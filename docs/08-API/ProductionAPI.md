@@ -9,10 +9,10 @@ Version : 1.0
 
 Production APIはProductionドメインを操作するためのREST APIを定義する。
 
-Productionは観客へ公開される公演を表す。
+ProductionはOrganizationが管理する公開公演である。
 
-ProjectはInternal Domainであり、
-APIからは公開しない。
+ProductionはProjectによって内部的に管理されるが、
+ProjectはInternal Domainであるため公開APIには含めない。
 
 Business RuleはDomain Layerが管理し、
 APIはApplication Layerの公開インターフェースとして機能する。
@@ -21,15 +21,23 @@ APIはApplication Layerの公開インターフェースとして機能する。
 
 # Resource
 
+ProductionはOrganization配下のResourceとして公開する。
+
 ```
-/api/v1/productions
+/api/v1/organizations/{organizationId}/productions
+```
+
+Production固有の操作はProduction Resourceとして公開する。
+
+```
+/api/v1/productions/{productionId}
 ```
 
 ---
 
 # Public Resource
 
-Production APIが公開する情報
+Production APIが公開するResource
 
 - Production
 - Performance
@@ -40,7 +48,7 @@ Production APIが公開する情報
 
 Projectは公開しない。
 
-利用者はProjectを意識しない。
+利用者はProjectの存在を意識しない。
 
 ---
 
@@ -49,20 +57,19 @@ Projectは公開しない。
 ## Request
 
 ```
-POST /api/v1/productions
+POST /api/v1/organizations/{organizationId}/productions
 ```
 
 ### Request Body
 
 ```json
 {
-    "organizationId": "...",
-    "title": "12人のうかれる人々",
-    "categoryId": "...",
-    "genreIds": [
-        "...",
-        "..."
-    ]
+  "title": "12人のうかれる人々",
+  "categoryId": "...",
+  "genreIds": [
+    "...",
+    "..."
+  ]
 }
 ```
 
@@ -74,8 +81,8 @@ POST /api/v1/productions
 
 ### Business Rules
 
-- Productionを新規作成する。
-- Projectを内部生成する。
+- Productionを作成する。
+- 内部的にProjectを生成する。
 - ProductionCreatedを発行する。
 - 初期Performanceを生成する。
 - 初期設定はDomain Eventによって実行する。
@@ -148,6 +155,14 @@ PATCH /api/v1/productions/{productionId}/archive
 
 ## Request
 
+Organization内の公演一覧
+
+```
+GET /api/v1/organizations/{organizationId}/productions
+```
+
+公開公演検索
+
 ```
 GET /api/v1/productions
 ```
@@ -166,8 +181,6 @@ category
 genre
 
 tag
-
-organization
 
 status
 
@@ -196,11 +209,11 @@ sort
 Production配下の公開Resource
 
 ```
-GET    /productions/{id}/performances
+GET    /productions/{productionId}/performances
 
-GET    /productions/{id}/participants
+GET    /productions/{productionId}/participants
 
-GET    /productions/{id}
+GET    /productions/{productionId}
 ```
 
 ---
@@ -210,7 +223,7 @@ GET    /productions/{id}
 Productionの作成・更新・公開は
 Organization Membershipによって認可する。
 
-Roleに応じて操作を制御する。
+Roleに応じて利用可能な操作を制御する。
 
 ---
 
@@ -259,6 +272,7 @@ Production APIは以下のDomain Eventを利用する。
 # Design Principles
 
 - Productionは公開Resourceである。
+- Organization配下のResourceとして管理する。
 - ProjectはInternal Domainとして隠蔽する。
 - Business RuleはDomain Layerが管理する。
 - Domain Eventを利用してBusiness Processを開始する。
