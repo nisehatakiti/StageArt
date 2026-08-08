@@ -207,3 +207,24 @@ Domain EventはBusiness Ruleを表現する。
 - 一つのDomain Eventから複数のBusiness Processが実行できる。
 - Event Handlerは互いに独立している。
 - 新しい処理は新しいEvent Handlerを追加して実現する。
+
+# Relationship with Golden Rule
+
+StageArtでは、利用者はBusiness Eventを意識しない。
+
+利用者は
+
+- 劇団を作る
+- 公演を作る
+- 予約する
+- 受付する
+
+という目的だけを操作する。
+
+それ以外の処理はDomain Eventによって自動的に実行される。
+
+これはGolden Ruleで定義する
+
+「利用者は内部構造を意識しない」
+
+という原則を実現するための設計である。
