@@ -449,6 +449,7 @@ Domain Modelを変更しない限りBusiness Ruleは変更しない。
 - APIはBusiness Resourceを公開する。
 - ResourceはDomain Modelと対応する。
 - 親子関係はURIで表現する。
+- 公開APIはAggregate Rootのみを公開する。   ←追加
 - 作成・一覧取得は親Resource配下で行う。
 - 個別取得・更新・削除は対象Resourceを利用する。
 - APIはBusiness Ruleを持たない。
