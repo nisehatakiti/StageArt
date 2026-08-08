@@ -1,159 +1,225 @@
 # StageArt Blueprint
 # Domain Model : Participant
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
-ParticipantはProductionへ参加する人物または団体を管理するドメインである。
+ParticipantはProductionへ参加する活動主体を表すDomainである。
 
-StageArtでは出演者だけでなく、スタッフ、制作、協賛など、公演へ参加するすべての主体をParticipantとして管理する。
+Participantは出演者だけではなく、
+
+- キャスト
+- スタッフ
+- 主催
+- 共催
+- 協賛
+- 後援
+
+など、公演へ関与するすべての主体を表現する。
+
+ParticipantはProductionとSubjectを関連付けるBusiness Domainである。
 
 ---
 
 # Concept
 
-Participantは「公演への参加」という事実を表す。
+ParticipantはProductionへの参加を表す。
 
-PersonやOrganizationそのものではない。
+参加主体はSubjectによって表現する。
 
-Productionへどのような立場で参加しているかを表現する。
+SubjectはPersonまたはOrganizationを参照する。
+
+```
+Production
+        │
+        ▼
+   Participant
+        │
+        ▼
+     Subject
+     ├── Person
+     └── Organization
+```
+
+ParticipantはSubjectを介して活動主体を参照する。
+
+PersonおよびOrganizationへ直接依存しない。
+
+---
+
+# Responsibility
+
+Participantは以下を管理する。
+
+- Subject
+- ParticipantType
+- Role
+- CreditOrder
+- Visibility
+- Status
+
+Productionとの関連付けはParticipantが管理する。
 
 ---
 
 # Identity
 
-ParticipantはParticipantIDによって一意に識別する。
+ParticipantはParticipantIdによって識別する。
 
-PersonIDやOrganizationIDは識別子ではない。
+ParticipantIdは変更できない。
+
+Productionを変更する場合は
+新しいParticipantとして扱う。
 
 ---
 
-# Relationship
+# Subject
 
-Participantは必ず一つのProductionへ所属する。
+ParticipantはSubjectを保持する。
 
-Participantは以下のいずれかを参照する。
+Subjectは以下で構成される。
+
+- SubjectType
+- SubjectId
+
+Subjectは以下を参照できる。
 
 - Person
 - Organization
 
-```
-Production
-    │
-    └── Participant
-            ├── Person
-            └── Organization
-```
+Version 1.0では上記のみをサポートする。
 
 ---
 
 # Participant Type
 
-Participantは参加区分を持つ。
+ParticipantTypeは参加区分を表す。
 
 例）
 
-- Cast
-- Staff
-- Organizer
-- Sponsor
-- Supporter
+- CAST
+- STAFF
+- DIRECTOR
+- PRODUCER
+- ORGANIZER
+- SPONSOR
+- SUPPORTER
 
-Typeは役割の分類であり、権限ではない。
+将来的に追加可能である。
 
 ---
 
 # Role
 
-Participantは表示用の役割名を持つ。
+Roleは公演内での役割を表す。
 
 例）
 
 - 主演
-- 助演
 - 演出
-- 脚本
-- 舞台監督
 - 音響
 - 照明
-- 制作
+- 舞台監督
 - 主催
 - 協賛
 
-Roleは公演ごとに自由に設定できる。
+Roleは表示情報であり、
+Business Ruleを持たない。
 
 ---
 
-# Credit
+# Credit Order
 
-Participantはクレジット順を保持する。
+CreditOrderは表示順を表す。
 
-StageArtはこの順番を利用して出演者一覧やスタッフ一覧を表示する。
+小さい値ほど先に表示する。
+
+同順位を許可する。
 
 ---
 
 # Visibility
 
-Participantは公開設定を持つ。
+Visibilityは公開状態を表す。
 
-公開の場合
+例）
 
-Productionページへ表示する。
+- PUBLIC
+- PRIVATE
 
-非公開の場合
-
-内部管理のみ利用する。
+非公開Participantは管理画面のみ表示する。
 
 ---
 
-# History
+# Status
 
-Production終了後、
+ParticipantStatusはParticipantの状態を表す。
 
-Participant情報は削除しない。
+例）
 
-Personの出演実績、
+- ACTIVE
+- INACTIVE
 
-Organizationの参加実績はParticipantから自動生成される。
+論理削除はStatusによって管理する。
+
+---
+
+# Business Rules
+
+ParticipantはProductionへ所属する。
+
+Participantは必ず一つのSubjectを持つ。
+
+SubjectはPersonまたはOrganizationである。
+
+一つのParticipantが複数のSubjectを持つことはできない。
+
+Production内で同一Subjectを重複登録できるかどうかは、
+ParticipantTypeを含めたBusiness Ruleによって判定する。
+
+Participantの追加・更新・削除は
+Historyを直接更新しない。
+
+HistoryはDomain Eventによって自動更新する。
+
+---
+
+# Domain Events
+
+Participantは以下のDomain Eventを発行する。
+
+- ParticipantAdded
+- ParticipantUpdated
+- ParticipantRemoved
+
+HistoryはこれらのDomain Eventによって更新される。
 
 ---
 
 # Design Decisions
 
-Participantは「公演への参加」を管理する。
+ParticipantはProductionへの参加を表す。
 
-Person情報は保持しない。
+ParticipantはSubjectを通じて活動主体を参照する。
 
-Organization情報は保持しない。
+ParticipantはPersonおよびOrganizationへ直接依存しない。
 
-出演履歴はPersonへ保存しない。
+ParticipantはHistoryを保持しない。
 
-ParticipantからHistoryを生成する。
-
----
-
-# Future
-
-将来的に以下へ対応する。
-
-- キャストグループ
-- スタッフグループ
-- ゲスト出演
-- 日替わり出演
-- 出演期間
-- 出演回指定
-- SNSリンク
+Historyは独立したDomainで管理する。
 
 ---
 
 # Design Principles
 
-- Participantは参加という事実を表す。
-- Personとは責務を分離する。
-- Organizationとは責務を分離する。
-- 出演実績はParticipantから生成する。
-- Roleは公演ごとに自由に設定できる。
-- ParticipantはProductionへ所属する。
+- ParticipantはProductionへの参加を表すBusiness Domainである。
+- Subjectは活動主体を表す共通Referenceである。
+- ParticipantはSubjectのみを参照する。
+- PersonおよびOrganizationへ直接依存しない。
+- ParticipantTypeは参加区分を表す。
+- Roleは表示情報である。
+- HistoryはDomain Eventによって自動更新する。
+- ParticipantはBusiness Ruleのみを管理する。
