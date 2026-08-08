@@ -7,45 +7,37 @@ Version : 1.0
 
 # Purpose
 
-Domain Eventsは、StageArtにおいて発生したBusiness Eventを定義する。
+Domain Eventは、StageArtにおいて発生したBusiness Eventを定義する。
 
-StageArtは利用者の操作ではなく、Business Eventを起点として内部処理を実行する。
+StageArtは利用者の操作そのものではなく、
+Business Eventを起点として内部処理を実行する。
 
-利用者は「やりたいこと」を実行するだけであり、その結果発生する処理はDomain Eventによって自動的に連鎖する。
+利用者は「何をしたいか」だけを意識し、
+その結果必要となる処理はStageArtが自動的に実行する。
 
 ---
 
 # Concept
 
-Domain EventはBusiness Ruleの結果として発生する。
+Domain EventはBusiness Ruleの結果として発生した「過去の事実」を表現する。
 
-画面遷移やAPI呼び出しを表すものではない。
+Domain Eventは画面操作やAPI呼び出しを表すものではない。
 
-利用者の操作によって発生したBusiness Eventを表現する。
+例えば、
 
-例）
-
-利用者
-
-↓
-
-「公演を作る」
-
-↓
+利用者が「公演を作成する」を実行すると、
 
 ProductionCreated
 
-↓
+というBusiness Eventが発生する。
 
-Project初期化
+その後、
 
-↓
+- 初期設定
+- チェックリスト生成
+- ドキュメント領域生成
 
-チェックリスト生成
-
-↓
-
-ホームページ生成
+などの処理はProductionCreatedを契機として実行される。
 
 ---
 
@@ -58,6 +50,7 @@ Domain Eventは以下の特徴を持つ。
 - Business上の意味を持つ。
 - Domain Layerで発生する。
 - UIやFrameworkへ依存しない。
+- Event単体でBusinessの意味を理解できる。
 
 ---
 
@@ -67,23 +60,9 @@ StageArtはEvent Driven Architectureを採用する。
 
 利用者は内部処理を意識しない。
 
-必要な処理はDomain Eventを契機として自動的に実行される。
+必要なBusiness ProcessはDomain Eventを契機として自動的に実行される。
 
-例）
-
-OrganizationCreated
-
-↓
-
-Default Membership作成
-
-↓
-
-Default Role作成
-
-↓
-
-Organization初期設定
+一つのDomain Eventから複数のBusiness Processが実行されることを許可する。
 
 ---
 
@@ -93,11 +72,14 @@ Domain Eventは過去形で命名する。
 
 例）
 
+- AccountCreated
 - OrganizationCreated
+- MembershipJoined
+- ProjectCreated
 - ProductionCreated
+- PerformanceCreated
 - ReservationCreated
 - ReservationCheckedIn
-- MembershipJoined
 
 以下のような命名は使用しない。
 
@@ -105,58 +87,123 @@ Domain Eventは過去形で命名する。
 - SaveReservation
 - UpdateProduction
 
-CommandではなくEventを表現する。
+Commandではなく、
+Business Eventを表現する。
 
 ---
 
 # Event Categories
 
-StageArtでは以下の種類のDomain Eventを定義する。
+StageArtでは以下のカテゴリのDomain Eventを定義する。
 
 - Account Events
 - Organization Events
+- Membership Events
+- Project Events
 - Production Events
 - Performance Events
 - Reservation Events
-- Membership Events
 
 将来的に必要に応じて追加する。
 
 ---
 
+# Event Flow
+
+StageArtでは、一つのDomain Eventから複数のBusiness Processが連鎖して実行される。
+
+利用者は内部処理を意識する必要はない。
+
+---
+
+## Example 1 : Organization
+
+```
+利用者
+    │
+    ▼
+OrganizationCreated
+    │
+    ├── Create Default Membership
+    ├── Create Default Roles
+    ├── Create Default Settings
+    └── Create Document Space
+```
+
+---
+
+## Example 2 : Production
+
+```
+利用者
+    │
+    ▼
+ProductionCreated
+    │
+    ├── Initialize Production
+    ├── Create Default Performances
+    ├── Create Checklist
+    └── Create Homepage
+```
+
+---
+
+## Example 3 : Reservation
+
+```
+利用者
+    │
+    ▼
+ReservationCreated
+    │
+    ├── Generate QR Code
+    ├── Send Confirmation Mail
+    ├── Update Audience History
+    └── Update Sales
+```
+
+---
+
+同じDomain Eventに対して新しいBusiness Processを追加する場合は、
+
+既存Eventを変更するのではなく、
+新しいEvent Handlerを追加することを基本とする。
+
+---
+
 # Event Processing
 
-一つのDomain Eventから複数の処理が実行される場合がある。
+Domain Eventは同期・非同期の実装方式へ依存しない。
 
-例）
+Eventがどのように配信・処理されるかはInfrastructure Layerの責務である。
 
-ReservationCreated
+BlueprintではBusiness Eventのみを定義する。
 
-↓
+---
 
-QRコード生成
+# Scope
 
-↓
+Domain EventはBusiness Ruleを表現する。
 
-確認メール送信
+以下はDomain Eventではない。
 
-↓
+- Button Click
+- API Request
+- Database Update
+- Mail Send
+- File Upload
 
-観客履歴更新
-
-↓
-
-売上集計更新
-
-各処理は互いに独立している。
+これらはInfrastructureまたはPresentation Layerの責務である。
 
 ---
 
 # Design Principles
 
 - Domain EventはBusiness Eventを表す。
-- Domain EventはImmutableである。
 - Domain Eventは過去形で命名する。
-- UIやFrameworkへ依存しない。
-- Domain Eventを起点としてBusiness Ruleを実行する。
-- 利用者は内部イベントを意識しない。
+- Domain EventはImmutableである。
+- Domain EventはUIやFrameworkへ依存しない。
+- Business ProcessはDomain Eventを契機として実行される。
+- 一つのDomain Eventから複数のBusiness Processが実行できる。
+- Event Handlerは互いに独立している。
+- 新しい処理は新しいEvent Handlerを追加して実現する。
