@@ -188,3 +188,16 @@ ReservationSeatおよびCompanionは
 Reservationの子エンティティである。
 
 子エンティティはReservationを経由してのみ更新される。
+
+# Aggregate Rule
+
+ReservationはAggregate Rootである。
+
+Reservationは以下の子エンティティを管理する。
+
+- ReservationSeat
+- Companion
+
+子エンティティはReservationを経由してのみ生成・更新・削除できる。
+
+外部ドメインはReservationSeatおよびCompanionを直接変更してはならない。
