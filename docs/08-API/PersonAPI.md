@@ -9,10 +9,10 @@ Version : 1.0
 
 Person APIはPersonドメインを操作するためのREST APIを定義する。
 
-PersonはStageArtに登録された人物を表す。
+PersonはStageArtに登録された人物を表すBusiness Resourceである。
 
-Personは認証情報(Account)とは独立したBusiness Resourceであり、
-プロフィール、出演実績、観劇履歴などの公開情報を管理する。
+Personは認証情報(Account)とは独立したDomainであり、
+プロフィール、所属情報、およびHistoryを統合して公開する。
 
 Business RuleはDomain Layerが管理し、
 APIはApplication Layerの公開インターフェースとして機能する。
@@ -38,17 +38,19 @@ Person固有の操作はPerson Resourceとして公開する。
 Person APIが公開する情報
 
 - Person Profile
-- Participation History
-- Audience History
-- Organization Membership（公開設定のみ）
+- Public Organizations
+- History
 
-認証情報(Account)は公開しない。
+Historyは独立したDomainであるが、
+公開APIではPerson Resourceの一部として提供する。
+
+Accountは公開しない。
 
 ---
 
 # Create Person
 
-Version 1.0ではPersonは直接作成しない。
+Version 1.0ではPersonを直接作成しない。
 
 Personは以下の場合に自動生成される。
 
@@ -73,13 +75,19 @@ GET /api/v1/persons/{personId}
 取得可能情報
 
 - Display Name
-- Profile
+- Biography
 - Profile Image
-- SNS
 - Website
+- SNS
 - Public Organizations
+- History
+
+Historyには以下を含む。
+
 - Participation History
 - Audience History
+
+Historyは読み取り専用である。
 
 ---
 
@@ -101,6 +109,8 @@ PUT /api/v1/persons/{personId}
 - Public Settings
 
 PersonIdは変更できない。
+
+Historyは更新できない。
 
 ---
 
@@ -137,25 +147,8 @@ sort
 - Display Name
 - Biography
 - Organization
-- Participation History
+- History
 - Tag
-
----
-
-# Child Resources
-
-Person配下の公開Resource
-
-```
-GET /persons/{personId}/participations
-
-GET /persons/{personId}/audience-history
-```
-
-Version 1.0では読み取り専用とする。
-
-ParticipationおよびAudience Historyは
-Domain Eventによって自動更新される。
 
 ---
 
@@ -163,9 +156,11 @@ Domain Eventによって自動更新される。
 
 Person情報の閲覧は公開設定に従う。
 
-本人のみ更新可能とする。
+更新は本人のみ可能とする。
 
 Organization Membershipによる更新権限は持たない。
+
+Historyは更新できない。
 
 ---
 
@@ -175,13 +170,17 @@ Person APIは以下のDomain Eventを利用する。
 
 - PersonProfileUpdated
 
+Historyは以下のDomain Eventによって自動更新される。
+
+- ParticipantAdded
+- ParticipantUpdated
+- ReservationCreated
+- ReservationCheckedIn
+
 将来的に以下を追加する。
 
 - PersonMerged
 - PersonArchived
-
-Participation HistoryおよびAudience Historyは
-Domain Eventによって更新される。
 
 ---
 
@@ -223,7 +222,10 @@ Domain Eventによって更新される。
 - Personは人物を表すBusiness Resourceである。
 - PersonはAccountとは独立したDomainである。
 - Accountは公開APIとして提供しない。
-- Participation Historyは自動生成する。
-- Audience Historyは自動生成する。
+- Historyは独立したDomainである。
+- HistoryはParticipantおよびReservationから自動生成する。
+- HistoryはPerson Resourceの一部として公開する。
+- Historyは読み取り専用である。
+- Historyを操作するAPIは提供しない。
 - Business RuleはDomain Layerが管理する。
 - APIはRESTを採用する。
