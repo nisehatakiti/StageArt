@@ -12,19 +12,21 @@ Version : 1.0
 APIはPresentation LayerとApplication Layerを接続するインターフェースである。
 
 Business Ruleは保持せず、
-Domain Layerの機能を外部へ公開する責務のみを持つ。
+Domain Layerの機能をBusiness Resourceとして公開する責務のみを持つ。
 
-StageArtのAPIはBlueprintに定義されたDomain Modelを公開するためのインターフェースであり、
+StageArtのAPIはBlueprintで定義したDomain Modelを利用者へ提供するためのインターフェースであり、
 Domain Modelを変更しない限りAPI設計も変更しない。
 
 ---
 
 # Design Philosophy
 
-StageArtはDomain Driven Design(DDD)を採用する。
+StageArtはDomain Driven Design（DDD）を採用する。
 
-APIはDomain Modelをそのまま公開するものではなく、
-Business Resourceとして表現する。
+APIはDomain Modelそのものを公開するものではない。
+
+利用者にとって自然なBusiness Resourceを公開し、
+内部構造は隠蔽する。
 
 利用者はBusiness Resourceのみを操作し、
 内部構造を意識しない。
@@ -70,6 +72,7 @@ Application Layerが公開ドメインとInternal Domainを連携させる。
 
 ## Internal Domain
 
+- Account
 - Project
 - Workflow
 - Checklist
@@ -82,9 +85,44 @@ Internal Domainは将来的に追加されても、
 
 ---
 
+# Public API Rule
+
+DomainとAPIは1対1に対応しない。
+
+公開APIはBusiness Resourceを公開するものであり、
+Domain構造をそのまま公開するものではない。
+
+必要な情報はBusiness Resourceへ集約して公開する。
+
+例）
+
+Historyは独立したDomainとして管理する。
+
+しかしHistory APIは提供しない。
+
+HistoryはPerson Resourceへ集約して公開する。
+
+```
+GET /persons/{personId}
+```
+
+↓
+
+```json
+{
+  "profile": {},
+  "organizations": [],
+  "history": []
+}
+```
+
+Business Resourceとして自然な形を優先する。
+
+---
+
 # Resource Design
 
-APIで公開するResourceはDomain Modelと対応する。
+APIで公開するResourceはBusiness Resourceとする。
 
 ResourceはBusiness上の概念を表現する。
 
@@ -96,9 +134,7 @@ ResourceはBusiness上の概念を表現する。
 - Performance
 - Reservation
 
-Resource名はBusiness Languageを利用する。
-
-DatabaseやInfrastructureの概念を公開しない。
+Database構造やInfrastructureの概念は公開しない。
 
 ---
 
@@ -108,7 +144,7 @@ URIは名詞を利用する。
 
 Resourceは複数形で表現する。
 
-例
+例）
 
 ```
 /organizations
@@ -122,7 +158,7 @@ Resourceは複数形で表現する。
 
 Commandを表すURIは使用しない。
 
-例
+例）
 
 ```
 /createReservation
@@ -153,7 +189,7 @@ URIでも親子関係を表現する。
 
 は対象Resource自身を利用する。
 
-例
+例）
 
 ```
 POST /organizations/{organizationId}/productions
@@ -170,6 +206,7 @@ PATCH /productions/{productionId}/publish
 StageArt全体でこのルールを統一する。
 
 ---
+
 # Aggregate Rule
 
 公開APIはAggregate Rootのみを公開する。
@@ -179,8 +216,6 @@ Aggregate内部の子Entityは独立したAPIとして公開しない。
 子Entityの生成・更新・削除は、
 必ずAggregate Rootを経由して行う。
 
-これによりAggregateの整合性を維持する。
-
 例）
 
 ```
@@ -189,27 +224,19 @@ Reservation
     └── ReservationSeat
 ```
 
-CompanionおよびReservationSeatは
-独立したAPIを持たない。
-
-以下のAPIは提供しない。
-
-```
-/companions
-
-/reservation-seats
-```
-
-これらの更新は
+CompanionおよびReservationSeatは独立したAPIを持たない。
 
 ```
 PUT /reservations/{reservationId}
 ```
 
-を通じて実施する。
+を通して更新する。
 
-将来的に新しい子Entityが追加されても、
+将来的に子Entityが追加されても、
 同じルールを適用する。
+
+---
+
 # HTTP Method
 
 HTTP MethodはRESTの意味に従う。
@@ -283,7 +310,7 @@ HTTP Status Codeを利用する。
 |500|Internal Server Error|
 
 Business ErrorはHTTP Errorではなく、
-Business Ruleとして扱う。
+Domain Layerで表現する。
 
 ---
 
@@ -294,7 +321,8 @@ Version 1.0では以下をサポートする。
 - Google Login
 - Email Login
 
-認証方式はAPI利用者から隠蔽する。
+Accountは認証基盤であり、
+公開APIとして提供しない。
 
 ---
 
@@ -357,8 +385,6 @@ pageSize
 
 API VersionはURLで管理する。
 
-例
-
 ```
 /api/v1/
 ```
@@ -373,7 +399,7 @@ APIはBusiness Processを実装しない。
 
 Business ProcessはDomain Eventを契機として開始する。
 
-例
+例）
 
 ```
 POST Organization
@@ -446,16 +472,17 @@ Domain Modelを変更しない限りBusiness Ruleは変更しない。
 - APIはRESTを採用する。
 - APIは公開Domainのみを公開する。
 - Internal Domainは公開しない。
+- DomainとAPIは1対1に対応しない。
 - APIはBusiness Resourceを公開する。
-- ResourceはDomain Modelと対応する。
+- ResourceはBusiness Resourceとして設計する。
 - 親子関係はURIで表現する。
-- 公開APIはAggregate Rootのみを公開する。   ←追加
 - 作成・一覧取得は親Resource配下で行う。
 - 個別取得・更新・削除は対象Resourceを利用する。
-- APIはBusiness Ruleを持たない。
+- 公開APIはAggregate Rootのみを公開する。
+- 子EntityはAggregate Root経由でのみ操作する。
 - ValidationはApplication Layerが担当する。
 - Business RuleはDomain Layerが担当する。
 - APIはDomain Eventの入口となる。
-- APIはPresentation用DTOを返却する。
+- ResponseはPresentation用DTOを返却する。
 - Domain Entityを直接公開しない。
 - Domain Modelを唯一の設計基準とする。
