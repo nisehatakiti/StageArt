@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Participant
 
-Version : 1.0
+Version : 2.0
 
 ---
 
@@ -9,16 +9,12 @@ Version : 1.0
 
 Participant APIはParticipantドメインを操作するためのREST APIを定義する。
 
-ParticipantはProductionへ参加する人物または団体を表すBusiness Resourceである。
+ParticipantはProductionへ参加する活動主体を表すBusiness Resourceである。
 
-出演者だけでなく、
+活動主体はSubjectによって表現する。
 
-- スタッフ
-- 主催
-- 協賛
-- 後援
-
-など、公演へ参加するすべての主体を管理する。
+SubjectはPersonまたはOrganizationを参照する共通Referenceであり、
+ParticipantはSubjectを通じて活動主体を管理する。
 
 Business RuleはDomain Layerが管理し、
 APIはApplication Layerの公開インターフェースとして機能する。
@@ -46,12 +42,14 @@ Participant固有の操作はParticipant Resourceとして公開する。
 Participant APIが公開する情報
 
 - Participant
-- Person
-- Organization
-- Role
+- Subject
 - ParticipantType
+- Role
+- CreditOrder
+- Visibility
+- Status
 
-ParticipantはProductionの構成要素として公開する。
+SubjectはPersonまたはOrganizationを表す。
 
 ---
 
@@ -67,7 +65,10 @@ POST /api/v1/productions/{productionId}/participants
 
 ```json
 {
-  "personId": "...",
+  "subject": {
+    "type": "PERSON",
+    "id": "person-001"
+  },
   "participantType": "CAST",
   "role": "主演",
   "creditOrder": 1
@@ -84,8 +85,9 @@ POST /api/v1/productions/{productionId}/participants
 
 - Participantを作成する。
 - Productionへ紐付ける。
+- Subjectを登録する。
 - ParticipantAddedを発行する。
-- 出演実績はHistoryへ自動反映する。
+- HistoryはDomain Eventによって自動更新する。
 
 ---
 
@@ -113,10 +115,12 @@ PUT /api/v1/participants/{participantId}
 - Role
 - CreditOrder
 - Visibility
+- Status
 
-ParticipantIdは変更できない。
+Subjectは変更できない。
 
-PersonおよびOrganizationの変更はできない。
+活動主体を変更する場合は、
+Participantを作り直す。
 
 ---
 
@@ -132,7 +136,7 @@ DELETE /api/v1/participants/{participantId}
 
 - ParticipantをProductionから削除する。
 - ParticipantRemovedを発行する。
-- HistoryはDomain Eventによって更新する。
+- HistoryはDomain Eventによって自動更新する。
 
 ---
 
@@ -150,10 +154,10 @@ GET /api/v1/productions/{productionId}/participants
 
 検索対象
 
-- Person
-- Organization
-- Role
+- Subject
 - ParticipantType
+- Role
+- Status
 
 ---
 
@@ -174,7 +178,7 @@ Participant APIは以下のDomain Eventを利用する。
 - ParticipantUpdated
 - ParticipantRemoved
 
-HistoryはDomain Eventによって自動更新される。
+HistoryはこれらのDomain Eventによって自動更新される。
 
 ---
 
@@ -209,13 +213,21 @@ HistoryはDomain Eventによって自動更新される。
 - ゲスト出演
 - SNSリンク
 
+Subjectの種類が追加されても、
+Participant APIは変更しない。
+
 ---
 
 # Design Principles
 
 - ParticipantはProductionへの参加を表すBusiness Resourceである。
-- PersonまたはOrganizationを参照する。
-- 出演実績はHistoryへ自動反映する。
+- ParticipantはSubjectを通じて活動主体を参照する。
+- SubjectはPersonまたはOrganizationを表す。
+- ParticipantはPersonおよびOrganizationへ直接依存しない。
+- ParticipantTypeはシステムが管理する参加区分である。
+- Roleは表示用の役割である。
+- Subjectは変更できない。
+- HistoryはDomain Eventによって自動更新する。
 - Historyは直接更新しない。
 - Business RuleはDomain Layerが管理する。
 - APIはRESTを採用する。
