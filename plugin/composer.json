@@ -1,0 +1,17 @@
+{
+    "name": "stageart/stageart",
+    "description": "StageArt WordPress plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "StageArt\\Domain\\": "src/Domain/",
+            "StageArt\\Application\\": "src/Application/",
+            "StageArt\\Infrastructure\\": "src/Infrastructure/",
+            "StageArt\\Presentation\\": "src/Presentation/"
+        }
+    }
+}
