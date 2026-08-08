@@ -275,3 +275,13 @@ pageSize
 - APIはBusiness Ruleを持たない。
 - JSONを利用する。
 - APIはVersion管理する。
+
+## Public Domain Rule
+
+APIは公開ドメインのみを公開する。
+
+Internal DomainはAPIとして公開しない。
+
+利用者はInternal Domainの存在を意識しない。
+
+Internal Domainとの連携はApplication Layerが担当する。
