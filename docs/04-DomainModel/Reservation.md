@@ -182,3 +182,9 @@ CompanionはReservationへ所属する。
 - Seatは予約状態を保持しない。
 - CompanionはReservationへ所属する。
 - Reservationは削除しない。
+- ReservationはAggregate Rootである。
+
+ReservationSeatおよびCompanionは
+Reservationの子エンティティである。
+
+子エンティティはReservationを経由してのみ更新される。
