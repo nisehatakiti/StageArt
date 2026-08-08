@@ -12,7 +12,28 @@ Version : 1.0
 APIはPresentation LayerとApplication Layerを接続するインターフェースである。
 
 Business Ruleは保持せず、
-Domain Layerの機能を公開する責務のみを持つ。
+Domain Layerの機能を外部へ公開する責務のみを持つ。
+
+StageArtのAPIはBlueprintに定義されたDomain Modelを公開するためのインターフェースであり、
+Domain Modelを変更しない限りAPI設計も変更しない。
+
+---
+
+# Design Philosophy
+
+StageArtはDomain Driven Design(DDD)を採用する。
+
+APIはDomain Modelをそのまま公開するものではなく、
+Business Resourceとして表現する。
+
+利用者はBusiness Resourceのみを操作し、
+内部構造を意識しない。
+
+これはGolden Ruleで定義する
+
+「利用者は内部構造を意識しない」
+
+という原則を実現するためである。
 
 ---
 
@@ -36,25 +57,28 @@ Internal DomainはAPIとして公開しない。
 
 利用者はInternal Domainの存在を意識しない。
 
-Internal Domainとの連携はApplication Layerが担当する。
+Application Layerが公開ドメインとInternal Domainを連携させる。
 
-例）
-
-公開するDomain
+## Public Domain
 
 - Organization
+- Person
 - Production
 - Performance
+- Participant
 - Reservation
-- Person
 
-公開しないDomain
+## Internal Domain
 
 - Project
 - Workflow
 - Checklist
 - Document Workspace
 - Budget Workspace
+- Notification Queue
+
+Internal Domainは将来的に追加されても、
+公開APIへ影響を与えない。
 
 ---
 
@@ -62,6 +86,8 @@ Internal Domainとの連携はApplication Layerが担当する。
 
 APIで公開するResourceはDomain Modelと対応する。
 
+ResourceはBusiness上の概念を表現する。
+
 例）
 
 - Organization
@@ -70,7 +96,9 @@ APIで公開するResourceはDomain Modelと対応する。
 - Performance
 - Reservation
 
-ResourceはBusiness上の概念を表現する。
+Resource名はBusiness Languageを利用する。
+
+DatabaseやInfrastructureの概念を公開しない。
 
 ---
 
@@ -78,9 +106,9 @@ ResourceはBusiness上の概念を表現する。
 
 URIは名詞を利用する。
 
-複数形で表現する。
+Resourceは複数形で表現する。
 
-例）
+例
 
 ```
 /organizations
@@ -94,7 +122,7 @@ URIは名詞を利用する。
 
 Commandを表すURIは使用しない。
 
-例）
+例
 
 ```
 /createReservation
@@ -108,14 +136,24 @@ Commandを表すURIは使用しない。
 
 # Parent Resource Rule
 
-Resourceが別Resourceへ所属する場合は、
-親Resource配下として表現する。
+Resourceが他Resourceへ所属する場合は、
+URIでも親子関係を表現する。
 
-作成・一覧取得は親Resourceを利用する。
+作成(Create)
 
-個別取得・更新・削除は対象Resourceを利用する。
+一覧(List)
 
-例）
+は親Resource配下で行う。
+
+取得(Get)
+
+更新(Update)
+
+削除(Delete)
+
+は対象Resource自身を利用する。
+
+例
 
 ```
 POST /organizations/{organizationId}/productions
@@ -129,7 +167,7 @@ PUT /productions/{productionId}
 PATCH /productions/{productionId}/publish
 ```
 
-このルールをStageArt全体で統一する。
+StageArt全体でこのルールを統一する。
 
 ---
 
@@ -139,11 +177,11 @@ HTTP MethodはRESTの意味に従う。
 
 | Method | Purpose |
 |---------|---------|
-| GET | 取得 |
-| POST | 作成 |
-| PUT | 全体更新 |
-| PATCH | 部分更新 |
-| DELETE | 削除 |
+| GET | Resource取得 |
+| POST | Resource作成 |
+| PUT | Resource全体更新 |
+| PATCH | Resource部分更新 |
+| DELETE | Resource削除 |
 
 Business RuleはHTTP Methodではなく、
 Domain Layerが管理する。
@@ -152,11 +190,13 @@ Domain Layerが管理する。
 
 # Request
 
-RequestはResourceに対する操作を表現する。
+RequestはResourceへの操作を表現する。
 
 ValidationはApplication Layerで実施する。
 
 Business RuleはDomain Layerで実施する。
+
+RequestはBusiness Commandを表現しない。
 
 ---
 
@@ -184,6 +224,9 @@ Validation Errorなどは
 
 で返却する。
 
+ResponseはPresentation用DTOであり、
+Domain Entityを直接返却しない。
+
 ---
 
 # Error Response
@@ -199,6 +242,9 @@ HTTP Status Codeを利用する。
 |409|Conflict|
 |422|Validation Error|
 |500|Internal Server Error|
+
+Business ErrorはHTTP Errorではなく、
+Business Ruleとして扱う。
 
 ---
 
@@ -224,20 +270,6 @@ Organizationへの所属とRoleによって
 
 ---
 
-# Versioning
-
-API VersionはURLで管理する。
-
-例）
-
-```
-/api/v1/
-```
-
-Business RuleはVersionへ依存しない。
-
----
-
 # Pagination
 
 一覧APIはPaginationをサポートする。
@@ -256,7 +288,7 @@ pageSize
 
 一覧APIはFilterをサポートする。
 
-例）
+例
 
 ```
 ?status=published
@@ -272,7 +304,7 @@ pageSize
 
 一覧APIはSortをサポートする。
 
-例）
+例
 
 ```
 ?sort=name
@@ -282,14 +314,27 @@ pageSize
 
 ---
 
+# Versioning
+
+API VersionはURLで管理する。
+
+例
+
+```
+/api/v1/
+```
+
+Business RuleはVersionへ依存しない。
+
+---
+
 # Domain Events
 
-Business ProcessはDomain Eventを利用して開始する。
+APIはBusiness Processを実装しない。
 
-APIはEventを発行するだけであり、
-Business Processは保持しない。
+Business ProcessはDomain Eventを契機として開始する。
 
-例）
+例
 
 ```
 POST Organization
@@ -300,8 +345,60 @@ OrganizationCreated
 
 ↓
 
-Business Process
+Create Default Membership
+
+↓
+
+Create Default Settings
+
+↓
+
+Create Document Space
 ```
+
+APIはBusiness Eventの入口であり、
+Business Logicの実行主体ではない。
+
+---
+
+# Layer Responsibility
+
+Presentation Layer
+
+↓
+
+API
+
+↓
+
+Application Layer
+
+↓
+
+Domain Layer
+
+↓
+
+Infrastructure Layer
+
+APIはPresentation LayerとApplication Layerの境界である。
+
+Business RuleはDomain Layerのみが保持する。
+
+---
+
+# Future
+
+将来的に
+
+- Mobile App
+- LINE Integration
+- Public API
+- External API
+- GraphQL
+
+などが追加されても、
+Domain Modelを変更しない限りBusiness Ruleは変更しない。
 
 ---
 
@@ -310,12 +407,15 @@ Business Process
 - APIはRESTを採用する。
 - APIは公開Domainのみを公開する。
 - Internal Domainは公開しない。
+- APIはBusiness Resourceを公開する。
 - ResourceはDomain Modelと対応する。
 - 親子関係はURIで表現する。
 - 作成・一覧取得は親Resource配下で行う。
-- 個別取得・更新・削除は対象Resourceで行う。
-- Business RuleはDomain Layerが管理する。
+- 個別取得・更新・削除は対象Resourceを利用する。
 - APIはBusiness Ruleを持たない。
-- APIはDomain Eventを発行する。
-- JSONを利用する。
-- API Versionを管理する。
+- ValidationはApplication Layerが担当する。
+- Business RuleはDomain Layerが担当する。
+- APIはDomain Eventの入口となる。
+- APIはPresentation用DTOを返却する。
+- Domain Entityを直接公開しない。
+- Domain Modelを唯一の設計基準とする。
