@@ -9,10 +9,10 @@ Version : 1.0
 
 本章ではStageArtで採用するAPI設計の基本方針を定義する。
 
-APIはPresentation LayerとApplication Layerを接続するインターフェースであり、
-Business Ruleを保持しない。
+APIはPresentation LayerとApplication Layerを接続するインターフェースである。
 
-Business RuleはDomain Layerで管理する。
+Business Ruleは保持せず、
+Domain Layerの機能を公開する責務のみを持つ。
 
 ---
 
@@ -20,37 +20,57 @@ Business RuleはDomain Layerで管理する。
 
 StageArtはREST APIを採用する。
 
-APIはResourceを中心に設計する。
+APIはCommandではなく、
+Business Resourceを中心として設計する。
 
-CommandではなくResourceを公開する。
-
-例）
-
-```
-GET    /organizations
-
-GET    /productions
-
-POST   /reservations
-```
+Business RuleはDomain Layerが管理し、
+APIはその公開窓口として機能する。
 
 ---
 
-# Resource
+# Public Domain Rule
 
-APIで公開するResourceはDomain Modelに対応する。
+APIは公開ドメインのみを公開する。
+
+Internal DomainはAPIとして公開しない。
+
+利用者はInternal Domainの存在を意識しない。
+
+Internal Domainとの連携はApplication Layerが担当する。
 
 例）
 
-- Account
-- Person
+公開するDomain
+
 - Organization
+- Production
+- Performance
+- Reservation
+- Person
+
+公開しないDomain
+
 - Project
+- Workflow
+- Checklist
+- Document Workspace
+- Budget Workspace
+
+---
+
+# Resource Design
+
+APIで公開するResourceはDomain Modelと対応する。
+
+例）
+
+- Organization
+- Person
 - Production
 - Performance
 - Reservation
 
-内部専用Domainは公開しない。
+ResourceはBusiness上の概念を表現する。
 
 ---
 
@@ -72,15 +92,44 @@ URIは名詞を利用する。
 /reservations
 ```
 
-以下のようなURIは使用しない。
+Commandを表すURIは使用しない。
+
+例）
 
 ```
 /createReservation
 
-/getPerformance
-
 /updateProduction
+
+/deleteOrganization
 ```
+
+---
+
+# Parent Resource Rule
+
+Resourceが別Resourceへ所属する場合は、
+親Resource配下として表現する。
+
+作成・一覧取得は親Resourceを利用する。
+
+個別取得・更新・削除は対象Resourceを利用する。
+
+例）
+
+```
+POST /organizations/{organizationId}/productions
+
+GET /organizations/{organizationId}/productions
+
+GET /productions/{productionId}
+
+PUT /productions/{productionId}
+
+PATCH /productions/{productionId}/publish
+```
+
+このルールをStageArt全体で統一する。
 
 ---
 
@@ -88,33 +137,22 @@ URIは名詞を利用する。
 
 HTTP MethodはRESTの意味に従う。
 
-GET
+| Method | Purpose |
+|---------|---------|
+| GET | 取得 |
+| POST | 作成 |
+| PUT | 全体更新 |
+| PATCH | 部分更新 |
+| DELETE | 削除 |
 
-取得
-
-POST
-
-新規作成
-
-PUT
-
-全体更新
-
-PATCH
-
-部分更新
-
-DELETE
-
-削除
+Business RuleはHTTP Methodではなく、
+Domain Layerが管理する。
 
 ---
 
 # Request
 
-RequestはBusiness Commandではなく、
-
-Resourceへの操作を表現する。
+RequestはResourceに対する操作を表現する。
 
 ValidationはApplication Layerで実施する。
 
@@ -136,61 +174,40 @@ ResponseはJSONを利用する。
 }
 ```
 
-必要に応じて
+Validation Errorなどは
 
-```
-errors
+```json
+{
+  "errors": []
+}
 ```
 
-を返却する。
+で返却する。
 
 ---
 
 # Error Response
 
-ErrorはHTTP Status Codeを利用する。
+HTTP Status Codeを利用する。
 
-例）
-
-400
-
-Bad Request
-
-401
-
-Unauthorized
-
-403
-
-Forbidden
-
-404
-
-Not Found
-
-409
-
-Conflict
-
-422
-
-Validation Error
-
-500
-
-Internal Server Error
+| Code | Meaning |
+|------|---------|
+|400|Bad Request|
+|401|Unauthorized|
+|403|Forbidden|
+|404|Not Found|
+|409|Conflict|
+|422|Validation Error|
+|500|Internal Server Error|
 
 ---
 
 # Authentication
 
-Version 1.0
+Version 1.0では以下をサポートする。
 
-Google Login
-
-Email Login
-
-認証後はアクセストークンを利用する。
+- Google Login
+- Email Login
 
 認証方式はAPI利用者から隠蔽する。
 
@@ -198,25 +215,26 @@ Email Login
 
 # Authorization
 
-認可はMembershipを利用する。
+認可はMembershipによって行う。
 
-Account単位では判定しない。
+Accountでは判定しない。
 
-Organizationへの所属とRoleによって利用可能APIを決定する。
+Organizationへの所属とRoleによって
+利用可能なAPIを決定する。
 
 ---
 
 # Versioning
 
-API VersionをURLで管理する。
+API VersionはURLで管理する。
 
 例）
 
 ```
-/api/v1/organizations
+/api/v1/
 ```
 
-Version変更時もBusiness Ruleは変更しない。
+Business RuleはVersionへ依存しない。
 
 ---
 
@@ -224,21 +242,19 @@ Version変更時もBusiness Ruleは変更しない。
 
 一覧APIはPaginationをサポートする。
 
-基本形式
-
 ```
 page
 
 pageSize
 ```
 
-将来的にCursor Paginationへ変更可能とする。
+将来的にCursor Paginationへ対応可能とする。
 
 ---
 
 # Filtering
 
-一覧取得はFilterを利用する。
+一覧APIはFilterをサポートする。
 
 例）
 
@@ -254,7 +270,7 @@ pageSize
 
 # Sorting
 
-一覧取得はSortをサポートする。
+一覧APIはSortをサポートする。
 
 例）
 
@@ -266,22 +282,40 @@ pageSize
 
 ---
 
+# Domain Events
+
+Business ProcessはDomain Eventを利用して開始する。
+
+APIはEventを発行するだけであり、
+Business Processは保持しない。
+
+例）
+
+```
+POST Organization
+
+↓
+
+OrganizationCreated
+
+↓
+
+Business Process
+```
+
+---
+
 # Design Principles
 
 - APIはRESTを採用する。
-- Resource中心に設計する。
-- URIは名詞を利用する。
+- APIは公開Domainのみを公開する。
+- Internal Domainは公開しない。
+- ResourceはDomain Modelと対応する。
+- 親子関係はURIで表現する。
+- 作成・一覧取得は親Resource配下で行う。
+- 個別取得・更新・削除は対象Resourceで行う。
 - Business RuleはDomain Layerが管理する。
 - APIはBusiness Ruleを持たない。
+- APIはDomain Eventを発行する。
 - JSONを利用する。
-- APIはVersion管理する。
-
-## Public Domain Rule
-
-APIは公開ドメインのみを公開する。
-
-Internal DomainはAPIとして公開しない。
-
-利用者はInternal Domainの存在を意識しない。
-
-Internal Domainとの連携はApplication Layerが担当する。
+- API Versionを管理する。
