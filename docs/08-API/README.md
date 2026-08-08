@@ -170,7 +170,46 @@ PATCH /productions/{productionId}/publish
 StageArt全体でこのルールを統一する。
 
 ---
+# Aggregate Rule
 
+公開APIはAggregate Rootのみを公開する。
+
+Aggregate内部の子Entityは独立したAPIとして公開しない。
+
+子Entityの生成・更新・削除は、
+必ずAggregate Rootを経由して行う。
+
+これによりAggregateの整合性を維持する。
+
+例）
+
+```
+Reservation
+    ├── Companion
+    └── ReservationSeat
+```
+
+CompanionおよびReservationSeatは
+独立したAPIを持たない。
+
+以下のAPIは提供しない。
+
+```
+/companions
+
+/reservation-seats
+```
+
+これらの更新は
+
+```
+PUT /reservations/{reservationId}
+```
+
+を通じて実施する。
+
+将来的に新しい子Entityが追加されても、
+同じルールを適用する。
 # HTTP Method
 
 HTTP MethodはRESTの意味に従う。
