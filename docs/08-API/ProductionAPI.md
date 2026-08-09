@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 1.0
+Version : 2.0
 
 ---
 
@@ -9,9 +9,11 @@ Version : 1.0
 
 Production APIはProductionドメインを操作するためのREST APIを定義する。
 
-ProductionはOrganizationが管理する公開公演である。
+ProductionはOrganizationが管理する公開公演を表すBusiness Resourceである。
 
-ProductionはProjectによって内部的に管理されるが、
+Production APIはProductionを中心として、
+公演に必要な関連情報を集約して提供する。
+
 ProjectはInternal Domainであるため公開APIには含めない。
 
 Business RuleはDomain Layerが管理し、
@@ -37,14 +39,14 @@ Production固有の操作はProduction Resourceとして公開する。
 
 # Public Resource
 
-Production APIが公開するResource
+Production APIが公開する情報
 
 - Production
-- Performance
-- Participant
+- Performances
+- Participants
 - Category
-- Genre
-- Tag
+- Genres
+- Tags
 
 Projectは公開しない。
 
@@ -97,6 +99,19 @@ POST /api/v1/organizations/{organizationId}/productions
 GET /api/v1/productions/{productionId}
 ```
 
+### Response
+
+取得可能情報
+
+- Production
+- Performances
+- Participants
+- Category
+- Genres
+- Tags
+
+Production APIは関連Resourceを集約して返却する。
+
 ---
 
 # Update Production
@@ -114,8 +129,8 @@ PUT /api/v1/productions/{productionId}
 - Description
 - Image
 - Category
-- Genre
-- Tag
+- Genres
+- Tags
 
 ProductionIdは変更できない。
 
@@ -212,8 +227,6 @@ Production配下の公開Resource
 GET    /productions/{productionId}/performances
 
 GET    /productions/{productionId}/participants
-
-GET    /productions/{productionId}
 ```
 
 ---
@@ -267,13 +280,16 @@ Production APIは以下のDomain Eventを利用する。
 - Related Productions
 - Streaming
 
+Production APIは必要に応じて関連Resourceを集約して公開する。
+
 ---
 
 # Design Principles
 
-- Productionは公開Resourceである。
+- Productionは公開Business Resourceである。
 - Organization配下のResourceとして管理する。
 - ProjectはInternal Domainとして隠蔽する。
+- Production APIは関連Resourceを集約して公開する。
 - Business RuleはDomain Layerが管理する。
 - Domain Eventを利用してBusiness Processを開始する。
 - APIはRESTを採用する。
