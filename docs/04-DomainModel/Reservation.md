@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Domain Model : Reservation
 
-Version : 2.1
+Version : 3.0
 
 ---
 
@@ -27,6 +27,8 @@ Performance
       │
       ▼
  Reservation
+      ├── Booker
+      ├── HandledParticipant
       ├── Companion
       └── ReservationSeat
 ```
@@ -43,6 +45,7 @@ HistoryはReservationの責務ではない。
 Reservationは以下を管理する。
 
 - Booker
+- HandledParticipant
 - Companion
 - ReservationSeat
 - TicketType
@@ -59,7 +62,7 @@ ReservationはReservationIdによって識別する。
 
 ReservationIdは変更できない。
 
-ReservationNumberは表示用識別子とする。
+ReservationNumberは利用者へ表示する識別子とする。
 
 ---
 
@@ -69,7 +72,21 @@ Bookerは予約者を表す。
 
 BookerはPersonを参照する。
 
-Bookerは予約の責任者となる。
+Bookerは予約内容の変更およびキャンセルを行う主体となる。
+
+---
+
+# Handled Participant
+
+HandledParticipantは予約を担当するParticipantを表す。
+
+HandledParticipantはParticipantを参照する。
+
+HandledParticipantは任意である。
+
+指定されない場合は一般予約として扱う。
+
+HandledParticipantは予約作成後でも変更できる。
 
 ---
 
@@ -93,6 +110,8 @@ ReservationSeatはReservationに属する。
 
 ReservationSeat単独では存在できない。
 
+ReservationSeatはAggregate内部でのみ管理する。
+
 ---
 
 # Ticket Type
@@ -107,6 +126,8 @@ TicketTypeは予約種別を表す。
 - STAFF
 
 TicketTypeは料金計算および集計で利用する。
+
+HandledParticipantの有無とは独立して管理する。
 
 ---
 
@@ -131,7 +152,7 @@ ReservationStatusは予約状態を表す。
 - CANCELLED
 - NO_SHOW
 
-Statusによって予約状態を管理する。
+予約状態はReservationStatusで管理する。
 
 ---
 
@@ -141,15 +162,21 @@ Reservationは必ず一つのPerformanceへ所属する。
 
 ReservationはAggregate Rootである。
 
+Bookerは必須である。
+
+HandledParticipantは任意である。
+
 CompanionはReservationを経由してのみ変更できる。
 
 ReservationSeatはReservationを経由してのみ変更できる。
 
 Check InはReservationStatusを変更する。
 
+HandledParticipantは予約作成後でも変更できる。
+
 ReservationはHistoryを生成・更新・削除しない。
 
-HistoryはReservationが発行するDomain Eventによって
+HistoryはReservationが発行するDomain Eventを契機として
 別Domainが生成・更新する。
 
 ---
@@ -163,10 +190,8 @@ Reservationは以下のDomain Eventを発行する。
 - ReservationCheckedIn
 - ReservationCancelled
 
-HistoryはReservationCheckedInを契機として
-HistoryType=AUDIENCEのHistoryを生成する。
-
-ReservationはHistoryを意識しない。
+ReservationはDomain Eventを発行するのみであり、
+Business Processは保持しない。
 
 ---
 
@@ -175,6 +200,10 @@ ReservationはHistoryを意識しない。
 ReservationはPerformanceへの予約を表す。
 
 ReservationはAggregate Rootである。
+
+HandledParticipantは予約担当者を表す。
+
+HandledParticipantはParticipantを参照する。
 
 ReservationはHistoryへ依存しない。
 
@@ -189,6 +218,9 @@ Aggregate内部で管理する。
 
 - ReservationはPerformanceへの予約を表すBusiness Domainである。
 - ReservationはAggregate Rootである。
+- Bookerは予約者を表す。
+- HandledParticipantは予約担当Participantを表す。
+- HandledParticipantは任意である。
 - CompanionはReservation経由でのみ操作する。
 - ReservationSeatはReservation経由でのみ操作する。
 - ReservationはHistoryを管理しない。
