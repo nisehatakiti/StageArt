@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Person
 
-Version : 1.0
+Version : 2.0
 
 ---
 
@@ -12,7 +12,9 @@ Person APIはPersonドメインを操作するためのREST APIを定義する�
 PersonはStageArtに登録された人物を表すBusiness Resourceである。
 
 Personは認証情報(Account)とは独立したDomainであり、
-プロフィール、所属情報、およびHistoryを統合して公開する。
+人物情報を公開する責務を持つ。
+
+Person APIはPersonを中心とした情報を集約して提供する。
 
 Business RuleはDomain Layerが管理し、
 APIはApplication Layerの公開インターフェースとして機能する。
@@ -41,8 +43,9 @@ Person APIが公開する情報
 - Public Organizations
 - History
 
-Historyは独立したDomainであるが、
-公開APIではPerson Resourceの一部として提供する。
+Historyは独立したDomainである。
+
+公開APIではPerson Resourceへ集約して提供する。
 
 Accountは公開しない。
 
@@ -82,10 +85,13 @@ GET /api/v1/persons/{personId}
 - Public Organizations
 - History
 
-Historyには以下を含む。
+Historyには以下が含まれる。
 
-- Participation History
-- Audience History
+- HistoryType
+- ParticipantType
+- Production
+- Performance
+- EventDateTime
 
 Historyは読み取り専用である。
 
@@ -147,8 +153,9 @@ sort
 - Display Name
 - Biography
 - Organization
-- History
 - Tag
+
+Historyは検索条件としない。
 
 ---
 
@@ -174,13 +181,10 @@ Historyは以下のDomain Eventによって自動更新される。
 
 - ParticipantAdded
 - ParticipantUpdated
+- ParticipantRemoved
 - ReservationCreated
 - ReservationCheckedIn
-
-将来的に以下を追加する。
-
-- PersonMerged
-- PersonArchived
+- ReservationCancelled
 
 ---
 
@@ -223,8 +227,7 @@ Historyは以下のDomain Eventによって自動更新される。
 - PersonはAccountとは独立したDomainである。
 - Accountは公開APIとして提供しない。
 - Historyは独立したDomainである。
-- HistoryはParticipantおよびReservationから自動生成する。
-- HistoryはPerson Resourceの一部として公開する。
+- Person APIはHistoryを集約して公開する。
 - Historyは読み取り専用である。
 - Historyを操作するAPIは提供しない。
 - Business RuleはDomain Layerが管理する。
