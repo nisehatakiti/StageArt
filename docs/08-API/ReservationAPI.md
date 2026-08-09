@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Reservation
 
-Version : 2.1
+Version : 3.0
 
 ---
 
@@ -9,7 +9,7 @@ Version : 2.1
 
 Reservation APIはReservationドメインを操作するためのREST APIを定義する。
 
-ReservationはPerformanceに対する観客の予約を表すBusiness Resourceである。
+ReservationはPerformanceに対する来場予約を表すBusiness Resourceである。
 
 ReservationはAggregate Rootとして予約情報の整合性を管理する。
 
@@ -42,8 +42,17 @@ Reservation APIが公開するResource
 
 - Reservation
 
-CompanionおよびReservationSeatは
-Reservation Resourceへ集約して公開する。
+Reservationには以下を含む。
+
+- Booker
+- HandledParticipant
+- Companion
+- ReservationSeat
+- TicketType
+- QRCode
+- Status
+
+CompanionおよびReservationSeatはReservation Resourceへ集約して公開する。
 
 独立したAPIは提供しない。
 
@@ -77,6 +86,7 @@ POST /api/v1/performances/{performanceId}/reservations
   "booker": {
     "personId": "person-001"
   },
+  "handledParticipantId": "participant-001",
   "ticketType": "GENERAL",
   "companions": [
     {
@@ -90,20 +100,18 @@ POST /api/v1/performances/{performanceId}/reservations
 }
 ```
 
-### Success
-
-```
-201 Created
-```
-
 ### Business Rules
 
 - Reservationを作成する。
 - ReservationNumberを採番する。
 - QRCodeを生成する。
-- ReservationCreatedを発行する。
 - Companionを生成する。
 - ReservationSeatを生成する。
+- ReservationCreatedを発行する。
+
+HandledParticipantは任意である。
+
+指定されない場合は一般予約として扱う。
 
 ---
 
@@ -119,6 +127,7 @@ GET /api/v1/reservations/{reservationId}
 
 - Reservation
 - Booker
+- HandledParticipant
 - Companion
 - ReservationSeat
 - TicketType
@@ -137,15 +146,19 @@ PUT /api/v1/reservations/{reservationId}
 
 更新可能項目
 
+- HandledParticipant
 - Companion
-- TicketType
 - ReservationSeat
+- TicketType
 - Memo
 
 ReservationIdは変更できない。
 
-CompanionおよびReservationSeatは
-Reservation全体の更新として変更する。
+CompanionおよびReservationSeatはReservation全体の更新として変更する。
+
+HandledParticipantは変更できる。
+
+ReservationUpdatedを発行する。
 
 ---
 
@@ -159,10 +172,10 @@ PATCH /api/v1/reservations/{reservationId}/check-in
 
 ### Business Rules
 
-- ReservationStatusをCheckedInへ変更する。
+- ReservationStatusをCHECKED_INへ変更する。
 - ReservationCheckedInを発行する。
 
-Historyの生成はReservationの責務ではない。
+ReservationはHistoryを管理しない。
 
 ---
 
@@ -176,10 +189,10 @@ PATCH /api/v1/reservations/{reservationId}/cancel
 
 ### Business Rules
 
-- ReservationStatusをCancelledへ変更する。
+- ReservationStatusをCANCELLEDへ変更する。
 - ReservationCancelledを発行する。
 
-Historyの更新はReservationの責務ではない。
+ReservationはHistoryを管理しない。
 
 ---
 
@@ -199,8 +212,9 @@ GET /api/v1/performances/{performanceId}/reservations
 
 検索対象
 
-- Reservation Number
+- ReservationNumber
 - Booker
+- HandledParticipant
 - Companion
 - Status
 
@@ -219,14 +233,12 @@ Roleに応じて利用可能な操作を制御する。
 
 # Domain Events
 
-Reservation APIは以下のDomain Eventを利用する。
+Reservation APIは以下のDomain Eventを発行する。
 
 - ReservationCreated
 - ReservationUpdated
 - ReservationCheckedIn
 - ReservationCancelled
-
-APIはDomain Eventを発行する。
 
 Business ProcessはDomain Eventを契機として開始する。
 
@@ -268,12 +280,15 @@ Aggregate構造は変更しない。
 
 # Design Principles
 
+- ReservationはPerformanceへの予約を表すBusiness Resourceである。
 - ReservationはAggregate Rootである。
+- Bookerは予約者を表す。
+- HandledParticipantは予約担当Participantを表す。
+- HandledParticipantは任意である。
 - CompanionはReservation経由でのみ操作する。
 - ReservationSeatはReservation経由でのみ操作する。
 - Companion APIは公開しない。
 - ReservationSeat APIは公開しない。
-- Check InはReservationStatusで管理する。
 - ReservationはHistoryを管理しない。
 - APIはDomain Eventを発行する。
 - Business RuleはDomain Layerが管理する。
