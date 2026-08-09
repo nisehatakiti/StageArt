@@ -1,203 +1,197 @@
 # StageArt Blueprint
 # Domain Model : Reservation
 
-Version : 1.0
+Version : 2.1
 
 ---
 
 # Purpose
 
-Reservationは観客による公演予約を管理するドメインである。
+ReservationはPerformanceに対する予約を表すDomainである。
 
-Reservationは予約情報だけでなく、
+Reservationは観客による来場予約を管理する。
 
-受付状態、
+Reservationは予約情報の整合性を管理するAggregate Rootであり、
+CompanionおよびReservationSeatを管理する。
 
-QRコード、
-
-同行者、
-
-座席指定
-
-までを統一的に管理する。
-
-StageArtではReservationを受付単位として扱う。
+Business RuleはReservationが管理する。
 
 ---
 
 # Concept
 
-Reservationは一回の予約を表す。
+ReservationはPerformanceへの予約を表す。
 
-一人で複数枚予約する場合でもReservationは一つである。
+```
+Performance
+      │
+      ▼
+ Reservation
+      ├── Companion
+      └── ReservationSeat
+```
 
-同行者はCompanionによって管理する。
+ReservationはAggregate Rootとして
+CompanionおよびReservationSeatを管理する。
+
+HistoryはReservationの責務ではない。
+
+---
+
+# Responsibility
+
+Reservationは以下を管理する。
+
+- Booker
+- Companion
+- ReservationSeat
+- TicketType
+- QRCode
+- Status
+
+観劇履歴(History)は管理しない。
 
 ---
 
 # Identity
 
-ReservationはReservationIDによって一意に識別する。
+ReservationはReservationIdによって識別する。
 
-予約番号は表示用情報であり、
+ReservationIdは変更できない。
 
-識別子ではない。
-
-QRコードも識別子ではない。
+ReservationNumberは表示用識別子とする。
 
 ---
 
-# Relationship
+# Booker
 
-Reservationは必ず一つのPerformanceへ所属する。
+Bookerは予約者を表す。
 
-```
-Performance
-    │
-    └── Reservation
-            ├── ReservationSeat
-            └── Companion
-```
+BookerはPersonを参照する。
 
----
-
-# Reservation Information
-
-Reservationは以下を保持する。
-
-- Reservation Number
-- Performance
-- Representative
-- Ticket Type
-- Quantity
-- Price
-- QR Code
-
-QRコードはReservation生成時に自動生成する。
-
----
-
-# Reservation Seat
-
-指定席の場合、
-
-ReservationはReservationSeatを保持する。
-
-自由席の場合、
-
-ReservationSeatは存在しない。
-
-座席状態はSeatではなくReservationによって決定される。
+Bookerは予約の責任者となる。
 
 ---
 
 # Companion
 
-Reservationは複数のCompanionを保持できる。
+Companionは同行者を表す。
 
-CompanionはStageArt利用者である必要はない。
+CompanionはReservationに属する。
 
-後からPersonまたはAccountへ紐付けることができる。
+Companion単独では存在できない。
 
-これにより観劇履歴を統合できる。
-
----
-
-# Check In
-
-受付はReservation単位で管理する。
-
-Reservationは以下の状態を持つ。
-
-- Reserved
-- Checked In
-- Cancelled
-- No Show
-
-QRコード読取、
-
-予約番号検索、
-
-氏名検索
-
-すべてReservationへ到達するための検索手段である。
+CompanionはAggregate内部でのみ管理する。
 
 ---
 
-# Price
+# Reservation Seat
 
-Reservationは予約時点の料金を保持する。
+ReservationSeatは予約座席を表す。
 
-チケット種別変更後も、
+ReservationSeatはReservationに属する。
 
-過去Reservationの料金は変更しない。
+ReservationSeat単独では存在できない。
 
 ---
 
-# History
+# Ticket Type
 
-公演終了後、
+TicketTypeは予約種別を表す。
 
-Reservationは削除しない。
+例）
 
-ReservationはHistory生成の元データとなる。
+- GENERAL
+- STUDENT
+- INVITATION
+- STAFF
 
-Personの観劇履歴はReservationから生成される。
+TicketTypeは料金計算および集計で利用する。
+
+---
+
+# QR Code
+
+QRCodeは受付用識別子を表す。
+
+QRCodeはReservation生成時に発行する。
+
+QRCodeは変更しない。
+
+---
+
+# Status
+
+ReservationStatusは予約状態を表す。
+
+例）
+
+- RESERVED
+- CHECKED_IN
+- CANCELLED
+- NO_SHOW
+
+Statusによって予約状態を管理する。
+
+---
+
+# Business Rules
+
+Reservationは必ず一つのPerformanceへ所属する。
+
+ReservationはAggregate Rootである。
+
+CompanionはReservationを経由してのみ変更できる。
+
+ReservationSeatはReservationを経由してのみ変更できる。
+
+Check InはReservationStatusを変更する。
+
+ReservationはHistoryを生成・更新・削除しない。
+
+HistoryはReservationが発行するDomain Eventによって
+別Domainが生成・更新する。
+
+---
+
+# Domain Events
+
+Reservationは以下のDomain Eventを発行する。
+
+- ReservationCreated
+- ReservationUpdated
+- ReservationCheckedIn
+- ReservationCancelled
+
+HistoryはReservationCheckedInを契機として
+HistoryType=AUDIENCEのHistoryを生成する。
+
+ReservationはHistoryを意識しない。
 
 ---
 
 # Design Decisions
 
-Reservationは受付単位である。
+ReservationはPerformanceへの予約を表す。
 
-QRコードはReservationが保持する。
+ReservationはAggregate Rootである。
 
-SeatはReservation状態を保持しない。
+ReservationはHistoryへ依存しない。
 
-受付はReservationのStatus変更で表現する。
+Historyは独立したDomainとして管理する。
 
-CompanionはReservationへ所属する。
-
----
-
-# Future
-
-将来的に以下へ対応する。
-
-- キャンセル待ち
-- リセール
-- 電子もぎり
-- 入場時間管理
-- 複数QRコード発行
-- NFC受付
+CompanionおよびReservationSeatは
+Aggregate内部で管理する。
 
 ---
 
 # Design Principles
 
-- Reservationは受付単位である。
-- QRコードはReservationが保持する。
-- CheckInドメインは持たない。
-- Ticketドメインは持たない。
-- Seatは予約状態を保持しない。
-- CompanionはReservationへ所属する。
-- Reservationは削除しない。
+- ReservationはPerformanceへの予約を表すBusiness Domainである。
 - ReservationはAggregate Rootである。
-
-ReservationSeatおよびCompanionは
-Reservationの子エンティティである。
-
-子エンティティはReservationを経由してのみ更新される。
-
-# Aggregate Rule
-
-ReservationはAggregate Rootである。
-
-Reservationは以下の子エンティティを管理する。
-
-- ReservationSeat
-- Companion
-
-子エンティティはReservationを経由してのみ生成・更新・削除できる。
-
-外部ドメインはReservationSeatおよびCompanionを直接変更してはならない。
+- CompanionはReservation経由でのみ操作する。
+- ReservationSeatはReservation経由でのみ操作する。
+- ReservationはHistoryを管理しない。
+- HistoryはDomain Eventによって管理する。
+- Check InはReservationStatusで管理する。
+- ReservationはBusiness Ruleのみを管理する。
