@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Domain Model : Participant
 
-Version : 2.0
+Version : 2.1
 
 ---
 
@@ -13,12 +13,14 @@ Participantは出演者だけではなく、
 
 - キャスト
 - スタッフ
+- 演出
+- 制作
 - 主催
 - 共催
 - 協賛
 - 後援
 
-など、公演へ関与するすべての主体を表現する。
+など、公演へ参加するすべての活動主体を表現する。
 
 ParticipantはProductionとSubjectを関連付けるBusiness Domainである。
 
@@ -63,6 +65,8 @@ Participantは以下を管理する。
 
 Productionとの関連付けはParticipantが管理する。
 
+活動履歴(History)は管理しない。
+
 ---
 
 # Identity
@@ -96,7 +100,7 @@ Version 1.0では上記のみをサポートする。
 
 # Participant Type
 
-ParticipantTypeは参加区分を表す。
+ParticipantTypeは公演への参加区分を表す。
 
 例）
 
@@ -108,13 +112,15 @@ ParticipantTypeは参加区分を表す。
 - SPONSOR
 - SUPPORTER
 
+ParticipantTypeはBusiness Ruleおよび検索・集計に利用する。
+
 将来的に追加可能である。
 
 ---
 
 # Role
 
-Roleは公演内での役割を表す。
+Roleは公演内での役割名称を表す。
 
 例）
 
@@ -127,7 +133,7 @@ Roleは公演内での役割を表す。
 - 協賛
 
 Roleは表示情報であり、
-Business Ruleを持たない。
+Business Ruleには利用しない。
 
 ---
 
@@ -169,7 +175,7 @@ ParticipantStatusはParticipantの状態を表す。
 
 # Business Rules
 
-ParticipantはProductionへ所属する。
+Participantは必ず一つのProductionへ所属する。
 
 Participantは必ず一つのSubjectを持つ。
 
@@ -180,10 +186,10 @@ SubjectはPersonまたはOrganizationである。
 Production内で同一Subjectを重複登録できるかどうかは、
 ParticipantTypeを含めたBusiness Ruleによって判定する。
 
-Participantの追加・更新・削除は
-Historyを直接更新しない。
+ParticipantはHistoryを生成・更新・削除しない。
 
-HistoryはDomain Eventによって自動更新する。
+HistoryはParticipantが発行するDomain Eventによって
+別Domainが生成・更新する。
 
 ---
 
@@ -195,7 +201,10 @@ Participantは以下のDomain Eventを発行する。
 - ParticipantUpdated
 - ParticipantRemoved
 
-HistoryはこれらのDomain Eventによって更新される。
+HistoryはこれらのDomain Eventを契機として
+自動生成・更新される。
+
+ParticipantはHistoryを意識しない。
 
 ---
 
@@ -207,9 +216,9 @@ ParticipantはSubjectを通じて活動主体を参照する。
 
 ParticipantはPersonおよびOrganizationへ直接依存しない。
 
-ParticipantはHistoryを保持しない。
+ParticipantはHistoryへ依存しない。
 
-Historyは独立したDomainで管理する。
+Historyは独立したDomainとして管理する。
 
 ---
 
@@ -219,7 +228,8 @@ Historyは独立したDomainで管理する。
 - Subjectは活動主体を表す共通Referenceである。
 - ParticipantはSubjectのみを参照する。
 - PersonおよびOrganizationへ直接依存しない。
-- ParticipantTypeは参加区分を表す。
+- ParticipantTypeはシステムが管理する参加区分である。
 - Roleは表示情報である。
-- HistoryはDomain Eventによって自動更新する。
+- ParticipantはHistoryを管理しない。
+- HistoryはDomain Eventによって管理する。
 - ParticipantはBusiness Ruleのみを管理する。
