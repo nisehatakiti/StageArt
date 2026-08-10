@@ -1,230 +1,579 @@
 # StageArt Blueprint
-# Domain Events
+# 07 - Domain Events
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
-Domain Eventは、StageArtにおいて発生したBusiness Eventを定義する。
+Domain Eventは、Domain内で発生した重要なBusiness Eventを表す。
 
-StageArtは利用者の操作そのものではなく、
-Business Eventを起点として内部処理を実行する。
+Domain Eventは「何が起きたか」を表現し、
+そのEventを契機として別のBusiness Processを開始する。
 
-利用者は「何をしたいか」だけを意識し、
-その結果必要となる処理はStageArtが自動的に実行する。
+Domain EventはDomain間の直接依存を減らし、
+Business Processを疎結合に連携するために利用する。
 
 ---
 
-# Concept
+# Basic Concept
 
-Domain EventはBusiness Ruleの結果として発生した「過去の事実」を表現する。
+Domain Eventは以下の形式で発生する。
 
-Domain Eventは画面操作やAPI呼び出しを表すものではない。
+```text
+Domain
+   │
+   │ Business Action
+   ▼
+Domain Event
+   │
+   ├── Event Handler
+   ├── History
+   ├── Notification
+   └── Other Business Process
+```
 
-例えば、
+Eventを発行したDomainは、
+Eventを受け取ったDomainの処理内容を直接管理しない。
 
-利用者が「公演を作成する」を実行すると、
+---
 
+# Domain Event Principles
+
+Domain Eventには以下の原則を適用する。
+
+- 過去に発生したBusiness Eventを表現する。
+- Event名は過去形で表現する。
+- Eventは発生元Domainによって発行される。
+- Eventを受け取るDomainは発行元Domainへ直接依存しない。
+- Event HandlerはEventを契機としてBusiness Processを実行する。
+- 同じEventを複数回処理しても結果が重複しないよう冪等性を確保する。
+- Eventの処理に失敗した場合でも、元のTransactionとの責務を混同しない。
+
+---
+
+# Current Domain Events
+
+現在StageArtで定義する主要なDomain Eventは以下。
+
+## Organization
+
+```text
+OrganizationCreated
+```
+
+---
+
+## Production
+
+```text
 ProductionCreated
-
-というBusiness Eventが発生する。
-
-その後、
-
-- 初期設定
-- チェックリスト生成
-- ドキュメント領域生成
-
-などの処理はProductionCreatedを契機として実行される。
+ProductionPublished
+ProductionArchived
+```
 
 ---
 
-# Characteristics
+## Participant
 
-Domain Eventは以下の特徴を持つ。
-
-- 過去に発生した事実である。
-- Immutableである。
-- Business上の意味を持つ。
-- Domain Layerで発生する。
-- UIやFrameworkへ依存しない。
-- Event単体でBusinessの意味を理解できる。
+```text
+ParticipantAdded
+ParticipantUpdated
+ParticipantRemoved
+```
 
 ---
 
-# Event Driven
+## Reservation
 
-StageArtはEvent Driven Architectureを採用する。
-
-利用者は内部処理を意識しない。
-
-必要なBusiness ProcessはDomain Eventを契機として自動的に実行される。
-
-一つのDomain Eventから複数のBusiness Processが実行されることを許可する。
-
----
-
-# Event Naming
-
-Domain Eventは過去形で命名する。
-
-例）
-
-- AccountCreated
-- OrganizationCreated
-- MembershipJoined
-- ProjectCreated
-- ProductionCreated
-- PerformanceCreated
-- ReservationCreated
-- ReservationCheckedIn
-
-以下のような命名は使用しない。
-
-- CreateOrganization
-- SaveReservation
-- UpdateProduction
-
-Commandではなく、
-Business Eventを表現する。
-
----
-
-# Event Categories
-
-StageArtでは以下のカテゴリのDomain Eventを定義する。
-
-- Account Events
-- Organization Events
-- Membership Events
-- Project Events
-- Production Events
-- Performance Events
-- Reservation Events
-
-将来的に必要に応じて追加する。
+```text
+ReservationCreated
+ReservationUpdated
+ReservationCheckedIn
+ReservationCancelled
+```
 
 ---
 
 # Event Flow
 
-StageArtでは、一つのDomain Eventから複数のBusiness Processが連鎖して実行される。
+## Organization Created
 
-利用者は内部処理を意識する必要はない。
-
----
-
-## Example 1 : Organization
-
-```
-利用者
+```text
+Organization
     │
+    │ Create
     ▼
 OrganizationCreated
-    │
-    ├── Create Default Membership
-    ├── Create Default Roles
-    ├── Create Default Settings
-    └── Create Document Space
 ```
+
+Organizationの作成を契機として、
+Organizationに関連する初期Business Processを開始する。
 
 ---
 
-## Example 2 : Production
+## Production Created
 
-```
-利用者
+```text
+Production
     │
+    │ Create
     ▼
 ProductionCreated
-    │
-    ├── Initialize Production
-    ├── Create Default Performances
-    ├── Create Checklist
-    └── Create Homepage
 ```
+
+Productionの作成を契機として、
+Productionに関連する初期Business Processを開始する。
 
 ---
 
-## Example 3 : Reservation
+## Production Published
 
+```text
+Production
+    │
+    │ Publish
+    ▼
+ProductionPublished
 ```
-利用者
+
+Productionが公開状態になったことを表す。
+
+公開を契機として、
+検索公開、通知などのBusiness Processを開始できる。
+
+---
+
+# Participant Event Flow
+
+## Participant Added
+
+```text
+Participant
+    │
+    │ Add
+    ▼
+ParticipantAdded
     │
     ▼
-ReservationCreated
+History Domain
     │
-    ├── Generate QR Code
-    ├── Send Confirmation Mail
-    ├── Update Audience History
-    └── Update Sales
+    ▼
+History
+HistoryType = PARTICIPATION
+ParticipantType = Participant.ParticipantType
+```
+
+ParticipantがProductionへ追加されたことを契機として、
+Participation Historyを生成する。
+
+HistoryはParticipantが直接生成するのではなく、
+History DomainがEventを受け取って生成する。
+
+---
+
+## Participant Updated
+
+```text
+Participant
+    │
+    │ Update
+    ▼
+ParticipantUpdated
+    │
+    ▼
+History Domain
+```
+
+Participantの変更内容に応じて、
+既存のParticipation Historyを更新する。
+
+ParticipantTypeが変更された場合は、
+HistoryのParticipantTypeにも反映する。
+
+Role、CreditOrder、Visibilityなど、
+Historyの活動内容に影響しない項目の変更では
+Historyを更新しない。
+
+---
+
+## Participant Removed
+
+```text
+Participant
+    │
+    │ Remove
+    ▼
+ParticipantRemoved
+    │
+    ▼
+History Domain
+```
+
+Participantが削除されても、
+過去のParticipation Historyは削除しない。
+
+過去に発生した活動実績は、
+過去の事実として保持する。
+
+---
+
+# Reservation Event Flow
+
+## Reservation Created
+
+```text
+Reservation
+    │
+    │ Create
+    ▼
+ReservationCreated
+```
+
+Reservationが作成されたことを表す。
+
+ReservationCreatedだけでは
+Audience Historyを生成しない。
+
+予約したことと、
+実際に観劇したことは別のBusiness Eventとして扱う。
+
+---
+
+## Reservation Updated
+
+```text
+Reservation
+    │
+    │ Update
+    ▼
+ReservationUpdated
+```
+
+Reservationの内容が変更されたことを表す。
+
+HandledParticipantの変更も
+ReservationUpdatedとして扱う。
+
+HandledParticipantが変更されても、
+それだけではHistoryを生成・更新しない。
+
+---
+
+## Reservation Checked In
+
+```text
+Reservation
+    │
+    │ Check In
+    ▼
+ReservationCheckedIn
+    │
+    ▼
+History Domain
+    │
+    ▼
+History
+HistoryType = AUDIENCE
+```
+
+ReservationのCheck Inを契機として、
+Audience Historyを生成する。
+
+Audience HistoryにはParticipantTypeを設定しない。
+
+---
+
+## Reservation Cancelled
+
+```text
+Reservation
+    │
+    │ Cancel
+    ▼
+ReservationCancelled
+```
+
+Reservationがキャンセルされたことを表す。
+
+ReservationCancelledでは
+Audience Historyを生成しない。
+
+既にCheck In済みの場合のHistoryについては、
+別途定義されたBusiness Ruleに従う。
+
+---
+
+# History Integration
+
+Historyは独立したDomainである。
+
+ParticipantやReservationはHistoryを直接管理しない。
+
+HistoryはDomain Eventを契機として生成・更新される。
+
+```text
+ParticipantAdded
+        │
+        ▼
+Participation History
+```
+
+```text
+ReservationCheckedIn
+        │
+        ▼
+Audience History
 ```
 
 ---
 
-同じDomain Eventに対して新しいBusiness Processを追加する場合は、
+# History Generation Rules
 
-既存Eventを変更するのではなく、
-新しいEvent Handlerを追加することを基本とする。
+## Participation History
+
+以下のEventを契機として生成・更新する。
+
+```text
+ParticipantAdded
+ParticipantUpdated
+ParticipantRemoved
+```
+
+HistoryType
+
+```text
+PARTICIPATION
+```
+
+ParticipantType
+
+```text
+Participant.ParticipantType
+```
+
+ParticipantRemovedによって
+過去のHistoryを削除しない。
 
 ---
 
-# Event Processing
+## Audience History
 
-Domain Eventは同期・非同期の実装方式へ依存しない。
+以下のEventを契機として生成する。
 
-Eventがどのように配信・処理されるかはInfrastructure Layerの責務である。
+```text
+ReservationCheckedIn
+```
 
-BlueprintではBusiness Eventのみを定義する。
+HistoryType
+
+```text
+AUDIENCE
+```
+
+ParticipantType
+
+```text
+NULL
+```
+
+以下のEventではAudience Historyを生成しない。
+
+```text
+ReservationCreated
+ReservationUpdated
+ReservationCancelled
+```
 
 ---
 
-# Scope
+# HandledParticipant
 
-Domain EventはBusiness Ruleを表現する。
+HandledParticipantはReservationにおける
+「○○扱い」のParticipantを表す。
 
-以下はDomain Eventではない。
+```text
+Reservation
+     │
+     ▼
+HandledParticipant
+     │
+     ▼
+Participant
+```
 
-- Button Click
-- API Request
-- Database Update
-- Mail Send
-- File Upload
+HandledParticipantの指定・変更は
+ReservationのBusiness Eventとして扱う。
 
-これらはInfrastructureまたはPresentation Layerの責務である。
+ただし、
+
+```text
+HandledParticipant
+        ↓
+History
+```
+
+という直接的なHistory生成は行わない。
+
+HandledParticipantは
+予約の関連付けを表す情報であり、
+それ自体が活動実績を意味しない。
+
+---
+
+# Event Handler
+
+Event HandlerはDomain Eventを受け取り、
+必要なBusiness Processを実行する。
+
+例）
+
+```text
+ParticipantAdded
+        ↓
+ParticipationHistoryHandler
+        ↓
+History生成
+```
+
+```text
+ReservationCheckedIn
+        ↓
+AudienceHistoryHandler
+        ↓
+History生成
+```
+
+Event Handlerは発行元Domainの内部実装を直接操作しない。
+
+---
+
+# Idempotency
+
+Domain Eventの処理は冪等であることを原則とする。
+
+同じEventが複数回配送された場合でも、
+HistoryなどのBusiness Dataが重複して生成されないようにする。
+
+例えば、
+
+```text
+ParticipantAdded
+EventId = xxx
+```
+
+を複数回受信しても、
+同じParticipation Historyを複数作成しない。
+
+---
+
+# Transaction Boundary
+
+Domain Eventの発行元Domainと、
+Event Handlerによる後続処理は、
+必ずしも同一Transactionには含めない。
+
+```text
+Transaction A
+
+Participant
+    ↓
+ParticipantAdded
+```
+
+```text
+Transaction B
+
+ParticipantAdded
+    ↓
+History
+```
+
+このようにDomain Eventを介して
+非同期に処理できる構造とする。
+
+---
+
+# Event Payload
+
+Domain Eventには、
+後続処理に必要な最小限の情報を含める。
+
+例）
+
+```json
+{
+  "eventId": "event-001",
+  "eventType": "ParticipantAdded",
+  "occurredAt": "2026-08-10T09:00:00+09:00",
+  "participantId": "participant-001",
+  "productionId": "production-001",
+  "subjectId": "person-001",
+  "participantType": "CAST"
+}
+```
+
+Event PayloadはEvent発生時点の事実を表す。
+
+後続処理で必要な情報を、
+発行元Domainへ都度問い合わせることを原則としない。
+
+---
+
+# Event Naming
+
+Event名は過去形で表現する。
+
+```text
+OrganizationCreated
+ProductionCreated
+ProductionPublished
+ParticipantAdded
+ParticipantUpdated
+ParticipantRemoved
+ReservationCreated
+ReservationUpdated
+ReservationCheckedIn
+ReservationCancelled
+```
+
+Commandではなく、
+「すでに発生した事実」を表現する。
+
+---
+
+# Event Ownership
+
+Event | Publisher
+--- | ---
+OrganizationCreated | Organization
+ProductionCreated | Production
+ProductionPublished | Production
+ProductionArchived | Production
+ParticipantAdded | Participant
+ParticipantUpdated | Participant
+ParticipantRemoved | Participant
+ReservationCreated | Reservation
+ReservationUpdated | Reservation
+ReservationCheckedIn | Reservation
+ReservationCancelled | Reservation
 
 ---
 
 # Design Principles
 
-- Domain EventはBusiness Eventを表す。
-- Domain Eventは過去形で命名する。
-- Domain EventはImmutableである。
-- Domain EventはUIやFrameworkへ依存しない。
-- Business ProcessはDomain Eventを契機として実行される。
-- 一つのDomain Eventから複数のBusiness Processが実行できる。
-- Event Handlerは互いに独立している。
-- 新しい処理は新しいEvent Handlerを追加して実現する。
-
-# Relationship with Golden Rule
-
-StageArtでは、利用者はBusiness Eventを意識しない。
-
-利用者は
-
-- 劇団を作る
-- 公演を作る
-- 予約する
-- 受付する
-
-という目的だけを操作する。
-
-それ以外の処理はDomain Eventによって自動的に実行される。
-
-これはGolden Ruleで定義する
-
-「利用者は内部構造を意識しない」
-
-という原則を実現するための設計である。
+- Domain Eventは過去に発生したBusiness Eventを表現する。
+- Event名は過去形で表現する。
+- Eventは発生元Domainが発行する。
+- Event Handlerは後続のBusiness Processを実行する。
+- Domain間の直接依存を避ける。
+- HistoryはDomain Eventを契機として生成・更新する。
+- ParticipantはHistoryを直接管理しない。
+- ReservationはHistoryを直接管理しない。
+- HandledParticipantはHistoryを生成する理由にならない。
+- ReservationCreatedではAudience Historyを生成しない。
+- ReservationCheckedInでAudience Historyを生成する。
+- 過去のParticipation HistoryはParticipantRemovedによって削除しない。
+- Event処理は冪等性を確保する。
+- Event Payloadは発生時点の事実を表現する。
