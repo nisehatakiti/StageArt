@@ -1,11 +1,12 @@
-# StageArt Blueprint
-# Chapter 2 : Design Principles
+StageArt Blueprint
 
-Version : 1.0
+Chapter 2 : Design Principles
 
----
+Version : 2.0
 
-# Architect's Note
+⸻
+
+Architect’s Note
 
 Design Principlesは、StageArtを設計・開発するすべての人が守るべき設計原則である。
 
@@ -13,10 +14,11 @@ Design Principlesは、StageArtを設計・開発するすべての人が守る�
 
 一時的な利便性のために、設計原則を破ってはならない。
 
----
+⸻
 
-# Principle 1
-## Domain First
+Principle 1
+
+Domain First
 
 StageArtは画面やデータベースから設計しない。
 
@@ -25,10 +27,11 @@ StageArtは画面やデータベースから設計しない。
 画面はDomainを操作するためのUIであり、
 データベースはDomainを永続化する手段である。
 
----
+⸻
 
-# Principle 2
-## User First
+Principle 2
+
+User First
 
 利用者はシステムの内部構造を意識しない。
 
@@ -43,19 +46,21 @@ StageArtは画面やデータベースから設計しない。
 
 ProjectやProductionなどの内部ドメインはシステムが自動生成・管理する。
 
----
+⸻
 
-# Principle 3
-## Simple UI, Rich Domain
+Principle 3
+
+Simple UI, Rich Domain
 
 UIは可能な限りシンプルにする。
 
 複雑さはすべてDomain Modelが吸収する。
 
----
+⸻
 
-# Principle 4
-## Multi Tenant
+Principle 4
+
+Multi Tenant
 
 StageArtは複数劇団が同一システム上で安全に利用できることを前提とする。
 
@@ -63,30 +68,33 @@ StageArtは複数劇団が同一システム上で安全に利用できること
 
 他劇団のデータへアクセスできてはならない。
 
----
+⸻
 
-# Principle 5
-## API First
+Principle 5
+
+API First
 
 すべての機能はREST APIとして提供する。
 
 Web画面はAPIの利用者であり、
 将来のFlutterアプリやLINE連携も同一APIを利用する。
 
----
+⸻
 
-# Principle 6
-## Mobile Ready
+Principle 6
+
+Mobile Ready
 
 スマートフォンで利用されることを前提として設計する。
 
 受付業務やQRチケットなど、
 モバイル利用を最優先に考える。
 
----
+⸻
 
-# Principle 7
-## Event Driven
+Principle 7
+
+Event Driven
 
 利用者の操作を起点として、
 必要な内部データをシステムが自動生成する。
@@ -115,10 +123,11 @@ Production生成
 
 ホームページ生成
 
----
+⸻
 
-# Principle 8
-## Single Source of Truth
+Principle 8
+
+Single Source of Truth
 
 同じ情報を複数箇所で管理しない。
 
@@ -126,10 +135,11 @@ Production生成
 
 他の情報は参照または集計によって表現する。
 
----
+⸻
 
-# Principle 9
-## Fact and Artifact
+Principle 9
+
+Fact and Artifact
 
 StageArtは
 
@@ -146,36 +156,33 @@ Artifact（成果物）
 Fact
 
 ・予約
-
 ・出演
-
 ・受付
 
 Artifact
 
 ・QRチケット
-
 ・プロフィール
-
 ・ホームページ
-
 ・収支レポート
 
 ArtifactはFactから生成される。
 
----
+⸻
 
-# Principle 10
-## Backward Compatibility
+Principle 10
+
+Backward Compatibility
 
 アップデートによって既存データを破壊しない。
 
 将来の機能追加を前提として設計する。
 
----
+⸻
 
-# Principle 11
-## Plugin First
+Principle 11
+
+Plugin First
 
 StageArtはWordPress Pluginとして実装する。
 
@@ -184,10 +191,11 @@ StageArtのBusiness Logicではない。
 
 Business LogicはDomain Layerに実装する。
 
----
+⸻
 
-# Principle 12
-## Framework Independent
+Principle 12
+
+Framework Independent
 
 StageArtのDomainはWordPressへ依存しない。
 
@@ -195,10 +203,11 @@ WordPressはInfrastructureとして扱う。
 
 将来、他プラットフォームへ移植できる構造を維持する。
 
----
+⸻
 
-# Principle 13
-## Incremental Development
+Principle 13
+
+Incremental Development
 
 MVPを最優先とする。
 
@@ -207,10 +216,11 @@ MVPを最優先とする。
 小さく作り、
 実際に利用しながら改善を続ける。
 
----
+⸻
 
-# Principle 14
-## Blueprint First
+Principle 14
+
+Blueprint First
 
 コードを書く前にBlueprintを更新する。
 
@@ -218,10 +228,11 @@ Blueprintが唯一の設計基準（Single Source of Truth）である。
 
 すべての実装はBlueprintに従う。
 
----
+⸻
 
-# Principle 15
-## Theatre First
+Principle 15
+
+Theatre First
 
 StageArtはITシステムではない。
 
@@ -232,3 +243,167 @@ StageArtはITシステムではない。
 「舞台芸術に関わる人が創作活動へ集中できるか」
 
 を最優先に判断する。
+
+⸻
+
+Principle 16
+
+UI Theme and Design System
+
+StageArtのUIは、
+特定の色やスタイルを画面ごとに直接定義しない。
+
+UIの基本的な色、文字、余白、境界線、角丸、影などは
+Theme Tokenとして定義し、
+各UI ComponentはTheme Tokenを参照して表示する。
+
+UIの見た目とBusiness Logicを分離し、
+Themeを変更してもDomain ModelやBusiness Logicへ影響しない構造とする。
+
+⸻
+
+Theme Token
+
+UIではCSS Custom Propertiesを利用して、
+Theme Tokenを定義する。
+
+例）
+
+–stageart-color-primary
+–stageart-color-secondary
+–stageart-color-accent
+–stageart-color-background
+–stageart-color-surface
+–stageart-color-text
+–stageart-color-muted
+–stageart-color-success
+–stageart-color-warning
+–stageart-color-error
+
+Componentは直接カラーコードを指定せず、
+Theme Tokenを参照する。
+
+例）
+
+.button-primary {
+background-color: var(–stageart-color-primary);
+}
+
+⸻
+
+Component Independence
+
+UI Componentは、
+具体的なThemeの色やデザインへ直接依存しない。
+
+Button、Form、Table、Card、Navigation、Modalなどの
+共通ComponentはTheme Tokenを利用して表示する。
+
+これによりThemeを変更しても、
+個々のComponentを変更する必要がない構造とする。
+
+⸻
+
+Theme Scope
+
+Themeは将来的に以下の単位で変更できる構造とする。
+
+* StageArt Global
+* Organization
+* Production
+
+Version 1.0では、
+Theme設定機能そのものを提供する必要はない。
+
+ただし、
+将来的にOrganizationやProductionごとに
+Brand Colorなどを設定できるよう、
+UI実装はTheme Tokenを経由する。
+
+⸻
+
+CSS Scope
+
+StageArtのCSSは、
+WordPress Themeや他のWordPress PluginのCSSと
+不用意に干渉しないようにする。
+
+StageArt独自のCSS Scopeを設け、
+Global CSSを汚染しない。
+
+StageArtのComponent Styleは、
+StageArtのUI領域内でのみ適用されることを基本とする。
+
+⸻
+
+Responsive Design
+
+StageArtのUIは、
+Desktop、Tablet、Mobileの各画面サイズに対応する。
+
+特に以下の業務ではMobile利用を優先する。
+
+* QR Check In
+* Reservation受付
+* 公演当日の受付業務
+* 稽古管理
+
+⸻
+
+Accessibility
+
+Theme Tokenは、
+視認性とアクセシビリティを考慮して定義する。
+
+特に、
+
+* Text
+* Background
+* Button
+* Link
+* Error
+* Warning
+* Success
+
+などの組み合わせについて、
+十分なコントラストを確保する。
+
+色だけを情報伝達の唯一の手段にしない。
+
+⸻
+
+Design System
+
+StageArtのUIは、
+共通ComponentとTheme Tokenによって構成する。
+
+新しい画面を追加する場合、
+既存Componentを優先して利用する。
+
+画面ごとに独自の色、
+独自のButton、
+独自のForm Styleなどを作成しない。
+
+共通Componentで表現できない場合は、
+既存Componentを拡張するか、
+Design Systemへ新しいComponentを追加する。
+
+⸻
+
+Future
+
+将来的に以下へ対応できる構造とする。
+
+* Organization Brand Color
+* Production Theme
+* Dark Mode
+* Custom Theme
+* Theme Preset
+* Logo
+* Typography
+* Component Variation
+
+Theme変更によって、
+Business LogicやDomain Modelが影響を受けてはならない。
+
+⸻
