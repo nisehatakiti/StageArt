@@ -199,3 +199,72 @@ Notification
 ReservationCreated
         ↓
 Search / Analytics
+
+Event HandlerはReservation Domainの内部実装を
+直接操作しない。
+
+---
+
+# Idempotency
+
+ReservationCreatedの処理は冪等であること。
+
+同じeventIdを複数回受信した場合でも、
+後続Business Processを重複して実行しない。
+
+ReservationCreated
+eventId = event-005
+
+1回目
+    ↓
+Business Process実行
+
+2回目
+    ↓
+処理済み
+    ↓
+Business Process実行しない
+
+---
+
+# Failure Handling
+
+Event Handlerによる後続処理に失敗した場合でも、
+Reservationの作成自体を取り消さない。
+
+ReservationCreatedは発行済みEventとして保持し、
+Event Handlerが再実行できる状態とする。
+
+---
+
+# Business Rules
+
+- ReservationCreatedはReservation Domainが発行する。
+- ReservationCreatedはReservation作成完了後に発行する。
+- ReservationCreatedはHistoryを直接操作しない。
+- ReservationCreatedではAudience Historyを生成しない。
+- Bookerは予約者であるPersonを表す。
+- Bookerは必須である。
+- HandledParticipantは任意である。
+- HandledParticipantがない場合はNULLとする。
+- HandledParticipantはHistoryを生成する理由にならない。
+- Productionは予約対象となったPerformanceのProductionを表す。
+- Performanceは予約対象となったPerformanceを表す。
+- Event処理は冪等である。
+- Event Handlerの失敗によってReservation作成を取り消さない。
+
+---
+
+# Design Principles
+
+- Eventは発生したBusiness Eventを表現する。
+- Event PublisherとEvent Handlerを分離する。
+- Reservation Domainは後続Business Processへ直接依存しない。
+- Reservation DomainはHistory Domainへ直接依存しない。
+- 予約した事実と観劇した事実を分離する。
+- ReservationCreatedではAudience Historyを生成しない。
+- ReservationCheckedInでAudience Historyを生成する。
+- HandledParticipantは予約の「扱い」を表す。
+- HandledParticipantはHistoryの活動主体ではない。
+- 同一Eventの重複処理を防止する。
+- Event Payloadには後続処理に必要な情報を含める。
