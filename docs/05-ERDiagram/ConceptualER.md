@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Conceptual ER Diagram
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -29,6 +29,11 @@ Business上の概念と関係性を示す。
 
         Organization ||--o{ Project : owns
         Project ||--|| Production : manages
+
+        Production ||--|| Person : primary_manager
+        Production ||--o{ ProductionDelegate : has
+        ProductionDelegate }o--|| Person : assigned_to
+        ProductionDelegate }o--|| DelegateRole : has
 
         Production ||--o{ Performance : has
         Production ||--o{ Participant : has
@@ -187,6 +192,98 @@ ProjectはProductionの制作活動を管理する。
 Productionは利用者・観客へ公開されるBusiness Resourceである。
 
 Projectは公開APIには出さない。
+
+---
+
+## Production - PrimaryManager
+
+    Production
+        │
+        ▼
+    PrimaryManager
+        │
+        ▼
+      Person
+
+Productionは一人のPrimaryManagerを持つ。
+
+PrimaryManagerはProductionの管理責任者を表す。
+
+PrimaryManagerはPersonを参照する。
+
+PrimaryManagerはProductionに対する全権限を持つ。
+
+PrimaryManagerはDelegateRoleによって権限を制限されない。
+
+---
+
+## Production - ProductionDelegate
+
+    Production
+        │
+        ├── ProductionDelegate
+        ├── ProductionDelegate
+        └── ProductionDelegate
+
+Productionは複数のProductionDelegateを持つことができる。
+
+ProductionDelegateは、
+PrimaryManagerからProductionの管理権限を委任されたPersonを表す。
+
+ProductionDelegateはProductionの子Entityとして管理する。
+
+---
+
+## ProductionDelegate - Person
+
+    ProductionDelegate
+        │
+        ▼
+      Person
+
+ProductionDelegateは一人のPersonを参照する。
+
+同一Personを複数のProductionに
+ProductionDelegateとして登録できる。
+
+また、同一Personであっても、
+Productionごとに異なるDelegateRoleを設定できる。
+
+---
+
+## ProductionDelegate - DelegateRole
+
+    ProductionDelegate
+        │
+        ▼
+    DelegateRole
+
+ProductionDelegateは一つのDelegateRoleを参照する。
+
+DelegateRoleは、
+ProductionDelegateに付与する権限セットを表す。
+
+DelegateRoleはPersonに直接紐付かない。
+
+ProductionDelegateを介して、
+特定ProductionにおけるPersonの権限を定義する。
+
+---
+
+## DelegateRole - Permission
+
+    DelegateRole
+        │
+        ▼
+    Permission Set
+
+DelegateRoleは、
+あらかじめ定義された権限セットを持つ。
+
+DelegateRoleはProductionDelegateへ
+定義済みの権限を付与する。
+
+Permissionの具体的な構造はAuthorization設計で定義する。
 
 ---
 
@@ -425,6 +522,35 @@ Infrastructure Layerで管理する。
 
 ---
 
+# Production Management Boundary
+
+Productionの管理権限は、
+Organization Membershipとは別に管理する。
+
+Productionは、
+PrimaryManagerとProductionDelegateによって
+Production単位の管理権限を管理する。
+
+    Production
+        ├── PrimaryManager
+        │       └── Person
+        │
+        └── ProductionDelegate
+                ├── Person
+                └── DelegateRole
+
+PrimaryManagerはProductionに対する全権限を持つ。
+
+ProductionDelegateはDelegateRoleによって
+あらかじめ定義された権限のみを持つ。
+
+DelegateRoleはProduction単位で適用される。
+
+同一Personが複数ProductionのDelegateになる場合、
+Productionごとに異なるDelegateRoleを持つことができる。
+
+---
+
 # Domain Boundaries
 
 Conceptual ERでは、
@@ -452,6 +578,14 @@ Domain間のBusiness上の関係のみを表現する。
         ├── Service
         └── Credential
 
+    Production
+        ├── PrimaryManager
+        │       └── Person
+        │
+        └── ProductionDelegate
+                ├── Person
+                └── DelegateRole
+
 HistoryはParticipantやReservationの子Entityではない。
 
 HistoryはDomain Eventを契機として
@@ -463,6 +597,13 @@ CredentialはExternalConnectionの子Entityである。
 
 ServiceはMaster Domainとして管理され、
 複数のExternalConnectionから参照される。
+
+ProductionDelegateはProductionの子Entityである。
+
+PrimaryManagerはProductionからPersonを参照する。
+
+DelegateRoleはProductionDelegateに付与される
+権限セットを表す。
 
 ---
 
@@ -492,3 +633,16 @@ ServiceはMaster Domainとして管理され、
 - Credentialは平文で保存しない。
 - ExternalConnectionはServiceを参照する。
 - 外部サービス固有のAPI仕様はConceptual ERでは表現しない。
+- Productionは一人のPrimaryManagerを持つ。
+- PrimaryManagerはPersonを参照する。
+- PrimaryManagerはProductionに対する全権限を持つ。
+- Productionは複数のProductionDelegateを持つことができる。
+- ProductionDelegateはProductionの子Entityである。
+- ProductionDelegateはPersonを参照する。
+- ProductionDelegateはDelegateRoleを参照する。
+- DelegateRoleはあらかじめ定義された権限セットを表す。
+- DelegateRoleはProduction単位で適用される。
+- 同一Personが複数Productionで異なるDelegateRoleを持つことを許可する。
+- Organization MembershipとProduction単位の管理権限を分離する。
+- PrimaryManagerはDelegateRoleによる制限を受けない。
+- ProductionDelegateはDelegateRoleによって権限を制限する。
