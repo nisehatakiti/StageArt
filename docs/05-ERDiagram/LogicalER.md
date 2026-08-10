@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Logical ER Diagram
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -42,6 +42,10 @@ Subject
 
 Organization
     ├── Membership
+    ├── ExternalConnection
+    │       ├── Service
+    │       └── Credential
+    │
     └── Project
             └── Production
 
@@ -81,6 +85,12 @@ Organizationは劇団、制作会社、企業などの団体を表す。
 
 OrganizationId
 
+OrganizationはStageArtにおけるTenantである。
+
+OrganizationはMembershipおよびExternalConnectionを管理する。
+
+OrganizationはProjectを管理する。
+
 ---
 
 ## Membership
@@ -99,6 +109,314 @@ OrganizationId
 MembershipはOrganization単位の所属・権限を表す。
 
 Production単位の管理権限とは別に管理する。
+
+---
+
+## ExternalConnection
+
+ExternalConnectionは、
+Organizationと外部サービスとの接続関係を表す。
+
+主な識別子
+
+ExternalConnectionId
+
+主なReference
+
+OrganizationId
+ServiceId
+CredentialId
+
+主な情報
+
+ExternalConnectionId
+OrganizationId
+ServiceId
+CredentialId
+AccountIdentifier
+Status
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+
+ExternalConnectionはOrganizationの子Entityである。
+
+一つのOrganizationは、
+0個以上のExternalConnectionを持つことができる。
+
+ExternalConnectionはSNS専用ではない。
+
+SNS、動画サービス、クラウドサービス、
+メッセージングサービスなど、
+StageArtが外部連携するサービスを共通して扱う。
+
+---
+
+## ExternalConnection - Account Identifier
+
+AccountIdentifierは、
+外部サービス上の接続先Accountを識別する情報である。
+
+例えば、
+
+- User Name
+- Account ID
+- Page ID
+- Channel ID
+
+などを表現する。
+
+AccountIdentifierは、
+StageArt内部のAccountとは異なる。
+
+StageArt内部のAccountはStageArtへの認証を表す。
+
+AccountIdentifierは外部サービス上のAccountを表す。
+
+---
+
+## ExternalConnection - Service
+
+ExternalConnectionは一つのServiceを参照する。
+
+ExternalConnection.ServiceId
+    ↓
+Service.ServiceId
+
+Serviceは外部サービスの種類を表すMasterである。
+
+SNSはServiceの一種として扱う。
+
+ExternalConnection自身に、
+SNS固有の属性を持たせない。
+
+---
+
+## ExternalConnection - Credential
+
+ExternalConnectionは一つのCredentialを保持する。
+
+ExternalConnection.CredentialId
+    ↓
+Credential.CredentialId
+
+CredentialはExternalConnectionに属する。
+
+Credentialは外部サービスへの認証情報を表す。
+
+Credentialは単独のPublic Resourceとして公開しない。
+
+---
+
+## Service
+
+Serviceは、
+StageArtが接続可能な外部サービスの種類を表すMaster Domainである。
+
+主な識別子
+
+ServiceId
+
+主な情報
+
+ServiceId
+Code
+Name
+Description
+ServiceType
+AuthenticationType
+Status
+
+Serviceは複数のExternalConnectionから参照できる。
+
+例）
+
+- X
+- Instagram
+- Facebook
+- YouTube
+- TikTok
+- LINE
+- Google
+- Google Drive
+
+SNSはServiceの一種として扱う。
+
+---
+
+## ServiceType
+
+ServiceTypeは、
+外部サービスの分類を表す。
+
+例）
+
+- SOCIAL
+- VIDEO
+- CLOUD_STORAGE
+- MESSAGING
+- OTHER
+
+ServiceTypeは分類および検索に利用する。
+
+ServiceTypeによって
+ExternalConnectionの構造を変更してはならない。
+
+---
+
+## Service AuthenticationType
+
+AuthenticationTypeは、
+Serviceが要求する認証方式を表す。
+
+例）
+
+- OAUTH
+- API_KEY
+- SECRET
+- NONE
+
+AuthenticationTypeは、
+Credentialの利用方法を決定するために利用する。
+
+実際の認証処理はInfrastructure Layerが担当する。
+
+---
+
+## Service Capabilities
+
+Serviceは、
+StageArtから利用可能な機能を定義できる。
+
+例えば、
+
+- TEXT_POST
+- IMAGE_POST
+- VIDEO_POST
+- LINK_POST
+- VIDEO_UPLOAD
+- FILE_UPLOAD
+
+などを想定する。
+
+CapabilitiesはServiceの機能差を表す。
+
+実際の外部API操作はInfrastructure Adapterが担当する。
+
+---
+
+## Credential
+
+Credentialは、
+ExternalConnectionが外部サービスへ接続するために必要とする
+認証情報を表す。
+
+主な識別子
+
+CredentialId
+
+主なReference
+
+ExternalConnectionId
+
+主な情報
+
+CredentialId
+ExternalConnectionId
+CredentialStatus
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+
+CredentialのSecret値そのものは、
+通常のLogical Entity属性として平文管理しない。
+
+Secret値の保存先および暗号化方式は
+Infrastructure Layerで定義する。
+
+---
+
+## Credential Authentication Data
+
+Credentialでは、
+ServiceのAuthenticationTypeに応じて
+以下の認証情報を扱える。
+
+OAuth
+
+- AccessToken
+- RefreshToken
+- TokenExpiresAt
+- Scope
+
+API Key
+
+- APIKey
+
+Secret
+
+- Secret
+- ClientSecret
+- Password
+
+これらのSecret情報は、
+Domain Event、API Response、Log、Audit Logへ
+出力してはならない。
+
+---
+
+## Credential Status
+
+Credentialは以下の状態を持つ。
+
+- ACTIVE
+- EXPIRED
+- INVALID
+- REVOKED
+
+ACTIVE
+
+認証情報が有効な状態。
+
+EXPIRED
+
+認証情報の有効期限が切れている状態。
+
+INVALID
+
+外部サービスによって認証情報が無効と判断された状態。
+
+REVOKED
+
+認証情報が明示的に無効化された状態。
+
+---
+
+## ExternalConnection Status
+
+ExternalConnectionは以下の接続状態を持つ。
+
+- CONNECTED
+- DISCONNECTED
+- ERROR
+
+CONNECTED
+
+外部サービスとの接続が有効な状態。
+
+DISCONNECTED
+
+外部サービスとの接続を切断した状態。
+
+ERROR
+
+認証失敗や外部サービス障害などにより、
+接続に問題が発生している状態。
+
+Credential StatusとExternalConnection Statusは
+別の状態として管理する。
 
 ---
 
@@ -490,6 +808,60 @@ ParticipantTypeはHistoryTypeがPARTICIPATIONの場合のみ保持する。
 
 # Reference Rules
 
+## Organization → ExternalConnection
+
+Organizationは0個以上のExternalConnectionを持つ。
+
+ExternalConnection.OrganizationId
+    ↓
+Organization.OrganizationId
+
+ExternalConnectionはOrganizationの子Entityとして管理する。
+
+ExternalConnectionを異なるOrganization間で共有しない。
+
+---
+
+## ExternalConnection → Service
+
+ExternalConnectionは必ず一つのServiceを参照する。
+
+ExternalConnection.ServiceId
+    ↓
+Service.ServiceId
+
+一つのServiceは複数のExternalConnectionから参照できる。
+
+ServiceはMasterとして管理する。
+
+---
+
+## ExternalConnection → Credential
+
+ExternalConnectionは一つのCredentialを保持する。
+
+ExternalConnection.CredentialId
+    ↓
+Credential.CredentialId
+
+CredentialはExternalConnectionの子Entityとして管理する。
+
+Credentialは単独のPublic Resourceとして公開しない。
+
+---
+
+## Credential → ExternalConnection
+
+Credentialは必ず一つのExternalConnectionに所属する。
+
+Credential.ExternalConnectionId
+    ↓
+ExternalConnection.ExternalConnectionId
+
+CredentialをOrganization間で共有しない。
+
+---
+
 ## Production → PrimaryManager
 
 Productionは一人のPrimaryManagerを参照する。
@@ -678,6 +1050,24 @@ Organization
 
 ---
 
+## Organization ExternalConnection
+
+ExternalConnectionはOrganization単位の外部サービス接続を表す。
+
+Organization
+    ↓
+ExternalConnection
+    ├── Service
+    └── Credential
+
+ExternalConnectionの管理権限は、
+Organization Scopeの権限によって制御する。
+
+CredentialのSecret値は、
+管理権限を持つ利用者であっても通常のAPI Responseとして取得できない。
+
+---
+
 ## Production Primary Manager
 
 PrimaryManagerはProduction単位の管理責任者である。
@@ -712,6 +1102,9 @@ Organization Membershipの権限とは分離する。
 # Aggregate Structure
 
 Organization
+├── Membership
+├── ExternalConnection
+│   └── Credential
 └── Project
     └── Production
         ├── ProductionDelegate
@@ -721,6 +1114,9 @@ Organization
             └── Reservation
                 ├── ReservationSeat
                 └── Companion
+
+ServiceはMaster Domainとして管理され、
+ExternalConnectionから参照される。
 
 PrimaryManagerはProductionからPersonを参照する。
 
@@ -745,9 +1141,30 @@ Production | Production
 Performance | Performance
 Reservation | Reservation
 
+ServiceはMaster Domainであり、
+Organization Aggregateの子Entityではない。
+
+CredentialはExternalConnectionの子Entityである。
+
 ---
 
 # Aggregate Rules
+
+OrganizationはExternalConnectionを管理する。
+
+ExternalConnectionの追加・変更・削除は、
+Organizationの管理権限を通して行う。
+
+ExternalConnectionはServiceを参照する。
+
+ExternalConnectionはCredentialを管理する。
+
+CredentialのSecret情報は、
+ExternalConnectionを経由して管理する。
+
+ServiceはOrganizationごとに複製しない。
+
+同一Serviceを複数OrganizationのExternalConnectionから参照できる。
 
 ProductionはProductionDelegateを管理する。
 
@@ -801,6 +1218,25 @@ ReservationCreated
 ReservationUpdated
 ReservationCancelled
 
+ExternalConnectionCreated
+        ↓
+External Connection State
+
+ExternalConnectionConnected
+        ↓
+Connection State
+
+ExternalConnectionDisconnected
+        ↓
+Connection State
+
+ExternalConnectionError
+        ↓
+Connection Error State
+
+CredentialのSecret値は、
+Domain Eventに含めない。
+
 ---
 
 # Design Principles
@@ -808,6 +1244,23 @@ ReservationCancelled
 - Logical ERはDomain Modelをデータ構造として表現する。
 - Database製品固有の物理設計はLogical ERでは定義しない。
 - Organization MembershipとProduction単位の権限を分離する。
+- OrganizationはExternalConnectionを管理する。
+- ExternalConnectionはOrganizationの子Entityである。
+- ExternalConnectionはServiceを参照する。
+- ExternalConnectionはCredentialを保持する。
+- ExternalConnectionはSNSに限定しない。
+- Serviceは外部サービスの種類を表すMasterである。
+- Serviceは複数のExternalConnectionから参照できる。
+- CredentialはExternalConnectionの子Entityである。
+- Credentialは単独のPublic Resourceとして公開しない。
+- CredentialのSecret情報は平文で保存しない。
+- CredentialのSecret情報をAPI Responseへ返却しない。
+- CredentialのSecret情報をDomain Eventへ含めない。
+- CredentialのSecret情報をLogへ出力しない。
+- CredentialのSecret情報をAudit Logへ出力しない。
+- ServiceのAuthenticationTypeはCredentialの認証方式を決定する。
+- ServiceのCapabilitiesは外部サービスごとの機能差を表現する。
+- ExternalConnectionの接続状態とCredentialの状態を分離する。
 - Productionは一人のPrimaryManagerを参照する。
 - PrimaryManagerはPersonを参照する。
 - PrimaryManagerはProductionに関する全権限を持つ。
@@ -836,3 +1289,6 @@ ReservationCancelled
 - AUDIENCE HistoryはParticipantTypeを保持しない。
 - AUDIENCE HistoryのSubjectはReservation.Bookerである。
 - HistoryはDomain Eventを契機として生成・更新する。
+- 外部サービス固有のAPI仕様はLogical ERでは定義しない。
+- 外部サービスへのAPI呼び出しはInfrastructure Layerで実装する。
+- ExternalConnectionは特定の外部サービスAPIへ直接依存しない。
