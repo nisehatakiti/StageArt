@@ -1,258 +1,263 @@
 # StageArt Blueprint
-# 04 - Domain Model
+# Domain Model
 
-Version : 4.0
+Version : 2.0
 
 ---
 
 # Purpose
 
-Domain ModelはStageArtが管理する業務上の概念（ドメイン）を定義する。
+Domain Modelは、
+StageArtにおけるBusiness Domainの構造を定義する。
 
-StageArtはデータベースや画面を中心に設計するのではなく、
-舞台芸術における業務そのものをドメインとして表現する。
+Domain Modelは、
+UI、API、Database、WordPressなどの
+Infrastructureから独立して設計する。
 
-Business Flowが利用者の行動を定義するのに対し、
-Domain ModelはStageArt内部で管理される概念と責務を定義する。
+Business RuleはDomain Layerが管理する。
 
 ---
 
 # Domain Structure
 
-Organization
-│
-└── Project
+StageArtの主要Domainは以下で構成する。
+
+    Organization
+    ├── Membership
+    ├── ExternalConnection
+    │      ├── Service
+    │      └── Credential
     │
+    └── Project
+
+    Project
     └── Production
-        ├── PrimaryManager
-        │   └── Person
-        │
-        ├── ProductionDelegate
-        │   ├── Person
-        │   └── DelegateRole
-        │
-        ├── Performance
-        │   ├── Seats
-        │   └── Reservation
-        │       ├── Booker
-        │       ├── HandledParticipant
-        │       └── Companion
-        │
-        ├── Participant
-        │   │
-        │   └── Subject
-        │       ├── Person
-        │       └── Organization
-        │
-        ├── Category
-        ├── Genre
-        └── Tag
 
-Subject
-│
-└── History
+    Production
+    ├── Performance
+    ├── Participant
+    └── Reservation
+
+    Person
+    └── History
+
+各Domainは、
+それぞれの責務とBusiness Ruleを持つ。
 
 ---
 
-# Domain Overview
+# Organization
 
-## Organization
+Organizationは、
+StageArtにおけるTenantである。
 
-Organizationは劇団・ユニット・制作会社・企業などの団体を表す。
+舞台芸術活動を行う団体を表す。
 
-一つのOrganizationは複数のProjectを持つ。
+Organizationは、
 
-OrganizationとPersonの所属関係はMembershipによって管理する。
+- 劇団
+- プロデュース団体
+- ダンスカンパニー
+- 学生劇団
+- 演劇サークル
+- 実行委員会
 
----
+などを表現できる。
 
-## Project
-
-Projectは公演制作プロジェクトを表す。
-
-利用者はProjectを直接意識しない。
-
-利用者が「公演を作る」を実行すると、
-StageArtは内部でProjectを自動生成する。
-
-Projectには将来的に以下が紐付く。
-
-- 稽古
-- スケジュール
-- タスク
-- ドキュメント
-- 予算
-- 収支
-- 助成金
-
-ProjectはStageArt内部で制作全体を管理するInternal Domainである。
-
-Projectは公開APIには出さない。
+Organizationは、
+Business DataのTenant境界となる。
 
 ---
 
-## Production
+# Membership
 
-Productionは利用者・観客へ公開される「公演」を表す。
+Membershipは、
+PersonとOrganizationの所属関係を表す。
 
-Productionには以下が含まれる。
+    Person
+       ↓
+    Membership
+       ↓
+    Organization
 
-- タイトル
-- 公演概要
-- 公演画像
-- Category
-- Genre
-- Tag
-- Participant
-- Performance
-- PrimaryManager
-- ProductionDelegate
+Personは複数Organizationへ所属できる。
 
-一つのProductionは複数のPerformanceを持つ。
+Organizationは、
+Membershipを通じてPersonとの関係を管理する。
 
-Productionは公開Business Resourceである。
+Organization自身は、
+MemberやRoleを直接保持しない。
 
 ---
 
-## PrimaryManager
+# ExternalConnection
 
-PrimaryManagerはProductionの管理責任者を表す。
+ExternalConnectionは、
+Organizationと外部サービスとの接続関係を表す。
 
-一つのProductionには一人のPrimaryManagerを設定する。
+    Organization
+    └── ExternalConnection
+           ├── Service
+           └── Credential
 
-PrimaryManagerはPersonを参照する。
+ExternalConnectionはSNS専用ではない。
 
-PrimaryManagerはProductionに関する全権限を持つ。
+SNS、動画サービス、
+クラウドサービス、
+メッセージングサービスなど、
+StageArtが外部連携するサービスを
+共通の仕組みで扱う。
 
-PrimaryManagerはDelegateRoleによる制限を受けない。
-
-PrimaryManagerはProduction単位の管理責任者であり、
-Person自身のRoleを表すものではない。
-
-Production
-│
-└── PrimaryManager
-    └── Person
-
----
-
-## ProductionDelegate
-
-ProductionDelegateは、
-Productionに対して管理権限を委任されたPersonを表す。
-
-Productionの子Entityとして管理する。
-
-一つのProductionには、
-必要に応じて複数のProductionDelegateを設定できる。
-
-ProductionDelegateは以下を参照する。
-
-- Production
-- Person
-- DelegateRole
-
-Production
-│
-└── ProductionDelegate
-    ├── Person
-    └── DelegateRole
-
-ProductionDelegateは、
-DelegateRoleによって定義された権限のみを持つ。
-
-同一Personを複数のProductionのDelegateとして登録できる。
-
-また、同一Personであっても、
-Productionごとに異なるDelegateRoleを設定できる。
-
-ProductionDelegateの権限は、
-登録されたProductionに対してのみ有効である。
+ExternalConnectionはOrganizationの子Entityである。
 
 ---
 
-## DelegateRole
+# Service
 
-DelegateRoleは、
-ProductionDelegateへ付与する権限セットを定義するMaster Domainである。
-
-DelegateRoleはPersonへ直接付与しない。
-
-ProductionDelegateを介して、
-Production単位でPersonへ適用する。
-
-例えば、
-
-Production A
-│
-└── ProductionDelegate
-    ├── Person A
-    └── REHEARSAL_MANAGER
-
-Production B
-│
-└── ProductionDelegate
-    ├── Person A
-    └── RESERVATION_MANAGER
-
-という設定を許可する。
-
-DelegateRoleは、
-Productionごとに作成するものではない。
-
-あらかじめ定義されたDelegateRoleを
-複数のProductionで利用する。
-
----
-
-## Performance
-
-Performanceは実際の公演回を表す。
+Serviceは、
+StageArtが接続可能な外部サービスの種類を表す
+Master Domainである。
 
 例）
 
-- 8/1 14:00
-- 8/1 18:00
-- 8/2 13:00
+- X
+- Instagram
+- Facebook
+- YouTube
+- TikTok
+- LINE
+- Google
+- Google Drive
 
-Performanceには以下が紐付く。
+SNSはServiceの一種として扱う。
 
-- Seats
-- Reservation
+SNS専用Domainは作成しない。
 
-一つのProductionは複数のPerformanceを持つ。
-
----
-
-## Seats
-
-SeatsはPerformanceに存在する座席を表す。
-
-Seatsは座席情報のみを保持する。
-
-予約状態は保持しない。
-
-座席の予約状況はReservationから判断する。
-
-自由席の場合、
-ReservationSeatを持たない予約として管理する。
-
-指定席の場合、
-ReservationSeatからSeatを参照する。
-
-SeatはCheck Inの対象ではない。
-
-Check InはReservation単位で管理する。
+ServiceはExternalConnectionから参照される。
 
 ---
 
-## Reservation
+# Credential
 
-ReservationはPerformanceに対する予約を表す。
+Credentialは、
+ExternalConnectionが外部サービスへ接続するために必要とする
+認証情報を表す。
 
-ReservationはAggregate Rootとして予約情報の整合性を管理する。
+    ExternalConnection
+           ├── Service
+           └── Credential
 
-Reservationは以下を管理する。
+Credentialには、
+
+- OAuth
+- Access Token
+- Refresh Token
+- API Key
+- Secret
+
+などの認証情報を扱える構造を持たせる。
+
+Credentialは、
+StageArt内部のAccountとは別の概念である。
+
+認証情報は平文で保存しない。
+
+---
+
+# Project
+
+Projectは、
+Organization内部で行われる制作活動を管理する
+Internal Domainである。
+
+ProjectはPublic APIには公開しない。
+
+Projectは、
+ProductionなどのBusiness Resourceを
+内部的に管理する。
+
+利用者は通常、
+Projectの存在を意識しない。
+
+---
+
+# Production
+
+Productionは、
+Organizationが行う公開公演を表す
+Business Resourceである。
+
+ProductionはProjectと内部的に関連する。
+
+ただし、
+ProjectはPublic Resourceとして公開しない。
+
+Productionは、
+
+- Performance
+- Participant
+- Public Information
+
+などの公演情報を管理する。
+
+---
+
+# Performance
+
+Performanceは、
+Productionに属する個々の公演回を表す。
+
+    Production
+       ↓
+    Performance
+
+観客による予約は、
+Performance単位で行われる。
+
+Performanceは、
+
+- 開演日時
+- 終演日時
+- 会場
+- 公開状態
+- 公演状態
+
+などを管理する。
+
+---
+
+# Participant
+
+Participantは、
+Productionへの参加を表すBusiness Resourceである。
+
+Participantは、
+Subjectを通じて活動主体を参照する。
+
+Subjectは、
+
+- Person
+- Organization
+
+などの活動主体を表す共通Referenceである。
+
+Participantは、
+PersonやOrganizationへ直接依存しない。
+
+---
+
+# Reservation
+
+Reservationは、
+Performanceに対する来場予約を表すBusiness Resourceである。
+
+    Performance
+       ↓
+    Reservation
+
+ReservationはAggregate Rootである。
+
+Reservationは、
 
 - Booker
 - HandledParticipant
@@ -262,535 +267,396 @@ Reservationは以下を管理する。
 - QRCode
 - Status
 
-### Booker
+などを管理する。
 
-Bookerは予約者を表すPersonである。
+CompanionおよびReservationSeatは、
+Reservationの内部Entityとして扱う。
 
-### HandledParticipant
-
-HandledParticipantは予約を担当するParticipantを表す。
-
-いわゆる「○○扱い」の予約を表現する。
-
-HandledParticipantは任意である。
-
-指定されない場合は一般予約として扱う。
-
-HandledParticipantは予約作成後でも変更できる。
-
-### Companion
-
-Companionは同行者を表す。
-
-CompanionはReservationに属する子Entityであり、
-単独では存在しない。
-
-CompanionはReservationを経由してのみ管理する。
-
-### ReservationSeat
-
-ReservationSeatは予約されたSeatを表す。
-
-ReservationSeatはReservationに属する子Entityであり、
-単独では存在しない。
-
-### TicketType
-
-TicketTypeは予約種別を表す。
-
-例）
-
-- GENERAL
-- STUDENT
-- INVITATION
-- STAFF
-
-TicketTypeは料金計算および集計で利用する。
-
-HandledParticipantの有無とは独立して管理する。
-
-### QRCode
-
-QRCodeは受付用識別子を表す。
-
-Reservation生成時に発行する。
-
-QRCodeは変更しない。
-
-### Status
-
-ReservationStatusは予約状態を表す。
-
-例）
-
-- RESERVED
-- CHECKED_IN
-- CANCELLED
-- NO_SHOW
-
-受付はReservationのStatus変更で管理する。
-
-CheckInという独立したDomainは持たない。
-
-### History
-
-ReservationはHistoryを管理しない。
-
-ReservationCheckedInなどのDomain Eventを契機として、
-History Domainが必要な履歴を生成・更新する。
+ReservationはHistoryを直接管理しない。
 
 ---
 
-## Participant
+# Person
 
-ParticipantはProductionへの参加を表すBusiness Domainである。
+Personは、
+StageArtに登録された人物を表すBusiness Resourceである。
 
-Participantは出演者だけではなく、
+Personは、
+認証情報を表すAccountとは独立したDomainである。
 
-- キャスト
-- スタッフ
-- 演出
-- 制作
-- 主催
-- 共催
-- 協賛
-- 後援
-- 制作協力
-- 会場提供
+Personは、
 
-など、公演へ参加するすべての活動主体を表現する。
+- Profile
+- Public Organization
+- History
 
-ParticipantはPersonまたはOrganizationを直接参照しない。
-
-ParticipantはSubjectを通じて活動主体を参照する。
-
-Participant
-│
-▼
-Subject
-├── Person
-└── Organization
+などの情報を扱う。
 
 ---
 
-## Subject
+# History
 
-SubjectはStageArtにおける活動主体を表す共通Referenceである。
+Historyは、
+Personの活動履歴を表す独立したDomainである。
 
-Subjectは以下で構成される。
+Historyは、
+Personから参照される。
 
-- SubjectType
-- SubjectId
+Historyは読み取り専用として扱う。
 
-Version 1.0では以下をサポートする。
+History自身を直接編集するAPIは提供しない。
 
-- PERSON
-- ORGANIZATION
-
-ParticipantはSubjectを必ず一つ持つ。
-
----
-
-## ParticipantType
-
-ParticipantTypeは公演への参加区分を表す。
-
-例）
-
-- CAST
-- STAFF
-- DIRECTOR
-- PRODUCER
-- ORGANIZER
-- SPONSOR
-- SUPPORTER
-
-ParticipantTypeはBusiness Rule、検索、集計などのシステム処理に利用する。
+Historyは、
+Domain Eventによって自動生成・更新される。
 
 ---
 
-## Role
+# Domain Relationship
 
-Roleは公演内での具体的な役割名称を表す。
+主要なDomain Relationshipは以下とする。
 
-例）
+    Organization
+       │
+       ├── Membership
+       │       └── Person
+       │
+       ├── ExternalConnection
+       │       ├── Service
+       │       └── Credential
+       │
+       └── Project
+              └── Production
+                     ├── Performance
+                     │      └── Reservation
+                     │
+                     └── Participant
+                            └── Subject
 
-- 主演
-- 演出
-- 音響
-- 照明
-- 舞台監督
-- 主催
-- 協賛
+Personは、
 
-Roleは表示情報であり、
-ParticipantTypeとは責務を分ける。
+    Person
+       └── History
 
----
-
-## CreditOrder
-
-CreditOrderはクレジット表示順を表す。
-
-小さい値ほど先に表示する。
-
----
-
-## Visibility
-
-VisibilityはParticipant情報の公開状態を表す。
-
-例）
-
-- PUBLIC
-- PRIVATE
+という関係を持つ。
 
 ---
 
-## Status
+# Aggregate
 
-ParticipantStatusはParticipantの状態を表す。
+StageArtでは、
+DomainごとにAggregateを定義する。
 
-例）
+主要Aggregate Rootは、
 
-- ACTIVE
-- INACTIVE
-
-ParticipantはHistoryを管理しない。
-
-ParticipantAdded、ParticipantUpdated、ParticipantRemovedなどの
-Domain Eventを発行し、
-History Domainが必要な履歴を生成・更新する。
-
-通常はProduction単位でParticipantを登録する。
-
-公演回ごとにParticipantを登録する必要はない。
-
----
-
-## History
-
-HistoryはStageArtにおける活動履歴を表す独立したDomainである。
-
-HistoryはPersonやOrganizationの子Entityではない。
-
-HistoryはSubjectを中心として活動履歴を管理する。
-
-Subject
-│
-└── History
-
-Historyは以下を管理する。
-
-- Subject
-- HistoryType
-- ParticipantType
+- Organization
 - Production
 - Performance
-- EventDateTime
+- Reservation
+- Person
 
-### HistoryType
+などである。
 
-HistoryTypeは活動の種類を表す。
+Aggregate内部のEntityは、
+Aggregate Rootを経由して操作する。
 
-Version 1.0では以下をサポートする。
+---
 
-- PARTICIPATION
-- AUDIENCE
+# Child Entity
 
-ParticipantTypeはHistoryTypeとは異なる概念である。
+子Entityは、
+親Aggregateまたは親Domainの責務として管理する。
 
-### ParticipantType
+例えば、
 
-ParticipantTypeはHistoryTypeがPARTICIPATIONの場合に、
-公演への参加区分を表す。
+    Organization
+    └── ExternalConnection
 
-例）
+    ExternalConnection
+    └── Credential
 
-- CAST
-- STAFF
-- DIRECTOR
-- PRODUCER
-- ORGANIZER
-- SPONSOR
-- SUPPORTER
+    Reservation
+    ├── Companion
+    └── ReservationSeat
 
-HistoryTypeがAUDIENCEの場合、
-ParticipantTypeは保持しない。
+などである。
 
-### Production
+子Entityを独立したPublic APIとして公開する必要がない場合、
+親Resourceを経由して操作する。
 
-Historyは活動対象となったProductionを参照する。
+---
 
-Productionは必須である。
+# Reference
 
-### Performance
+Domain間で情報を共有する場合、
+必要に応じてReferenceを利用する。
 
-Historyは必要に応じてPerformanceを参照する。
+例えば、
 
-Performanceは任意である。
+    Participant
+        ↓
+    Subject
+        ↓
+    Person
 
-Production単位の活動履歴ではPerformanceを持たない場合がある。
+のように、
+別DomainのEntityそのものを直接所有しない。
 
-観劇履歴など、特定の公演回を記録する場合はPerformanceを保持する。
+---
 
-### EventDateTime
+# Domain Event
 
-EventDateTimeは活動日時を表す。
+Domain間のBusiness Processは、
+Domain Eventによって連携する。
 
-### Generation
+例えば、
 
-HistoryはDomain Eventを契機として自動生成・更新される。
+    ProductionCreated
+        ↓
+    初期設定
 
-代表的な契機は以下である。
+    ReservationCreated
+        ↓
+    Business Process
+
+    ParticipantAdded
+        ↓
+    History更新
+
+などを行う。
+
+Domain Eventには、
+SecretやCredentialなどの
+機密情報を含めない。
+
+---
+
+# External Service Boundary
+
+外部サービスとの接続は、
+ExternalConnectionを境界として扱う。
+
+    Domain
+       ↓
+    ExternalConnection
+       ↓
+    Service
+       ↓
+    Infrastructure Adapter
+       ↓
+    External Service
+
+Domain Layerは、
+外部サービスのAPI仕様へ直接依存しない。
+
+外部サービスごとの差異は、
+Infrastructure LayerのAdapterで吸収する。
+
+---
+
+# Credential Security
+
+Credentialは、
+ExternalConnectionに属する認証情報として扱う。
+
+以下の情報はSecretとして扱う。
+
+- Access Token
+- Refresh Token
+- API Key
+- Secret
+- Client Secret
+- Password
+
+Secret情報は、
+
+- API Response
+- Domain Event
+- Log
+- Audit Log
+- Error Message
+
+へ出力してはならない。
+
+具体的な暗号化およびSecret Storageは、
+Infrastructure Layerが担当する。
+
+---
+
+# Authorization Boundary
+
+OrganizationはTenant境界である。
+
+Organizationに属するBusiness Dataは、
+Organization Scopeによってアクセス制御する。
+
+また、
+Productionなどの個別Resourceについては、
+PrimaryManagerおよびDelegateRoleなどの
+Resource Scope権限を利用できる。
+
+ExternalConnectionについては、
+Organization管理権限を基本とする。
+
+---
+
+# History Boundary
+
+Historyは、
+Business Eventから自動的に生成される。
+
+Domain Modelから直接Historyを編集しない。
+
+以下のようなEventを契機として
+Historyを更新できる。
 
 - ParticipantAdded
 - ParticipantUpdated
 - ParticipantRemoved
+- ReservationCreated
 - ReservationCheckedIn
+- ReservationCancelled
 
-Historyは利用者が直接編集するDomainではない。
-
-Historyは読み取りを中心とした独立Domainとして管理する。
-
-Person APIなどのBusiness Resource APIから、
-SubjectがPersonであるHistoryを集約して公開する。
-
-Organizationについても同様に、
-SubjectがOrganizationであるHistoryを必要に応じて公開する。
+ExternalConnectionやCredentialなどの
+技術的な接続情報は、
+Personの活動Historyを生成しない。
 
 ---
 
-## Category
+# Publication Boundary
 
-CategoryはProductionの公開形態を表すマスターである。
+外部サービスへの投稿は、
+ExternalConnectionとは別のBusiness Domainとして扱う。
 
-例）
+ExternalConnectionは、
 
-- 舞台
-- ミュージカル
-- 朗読劇
-- ダンス
-- 音楽ライブ
-- 映像作品
-- 配信
-- ワークショップ
+「外部サービスへ接続できる状態」
 
-CategoryはProductionの分類に利用する。
+を提供する。
 
-Participantの参加区分には利用しない。
+Publicationは、
 
----
+- 投稿内容
+- 投稿対象
+- 投稿日時
+- 投稿結果
 
-## Genre
+などを管理する。
 
-Genreは作品ジャンルを表すマスターである。
+将来的に、
 
-例）
+    Publication
+        ↓
+    ExternalConnection
+        ↓
+    Service
+        ↓
+    External Service
 
-- コメディ
-- ホラー
-- ミステリー
-- SF
-- 青春
-- 恋愛
-
-GenreはProductionのジャンル分類に利用する。
+という構造で一括投稿を実現する。
 
 ---
 
-## Tag
+# Design Principles
 
-TagはStageArt全体で利用する検索・分類用データである。
+- Domain First
+- User First
+- Simple UI, Rich Domain
+- Multi Tenant
+- API First
+- Mobile Ready
+- Event Driven
+- Single Source of Truth
+- Fact and Artifact
+- Backward Compatibility
+- Plugin First
+- Framework Independent
+- Incremental Development
+- Blueprint First
+- Theatre First
+- UI Theme and Design System
 
-Tagは以下へ付与できる。
-
-- Person
-- Organization
-- Production
-- Performance
-
-初期状態ではStageArtがプリセットTagを提供する。
-
-利用者は自由にTagを追加できる。
-
-追加されたTagはTagマスターへ登録され、
-以後すべての利用者が利用できる。
-
-Tagの表記ゆれ・重複についてはシステムで厳密に制御しない。
-
-管理者が定期的に整理・統合することで検索品質を維持する。
-
----
-
-# Domain Classification
-
-## Core Domain
-
-- Person
-- Organization
-- Project
-- Production
-- Performance
-- Participant
-- Reservation
-- History
-
-## Supporting Domain
-
-- ProductionDelegate
-- DelegateRole
-- Seats
-- Category
-- Genre
-- Tag
-
-ProductionDelegateとDelegateRoleは、
-Productionに対する管理権限を実現するための
-Supporting Domainとして扱う。
+Domain Modelは、
+これらのDesign Principlesに従って設計する。
 
 ---
 
-# Golden Rule
+# Domain Independence
 
-利用者はドメインモデルを意識しない。
+Domain Modelは、
 
-利用者は、
+- WordPress
+- REST Framework
+- Database
+- CSS
+- JavaScript
+- 外部API
+- UI Framework
 
-- 劇団を作る
-- 公演を作る
-- 公演に参加する
-- 公演を予約する
+などのInfrastructureへ直接依存しない。
 
-といった業務上の操作だけを行う。
-
-Projectなどの内部ドメインはStageArtが自動生成・管理する。
-
-Participant、Reservationなどの操作によって発生する活動履歴は、
-可能な限りDomain Eventを通じて自動的に蓄積される。
-
-Productionの管理権限についても、
-利用者はPrimaryManagerやProductionDelegateという
-内部構造を意識する必要はない。
-
-利用者には、
-自分が操作可能な業務だけを提供する。
+Infrastructureは、
+Domain Modelを実現するための手段として扱う。
 
 ---
 
-# Future Domain
+# Future
 
-Version 1.5以降
+将来的に以下のDomainを追加できる構造とする。
 
-- Rehearsal
-- Finance
-- FanClub
-- Store
+- Publication
+- Accounting
+- Budget
+- Document
 - Notification
-- Messaging
+- Venue
+- Ticket
+- Goods
+- Sponsor
+- Fan Club
+- Streaming
+- External Service Analytics
 
-ProductionDelegateのDelegateRoleは、
-将来的にこれらのDomainに対する管理権限へ拡張できる。
-
----
-
-# Identity Linking
-
-StageArtではPersonおよびOrganizationは、
-StageArt利用の有無に関わらず登録できる。
-
-そのため、Person・OrganizationとAccountは独立した概念として管理する。
-
-AccountはStageArt利用者を一意に識別するための認証情報であり、
-PersonまたはOrganizationへ任意に紐付けられる。
-
-Accountを持たないPerson・Organizationは「未紐付け」として管理する。
+新しいDomainを追加する場合も、
+既存Domainの責務を不必要に拡張しない。
 
 ---
 
-# Identity Linking Flow
-
-Account登録後、StageArtはAIを利用して未紐付けPerson・Organizationとの照合を行う。
-
-AIは以下の情報をもとに候補を抽出する。
-
-- 氏名
-- 団体名
-- 出演履歴
-- スタッフ参加履歴
-- 協賛履歴
-- 公演情報
-- その他StageArt内の関連情報
-
-AIは候補ごとに一致度を算出し、
-運営へ確認候補として提示する。
-
-AIはPerson・Organizationを自動で紐付けない。
-
----
-
-# Human Review
-
-運営はAIが提示した候補を確認し、
-本人確認を実施する候補を選択する。
-
----
-
-# Identity Confirmation
-
-運営が候補を選択すると、
-StageArtは本人確認メールを自動生成・送信する。
-
-例）
-
-件名
-
-StageArt 登録情報確認のお願い
-
-本文
-
-StageArtへご登録ありがとうございます。
-
-登録情報を確認したところ、
-以下の公演参加履歴が見つかりました。
-
-2026年 『夏の終わり』
-
-スタッフ（照明）
-
-こちらの参加履歴はご本人のもので間違いありませんか。
-
-〖はい〗 〖いいえ〗
-
-本人から承認を得た後、
-運営がAccountとPersonまたはOrganizationを紐付ける。
-
----
-
-# AI Policy
-
-AIは以下を担当する。
-
-- 候補検索
-- 一致度算出
-- 確認メール生成
-- 運営への候補提示
-
-AIは本人情報を自動で確定しない。
-
-最終判断は運営および本人確認によって行う。
-
----
-
-# Design Principle
+# Design Decisions
 
 StageArtでは、
+Domain ModelをBusiness Logicの中心とする。
 
-「AIは決定しない。AIは提案する。」
+OrganizationをTenant境界とする。
 
-を基本方針とする。
+ProjectはInternal Domainとして扱う。
 
-本人情報・履歴・参加情報など、
-重要なデータの確定は必ず人間の確認を経て行う。
+ProductionはPublic Business Resourceとして扱う。
 
-これにより、高いデータ品質と利用者の信頼性を維持する。
+PerformanceはProduction配下の公演回として扱う。
+
+ReservationはPerformance配下の予約Aggregateとして扱う。
+
+ParticipantはSubjectを通じて活動主体を参照する。
+
+PersonはAccountとは独立したDomainとして扱う。
+
+Historyは独立Domainとして管理し、
+Domain Eventによって自動更新する。
+
+ExternalConnectionはOrganizationの子Entityとして管理する。
+
+ExternalConnectionはSNSに限定しない。
+
+Serviceは外部サービスの種類を表すMaster Domainとする。
+
+CredentialはExternalConnectionに属する認証情報として管理する。
+
+StageArt内部のAccountとExternal Credentialを分離する。
+
+外部サービス固有の処理はInfrastructure Layerへ隔離する。
+
+Bulk PublicationはExternalConnectionとは別のDomainとして管理する。
+
+Business RuleはDomain Layerが管理する。
+
+Blueprintを唯一の設計基準とする。
