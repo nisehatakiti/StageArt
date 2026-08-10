@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Logical ER Diagram
 
-Version : 2.0
+Version : 3.0
 
 ---
 
@@ -20,39 +20,30 @@ Physical ERまたは実装設計で定義する。
 
 # Logical Model
 
-```mermaid
-erDiagram
+Production
+    │
+    ├── PrimaryManager ────── Person
+    │
+    ├── ProductionDelegate
+    │       ├── Person
+    │       └── DelegateRole
+    │
+    ├── Performance
+    │       ├── Seat
+    │       └── Reservation
+    │               ├── ReservationSeat
+    │               └── Companion
+    │
+    └── Participant
+            └── Subject
 
-    Account ||--o| Person : authenticates
+Subject
+    └── History
 
-    Person ||--o{ Membership : belongs_to
-    Organization ||--o{ Membership : has
-
-    Organization ||--o{ Project : owns
-    Project ||--|| Production : manages
-
-    Production ||--o{ Performance : has
-    Production ||--o{ Participant : has
-
-    Participant }o--|| Subject : references
-    Subject ||--o| Person : references
-    Subject ||--o| Organization : references
-
-    Production }o--|| Category : category
-    Production }o--o{ Genre : genres
-    Production }o--o{ Tag : tags
-
-    Performance ||--o{ Seat : has
-    Performance ||--o{ Reservation : accepts
-
-    Reservation }o--o| Participant : handled_by
-    Reservation ||--o{ ReservationSeat : contains
-    Reservation ||--o{ Companion : contains
-
-    Subject ||--o{ History : has
-    History }o--|| Production : relates_to
-    History }o--o| Performance : relates_to
-```
+Organization
+    ├── Membership
+    └── Project
+            └── Production
 
 ---
 
@@ -64,9 +55,7 @@ Accountは認証情報を表す。
 
 主な識別子
 
-```text
 AccountId
-```
 
 AccountはPersonとは独立した概念として管理する。
 
@@ -78,9 +67,7 @@ PersonはStageArtにおける人物を表す。
 
 主な識別子
 
-```text
 PersonId
-```
 
 Accountとの紐付けは任意とする。
 
@@ -92,9 +79,7 @@ Organizationは劇団、制作会社、企業などの団体を表す。
 
 主な識別子
 
-```text
 OrganizationId
-```
 
 ---
 
@@ -102,12 +87,18 @@ OrganizationId
 
 MembershipはPersonとOrganizationの所属関係を表す。
 
-主な参照
+主な識別子
 
-```text
+MembershipId
+
+主なReference
+
 PersonId
 OrganizationId
-```
+
+MembershipはOrganization単位の所属・権限を表す。
+
+Production単位の管理権限とは別に管理する。
 
 ---
 
@@ -117,10 +108,8 @@ ProjectはOrganizationが管理する制作プロジェクトを表す。
 
 主な識別子
 
-```text
 ProjectId
 OrganizationId
-```
 
 ProjectはInternal Domainであり、
 公開APIには直接公開しない。
@@ -133,13 +122,152 @@ Productionは公開される公演を表す。
 
 主な識別子
 
-```text
 ProductionId
 OrganizationId
 ProjectId
-```
+
+主なReference
+
+PrimaryManagerId
 
 ProductionはProjectによって内部的に管理される。
+
+Productionは一人のPrimaryManagerを持つ。
+
+PrimaryManagerはPersonを参照する。
+
+---
+
+## Production Primary Manager
+
+PrimaryManagerは、
+Productionの管理責任者を表す。
+
+Productionは必ず一人のPrimaryManagerを参照する。
+
+主なReference
+
+Production.PrimaryManagerId
+    ↓
+Person.PersonId
+
+PrimaryManagerはProductionに関する
+すべての管理権限を持つ。
+
+PrimaryManagerにはDelegateRoleを設定しない。
+
+PrimaryManagerはPersonのRoleではなく、
+Productionに対する管理権限として扱う。
+
+---
+
+## ProductionDelegate
+
+ProductionDelegateは、
+PrimaryManagerからProductionの管理権限を委任されたPersonを表す。
+
+Productionに属する子Entityとして管理する。
+
+主な識別子
+
+ProductionDelegateId
+
+主なReference
+
+ProductionId
+PersonId
+DelegateRoleId
+
+ProductionDelegateは以下の情報を持つ。
+
+ProductionDelegateId
+ProductionId
+PersonId
+DelegateRoleId
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+
+一つのProductionには、
+0人以上のProductionDelegateを設定できる。
+
+---
+
+## ProductionDelegate - Person
+
+ProductionDelegateは一人のPersonを参照する。
+
+ProductionDelegate.PersonId
+    ↓
+Person.PersonId
+
+同一Personを複数のProductionに
+ProductionDelegateとして登録できる。
+
+また、同一Personであっても、
+Productionごとに異なるDelegateRoleを設定できる。
+
+例えば、
+
+Production A
+    ↓
+Person A
+    ↓
+REHEARSAL_MANAGER
+
+Production B
+    ↓
+Person A
+    ↓
+RESERVATION_MANAGER
+
+という設定を許可する。
+
+---
+
+## DelegateRole
+
+DelegateRoleは、
+ProductionDelegateへ付与する権限セットを表すマスターである。
+
+主な識別子
+
+DelegateRoleId
+
+主な情報
+
+DelegateRoleId
+Code
+Name
+Description
+Status
+
+DelegateRoleはPersonに直接紐付かない。
+
+ProductionDelegateを介して、
+特定ProductionにおけるPersonの権限を定義する。
+
+---
+
+## DelegateRole Permission
+
+DelegateRoleは、
+あらかじめ定義された権限セットを持つ。
+
+論理的には、
+
+DelegateRole
+    ↓
+Permission Set
+
+という関係を持つ。
+
+Permissionの具体的な物理構造は、
+Authorization設計で定義する。
+
+Logical ERでは、
+DelegateRoleが権限セットを参照する概念のみを定義する。
 
 ---
 
@@ -149,10 +277,10 @@ PerformanceはProductionに属する公演回を表す。
 
 主な識別子
 
-```text
 PerformanceId
 ProductionId
-```
+
+PerformanceはProductionに所属する。
 
 ---
 
@@ -162,19 +290,16 @@ ParticipantはProductionへの参加を表す。
 
 主な識別子
 
-```text
 ParticipantId
 ProductionId
 SubjectId
-```
 
 ParticipantはPersonまたはOrganizationを直接参照しない。
 
-`SubjectId`を介して活動主体を参照する。
+SubjectIdを介して活動主体を参照する。
 
 Participantは以下の情報を持つ。
 
-```text
 ParticipantId
 ProductionId
 SubjectId
@@ -183,32 +308,64 @@ Role
 CreditOrder
 Visibility
 Status
-```
 
 ---
 
 ## Subject
 
-SubjectはBusiness上の活動主体を共通Referenceとして表現する。
+SubjectはBusiness上の活動主体を
+共通Referenceとして表現する。
 
 主な識別情報
 
-```text
 SubjectType
 SubjectId
-```
 
 SubjectType
 
-```text
 PERSON
 ORGANIZATION
-```
 
 SubjectはPersonまたはOrganizationを表す。
 
 Subjectは独立したBusiness Entityではなく、
 PersonおよびOrganizationを共通の参照形式で扱うための概念である。
+
+---
+
+## Category
+
+CategoryはProductionの分類を表す。
+
+主な識別子
+
+CategoryId
+
+ProductionからCategoryを参照する。
+
+---
+
+## Genre
+
+GenreはProductionのジャンルを表す。
+
+主な識別子
+
+GenreId
+
+ProductionとGenreは多対多の関係を持つ。
+
+---
+
+## Tag
+
+TagはProductionに付与するタグを表す。
+
+主な識別子
+
+TagId
+
+ProductionとTagは多対多の関係を持つ。
 
 ---
 
@@ -218,10 +375,16 @@ SeatはPerformanceに属する座席を表す。
 
 主な識別子
 
-```text
 SeatId
 PerformanceId
-```
+
+Seatは座席情報のみを保持する。
+
+Seat自身は予約状態を保持しない。
+
+SeatはCheck Inの対象ではない。
+
+予約状態はReservationとReservationSeatの関係から判断する。
 
 ---
 
@@ -231,16 +394,13 @@ ReservationはPerformanceに対する予約を表す。
 
 主な識別子
 
-```text
 ReservationId
 PerformanceId
 BookerId
 HandledParticipantId
-```
 
 Reservationは以下を管理する。
 
-```text
 ReservationId
 PerformanceId
 BookerId
@@ -248,13 +408,21 @@ HandledParticipantId
 TicketType
 QRCode
 Status
-```
+CreatedBy
+CreatedAt
+UpdatedBy
+UpdatedAt
 
-`BookerId`は予約者であるPersonを参照する。
+BookerIdは予約者であるPersonを参照する。
 
-`HandledParticipantId`は予約を担当するParticipantを参照する。
+HandledParticipantIdは、
+予約における「○○扱い」のParticipantを参照する。
 
 HandledParticipantIdは任意である。
+
+CreatedByはReservationを作成した主体を表す。
+
+UpdatedByはReservationを最後に変更した主体を表す。
 
 ---
 
@@ -264,13 +432,17 @@ ReservationSeatはReservationに紐付く予約座席を表す。
 
 主な識別子
 
-```text
 ReservationSeatId
 ReservationId
 SeatId
-```
 
 ReservationSeatはReservationの子Entityである。
+
+ReservationSeatはReservationを経由してのみ変更できる。
+
+ReservationSeatはSeatを参照する。
+
+ReservationSeat自体はCheck In状態を保持しない。
 
 ---
 
@@ -280,10 +452,8 @@ CompanionはReservationに属する同行者を表す。
 
 主な識別子
 
-```text
 CompanionId
 ReservationId
-```
 
 CompanionはReservationの子Entityである。
 
@@ -297,16 +467,13 @@ HistoryはSubjectの活動履歴を表す。
 
 主な識別子
 
-```text
 HistoryId
 SubjectId
 ProductionId
 PerformanceId
-```
 
 Historyは以下の情報を持つ。
 
-```text
 HistoryId
 SubjectId
 HistoryType
@@ -314,25 +481,93 @@ ParticipantType
 ProductionId
 PerformanceId
 EventDateTime
-```
 
-`PerformanceId`は任意である。
+PerformanceIdは任意である。
 
-`ParticipantType`はHistoryTypeがPARTICIPATIONの場合のみ保持する。
+ParticipantTypeはHistoryTypeがPARTICIPATIONの場合のみ保持する。
 
 ---
 
 # Reference Rules
 
+## Production → PrimaryManager
+
+Productionは一人のPrimaryManagerを参照する。
+
+Production.PrimaryManagerId
+    ↓
+Person.PersonId
+
+PrimaryManagerはPersonを直接参照する。
+
+PrimaryManagerはProductionに対して全権限を持つ。
+
+---
+
+## Production → ProductionDelegate
+
+Productionは0人以上のProductionDelegateを持つ。
+
+ProductionDelegate.ProductionId
+    ↓
+Production.ProductionId
+
+ProductionDelegateはProductionの子Entityとして管理する。
+
+---
+
+## ProductionDelegate → Person
+
+ProductionDelegateは必ず一人のPersonを参照する。
+
+ProductionDelegate.PersonId
+    ↓
+Person.PersonId
+
+---
+
+## ProductionDelegate → DelegateRole
+
+ProductionDelegateは一つのDelegateRoleを参照する。
+
+ProductionDelegate.DelegateRoleId
+    ↓
+DelegateRole.DelegateRoleId
+
+DelegateRoleは、
+ProductionDelegateに付与される権限セットを表す。
+
+---
+
+## ProductionDelegate Scope
+
+ProductionDelegateの権限は、
+Production単位で有効となる。
+
+同一Personが複数ProductionのDelegateになる場合、
+Productionごとに別のDelegateRoleを持つことができる。
+
+Production A
+    ↓
+ProductionDelegate
+    ├── PersonId = person-001
+    └── DelegateRoleId = rehearsal-manager
+
+Production B
+    ↓
+ProductionDelegate
+    ├── PersonId = person-001
+    └── DelegateRoleId = reservation-manager
+
+---
+
 ## Participant → Subject
 
 Participantは必ず一つのSubjectを参照する。
 
-```text
 Participant.SubjectId
     ↓
 Subject.SubjectId
-```
 
 ParticipantからPersonまたはOrganizationを直接参照しない。
 
@@ -342,11 +577,11 @@ ParticipantからPersonまたはOrganizationを直接参照しない。
 
 Reservationは必ず一つのBookerを持つ。
 
-```text
 Reservation.BookerId
     ↓
 Person.PersonId
-```
+
+Bookerは予約者を表す。
 
 ---
 
@@ -354,11 +589,9 @@ Person.PersonId
 
 Reservationは任意でHandledParticipantを持つ。
 
-```text
 Reservation.HandledParticipantId
     ↓
 Participant.ParticipantId
-```
 
 HandledParticipantが存在しないReservationも許可する。
 
@@ -366,15 +599,44 @@ HandledParticipantはReservationとParticipantの関係を表す。
 
 ---
 
+## Reservation → ReservationSeat
+
+Reservationは0人以上のReservationSeatを持つ。
+
+ReservationSeat.ReservationId
+    ↓
+Reservation.ReservationId
+
+Reservation人数の変更によって、
+ReservationSeatを追加・解放できる。
+
+Reservationのキャンセル時には、
+関連するReservationSeatをすべて解放する。
+
+---
+
+## ReservationSeat → Seat
+
+ReservationSeatは一つのSeatを参照する。
+
+ReservationSeat.SeatId
+    ↓
+Seat.SeatId
+
+SeatはPerformanceに属する。
+
+ReservationSeatが参照するSeatは、
+Reservationが所属するPerformanceのSeatでなければならない。
+
+---
+
 ## History → Subject
 
 Historyは必ず一つのSubjectを参照する。
 
-```text
 History.SubjectId
     ↓
 Subject.SubjectId
-```
 
 HistoryからPersonまたはOrganizationを直接参照しない。
 
@@ -384,11 +646,9 @@ HistoryからPersonまたはOrganizationを直接参照しない。
 
 Historyは必ず一つのProductionを参照する。
 
-```text
 History.ProductionId
     ↓
 Production.ProductionId
-```
 
 ---
 
@@ -396,83 +656,80 @@ Production.ProductionId
 
 Historyは必要に応じてPerformanceを参照する。
 
-```text
 History.PerformanceId
     ↓
 Performance.PerformanceId
-```
 
 PerformanceIdはNULLを許可する。
 
 ---
 
-# History Rules
+# Authorization Rules
 
-HistoryTypeは以下を使用する。
+## Organization Membership
 
-```text
-PARTICIPATION
-AUDIENCE
-```
+MembershipはOrganization単位の権限を表す。
+
+Person
+    ↓
+Membership
+    ↓
+Organization
 
 ---
 
-## PARTICIPATION
+## Production Primary Manager
 
-Productionへの参加履歴を表す。
+PrimaryManagerはProduction単位の管理責任者である。
 
-Participantによって生成される。
-
-```text
-Participant
+Production
     ↓
-ParticipantAdded
+PrimaryManager
     ↓
-History
-```
+Person
 
-ParticipantTypeを保持する。
+PrimaryManagerはProductionに関する全権限を持つ。
 
 ---
 
-## AUDIENCE
+## Production Delegate
 
-観客としてPerformanceを観覧した履歴を表す。
+ProductionDelegateはProduction単位の委任権限を持つ。
 
-ReservationCheckedInによって生成される。
-
-```text
-Reservation
+Production
     ↓
-ReservationCheckedIn
-    ↓
-History
-```
+ProductionDelegate
+    ├── Person
+    └── DelegateRole
 
-ParticipantTypeは保持しない。
+ProductionDelegateは、
+DelegateRoleに定義された権限のみを持つ。
+
+Organization Membershipの権限とは分離する。
 
 ---
 
 # Aggregate Structure
 
-```text
 Organization
 └── Project
     └── Production
+        ├── ProductionDelegate
         ├── Participant
         └── Performance
             ├── Seat
             └── Reservation
                 ├── ReservationSeat
                 └── Companion
-```
+
+PrimaryManagerはProductionからPersonを参照する。
+
+ProductionDelegateはProductionに属する子Entityである。
 
 Historyは上記Aggregateの子Entityではない。
 
-```text
 Subject
 └── History
-```
 
 Historyは独立したDomainとして管理する。
 
@@ -492,6 +749,18 @@ Reservation | Reservation
 
 # Aggregate Rules
 
+ProductionはProductionDelegateを管理する。
+
+ProductionDelegateの追加・変更・削除は、
+Productionの管理権限を通して行う。
+
+ProductionはPrimaryManagerを一人保持する。
+
+PrimaryManagerはProductionに対する全権限を持つ。
+
+ProductionDelegateはDelegateRoleによって
+権限を制限する。
+
 Reservationは以下の子Entityを管理する。
 
 - ReservationSeat
@@ -510,53 +779,60 @@ ParticipantやReservationのAggregateには含めない。
 
 HistoryはDomain Eventを契機として生成・更新される。
 
-```text
 ParticipantAdded
         ↓
 Participation History
-```
 
-```text
 ParticipantUpdated
         ↓
 必要に応じてHistory更新
-```
 
-```text
 ParticipantRemoved
         ↓
 過去のHistoryは削除しない
-```
 
-```text
 ReservationCheckedIn
         ↓
 Audience History
-```
 
 以下のイベントではAudience Historyを生成しない。
 
-```text
 ReservationCreated
+ReservationUpdated
 ReservationCancelled
-```
 
 ---
 
 # Design Principles
 
 - Logical ERはDomain Modelをデータ構造として表現する。
+- Database製品固有の物理設計はLogical ERでは定義しない。
+- Organization MembershipとProduction単位の権限を分離する。
+- Productionは一人のPrimaryManagerを参照する。
+- PrimaryManagerはPersonを参照する。
+- PrimaryManagerはProductionに関する全権限を持つ。
+- Productionは0人以上のProductionDelegateを持つ。
+- ProductionDelegateはPersonを参照する。
+- ProductionDelegateはDelegateRoleを参照する。
+- DelegateRoleはあらかじめ定義された権限セットを表す。
+- DelegateRoleはProduction単位で適用される。
+- 同一PersonがProductionごとに異なるDelegateRoleを持つことを許可する。
 - ParticipantはSubjectを介して活動主体を参照する。
 - PersonとOrganizationはSubjectによって共通化して参照する。
 - ReservationはHandledParticipantを任意で参照できる。
 - HandledParticipantはParticipantを参照する。
 - CompanionはReservationの子Entityである。
 - ReservationSeatはReservationの子Entityである。
+- ReservationSeatはSeatを参照する。
+- SeatはPerformanceに属する。
+- Seatは予約状態を保持しない。
+- SeatはCheck Inの対象ではない。
+- Check InはReservation単位で行う。
 - Historyは独立したDomainである。
 - HistoryはSubjectを介して活動主体を参照する。
 - HistoryはProductionを必ず参照する。
 - PerformanceはHistoryに対して任意である。
 - PARTICIPATION HistoryはParticipantTypeを保持する。
 - AUDIENCE HistoryはParticipantTypeを保持しない。
+- AUDIENCE HistoryのSubjectはReservation.Bookerである。
 - HistoryはDomain Eventを契機として生成・更新する。
-- Database製品固有の物理設計はLogical ERでは定義しない。
