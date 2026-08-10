@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Reservation
 
-Version : 4.0
+Version : 5.0
 
 ---
 
@@ -120,6 +120,22 @@ BookerとCreatedByは異なる値を持つことができる。
 
 ---
 
+# General Reservation
+
+Reservationの作成は一般利用者が利用する公開Business Flowである。
+
+一般利用者は、
+対象Performanceに対してReservationを作成できる。
+
+Reservationの作成自体は、
+ProductionのPrimaryManagerまたはProductionDelegateによる
+管理権限の対象としない。
+
+ただし、販売期限を過ぎたPerformanceについては、
+新規予約を作成できない。
+
+---
+
 # Get Reservation
 
 ## Request
@@ -185,6 +201,48 @@ ReservationUpdatedを発行する。
 
 ---
 
+# Update Authorization
+
+Reservationの更新は、
+チケット販売期限およびReservationStatusによって制御する。
+
+## Before Ticket Sales Deadline
+
+チケット販売期限前で、
+ReservationStatusがCHECKED_INではない場合、
+一般予約者は自身のReservationを更新できる。
+
+一般予約者による更新は、
+Productionの管理権限を必要としない。
+
+一般予約者が更新できるのは、
+自身がBookerであるReservationとする。
+
+---
+
+## After Ticket Sales Deadline
+
+チケット販売期限を過ぎた場合、
+一般予約者によるReservationの更新はできない。
+
+チケット販売期限後のReservation更新は、
+Production単位の管理権限を持つ利用者のみ可能とする。
+
+管理権限は以下のいずれかによって付与される。
+
+- PrimaryManager
+- ProductionDelegate
+
+PrimaryManagerは対象Productionに対して
+全権限を持つ。
+
+ProductionDelegateは、
+対象Productionに設定されたDelegateRoleによって
+Reservation.Update Permissionが付与されている場合のみ、
+Reservationを更新できる。
+
+---
+
 # Update Restrictions
 
 Reservationの更新はCheck In前に限り可能とする。
@@ -205,6 +263,23 @@ Reservationを更新することはできない。
 
 CHECKED_INのReservationに対してUpdate APIを実行した場合、
 409 Conflictを返す。
+
+---
+
+# Update Authorization Decision
+
+Reservation Updateの実行可否は、
+以下の順序で判定する。
+
+1. Reservationが存在すること
+2. ReservationStatusがCHECKED_INではないこと
+3. 対象Performanceのチケット販売期限を確認する
+4. 販売期限前の場合は一般予約者による更新を許可する
+5. 販売期限後の場合はProduction Authorizationを確認する
+6. PrimaryManagerの場合は許可する
+7. ProductionDelegateの場合はDelegateRoleを確認する
+8. DelegateRoleにReservation.Update Permissionがある場合は許可する
+9. それ以外の場合は403 Forbiddenを返す
 
 ---
 
@@ -245,6 +320,23 @@ Check In完了後、
 Reservationは変更不可となる。
 
 ReservationはHistoryを管理しない。
+
+---
+
+# Check In Authorization
+
+Check Inは管理操作として扱う。
+
+Check Inを実行できる利用者は、
+対象Productionに対する管理権限を持つ必要がある。
+
+PrimaryManagerはCheck Inを実行できる。
+
+ProductionDelegateは、
+DelegateRoleにReservation.CheckIn Permissionが付与されている場合のみ
+Check Inを実行できる。
+
+一般予約者はCheck Inを実行できない。
 
 ---
 
@@ -320,6 +412,9 @@ PATCH /api/v1/reservations/{reservationId}/cancel
 
 ReservationはCheck In前であればキャンセルできる。
 
+ただし、チケット販売期限を過ぎたReservationを
+一般予約者がキャンセルすることはできない。
+
 キャンセルされたReservationは削除しない。
 
 ReservationStatusをCANCELLEDへ変更する。
@@ -332,6 +427,45 @@ ReservationCancelledを発行する。
 
 ---
 
+# Cancel Authorization
+
+## Before Ticket Sales Deadline
+
+チケット販売期限前で、
+ReservationStatusがCHECKED_INではない場合、
+一般予約者は自身のReservationをキャンセルできる。
+
+一般予約者によるキャンセルは、
+Productionの管理権限を必要としない。
+
+一般予約者がキャンセルできるのは、
+自身がBookerであるReservationとする。
+
+---
+
+## After Ticket Sales Deadline
+
+チケット販売期限を過ぎた場合、
+一般予約者によるReservationのキャンセルはできない。
+
+チケット販売期限後のReservationキャンセルは、
+Production単位の管理権限を持つ利用者のみ可能とする。
+
+管理権限は以下のいずれかによって付与される。
+
+- PrimaryManager
+- ProductionDelegate
+
+PrimaryManagerは対象Productionに対して
+全権限を持つ。
+
+ProductionDelegateは、
+対象Productionに設定されたDelegateRoleによって
+Reservation.Cancel Permissionが付与されている場合のみ、
+Reservationをキャンセルできる。
+
+---
+
 # Cancel Restrictions
 
 ReservationStatusがCHECKED_INの場合、
@@ -339,6 +473,23 @@ Reservationをキャンセルすることはできない。
 
 CHECKED_INのReservationに対してCancel APIを実行した場合、
 409 Conflictを返す。
+
+---
+
+# Cancel Authorization Decision
+
+Reservation Cancelの実行可否は、
+以下の順序で判定する。
+
+1. Reservationが存在すること
+2. ReservationStatusがCHECKED_INではないこと
+3. 対象Performanceのチケット販売期限を確認する
+4. 販売期限前の場合は一般予約者によるキャンセルを許可する
+5. 販売期限後の場合はProduction Authorizationを確認する
+6. PrimaryManagerの場合は許可する
+7. ProductionDelegateの場合はDelegateRoleを確認する
+8. DelegateRoleにReservation.Cancel Permissionがある場合は許可する
+9. それ以外の場合は403 Forbiddenを返す
 
 ---
 
@@ -369,18 +520,156 @@ Check In Portalでは、
 
 # Authorization
 
-Reservationの作成は認証済み利用者のみ可能とする。
+Reservationの作成は、
+一般利用者も利用可能なBusiness Flowとする。
 
-Reservationの更新・キャンセルは、
-認証済み利用者かつ許可されたRoleを持つ利用者のみ可能とする。
+Reservationの作成は、
+ProductionのPrimaryManagerまたはProductionDelegateによる
+管理権限を必須としない。
 
-予約一覧・受付・更新は
-Organization Membershipによって認可する。
+Reservationの取得・更新・キャンセル・Check Inについては、
+操作内容に応じてAuthorizationを行う。
 
-Roleに応じて利用可能な操作を制御する。
+## General User
 
-CreatedByおよびUpdatedByには、
-実際にAPI操作を実行した認証済み利用者を設定する。
+一般予約者は、
+自身のReservationについて以下を実行できる。
+
+チケット販売期限前
+
+- Reservation.Create
+- Reservation.Read
+- Reservation.Update
+- Reservation.Cancel
+
+チケット販売期限後
+
+- Reservation.Read
+
+チケット販売期限後は、
+一般予約者によるUpdateおよびCancelを禁止する。
+
+---
+
+## PrimaryManager
+
+PrimaryManagerは、
+対象Productionに対して全権限を持つ。
+
+したがって、対象Productionに属するReservationについて、
+
+- Reservation.Read
+- Reservation.Update
+- Reservation.Cancel
+- Reservation.CheckIn
+
+を実行できる。
+
+PrimaryManagerはDelegateRoleによる制限を受けない。
+
+---
+
+## ProductionDelegate
+
+ProductionDelegateは、
+対象Productionに設定されたDelegateRoleによって
+Reservation関連Permissionを付与される。
+
+例
+
+- Reservation.Read
+- Reservation.Update
+- Reservation.Cancel
+- Reservation.CheckIn
+
+DelegateRoleに定義されていない操作は実行できない。
+
+---
+
+# Production Authorization Scope
+
+Reservationの管理Authorizationは、
+Reservationが所属するPerformanceを経由して
+Productionを特定する。
+
+Reservation
+    ↓
+Performance
+    ↓
+Production
+    ↓
+PrimaryManager / ProductionDelegate
+    ↓
+DelegateRole
+
+Organization Membershipと
+Production単位の管理権限は分離する。
+
+Organization Membershipを持っていることだけを理由として、
+Production上のReservation管理権限を自動的に付与しない。
+
+---
+
+# Reservation Management Permissions
+
+ProductionDelegateに付与可能なReservation関連Permissionは以下とする。
+
+- Reservation.Read
+- Reservation.Update
+- Reservation.Cancel
+- Reservation.CheckIn
+
+Reservation.Createは、
+一般予約にも利用されるため、
+ProductionDelegateの基本Permissionには含めない。
+
+管理者による代理予約作成が将来必要になった場合は、
+別途Permissionとして追加する。
+
+---
+
+# Ticket Sales Deadline
+
+チケット販売期限は、
+Performanceに設定されたBusiness Ruleとして扱う。
+
+Reservation UpdateおよびCancelのAuthorizationでは、
+対象ReservationのPerformanceに設定された
+チケット販売期限を参照する。
+
+販売期限前
+
+- 一般予約者によるUpdateを許可する。
+- 一般予約者によるCancelを許可する。
+
+販売期限後
+
+- 一般予約者によるUpdateを禁止する。
+- 一般予約者によるCancelを禁止する。
+- Production管理者によるUpdateを許可する。
+- Production管理者によるCancelを許可する。
+
+PrimaryManagerは全権限を持つ。
+
+ProductionDelegateはDelegateRoleに定義された
+Permissionの範囲で操作できる。
+
+---
+
+# CreatedBy / UpdatedBy
+
+CreatedByには、
+実際にReservationを作成した認証済み利用者を設定する。
+
+UpdatedByには、
+実際にReservationを最後に変更した認証済み利用者を設定する。
+
+一般予約者による操作であっても、
+CreatedByおよびUpdatedByには実際の操作主体を記録する。
+
+管理者が代理操作した場合も、
+Bookerとは別にCreatedByまたはUpdatedByへ
+実際の操作主体を記録する。
 
 ---
 
@@ -427,6 +716,9 @@ Business ProcessはDomain Eventを契機として開始する。
 - 既にCheck In済みのReservationを再度Check Inしようとした場合
 - CANCELLEDのReservationをCheck Inしようとした場合
 
+販売期限後に一般予約者がUpdateまたはCancelを実行した場合は、
+Business RuleによるAuthorization違反として403 Forbiddenを返す。
+
 ---
 
 # Reservation Change and Seat Adjustment
@@ -437,7 +729,7 @@ Reservation Countを変更する場合、
 例えば、
 
 2名
-    ↓
+↓
 3名
 
 へ変更した場合、
@@ -461,26 +753,44 @@ Reservation CountとReservationSeatの整合性が
 Reservationの基本的な状態遷移
 
 RESERVED
-    │
-    ├── Update
-    │      ↓
-    │   RESERVED
-    │
-    ├── Cancel
-    │      ↓
-    │   CANCELLED
-    │
-    └── Check In
-           ↓
-       CHECKED_IN
+│
+├── Update
+│   ↓
+│  RESERVED
+│
+├── Cancel
+│   ↓
+│  CANCELLED
+│
+└── Check In
+    ↓
+   CHECKED_IN
 
 CHECKED_IN
-    │
-    └── 変更不可
+└── 変更不可
 
 CANCELLED
-    │
-    └── Check In不可
+└── Check In不可
+
+販売期限はReservationStatusとは別の
+Business Ruleとして扱う。
+
+販売期限前
+
+RESERVED
+├── 一般予約者 Update
+└── 一般予約者 Cancel
+
+販売期限後
+
+RESERVED
+├── 一般予約者 Update不可
+├── 一般予約者 Cancel不可
+├── PrimaryManager Update可
+├── PrimaryManager Cancel可
+├── ProductionDelegate Update可
+└── ProductionDelegate Cancel可
+    └── DelegateRole Permissionによる
 
 ---
 
@@ -492,11 +802,11 @@ ReservationCheckedInを契機として、
 History DomainがAudience Historyを生成する。
 
 Reservation
-    ↓
+↓
 ReservationCheckedIn
-    ↓
+↓
 History Domain
-    ↓
+↓
 Audience History
 
 ReservationCreated、
@@ -515,6 +825,10 @@ Audience Historyを生成しない。
 - 招待予約
 - 団体予約
 - QRコード再発行
+
+管理者による代理予約作成が必要になった場合、
+Reservation.CreateをProductionDelegateのPermissionとして
+追加できる構造とする。
 
 Aggregate構造は変更しない。
 
@@ -544,6 +858,24 @@ Aggregate構造は変更しない。
 - Check In前にProductionおよびPerformanceを選択する。
 - ReservationのPerformanceと受付中Performanceが一致しない場合はCheck Inできない。
 - ReservationはHistoryを管理しない。
+- Reservationの作成は一般利用者も利用できる。
+- Reservationの作成にProduction管理権限を要求しない。
+- チケット販売期限前は一般予約者が自身のReservationを変更できる。
+- チケット販売期限前は一般予約者が自身のReservationをキャンセルできる。
+- チケット販売期限後は一般予約者によるReservation変更を禁止する。
+- チケット販売期限後は一般予約者によるReservationキャンセルを禁止する。
+- チケット販売期限後のReservation変更はProduction管理権限を要求する。
+- チケット販売期限後のReservationキャンセルはProduction管理権限を要求する。
+- PrimaryManagerは対象Productionに対して全権限を持つ。
+- ProductionDelegateはDelegateRoleによって権限を制限する。
+- Reservation.ReadはProductionDelegateに付与可能なPermissionである。
+- Reservation.UpdateはProductionDelegateに付与可能なPermissionである。
+- Reservation.CancelはProductionDelegateに付与可能なPermissionである。
+- Reservation.CheckInはProductionDelegateに付与可能なPermissionである。
+- Reservation.Createは一般予約にも利用されるためProductionDelegateの基本Permissionには含めない。
+- Reservationの管理AuthorizationはPerformanceからProductionを特定して判定する。
+- Organization MembershipとProduction単位の管理権限を分離する。
+- CreatedByおよびUpdatedByには実際にAPI操作を実行した認証済み利用者を設定する。
 - APIはDomain Eventを契機とするBusiness Processから分離される。
 - Business RuleはDomain Layerが管理する。
 - APIはRESTを採用する。
