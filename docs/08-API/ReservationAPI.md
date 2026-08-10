@@ -20,7 +20,6 @@ APIはApplication Layerの公開インターフェースとして機能する。
 
 ---
 
-
 # Resource
 
 ReservationはPerformance配下のResourceとして公開する。
