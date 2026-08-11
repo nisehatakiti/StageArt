@@ -2,7 +2,7 @@
 
 # Domain Model : Production
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -130,26 +130,63 @@ CategoryとGenreは別の属性として管理する。
 
 # History
 
-HistoryはProductionにとって必須の関連Domainである。
+HistoryはProductionに所属する子Entityではない。
 
-Productionは、
-公演終了後も削除せず、
-過去の公演履歴として保持する。
+HistoryはStageArt上で発生した活動Factから
+自動生成される独立Domainである。
 
-ProductionはHistory生成の基点となる。
+ProductionはHistoryの生成元となる
+Business Factを提供する。
 
-Productionに関連するHistoryには、
+例えば、
 
-- 公演履歴
-- 出演履歴
-- スタッフ履歴
-- 観劇履歴
-- その他Productionに関連する活動履歴
+- Productionへの参加
+- Performanceでの観劇
+- その他Productionに関連する活動
 
-などが含まれる。
+などがHistory生成の対象となる。
 
-HistoryはProductionに直接埋め込むのではなく、
-History Domainとして管理する。
+HistoryはProductionへ直接埋め込まない。
+
+HistoryはHistory Domainとして管理する。
+
+ProductionからHistoryを直接作成・編集・削除しない。
+
+---
+
+# History Relationship
+
+ProductionとHistoryの関係は、
+所有関係ではなく関連関係として扱う。
+
+基本構造：
+
+Production
+  ↓
+Activity Fact
+  ↓
+Domain Event
+  ↓
+History
+
+例えば、
+
+Participant
+  ↓
+ParticipantAdded
+  ↓
+Participation History
+
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Audience History
+
+となる。
+
+Historyの具体的な管理ルールは
+History Domainで定義する。
 
 ---
 
@@ -158,7 +195,19 @@ History Domainとして管理する。
 Productionには複数のParticipantを登録できる。
 
 Participantは、
-PersonがProductionへ参加するというFactを表す。
+SubjectがProductionへ参加するというFactを表す。
+
+SubjectはPersonまたはOrganizationを参照できる。
+
+基本構造：
+
+Production
+  ↓
+Participant
+  ↓
+Subject
+  ├── Person
+  └── Organization
 
 Participant Typeによって、
 Productionへの参加区分を表現する。
@@ -209,6 +258,26 @@ Organization RoleとParticipant Typeは独立して管理する。
 
 ---
 
+# Participant and History
+
+ParticipantがProductionへの参加Factを表す。
+
+Participantが追加された場合、
+
+ParticipantAdded
+  ↓
+History
+
+としてParticipation Historyを生成できる。
+
+HistoryのSubjectは、
+ParticipantのSubjectを基準とする。
+
+ParticipantRemovedによって、
+過去に生成されたHistoryを削除しない。
+
+---
+
 # Performance
 
 Productionは複数のPerformanceを持つことができる。
@@ -223,6 +292,17 @@ Performanceは、
 - 8/2 13:00
 
 チケット予約はPerformance単位で管理する。
+
+基本構造：
+
+Production
+  ↓
+Performance
+  ↓
+Reservation
+
+Performanceの詳細な管理ルールは
+Performance Domainで定義する。
 
 ---
 
@@ -266,6 +346,9 @@ Reservation
 ReservationはProductionから直接予約するものではなく、
 Performanceを対象として管理する。
 
+Reservationの詳細な管理ルールは
+Reservation Domainで定義する。
+
 ---
 
 # Audience
@@ -273,14 +356,118 @@ Performanceを対象として管理する。
 一般観客は、
 StageArtのInternal Portalへ参加する必要はない。
 
+一般観客について、
+Personを必ず作成する必要はない。
+
 ただし、
+
 StageArtでユーザー登録を行い、
 チケットを購入・予約したPersonは、
 自身の観劇履歴を確認できる。
 
-一般観客としての予約情報と、
-StageArtユーザーとしてのPersonは、
-必要に応じて関連付ける。
+登録ユーザーの観劇履歴は、
+History Domainで管理する。
+
+---
+
+# Audience History
+
+Audience Historyは、
+Reservationそのものから生成しない。
+
+予約しただけでは、
+観劇履歴として扱わない。
+
+Check Inが完了した時点で、
+観劇実績として扱う。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Audience History
+
+Audience HistoryのSubjectは、
+ReservationのBookerを基本とする。
+
+HandledParticipantは、
+Audience HistoryのSubjectにはならない。
+
+CreatedByは、
+Audience HistoryのSubjectにはならない。
+
+UpdatedByは、
+Audience HistoryのSubjectにはならない。
+
+---
+
+# Check In and Accounting
+
+Check Inが完了すると、
+CheckInCompletedが発行される。
+
+CheckInCompletedは、
+観劇実績の確定だけでなく、
+チケット売上を会計へ連携する契機となる。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ├── History
+  │     └── Audience History
+  │
+  └── Accounting
+        └── Journal Entry
+
+Production Domainは、
+仕訳そのものを管理しない。
+
+Accounting Domainが、
+CheckInCompletedなどのBusiness Factを受け取り、
+必要なJournal Entryを生成する。
+
+---
+
+# Ticket Revenue
+
+チケット売上は、
+チケットを予約した時点では
+正式な会計上の売上として確定しない。
+
+Check Inが完了し、
+CheckInCompletedが発生した時点で、
+チケット売上を会計へ連携する。
+
+基本Flow：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Journal Entry
+
+具体的な勘定科目やDebit / Creditの処理は、
+Accounting Domainで定義する。
 
 ---
 
@@ -336,7 +523,8 @@ Google Calendar連携
 Google Calendarへの連携は、
 稽古参加者だけを対象とするものではない。
 
-Google Calendar連携の詳細はRehearsal Domainで定義する。
+Google Calendar連携の詳細は
+Rehearsal Domainで定義する。
 
 ---
 
@@ -405,6 +593,12 @@ Production
 
 などを確認できる。
 
+Production Actualは、
+Production単位の予実管理を目的とする。
+
+正式なOrganization会計の仕訳は、
+Accounting Domainで管理する。
+
 ---
 
 # Accounting Relationship
@@ -426,7 +620,15 @@ Production Budget / Production Actual
 は責務を分離する。
 
 必要に応じて、
-Productionの会計情報をOrganization Accountingへ連携する。
+Productionに関連する会計Factを
+Organization Accountingへ連携する。
+
+CheckInCompletedによって確定した
+チケット売上についても、
+Accounting Domainへ連携する。
+
+Production自身は、
+Journal Entryを直接管理しない。
 
 ---
 
@@ -499,6 +701,9 @@ Announcementの対象者は、
 管理者または適切な権限を持つDelegateが、
 Productionに関するAnnouncementを作成できる。
 
+Announcementの詳細な管理ルールは
+Announcement Domainで定義する。
+
 ---
 
 # Social Post
@@ -544,6 +749,9 @@ PrimaryManagerは、
 Productionに関する全管理権限を持つ。
 
 PrimaryManagerにはDelegateRoleを設定しない。
+
+PrimaryManagerは、
+Organization Roleとは別の概念である。
 
 ---
 
@@ -652,253 +860,302 @@ Productionの公開情報には、
 - 公演タイトル
 - キャッチコピー
 - あらすじ
+- 公演日時
+- 会場
+- 出演者
+- スタッフ
+- チケット情報
 - 公演画像
-- 公演期間
-- 公演ステータス
-- 公開URL
-- Category
-- Genre
-- 出演者・スタッフなどの公開情報
+- その他公開情報
 
 などを含めることができる。
 
-内部管理情報は公開しない。
-
-例えば、
-
-- 管理権限
-- 会計情報
-- 内部Document
-- 内部Announcement
-- その他内部情報
-
-などは一般公開しない。
+公開情報は、
+Production Public Pageから参照できる。
 
 ---
 
-# Search
+# Production Public Page
 
-Productionは検索対象となる。
+Production Public Pageは、
+一般観客向けにProductionを公開するための
+Presentation / Public Resourceである。
 
-検索条件の例：
+Production Public Pageは、
+Productionそのものとは別の表示モデルとして扱う。
 
-- キーワード
-- Category
-- Genre
-- 出演者
-- 劇団
-- 開催地域
-- 開催期間
-
-Productionの公開情報のみを検索対象とする。
-
-内部管理情報は検索結果へ公開しない。
+Productionの正本情報はProduction Domainが保持する。
 
 ---
 
-# Lifecycle
+# Production Status
 
-Productionは以下のLifecycleを持つ。
+Productionの公開状態と
+Productionそのものの存在を混同しない。
 
-- DRAFT
-- PRIVATE
-- PUBLISHED
-- CLOSED
-- ARCHIVED
+ProductionがCLOSEDまたはARCHIVEDになっても、
+過去のProduction Factを削除しない。
 
-Production終了後も削除しない。
-
-過去の公演情報として保持する。
+過去のProductionは、
+必要に応じて参照可能な状態を維持する。
 
 ---
 
-# History Generation
+# Archive
 
-Productionに関連するFactから、
-Historyを生成・更新する。
+Productionは、
+公演終了後も削除しない。
 
-例：
+公演終了後は、
+必要に応じてARCHIVEDとして管理する。
 
-Participant
-  ↓
-出演・スタッフ履歴
+ProductionをArchiveしても、
 
-Reservation
-  ↓
-Check In
-  ↓
-観劇履歴
+- Participant
+- Performance
+- Reservation
+- Issued Ticket
+- Check In
+- Budget
+- Production Actual
+- History
 
-Production
-  ↓
-公演履歴
-
-Historyは、
-各Factを直接書き換えることで管理しない。
-
----
-
-# Business Rules
-
-- ProductionはProjectに所属する。
-- Productionは具体的な公演を表す。
-- Productionは公開情報を管理する。
-- CategoryはProductionの属性として管理する。
-- GenreはProductionの属性として管理する。
-- HistoryはProductionにとって必須の関連Domainである。
-- Production終了後も削除しない。
-- ParticipantをProductionに関連付ける。
-- Participant Typeとしてキャストとスタッフを管理する。
-- Participant TypeとOrganization Roleを分離する。
-- PerformanceはProductionに所属する。
-- ReservationはPerformance単位で管理する。
-- TicketTypeとPriceの組み合わせをProductionごとに管理する。
-- RehearsalはProductionに関連付ける。
-- RehearsalはRehearsal Candidateから作成できる。
-- Rehearsalは単独でも作成できる。
-- TimetableはProductionに関連付ける。
-- BudgetはProduction単位で管理する。
-- Productionには複数のBudgetを持つことができる。
-- Budgetには利用者が簡単な名称を設定できる。
-- Production ActualはProduction単位で管理する。
-- BudgetとProduction Actualを比較して予実を確認できる。
-- Organization AccountingとProduction予実管理は責務を分離する。
-- DocumentはProductionに関連付けられる。
-- Documentの実ファイルはGoogle Drive等の外部ストレージで管理できる。
-- 情報共有ではOrganization RoleとParticipant Typeを参照できる。
-- ProductionにはAnnouncementを作成できる。
-- Social Postは投稿画面を提供する。
-- Social Postの投稿内容はStageArt内で管理しない。
-- Seatsは将来実装する。
-- PrimaryManagerはProductionの全管理権限を持つ。
-- ProductionDelegateはProduction単位の権限を持つ。
-- Organization RoleとProductionDelegateは別の権限体系である。
-- PUBLISHEDとなったProductionを一般観客へ公開する。
-- 内部管理情報を一般公開しない。
-- ProductionはHistory生成の基点となる。
+などの過去Factを削除しない。
 
 ---
 
 # Domain Events
 
-Productionに関する主なDomain Event：
+Productionに関連する主なDomain Event：
 
 - ProductionCreated
 - ProductionUpdated
 - ProductionPublished
 - ProductionClosed
 - ProductionArchived
-- PrimaryManagerAssigned
-- PrimaryManagerChanged
-- ProductionDelegateAssigned
-- ProductionDelegateChanged
-- ProductionDelegateRemoved
 
-Participant、Performance、Reservation、Rehearsal、Budgetなどの
-Eventは各Domainで定義する。
+Productionに関連するBusiness Event：
+
+Participant Domain：
+
+- ParticipantAdded
+- ParticipantUpdated
+- ParticipantRemoved
+
+Check In Domain：
+
+- CheckInCompleted
+
+これらのEventを契機として、
+History DomainやAccounting Domainなどが
+必要な処理を行う。
+
+Production Domain自身が、
+他DomainのFactを直接生成・編集しない。
+
+---
+
+# Business Rules
+
+Productionは必ず一つのProjectに所属する。
+
+ProductionはProductionIdによって識別する。
+
+ProductionIdは変更しない。
+
+Production Titleは識別子ではない。
+
+CategoryはProductionの属性である。
+
+GenreはProductionの属性である。
+
+CategoryとGenreは別の属性として管理する。
+
+Productionには複数のParticipantを登録できる。
+
+ParticipantのSubjectはPersonまたはOrganizationを参照できる。
+
+Participant TypeはProductionへの参加区分を表す。
+
+Organization RoleとParticipant Typeを混同しない。
+
+Productionは複数のPerformanceを持つことができる。
+
+ReservationはPerformance単位で管理する。
+
+ProductionごとにTicket Type / Price Masterを管理する。
+
+RehearsalはProductionに関連付ける。
+
+RehearsalはRehearsal Candidateから作成できる。
+
+RehearsalはCandidateを経由せず直接作成できる。
+
+TimetableはProductionに関連付ける。
+
+Productionには複数のBudgetを作成できる。
+
+BudgetはProductionの複数の計画案を管理する。
+
+Production ActualはProduction単位の実績管理を行う。
+
+正式な会計仕訳はAccounting Domainで管理する。
+
+CheckInCompletedはチケット売上をAccounting Domainへ連携する契機となる。
+
+Production自身はJournal Entryを管理しない。
+
+HistoryはProductionの子Entityではない。
+
+Historyは独立Domainとして管理する。
+
+ProductionはHistory生成の元となるFactを提供する。
+
+ParticipantAddedを契機としてParticipation Historyを生成できる。
+
+CheckInCompletedを契機としてAudience Historyを生成する。
+
+Audience HistoryのSubjectはReservation.Bookerを基本とする。
+
+HandledParticipantはAudience HistoryのSubjectにならない。
+
+CreatedByはAudience HistoryのSubjectにならない。
+
+UpdatedByはAudience HistoryのSubjectにならない。
+
+ReservationCreatedだけではAudience Historyを生成しない。
+
+ReservationUpdatedだけではAudience Historyを生成しない。
+
+ReservationCancelledだけではAudience Historyを生成しない。
+
+Social Postは投稿画面を提供する。
+
+Social Postの投稿内容をStageArtの正本として管理しない。
+
+SeatsはVersion 1.0では実装しない。
+
+PrimaryManagerはProductionに対する全管理権限を持つ。
+
+ProductionDelegateはProduction単位の権限委任を表す。
+
+Organization RoleとProduction Delegateを混同しない。
+
+Productionは公演終了後も削除せずArchiveできる。
+
+ProductionのArchiveによって過去Factを削除しない。
 
 ---
 
 # Design Decisions
 
 Productionは、
-Projectに所属する具体的な公演を表す。
+StageArtにおける具体的な公演単位を表す。
 
-Productionは公開情報の中心となるDomainである。
+ProductionはProjectに所属し、
+ProjectはOrganizationに所属する。
 
-CategoryとGenreはProductionの属性として保持する。
+基本構造：
 
-Historyは必須の関連Domainとして扱う。
+Organization
+  ↓
+Project
+  ↓
+Production
 
-ParticipantはProductionへの参加というFactを表す。
+CategoryとGenreはProduction自身の属性として保持する。
 
-Participant Typeは、
+Productionへの参加はParticipantで管理する。
 
-- キャスト
-- スタッフ
+ParticipantはSubjectを参照し、
+SubjectはPersonまたはOrganizationとなることができる。
 
-を基本とする。
+Productionの個別公演回はPerformanceで管理する。
 
-Organization Roleとは明確に分離する。
+チケット予約はPerformance単位で管理する。
 
-TicketはProductionごとに
-TicketTypeとPriceの組み合わせを管理する。
+TicketはProductionごとの
+Ticket Type / Price Masterとして管理する。
 
-BudgetはProduction単位で管理し、
-複数の予算案を保持できる。
+稽古はProductionに関連付ける。
 
-Production Actualは実績を表し、
-Budgetと比較して予実を確認できる。
+BudgetはProduction単位で複数作成でき、
+複数の計画案を比較できる。
 
-RehearsalはProductionに関連付けるが、
-Rehearsal Candidateを経由する場合と
-直接作成する場合の両方を許可する。
+Production Actualは公演単位の予実管理を行う。
 
-DocumentはGoogle Drive等の外部ストレージと連携する。
+正式な会計仕訳はAccounting Domainで管理する。
 
-Social Postは投稿機能のみを提供し、
-投稿内容をStageArt内の正本として管理しない。
+CheckInCompletedによって、
+チケット売上をAccounting Domainへ連携する。
+
+HistoryはProductionの子Entityではなく、
+独立Domainとして管理する。
+
+StageArt上の活動Factから生成されるHistoryと、
+本人がProfileへ入力するHistoricalActivityは
+別の概念として扱う。
+
+ProductionからHistoryを直接作成・編集しない。
+
+一般観客はPersonを必須とせず、
+StageArtユーザーとして登録された観客は
+自身のAudience Historyを参照できる。
+
+Social Postは投稿画面を提供するが、
+投稿内容そのものをStageArtの正本として管理しない。
 
 Seatsは将来実装する。
 
-Production単位の管理権限は、
-PrimaryManagerおよびProductionDelegateによって管理する。
+PrimaryManagerはProductionに対する全管理権限を持つ。
 
-Organization全体の権限はRoleで管理し、
-Production単位の権限とは分離する。
+ProductionDelegateは、
+Production単位で管理権限を委任する。
 
----
-
-# Future
-
-将来的に以下へ対応できる構造とする。
-
-- Seats
-- 座席指定
-- 配信公演
-- 公演シリーズ
-- 関連作品
-- レビュー
-- ファンクラブ限定公開
-- 高度な公演分析
-- 高度な予実分析
-- SNS連携の拡張
-
-ただし、
-将来機能を実装する場合も、
-既存のProduction Domainの責務を不必要に拡張しない。
+Organization RoleはOrganization Context、
+Production DelegateはProduction Contextで判定する。
 
 ---
 
 # Design Principles
 
-- ProductionはProjectに所属する。
 - Productionは具体的な公演を表す。
-- Productionは公開情報の中心となる。
-- CategoryとGenreはProductionの属性である。
-- Historyは必須の関連Domainである。
+- ProductionはProjectに所属する。
+- ProjectはOrganizationに所属する。
+- CategoryはProductionの属性である。
+- GenreはProductionの属性である。
+- CategoryとGenreを分離する。
 - ParticipantはProductionへの参加Factを表す。
+- ParticipantのSubjectはPersonまたはOrganizationである。
 - Participant TypeとOrganization Roleを分離する。
-- キャストとスタッフはParticipant Typeで管理する。
-- PerformanceはProductionに所属する。
+- Productionは複数のPerformanceを持つ。
 - ReservationはPerformance単位で管理する。
-- TicketTypeとPriceの組み合わせをProductionごとに管理する。
+- Ticket Type / PriceはProduction単位のMasterとして管理する。
 - RehearsalはProductionに関連付ける。
-- Rehearsalは候補日経由でも単独でも作成できる。
+- RehearsalはCandidateから作成できる。
+- RehearsalはCandidateを経由せず直接作成できる。
 - TimetableはProductionに関連付ける。
-- BudgetはProduction単位で管理する。
-- Production Actualによって実績を管理する。
-- BudgetとProduction Actualによって予実を確認する。
+- BudgetはProduction単位で複数作成できる。
+- Production Actualは公演単位の実績を管理する。
 - Organization AccountingとProduction予実管理を分離する。
-- Documentは外部ストレージと連携できる。
-- Google DriveをDocumentの外部保存先として利用できる。
-- AnnouncementはProduction関係者へ共有できる。
-- Social Postは投稿機能として提供する。
-- Social Postの投稿内容をStageArt内で管理しない。
+- CheckInCompletedをチケット売上のAccounting連携契機とする。
+- Production自身はJournal Entryを管理しない。
+- HistoryはProductionの子Entityではない。
+- Historyは独立Domainとして管理する。
+- ProductionはHistory生成の元となるFactを提供する。
+- ParticipantAddedからParticipation Historyを生成できる。
+- CheckInCompletedからAudience Historyを生成する。
+- Audience HistoryのSubjectはReservation.Bookerである。
+- HandledParticipantはAudience HistoryのSubjectにならない。
+- CreatedByはAudience HistoryのSubjectにならない。
+- UpdatedByはAudience HistoryのSubjectにならない。
+- 予約と観劇実績を分離する。
+- Social Postは投稿画面のみを提供する。
+- Social Postの投稿内容をStageArtの正本として管理しない。
 - Seatsは将来実装する。
-- PrimaryManagerはProductionの全権限を持つ。
-- ProductionDelegateはProduction単位の権限を持つ。
-- Organization RoleとProduction単位の権限を分離する。
-- Productionは終了後も削除しない。
-- ProductionはHistory生成の基点となる。
+- PrimaryManagerはProduction全権限を持つ。
+- ProductionDelegateはProduction単位の権限委任を表す。
+- Organization RoleとProduction Delegateを分離する。
+- Production終了後もProductionを削除しない。
+- Archiveによって過去Factを削除しない。
 - Blueprintを唯一の設計基準とする。
