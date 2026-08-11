@@ -1,102 +1,344 @@
 # StageArt Blueprint
+
 # Domain Model : Membership
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
-MembershipはPersonとOrganizationの所属関係を管理するドメインである。
+Membershipは、
+PersonとOrganizationの所属関係を表すDomainである。
 
-StageArtではPersonとOrganizationを直接関連付けない。
+StageArtでは、
+PersonとOrganizationを直接関連付けない。
 
-所属という事実はすべてMembershipによって表現する。
+所属という事実は、
+Membershipによって表現する。
 
 ---
 
 # Concept
 
-Membershipは
+Membershipは、
 
+```text
 Person
-
-↓
-
+    ↓
+Membership
+    ↓
 Organization
+```
 
-の関係を表す。
+という関係を表す。
 
-Personは複数Organizationへ所属できる。
+Personは複数のOrganizationへ所属できる。
 
-Organizationは複数Personを持つことができる。
+Organizationは複数のPersonを所属させることができる。
+
+同一Personが複数のOrganizationへ所属することもできる。
 
 ---
 
 # Identity
 
-MembershipはMembershipIDによって一意に識別する。
+MembershipはMembershipIdによって一意に識別する。
 
-PersonIDとOrganizationIDは識別子ではない。
+PersonIdとOrganizationIdの組み合わせを
+Membershipの識別子とはしない。
 
-同一Personが同一Organizationへ複数回所属する場合もあるため、
+Membership自身が独立したIdentityを持つ。
 
-Membership単位で履歴を管理する。
+これにより、
+同一Personの同一Organizationにおける
+所属履歴や状態変更を管理できる。
+
+---
+
+# Organization Scope
+
+Membershipは一つのOrganizationに所属する。
+
+```text
+Membership
+    ├── Person
+    └── Organization
+```
+
+MembershipはOrganizationをまたいで共有しない。
+
+Personが複数Organizationに所属する場合も、
+Organizationごとに別のMembershipを持つ。
 
 ---
 
 # Role
 
-MembershipはRoleを保持する。
+Membershipには、
+そのOrganizationにおけるPersonのRoleが関連する。
 
-例）
+同じPersonでも、
+Organizationごとに異なるRoleを持つことができる。
 
-- Owner
-- Administrator
-- Manager
-- Member
+例：
 
-Roleは権限を表す。
+```text
+Person A
+
+    Membership
+        Organization = 劇団A
+        Role = Administrator
+
+    Membership
+        Organization = 劇団B
+        Role = Cast
+```
+
+RoleはOrganization Contextにおける権限・役割を表す。
+
+PersonがどのOrganizationを利用しているかによって、
+適用されるRoleが変わる。
 
 ---
 
-# Status
+# Organization Context
+
+StageArtでは、
+Personが複数のOrganizationに所属できる。
+
+利用者がOrganizationを切り替えた場合、
+そのOrganizationに対するMembershipとRoleに基づいて
+利用可能な機能・権限を決定する。
+
+例：
+
+```text
+Person
+    │
+    ├── Membership
+    │      └── Organization A
+    │             └── Role = Administrator
+    │
+    └── Membership
+           └── Organization B
+                  └── Role = Cast
+```
+
+Organization Aを利用している場合はAdministratorとして扱い、
+Organization Bを利用している場合はCastとして扱う。
+
+RoleをPerson自身の属性として保持してはならない。
+
+---
+
+# Membership Status
 
 Membershipは以下の状態を持つ。
 
-- Invited
-- Active
-- Suspended
-- Left
-
-退団した場合はLeftとなる。
-
-削除は行わない。
+- REQUESTED
+- INVITED
+- ACTIVE
+- SUSPENDED
+- LEFT
+- REJECTED
 
 ---
 
-# Period
+# Requested
 
-Membershipは所属期間を保持する。
+PersonがOrganizationへの所属を申請した状態。
 
-- JoinDate
-- LeaveDate
+```text
+Person
+    ↓
+Membership Request
+    ↓
+Membership
+    ↓
+REQUESTED
+```
 
-LeaveDateが設定されることで、
+Organization側の権限を持つ利用者が承認すると、
+ACTIVEへ遷移する。
 
-過去の所属履歴を保持できる。
+---
+
+# Invited
+
+Organization側からPersonへ
+所属招待を行った状態。
+
+招待を受けたPersonが承認すると、
+ACTIVEへ遷移する。
+
+---
+
+# Active
+
+Organizationへの所属が有効な状態。
+
+ACTIVEのMembershipを持つPersonは、
+そのOrganizationのRoleに従って
+Organization内の機能を利用できる。
+
+---
+
+# Suspended
+
+一時的にOrganizationの利用・所属を停止している状態。
+
+Membership自体は削除しない。
+
+---
+
+# Left
+
+Organizationから退会・退団した状態。
+
+過去の所属履歴を保持するため、
+Membershipを削除しない。
+
+---
+
+# Rejected
+
+所属申請または招待が拒否された状態。
+
+過去の申請・招待の事実を保持するため、
+Membershipそのものを物理削除しない。
+
+---
+
+# Membership Request
+
+Personは、
+自分が所属したいOrganizationへ
+所属申請を行うことができる。
+
+基本的なFlow：
+
+```text
+Person
+    ↓
+Organizationを選択
+    ↓
+所属申請
+    ↓
+Membership = REQUESTED
+    ↓
+Organization管理者が確認
+    ↓
+承認
+    ↓
+Membership = ACTIVE
+```
+
+Organization側から招待する場合は、
+
+```text
+Organization
+    ↓
+Personを招待
+    ↓
+Membership = INVITED
+    ↓
+Personが承認
+    ↓
+Membership = ACTIVE
+```
+
+とする。
+
+---
+
+# Approval
+
+REQUESTEDのMembershipをACTIVEへ変更するには、
+Organization側の適切な権限を持つPersonによる承認が必要。
+
+承認者は監査情報として記録できるようにする。
 
 ---
 
 # Invitation
 
-OrganizationはPersonを招待できる。
+Organizationは、
+PersonをOrganizationへ招待できる。
 
-招待時、
+招待によってMembershipを作成し、
+INVITED状態とする。
 
-MembershipはInvited状態となる。
+Personが招待を承認するとACTIVEへ遷移する。
 
-本人が承認するとActiveとなる。
+---
+
+# Membership Period
+
+Membershipは所属期間を管理する。
+
+基本情報：
+
+- JoinDate
+- LeaveDate
+
+ACTIVEとなった時点をJoinDateとして記録する。
+
+LEFTとなった場合はLeaveDateを記録する。
+
+過去のMembershipを削除することなく、
+所属履歴として保持する。
+
+---
+
+# Membership History
+
+Membership自身が所属というFactを表す。
+
+Personから見ると、
+
+- 所属Organization
+- 所属期間
+- OrganizationごとのRole
+
+を確認できる。
+
+Organizationから見ると、
+
+- 現在のメンバー
+- 過去のメンバー
+- 所属期間
+- Organization内Role
+
+を確認できる。
+
+---
+
+# Authorization
+
+MembershipはOrganization Contextにおける
+Authorizationの基礎となる。
+
+ただし、
+Membershipそのものがすべての権限ロジックを実装するわけではない。
+
+RoleおよびDelegateRoleによって、
+具体的な権限を決定する。
+
+```text
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Authorization
+```
+
+Production単位の権限については、
+ProductionDelegateを利用する。
 
 ---
 
@@ -104,54 +346,185 @@ MembershipはInvited状態となる。
 
 OrganizationのOwnerもMembershipとして管理する。
 
-OwnerはOrganization固有の情報ではない。
+OwnerはPerson自身の属性ではない。
 
-Roleによって表現する。
+Organizationに対するMembershipのRoleによって、
+Ownerとしての権限を表現する。
+
+Ownerが変更された場合も、
+Membership / Roleの変更として管理できる。
 
 ---
 
-# History
+# Public Information
 
-Membershipは所属履歴を保持する。
+Membershipそのものは内部情報である。
 
-Personから見ると
+Membershipの詳細情報や権限情報を
+一般公開してはならない。
 
-- 所属劇団履歴
+Organization Public Profileに
+メンバーを掲載する場合は、
+公開対象として選択されたPersonのみを表示する。
 
-Organizationから見ると
+公開情報として、
 
-- 所属メンバー履歴
+- Personの公開Profile
+- Organization内での公開Role
+- その他公開対象情報
 
-として利用される。
+などを表示できる。
+
+ただし、
+内部権限や管理情報を公開しない。
+
+---
+
+# Lifecycle
+
+MembershipのLifecycle：
+
+```text
+REQUESTED
+    ↓
+ACTIVE
+    ↓
+SUSPENDED
+    ↓
+ACTIVE
+    ↓
+LEFT
+```
+
+または、
+
+```text
+INVITED
+    ↓
+ACTIVE
+```
+
+申請が拒否された場合：
+
+```text
+REQUESTED
+    ↓
+REJECTED
+```
+
+招待が拒否された場合：
+
+```text
+INVITED
+    ↓
+REJECTED
+```
+
+Membershipは原則として物理削除しない。
+
+---
+
+# Business Rules
+
+- PersonとOrganizationは直接関連付けない。
+- 所属関係はMembershipで表現する。
+- 一人のPersonは複数Organizationへ所属できる。
+- Organizationは複数Personを所属させることができる。
+- OrganizationごとにMembershipを持つ。
+- OrganizationごとにRoleを持つ。
+- PersonがOrganizationを切り替えると、そのOrganizationのRoleが適用される。
+- PersonからOrganizationへの所属申請を許可する。
+- OrganizationからPersonへの招待を許可する。
+- 所属申請はOrganization側の承認によってACTIVEになる。
+- 招待はPerson側の承認によってACTIVEになる。
+- Membershipの履歴は削除しない。
+- Membershipの所属期間を管理する。
+- Membershipの詳細な権限はRole / DelegateRoleによって決定する。
+- Production単位の権限はProductionDelegateで管理する。
+- Membershipの内部情報を一般公開しない。
+- Public Profileに表示するメンバーは公開対象として選択されたPersonに限定する。
+
+---
+
+# Domain Events
+
+Membershipに関する主なDomain Event：
+
+- MembershipRequested
+- MembershipInvited
+- MembershipApproved
+- MembershipRejected
+- MembershipSuspended
+- MembershipReactivated
+- MembershipLeft
+- MembershipRoleChanged
+
+Domain Eventには、
+認証情報などのSecret情報を含めない。
 
 ---
 
 # Design Decisions
 
-MembershipはPerson情報を保持しない。
+Membershipは、
+PersonとOrganizationの所属というFactを表す。
 
-MembershipはOrganization情報を保持しない。
+Person自身にOrganization Roleを保持させない。
 
-Membershipは所属という事実のみを表現する。
+RoleはOrganization Contextに属する。
+
+同じPersonでも、
+Organizationによって異なるRoleを持つ。
+
+Organization Contextを切り替えることで、
+適用されるMembership / Roleが変わる。
+
+Personからの所属申請を許可する。
+
+Organizationからの招待を許可する。
+
+所属申請と招待は異なるLifecycleとして扱う。
+
+Membershipは過去の所属履歴を保持するため、
+原則として削除しない。
+
+Companionなどの観客同行者管理とは関係しない。
 
 ---
 
 # Future
 
-将来的に以下へ対応する。
+将来的に、
 
 - 招待メール
 - 招待URL
-- 権限変更履歴
+- 招待期限
+- 所属申請メッセージ
+- 承認コメント
+- Role変更履歴
 - 一時休団
 - 復団
+
+などへ拡張できる構造とする。
 
 ---
 
 # Design Principles
 
-- PersonとOrganizationは直接関連付けない。
-- 所属はMembershipで表現する。
-- 権限はMembershipが保持する。
-- 所属履歴は削除しない。
-- Membershipは所属という事実のみを管理する。
+- MembershipはPersonとOrganizationの所属関係を表す。
+- PersonとOrganizationを直接関連付けない。
+- Personは複数Organizationへ所属できる。
+- OrganizationごとにMembershipを持つ。
+- OrganizationごとにRoleを持つ。
+- RoleはPersonの属性ではない。
+- Organization Contextによって適用されるRoleが変わる。
+- Personからの所属申請を許可する。
+- Organizationからの招待を許可する。
+- 所属申請はOrganization側の承認を必要とする。
+- 招待はPerson側の承認を必要とする。
+- Membership履歴は削除しない。
+- Membershipは所属というFactを表現する。
+- 詳細なAuthorizationはRole / DelegateRoleで管理する。
+- Production単位の権限はProductionDelegateで管理する。
+- Membershipの内部情報を公開しない。
+- Blueprintを唯一の設計基準とする。
