@@ -1,549 +1,848 @@
-StageArt Blueprint
+# StageArt Blueprint
 
-Domain Model : Organization
+# Domain Model : Organization
 
-Version : 2.0
+Version : 3.0
 
-⸻
+---
 
-Purpose
+# Purpose
 
-Organizationは、舞台芸術活動を行う団体を管理するドメインである。
+Organizationは、
+舞台芸術活動を行う団体を表すDomainである。
 
-StageArtにおけるすべての活動はOrganizationを起点として行われる。
+OrganizationはStageArtにおけるTenantであり、
+団体に属するBusiness Dataの管理単位となる。
 
-Production、Member、Ticket、Budgetなどの情報は、必ずいずれかのOrganizationに所属する。
-
-OrganizationはStageArtのマルチテナントを構成する最も重要なドメインである。
-
-⸻
-
-Concept
-
-Organizationは「劇団」を意味しない。
+Organizationは「劇団」を意味するものではない。
 
 舞台芸術活動を行うあらゆる団体を表現する。
 
-例）
+---
 
-* 劇団
-* プロデュース団体
-* ダンスカンパニー
-* 学生劇団
-* 演劇サークル
-* 実行委員会
+# Concept
 
-StageArtは団体種別によって機能を分けない。
+Organizationの例：
 
-⸻
+- 劇団
+- プロデュース団体
+- ダンスカンパニー
+- 学生劇団
+- 演劇サークル
+- 実行委員会
+- 制作団体
+- その他舞台芸術団体
 
-Identity
+StageArtは、
+Organizationの種別によって基本的なDomain構造を分けない。
 
-OrganizationはOrganizationIDによって一意に識別される。
+---
+
+# Identity
+
+OrganizationはOrganizationIdによって一意に識別される。
+
+OrganizationIdは変更できない。
 
 団体名は識別子ではない。
 
 団体名は変更できる。
 
-同名団体が存在しても問題ない。
+同名のOrganizationが存在しても問題ない。
 
-⸻
+---
 
-Multi Tenant
+# Multi Tenant
 
 OrganizationはStageArtにおけるTenantである。
 
-すべてのBusiness DataはOrganizationへ所属する。
+Organizationに属するBusiness Dataは、
+Organization Scopeの中で管理する。
 
-異なるOrganization同士でデータを共有してはならない。
+異なるOrganizationの内部情報へ、
+権限なくアクセスしてはならない。
 
-Production
+Organization Scopeの対象には、
 
-Reservation
+- Project
+- Membership
+- Accounting
+- Equipment
+- Document
+- External Connection
+- Regulation
 
-Budget
+などが含まれる。
 
-Member
+ProductionはProjectを介してOrganizationに属する。
 
-Document
+ReservationやParticipantなどのProduction関連Domainについても、
+所属するProductionを通じてOrganization Scopeを判定する。
 
-ExternalConnection
+---
 
-すべてOrganization単位で管理される。
-
-⸻
-
-Membership
+# Membership
 
 Organizationには複数のPersonが所属できる。
 
-Personは複数Organizationへ所属できる。
+Personは複数のOrganizationへ所属できる。
 
-所属情報はMembershipによって管理する。
+所属関係はMembershipによって管理する。
 
+```text
 Person
-↓
+    ↓
 Membership
-↓
+    ↓
 Organization
+```
 
-Organization自身は所属情報を保持しない。
+Organization自身は、
+Personを直接保持しない。
 
-⸻
+Membershipは、
 
-Ownership
+- 所属状態
+- Organization内のRole
+- 所属開始
+- 所属終了
+- その他所属に関する情報
 
-OrganizationにはOwnerが存在する。
+を管理する。
 
-OwnerとはOrganizationを管理できるPersonである。
+---
 
-Owner情報もMembershipのRoleによって管理する。
+# Role
 
-Organization自身はOwnerIDを保持しない。
+Organization内におけるPersonの権限・役割は、
+Membershipに関連するRoleによって管理する。
 
-⸻
+同じPersonでも、
+Organizationごとに異なるRoleを持つことができる。
 
-External Connection
+例：
 
-Organizationは外部サービスとの接続情報を
+```text
+Person A
+    │
+    ├── Membership
+    │      └── 劇団A
+    │             └── Role = 管理者
+    │
+    └── Membership
+           └── 劇団B
+                  └── Role = キャスト
+```
+
+Organization自身がRoleを保持するのではなく、
+Membershipを通じてPersonのOrganization内権限を管理する。
+
+---
+
+# Organization Owner
+
+Organizationには、
+Organizationを管理するOwnerが存在する。
+
+OwnerはOrganizationに対する管理権限を持つPersonである。
+
+Owner情報はMembershipおよびRoleによって表現し、
+Organization自身にOwnerIdを直接保持しない。
+
+Ownerが変更された場合も、
+MembershipのRole変更として管理できる構造とする。
+
+---
+
+# Delegate
+
+Organizationの管理権限の一部を、
+他のPersonへ委任できる。
+
+委任権限はDelegateRoleによって管理する。
+
+DelegateRoleは、
+
+- 管理者と同等の権限
+- 個別に選択した権限
+
+の両方を表現できる構造とする。
+
+Organization全体のDelegateと、
+Production単位のProductionDelegateは区別する。
+
+---
+
+# Project
+
+OrganizationはProjectを保持する。
+
+基本構造は、
+
+```text
+Organization
+    ↓
+Project
+    ↓
+Production
+```
+
+とする。
+
+Projectは、
+Organizationが行う活動・制作の内部単位である。
+
+Projectは一つ以上のProductionを持つことができる。
+
+Projectは利用者が必ずしも意識する必要のないInternal Domainであり、
+UI上では必要に応じてStageArtが適切な名称・表示方法で扱う。
+
+---
+
+# Production
+
+ProductionはProjectに所属する。
+
+Productionは、
+具体的な公演・活動を表す。
+
+OrganizationがProductionを直接所有するのではなく、
+
+```text
+Organization
+    ↓
+Project
+    ↓
+Production
+```
+
+という階層で管理する。
+
+Productionに関連する、
+
+- Participant
+- Performance
+- Ticket
+- Reservation
+- Rehearsal
+- Budget
+- Document
+- Announcement
+- Survey
+
+などはProductionに関連付けて管理する。
+
+---
+
+# Organization Public Information
+
+Organizationの公開情報は、
+一般利用者が閲覧できるPublic Informationとして管理する。
+
+基本的な公開情報は、
+
+- 団体名
+- 沿革
+- 代表
+- メンバー
+- 過去公演情報
+- SNS情報
+
+などとする。
+
+メンバー情報や過去公演情報は、
+Organization内部のFactから生成・参照する。
+
+内部管理情報をPublic Informationとして公開してはならない。
+
+---
+
+# Public Profile
+
+Organizationの公開ページは、
+OrganizationのFactおよび関連Domainから生成されるPublic Artifactとして扱う。
+
+Organization Public Profileでは、
+団体の公開情報を表示する。
+
+公開ページに表示する情報は、
+公開対象として定義された情報に限定する。
+
+---
+
+# Internal Information
+
+Organization内部には、
+一般公開しない情報が存在する。
+
+例：
+
+- メンバー権限
+- 管理権限
+- 会計情報
+- 予算情報
+- 内部ファイル
+- 内部お知らせ
+- 外部サービス認証情報
+- その他内部管理情報
+
+これらはPublic Profileから公開してはならない。
+
+---
+
+# Organization Information
+
+Organizationは、
+団体そのものに関する基本情報を管理する。
+
+例：
+
+- Organization Name
+- Organization Type
+- Description
+- History
+- Representative
+- Activity Area
+- Website
+- Logo
+- Public Settings
+
+具体的な公開範囲はPublic Profileのルールに従う。
+
+---
+
+# History
+
+Organizationの活動履歴はHistory Domainによって管理する。
+
+Organizationに関連するHistoryには、
+
+- 公演履歴
+- 活動履歴
+- 制作履歴
+- その他団体活動履歴
+
+などが含まれる。
+
+HistoryはOrganization自身が直接保持するのではなく、
+History Domainによって関連付ける。
+
+Organizationに関連するHistoryは、
+Project、Production、ParticipantなどのFactから生成できる。
+
+---
+
+# Accounting
+
+Organizationは団体全体の会計を管理する。
+
+主なDomain：
+
+- Accounting Period
+- Account
+- Journal Entry
+- Journal Entry Line
+
+AccountingはOrganization単位で管理する。
+
+Production単位のBudgetおよびActualとは、
+異なる目的を持つ。
+
+---
+
+# Equipment
+
+Organizationは備品を管理する。
+
+EquipmentはOrganizationに所属する。
+
+備品管理は資産価値を管理することを目的としない。
+
+主な目的は、
+
+- 何があるか
+- どこにあるか
+- 誰が持っているか
+- 使用可能か
+- 不明か
+- 廃棄されたか
+
+を明らかにすることである。
+
+Equipmentの取得価格、
+資産価値、
+減価償却は管理しない。
+
+---
+
+# Regulation
+
+Organizationは規約を管理できる。
+
+RegulationはOrganizationに所属する。
+
+規約を変更する場合は、
+既存Versionを上書きせず、
+新しいRegulation Versionを作成する。
+
+```text
+Organization
+    ↓
+Regulation
+    ├── Version 1
+    ├── Version 2
+    └── Version 3
+```
+
+---
+
+# Document
+
+OrganizationおよびそのProject / Productionに関連する
+Documentを管理できる。
+
+実ファイルはGoogle Driveなどの外部ストレージと連携する。
+
+StageArtでは、
+
+- ファイル情報
+- 関連するProject / Production
+- 共有対象
+- 外部ファイル参照情報
+
+などを管理する。
+
+---
+
+# Announcement
+
+OrganizationまたはProductionの関係者へ、
+内部のお知らせを送信できる。
+
+管理者または適切な権限を持つDelegateが、
+Announcementを作成できる。
+
+対象者は、
+
+- キャスト
+- スタッフ
+- 制作
+- その他関係者
+
+などから指定できる。
+
+---
+
+# External Connection
+
+Organizationは外部サービスとの接続を、
 ExternalConnectionとして管理する。
 
 ExternalConnectionはOrganizationの子Entityである。
 
+```text
 Organization
-└── ExternalConnection
-       ├── Service
-       └── Credential
+    ↓
+ExternalConnection
+    ├── Service
+    ├── Account Identifier
+    └── Credential
+```
 
-ExternalConnectionは、
-Organizationが外部サービスを利用するための
-接続関係を表す。
-
-ExternalConnectionはSNSに限定しない。
+ExternalConnectionはSNS専用のDomainではない。
 
 例えば、
 
-* X
-* Instagram
-* Facebook
-* YouTube
-* TikTok
-* LINE
-* Google
-* Google Drive
+- X
+- Instagram
+- Facebook
+- YouTube
+- TikTok
+- LINE
+- Google
+- Google Drive
+- Google Calendar
 
-などの外部サービスを接続先として扱うことができる。
+などを外部Serviceとして扱うことができる。
+
+---
+
+# External Service
 
 外部サービスの種類はServiceによって管理する。
 
-⸻
+Serviceは、
 
-External Connection Responsibility
+- X
+- Instagram
+- Facebook
+- Google
+- Google Drive
+- Google Calendar
 
-ExternalConnectionは以下の責務を持つ。
+などの外部サービスを識別する。
 
-* Organizationと外部Serviceの接続関係を管理する。
-* 接続先Serviceを参照する。
-* 外部サービス上のAccount情報を管理する。
-* 外部サービスへの認証情報をCredentialとして管理する。
-* Connection Statusを管理する。
-* 接続・切断・認証更新などの状態を管理する。
+特定サービス固有のBusiness Logicは、
+Organization Domainへ持ち込まない。
 
-ExternalConnection自身は、
-外部サービス固有のBusiness Logicを持たない。
+---
 
-外部サービスごとの差異はServiceおよび
-Infrastructure Layerで吸収する。
-
-⸻
-
-Credential
-
-ExternalConnectionは、
-外部サービスへの接続に必要な認証情報をCredentialとして管理する。
-
-CredentialはExternalConnectionに属する。
-
-ExternalConnection
-└── Credential
-
-Credentialは、
-OAuth、Access Token、Refresh Token、Secretなど、
-外部サービスの認証方式に応じた情報を保持する。
-
-認証情報は平文で保存しない。
-
-認証情報の暗号化、Secret管理、Token更新などの
-具体的な実装方式はInfrastructure Layerで管理する。
-
-Domain Modelは、
-特定の認証方式や外部サービスの実装へ直接依存しない。
-
-⸻
-
-External Account
+# External Account
 
 ExternalConnectionは、
 外部サービス上のAccountを識別するための情報を保持する。
 
-例えば、
+基本構造：
 
+```text
 ExternalConnection
-├── Service
-├── AccountIdentifier
-└── Credential
+    ├── Service
+    ├── Account Identifier
+    └── Credential
+```
 
-という構造を基本とする。
+Account Identifierは、
 
-AccountIdentifierは、
-外部サービス上のユーザー名、アカウントID、
-ページIDなど、接続先を識別するための情報を表す。
+- 外部サービスのAccount ID
+- ユーザー名
+- Page ID
+- その他外部サービス上の識別子
+
+などを表す。
 
 StageArt内部のAccountとは別の概念である。
 
-StageArtのAccountは、
-StageArtへのログインおよび認証を表す。
+---
 
-ExternalConnectionのAccountIdentifierは、
-外部サービス上のアカウントを表す。
+# Credential
 
-⸻
+Credentialは、
+ExternalConnectionに属する外部サービスの認証情報を表す。
 
-Social Media
+Credentialには必要に応じて、
 
-SNSはExternalConnectionの特別な子Entityとして扱わない。
+- OAuth Token
+- Access Token
+- Refresh Token
+- Secret
 
-SNSも外部サービスの一種としてServiceで管理する。
+などを保持する。
 
-例えば、
+認証情報は平文で保存しない。
 
-Organization
-├── ExternalConnection
-│   ├── Service = X
-│   └── Credential
-│
-├── ExternalConnection
-│   ├── Service = Instagram
-│   └── Credential
-│
-└── ExternalConnection
-    ├── Service = Facebook
-    └── Credential
+暗号化、
+Secret管理、
+Token更新などの具体的な実装はInfrastructure Layerで管理する。
 
-という構造を取る。
+Domain Modelは、
+特定の認証方式へ直接依存しない。
 
-これにより、
-SNS以外の外部サービスについても
-同じ接続基盤を利用できる。
+---
 
-⸻
-
-External Connection Scope
+# External Connection Scope
 
 ExternalConnectionはOrganizationに所属する。
 
-ExternalConnectionは、
-所属Organizationの外部サービス接続としてのみ利用できる。
+異なるOrganizationのExternalConnectionを共有してはならない。
 
-異なるOrganizationのExternalConnectionを
-共有してはならない。
+例：
 
-例えば、
-
+```text
 Organization A
-└── ExternalConnection
-       └── Instagram A
+    └── ExternalConnection
+            └── Instagram A
+
 Organization B
-└── ExternalConnection
-       └── Instagram B
+    └── ExternalConnection
+            └── Instagram B
+```
 
-というように、
-Organizationごとに独立した接続を保持する。
+Organization Aの認証情報を、
+Organization Bから利用することはできない。
 
-⸻
+---
 
-External Connection Lifecycle
+# External Connection Lifecycle
 
 ExternalConnectionは以下の状態を持つ。
 
-* CONNECTED
-* DISCONNECTED
-* ERROR
+- CONNECTED
+- DISCONNECTED
+- ERROR
 
-CONNECTEDの場合、
-外部サービスとの接続が有効である。
+CONNECTED：
+外部サービスとの接続が有効。
 
-DISCONNECTEDの場合、
-接続情報は保持されるが、
-外部サービスへの操作は実行できない。
+DISCONNECTED：
+接続情報は保持するが、
+外部サービスへの操作は実行しない。
 
-ERRORの場合、
+ERROR：
 認証期限切れなどにより、
-再認証が必要な状態を表す。
+再認証等が必要な状態。
 
-具体的な状態遷移は、
-ExternalConnection Domainで定義する。
+具体的な状態遷移はExternalConnection Domainで定義する。
 
-⸻
+---
 
-External Service Operation
-
-ExternalConnectionは、
-StageArtから外部サービスへ操作するための
-接続情報を提供する。
-
-例えばSNSの場合、
-
-Organization
-↓
-ExternalConnection
-↓
-Service = X
-↓
-Credential
-↓
-X API
-
-という経路で外部サービスへ接続する。
+# External Service Operations
 
 外部サービスへの実際のAPI呼び出しは、
 Infrastructure Layerが担当する。
 
 Domain Layerは、
-XやInstagramなど特定の外部サービスへ直接依存しない。
 
-⸻
+- X
+- Instagram
+- Google
+- Google Drive
+- Google Calendar
 
-Bulk Publication
-
-ExternalConnectionは、
-将来的な外部サービスへの一括投稿を支える基盤となる。
-
-例えば、
-
-Production
-↓
-Publication
-↓
-ExternalConnection
-├── X
-├── Instagram
-└── Facebook
-
-という形で、
-一つの投稿を複数の外部サービスへ
-配信できる構造を想定する。
-
-ただし、
-Bulk PublicationそのものはExternalConnectionの責務ではない。
+などの特定サービスへ直接依存しない。
 
 ExternalConnectionは、
-外部サービスへの接続を提供する。
+外部サービスを操作するために必要な接続情報を提供する。
 
-一括投稿のBusiness Logicは、
-別のDomainとして管理する。
+---
 
-⸻
+# SNS
 
-Lifecycle
+SNSはExternalConnectionの特別な子Entityとして扱わない。
 
-Organizationは以下の状態を持つ。
+SNSも外部サービスの一種としてServiceで管理する。
 
-* Active
-* Archived
-* Deleted
+OrganizationのPublic ProfileにSNS情報を表示する場合は、
+公開対象となるアカウント情報のみを参照する。
 
-Deletedは論理削除とする。
+Credentialや内部接続情報を公開してはならない。
 
-過去のProductionやAccountingとの整合性を維持する。
+StageArtはSNS投稿内容そのものをDomainの正本として管理しない。
 
-OrganizationがArchivedまたはDeletedとなった場合の
-ExternalConnectionの扱いは、
-LifecycleおよびAuthorizationのルールに従う。
+SNSへの投稿機能を提供する場合も、
+投稿本文などをStageArt内のSocial Post Domainとして永続管理することを前提としない。
 
-⸻
+---
 
-Automatically Generated
+# Google Drive
+
+Google Driveは、
+Documentの外部保存先として利用する。
+
+StageArtはGoogle Drive上の実ファイルそのものを正本として管理しない。
+
+StageArtでは、
+
+- File Identifier
+- File Name
+- File Type
+- External URL / Reference
+- Project / Productionとの関連
+- 共有対象
+
+などの情報を管理する。
+
+---
+
+# Google Calendar
+
+Google Calendarは、
+Rehearsalを外部Calendarへ連携するために利用する。
+
+確定したRehearsalをGoogle Calendarへ登録できる。
+
+Google Calendarへの登録対象は、
+Rehearsalの参加者だけに限定しない。
+
+---
+
+# External Connection Authorization
+
+ExternalConnectionの管理は、
+Organizationを管理する権限を持つPersonが実行できる。
+
+基本的には、
+
+- Organization Owner
+- 適切なOrganization Role
+- 適切なDelegate
+
+が対象となる。
+
+権限の詳細はAuthorization Domainで定義する。
+
+ProductionDelegateについては、
+Organization全体のExternalConnection操作権限とは別に扱う。
+
+---
+
+# Automatically Generated
 
 Organization作成時、
-StageArtは以下を自動生成する。
+StageArtは必要な基本情報を自動生成する。
 
-* Membership（Owner）
-* Default Role
-* Default Settings
-* Document Space
+例：
 
-将来的には
+- Owner Membership
+- Default Role
+- Default Settings
 
-* Homepage
-* Public Profile
+ProjectやProductionを作成する場合は、
+それぞれのDomainのBusiness Ruleに従って関連Domainを生成する。
 
-も生成する。
-
-ExternalConnectionはOrganization作成時に
-自動生成しない。
+ExternalConnectionは、
+Organization作成時には自動生成しない。
 
 外部サービスとの接続は、
 Organization管理者が必要に応じて設定する。
 
-⸻
+---
 
-Public Information
+# Lifecycle
 
-以下は公開できる。
+Organizationは以下の状態を持つ。
 
-* 団体名
-* ロゴ
-* 紹介文
-* Webサイト
-* SNS
-* 活動地域
+- ACTIVE
+- ARCHIVED
+- DELETED
 
-以下は公開しない。
+DELETEDは論理削除とする。
 
-* 内部設定
-* メンバー権限
-* 会計情報
-* 管理情報
-* ExternalConnection
-* Credential
-* 外部サービスの認証情報
+過去のProject、
+Production、
+Accountingなどの履歴との整合性を維持する。
 
-SNSなどの公開アカウント情報を公開プロフィールへ
-表示する場合も、
-ExternalConnectionのCredentialを公開してはならない。
+OrganizationがArchivedまたはDeletedになった場合、
+新規Business Activityの作成を制限する。
 
-⸻
+既存データの参照可否は、
+LifecycleおよびAuthorizationのルールに従う。
 
-Authorization
+---
 
-OrganizationのExternalConnectionは、
-Organizationを管理する権限を持つ利用者が管理する。
+# Audit Information
 
-基本的にはOrganization Ownerまたは
-適切なOrganization Roleを持つ利用者が、
-
-* ExternalConnectionの追加
-* ExternalConnectionの更新
-* ExternalConnectionの削除
-* 外部サービスへの接続
-* 外部サービスからの切断
-* 再認証
-
-を実行できる。
-
-ProductionDelegateによるExternalConnection操作については、
-Organization Scopeの権限とは別にAuthorizationで定義する。
-
-⸻
-
-Audit Information
-
-ExternalConnectionの管理操作についても、
-誰が操作したかを記録できるようにする。
+Organizationの重要な管理操作について、
+監査情報を記録できるようにする。
 
 基本的な監査情報として、
 
-* CreatedBy
-* CreatedAt
-* UpdatedBy
-* UpdatedAt
+- CreatedBy
+- CreatedAt
+- UpdatedBy
+- UpdatedAt
 
 を利用する。
 
-認証情報そのものを監査情報として記録しない。
+Credentialなどの認証情報そのものを
+監査情報として記録しない。
 
-⸻
+---
 
-Domain Events
+# Domain Events
 
-ExternalConnectionに関する操作では、
-将来的に以下のDomain Eventを利用する。
+Organizationに関する主なDomain Event：
 
-* ExternalConnectionCreated
-* ExternalConnectionUpdated
-* ExternalConnectionConnected
-* ExternalConnectionDisconnected
-* ExternalConnectionError
+- OrganizationCreated
+- OrganizationUpdated
+- OrganizationArchived
+- OrganizationDeleted
+- MembershipCreated
+- MembershipUpdated
+- MembershipRemoved
 
-Credentialの更新やToken更新については、
-セキュリティ上の理由から、
-SecretそのものをDomain Eventへ含めない。
+ExternalConnectionに関するEventは、
+ExternalConnection Domainで定義する。
 
-⸻
+---
 
-Design Decisions
+# Design Decisions
 
-OrganizationはBusiness Dataを所有する。
+OrganizationはStageArtにおけるTenantである。
 
-OrganizationはMemberを保持しない。
+Organizationは団体を表すBusiness Domainである。
 
-OrganizationはRoleを保持しない。
+Organizationは「劇団」に限定しない。
 
-OrganizationはProductionを直接保持しない。
+PersonとOrganizationは別のIdentityとして管理する。
 
-それらは関連ドメインによって管理される。
+Personとの所属関係はMembershipで管理する。
 
-ExternalConnectionはOrganizationに属する
-外部サービス接続の子Entityである。
+Organization内の権限はMembershipに関連するRoleで管理する。
 
-ExternalConnectionはSNS専用のEntityではない。
+OwnerもMembership / Roleによって表現する。
 
-SNSはServiceの一種として扱う。
+Organizationの活動・制作はProjectによって管理する。
 
-ExternalConnectionはServiceを参照する。
+ProductionはProjectに所属する。
 
-ExternalConnectionはCredentialを保持する。
+基本構造は、
 
-Credentialは外部サービスの認証情報を表す。
+```text
+Organization
+    ↓
+Project
+    ↓
+Production
+```
 
-StageArt内部のAccountと、
-外部サービスのAccountは別の概念として管理する。
+である。
+
+Production関連Domainは、
+Productionを通じてOrganization Scopeに属する。
+
+OrganizationはMemberやProductionを直接保持するのではなく、
+それぞれのDomainを通じて関連付ける。
+
+Historyは独立Domainとして管理する。
+
+AccountingはOrganization単位で管理する。
+
+BudgetおよびProduction ActualはProduction単位で管理する。
+
+EquipmentはOrganizationに所属するが、
+資産管理Domainではない。
+
+ExternalConnectionはOrganizationの子Entityである。
+
+ExternalConnectionはSNS専用ではない。
+
+SNS、Google Drive、Google CalendarなどはServiceとして扱う。
 
 Credentialは平文保存しない。
 
-外部サービスへのAPI呼び出しはInfrastructure Layerが担当する。
+外部サービスへのAPIアクセスはInfrastructure Layerが担当する。
 
-ExternalConnectionは特定の外部サービスのAPIへ直接依存しない。
+SNS投稿内容そのものはStageArtの正本として管理しない。
 
-Bulk PublicationはExternalConnectionとは別のDomainとして管理する。
+Public InformationとInternal Informationを明確に分離する。
 
-⸻
+内部情報をPublic Profileへ公開してはならない。
 
-Future
+---
 
-将来的に追加する。
+# Design Principles
 
-* Organization Logo
-* Brand Color
-* Public Homepage
-* Fan Club
-* Goods Store
-* Donation
-* Sponsor Management
-* External Service Integration
-* SNS Bulk Publication
-* Publication Scheduling
-* External Service Analytics
-
-⸻
-
-Design Principles
-
-* OrganizationはTenantである。
-* OrganizationはBusiness DataのOwnerである。
-* Personとの関係はMembershipで表現する。
-* 権限はRoleが管理する。
-* Organization自身は権限を持たない。
-* Organizationは舞台芸術活動を行う団体を表現する。
-* 同名団体を許可する。
-* ExternalConnectionはOrganizationの子Entityである。
-* ExternalConnectionは外部サービスとの接続を表す。
-* ExternalConnectionはSNSに限定しない。
-* Serviceは外部サービスの種類を表す。
-* Credentialは外部サービスへの認証情報を表す。
-* StageArt内部のAccountと外部サービスのAccountを分離する。
-* Credentialは平文で保存しない。
-* 外部サービスへの接続処理はInfrastructure Layerで実装する。
-* Bulk PublicationはExternalConnectionとは別の責務として管理する。
-* Blueprintを唯一の設計基準とする。
+- OrganizationはTenantである。
+- Organizationは団体を表すBusiness Domainである。
+- Organizationは劇団に限定しない。
+- PersonとOrganizationは別軸として管理する。
+- Personとの所属関係はMembershipで管理する。
+- Organization内の権限はRoleで管理する。
+- OwnerはMembership / Roleによって表現する。
+- Organizationの活動・制作はProjectで管理する。
+- Projectの下にProductionを持つ。
+- Production関連DomainはProductionを通じてOrganization Scopeに属する。
+- Organizationは内部情報と公開情報を分離する。
+- Organization Public Profileは公開対象情報のみを表示する。
+- AccountingはOrganization単位で管理する。
+- Equipmentは資産管理を目的としない。
+- ExternalConnectionはOrganizationの子Entityである。
+- ExternalConnectionはSNSに限定しない。
+- 外部サービスの種類はServiceで管理する。
+- 外部サービスの認証情報はCredentialで管理する。
+- Credentialは平文保存しない。
+- 外部サービス固有のAPI処理はInfrastructure Layerで実装する。
+- SNS投稿内容はStageArtの正本として管理しない。
+- Google DriveはDocumentの外部保存先として利用する。
+- Google CalendarはRehearsalの外部連携先として利用する。
+- Blueprintを唯一の設計基準とする。
