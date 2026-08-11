@@ -1,0 +1,63 @@
+.stageart-login {
+    max-width: 360px;
+    margin: 0 auto;
+}
+
+.stageart-login__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.stageart-login__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stageart-login__field label {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.stageart-login__field input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.stageart-login__submit {
+    padding: 0.625rem 1rem;
+    border: none;
+    border-radius: 4px;
+    background: #1d2327;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.stageart-login__submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.stageart-login__error {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    background: #fdecea;
+    color: #611a15;
+    font-size: 0.875rem;
+}
+
+.stageart-login__error[hidden] {
+    display: none;
+}
+
+.stageart-login__already {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    background: #edf7ed;
+    color: #1e4620;
+    font-size: 0.875rem;
+}
