@@ -2,7 +2,7 @@
 
 # Domain Model : Performance
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -369,15 +369,80 @@ ReservationのCheck Inによって確定する。
 
 Reservation
   ↓
-ReservationCheckedIn
+Check In
+  ↓
+CheckInCompleted
   ↓
 History
   ↓
 Audience History
 
+CheckInCompletedは、
+観劇実績の確定を表すBusiness Eventである。
+
 これにより、
 予約しただけで実際には来場しなかった場合と、
 実際に観劇した場合を区別できる。
+
+---
+
+# Check In and Accounting
+
+CheckInCompletedは、
+チケット売上をAccounting Domainへ連携する契機となる。
+
+基本的なFlow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ├── History
+  │     └── Audience History
+  │
+  └── Accounting
+        └── Ticket Revenue
+
+Performance Domainは、
+仕訳そのものを管理しない。
+
+Accounting Domainが、
+CheckInCompletedなどのBusiness Eventを受け取り、
+必要なJournal Entryを生成する。
+
+---
+
+# Ticket Revenue
+
+チケット売上は、
+チケットを予約した時点では
+正式な会計上の売上として確定しない。
+
+Check Inが完了し、
+CheckInCompletedが発生した時点で、
+チケット売上をAccounting Domainへ連携する。
+
+基本Flow：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Journal Entry
+
+具体的な勘定科目やDebit / Creditの処理は、
+Accounting Domainで定義する。
 
 ---
 
@@ -432,6 +497,12 @@ Ticket Type / Price
 Performance
   ↓
 Reservation
+
+Ticket Type / Priceの正本はProduction側にある。
+
+Performanceは、
+Productionに設定されたTicket Type / Priceを
+販売対象として利用する。
 
 Performanceごとに、
 利用可能なTicket Typeを設定できる構造を将来的に持たせる。
@@ -576,7 +647,10 @@ Productionが公開されている場合、
 - Check In時には対象Performanceの一致を検証する。
 - Performance自身は個々のReservationのCheck In状態を保持しない。
 - Check In状態はReservationを正本として判断する。
-- Audience HistoryはReservationCheckedInを契機として生成する。
+- CheckInCompletedは観劇実績を確定するBusiness Eventである。
+- CheckInCompletedを契機としてAudience Historyを生成する。
+- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
+- Performance DomainはJournal Entryを直接管理しない。
 - Ticket Type / PriceはProduction単位で管理する。
 - PerformanceはProductionに設定されたTicketを販売対象として利用する。
 - PerformanceはParticipantを直接管理しない。
@@ -602,10 +676,16 @@ Performanceに関する主なDomain Event：
 - PerformanceCancelled
 
 Check Inに関するEventは、
-Reservation Domainで定義する。
+Check In Domainで定義する。
 
-ReservationCheckedInを契機として、
+CheckInCompletedを契機として、
 History DomainがAudience Historyを生成する。
+
+CheckInCompletedを契機として、
+Accounting DomainがTicket Revenueを会計へ連携する。
+
+Performance Domain自身が、
+HistoryやJournal Entryを直接生成・更新しない。
 
 ---
 
@@ -624,6 +704,22 @@ Check InはReservation単位で行う。
 
 QR Check InとManual Check Inは、
 同じReservation Check Inとして扱う。
+
+Check Inが完了すると、
+CheckInCompletedが発生する。
+
+CheckInCompletedを契機として、
+
+- Audience History
+- Ticket Revenue
+
+をそれぞれのDomainへ連携する。
+
+HistoryはPerformanceの子Entityではなく、
+History Domainで管理する。
+
+Ticket RevenueおよびJournal Entryは、
+Accounting Domainで管理する。
 
 Seatおよび座席指定は将来実装する。
 
@@ -676,10 +772,13 @@ Performanceの責務を不必要に拡張しない。
 - Check In時には対象Performanceを検証する。
 - Performanceは個々のReservationのCheck In状態を保持しない。
 - ReservationをCheck Inの正本とする。
-- Audience HistoryはReservationCheckedInを契機として生成する。
+- CheckInCompletedは観劇実績を確定するBusiness Eventである。
+- CheckInCompletedからAudience Historyを生成する。
+- CheckInCompletedからTicket RevenueをAccounting Domainへ連携する。
 - Ticket Type / PriceはProduction単位で管理する。
 - ParticipantはProduction単位で管理する。
 - BudgetはProduction単位で管理する。
+- Performance DomainはJournal Entryを管理しない。
 - SeatはVersion 1.0では実装しない。
 - 座席指定はVersion 1.0では実装しない。
 - Reservation SeatはVersion 1.0では実装しない。
