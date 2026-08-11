@@ -2,7 +2,7 @@
 
 # Domain Model : Person
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -38,13 +38,16 @@ Personは、
 認証(Account)とは独立して存在し、
 Business上の主体として利用される。
 
-```text
+基本構造：
+
 Account
     │
     ▼
- Person
+  Person
     │
     ├── Profile
+    │      │
+    │      └── HistoricalActivity[]
     │
     ├── Membership
     │      │
@@ -54,12 +57,15 @@ Account
     │      │
     │      └── Production
     │
-    ├── Reservation
-    │      │
-    │      └── Check In
-    │
-    └── History
-```
+    └── Reservation
+           │
+           └── Performance
+
+HistoryはPersonの子Entityではなく、
+独立したDomainとして管理する。
+
+Personに関連するHistoryは、
+History Domainから参照・表示する。
 
 ---
 
@@ -68,7 +74,6 @@ Account
 Personは以下の情報およびBusiness上のIdentityを表す。
 
 - Person Identity
-- Display Name
 - Profile
 - Contact Information
 - Public Settings
@@ -80,7 +85,9 @@ Productionへの参加はParticipantで管理する。
 
 チケット予約はReservationで管理する。
 
-活動履歴はHistoryで管理する。
+Profileに関する本人入力情報はProfileで管理する。
+
+StageArt上で発生した活動履歴はHistoryで管理する。
 
 ---
 
@@ -97,28 +104,263 @@ PersonはStageArt上のBusiness Identityを表す。
 
 ---
 
+# Account Relationship
+
+Accountは認証情報を表す。
+
+PersonはBusiness上の個人Identityを表す。
+
+基本構造：
+
+Account
+    │
+    ▼
+Person
+
+Accountが存在することと、
+PersonがStageArt上でどのBusiness Activityを行うかは
+別の概念として扱う。
+
+---
+
 # Profile
 
-ProfileはPerson自身が作成・編集できるプロフィール情報を表す。
+ProfileはPerson自身が作成・編集できる
+プロフィール情報を表す。
+
+ProfileはPersonに1つだけ存在する。
+
+基本構造：
+
+Person
+    │
+    └── Profile
 
 Profileには必要に応じて、
 
-- Display Name
 - Biography
 - Profile Image
 - Website
 - SNS
-- その他プロフィール情報
+- HistoricalActivity[]
 
-などを登録する。
+などを保持する。
 
-ProfileはPerson本人による入力を許可する。
+ProfileはPerson本人による入力・編集を許可する。
 
-出演実績や観劇履歴などの活動履歴はProfileへ直接入力するのではなく、
-Historyから参照・表示する。
+Profileの詳細な管理ルールはProfile Domainで定義する。
 
-Profileの公開範囲は、
-StageArtにおける公開ルールに従う。
+---
+
+# HistoricalActivity
+
+HistoricalActivityは、
+Profileに登録する本人申告の過去活動実績を表す。
+
+例えば、
+
+- StageArt登録前の出演歴
+- StageArt登録前のスタッフ歴
+- 過去の演出歴
+- 過去の制作歴
+- 過去の観劇歴
+- その他本人が紹介したい活動実績
+
+など。
+
+基本構造：
+
+Person
+    │
+    └── Profile
+           │
+           └── HistoricalActivity[]
+
+HistoricalActivityはProfileの子Entityであり、
+Personから直接管理しない。
+
+HistoricalActivityの詳細な構造・ルールは
+HistoricalActivity Domainで定義する。
+
+---
+
+# HistoricalActivity and History
+
+HistoricalActivityとHistoryは異なる概念である。
+
+HistoricalActivity：
+
+Person本人がProfileへ登録する
+過去の活動実績。
+
+History：
+
+StageArt上で発生したFactから
+自動生成される活動履歴。
+
+基本構造：
+
+本人申告の過去活動
+
+Person
+    │
+    └── Profile
+           │
+           └── HistoricalActivity
+
+
+StageArt上の活動
+
+Participant / Check In
+    │
+    ▼
+Domain Event
+    │
+    ▼
+History
+
+HistoricalActivityをHistoryへ変換しない。
+
+HistoryをHistoricalActivityへ複製しない。
+
+---
+
+# History
+
+HistoryはStageArtにおける活動履歴を管理する
+独立したDomainである。
+
+HistoryはPersonの子Entityではない。
+
+Personに関連するHistoryは、
+History Domainから参照・表示する。
+
+例えば、
+
+- 出演履歴
+- スタッフ履歴
+- 観劇履歴
+
+などがある。
+
+基本構造：
+
+Person
+    │
+    └── History Reference
+
+History
+    │
+    ├── PARTICIPATION
+    └── AUDIENCE
+
+Historyの具体的な管理ルールは
+History Domainで定義する。
+
+---
+
+# Participation History
+
+PersonがStageArt上でProductionへ
+参加した実績は、
+Participantを起点としてHistoryに記録される。
+
+基本Flow：
+
+Production
+    ↓
+Participant
+    ↓
+ParticipantAdded
+    ↓
+History
+
+PersonはHistoryを直接作成・編集しない。
+
+---
+
+# Audience History
+
+PersonがStageArt上で
+観客として観劇した実績は、
+Check In完了を契機としてHistoryに記録される。
+
+基本Flow：
+
+Reservation
+    ↓
+Check In
+    ↓
+CheckInCompleted
+    ↓
+History
+
+予約しただけでは、
+観劇履歴として扱わない。
+
+---
+
+# Audience Identity
+
+Audience HistoryのSubjectは、
+ReservationのBookerを基本とする。
+
+例えば、
+
+Reservation
+    │
+    ├── Booker
+    │      └── Person A
+    │
+    └── Check In
+           │
+           └── CheckInCompleted
+                  │
+                  ▼
+              Audience History
+                  │
+                  └── Subject = Person A
+
+HandledParticipantは、
+Audience HistoryのSubjectにはならない。
+
+CreatedByも、
+Audience HistoryのSubjectにはならない。
+
+UpdatedByも、
+Audience HistoryのSubjectにはならない。
+
+---
+
+# General Audience
+
+一般観客は、
+StageArtのInternal Portalへ参加する必要はない。
+
+チケット購入や公演当日の受付に必要な情報のみを
+管理できる。
+
+一般観客について、
+必ずPersonを作成する必要はない。
+
+---
+
+# Registered Audience
+
+StageArtユーザーとして登録した観客は、
+Personとして管理できる。
+
+Personとして登録された観客は、
+自身の観劇履歴を確認できる。
+
+基本構造：
+
+Person
+    │
+    └── Audience History Reference
+
+観劇履歴そのものは、
+History Domainが管理する。
 
 ---
 
@@ -130,20 +372,19 @@ Personは複数のOrganizationへ所属できる。
 
 PersonはOrganizationを直接保持しない。
 
-```text
+基本構造：
+
 Person
     │
     └── Membership
              │
              └── Organization
-```
 
 同じPersonでも、
 Organizationごとに異なるRoleを持つことができる。
 
-例：
+例えば、
 
-```text
 Person A
     │
     ├── Membership
@@ -153,7 +394,24 @@ Person A
     └── Membership
            └── 劇団B
                   └── Role = キャスト
-```
+
+---
+
+# Membership
+
+Membershipは、
+PersonとOrganizationの所属関係を表す。
+
+Membershipによって、
+
+- Organizationへの所属
+- Organization内のRole
+- Organization内での権限
+
+などを管理する。
+
+Membershipの詳細な管理ルールは
+Membership Domainで定義する。
 
 ---
 
@@ -166,7 +424,8 @@ Productionとの関係はParticipantによって管理する。
 PersonはParticipantを直接保持するものではなく、
 ParticipantのSubjectとして参照される。
 
-```text
+基本構造：
+
 Production
     │
     └── Participant
@@ -174,88 +433,107 @@ Production
             └── Subject
                    │
                    └── Person
-```
 
 Participantによって、
 
-- キャスト
-- スタッフ
-- 制作
-- 客演
+- CAST
+- STAFF
+- DIRECTOR
+- PRODUCER
+- ORGANIZER
+- その他の参加区分
 
 などのProductionへの参加を表現する。
+
+Participantの詳細な管理ルールは
+Participant Domainで定義する。
 
 ---
 
 # Reservation
 
-Personは観客としてProductionのチケットを予約できる。
+Personは観客として
+Productionのチケットを予約できる。
 
-Reservationは観客による予約というFactを表す。
+Reservationは、
+観客による予約というFactを表す。
 
-```text
+基本構造：
+
 Person
     │
     └── Reservation
             │
             └── Performance
-```
 
-Reservation成立後にIssued Ticketが発行され、
-公演当日のCheck Inによって来場が記録される。
+ReservationはPersonの子Entityとして
+直接保持するのではなく、
+ReservationのBookerとしてPersonを参照する。
 
 ---
 
-# History
+# Check In
 
-HistoryはStageArtにおける活動履歴を管理する重要なDomainである。
+Check Inは、
+観客が実際に公演へ来場したFactを表す。
 
-PersonはHistoryを直接編集するのではなく、
-Historyから自身に関連する履歴を参照する。
+Reservationが存在しても、
+Check Inされるまでは観劇実績として扱わない。
 
-Personに関連するHistoryには、
+基本Flow：
 
-- 出演履歴
-- スタッフ履歴
-- 観劇履歴
-- その他活動履歴
-
-などが含まれる。
-
-```text
-Person
-    │
-    └── History
-         ├── 出演履歴
-         ├── スタッフ履歴
-         └── 観劇履歴
-```
-
-出演・スタッフ履歴はParticipant等のFactから生成される。
-
-観劇履歴は、
-
-```text
 Reservation
     ↓
 Issued Ticket
     ↓
 Check In
     ↓
+CheckInCompleted
+    ↓
 History
-```
 
-というFactの流れから生成される。
+CheckInCompletedを契機として、
+Audience Historyが生成される。
 
-StageArtユーザーとして登録していない一般観客については、
-Personを作成する必要はない。
+Check Inの詳細な管理ルールは
+Check In Domainで定義する。
 
-チケット予約・受付などの必要な情報のみを管理する。
+---
 
-StageArtユーザーとして登録した観客はPersonとして管理され、
-自身の観劇履歴を確認できる。
+# Contact Information
 
-Historyの具体的な管理ルールはHistory Domainで定義する。
+Personに必要なContact Informationを
+管理できる。
+
+Contact Informationは、
+Profileの公開情報とは区別する。
+
+例えば、
+
+- Email
+- Phone
+- その他連絡先
+
+など。
+
+公開プロフィールとして公開する情報と、
+Business上の連絡先を混同しない。
+
+具体的なContact Informationの管理ルールは、
+Contact Domainで定義する。
+
+---
+
+# Public Settings
+
+Personに関連する
+公開設定を管理できる。
+
+ProfileやHistoricalActivityなどの
+公開範囲に利用できる。
+
+具体的な公開設定ルールは、
+Profile / Public Settings Domainで定義する。
 
 ---
 
@@ -268,59 +546,176 @@ PersonStatusは人物の状態を表す。
 - ACTIVE
 - INACTIVE
 
-論理削除が必要な場合はStatusによって管理する。
+論理削除が必要な場合は
+Statusによって管理する。
 
 PersonIdそのものは変更・再利用しない。
 
 ---
 
+# Deletion
+
+Personを物理削除することによって、
+過去のBusiness Factを破壊しない。
+
+Personの利用停止が必要な場合は、
+Statusによって管理する。
+
+Personに関連する、
+
+- Membership
+- Participant
+- Reservation
+- History
+
+などの過去Factを、
+PersonのStatus変更によって削除しない。
+
+---
+
+# Privacy
+
+Personは個人情報を含むため、
+アクセス制御を適切に行う。
+
+特に、
+
+- Contact Information
+- Reservation
+- Audience History
+
+などは、
+公開Profile情報とは区別する。
+
+Person本人が参照できる情報と、
+Organization内部で参照できる情報、
+一般公開できる情報を分離する。
+
+---
+
+# Multi Tenant
+
+PersonはOrganizationとは独立したIdentityである。
+
+そのため、
+一人のPersonが複数Organizationに所属できる。
+
+ただし、
+Organization内部の情報については
+MembershipおよびRoleによる権限管理に従う。
+
+Personが複数Organizationに所属している場合でも、
+Organizationごとの情報を混在させない。
+
+---
+
+# Audit
+
+Personには、
+変更を追跡できるよう
+監査情報を保持する。
+
+基本情報：
+
+- Created At
+- Updated At
+
+必要に応じて、
+
+- Created By
+- Updated By
+
+などを保持する。
+
+ProfileやHistoricalActivityの変更については、
+それぞれのDomainの監査情報を使用する。
+
+---
+
 # Business Rules
 
-PersonはBusiness Activityの主体となる。
+PersonはStageArt上の個人Business Identityを表す。
+
+PersonはAccountとは独立して存在する。
 
 Personは複数のOrganizationへ所属できる。
 
-PersonのOrganizationへの所属はMembershipによって管理する。
+Organizationへの所属はMembershipで管理する。
 
 PersonはProductionへ参加できる。
 
-Productionへの参加はParticipantによって管理する。
+Productionへの参加はParticipantで管理する。
 
-Personは観客としてReservationを作成できる。
+Personは観客としてReservationのBookerになれる。
 
-StageArtユーザーとして登録した観客は、
-自身の観劇履歴を確認できる。
+Reservationの予約情報をPerson自身が直接保持するものではない。
 
-一般観客はStageArtのInternal Portalへ参加する必要はない。
+一般観客はStageArtのInternal Portalへ参加する必要がない。
 
-ProfileはPerson本人が入力・編集できる。
+一般観客についてPersonを必須作成しない。
 
-出演実績・スタッフ実績・観劇履歴などのFact由来のHistoryは、
-Personが直接編集しない。
+StageArtユーザーとして登録した観客はPersonとして管理できる。
+
+登録された観客は自身の観劇履歴を確認できる。
+
+ProfileはPerson本人が作成・編集できる。
+
+ProfileはPersonごとに一つとする。
+
+HistoricalActivityはProfileの子Entityである。
+
+HistoricalActivityは本人申告の過去活動実績である。
+
+HistoricalActivityはHistoryとは別Entityである。
+
+StageArt上で発生した活動FactはHistoryで管理する。
+
+PersonはHistoryを直接作成・編集しない。
+
+Participantから生成されるParticipation HistoryはHistory Domainで管理する。
+
+CheckInCompletedから生成されるAudience HistoryはHistory Domainで管理する。
+
+Audience HistoryのSubjectはReservation.Bookerを基本とする。
+
+HandledParticipantはAudience HistoryのSubjectにならない。
+
+CreatedByはAudience HistoryのSubjectにならない。
+
+UpdatedByはAudience HistoryのSubjectにならない。
+
+Companion Domainは存在しない。
+
+PersonのStatus変更によって過去のBusiness Factを削除しない。
 
 ---
 
 # Domain Events
 
-Personは以下のDomain Eventと関連する。
+Personに直接関連する主なDomain Event：
 
 - PersonCreated
 - PersonProfileUpdated
 - PersonArchived
 
-Personに関連するHistoryは、
-関連するBusiness Eventによって生成・更新される。
+Personに関連するBusiness Eventとして、
+以下のEventが存在する。
 
-主なEvent：
+Participant Domain：
 
 - ParticipantAdded
 - ParticipantUpdated
 - ParticipantRemoved
-- ReservationCreated
-- ReservationCheckedIn
-- ReservationCancelled
 
-Historyの生成・更新ルールはHistory Domainで定義する。
+Check In Domain：
+
+- CheckInCompleted
+
+Historyの生成・更新は、
+これらのBusiness Eventを契機として
+History Domainが処理する。
+
+Person Domain自身がHistoryを直接生成・更新しない。
 
 ---
 
@@ -337,31 +732,88 @@ PersonとOrganizationの関係はMembershipで管理する。
 
 PersonとProductionの関係はParticipantで管理する。
 
-PersonはReservationの主体となることができる。
+PersonはReservationのBookerとなることができる。
 
-ProfileはPerson本人が入力・編集できる。
+ProfileはPersonに1つだけ存在し、
+本人が作成・編集できる。
 
-HistoryはPersonとは独立したDomainとして管理する。
+Profileには、
+本人が入力するプロフィール情報を保持する。
 
-Personに関連するHistoryは、
-History Domainのルールに従って参照・表示する。
+本人が入力する過去の活動実績は、
+Profileの子EntityであるHistoricalActivityとして管理する。
 
-Companion Domainは存在しない。
+HistoricalActivityは、
+StageArt上で確認された正式な活動履歴ではない。
+
+StageArt上で発生した活動Factは、
+History DomainによってHistoryとして管理する。
+
+したがって、
+
+本人申告の過去実績：
+
+Person
+    ↓
+Profile
+    ↓
+HistoricalActivity
+
+
+StageArt上の正式な活動履歴：
+
+Participant / Check In
+    ↓
+Domain Event
+    ↓
+History
+
+という責務分離を行う。
+
+HistoryはPersonの子Entityではなく、
+独立Domainとして管理する。
+
+一般観客はPersonを必須とせず、
+StageArtユーザーとして登録した観客のみ
+Personとして管理できる。
+
+登録ユーザーの観劇履歴は、
+Reservation.BookerとCheckInCompletedをもとに
+History Domainから取得する。
+
+Companion Domainは設けない。
 
 ---
 
 # Design Principles
 
-- Personは人物を表すBusiness Domainである。
-- PersonはAccountとは独立したDomainである。
+- Personは個人Business Identityを表す。
+- PersonはAccountとは独立する。
 - Accountは認証Identity、PersonはBusiness Identityを表す。
 - PersonはBusiness Activityの主体である。
 - PersonとOrganizationの関係はMembershipで管理する。
 - PersonとProductionの関係はParticipantで管理する。
+- PersonはReservationのBookerになれる。
 - ProfileはPerson本人が作成・編集できる。
-- Personは観客としてReservationを作成できる。
-- StageArtユーザーとして登録した観客は観劇履歴を確認できる。
-- 一般観客はInternal Portalを利用しない。
-- Historyは重要な独立Domainとして扱う。
-- HistoryはBusiness Factから生成・更新する。
+- ProfileはPersonごとに一つとする。
+- HistoricalActivityはProfileの子Entityである。
+- HistoricalActivityは本人申告の過去実績である。
+- HistoricalActivityとHistoryを混同しない。
+- StageArt上の活動FactはHistoryで管理する。
+- HistoryはPersonの子Entityではない。
+- Historyは独立Domainとして管理する。
+- ParticipantからParticipation Historyを生成できる。
+- CheckInCompletedからAudience Historyを生成できる。
+- Audience HistoryのSubjectはReservation.Bookerである。
+- HandledParticipantはAudience HistoryのSubjectにならない。
+- CreatedByはAudience HistoryのSubjectにならない。
+- UpdatedByはAudience HistoryのSubjectにならない。
+- 一般観客はPersonを必須としない。
+- StageArtユーザーとして登録した観客は自身の観劇履歴を確認できる。
 - Companionは管理しない。
+- PersonのStatus変更によって過去Factを削除しない。
+- ProfileとMembershipを分離する。
+- ProfileとParticipantを分離する。
+- ProfileとHistoryを分離する。
+- HistoricalActivityとHistoryを分離する。
+- Blueprintを唯一の設計基準とする。
