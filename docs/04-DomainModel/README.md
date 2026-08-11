@@ -36,24 +36,41 @@ StageArtの基本Domainは以下の領域に分類する。
 - Organization
 - Membership
 - Role
+- Regulation
+- Regulation Version
+- Annual Plan
+- Equipment
+- Equipment History
+- Accounting Period
+- Journal Entry
+- Journal Entry Line
 
-### Production
+### Project / Production
 
+- Project
 - Production
 - Assignment
-- Rehearsal
+- Budget
+- Budget Item
+- Rehearsal Candidate
 - Rehearsal Availability
+- Rehearsal
 - Rehearsal Attendance
 - Timetable
-
-### Communication
-
+- Timetable Item
 - Announcement
-
-### File
-
 - Document
 - External Storage Reference
+
+### Ticket / Audience
+
+- Ticket Type
+- Ticket
+- Reservation
+- Reservation Item
+- Check In
+- Survey
+- Survey Response
 
 ### Public Information
 
@@ -62,32 +79,16 @@ StageArtの基本Domainは以下の領域に分類する。
 - Social Post Reference
 - Public Testimonial
 
-### Ticket / Audience
+### Accounting / Analysis
 
-- Ticket Type
-- Reservation
-- Ticket
-- Check In
-- Survey
-- Survey Response
-
-### Accounting
-
-- Accounting Period
-- Budget
-- Budget Item
-- Journal Entry
-- Journal Entry Line
 - Production Actual
+- Budget vs Actual
 - Financial Report
 
-### Organization Management
+### Integration
 
-- Regulation
-- Regulation Version
-- Annual Plan
-- Equipment
-- Equipment History
+- Google Calendar Integration
+- Google Drive Integration
 
 ---
 
@@ -108,16 +109,20 @@ Person自身はOrganizationに依存しない。
 - Account ID
 - Name
 - Contact Information
-- Profile
 
 Personは複数のOrganizationに所属できる。
+
+また、Organizationに所属していなくても、
+StageArt上で自身のProfileを作成することができる。
 
 ---
 
 ## Profile
 
 Profileは、
-Personが舞台活動を行う際に公開・利用するプロフィール情報を表す。
+Person自身が作成・管理できる個人プロフィールを表す。
+
+ProfileはPersonによって任意に作成できる。
 
 主な情報：
 
@@ -129,9 +134,12 @@ Personが舞台活動を行う際に公開・利用するプロフィール情�
 
 ProfileはPersonに紐付く。
 
-出演履歴そのものはProfileに保存しない。
+出演履歴や所属履歴などのFactそのものはProfileに保存しない。
 
-出演履歴はProductionおよびAssignmentから生成・参照する。
+出演実績はProject / Assignment等のFactから生成・参照する。
+
+Profileでは、
+それらの実績を公開プロフィール上に表示する。
 
 ---
 
@@ -155,7 +163,8 @@ StageArtを利用する団体を表す。
 - Public Information
 - SNS Information
 
-Organizationは複数のPersonをMembershipとして保持する。
+Organizationは、
+複数のProjectを管理する。
 
 ---
 
@@ -196,7 +205,7 @@ Organization C
 ## Role
 
 Roleは、
-OrganizationまたはProductionにおける利用者の権限・役割を表す。
+OrganizationまたはProjectにおける利用者の役割・権限を表す。
 
 基本的なRoleとして、
 
@@ -209,30 +218,76 @@ OrganizationまたはProductionにおける利用者の権限・役割を表す�
 
 RoleはPersonそのものに付与しない。
 
-MembershipまたはProduction Participationに対して付与する。
+MembershipまたはProject上の権限に対して付与する。
 
 必要に応じて複数Roleを持つことができる。
 
 ---
 
-# 4. Production Domain
+# 4. Project / Production Domain
+
+## Project
+
+Projectは、
+Organizationが行う一つの制作・活動単位を表す。
+
+Projectは内部的な制作全体を管理するDomainである。
+
+例えば、
+
+- 公演制作
+- ライブ制作
+- 朗読公演制作
+- セミナー開催
+
+などを一つのProjectとして扱う。
+
+主な情報：
+
+- Project ID
+- Organization
+- Name
+- Description
+- Status
+- Start Date
+- End Date
+- Internal Information
+
+Projectには一つのProductionが紐付く。
+
+Projectは、
+
+- キャスティング
+- 稽古
+- タイムテーブル
+- ファイル
+- 内部連絡
+- 予算
+- 実績
+- 収支
+
+など、制作全体に関する情報を管理する。
+
+利用者は通常、
+Projectという内部Domainを意識する必要はない。
+
+「公演を作る」などの操作によって、
+StageArtがProjectとProductionを生成する。
+
+---
 
 ## Production
 
 Productionは、
-Organizationが行う一つの活動・公演を表す。
+Projectに紐付く観客向けの公演・活動実施単位を表す。
 
-演劇では「公演」、
-音楽では「ライブ」、
-セミナーでは「講座」など、
-UI上の名称はOrganization Typeに応じて変更できる。
-
-内部DomainではProductionとして統一する。
+Projectが「制作全体」を表すのに対し、
+Productionは「観客へ公開される公演・活動」を表す。
 
 主な情報：
 
 - Production ID
-- Organization
+- Project
 - Name
 - Description
 - Start Date
@@ -241,23 +296,65 @@ UI上の名称はOrganization Typeに応じて変更できる。
 - Scheduled End Time
 - Status
 - Public Information
-- Internal Information
 
-ProductionはStageArtにおける活動Lifecycleの中心となるDomainである。
+Productionは、
+
+- 公演ページ
+- チケット
+- 予約
+- 受付
+- アンケート
+- 公開実績
+
+など、観客との接点となるDomainを管理する。
 
 ---
+
+## Project and Production Rule
+
+基本構造は、
+
+Organization
+↓
+Project
+↓
+Production
+
+とする。
+
+ProjectとProductionを同一Domainとして扱わない。
+
+Projectは制作・運営の内部単位であり、
+Productionは観客向けの公演単位である。
+
+再演を行う場合、
+初演と再演は別Projectとして管理する。
+
+例：
+
+Organization
+└ Project「作品A 初演」
+   └ Production「作品A」
+
+Organization
+└ Project「作品A 再演」
+   └ Production「作品A 再演」
+
+---
+
+# 5. Assignment Domain
 
 ## Assignment
 
 Assignmentは、
-PersonがProductionへ参加する事実を表す。
+PersonがProjectに参加する事実を表す。
 
 Organizationへの所属とは別に管理する。
 
 主な情報：
 
 - Assignment ID
-- Production
+- Project
 - Person
 - Role
 - Assignment Type
@@ -270,23 +367,26 @@ Person A
 Organization
 → Manager
 
-Production X
+Project X
 → Actor
 
 Person B
 
 Organization
-→ Cast
+→ Member
 
-Production X
+Project X
 → Staff
 
 客演など、
-Organization Membershipを持たないPersonがProductionへ参加することも許容する。
+Organization Membershipを持たないPersonがProjectへ参加することも許容する。
+
+Assignmentから、
+Production Public Pageへ出演者情報を生成できる。
 
 ---
 
-# 5. Rehearsal Domain
+# 6. Rehearsal Domain
 
 ## Rehearsal Candidate
 
@@ -296,22 +396,24 @@ Rehearsal Candidateは、
 主な情報：
 
 - Candidate ID
-- Production
+- Project
 - Date
 - Start Time
 - End Time
 - Location
 - Status
 
-候補日は、
-確定したRehearsalとは別の情報として扱う。
+Candidateは、
+日程調整を行う場合に使用する。
+
+すべてのRehearsalがCandidateから生成される必要はない。
 
 ---
 
 ## Rehearsal Availability
 
 Rehearsal Availabilityは、
-候補日に対する日程調整のための回答を表す。
+Rehearsal Candidateに対する日程調整のための回答を表す。
 
 主な情報：
 
@@ -329,19 +431,20 @@ Availabilityには、
 などを使用する。
 
 これは、
-「その日なら稽古に参加できるか」を確認するための情報である。
+「候補日のうち、どの日なら参加可能か」
+を確認するための情報である。
 
 ---
 
 ## Rehearsal
 
 Rehearsalは、
-確定した稽古を表す。
+Projectにおける具体的な予定を表す。
 
 主な情報：
 
 - Rehearsal ID
-- Production
+- Project
 - Date
 - Start Time
 - End Time
@@ -350,14 +453,33 @@ Rehearsalは、
 - Memo
 - Status
 
-RehearsalはRehearsal Candidateから生成される。
+Rehearsalは、
+
+1. Rehearsal Candidateから確定する
+2. 直接作成する
+
+の両方を許容する。
+
+したがって、
+日程調整を必要としない予定も直接登録できる。
+
+例：
+
+- 最初から日程が決まっている稽古
+- 本番日程
+- 小屋入り
+- ゲネプロ
+- その他の制作予定
+
+Rehearsal Candidateは、
+Rehearsalを作成するための唯一の入口ではない。
 
 ---
 
 ## Rehearsal Attendance
 
 Rehearsal Attendanceは、
-確定した稽古への参加予定・参加確認を表す。
+確定したRehearsalへの参加確認を表す。
 
 主な情報：
 
@@ -376,9 +498,17 @@ Attendance Statusには、
 
 Rehearsal Availabilityとは別のDomainである。
 
+Rehearsal Availabilityは
+「日程調整のための回答」、
+
+Rehearsal Attendanceは
+「確定した予定への参加確認」
+
+を表す。
+
 ---
 
-# 6. Timetable Domain
+# 7. Timetable Domain
 
 ## Timetable
 
@@ -388,7 +518,7 @@ Timetableは、
 主な情報：
 
 - Timetable ID
-- Production
+- Project
 - Date
 - Name
 - Status
@@ -414,23 +544,23 @@ Timetable Itemは、
 Timetableは、
 Rehearsalそのものとは別のDomainとして扱う。
 
-Rehearsalが「稽古という予定」を表すのに対し、
-Timetableは「その日の進行」を表す。
+Rehearsalが「予定」を表すのに対し、
+Timetableは「その日の具体的な進行」を表す。
 
 ---
 
-# 7. Communication Domain
+# 8. Communication Domain
 
 ## Announcement
 
 Announcementは、
-団体またはProductionの関係者へ伝達する内部連絡を表す。
+OrganizationまたはProjectの関係者へ伝達する内部連絡を表す。
 
 主な情報：
 
 - Announcement ID
 - Organization
-- Production
+- Project
 - Sender
 - Title
 - Body
@@ -452,12 +582,12 @@ Targetには、
 
 ---
 
-# 8. File Domain
+# 9. File Domain
 
 ## Document
 
 Documentは、
-ProductionまたはOrganizationに関連付けられたファイル情報を表す。
+OrganizationまたはProjectに関連付けられたファイル情報を表す。
 
 StageArt自身が実ファイルを管理することを前提としない。
 
@@ -465,7 +595,7 @@ StageArt自身が実ファイルを管理することを前提としない。
 
 - Document ID
 - Organization
-- Production
+- Project
 - Name
 - Description
 - External Storage Reference
@@ -495,7 +625,510 @@ StageArtは、
 
 ---
 
-# 9. Public Information Domain
+# 10. Budget Domain
+
+## Budget
+
+Budgetは、
+Projectに対する予算計画を表す。
+
+一つのProjectに対して、
+複数のBudgetを作成できる。
+
+Budgetには、
+利用者が識別しやすい名前を付ける。
+
+例：
+
+- A会場案
+- B会場案
+- 一日2公演案
+- 一日1公演案
+
+Budgetは、
+単なる一つの予算金額ではなく、
+一つのProjectに対する予算シナリオとして扱う。
+
+主な情報：
+
+- Budget ID
+- Project
+- Name
+- Description
+- Status
+- Total Revenue Budget
+- Total Expense Budget
+
+複数のBudgetのうち、
+実際に採用する予算を選択できる。
+
+---
+
+## Budget Item
+
+Budget Itemは、
+Budget内の個別の予算項目を表す。
+
+収入：
+
+- チケット収入
+- 協賛金
+- 拠出金
+- その他収入
+
+支出：
+
+- 消耗品費
+- 会場費
+- 人件費
+- 機器レンタル費用
+- チケットバック
+- その他支出
+
+などを扱う。
+
+主な情報：
+
+- Budget
+- Category
+- Description
+- Amount
+
+Budget Itemは、
+予算シナリオごとの金額を保持する。
+
+---
+
+# 11. Ticket / Audience Domain
+
+## Ticket Type
+
+Ticket Typeは、
+チケットの種別を表す。
+
+例：
+
+- 一般
+- 学生
+- その他
+
+Ticket Typeそのものは、
+価格を持たない。
+
+---
+
+## Ticket
+
+Ticketは、
+Productionごとに設定されるチケットマスタを表す。
+
+Ticket TypeとPriceを一つの組み合わせとして管理する。
+
+例：
+
+Production A
+
+- 一般 / 3,000円
+- 学生 / 2,000円
+- 当日券 / 3,500円
+
+主な情報：
+
+- Ticket ID
+- Production
+- Ticket Type
+- Price
+- Name
+- Description
+- Status
+
+同じTicket Typeでも、
+Productionごとに異なるPriceを設定できる。
+
+Ticketは、
+観客が購入・予約する際の基準となる。
+
+---
+
+## Reservation
+
+Reservationは、
+観客によるチケット予約という事実を表す。
+
+主な情報：
+
+- Reservation ID
+- Production
+- Customer Information
+- Status
+- Reservation Date
+
+Reservationは、
+一つ以上のReservation Itemを持つ。
+
+---
+
+## Reservation Item
+
+Reservation Itemは、
+一つのReservationにおけるチケット種別と数量を表す。
+
+主な情報：
+
+- Reservation
+- Ticket
+- Quantity
+- Unit Price
+
+Unit Priceは、
+予約時点のTicket Priceを記録する。
+
+これにより、
+後からTicketマスタの価格を変更しても、
+過去のReservationの金額が変化しない。
+
+---
+
+## Check In
+
+Check Inは、
+公演当日に観客が来場した事実を表す。
+
+主な情報：
+
+- Check In ID
+- Reservation
+- Production
+- Checked In At
+- Reception Staff
+
+受付方法には、
+
+- QR
+- Reservation Number
+- Name
+
+などを使用できる。
+
+QR TicketはReservationから生成されるArtifactとして扱う。
+
+---
+
+# 12. Survey Domain
+
+## Survey
+
+Surveyは、
+Production終了後に観客へ送信するアンケートを表す。
+
+主な情報：
+
+- Survey ID
+- Production
+- Questions
+- Send Timing
+- Response Deadline
+- Status
+
+SurveyはProductionごとに設定する。
+
+---
+
+## Survey Response
+
+Survey Responseは、
+観客がアンケートへ回答した事実を表す。
+
+主な情報：
+
+- Survey
+- Respondent
+- Answers
+- Submitted At
+
+回答には、
+
+- 評価
+- 感想
+- 推しキャスト
+- Production固有の質問
+
+などを含める。
+
+回答期間はProduction終了後3日間とする。
+
+---
+
+# 13. Accounting Domain
+
+## Accounting Period
+
+Accounting Periodは、
+Organizationの会計期間を表す。
+
+主な情報：
+
+- Accounting Period ID
+- Organization
+- Start Date
+- End Date
+- Status
+
+Accounting Periodは、
+団体全体の会計を集計する単位となる。
+
+---
+
+## Journal Entry
+
+Journal Entryは、
+団体会計における一つの仕訳を表す。
+
+主な情報：
+
+- Journal Entry ID
+- Organization
+- Accounting Period
+- Date
+- Description
+- Project
+- Reference
+- Status
+
+Production単位ではなく、
+Project単位で公演制作に関する会計を紐付ける。
+
+---
+
+## Journal Entry Line
+
+Journal Entry Lineは、
+Journal Entryを構成する費目ごとの行を表す。
+
+一つの費目につき一つのLineを持つ。
+
+主な情報：
+
+- Journal Entry
+- Account / Category
+- Amount
+- Is Debit
+
+`Is Debit`によって、
+そのLineが借方か貸方かを表現する。
+
+例：
+
+Journal Entry
+
+「会場費を支払った」
+
+↓
+
+Line 1
+会場費
+50,000円
+Is Debit = true
+
+↓
+
+Line 2
+現金
+50,000円
+Is Debit = false
+
+Journal Entry Line単位で費目を分けることで、
+費目別集計およびProject別集計を可能にする。
+
+---
+
+# 14. Production Actual Domain
+
+## Production Actual
+
+Production Actualは、
+Project / Productionに対する実際の収入・支出を表す。
+
+実績は、
+Journal Entryから参照・集計する。
+
+実績を別途手入力して、
+同じ金額を二重管理しない。
+
+Projectに紐付いたJournal Entryから、
+公演制作の実績を集計できる。
+
+---
+
+# 15. Budget vs Actual Domain
+
+## Budget vs Actual
+
+Budget vs Actualは、
+Budgetと実績を比較した結果を表す。
+
+これは独立したFactとして二重保存しない。
+
+Budget
+
+＋
+
+Journal Entryから集計したActual
+
+から生成するArtifactとして扱う。
+
+比較項目：
+
+- Budget
+- Actual
+- Difference
+
+比較は費目単位で行う。
+
+例：
+
+| 費目 | 予算 | 実績 | 差額 |
+|---|---:|---:|---:|
+| 会場費 | 100,000 | 110,000 | +10,000 |
+| 消耗品費 | 30,000 | 24,000 | -6,000 |
+| 人件費 | 80,000 | 80,000 | 0 |
+
+---
+
+# 16. Financial Report Domain
+
+## Financial Report
+
+Financial Reportは、
+会計情報から生成される財務レポートを表す。
+
+主なもの：
+
+- Project Profit and Loss
+- Organization Profit and Loss
+- Balance Sheet
+- Budget vs Actual
+
+レポートは会計Factから生成する。
+
+レポートそのものを会計情報の正本として扱わない。
+
+---
+
+# 17. Organization Management Domain
+
+## Regulation
+
+Regulationは、
+Organizationの団体規約を表す。
+
+Regulation自体を直接上書きしない。
+
+Version管理を行う。
+
+---
+
+## Regulation Version
+
+Regulation Versionは、
+規約の一つの版を表す。
+
+主な情報：
+
+- Regulation Version ID
+- Organization
+- Version Number
+- Content
+- Created At
+- Effective Date
+- Created By
+
+過去Versionは削除せず保持する。
+
+現在のVersionと過去Versionを区別する。
+
+規約変更権限を持つのは、
+Managerおよび規約変更権限を付与されたDelegateとする。
+
+---
+
+## Annual Plan
+
+Annual Planは、
+Organizationの年度計画を表す。
+
+主な情報：
+
+- Annual Plan ID
+- Organization
+- Fiscal Year
+- Activities
+- Project Plans
+- Policy
+- Status
+
+Annual Planは、
+団体活動の年間計画を管理するために利用する。
+
+公民館等への団体登録・活動申請に利用できる形式を想定する。
+
+---
+
+# 18. Equipment Domain
+
+## Equipment
+
+Equipmentは、
+Organizationが保有・管理する備品を表す。
+
+備品管理の目的は、
+金額や資産価値ではなく、
+所在と管理者を明らかにすることである。
+
+主な情報：
+
+- Equipment ID
+- Organization
+- Name
+- Category
+- Location
+- Custodian
+- Status
+- Memo
+
+Statusには、
+
+- Available
+- Loaned
+- Unknown
+- Disposed
+
+などを使用する。
+
+取得価格や減価償却情報は保持しない。
+
+---
+
+## Equipment History
+
+Equipment Historyは、
+備品の所在や管理者などの変更履歴を表す。
+
+主な情報：
+
+- Equipment
+- Changed At
+- Changed By
+- Previous Location
+- New Location
+- Previous Custodian
+- New Custodian
+- Status Change
+- Memo
+
+---
+
+# 19. Public Information Domain
 
 ## Organization Public Profile
 
@@ -551,7 +1184,7 @@ StageArtでは、
 - SNS
 - URL
 - 投稿内容のピックアップ
-- Productionとの関連
+- Organization / Productionとの関連
 
 などを参照情報として扱う。
 
@@ -569,414 +1202,7 @@ Public Testimonialは、
 
 ---
 
-# 10. Ticket / Audience Domain
-
-## Ticket Type
-
-Ticket Typeは、
-Productionにおけるチケット種別を表す。
-
-例：
-
-- 一般
-- 学生
-- その他
-
-具体的な券種はProductionごとに設定する。
-
----
-
-## Reservation
-
-Reservationは、
-観客によるチケット予約という事実を表す。
-
-主な情報：
-
-- Reservation ID
-- Production
-- Customer Information
-- Ticket Type
-- Quantity
-- Status
-- Reservation Date
-
-Reservationは、
-公演当日の受付対象となる。
-
----
-
-## Ticket
-
-Ticketは、
-Reservationに基づいて発行されるチケットを表す。
-
-主な情報：
-
-- Ticket ID
-- Reservation
-- QR Information
-- Status
-
-QR TicketはTicketから生成されるArtifactとして扱う。
-
----
-
-## Check In
-
-Check Inは、
-公演当日に観客が来場した事実を表す。
-
-主な情報：
-
-- Check In ID
-- Ticket
-- Production
-- Checked In At
-- Reception Staff
-
-受付方法には、
-
-- QR
-- Reservation Number
-- Name
-
-などを使用できる。
-
----
-
-# 11. Survey Domain
-
-## Survey
-
-Surveyは、
-Production終了後に観客へ送信するアンケートを表す。
-
-主な情報：
-
-- Survey ID
-- Production
-- Questions
-- Send Timing
-- Response Deadline
-- Status
-
-SurveyはProductionごとに設定する。
-
----
-
-## Survey Response
-
-Survey Responseは、
-観客がアンケートへ回答した事実を表す。
-
-主な情報：
-
-- Survey
-- Respondent
-- Answers
-- Submitted At
-
-回答には、
-
-- 評価
-- 感想
-- 推しキャスト
-- Production固有の質問
-
-などを含める。
-
-回答期間はProduction終了後3日間とする。
-
----
-
-# 12. Accounting Domain
-
-## Accounting Period
-
-Accounting Periodは、
-Organizationの会計期間を表す。
-
-主な情報：
-
-- Accounting Period ID
-- Organization
-- Start Date
-- End Date
-- Status
-
-Accounting Periodは、
-団体全体の会計を集計する単位となる。
-
----
-
-## Budget
-
-Budgetは、
-ProductionまたはOrganizationに対して設定された予算計画を表す。
-
-Betaでは、
-Production Budgetを中心として扱う。
-
-主な情報：
-
-- Budget ID
-- Organization
-- Production
-- Status
-- Total Revenue Budget
-- Total Expense Budget
-
----
-
-## Budget Item
-
-Budget Itemは、
-Budget内の個別の予算項目を表す。
-
-収入：
-
-- チケット収入
-- 協賛金
-- 拠出金
-- その他収入
-
-支出：
-
-- 消耗品費
-- 会場費
-- 人件費
-- 機器レンタル費用
-- チケットバック
-- その他支出
-
-などを扱う。
-
-主な情報：
-
-- Budget
-- Category
-- Description
-- Amount
-
----
-
-## Journal Entry
-
-Journal Entryは、
-団体会計における一つの仕訳を表す。
-
-主な情報：
-
-- Journal Entry ID
-- Organization
-- Accounting Period
-- Date
-- Description
-- Production
-- Reference
-- Status
-
-Productionに関連する仕訳は、
-Productionの実績として利用できる。
-
----
-
-## Journal Entry Line
-
-Journal Entry Lineは、
-Journal Entryを構成する個々の勘定行を表す。
-
-主な情報：
-
-- Journal Entry
-- Account
-- Debit
-- Credit
-- Category
-
-StageArtでは、
-高度な会計機能を目的としない。
-
-Betaでは、
-必要な収入・支出を簡易的に管理できることを優先する。
-
----
-
-## Production Actual
-
-Production Actualは、
-Productionに対する実際の収入・支出を表す。
-
-Production Actualは、
-Journal Entryから参照・集計できる。
-
-Production Actualを別途手入力することで、
-同じ実績を二重管理しない。
-
----
-
-## Budget vs Actual
-
-Budget vs Actualは、
-Productionの予算と実績を比較した結果を表す。
-
-これは独立したFactとして二重保存せず、
-
-Budget
-
-＋
-
-Production Actual
-
-から生成するArtifactとして扱う。
-
-比較項目：
-
-- 予算
-- 実績
-- 差額
-
----
-
-## Financial Report
-
-Financial Reportは、
-会計情報から生成される財務レポートを表す。
-
-主なもの：
-
-- Production Profit and Loss
-- Organization Profit and Loss
-- Balance Sheet
-- Budget vs Actual
-
-レポートは会計Factから生成する。
-
-レポートそのものを会計情報の正本として扱わない。
-
----
-
-# 13. Organization Management Domain
-
-## Regulation
-
-Regulationは、
-Organizationの団体規約を表す。
-
-Regulation自体を直接上書きしない。
-
-Version管理を行う。
-
----
-
-## Regulation Version
-
-Regulation Versionは、
-規約の一つの版を表す。
-
-主な情報：
-
-- Regulation Version ID
-- Organization
-- Version Number
-- Content
-- Created At
-- Effective Date
-- Created By
-
-過去Versionは削除せず保持する。
-
-現在のVersionと過去Versionを区別する。
-
-規約変更権限を持つのは、
-Managerおよび規約変更権限を付与されたDelegateとする。
-
----
-
-## Annual Plan
-
-Annual Planは、
-Organizationの年度計画を表す。
-
-主な情報：
-
-- Annual Plan ID
-- Organization
-- Fiscal Year
-- Activities
-- Production Plans
-- Policy
-- Status
-
-Annual Planは、
-団体活動の年間計画を管理するために利用する。
-
-公民館等への団体登録・活動申請に利用できる形式を想定する。
-
----
-
-# 14. Equipment Domain
-
-## Equipment
-
-Equipmentは、
-Organizationが保有・管理する備品を表す。
-
-備品管理の目的は、
-金額や資産価値ではなく、
-所在と管理者を明らかにすることである。
-
-主な情報：
-
-- Equipment ID
-- Organization
-- Name
-- Category
-- Location
-- Custodian
-- Status
-- Memo
-
-Statusには、
-
-- Available
-- Loaned
-- Unknown
-- Disposed
-
-などを使用する。
-
-取得価格や減価償却情報は保持しない。
-
----
-
-## Equipment History
-
-Equipment Historyは、
-備品の所在や管理者などの変更履歴を表す。
-
-主な情報：
-
-- Equipment
-- Changed At
-- Changed By
-- Previous Location
-- New Location
-- Previous Custodian
-- New Custodian
-- Status Change
-- Memo
-
-これにより、
-「誰が持っているか」
-「どこにあるか」
-を現在情報として確認できるだけでなく、
-変更履歴も追跡できる。
-
----
-
-# 15. External Integration Domain
+# 20. External Integration Domain
 
 ## Google Calendar Integration
 
@@ -1002,9 +1228,18 @@ Rehearsal確定
 
 Google Calendar Event生成
 
+または、
+
+Rehearsal直接作成
+
 ↓
 
-Rehearsal Attendance
+Google Calendar Event生成
+
+Google Calendarへの登録対象は、
+実際の稽古参加者に限定しない。
+
+予定を把握する必要がある関係者を登録対象とする。
 
 ---
 
@@ -1019,154 +1254,148 @@ StageArtは実ファイルの正本ではない。
 
 ---
 
-# 16. Domain Relationship
+# 21. Person-Centric Relationship
 
-StageArtの基本的なDomain Relationshipは以下とする。
+人物を中心としたDomain Relationshipは以下とする。
 
 Person
 │
 ├── Profile
 │
-└── Membership
-       │
-       └── Organization
-              │
-              ├── Regulation
-              │     └── Regulation Version
-              │
-              ├── Annual Plan
-              │
-              ├── Accounting Period
-              │     └── Journal Entry
-              │            └── Journal Entry Line
-              │
-              ├── Equipment
-              │     └── Equipment History
-              │
+├── Membership
+│      └── Organization
+│
+└── Assignment
+       └── Project
               └── Production
-                     │
-                     ├── Assignment
-                     │
-                     ├── Budget
-                     │     └── Budget Item
-                     │
-                     ├── Rehearsal Candidate
-                     │     └── Rehearsal Availability
-                     │
-                     ├── Rehearsal
-                     │     └── Rehearsal Attendance
-                     │
-                     ├── Timetable
-                     │     └── Timetable Item
-                     │
-                     ├── Announcement
-                     │
-                     ├── Document
-                     │
-                     ├── Ticket Type
-                     │     └── Reservation
-                     │            └── Ticket
-                     │                   └── Check In
-                     │
-                     ├── Survey
-                     │     └── Survey Response
-                     │
-                     ├── Production Actual
-                     │
-                     ├── Public Page
-                     │
-                     └── Social Post Reference
+
+PersonはStageArt全体で一つのIdentityを持つ。
+
+Organizationへの所属はMembershipで表現する。
+
+Projectへの参加はAssignmentで表現する。
+
+ProfileはPerson自身が作成・管理できる。
+
+出演実績はAssignmentおよびProductionから生成・参照する。
 
 ---
 
-# 17. Production as the Central Domain
+# 22. Organization-Centric Relationship
+
+団体を中心としたDomain Relationshipは以下とする。
+
+Organization
+│
+├── Membership
+│
+├── Regulation
+│     └── Regulation Version
+│
+├── Annual Plan
+│
+├── Accounting Period
+│     └── Journal Entry
+│            └── Journal Entry Line
+│
+├── Equipment
+│     └── Equipment History
+│
+└── Project
+      │
+      ├── Production
+      │
+      ├── Assignment
+      │
+      ├── Budget
+      │     └── Budget Item
+      │
+      ├── Rehearsal Candidate
+      │     └── Rehearsal Availability
+      │
+      ├── Rehearsal
+      │     └── Rehearsal Attendance
+      │
+      ├── Timetable
+      │     └── Timetable Item
+      │
+      ├── Announcement
+      │
+      ├── Document
+      │
+      └── Project Actual
+
+Production
+│
+├── Ticket
+│     └── Reservation
+│            └── Reservation Item
+│
+├── Check In
+│
+├── Survey
+│     └── Survey Response
+│
+└── Production Public Page
+
+---
+
+# 23. Project / Production Relationship
+
+StageArtの基本構造は、
+
+Organization
+↓
+Project
+↓
+Production
+
+とする。
+
+Projectは、
+一つの制作・活動全体を管理する。
 
 Productionは、
-StageArt Betaにおける活動Lifecycleの中心Domainとする。
+そのProjectにおける観客向けの公演・活動実施を表す。
 
-Productionには、
+Projectは、
 
-- Assignment
-- Budget
-- Rehearsal
-- Timetable
-- Document
-- Announcement
-- Ticket
-- Reservation
-- Check In
-- Survey
-- Production Actual
-- Public Page
+- キャスティング
+- 稽古
+- タイムテーブル
+- ファイル
+- 内部連絡
+- 予算
+- 実績
+- 収支
 
-などが関連する。
+などを管理する。
 
-これにより、一つの公演について、
+Productionは、
 
-企画
+- 公開情報
+- 公演日程
+- 会場
+- チケット
+- 予約
+- 受付
+- アンケート
+- 観客向け実績
 
-↓
-
-予算
-
-↓
-
-キャスティング
-
-↓
-
-稽古
-
-↓
-
-準備
-
-↓
-
-広報
-
-↓
-
-予約
-
-↓
-
-受付
-
-↓
-
-アンケート
-
-↓
-
-実績
-
-↓
-
-予実比較
-
-↓
-
-収支
-
-↓
-
-アーカイブ
-
-までを一つのLifecycleとして扱う。
+などを管理する。
 
 ---
 
-# 18. Accounting Relationship
+# 24. Accounting Relationship
 
 公演会計と団体会計は、
 別々の会計システムとして作らない。
 
-Productionに関連する実際の収入・支出は、
+Projectに関連する実際の収入・支出は、
 Journal Entryとして団体会計へ記録される。
 
-そのJournal EntryをProduction単位で集計することで、
-Production Actualを取得する。
+そのJournal EntryをProject単位で集計することで、
+Project Actualを取得する。
 
 したがって、
 
@@ -1174,7 +1403,7 @@ Journal Entry
 
 ↓
 
-Production Actual
+Project Actual
 
 ↓
 
@@ -1182,7 +1411,7 @@ Budget vs Actual
 
 ↓
 
-Production Result
+Project Result
 
 という関係になる。
 
@@ -1205,7 +1434,31 @@ PL / BS
 
 ---
 
-# 19. Public Artifact Relationship
+# 25. Budget Relationship
+
+Projectには複数のBudgetを持つことができる。
+
+例えば、
+
+Project「作品A」
+
+├── Budget「A会場案」
+├── Budget「B会場案」
+└── Budget「一日2公演案」
+
+のように管理する。
+
+各BudgetにはBudget Itemが存在する。
+
+Budgetは制作前の計画情報である。
+
+実際に採用したBudgetと、
+実際に発生したJournal Entryを比較することで、
+Projectの予実を確認する。
+
+---
+
+# 26. Public Artifact Relationship
 
 Public Pageは、
 独立した情報源として活動内容を管理しない。
@@ -1218,7 +1471,7 @@ Organization
 
 Organization Public Profile
 
-Production
+Project / Production
 
 ↓
 
@@ -1247,7 +1500,7 @@ Public Pageに古い情報を個別保存する必要をなくす。
 
 ---
 
-# 20. External Service Relationship
+# 27. External Service Relationship
 
 外部サービスは、
 StageArtのDomain Modelそのものではない。
@@ -1282,7 +1535,7 @@ Google Drive File
 
 ---
 
-# 21. Domain Rules
+# 28. Domain Rules
 
 StageArtのDomainには以下の原則を適用する。
 
@@ -1294,56 +1547,93 @@ Membershipを介して所属を表現する。
 
 ### Rule 2
 
-Organizationへの所属とProductionへの参加を分離する。
+Organizationへの所属とProjectへの参加を分離する。
 
 MembershipとAssignmentは別Domainとする。
 
 ### Rule 3
+
+ProjectとProductionを分離する。
+
+Projectは制作・運営の内部単位、
+Productionは観客向けの公演単位とする。
+
+### Rule 4
+
+ProfileはPerson自身が作成・編集できる。
+
+Profileを自動生成情報だけで構成しない。
+
+### Rule 5
+
+RehearsalはRehearsal Candidateからのみ生成されるものではない。
+
+直接作成できる。
+
+### Rule 6
+
+TicketはProductionごとのチケットマスタとする。
+
+Ticket TypeとPriceを一つの組み合わせとして管理する。
+
+### Rule 7
+
+BudgetはProjectごとに複数作成できる。
+
+Budgetには利用者が識別できる名前を付ける。
+
+### Rule 8
 
 予算と実績を分離する。
 
 Budgetは計画、
 Journal Entryは実績のFactとする。
 
-### Rule 4
+### Rule 9
 
-Production Actualを二重管理しない。
+Journal Entry Lineは費目ごとに分ける。
 
-Journal EntryからProduction Actualを生成・集計する。
+借方・貸方は`Is Debit`フラグで表現する。
 
-### Rule 5
+### Rule 10
+
+Project Actualを二重管理しない。
+
+Journal EntryからProject Actualを生成・集計する。
+
+### Rule 11
 
 Budget vs ActualをFactとして保存しない。
 
-BudgetとProduction Actualから生成するArtifactとする。
+BudgetとActualから生成するArtifactとする。
 
-### Rule 6
+### Rule 12
 
-Google Calendarを稽古情報の正本としない。
+Google Calendarを予定情報の正本としない。
 
 Rehearsalを正本とする。
 
-### Rule 7
+### Rule 13
 
 Google DriveをStageArtのDocument Domainそのものとしない。
 
 DocumentはStageArt上の関連情報、
 実ファイルはGoogle Driveに存在する。
 
-### Rule 8
+### Rule 14
 
 Public Pageに内部情報を保存しない。
 
 Public PageはDomain Factから生成する。
 
-### Rule 9
+### Rule 15
 
 規約を上書きしない。
 
 Regulation Versionを生成し、
 過去Versionを保持する。
 
-### Rule 10
+### Rule 16
 
 備品を資産会計として扱わない。
 
@@ -1351,7 +1641,7 @@ Equipmentは所在・管理者・状態を管理する。
 
 ---
 
-# 22. Domain Model Scope
+# 29. Domain Model Scope
 
 Betaでは、
 以下のDomainを正式な対象とする。
@@ -1366,26 +1656,41 @@ Betaでは、
 - Organization
 - Membership
 - Role
+- Regulation
+- Regulation Version
+- Annual Plan
+- Equipment
+- Equipment History
+- Accounting Period
+- Journal Entry
+- Journal Entry Line
 
-### Production
+### Project / Production
 
+- Project
 - Production
 - Assignment
+- Budget
+- Budget Item
 - Rehearsal Candidate
 - Rehearsal Availability
 - Rehearsal
 - Rehearsal Attendance
 - Timetable
 - Timetable Item
-
-### Communication
-
 - Announcement
-
-### File
-
 - Document
 - External Storage Reference
+
+### Ticket / Audience
+
+- Ticket Type
+- Ticket
+- Reservation
+- Reservation Item
+- Check In
+- Survey
+- Survey Response
 
 ### Public
 
@@ -1394,33 +1699,11 @@ Betaでは、
 - Social Post Reference
 - Public Testimonial
 
-### Ticket / Audience
+### Accounting / Analysis
 
-- Ticket Type
-- Reservation
-- Ticket
-- Check In
-- Survey
-- Survey Response
-
-### Accounting
-
-- Accounting Period
-- Budget
-- Budget Item
-- Journal Entry
-- Journal Entry Line
-- Production Actual
+- Project Actual
 - Budget vs Actual
 - Financial Report
-
-### Organization Management
-
-- Regulation
-- Regulation Version
-- Annual Plan
-- Equipment
-- Equipment History
 
 ### Integration
 
@@ -1429,7 +1712,7 @@ Betaでは、
 
 ---
 
-# 23. Out of Scope Domain
+# 30. Out of Scope Domain
 
 Betaでは以下のDomainを設計・実装対象としない。
 
@@ -1458,36 +1741,56 @@ StageArtのDomain Modelは、
 
 を中心として設計する。
 
-Personが存在する。
+人物軸では、
 
-Organizationに所属する。
+Person
+↓
+Profile
+↓
+Membership / Assignment
+↓
+Organization / Project
 
-Productionに参加する。
+という関係を持つ。
 
-稽古を行う。
+団体軸では、
 
-予算を立てる。
+Organization
+↓
+Project
+↓
+Production
 
-支出・収入が発生する。
+を基本構造とする。
 
-予約を受ける。
+Projectは制作全体を管理し、
+Productionは観客向けの公演を表す。
 
-観客が来場する。
+その上に、
 
-アンケートが回答される。
+予算
+↓
+実績
+↓
+予実比較
+↓
+収支
 
-公演が終了する。
+稽古候補
+↓
+日程調整
+↓
+稽古確定
+↓
+参加確認
 
-その事実から、
+予約
+↓
+受付
+↓
+アンケート
 
-Public Page
-QR Ticket
-Timetable
-Financial Report
-Budget vs Actual
-活動履歴
-
-などのArtifactを生成する。
+などのDomainが接続する。
 
 StageArtは、
 これらのFactを一貫して管理することで、
