@@ -2,7 +2,7 @@
 
 # Chapter 2 : Design Principles
 
-Version : 2.0
+Version : 2.1
 
 ---
 
@@ -72,8 +72,14 @@ UIは可能な限りシンプルにする。
 システムを覚えるための時間そのものが負担となる。
 
 StageArtは、
-「何ができるか」ではなく
-「何をしたいか」を起点として操作できるUIを優先する。
+
+「何ができるか」
+
+ではなく、
+
+「何をしたいか」
+
+を起点として操作できるUIを優先する。
 
 ---
 
@@ -111,7 +117,13 @@ OrganizationごとにMembershipおよびRoleを持つ。
 
 Organizationを切り替えると、
 そのOrganizationにおけるMembershipおよびRoleに基づいて、
-表示されるデータ、Portal、メニュー、利用可能な機能を切り替える。
+
+・表示されるデータ
+・Portal
+・メニュー
+・利用可能な機能
+
+を切り替える。
 
 ---
 
@@ -228,6 +240,11 @@ Google Calendar連携
 など、
 Business Flowに基づいて必要な処理を連鎖させる。
 
+ただし、すべてのRehearsalがRehearsal Candidateから生成されるとは限らない。
+
+日程調整を必要としない稽古や予定は、
+Rehearsalを直接作成できる。
+
 ---
 
 # Principle 10
@@ -244,13 +261,15 @@ Business Flowに基づいて必要な処理を連鎖させる。
 
 ・団体情報はOrganizationが管理する
 ・所属情報はMembershipが管理する
-・出演情報はAssignmentが管理する
+・公演参加情報はParticipantが管理する
 ・予約情報はReservationが管理する
 ・稽古情報はRehearsalが管理する
 ・会計情報はAccountingが管理する
+・予算情報はBudgetが管理する
 ・備品情報はEquipmentが管理する
 
-Public Page、Internal Page、レポート、集計結果などは、
+Public Page、Internal Page、プロフィール上の出演情報、
+レポート、集計結果などは、
 これらのFactを参照・集計して生成する。
 
 ---
@@ -261,7 +280,7 @@ Public Page、Internal Page、レポート、集計結果などは、
 
 StageArtは、
 
-Fact（事実）
+Fact（事実・管理対象）
 
 と
 
@@ -269,37 +288,40 @@ Artifact（成果物）
 
 を区別する。
 
-例）
+Fact / Managed Informationの例：
 
-Fact
+・Person
+・Profile
+・Organization
+・Membership
+・Project
+・Production
+・Participant
+・Reservation
+・Check In
+・Rehearsal
+・Timetable
+・Budget
+・Accounting
+・Equipment
+・Survey Response
 
-・団体
-・所属
-・公演
-・出演
-・予約
-・受付
-・稽古
-・会計仕訳
-・予算
-・実績
-・アンケート回答
-・備品の所在
+Artifactの例：
 
-Artifact
-
-・QRチケット
-・プロフィール
-・団体ページ
-・公演ページ
-・タイムテーブル
+・QR Ticket
+・Organization Public Page
+・Production Public Page
 ・収支レポート
 ・予実レポート
 ・アンケート集計
+・公演アーカイブ
 
 ArtifactはFactから生成される。
 
 同じ事実をArtifact側で再管理しない。
+
+ProfileやTimetableのように、
+利用者が作成・編集する情報はArtifactとして扱わない。
 
 ---
 
@@ -459,6 +481,16 @@ StageArtは、
 団体全体の会計期間におけるBS・PLは、
 それぞれ異なる目的を持つ情報として管理する。
 
+公演予算は、
+単一の予算だけでなく、
+複数の予算案・シナリオを名前付きで管理できる構造とする。
+
+例）
+
+・A会場案
+・B会場案
+・一日2公演案
+
 ---
 
 # Principle 15
@@ -498,11 +530,10 @@ StageArt上で基本的な業務が完結できることを前提とする。
 Google Calendar上の予定は、
 StageArtにおける稽古情報そのものではない。
 
-稽古候補日の調整を行い、
-StageArt上で稽古日を確定した結果として、
+StageArt上でRehearsalを確定した結果として、
 Google Calendarへ予定を連携する。
 
-基本的な流れは、
+日程調整を行う場合の基本的な流れは、
 
 稽古候補日
 
@@ -549,7 +580,12 @@ StageArtは公演関係者が必要なファイルへアクセスするための
 Google Drive上で管理する。
 
 StageArtでは、
-公演との紐付け、ファイル情報、共有対象などを管理する。
+
+・公演との紐付け
+・ファイル情報
+・共有対象
+
+などを管理する。
 
 ---
 
@@ -564,64 +600,11 @@ StageArtは、
 内部Domain Modelを特定のジャンルに固定しない。
 
 劇団、音楽活動、朗読、セミナーなど、
-舞台上で行われる様々な活動へ展開できる構造を維持する。
-
-Organization登録時に活動タイプを選択することで、
-利用者へ表示する用語やキャプションなどを変更できる。
-
-基本的なDomain Structureは共通化する。
+異なる活動形態にも応用できる共通構造を維持する。
 
 ---
 
 # Principle 19
-
-## Simple System
-
-StageArtは、
-大規模・高機能な業務システムを目指さない。
-
-利用者が実際に必要とする機能だけを提供し、
-必要以上の機能を持たない。
-
-特に、
-
-・リセール
-・キャンセル待ち
-・高度なチケット販売
-・高度な会計・税務
-・固定資産管理
-・減価償却
-・高度な在庫管理
-・大規模CRM
-・ファンクラブ
-・グッズ販売
-
-など、
-対象利用者にとって必要性の低い機能はBetaでは実装しない。
-
-「できることを増やす」ことより、
-「必要なことを簡単にできる」ことを優先する。
-
----
-
-# Principle 20
-
-## Incremental Development
-
-StageArtは段階的に開発する。
-
-Betaで必要な機能を優先し、
-将来必要になる可能性がある機能を先回りして実装しない。
-
-実際の利用によって必要性が確認された機能を、
-将来のVersionで追加する。
-
-Beta仕様を変更する場合は、
-その必要性を確認した上でBlueprintを更新する。
-
----
-
-# Principle 21
 
 ## Blueprint First
 
@@ -631,36 +614,63 @@ Blueprintが唯一の設計基準（Single Source of Truth）である。
 
 すべての実装はBlueprintに従う。
 
-既存コードがBlueprintと異なる場合、
-コードを基準としてBlueprintを変更するのではなく、
-まず設計意図を確認する。
+Domain Model、Business Flow、ER Diagram、API、UIなど、
+各設計資料は相互に矛盾しないよう管理する。
 
-設計変更が必要な場合は、
-先にBlueprintを更新する。
+---
+
+# Principle 20
+
+## Backward Compatibility
+
+アップデートによって既存データを破壊しない。
+
+将来の機能追加を前提として設計する。
+
+既存のDomainやデータ構造を変更する場合は、
+既存データへの影響を確認した上で変更する。
+
+---
+
+# Principle 21
+
+## Plugin First
+
+StageArtはWordPress Pluginとして実装する。
+
+WordPressはCMSであり、
+StageArtのBusiness Logicではない。
+
+Business LogicはDomain Layerに実装する。
 
 ---
 
 # Principle 22
 
-## Theatre First
+## Framework Independent
 
-StageArtはITシステムそのものを目的としない。
+StageArtのDomainはWordPressへ依存しない。
 
-舞台に立つ人、舞台を支える人の活動を支援するためのプラットフォームである。
+WordPressはInfrastructureとして扱う。
 
-設計判断に迷った場合は、
-
-「舞台に関わる人の負担を減らし、
-創作活動へ集中できる時間を増やせるか」
-
-を最優先に判断する。
-
-高機能であることより、
-現場で迷わず使えることを優先する。
+将来、他プラットフォームへ移植できる構造を維持する。
 
 ---
 
 # Principle 23
+
+## Incremental Development
+
+MVP / Betaを最優先とする。
+
+一度にすべての機能を実装しない。
+
+小さく作り、
+実際に利用しながら改善を続ける。
+
+---
+
+# Principle 24
 
 ## UI Theme and Design System
 
@@ -726,7 +736,7 @@ Themeは将来的に以下の単位で変更できる構造とする。
 - Organization
 - Production
 
-Betaでは、
+Version 1.0 / Betaでは、
 Theme設定機能そのものを提供する必要はない。
 
 ただし、
@@ -821,30 +831,3 @@ Design Systemへ新しいComponentを追加する。
 
 Theme変更によって、
 Business LogicやDomain Modelが影響を受けてはならない。
-
----
-
-# Final Design Principle
-
-StageArtのすべての設計判断は、
-以下の優先順位に従う。
-
-1. 舞台に関わる人の負担を減らせるか
-2. 創作活動に使える時間を増やせるか
-3. 利用者が迷わず使えるか
-4. Domain Modelとして正しく表現できるか
-5. 将来の拡張性を維持できるか
-
-「高機能であること」や
-「技術的に高度であること」は、
-これらより優先されない。
-
-StageArtは、
-凄いシステムを作ることを目的としない。
-
-必要なものを、
-必要な人へ、
-必要なだけ、
-簡単に提供する。
-
-それがStageArtの設計原則である。
