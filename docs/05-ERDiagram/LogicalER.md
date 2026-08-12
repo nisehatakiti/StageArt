@@ -1,7 +1,8 @@
 # StageArt Blueprint
+
 # Logical ER Diagram
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -16,221 +17,1043 @@ EntityおよびReferenceとして具体化する。
 Database製品固有の型やインデックスなどの物理設計は、
 Physical ERまたは実装設計で定義する。
 
+Logical ERでは、
+Domain間の責務とEntity間のReferenceを明確にする。
+
 ---
 
 # Logical Model
 
-Production
+UserAccount
     │
-    ├── PrimaryManager ────── Person
-    │
-    ├── ProductionDelegate
-    │       ├── Person
-    │       └── DelegateRole
-    │
-    ├── Performance
-    │       ├── Seat
-    │       └── Reservation
-    │               ├── ReservationSeat
-    │               └── Companion
-    │
-    └── Participant
-            └── Subject
-
-Subject
-    └── History
+    └── Person
+            ├── Membership
+            │       └── Organization
+            │
+            ├── Participant
+            │       └── Production
+            │
+            ├── ProductionDelegate
+            │       ├── Production
+            │       └── Role
+            │
+            ├── Reservation
+            │
+            └── RehearsalAttendance
 
 Organization
     ├── Membership
+    ├── Role
+    ├── Accounting
+    │       ├── AccountingPeriod
+    │       ├── Account
+    │       └── JournalEntry
+    │               └── JournalEntryLine
+    │
+    ├── Equipment
+    ├── Regulation
+    ├── Document
+    ├── Announcement
     ├── ExternalConnection
     │       ├── Service
     │       └── Credential
     │
     └── Project
             └── Production
+                    ├── PrimaryManager ─── Person
+                    ├── ProductionDelegate
+                    │       ├── Person
+                    │       └── Role
+                    │
+                    ├── Participant
+                    │       └── Subject
+                    │
+                    ├── Performance
+                    │       ├── Seat
+                    │       └── Reservation
+                    │               ├── ReservationSeat
+                    │               └── Companion
+                    │
+                    ├── RehearsalCandidate
+                    │       └── RehearsalAvailability
+                    │
+                    ├── Rehearsal
+                    │       └── RehearsalAttendance
+                    │
+                    ├── Timetable
+                    │       └── TimetableItem
+                    │
+                    ├── Budget
+                    │       └── BudgetItem
+                    │
+                    ├── ProductionActual
+                    │
+                    ├── Document
+                    ├── Announcement
+                    └── Survey
+                            └── SurveyResponse
 
 ---
 
-# Entity Definitions
+# Identity Structure
 
-## Account
+## UserAccount
 
-Accountは認証情報を表す。
+UserAccountはStageArtへの
+Authentication Identityを表す。
 
-主な識別子
+主な識別子：
 
-AccountId
+UserAccountId
 
-AccountはPersonとは独立した概念として管理する。
+UserAccountはPersonに関連付ける。
+
+UserAccountはOrganizationやProductionに
+直接所属しない。
+
+基本構造：
+
+UserAccount
+    ↓
+Person
 
 ---
 
 ## Person
 
-PersonはStageArtにおける人物を表す。
+PersonはStageArtにおける
+Business Identityを表す。
 
-主な識別子
+主な識別子：
 
 PersonId
 
-Accountとの紐付けは任意とする。
+PersonはUserAccountを持たなくてもよい。
+
+Personは、
+
+- Organizationへの所属
+- Productionへの参加
+- Production Scopeの管理権限
+- Profile
+- HistoricalActivity
+
+などのBusiness Relationshipを持つ。
 
 ---
+
+## Profile
+
+ProfileはPersonに属する
+プロフィール情報を表す。
+
+Person
+    ↓
+Profile
+
+---
+
+## HistoricalActivity
+
+HistoricalActivityはPersonに関連する
+過去の活動実績を表す。
+
+Person
+    ↓
+HistoricalActivity
+
+HistoricalActivityは、
+PersonのBusiness Dataの正本ではない。
+
+---
+
+# Organization
 
 ## Organization
 
-Organizationは劇団、制作会社、企業などの団体を表す。
+OrganizationはStageArtにおけるTenantである。
 
-主な識別子
+主な識別子：
 
 OrganizationId
 
-OrganizationはStageArtにおけるTenantである。
+Organizationは、
 
-OrganizationはMembershipおよびExternalConnectionを管理する。
+- Membership
+- Role
+- Project
+- Accounting
+- Equipment
+- Regulation
+- Document
+- Announcement
+- ExternalConnection
 
-OrganizationはProjectを管理する。
+などを管理する。
+
+Organizationは劇団に限定しない。
 
 ---
 
-## Membership
+# Membership
 
-MembershipはPersonとOrganizationの所属関係を表す。
+MembershipはPersonとOrganizationの
+所属関係を表す。
 
-主な識別子
+主な識別子：
 
 MembershipId
 
-主なReference
+主なReference：
 
 PersonId
 OrganizationId
 
-MembershipはOrganization単位の所属・権限を表す。
+基本構造：
 
-Production単位の管理権限とは別に管理する。
+Person
+    ↓
+Membership
+    ↓
+Organization
+
+MembershipはOrganization Scopeにおける
+Personの所属関係を表す。
+
+Membershipに関連するRoleは、
+Organization ScopeでPersonに適用される。
+
+Role Assignmentという独立Entityは作成しない。
 
 ---
 
-## ExternalConnection
+# Role
 
-ExternalConnectionは、
-Organizationと外部サービスとの接続関係を表す。
+RoleはPermission Setを定義する。
 
-主な識別子
+主な識別子：
+
+RoleId
+
+RoleはOrganization ScopeとProduction Scopeの
+両方で利用できる。
+
+Role自身はScopeを保持しない。
+
+基本構造：
+
+Role
+    ↓
+Permission
+
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
+
+Production Scope：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+---
+
+# ProductionDelegate
+
+ProductionDelegateは、
+Production ScopeにおいてPersonへRoleを適用する関係を表す。
+
+主な識別子：
+
+ProductionDelegateId
+
+主なReference：
+
+ProductionId
+PersonId
+RoleId
+
+基本構造：
+
+Production
+    ↓
+ProductionDelegate
+    ├── Person
+    └── Role
+
+ProductionDelegateはProductionの子Entityである。
+
+ProductionDelegateはPermissionを直接保持しない。
+
+PermissionはRoleから決定する。
+
+DelegateRoleおよびDelegateRoleIdは使用しない。
+
+---
+
+# Project
+
+ProjectはOrganizationが行う
+活動・制作の内部単位を表す。
+
+主な識別子：
+
+ProjectId
+
+主なReference：
+
+OrganizationId
+
+基本構造：
+
+Organization
+    ↓
+Project
+    ↓
+Production
+
+ProjectはInternal Domainである。
+
+---
+
+# Production
+
+ProductionはProjectに所属する
+具体的な公演・活動を表す。
+
+主な識別子：
+
+ProductionId
+
+主なReference：
+
+ProjectId
+PrimaryManagerId
+
+基本構造：
+
+Organization
+    ↓
+Project
+    ↓
+Production
+
+Productionは一人のPrimaryManagerを持つ。
+
+---
+
+# PrimaryManager
+
+PrimaryManagerはProductionの
+管理責任者を表す。
+
+主なReference：
+
+Production.PrimaryManagerId
+    ↓
+Person.PersonId
+
+PrimaryManagerはProductionに関する
+全管理権限を持つ。
+
+PrimaryManagerはRoleによる
+ProductionDelegateではない。
+
+---
+
+# Participant
+
+ParticipantはPersonまたはOrganizationが
+Productionへ参加していることを表す。
+
+主な識別子：
+
+ParticipantId
+
+主なReference：
+
+ProductionId
+SubjectId
+
+基本構造：
+
+Production
+    ↓
+Participant
+    ↓
+Subject
+
+ParticipantはProductionへの参加Factを表す。
+
+Participant TypeとRoleは異なる概念である。
+
+---
+
+# Subject
+
+SubjectはProductionへの参加主体を
+共通Referenceとして表現する。
+
+Subject Type：
+
+PERSON
+ORGANIZATION
+
+Subjectは独立したBusiness Entityではなく、
+PersonおよびOrganizationを共通参照するための概念である。
+
+---
+
+# Participant Type
+
+Participant TypeはProductionにおける
+参加区分を表す。
+
+例：
+
+- CAST
+- STAFF
+
+Participant TypeはRoleではない。
+
+Participant Typeによって
+管理権限を自動的に付与してはならない。
+
+---
+
+# Performance
+
+PerformanceはProductionにおける
+個別の公演回を表す。
+
+主な識別子：
+
+PerformanceId
+
+主なReference：
+
+ProductionId
+
+基本構造：
+
+Production
+    ↓
+Performance
+
+---
+
+# Seat
+
+SeatはPerformanceに属する座席を表す。
+
+主な識別子：
+
+SeatId
+
+主なReference：
+
+PerformanceId
+
+基本構造：
+
+Performance
+    ↓
+Seat
+
+Seat自身は予約状態を保持しない。
+
+予約状態はReservationおよびReservationSeatによって判断する。
+
+---
+
+# Reservation
+
+ReservationはPerformanceに対する
+予約というFactを表す。
+
+主な識別子：
+
+ReservationId
+
+主なReference：
+
+PerformanceId
+BookerId
+HandledParticipantId
+
+基本構造：
+
+Performance
+    ↓
+Reservation
+    ├── ReservationSeat
+    └── Companion
+
+BookerIdは予約者であるPersonを参照する。
+
+HandledParticipantIdは、
+予約における「○○扱い」のParticipantを参照する。
+
+---
+
+# ReservationSeat
+
+ReservationSeatはReservationに紐付く
+予約座席を表す。
+
+主な識別子：
+
+ReservationSeatId
+
+主なReference：
+
+ReservationId
+SeatId
+
+基本構造：
+
+Reservation
+    ↓
+ReservationSeat
+    ↓
+Seat
+
+ReservationSeatはReservationの子Entityである。
+
+---
+
+# Companion
+
+CompanionはReservationに属する
+同行者を表す。
+
+主な識別子：
+
+CompanionId
+
+主なReference：
+
+ReservationId
+
+基本構造：
+
+Reservation
+    ↓
+Companion
+
+---
+
+# RehearsalCandidate
+
+RehearsalCandidateは
+稽古候補日を表す。
+
+主な識別子：
+
+RehearsalCandidateId
+
+主なReference：
+
+ProductionId
+
+基本構造：
+
+Production
+    ↓
+RehearsalCandidate
+
+---
+
+# RehearsalAvailability
+
+RehearsalAvailabilityはPersonが
+RehearsalCandidateに対して回答した
+参加可能状況を表す。
+
+主な識別子：
+
+RehearsalAvailabilityId
+
+主なReference：
+
+RehearsalCandidateId
+PersonId
+
+基本構造：
+
+RehearsalCandidate
+    ↓
+RehearsalAvailability
+    ↓
+Person
+
+---
+
+# Rehearsal
+
+Rehearsalは確定した稽古を表す。
+
+主な識別子：
+
+RehearsalId
+
+主なReference：
+
+ProductionId
+
+基本構造：
+
+Production
+    ↓
+Rehearsal
+
+RehearsalはRehearsalCandidateから
+生成することも、直接作成することもできる。
+
+---
+
+# RehearsalAttendance
+
+RehearsalAttendanceは
+確定したRehearsalへの参加状況を表す。
+
+主な識別子：
+
+RehearsalAttendanceId
+
+主なReference：
+
+RehearsalId
+PersonId
+
+基本構造：
+
+Rehearsal
+    ↓
+RehearsalAttendance
+    ↓
+Person
+
+---
+
+# Timetable
+
+TimetableはProductionにおける
+日別進行・予定を表す。
+
+主な識別子：
+
+TimetableId
+
+主なReference：
+
+ProductionId
+
+基本構造：
+
+Production
+    ↓
+Timetable
+    ↓
+TimetableItem
+
+---
+
+# TimetableItem
+
+TimetableItemはTimetable内の
+個別項目を表す。
+
+主な識別子：
+
+TimetableItemId
+
+主なReference：
+
+TimetableId
+
+---
+
+# Ticket
+
+TicketはProductionにおける
+チケット販売・利用条件を表す。
+
+主な識別子：
+
+TicketId
+
+主なReference：
+
+ProductionId
+
+TicketはPerformance、
+Reservationなどと関連する。
+
+---
+
+# IssuedTicket
+
+IssuedTicketは予約成立後などに
+発行される個別のチケットを表す。
+
+主な識別子：
+
+IssuedTicketId
+
+主なReference：
+
+ReservationId
+
+基本構造：
+
+Reservation
+    ↓
+IssuedTicket
+
+---
+
+# CheckIn
+
+CheckInは公演当日の入場受付という
+Factを表す。
+
+主な識別子：
+
+CheckInId
+
+主なReference：
+
+IssuedTicketId
+
+基本構造：
+
+IssuedTicket
+    ↓
+CheckIn
+
+CheckIn完了時に
+CheckInCompletedを発生させる。
+
+---
+
+# Ticket Revenue
+
+Ticket RevenueはTicket / CheckInに関連する
+会計連携対象のRevenueを表す。
+
+基本フロー：
+
+CheckInCompleted
+    ↓
+Ticket Revenue
+    ↓
+Accounting
+
+Ticket RevenueはAccountingの
+Journal Entryそのものではない。
+
+---
+
+# Budget
+
+BudgetはProduction単位の
+予算計画を表す。
+
+主な識別子：
+
+BudgetId
+
+主なReference：
+
+ProductionId
+
+基本構造：
+
+Production
+    ↓
+Budget
+    ↓
+BudgetItem
+
+---
+
+# BudgetItem
+
+BudgetItemはBudget内の
+個別予算項目を表す。
+
+主な識別子：
+
+BudgetItemId
+
+主なReference：
+
+BudgetId
+
+---
+
+# ProductionActual
+
+ProductionActualはProduction単位の
+実績金額を表す。
+
+主な識別子：
+
+ProductionActualId
+
+主なReference：
+
+ProductionId
+
+BudgetおよびProductionActualは、
+Organization Accountingとは異なる。
+
+---
+
+# Accounting
+
+AccountingはOrganization単位の
+会計正本を管理する。
+
+基本構造：
+
+Organization
+    ↓
+Accounting
+    ├── AccountingPeriod
+    ├── Account
+    └── JournalEntry
+            └── JournalEntryLine
+
+---
+
+# AccountingPeriod
+
+AccountingPeriodはOrganizationにおける
+会計期間を表す。
+
+主な識別子：
+
+AccountingPeriodId
+
+主なReference：
+
+OrganizationId
+
+---
+
+# Account
+
+Accountは会計上の勘定科目を表す。
+
+主な識別子：
+
+AccountId
+
+主なReference：
+
+OrganizationId
+
+AccountはAccounting DomainのEntityである。
+
+AccountはAuthentication Identityではない。
+
+UserAccountとは完全に別の概念である。
+
+---
+
+# JournalEntry
+
+JournalEntryは会計上の仕訳を表す。
+
+主な識別子：
+
+JournalEntryId
+
+主なReference：
+
+OrganizationId
+AccountingPeriodId
+
+JournalEntryはJournalEntryLineによって構成する。
+
+---
+
+# JournalEntryLine
+
+JournalEntryLineはJournalEntryを構成する
+借方・貸方の明細を表す。
+
+主な識別子：
+
+JournalEntryLineId
+
+主なReference：
+
+JournalEntryId
+AccountId
+
+---
+
+# Equipment
+
+EquipmentはOrganizationが管理する
+備品を表す。
+
+主な識別子：
+
+EquipmentId
+
+主なReference：
+
+OrganizationId
+
+Equipmentは資産会計のための
+Accounting Assetではない。
+
+---
+
+# Regulation
+
+RegulationはOrganizationの
+規約を表す。
+
+主な識別子：
+
+RegulationId
+
+主なReference：
+
+OrganizationId
+
+基本構造：
+
+Organization
+    ↓
+Regulation
+    ↓
+RegulationVersion
+
+---
+
+# RegulationVersion
+
+RegulationVersionはRegulationの
+各Versionを表す。
+
+既存Versionを上書きせず、
+変更時には新しいVersionを作成する。
+
+---
+
+# Document
+
+DocumentはOrganization、Project、
+Productionなどに関連する
+文書・ファイル情報を表す。
+
+基本構造：
+
+Organization
+    ├── Document
+    └── Project
+            └── Production
+                    └── Document
+
+実ファイルはGoogle Driveなどの
+外部ストレージに保存できる。
+
+StageArtは実ファイルそのものを
+正本として管理しない。
+
+---
+
+# Announcement
+
+AnnouncementはOrganizationまたはProductionの
+関係者へ送信する内部のお知らせを表す。
+
+基本構造：
+
+Organization
+    ↓
+Announcement
+
+または、
+
+Production
+    ↓
+Announcement
+
+---
+
+# Survey
+
+SurveyはOrganizationまたはProductionの
+関係者から回答を収集する。
+
+基本構造：
+
+Production
+    ↓
+Survey
+    ↓
+SurveyResponse
+
+---
+
+# ExternalConnection
+
+ExternalConnectionはOrganizationと
+外部サービスとの接続関係を表す。
+
+主な識別子：
 
 ExternalConnectionId
 
-主なReference
+主なReference：
 
 OrganizationId
 ServiceId
 CredentialId
 
-主な情報
+基本構造：
 
-ExternalConnectionId
-OrganizationId
-ServiceId
-CredentialId
-AccountIdentifier
-Status
-CreatedAt
-CreatedBy
-UpdatedAt
-UpdatedBy
+Organization
+    ↓
+ExternalConnection
+    ├── Service
+    └── Credential
 
 ExternalConnectionはOrganizationの子Entityである。
 
-一つのOrganizationは、
-0個以上のExternalConnectionを持つことができる。
-
-ExternalConnectionはSNS専用ではない。
-
-SNS、動画サービス、クラウドサービス、
-メッセージングサービスなど、
-StageArtが外部連携するサービスを共通して扱う。
-
 ---
 
-## ExternalConnection - Account Identifier
+# Service
 
-AccountIdentifierは、
-外部サービス上の接続先Accountを識別する情報である。
+ServiceはStageArtが接続可能な
+外部サービスの種類を表す。
 
-例えば、
-
-- User Name
-- Account ID
-- Page ID
-- Channel ID
-
-などを表現する。
-
-AccountIdentifierは、
-StageArt内部のAccountとは異なる。
-
-StageArt内部のAccountはStageArtへの認証を表す。
-
-AccountIdentifierは外部サービス上のAccountを表す。
-
----
-
-## ExternalConnection - Service
-
-ExternalConnectionは一つのServiceを参照する。
-
-ExternalConnection.ServiceId
-    ↓
-Service.ServiceId
-
-Serviceは外部サービスの種類を表すMasterである。
-
-SNSはServiceの一種として扱う。
-
-ExternalConnection自身に、
-SNS固有の属性を持たせない。
-
----
-
-## ExternalConnection - Credential
-
-ExternalConnectionは一つのCredentialを保持する。
-
-ExternalConnection.CredentialId
-    ↓
-Credential.CredentialId
-
-CredentialはExternalConnectionに属する。
-
-Credentialは外部サービスへの認証情報を表す。
-
-Credentialは単独のPublic Resourceとして公開しない。
-
----
-
-## Service
-
-Serviceは、
-StageArtが接続可能な外部サービスの種類を表すMaster Domainである。
-
-主な識別子
+主な識別子：
 
 ServiceId
 
-主な情報
-
-ServiceId
-Code
-Name
-Description
-ServiceType
-AuthenticationType
-Status
-
-Serviceは複数のExternalConnectionから参照できる。
-
-例）
+例：
 
 - X
 - Instagram
@@ -240,807 +1063,133 @@ Serviceは複数のExternalConnectionから参照できる。
 - LINE
 - Google
 - Google Drive
+- Google Calendar
 
 SNSはServiceの一種として扱う。
 
 ---
 
-## ServiceType
+# Credential
 
-ServiceTypeは、
-外部サービスの分類を表す。
-
-例）
-
-- SOCIAL
-- VIDEO
-- CLOUD_STORAGE
-- MESSAGING
-- OTHER
-
-ServiceTypeは分類および検索に利用する。
-
-ServiceTypeによって
-ExternalConnectionの構造を変更してはならない。
-
----
-
-## Service AuthenticationType
-
-AuthenticationTypeは、
-Serviceが要求する認証方式を表す。
-
-例）
-
-- OAUTH
-- API_KEY
-- SECRET
-- NONE
-
-AuthenticationTypeは、
-Credentialの利用方法を決定するために利用する。
-
-実際の認証処理はInfrastructure Layerが担当する。
-
----
-
-## Service Capabilities
-
-Serviceは、
-StageArtから利用可能な機能を定義できる。
-
-例えば、
-
-- TEXT_POST
-- IMAGE_POST
-- VIDEO_POST
-- LINK_POST
-- VIDEO_UPLOAD
-- FILE_UPLOAD
-
-などを想定する。
-
-CapabilitiesはServiceの機能差を表す。
-
-実際の外部API操作はInfrastructure Adapterが担当する。
-
----
-
-## Credential
-
-Credentialは、
-ExternalConnectionが外部サービスへ接続するために必要とする
+CredentialはExternalConnectionが
+外部サービスへ接続するための
 認証情報を表す。
 
-主な識別子
+主な識別子：
 
 CredentialId
 
-主なReference
+主なReference：
 
 ExternalConnectionId
 
-主な情報
+Secret値そのものはLogical Entityの
+通常属性として平文管理しない。
 
-CredentialId
-ExternalConnectionId
-CredentialStatus
-CreatedAt
-CreatedBy
-UpdatedAt
-UpdatedBy
-
-CredentialのSecret値そのものは、
-通常のLogical Entity属性として平文管理しない。
-
-Secret値の保存先および暗号化方式は
-Infrastructure Layerで定義する。
+具体的なSecret Storageは
+Infrastructure Layerで管理する。
 
 ---
 
-## Credential Authentication Data
+# ExternalConnection AccountIdentifier
 
-Credentialでは、
-ServiceのAuthenticationTypeに応じて
-以下の認証情報を扱える。
+AccountIdentifierは、
+外部サービス上のAccountを識別する情報を表す。
 
-OAuth
+例：
 
-- AccessToken
-- RefreshToken
-- TokenExpiresAt
-- Scope
+- User Name
+- Account ID
+- Page ID
+- Channel ID
 
-API Key
-
-- APIKey
-
-Secret
-
-- Secret
-- ClientSecret
-- Password
-
-これらのSecret情報は、
-Domain Event、API Response、Log、Audit Logへ
-出力してはならない。
+AccountIdentifierは、
+StageArt内部のUserAccountとは異なる。
 
 ---
 
-## Credential Status
+# ExternalConnection Status
 
-Credentialは以下の状態を持つ。
-
-- ACTIVE
-- EXPIRED
-- INVALID
-- REVOKED
-
-ACTIVE
-
-認証情報が有効な状態。
-
-EXPIRED
-
-認証情報の有効期限が切れている状態。
-
-INVALID
-
-外部サービスによって認証情報が無効と判断された状態。
-
-REVOKED
-
-認証情報が明示的に無効化された状態。
-
----
-
-## ExternalConnection Status
-
-ExternalConnectionは以下の接続状態を持つ。
+ExternalConnectionは以下の状態を持つ。
 
 - CONNECTED
 - DISCONNECTED
 - ERROR
 
-CONNECTED
-
-外部サービスとの接続が有効な状態。
-
-DISCONNECTED
-
-外部サービスとの接続を切断した状態。
-
-ERROR
-
-認証失敗や外部サービス障害などにより、
-接続に問題が発生している状態。
-
-Credential StatusとExternalConnection Statusは
-別の状態として管理する。
+Credential Statusとは別に管理する。
 
 ---
 
-## Project
+# Public Information
 
-ProjectはOrganizationが管理する制作プロジェクトを表す。
+Public Informationは
+一般利用者へ公開可能な情報を表す。
 
-主な識別子
+Public Informationと
+Internal Informationを分離する。
 
-ProjectId
-OrganizationId
-
-ProjectはInternal Domainであり、
-公開APIには直接公開しない。
-
----
-
-## Production
-
-Productionは公開される公演を表す。
-
-主な識別子
-
-ProductionId
-OrganizationId
-ProjectId
-
-主なReference
-
-PrimaryManagerId
-
-ProductionはProjectによって内部的に管理される。
-
-Productionは一人のPrimaryManagerを持つ。
-
-PrimaryManagerはPersonを参照する。
+UserAccount、
+Credential、
+Role、
+Permission、
+Accountingなどの内部情報を
+Public Informationとして公開しない。
 
 ---
 
-## Production Primary Manager
+# Organization Public Profile
 
-PrimaryManagerは、
-Productionの管理責任者を表す。
+Organization Public Profileは
+Organizationの公開情報を表示する。
 
-Productionは必ず一人のPrimaryManagerを参照する。
+基本構造：
 
-主なReference
-
-Production.PrimaryManagerId
+Organization
     ↓
-Person.PersonId
+Public Profile
 
-PrimaryManagerはProductionに関する
-すべての管理権限を持つ。
-
-PrimaryManagerにはDelegateRoleを設定しない。
-
-PrimaryManagerはPersonのRoleではなく、
-Productionに対する管理権限として扱う。
+公開情報はOrganizationおよび
+関連DomainのFactから生成・参照する。
 
 ---
 
-## ProductionDelegate
+# Production Public Page
 
-ProductionDelegateは、
-PrimaryManagerからProductionの管理権限を委任されたPersonを表す。
+Production Public Pageは
+Productionの公開情報を表示する。
 
-Productionに属する子Entityとして管理する。
-
-主な識別子
-
-ProductionDelegateId
-
-主なReference
-
-ProductionId
-PersonId
-DelegateRoleId
-
-ProductionDelegateは以下の情報を持つ。
-
-ProductionDelegateId
-ProductionId
-PersonId
-DelegateRoleId
-CreatedAt
-CreatedBy
-UpdatedAt
-UpdatedBy
-
-一つのProductionには、
-0人以上のProductionDelegateを設定できる。
+内部管理情報を公開しない。
 
 ---
 
-## ProductionDelegate - Person
+# History
 
-ProductionDelegateは一人のPersonを参照する。
+Historyは過去の活動履歴を表す。
 
-ProductionDelegate.PersonId
+HistoryはBusiness Dataの正本ではない。
+
+現在のFactから必要に応じて
+生成・参照する。
+
+Personの過去活動については、
+HistoricalActivityを利用する。
+
+ProductionやOrganizationの活動履歴についても、
+各DomainのFactを正本とする。
+
+---
+
+# Domain Relationship Summary
+
+## Authentication
+
+UserAccount
     ↓
-Person.PersonId
-
-同一Personを複数のProductionに
-ProductionDelegateとして登録できる。
-
-また、同一Personであっても、
-Productionごとに異なるDelegateRoleを設定できる。
-
-例えば、
-
-Production A
-    ↓
-Person A
-    ↓
-REHEARSAL_MANAGER
-
-Production B
-    ↓
-Person A
-    ↓
-RESERVATION_MANAGER
-
-という設定を許可する。
+Person
 
 ---
 
-## DelegateRole
-
-DelegateRoleは、
-ProductionDelegateへ付与する権限セットを表すマスターである。
-
-主な識別子
-
-DelegateRoleId
-
-主な情報
-
-DelegateRoleId
-Code
-Name
-Description
-Status
-
-DelegateRoleはPersonに直接紐付かない。
-
-ProductionDelegateを介して、
-特定ProductionにおけるPersonの権限を定義する。
-
----
-
-## DelegateRole Permission
-
-DelegateRoleは、
-あらかじめ定義された権限セットを持つ。
-
-論理的には、
-
-DelegateRole
-    ↓
-Permission Set
-
-という関係を持つ。
-
-Permissionの具体的な物理構造は、
-Authorization設計で定義する。
-
-Logical ERでは、
-DelegateRoleが権限セットを参照する概念のみを定義する。
-
----
-
-## Performance
-
-PerformanceはProductionに属する公演回を表す。
-
-主な識別子
-
-PerformanceId
-ProductionId
-
-PerformanceはProductionに所属する。
-
----
-
-## Participant
-
-ParticipantはProductionへの参加を表す。
-
-主な識別子
-
-ParticipantId
-ProductionId
-SubjectId
-
-ParticipantはPersonまたはOrganizationを直接参照しない。
-
-SubjectIdを介して活動主体を参照する。
-
-Participantは以下の情報を持つ。
-
-ParticipantId
-ProductionId
-SubjectId
-ParticipantType
-Role
-CreditOrder
-Visibility
-Status
-
----
-
-## Subject
-
-SubjectはBusiness上の活動主体を
-共通Referenceとして表現する。
-
-主な識別情報
-
-SubjectType
-SubjectId
-
-SubjectType
-
-PERSON
-ORGANIZATION
-
-SubjectはPersonまたはOrganizationを表す。
-
-Subjectは独立したBusiness Entityではなく、
-PersonおよびOrganizationを共通の参照形式で扱うための概念である。
-
----
-
-## Category
-
-CategoryはProductionの分類を表す。
-
-主な識別子
-
-CategoryId
-
-ProductionからCategoryを参照する。
-
----
-
-## Genre
-
-GenreはProductionのジャンルを表す。
-
-主な識別子
-
-GenreId
-
-ProductionとGenreは多対多の関係を持つ。
-
----
-
-## Tag
-
-TagはProductionに付与するタグを表す。
-
-主な識別子
-
-TagId
-
-ProductionとTagは多対多の関係を持つ。
-
----
-
-## Seat
-
-SeatはPerformanceに属する座席を表す。
-
-主な識別子
-
-SeatId
-PerformanceId
-
-Seatは座席情報のみを保持する。
-
-Seat自身は予約状態を保持しない。
-
-SeatはCheck Inの対象ではない。
-
-予約状態はReservationとReservationSeatの関係から判断する。
-
----
-
-## Reservation
-
-ReservationはPerformanceに対する予約を表す。
-
-主な識別子
-
-ReservationId
-PerformanceId
-BookerId
-HandledParticipantId
-
-Reservationは以下を管理する。
-
-ReservationId
-PerformanceId
-BookerId
-HandledParticipantId
-TicketType
-QRCode
-Status
-CreatedBy
-CreatedAt
-UpdatedBy
-UpdatedAt
-
-BookerIdは予約者であるPersonを参照する。
-
-HandledParticipantIdは、
-予約における「○○扱い」のParticipantを参照する。
-
-HandledParticipantIdは任意である。
-
-CreatedByはReservationを作成した主体を表す。
-
-UpdatedByはReservationを最後に変更した主体を表す。
-
----
-
-## ReservationSeat
-
-ReservationSeatはReservationに紐付く予約座席を表す。
-
-主な識別子
-
-ReservationSeatId
-ReservationId
-SeatId
-
-ReservationSeatはReservationの子Entityである。
-
-ReservationSeatはReservationを経由してのみ変更できる。
-
-ReservationSeatはSeatを参照する。
-
-ReservationSeat自体はCheck In状態を保持しない。
-
----
-
-## Companion
-
-CompanionはReservationに属する同行者を表す。
-
-主な識別子
-
-CompanionId
-ReservationId
-
-CompanionはReservationの子Entityである。
-
-Companion単独では存在しない。
-
----
-
-## History
-
-HistoryはSubjectの活動履歴を表す。
-
-主な識別子
-
-HistoryId
-SubjectId
-ProductionId
-PerformanceId
-
-Historyは以下の情報を持つ。
-
-HistoryId
-SubjectId
-HistoryType
-ParticipantType
-ProductionId
-PerformanceId
-EventDateTime
-
-PerformanceIdは任意である。
-
-ParticipantTypeはHistoryTypeがPARTICIPATIONの場合のみ保持する。
-
----
-
-# Reference Rules
-
-## Organization → ExternalConnection
-
-Organizationは0個以上のExternalConnectionを持つ。
-
-ExternalConnection.OrganizationId
-    ↓
-Organization.OrganizationId
-
-ExternalConnectionはOrganizationの子Entityとして管理する。
-
-ExternalConnectionを異なるOrganization間で共有しない。
-
----
-
-## ExternalConnection → Service
-
-ExternalConnectionは必ず一つのServiceを参照する。
-
-ExternalConnection.ServiceId
-    ↓
-Service.ServiceId
-
-一つのServiceは複数のExternalConnectionから参照できる。
-
-ServiceはMasterとして管理する。
-
----
-
-## ExternalConnection → Credential
-
-ExternalConnectionは一つのCredentialを保持する。
-
-ExternalConnection.CredentialId
-    ↓
-Credential.CredentialId
-
-CredentialはExternalConnectionの子Entityとして管理する。
-
-Credentialは単独のPublic Resourceとして公開しない。
-
----
-
-## Credential → ExternalConnection
-
-Credentialは必ず一つのExternalConnectionに所属する。
-
-Credential.ExternalConnectionId
-    ↓
-ExternalConnection.ExternalConnectionId
-
-CredentialをOrganization間で共有しない。
-
----
-
-## Production → PrimaryManager
-
-Productionは一人のPrimaryManagerを参照する。
-
-Production.PrimaryManagerId
-    ↓
-Person.PersonId
-
-PrimaryManagerはPersonを直接参照する。
-
-PrimaryManagerはProductionに対して全権限を持つ。
-
----
-
-## Production → ProductionDelegate
-
-Productionは0人以上のProductionDelegateを持つ。
-
-ProductionDelegate.ProductionId
-    ↓
-Production.ProductionId
-
-ProductionDelegateはProductionの子Entityとして管理する。
-
----
-
-## ProductionDelegate → Person
-
-ProductionDelegateは必ず一人のPersonを参照する。
-
-ProductionDelegate.PersonId
-    ↓
-Person.PersonId
-
----
-
-## ProductionDelegate → DelegateRole
-
-ProductionDelegateは一つのDelegateRoleを参照する。
-
-ProductionDelegate.DelegateRoleId
-    ↓
-DelegateRole.DelegateRoleId
-
-DelegateRoleは、
-ProductionDelegateに付与される権限セットを表す。
-
----
-
-## ProductionDelegate Scope
-
-ProductionDelegateの権限は、
-Production単位で有効となる。
-
-同一Personが複数ProductionのDelegateになる場合、
-Productionごとに別のDelegateRoleを持つことができる。
-
-Production A
-    ↓
-ProductionDelegate
-    ├── PersonId = person-001
-    └── DelegateRoleId = rehearsal-manager
-
-Production B
-    ↓
-ProductionDelegate
-    ├── PersonId = person-001
-    └── DelegateRoleId = reservation-manager
-
----
-
-## Participant → Subject
-
-Participantは必ず一つのSubjectを参照する。
-
-Participant.SubjectId
-    ↓
-Subject.SubjectId
-
-ParticipantからPersonまたはOrganizationを直接参照しない。
-
----
-
-## Reservation → Booker
-
-Reservationは必ず一つのBookerを持つ。
-
-Reservation.BookerId
-    ↓
-Person.PersonId
-
-Bookerは予約者を表す。
-
----
-
-## Reservation → HandledParticipant
-
-Reservationは任意でHandledParticipantを持つ。
-
-Reservation.HandledParticipantId
-    ↓
-Participant.ParticipantId
-
-HandledParticipantが存在しないReservationも許可する。
-
-HandledParticipantはReservationとParticipantの関係を表す。
-
----
-
-## Reservation → ReservationSeat
-
-Reservationは0人以上のReservationSeatを持つ。
-
-ReservationSeat.ReservationId
-    ↓
-Reservation.ReservationId
-
-Reservation人数の変更によって、
-ReservationSeatを追加・解放できる。
-
-Reservationのキャンセル時には、
-関連するReservationSeatをすべて解放する。
-
----
-
-## ReservationSeat → Seat
-
-ReservationSeatは一つのSeatを参照する。
-
-ReservationSeat.SeatId
-    ↓
-Seat.SeatId
-
-SeatはPerformanceに属する。
-
-ReservationSeatが参照するSeatは、
-Reservationが所属するPerformanceのSeatでなければならない。
-
----
-
-## History → Subject
-
-Historyは必ず一つのSubjectを参照する。
-
-History.SubjectId
-    ↓
-Subject.SubjectId
-
-HistoryからPersonまたはOrganizationを直接参照しない。
-
----
-
-## History → Production
-
-Historyは必ず一つのProductionを参照する。
-
-History.ProductionId
-    ↓
-Production.ProductionId
-
----
-
-## History → Performance
-
-Historyは必要に応じてPerformanceを参照する。
-
-History.PerformanceId
-    ↓
-Performance.PerformanceId
-
-PerformanceIdはNULLを許可する。
-
----
-
-# Authorization Rules
-
-## Organization Membership
-
-MembershipはOrganization単位の権限を表す。
+## Organization
 
 Person
     ↓
@@ -1050,9 +1199,114 @@ Organization
 
 ---
 
-## Organization ExternalConnection
+## Organization Role
 
-ExternalConnectionはOrganization単位の外部サービス接続を表す。
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
+
+---
+
+## Production
+
+Organization
+    ↓
+Project
+    ↓
+Production
+
+---
+
+## Production Role
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+ProductionDelegateはRoleを参照する。
+
+DelegateRoleという独立Entityは存在しない。
+
+---
+
+## Participation
+
+Production
+    ↓
+Participant
+    ↓
+Subject
+        ├── Person
+        └── Organization
+
+Participant Typeは参加区分を表し、
+Roleとは別に管理する。
+
+---
+
+## Ticket
+
+Production
+    ↓
+Performance
+    ↓
+Reservation
+    ↓
+IssuedTicket
+    ↓
+CheckIn
+    ↓
+CheckInCompleted
+    ↓
+Ticket Revenue
+    ↓
+Accounting
+
+---
+
+## Rehearsal
+
+Production
+    ↓
+RehearsalCandidate
+    ↓
+RehearsalAvailability
+    ↓
+Rehearsal
+
+または、
+
+Production
+    ↓
+Rehearsal
+
+---
+
+## Accounting
+
+Organization
+    ↓
+Accounting
+    ├── AccountingPeriod
+    ├── Account
+    └── JournalEntry
+            └── JournalEntryLine
+
+---
+
+## External Integration
 
 Organization
     ↓
@@ -1060,74 +1314,112 @@ ExternalConnection
     ├── Service
     └── Credential
 
-ExternalConnectionの管理権限は、
-Organization Scopeの権限によって制御する。
+---
 
-CredentialのSecret値は、
-管理権限を持つ利用者であっても通常のAPI Responseとして取得できない。
+# Domain Separation
+
+以下の概念は明確に分離する。
+
+UserAccount / Person
+
+UserAccountはAuthentication Identity。
+
+PersonはBusiness Identity。
 
 ---
 
-## Production Primary Manager
+Membership / Participant
 
-PrimaryManagerはProduction単位の管理責任者である。
+MembershipはOrganizationへの所属。
 
-Production
-    ↓
-PrimaryManager
-    ↓
-Person
-
-PrimaryManagerはProductionに関する全権限を持つ。
+ParticipantはProductionへの参加。
 
 ---
 
-## Production Delegate
+Participant Type / Role
 
-ProductionDelegateはProduction単位の委任権限を持つ。
+Participant Typeは参加区分。
 
-Production
-    ↓
-ProductionDelegate
-    ├── Person
-    └── DelegateRole
+RoleはPermission Set。
 
-ProductionDelegateは、
-DelegateRoleに定義された権限のみを持つ。
+---
 
-Organization Membershipの権限とは分離する。
+ProductionDelegate / Role
+
+ProductionDelegateはProduction Scopeにおいて
+PersonへRoleを適用する関係。
+
+RoleはPermission Setを定義する。
+
+---
+
+RoleAssignment
+
+RoleAssignmentという独立Domainは作成しない。
+
+RoleをどのScopeで誰に適用するかは、
+MembershipまたはProductionDelegateとの関係によって表現する。
+
+---
+
+Account / UserAccount
+
+AccountはAccounting上の勘定科目。
+
+UserAccountはAuthentication Identity。
+
+両者は完全に別Domainである。
+
+---
+
+Budget / ProductionActual / Accounting
+
+BudgetはProduction単位の計画。
+
+ProductionActualはProduction単位の実績。
+
+AccountingはOrganization単位の会計正本。
 
 ---
 
 # Aggregate Structure
 
 Organization
-├── Membership
-├── ExternalConnection
-│   └── Credential
-└── Project
-    └── Production
-        ├── ProductionDelegate
-        ├── Participant
-        └── Performance
-            ├── Seat
-            └── Reservation
-                ├── ReservationSeat
-                └── Companion
-
-ServiceはMaster Domainとして管理され、
-ExternalConnectionから参照される。
-
-PrimaryManagerはProductionからPersonを参照する。
-
-ProductionDelegateはProductionに属する子Entityである。
-
-Historyは上記Aggregateの子Entityではない。
-
-Subject
-└── History
-
-Historyは独立したDomainとして管理する。
+    │
+    ├── Membership
+    ├── Role
+    ├── Accounting
+    │       ├── AccountingPeriod
+    │       ├── Account
+    │       └── JournalEntry
+    │               └── JournalEntryLine
+    │
+    ├── Equipment
+    ├── Regulation
+    ├── Document
+    ├── Announcement
+    ├── ExternalConnection
+    │       ├── Service
+    │       └── Credential
+    │
+    └── Project
+            └── Production
+                    ├── Participant
+                    ├── ProductionDelegate
+                    ├── Performance
+                    │       ├── Seat
+                    │       └── Reservation
+                    │               ├── ReservationSeat
+                    │               └── Companion
+                    │
+                    ├── RehearsalCandidate
+                    ├── Rehearsal
+                    ├── Timetable
+                    ├── Budget
+                    ├── ProductionActual
+                    ├── Document
+                    ├── Announcement
+                    └── Survey
 
 ---
 
@@ -1140,155 +1432,98 @@ Project | Project
 Production | Production
 Performance | Performance
 Reservation | Reservation
-
-ServiceはMaster Domainであり、
-Organization Aggregateの子Entityではない。
-
-CredentialはExternalConnectionの子Entityである。
-
----
-
-# Aggregate Rules
-
-OrganizationはExternalConnectionを管理する。
-
-ExternalConnectionの追加・変更・削除は、
-Organizationの管理権限を通して行う。
-
-ExternalConnectionはServiceを参照する。
-
-ExternalConnectionはCredentialを管理する。
-
-CredentialのSecret情報は、
-ExternalConnectionを経由して管理する。
-
-ServiceはOrganizationごとに複製しない。
-
-同一Serviceを複数OrganizationのExternalConnectionから参照できる。
-
-ProductionはProductionDelegateを管理する。
-
-ProductionDelegateの追加・変更・削除は、
-Productionの管理権限を通して行う。
-
-ProductionはPrimaryManagerを一人保持する。
-
-PrimaryManagerはProductionに対する全権限を持つ。
-
-ProductionDelegateはDelegateRoleによって
-権限を制限する。
-
-Reservationは以下の子Entityを管理する。
-
-- ReservationSeat
-- Companion
-
-これらはReservationを経由してのみ変更できる。
-
-ParticipantはProductionに属する独立したDomain Entityである。
-
-Historyは独立したDomainであり、
-ParticipantやReservationのAggregateには含めない。
+Rehearsal | Rehearsal
+Timetable | Timetable
+Budget | Budget
+Accounting | Organization
 
 ---
 
-# Domain Event Relationship
+# Design Decisions
 
-HistoryはDomain Eventを契機として生成・更新される。
+Logical ERでは、
+Domain間の責務とReferenceを明確にする。
 
-ParticipantAdded
-        ↓
-Participation History
+UserAccountはAuthentication Identityとして管理する。
 
-ParticipantUpdated
-        ↓
-必要に応じてHistory更新
+PersonはBusiness Identityとして管理する。
 
-ParticipantRemoved
-        ↓
-過去のHistoryは削除しない
+UserAccountとPersonを分離する。
 
-ReservationCheckedIn
-        ↓
-Audience History
+OrganizationはStageArtにおけるTenantである。
 
-以下のイベントではAudience Historyを生成しない。
+PersonとOrganizationの所属関係はMembershipで管理する。
 
-ReservationCreated
-ReservationUpdated
-ReservationCancelled
+Organization Scopeの権限はRoleで管理する。
 
-ExternalConnectionCreated
-        ↓
-External Connection State
+RoleはPermission Setを定義する。
 
-ExternalConnectionConnected
-        ↓
-Connection State
+Role DefinitionはOrganization Scopeと
+Production Scopeで共通利用する。
 
-ExternalConnectionDisconnected
-        ↓
-Connection State
+RoleAssignmentという独立Domainは作成しない。
 
-ExternalConnectionError
-        ↓
-Connection Error State
+ProductionDelegateはProduction Scopeにおいて
+PersonへRoleを適用する。
 
-CredentialのSecret値は、
-Domain Eventに含めない。
+DelegateRoleという別のRole体系は使用しない。
+
+DelegateRoleIdは使用しない。
+
+Participant TypeとRoleを分離する。
+
+ProductionはProjectに所属する。
+
+Production関連DomainはProductionを通じて
+Organization Scopeに属する。
+
+AccountingはOrganization単位で管理する。
+
+AccountはAccounting上の勘定科目である。
+
+UserAccountとAccountを明確に分離する。
+
+BudgetおよびProductionActualは
+Production単位で管理する。
+
+Public InformationとInternal Informationを分離する。
+
+ExternalConnectionはOrganizationの子Entityである。
+
+外部サービス固有のAPI処理はInfrastructure Layerで実装する。
+
+Credentialは平文保存しない。
+
+Blueprintを唯一の設計基準とする。
 
 ---
 
 # Design Principles
 
-- Logical ERはDomain Modelをデータ構造として表現する。
-- Database製品固有の物理設計はLogical ERでは定義しない。
-- Organization MembershipとProduction単位の権限を分離する。
-- OrganizationはExternalConnectionを管理する。
+- UserAccountはAuthentication Identityである。
+- PersonはBusiness Identityである。
+- UserAccountとPersonを分離する。
+- OrganizationはStageArtにおけるTenantである。
+- MembershipはPersonとOrganizationの所属関係を表す。
+- RoleはPermission Setを定義する。
+- RoleはOrganization ScopeとProduction Scopeで共通利用する。
+- RoleAssignmentという独立Domainを作成しない。
+- ProductionDelegateはProduction ScopeでPersonへRoleを適用する。
+- DelegateRoleという別のRole体系を使用しない。
+- DelegateRoleIdを使用しない。
+- ParticipantとMembershipを分離する。
+- Participant TypeとRoleを分離する。
+- Organizationの活動・制作はProjectで管理する。
+- Projectの下にProductionを持つ。
+- Production関連DomainはProductionを通じてOrganization Scopeに属する。
+- AccountingはOrganization単位で管理する。
+- AccountはAccounting上の勘定科目である。
+- UserAccountとAccountを混同しない。
+- BudgetはProduction単位の計画である。
+- ProductionActualはProduction単位の実績である。
+- ProfileとHistoricalActivityを分離する。
+- Public InformationとInternal Informationを分離する。
 - ExternalConnectionはOrganizationの子Entityである。
-- ExternalConnectionはServiceを参照する。
-- ExternalConnectionはCredentialを保持する。
-- ExternalConnectionはSNSに限定しない。
-- Serviceは外部サービスの種類を表すMasterである。
-- Serviceは複数のExternalConnectionから参照できる。
-- CredentialはExternalConnectionの子Entityである。
-- Credentialは単独のPublic Resourceとして公開しない。
-- CredentialのSecret情報は平文で保存しない。
-- CredentialのSecret情報をAPI Responseへ返却しない。
-- CredentialのSecret情報をDomain Eventへ含めない。
-- CredentialのSecret情報をLogへ出力しない。
-- CredentialのSecret情報をAudit Logへ出力しない。
-- ServiceのAuthenticationTypeはCredentialの認証方式を決定する。
-- ServiceのCapabilitiesは外部サービスごとの機能差を表現する。
-- ExternalConnectionの接続状態とCredentialの状態を分離する。
-- Productionは一人のPrimaryManagerを参照する。
-- PrimaryManagerはPersonを参照する。
-- PrimaryManagerはProductionに関する全権限を持つ。
-- Productionは0人以上のProductionDelegateを持つ。
-- ProductionDelegateはPersonを参照する。
-- ProductionDelegateはDelegateRoleを参照する。
-- DelegateRoleはあらかじめ定義された権限セットを表す。
-- DelegateRoleはProduction単位で適用される。
-- 同一PersonがProductionごとに異なるDelegateRoleを持つことを許可する。
-- ParticipantはSubjectを介して活動主体を参照する。
-- PersonとOrganizationはSubjectによって共通化して参照する。
-- ReservationはHandledParticipantを任意で参照できる。
-- HandledParticipantはParticipantを参照する。
-- CompanionはReservationの子Entityである。
-- ReservationSeatはReservationの子Entityである。
-- ReservationSeatはSeatを参照する。
-- SeatはPerformanceに属する。
-- Seatは予約状態を保持しない。
-- SeatはCheck Inの対象ではない。
-- Check InはReservation単位で行う。
-- Historyは独立したDomainである。
-- HistoryはSubjectを介して活動主体を参照する。
-- HistoryはProductionを必ず参照する。
-- PerformanceはHistoryに対して任意である。
-- PARTICIPATION HistoryはParticipantTypeを保持する。
-- AUDIENCE HistoryはParticipantTypeを保持しない。
-- AUDIENCE HistoryのSubjectはReservation.Bookerである。
-- HistoryはDomain Eventを契機として生成・更新する。
-- 外部サービス固有のAPI仕様はLogical ERでは定義しない。
-- 外部サービスへのAPI呼び出しはInfrastructure Layerで実装する。
-- ExternalConnectionは特定の外部サービスAPIへ直接依存しない。
+- Credentialは平文保存しない。
+- 外部サービス固有のAPI処理はInfrastructure Layerで実装する。
+- Blueprintを唯一の設計基準とする。
