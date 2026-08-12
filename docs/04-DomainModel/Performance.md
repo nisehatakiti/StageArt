@@ -2,7 +2,7 @@
 
 # Domain Model : Performance
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -34,7 +34,7 @@ Productionにおける個別の上演回を表す。
 一つ以上のPerformanceを持つことができる。
 
 Productionが「公演」そのものを表すのに対し、
-Performanceは「その公演の何回目の上演か」を表す。
+Performanceは「その公演の一回の上演」を表す。
 
 ---
 
@@ -53,6 +53,12 @@ PerformanceはPerformanceIdによって一意に識別する。
 
 Performanceは必ず一つのProductionに所属する。
 
+基本構造：
+
+Organization
+  ↓
+Project
+  ↓
 Production
   ↓
 Performance
@@ -66,7 +72,7 @@ Performance
   ↓
 Reservation
 
-ReservationのAggregate Ruleは、
+Reservationの作成・変更・キャンセル・状態管理は、
 Reservation Domainが管理する。
 
 ---
@@ -84,6 +90,9 @@ Performanceは、
 Performanceの日時は、
 公演回を識別・公開するための基本情報となる。
 
+日時を変更しても、
+PerformanceIdは変更しない。
+
 ---
 
 # Venue
@@ -97,8 +106,11 @@ Performanceは、
 - ホール
 - ステージ
 
-会場情報の詳細については、
+会場そのものの詳細情報は、
 Venue関連Domainの責務に応じて管理する。
+
+Performanceは、
+そのPerformanceで使用するVenueを参照する。
 
 ---
 
@@ -114,6 +126,9 @@ Version 1.0では、
 満席判定などの詳細なルールは、
 Reservation Domainと連携して管理する。
 
+Capacityの集計・販売可能数については、
+Reservationを正本として扱う。
+
 ---
 
 # Status
@@ -126,30 +141,43 @@ Performanceは以下の状態を持つ。
 - FINISHED
 - CANCELLED
 
+Statusは、
+Performance自身のLifecycleを表す。
+
 ---
 
-# Draft
+# DRAFT
 
 Performanceが作成されたが、
 まだ一般公開されていない状態。
 
+この状態では、
+公演日時や会場などの情報を準備できる。
+
 ---
 
-# Published
+# PUBLISHED
 
 Performanceが一般公開され、
 観客が予約可能な状態。
 
+ただし、
+予約受付の具体的な条件は
+Reservation / Ticket Domainのルールに従う。
+
 ---
 
-# Sold Out
+# SOLD_OUT
 
 予約可能数に達し、
 新規予約を受け付けない状態。
 
+SOLD_OUTは、
+Performanceそのものの終了を意味しない。
+
 ---
 
-# Finished
+# FINISHED
 
 Performanceが終了した状態。
 
@@ -157,9 +185,12 @@ Performanceは終了後も削除しない。
 
 過去の上演履歴として保持する。
 
+Performanceに関連するReservation、
+Check InなどのFactも保持する。
+
 ---
 
-# Cancelled
+# CANCELLED
 
 Performanceが中止された状態。
 
@@ -168,6 +199,58 @@ Performanceを物理削除せず、
 
 既存Reservationへの対応は、
 Performance Cancellationに伴うBusiness Processとして処理する。
+
+例えば、
+
+- 中止通知
+- Reservationのキャンセル
+- 払い戻し
+- 振替案内
+
+などを必要に応じて実行する。
+
+これらの処理をPerformance Domain自身へ
+過度に集約しない。
+
+---
+
+# Lifecycle
+
+基本的なLifecycle：
+
+DRAFT
+  ↓
+PUBLISHED
+  ↓
+SOLD_OUT
+  ↓
+FINISHED
+
+または、
+
+PUBLISHED
+  ↓
+FINISHED
+
+中止の場合：
+
+DRAFT
+  ↓
+CANCELLED
+
+PUBLISHED
+  ↓
+CANCELLED
+
+SOLD_OUT
+  ↓
+CANCELLED
+
+FINISHEDおよびCANCELLEDから、
+通常のLifecycleへ戻すことはしない。
+
+具体的な遷移ルールは、
+Performance Lifecycle Ruleで定義する。
 
 ---
 
@@ -209,13 +292,14 @@ Performanceでは、
 - 予約人数
 - 残席・残数
 - キャンセル件数
+- チェックイン済み人数
 
 集計値をPerformance自身のFactとして
 重複保存しないことを基本とする。
 
 必要に応じて、
 パフォーマンス上の理由からCacheや集計値を保持する場合でも、
-Reservationを正本とする。
+Reservation / Check Inを正本とする。
 
 ---
 
@@ -226,11 +310,13 @@ Reservationを正本とする。
 受付担当者は、
 受付開始時に対象となるProductionおよびPerformanceを選択する。
 
+基本構造：
+
 Production
   ↓
 Performance
   ↓
-Check In受付開始
+Check In受付
 
 選択されたPerformanceが、
 その受付でCheck In対象となる公演回である。
@@ -245,6 +331,8 @@ Seatを個別にCheck Inすることはしない。
 
 Reservation全体をCheck Inする。
 
+基本的な状態：
+
 Reservation
   ↓
 CHECKED_IN
@@ -256,7 +344,7 @@ CHECKED_IN
 # Check In Validation
 
 Check Inを実行する際は、
-受付中のPerformanceと
+受付中のPerformanceと、
 Reservationが対象としているPerformanceが
 一致していることを確認する。
 
@@ -452,9 +540,10 @@ PerformanceがFINISHEDとなった場合、
 そのPerformanceが終了したことを表す。
 
 Performance終了時に、
-過去のProduction / Performance情報を削除しない。
+Production / Performance情報を削除しない。
 
-Performanceに関連するReservationやCheck InなどのFactも保持する。
+Performanceに関連するReservation、
+Check InなどのFactも保持する。
 
 ---
 
@@ -469,14 +558,11 @@ Performance Cancellationに伴うBusiness Processとして処理する。
 例えば、
 
 - 中止通知
-- 予約キャンセル
+- Reservationキャンセル
 - 払い戻し
 - 振替案内
 
 などを必要に応じて実行する。
-
-これらの処理をPerformance Domain自身へ
-過度に集約しない。
 
 ---
 
@@ -505,7 +591,8 @@ Productionに設定されたTicket Type / Priceを
 販売対象として利用する。
 
 Performanceごとに、
-利用可能なTicket Typeを設定できる構造を将来的に持たせる。
+利用可能なTicket Typeを設定できる構造を
+将来的に持たせる。
 
 Ticket DomainがTicketに関する詳細なルールを管理する。
 
@@ -558,7 +645,7 @@ Reservation側のFactから予約状態を判断する設計を基本とする�
 
 ---
 
-# Future Timetable Relationship
+# Timetable Relationship
 
 TimetableはProductionに関連する。
 
@@ -572,7 +659,27 @@ Timetable Domainで管理する。
 
 ---
 
-# Performance and Participant
+# Rehearsal Relationship
+
+RehearsalはProductionに関連する。
+
+Performanceは、
+Rehearsalを直接管理しない。
+
+基本構造：
+
+Production
+  ├── Rehearsal
+  │     └── RehearsalAttendance
+  │
+  └── Performance
+
+公演準備中の稽古と、
+実際の公演回は別のDomainとして管理する。
+
+---
+
+# Participant Relationship
 
 Performanceは、
 出演者やスタッフを直接管理しない。
@@ -594,7 +701,7 @@ Performanceごとに出演者が異なる場合など、
 
 ---
 
-# Performance and Budget
+# Budget Relationship
 
 Performanceは、
 Budgetを直接管理しない。
@@ -608,7 +715,7 @@ Production
 Budget
 
 Performance単位の収支を必要とする場合は、
-将来的なAccounting / Production Actualの拡張として扱う。
+Production Actual / Accountingの拡張として扱う。
 
 ---
 
@@ -627,40 +734,108 @@ Productionが公開されている場合、
 
 ---
 
+# Public Information
+
+一般観客向けに公開するPerformance情報には、
+必要に応じて以下を含める。
+
+- 公演日時
+- 開場日時
+- 開演日時
+- 会場
+- 公演回情報
+- 予約状況
+- Ticket Information
+
+内部管理情報は公開しない。
+
+例えば、
+
+- Internal Note
+- 内部権限情報
+- Accounting情報
+- External Connection情報
+
+などはPublic Informationに含めない。
+
+---
+
+# Authorization
+
+Performanceに対する操作権限は、
+Production ScopeのAuthorizationによって制御する。
+
+PrimaryManagerは、
+Productionに関する全管理権限を持つ。
+
+ProductionDelegateは、
+適用されたRoleのPermissionに応じて
+Performanceを管理できる。
+
+Participant Typeによって、
+Performance管理権限を自動付与しない。
+
+Performance Domain自身は、
+RoleやPermissionを定義しない。
+
+---
+
+# Audit Information
+
+Performanceの重要な変更について、
+監査情報を保持できる。
+
+基本的な監査情報：
+
+- CreatedBy
+- CreatedAt
+- UpdatedBy
+- UpdatedAt
+
+Status変更、
+日時変更、
+Venue変更、
+Cancellationなどについても、
+必要に応じて監査情報を保持する。
+
+---
+
 # Business Rules
 
 - PerformanceはProductionに所属する。
 - Performanceは一つの上演回を表す。
-- 一つのProductionは複数のPerformanceを持てる。
-- PerformanceはPerformanceIdによって一意に識別する。
-- 開場日時、開演日時、終演予定日時、タイムゾーンを管理する。
-- Performanceは開催場所を管理する。
-- Performanceは状態を持つ。
-- Performance終了後も削除しない。
-- PerformanceがCancelledとなっても既存Reservationを物理削除しない。
+- PerformanceはPerformanceIdで一意に識別する。
+- 日時をPerformanceIdとして使用しない。
+- Performanceの日時変更によってPerformanceIdを変更しない。
+- 一つのProductionに複数Performanceを持つことができる。
 - ReservationはPerformance単位で管理する。
-- ReservationのAggregate RuleはReservation Domainが管理する。
+- ReservationのLifecycleはReservation Domainが管理する。
 - Check InはPerformance単位の受付として実施する。
 - Check Inの対象はReservationである。
 - Seatを個別にCheck Inしない。
-- QR Check InとManual Check Inは同じReservation Check Inとして扱う。
-- Check In時には対象Performanceの一致を検証する。
 - Performance自身は個々のReservationのCheck In状態を保持しない。
-- Check In状態はReservationを正本として判断する。
-- CheckInCompletedは観劇実績を確定するBusiness Eventである。
-- CheckInCompletedを契機としてAudience Historyを生成する。
-- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
-- Performance DomainはJournal Entryを直接管理しない。
-- Ticket Type / PriceはProduction単位で管理する。
-- PerformanceはProductionに設定されたTicketを販売対象として利用する。
+- Check In状態はReservationを正本とする。
+- CheckInCompletedは観劇実績確定のBusiness Eventである。
+- CheckInCompletedをAccounting連携の契機として利用できる。
+- Performance DomainはJournal Entryを管理しない。
+- Accounting DomainがJournal Entryを生成する。
+- Ticket Type / Priceの正本はProduction側にある。
+- PerformanceはProductionのTicket Type / Priceを販売対象として利用する。
+- Seat Domainは現時点では実装しない。
 - PerformanceはParticipantを直接管理しない。
-- 出演者・スタッフはProductionのParticipantで管理する。
+- 出演者・スタッフはParticipantで管理する。
+- PerformanceはRehearsalを直接管理しない。
+- RehearsalはProductionに所属する。
 - PerformanceはBudgetを直接管理しない。
 - BudgetはProduction単位で管理する。
-- SeatはVersion 1.0では実装しない。
-- 座席指定はVersion 1.0では実装しない。
-- Reservation SeatはVersion 1.0では実装しない。
-- PerformanceはProductionの公開状態と整合する。
+- Timetableの詳細進行をPerformanceに直接持たせない。
+- Performanceの公開状態はProductionの公開状態と整合させる。
+- Performanceの内部情報を一般公開しない。
+- PerformanceはFINISHED後も削除しない。
+- PerformanceがCANCELLEDになっても既存Reservationを物理削除しない。
+- PerformanceのLifecycleとProductionのLifecycleを分離する。
+- PerformanceのAuthorizationはProduction Scopeで管理する。
+- Participant TypeによってPerformance管理権限を付与しない。
 
 ---
 
@@ -675,113 +850,127 @@ Performanceに関する主なDomain Event：
 - PerformanceFinished
 - PerformanceCancelled
 
-Check Inに関するEventは、
-Check In Domainで定義する。
+Check Inに関連するBusiness Event：
 
-CheckInCompletedを契機として、
-History DomainがAudience Historyを生成する。
+- CheckInCompleted
 
-CheckInCompletedを契機として、
-Accounting DomainがTicket Revenueを会計へ連携する。
+Performance Cancellationに伴うBusiness Processでは、
+必要に応じてReservation関連Eventを発生させる。
 
 Performance Domain自身が、
-HistoryやJournal Entryを直接生成・更新しない。
+Reservation Domainの状態を直接管理することはしない。
 
 ---
 
 # Design Decisions
 
 Performanceは、
-Productionにおける個別の上演回を管理する。
+Productionにおける一つの公演回を表す。
+
+基本構造：
+
+Organization
+  ↓
+Project
+  ↓
+Production
+  ↓
+Performance
 
 Performanceは、
-予約・受付・来場確認の単位となる。
+観客が実際に来場する一回の上演を表す。
 
 ReservationはPerformance単位で管理する。
 
-受付はPerformanceを選択して開始し、
-Check InはReservation単位で行う。
+Check InもPerformance単位の受付として実施するが、
+来場FactそのものはReservationのCheck Inによって管理する。
 
-QR Check InとManual Check Inは、
-同じReservation Check Inとして扱う。
+Performance自身は、
+個々のReservationのCheck In状態を保持しない。
 
-Check Inが完了すると、
-CheckInCompletedが発生する。
+CheckInCompletedは、
+観劇履歴およびAccounting連携のBusiness Eventとして利用する。
 
-CheckInCompletedを契機として、
+Ticket Type / PriceはProduction側を正本とする。
 
-- Audience History
-- Ticket Revenue
+Performanceは、
+Productionに設定されたTicket Type / Priceを
+販売対象として利用する。
 
-をそれぞれのDomainへ連携する。
+Seat Domainは現時点では実装しない。
 
-HistoryはPerformanceの子Entityではなく、
-History Domainで管理する。
+ParticipantはProductionに所属し、
+Performanceは必要に応じてParticipantを参照する。
 
-Ticket RevenueおよびJournal Entryは、
-Accounting Domainで管理する。
+Performanceは、
+Participantそのものを管理しない。
 
-Seatおよび座席指定は将来実装する。
+RehearsalもProductionに所属し、
+Performanceとは別Domainとして管理する。
 
-そのためVersion 1.0では、
-PerformanceからSeatを管理しない。
+BudgetもProduction単位で管理し、
+PerformanceがBudgetを直接管理しない。
 
-Performanceは出演者・スタッフを直接管理せず、
-ProductionのParticipantを参照する。
+PerformanceはProductionの公開状態と整合して
+一般公開する。
 
-PerformanceはBudgetを直接管理せず、
-ProductionのBudgetを参照する。
-
-Performance終了後も、
-公演回および関連Factを保持する。
+Performanceの終了・中止後も、
+Performanceおよび関連Factを保持する。
 
 ---
 
 # Future
 
-将来的に以下へ対応する。
+将来的に必要となった場合、
 
-- 座席管理
 - 座席指定
-- 連席管理
+- Seat Map
 - Reservation Seat
-- 上演時間変更
-- 開演遅延
-- 中止
-- 振替公演
-- 配信公演
-- ライブビューイング
-- リアルタイム座席状況
-- Performance単位の予実分析
+- Performance別出演者
+- Performance別スタッフ
+- Performance別価格
+- Performance別収支
+- Performance別来場者分析
+- QR Ticket高度化
+- 入場履歴分析
+
+などへ拡張できる。
 
 ただし、
-将来機能を追加する場合も、
-Performanceの責務を不必要に拡張しない。
+これらの機能追加によって
+Performanceの責務を過度に拡張しない。
 
 ---
 
 # Design Principles
 
 - PerformanceはProductionに所属する。
-- Performanceは上演回を表す。
-- Performanceは予約・受付・来場確認の単位となる。
+- Performanceは一つの公演回を表す。
+- PerformanceIdによって一意に識別する。
+- 日時をIdentityとして使用しない。
 - ReservationはPerformance単位で管理する。
-- ReservationのAggregate RuleはReservation Domainが管理する。
-- Check InはReservation単位で行う。
-- QR Check InとManual Check Inを同じReservation Check Inとして扱う。
-- Check In時には対象Performanceを検証する。
-- Performanceは個々のReservationのCheck In状態を保持しない。
+- Check InはPerformance単位で受付する。
+- Check In対象はReservationである。
+- Performance自身はReservationのCheck In状態を保持しない。
 - ReservationをCheck Inの正本とする。
-- CheckInCompletedは観劇実績を確定するBusiness Eventである。
-- CheckInCompletedからAudience Historyを生成する。
-- CheckInCompletedからTicket RevenueをAccounting Domainへ連携する。
-- Ticket Type / PriceはProduction単位で管理する。
-- ParticipantはProduction単位で管理する。
-- BudgetはProduction単位で管理する。
+- CheckInCompletedを観劇実績確定Eventとして扱う。
+- CheckInCompletedをAccounting連携の契機として利用できる。
 - Performance DomainはJournal Entryを管理しない。
-- SeatはVersion 1.0では実装しない。
-- 座席指定はVersion 1.0では実装しない。
-- Reservation SeatはVersion 1.0では実装しない。
-- Performanceは終了後も削除しない。
-- Performanceは過去の上演Factを保持する。
+- Ticket Type / Priceの正本はProduction側にある。
+- PerformanceはTicket Type / Priceを販売対象として利用する。
+- Seat Domainは現時点では実装しない。
+- ParticipantはProductionに所属する。
+- PerformanceはParticipantを直接管理しない。
+- RehearsalはProductionに所属する。
+- PerformanceはRehearsalを直接管理しない。
+- BudgetはProduction単位で管理する。
+- PerformanceはBudgetを直接管理しない。
+- Timetableの詳細進行をPerformanceに持たせない。
+- Performanceの公開状態はProductionと整合させる。
+- Performanceの内部情報を公開しない。
+- PerformanceはFINISHED後も保持する。
+- PerformanceはCANCELLED後も保持する。
+- Performance CancellationでReservationを物理削除しない。
+- Performance Scopeの権限はProduction ScopeのAuthorizationで管理する。
+- Participant TypeをAuthorizationとして利用しない。
 - Blueprintを唯一の設計基準とする。
