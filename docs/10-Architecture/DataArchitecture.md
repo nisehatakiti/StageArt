@@ -3,7 +3,7 @@
 # 10 - Architecture
 # Data Architecture
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -61,6 +61,9 @@ StageArtのData Architectureは、
 - Client側のStateをBusiness Factの正本にしない。
 - Transaction BoundaryをApplication Use Caseと整合させる。
 - Data IntegrityをApplicationとDatabaseの双方で保証する。
+- Check InはClient固有のDataではなく、Server Sideで確定するBusiness Factとして管理する。
+- Web ClientとMobile Clientは、同一のCheck In Business Factを生成する。
+- QR CodeはCheck Inそのものではなく、Issued Ticketを識別するArtifactとして扱う。
 
 ---
 
@@ -159,6 +162,10 @@ Survey Response
 
 External Service上の情報を、
 これらのBusiness Factの代わりにしない。
+
+Check Inについては、
+Web ClientやMobile Clientが保持する
+UI StateやLocal Stateを正本としない。
 
 ---
 
@@ -687,6 +694,15 @@ Business Factの正本としない。
 QR Codeが削除・再発行されても、
 Issued Ticketそのものは維持できる構造とする。
 
+QR Codeの利用は、
+Mobile Clientに限定されるものではなく、
+将来的に別のClientや受付端末から
+利用される可能性もある。
+
+ただし、
+QR Codeを読み取るDevice側で
+Check In Factを確定してはならない。
+
 ---
 
 # 21. Check In
@@ -713,6 +729,14 @@ Check Inは、
 
 という事実を表す。
 
+Check Inは、
+Web ClientまたはMobile Clientなど、
+複数のClientから実行できる。
+
+ただし、
+どのClientから実行された場合でも、
+生成されるCheck In Business Factは同一のものとする。
+
 ---
 
 # 22. Check In Ownership
@@ -721,10 +745,38 @@ Check In Dataは、
 Check In DomainがOwnershipを持つ。
 
 Ticket DomainやReservation Domainが、
-Check In Factを直接所有しない。
+Check In Factを直接更新しない。
 
 Check Inを発生させるOperationは、
 Application Layerから実行する。
+
+Web ClientからのCheck In：
+
+Web Client
+↓
+Reservation / Issued Ticket List
+↓
+対象Ticket選択
+↓
+Check In Use Case
+↓
+Check In
+
+Mobile ClientからのCheck In：
+
+Mobile Client
+↓
+QR Scanner
+↓
+Issued Ticket Identifier
+↓
+Check In Use Case
+↓
+Check In
+
+どちらの場合も、
+最終的なCheck In Factは
+Server Sideで確定する。
 
 ---
 
@@ -750,6 +802,10 @@ Check InのBusiness Factを起点として
 
 Ticket購入だけでは、
 観劇履歴を確定しない。
+
+Web ClientからのManual Check Inでも、
+Mobile ClientからのQR Check Inでも、
+同じCheckInCompletedを起点とする。
 
 ---
 
@@ -942,6 +998,10 @@ Journal Entry
 この構造によって、
 Check In Domainが
 会計内部構造を知る必要がなくなる。
+
+Web ClientからのCheck Inでも、
+Mobile ClientからのCheck Inでも、
+Accounting Processは同一とする。
 
 ---
 
@@ -1461,6 +1521,29 @@ Server Sideで強いConsistencyを確保する。
 
 という状態が競合しないようにする。
 
+Web ClientからManual Check Inを行う場合と、
+Mobile ClientからQR Check Inを行う場合も、
+同じConsistency Ruleを適用する。
+
+例えば、
+
+Web Client
+↓
+Ticket X
+↓
+Check In
+
+と同時に、
+
+Mobile Client
+↓
+QR Ticket X
+↓
+Check In
+
+が実行された場合でも、
+Check In Factを二重作成しない。
+
 具体的なDatabase Lockや
 Unique Constraintなどは、
 Implementation Specificationで定義する。
@@ -1484,6 +1567,10 @@ Implementation Specificationで定義する。
 必要に応じて、
 Idempotency KeyやExternal Event IDなどを
 保持する。
+
+Check Inでは、
+Web ClientとMobile Clientの双方から
+同一Ticketに対するRequestが送信される可能性を考慮する。
 
 ---
 
@@ -1517,6 +1604,10 @@ Timestamp
 
 Auditを、
 Check In Factそのものとして扱わない。
+
+Web ClientからのCheck Inでも、
+Mobile ClientからのCheck Inでも、
+必要に応じて同じAudit Ruleを適用する。
 
 ---
 
@@ -1786,6 +1877,13 @@ Client DataをSource of Truthとしない。
 と保持していても、
 Server上のCheck In Factを優先する。
 
+Web Clientが一覧上で、
+
+「受付済み」
+
+と表示していても、
+その表示自体をBusiness Factの正本としない。
+
 ---
 
 # 71. Offline Data
@@ -1933,6 +2031,10 @@ Business Ruleを検証する。
 
 具体的なRuleは、
 Ticket / Reservation / Check In Domainで定義する。
+
+Web ClientからのManual Check Inと、
+Mobile ClientからのQR Check Inで、
+Business Ruleを分けない。
 
 ---
 
@@ -2131,8 +2233,35 @@ Integration DataやCacheは、
 
 # 87. Check In Data Flow
 
-Check Inに関するData Flow：
+Check Inに関するData Flowは、
+Clientによって入口が異なる。
 
+Web Reception：
+
+Web Client
+↓
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Ticket Selection
+↓
+Check In Use Case
+↓
+Issued Ticket
+↓
+Check In
+↓
+CheckInCompleted
+├── Audience History
+└── Accounting
+
+Mobile QR Reception：
+
+Mobile Client
+↓
+QR Scanner
+↓
 QR Code
 ↓
 Issued Ticket Identifier
@@ -2147,12 +2276,11 @@ CheckInCompleted
 ├── Audience History
 └── Accounting
 
+両方とも、
+同じCheck In Business Factを生成する。
+
 QR Code自体は、
 Business Factではない。
-
-Check Inが、
-観劇実績とAccounting Processの
-起点となる。
 
 ---
 
@@ -2199,6 +2327,10 @@ Audience Historyを確定しない。
 
 実際のCheck Inを、
 観劇実績の起点とする。
+
+Web ClientからのManual Check Inでも、
+Mobile ClientからのQR Check Inでも、
+同じCheckInCompletedを起点とする。
 
 ---
 
@@ -2417,6 +2549,10 @@ API Contractは、
 Business OperationとClient Requirementを
 基準として定義する。
 
+Check In APIは、
+Web ClientとMobile Clientの双方から
+利用できる共通Application Boundaryとする。
+
 ---
 
 # 101. Data Architecture and Mobile Client
@@ -2443,12 +2579,55 @@ API
 Server Data
 ↓
 Check In
+↓
+CheckInCompleted
 
 という構造を維持する。
 
+Mobile Clientが、
+Check In済みという状態を
+独自に確定しない。
+
 ---
 
-# 102. Data Architecture and WordPress
+# 102. Data Architecture and Web Client
+
+Web Clientは、
+QR Codeを利用せず、
+Reservation / Issued Ticketの一覧から
+Check Inを実行できる。
+
+基本構造：
+
+Web Client
+↓
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Search / Filter
+↓
+Ticket Selection
+↓
+Check In API
+↓
+Check In
+↓
+CheckInCompleted
+
+Web Client上の一覧表示は、
+Query / Read Modelを利用できる。
+
+ただし、
+一覧上のCheck In Statusを
+Business Factの正本としない。
+
+Check Inの確定は、
+Server SideのCheck In Use Caseで行う。
+
+---
+
+# 103. Data Architecture and WordPress
 
 WordPress Databaseを利用する場合でも、
 WordPress Database Structureと
@@ -2469,7 +2648,7 @@ Database
 
 ---
 
-# 103. Data Architecture and PHP
+# 104. Data Architecture and PHP
 
 PHP Server側では、
 Application / Domain / Infrastructureの
@@ -2492,7 +2671,7 @@ Domain Modelの構造を変更しない。
 
 ---
 
-# 104. Data Architecture and Modular Monolith
+# 105. Data Architecture and Modular Monolith
 
 Modular Monolithでは、
 Databaseを一つにまとめることができる。
@@ -2517,7 +2696,7 @@ etc.
 
 ---
 
-# 105. Cross Module Data Access
+# 106. Cross Module Data Access
 
 Module間でDataを参照する場合は、
 必要な情報だけを取得する。
@@ -2537,7 +2716,7 @@ Application / Domain Interfaceを通して取得する。
 
 ---
 
-# 106. Reporting Data
+# 107. Reporting Data
 
 Reportは、
 Business Factから生成する。
@@ -2567,7 +2746,7 @@ Business Factの正本にしない。
 
 ---
 
-# 107. Dashboard Data
+# 108. Dashboard Data
 
 Dashboardは、
 複数DomainのRead Modelを
@@ -2597,7 +2776,7 @@ Business Factの正本ではない。
 
 ---
 
-# 108. Search Data
+# 109. Search Data
 
 検索機能では、
 複数DomainのDataを検索できる。
@@ -2620,7 +2799,7 @@ Business Factから再構築できることを目指す。
 
 ---
 
-# 109. Data Versioning
+# 110. Data Versioning
 
 Version管理が必要なBusiness Dataは、
 明示的にVersionを管理する。
@@ -2640,7 +2819,7 @@ Domain Entityとして扱う。
 
 ---
 
-# 110. Immutable Fact
+# 111. Immutable Fact
 
 変更してはいけないBusiness Factは、
 Immutableとして扱う。
@@ -2661,7 +2840,7 @@ Business Operationを利用する。
 
 ---
 
-# 111. Accounting Immutability
+# 112. Accounting Immutability
 
 Journal Entryは、
 原則として過去の会計Factを
@@ -2682,7 +2861,7 @@ Accounting Domainで定義する。
 
 ---
 
-# 112. Check In Immutability
+# 113. Check In Immutability
 
 Check Inは、
 「いつ、どのTicketが受付されたか」
@@ -2697,7 +2876,7 @@ Check In Domainで定義する。
 
 ---
 
-# 113. HistoricalActivity Immutability
+# 114. HistoricalActivity Immutability
 
 HistoricalActivityは、
 過去の活動実績を表す。
@@ -2711,7 +2890,7 @@ HistoricalActivityの修正は、
 
 ---
 
-# 114. Data Lifecycle
+# 115. Data Lifecycle
 
 Business Dataは、
 Lifecycleを持つ場合がある。
@@ -2749,7 +2928,7 @@ Domain Ruleとして管理する。
 
 ---
 
-# 115. State and History
+# 116. State and History
 
 Current StateとHistoryを分離する。
 
@@ -2768,7 +2947,7 @@ Current Stateだけから、
 
 ---
 
-# 116. Data State Machine
+# 117. Data State Machine
 
 Stateを持つEntityについては、
 許可されるState Transitionを
@@ -2790,7 +2969,7 @@ Databaseへの直接Updateで許可しない。
 
 ---
 
-# 117. Data Architecture Summary
+# 118. Data Architecture Summary
 
 StageArt Data Architectureでは、
 
@@ -2824,9 +3003,38 @@ External Reference
 
 とする。
 
+Check Inについては、
+
+Web Client
+↓
+Reservation / Issued Ticket List
+↓
+Check In Use Case
+
+または、
+
+Mobile Client
+↓
+QR Scanner
+↓
+Issued Ticket Identifier
+↓
+Check In Use Case
+
+という複数の入口を持つ。
+
+しかし、
+どの入口から実行されても、
+
+Check In
+↓
+CheckInCompleted
+
+という同一のBusiness Factを生成する。
+
 ---
 
-# 118. Core Data Flow
+# 119. Core Data Flow
 
 StageArtの主要なData Flow：
 
@@ -2852,13 +3060,25 @@ CheckInCompleted
        ↓
     Journal Entry
 
+Check Inの入口は、
+
+Web Client
+または
+Mobile Client
+
+のいずれでもよい。
+
+ただし、
+Check In Business FactのSource of Truthは
+Server SideのCheck In Domainとする。
+
 このFlowにおいて、
 各Business Factは、
 それぞれのDomainがOwnershipを持つ。
 
 ---
 
-# 119. Data Architecture Principle
+# 120. Data Architecture Principle
 
 StageArt Data Architectureの最重要原則：
 
@@ -2875,6 +3095,11 @@ Database Structure
 
 「現在の状態と過去のFactを分離し、
 DomainごとのData Ownershipを維持する。」
+
+さらに、
+
+「Check Inの入口がWebでもMobileでも、
+同一のCheck In Business FactをServer Sideで確定する。」
 
 これにより、
 
