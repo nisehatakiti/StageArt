@@ -1,7 +1,8 @@
 # StageArt Blueprint
+
 # Authorization
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -28,14 +29,16 @@ StageArtの認可は、
 
 Organization Membership
     ↓
-Organization単位の権限
+Organization Role
+    ↓
+Permission Set
 
 Production
     ├── PrimaryManager
     │       └── 全権限
     │
     └── ProductionDelegate
-            └── DelegateRole
+            └── Role
                     └── Permission Set
 
 Organization Membershipは、
@@ -43,6 +46,10 @@ Organizationに対する所属および権限を表す。
 
 PrimaryManagerおよびProductionDelegateは、
 特定のProductionに対する管理権限を表す。
+
+Roleは、
+Organization ScopeおよびProduction Scopeで
+共通して利用するPermission Setを定義する。
 
 ---
 
@@ -55,13 +62,18 @@ Authorizationは、
 公開Resourceを除き、
 管理操作を実行できない。
 
-AccountはAuthenticationを担当する。
+UserAccountはAuthenticationを担当する。
 
 PersonはBusiness上の人物を表す。
 
 Authorizationでは、
-認証されたAccountから対応するPersonを特定し、
+認証されたUserAccountから対応するPersonを特定し、
 そのPersonが持つ権限を判定する。
+
+UserAccountとPersonは別のIdentityとして管理する。
+
+AccountはAccounting Domainの勘定科目を表し、
+Authenticationには使用しない。
 
 ---
 
@@ -90,16 +102,26 @@ Authorizationには以下のScopeが存在する。
 Organization Membershipによって
 Organization単位の権限を判定する。
 
-例）
+基本構造：
 
 Organization
     ↓
 Membership
     ↓
 Person
+    ↓
+Role
+    ↓
+Permission
 
-Organization Membershipは、
-Organizationに対する操作権限を表す。
+Membershipは、
+PersonとOrganizationの所属関係を表す。
+
+RoleはOrganization Scopeにおける
+Personの権限を定義する。
+
+Organization ScopeのRoleは、
+そのOrganizationにおいて有効である。
 
 ---
 
@@ -111,10 +133,15 @@ Production
     ├── PrimaryManager
     │
     └── ProductionDelegate
-            └── DelegateRole
+            └── Role
+                    └── Permission
 
 Production Scopeの権限は、
 そのProductionに対してのみ有効である。
+
+ProductionDelegateに適用されるRoleは、
+Organization Scopeで使用されるRoleと
+同じRole Definitionを利用する。
 
 ---
 
@@ -136,7 +163,111 @@ Organization全体に対する権限を表す。
 などを定義できる。
 
 具体的なOrganization Roleは、
-Organization Authorization設計で定義する。
+Role Domainで定義する。
+
+Membershipによって適用されたRoleは、
+そのOrganization Scopeにおいて有効である。
+
+Organization Membershipが存在すること自体は、
+Production Scopeの管理権限を意味しない。
+
+---
+
+# Role
+
+Roleは、
+複数のPermissionをまとめたPermission Setを定義する。
+
+RoleはPersonへ直接付与しない。
+
+RoleはMembershipまたはProductionDelegateを介して
+Personへ適用する。
+
+基本構造：
+
+Role
+    ↓
+Permission Set
+    ↓
+Permission
+
+RoleはOrganization ScopeとProduction Scopeの
+両方で利用できる。
+
+例えば、
+
+REHEARSAL_MANAGER
+    ↓
+Rehearsal.Read
+Rehearsal.Create
+Rehearsal.Update
+Rehearsal.Delete
+Schedule.Read
+
+RESERVATION_MANAGER
+    ↓
+Reservation.Read
+Reservation.Create
+Reservation.Update
+Reservation.Cancel
+Reservation.CheckIn
+Performance.Read
+
+PARTICIPANT_MANAGER
+    ↓
+Participant.Read
+Participant.Create
+Participant.Update
+Participant.Delete
+
+PERFORMANCE_MANAGER
+    ↓
+Performance.Read
+Performance.Create
+Performance.Update
+Performance.Cancel
+Performance.Finish
+
+RoleはPermission Setの定義であり、
+Person固有の属性ではない。
+
+同じRoleを複数のPersonへ適用できる。
+
+---
+
+# Role Application
+
+RoleをPersonへ適用する経路は、
+Scopeによって異なる。
+
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
+
+Production Scope：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+RoleAssignmentという独立Domainは作成しない。
+
+RoleをどのScopeで誰に適用するかは、
+MembershipまたはProductionDelegateによって表現する。
 
 ---
 
@@ -147,7 +278,7 @@ Productionには一人のPrimaryManagerを設定する。
 PrimaryManagerは、
 Productionに関する全権限を持つ。
 
-PrimaryManagerはDelegateRoleによる制限を受けない。
+PrimaryManagerはRoleによる制限を受けない。
 
 Production
     ↓
@@ -160,6 +291,11 @@ All Production Permissions
 PrimaryManagerは、
 Productionに紐づく管理対象を横断して操作できる。
 
+PrimaryManagerはProductionDelegateとは異なる。
+
+PrimaryManagerには、
+ProductionDelegate用のRoleを適用する必要はない。
+
 ---
 
 # Production Delegate
@@ -167,36 +303,27 @@ Productionに紐づく管理対象を横断して操作できる。
 ProductionDelegateは、
 Productionの管理権限を委任されたPersonを表す。
 
+基本構造：
+
 Production
     ↓
 ProductionDelegate
     ├── Person
-    └── DelegateRole
+    └── Role
 
 ProductionDelegateは、
-DelegateRoleに定義されたPermissionのみを持つ。
+Roleに定義されたPermissionのみを持つ。
 
-DelegateRoleに含まれない操作は実行できない。
+Roleに含まれない操作は実行できない。
 
----
+ProductionDelegateは、
+Production単位で管理する。
 
-# DelegateRole
+同一Personが複数のProductionで
+ProductionDelegateになることができる。
 
-DelegateRoleは、
-ProductionDelegateへ付与する権限セットを定義するMaster Dataである。
-
-DelegateRoleはPersonへ直接付与しない。
-
-DelegateRoleはProductionDelegateを介して適用する。
-
-Person
-    ↑
-ProductionDelegate
-    ↑
-DelegateRole
-
-同一Personが、
-Productionごとに異なるDelegateRoleを持つことを許可する。
+また、同一Personに対して、
+Productionごとに異なるRoleを適用できる。
 
 ---
 
@@ -288,7 +415,7 @@ Reservation.Cancel
 
 # Permission Set
 
-DelegateRoleは複数のPermissionをまとめて保持する。
+Roleは複数のPermissionをまとめて保持する。
 
 例えば、
 
@@ -324,6 +451,8 @@ Performance.Update
 Performance.Cancel
 Performance.Finish
 
+これらはRoleとして定義する。
+
 ---
 
 # Authorization Decision
@@ -355,13 +484,13 @@ Productionに関する全権限を持つ。
     ↓
 
 対象ProductionのProductionDelegateである場合、
-DelegateRoleを取得する。
+適用されているRoleを取得する。
 
-5. DelegateRole
+5. Role
 
     ↓
 
-DelegateRoleに対象Permissionが存在するか確認する。
+Roleに対象Permissionが存在するか確認する。
 
 6. Permission
 
@@ -393,7 +522,7 @@ Authenticated?
           │
           ├── No
           │     ↓
-          │   Other Authorization
+          │   Check Organization Scope
           │
           └── Yes
                 ↓
@@ -413,7 +542,7 @@ Authenticated?
                       │
                       └── Yes
                             ↓
-                       DelegateRole
+                           Role
                             ↓
                        Permission?
                             │
@@ -433,7 +562,7 @@ PrimaryManagerは、
 Productionに関する全権限を持つ。
 
 したがって、
-DelegateRoleのPermission Setを
+RoleのPermission Setを
 PrimaryManagerの権限判定に使用しない。
 
 PrimaryManager
@@ -442,7 +571,7 @@ All Production Permissions
 
 ProductionDelegate
     ↓
-DelegateRole
+Role
     ↓
 Permission Set
 
@@ -506,6 +635,9 @@ Reservation関連の権限を持つ。
 Production Aで持つ権限が
 Production Bへ自動的に継承されることはない。
 
+同一Personに対するRoleは、
+Productionごとに独立して判定する。
+
 ---
 
 # Organization and Production Authorization
@@ -516,20 +648,30 @@ Organization MembershipとProduction単位の権限は、
 Organization Membership
     ↓
 Organization Scope
+    ↓
+Role
+    ↓
+Permission
 
 PrimaryManager
     ↓
 Production Scope
+    ↓
+All Production Permissions
 
 ProductionDelegate
     ↓
 Production Scope
+    ↓
+Role
+    ↓
+Permission
 
 Organization Membershipによって
 自動的にProductionDelegateになることはない。
 
 ProductionDelegateであることによって、
-Organization Membershipの権限が変更されることもない。
+Organization MembershipのRoleが変更されることもない。
 
 ---
 
@@ -543,6 +685,8 @@ Organization ScopeとProduction Scopeが
 
 Organization A
     ↓
+Project A
+    ↓
 Production A
     ↓
 Reservation A
@@ -552,6 +696,9 @@ Reservation Aを操作するには、
 Reservationが所属するPerformance、
 Performanceが所属するProductionを特定し、
 Productionに対する管理権限を確認する。
+
+必要に応じて、
+Organization Scopeの権限も確認する。
 
 ---
 
@@ -598,7 +745,7 @@ Document
 Production Scope
 
 この構造により、
-ProductionDelegateの権限を
+ProductionDelegateのRoleによるPermissionを
 関連Resourceへ適用できる。
 
 ---
@@ -625,7 +772,7 @@ Reservation.Update
 Reservation.Cancel
 Reservation.CheckIn
 
-などのPermissionをDelegateRoleへ設定できる。
+などのPermissionをRoleへ設定できる。
 
 ---
 
@@ -687,7 +834,7 @@ Production
 Rehearsal
 
 ProductionDelegateには、
-DelegateRoleによって以下のような権限を付与できる。
+Roleによって以下のようなPermissionを付与できる。
 
 Rehearsal.Read
 Rehearsal.Create
@@ -707,7 +854,7 @@ Production
     ↓
 Schedule
 
-DelegateRoleには、
+Roleには、
 
 Schedule.Read
 Schedule.Create
@@ -726,7 +873,7 @@ Production
     ↓
 Participant
 
-DelegateRoleには、
+Roleには、
 
 Participant.Read
 Participant.Create
@@ -748,7 +895,7 @@ Production
     ↓
 Performance
 
-DelegateRoleには、
+Roleには、
 
 Performance.Read
 Performance.Create
@@ -767,24 +914,37 @@ PrimaryManagerはPerformanceに関する全権限を持つ。
 Permissionは、
 Personそのものに直接付与しない。
 
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Role
+    ↓
+Permission
+
+Production Scope：
+
 Person
     ↓
 ProductionDelegate
     ↓
-DelegateRole
+Role
     ↓
 Permission
 
 という経路で権限を解決する。
 
 これにより、
-同一PersonがProductionごとに異なる権限を持つことができる。
+同一PersonがOrganizationごと、
+またProductionごとに異なる権限を持つことができる。
 
 ---
 
 # Role Independence
 
-DelegateRoleはPersonのRoleではない。
+RoleはPersonそのものの属性ではない。
 
 Person Aが、
 
@@ -799,288 +959,144 @@ RESERVATION_MANAGER
 となることを許可する。
 
 Person A自身に
-REHEARSAL_MANAGERというRoleが付いているわけではない。
+REHEARSAL_MANAGERというRoleが固定的に付いているわけではない。
+
+Roleは、
+MembershipまたはProductionDelegateを介して
+Scopeごとに適用される。
 
 ---
 
-# Role Status
+# Role Scope Isolation
 
-DelegateRoleにはStatusを持たせる。
+Roleによって付与されたPermissionは、
+Roleが適用されたScope内でのみ有効である。
 
-ACTIVE
-INACTIVE
+Organization ScopeのRole：
 
-ACTIVEのDelegateRoleは、
-新しいProductionDelegateへ設定できる。
-
-INACTIVEのDelegateRoleは、
-新規のProductionDelegateへ設定できない。
-
-既存ProductionDelegateへの影響については、
-Roleの無効化時にAuthorization Ruleに従って処理する。
-
----
-
-# ProductionDelegate Status
-
-ProductionDelegateにもStatusを持たせる。
-
-ACTIVE
-INACTIVE
-
-ACTIVEの場合、
-DelegateRoleによる権限を有効とする。
-
-INACTIVEの場合、
-ProductionDelegateは保持されるが、
-委任権限を無効とする。
-
----
-
-# Permission Changes
-
-DelegateRoleのPermission Setを変更すると、
-そのRoleを使用しているProductionDelegateの
-権限にも影響する。
-
-例えば、
-
-REHEARSAL_MANAGER
+Organization A
     ↓
-Rehearsal.Read
-Rehearsal.Create
-
-に、
-
-Rehearsal.Update
-
-を追加した場合、
-REHEARSAL_MANAGERを使用する
-すべてのProductionDelegateに
-Rehearsal.Updateが付与される。
-
-そのため、
-DelegateRoleの変更はMaster Dataの変更として扱う。
-
----
-
-# Authorization Cache
-
-Authorization結果をキャッシュする場合、
-以下の変更時には関連Cacheを無効化する。
-
-- ProductionPrimaryManagerChanged
-- ProductionDelegateAdded
-- ProductionDelegateUpdated
-- ProductionDelegateRemoved
-- DelegateRoleUpdated
-- DelegateRoleActivated
-- DelegateRoleDeactivated
-
-Cacheを利用する場合でも、
-最終的なAuthorizationの正当性は
-Domain RuleとAuthorization Ruleに従う。
-
----
-
-# Audit
-
-管理権限を利用した操作について、
-誰が操作したかを記録できるようにする。
-
-基本的な監査情報として、
-
-CreatedBy
-CreatedAt
-UpdatedBy
-UpdatedAt
-
-を利用する。
-
-Business Resourceの変更では、
-実際に操作を実行した利用者をUpdatedByとして記録する。
-
-PrimaryManagerが変更された場合でも、
-過去の操作のCreatedByおよびUpdatedByを書き換えない。
-
-ProductionDelegateの変更についても、
-同様に過去の監査情報を変更しない。
-
----
-
-# Authorization Failure
-
-Authorizationに失敗した場合、
-基本的には403 Forbiddenを返す。
-
-未認証の場合は401 Unauthorizedを返す。
-
-Resourceが存在しない場合は404 Not Foundを返す。
-
-Business Ruleによる操作拒否と
-Authorizationによる操作拒否は区別する。
-
----
-
-# Security Principle
-
-Authorizationは、
-API Endpointだけで実装しない。
-
-API Layer
+Membership
     ↓
-Application Layer
-    ↓
-Authorization
-    ↓
-Domain Rule
-
-という構造で、
-Business Operationの実行時にも
-権限を確認する。
-
-API Endpointを直接呼び出す以外の経路からも、
-Authorization Ruleを回避できない設計とする。
-
----
-
-# Domain Rule and Authorization
-
-Authorizationは、
-「誰が操作できるか」を判定する。
-
-Domain Ruleは、
-「その操作自体がBusiness上可能か」を判定する。
-
-例えば、
-
-Authorization
-    ↓
-Reservation.Updateを実行可能
-
-Domain Rule
-    ↓
-Check In済みReservationは変更不可
-
-というように、
-AuthorizationとBusiness Ruleを分離する。
-
-Authorizationを持っていても、
-Domain Ruleに違反する操作は実行できない。
-
----
-
-# Check In Example
-
-例えば、
-
 Person A
+    ↓
+Role
+    ↓
+Permission
+
+Production ScopeのRole：
+
+Production A
     ↓
 ProductionDelegate
     ↓
-RESERVATION_MANAGER
-    ↓
-Reservation.CheckIn
-
-というPermissionを持っている場合、
-Person AはそのProductionのReservationについて
-Check Inを実行できる。
-
-ただし、
-
-Reservation
-    ↓
-CHECKED_IN
-
-の場合は、
-Authorizationがあっても再Check Inはできない。
-
-これはAuthorizationではなく、
-Reservation DomainのBusiness Ruleによって拒否する。
-
----
-
-# Update Example
-
-Reservationの人数を変更する場合、
-
 Person A
     ↓
-ProductionDelegate
+Role
     ↓
-RESERVATION_MANAGER
-    ↓
-Reservation.Update
+Permission
 
-によってAuthorizationを通過する。
+Organization AのRoleが、
+自動的にProduction AのProductionDelegate権限へ
+変換されることはない。
 
-その後、
-
-Reservation Domain
-    ↓
-Check In済みか？
-
-を確認する。
-
-CHECKED_INの場合は変更不可とする。
-
-Check In前であれば、
-人数変更および必要なReservationSeatの変更を
-Business Ruleに従って実行する。
+同様に、
+ProductionDelegateのRoleが
+Organization Scopeへ自動的に適用されることもない。
 
 ---
 
-# Permission Naming Principles
+# Role and Permission Management
+
+Roleの定義は、
+Authorization Domainで管理する。
 
 Permissionは、
-Business ResourceとBusiness Operationが
-明確になる名前を使用する。
+Business Resourceに対する操作単位で定義する。
 
-基本形式
+RoleはPermissionの集合として定義する。
 
-Resource.Action
+Roleの変更によって、
+そのRoleを適用されているPersonの権限が変更される。
 
-例）
+Roleの適用関係は、
+MembershipまたはProductionDelegateによって管理する。
 
-Production.Read
-Production.Update
-
-Reservation.Read
-Reservation.Update
-Reservation.Cancel
-Reservation.CheckIn
-
-Rehearsal.Read
-Rehearsal.Update
-
-Actionは、
-単なる画面操作ではなく、
-Business Operationを表す。
+RoleAssignmentという独立Entityは作成しない。
 
 ---
 
-# Design Principles
+# Authorization Boundary
+
+Authorizationは、
+「誰が」「どのScopeで」「何を」「どの操作まで」
+実行できるかを判定する。
+
+基本構造：
+
+UserAccount
+    ↓
+Person
+    ↓
+Scope
+    ↓
+Role
+    ↓
+Permission
+    ↓
+Resource.Action
+
+Production Scopeでは、
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Role
+    ↓
+Permission
+    ↓
+Resource.Action
+
+という経路で判定する。
+
+PrimaryManagerの場合は、
+
+Person
+    ↓
+PrimaryManager
+    ↓
+All Production Permissions
+    ↓
+Resource.Action
+
+となる。
+
+---
+
+# Security Principles
 
 - AuthenticationとAuthorizationを分離する。
+- UserAccountはAuthentication Identityとして扱う。
+- PersonはBusiness Identityとして扱う。
+- AccountはAccounting Domainの勘定科目として扱う。
+- AccountをAuthentication Identityとして使用しない。
 - Organization ScopeとProduction Scopeを分離する。
-- Organization MembershipはOrganization単位の権限を表す。
-- PrimaryManagerはProduction単位の全権限を持つ。
-- PrimaryManagerはDelegateRoleによる制限を受けない。
-- ProductionDelegateはProduction単位の委任権限を表す。
-- ProductionDelegateはDelegateRoleを介して権限を取得する。
-- DelegateRoleはPermission Setを定義するMaster Dataである。
-- DelegateRoleをPersonへ直接付与しない。
-- 同一PersonがProductionごとに異なるDelegateRoleを持つことを許可する。
-- ProductionDelegateの権限は所属Productionに対してのみ有効とする。
-- PermissionはResource.Action形式を基本とする。
-- CRUDだけで表現できないBusiness Operationには専用Actionを定義する。
-- AuthorizationとDomain Business Ruleを分離する。
-- Authorizationを通過してもDomain Ruleに違反する操作は実行できない。
-- Check InはReservation単位のBusiness Operationとして扱う。
-- Check InではProductionおよびPerformanceのScopeを確認する。
-- Check In済みReservationはDomain Ruleによって変更不可とする。
-- Productionに紐づく関連ResourceはProduction Scopeを継承して認可する。
-- ProductionDelegateの権限変更は監査可能とする。
-- 過去のCreatedByおよびUpdatedByは権限変更によって書き換えない。
-- AuthorizationはAPI Endpointだけに依存しない。
-- Business RuleはDomain Layerが管理する。
+- RoleはPermission Setを定義する。
+- RoleはPersonへ直接付与しない。
+- MembershipまたはProductionDelegateを介してRoleを適用する。
+- RoleAssignmentという独立Domainを作成しない。
+- ProductionDelegateはProduction Scopeに限定する。
+- Organization ScopeのRoleをProduction Scopeへ自動継承しない。
+- Production ScopeのRoleをOrganization Scopeへ自動継承しない。
+- PrimaryManagerはProductionに対する全権限を持つ。
+- ProductionDelegateはRoleに定義されたPermissionのみを持つ。
+- PermissionはResource.Action形式で定義する。
+- Resource Scopeを必ず確認してからPermissionを判定する。
+- 異なるOrganizationのResourceへ無断でアクセスできない。
+- 異なるProductionのResourceへ無断でアクセスできない。
+- Public Scopeでは公開設定に従って認証なしの参照を許可できる。
+- 認証情報をAuthorization Resourceとして公開しない。
+- CredentialをPermissionやRoleの内容として公開しない。
+- Authorizationの具体的な実装はInfrastructure Layerへ依存しない。
+- Blueprintを唯一の設計基準とする。
