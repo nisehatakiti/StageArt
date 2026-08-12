@@ -2,7 +2,7 @@
 
 # Domain Model : Production
 
-Version : 4.1
+Version : 4.2
 
 ---
 
@@ -122,8 +122,8 @@ Productionを管理するPrimaryManagerが存在する。
 PrimaryManagerは、
 Productionに関する全管理権限を持つ。
 
-PrimaryManagerは、
-Productionに対して一人だけ存在する。
+一つのProductionには、
+一人のPrimaryManagerが存在する。
 
 PrimaryManagerはPersonによって表現する。
 
@@ -141,6 +141,12 @@ OrganizationのOwnerとは異なる概念である。
 Organization OwnerはOrganization Scopeの管理者であり、
 PrimaryManagerはProduction Scopeの管理者である。
 
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
+
+PrimaryManagerであることによって、
+そのPersonが他のProductionのPrimaryManagerになることを妨げない。
+
 ---
 
 # Production Delegate
@@ -151,7 +157,7 @@ Productionの管理業務の一部を、
 その委任をProductionDelegateによって管理する。
 
 ProductionDelegateは、
-Production ScopeにおけるRole Assignmentである。
+Production ScopeにおいてPersonへRoleを適用する関係を表す。
 
 基本構造：
 
@@ -166,7 +172,7 @@ ProductionDelegate
 ProductionDelegate自身は、
 Permissionを定義しない。
 
-付与されるPermissionは、
+適用されるPermissionは、
 Roleによって定義される。
 
 RoleはRole Domainで一元管理する。
@@ -175,7 +181,7 @@ RoleはRole Domainで一元管理する。
 
 # Production Delegate Scope
 
-ProductionDelegateによってAssignmentされたRoleは、
+ProductionDelegateによって適用されたRoleは、
 対象Productionに対してのみ有効である。
 
 例えば、
@@ -194,7 +200,7 @@ Rehearsal ManagerのPermissionを持つ。
 Person AがProduction Bについて
 同じPermissionを持つとは限らない。
 
-ProductionDelegateによるRole Assignmentは、
+ProductionDelegateによるRoleの適用は、
 Organization全体の権限を変更しない。
 
 ---
@@ -209,7 +215,7 @@ PersonがOrganizationに所属していることを表す。
 
 ProductionDelegateは、
 Personが特定Productionについて
-RoleをAssignmentされていることを表す。
+Roleを適用されていることを表す。
 
 基本構造：
 
@@ -225,7 +231,7 @@ ProductionDelegate
     ↓
 Role
 
-ProductionDelegateによるRole Assignmentは、
+ProductionDelegateによるRoleの適用は、
 PersonのOrganization Membershipを変更しない。
 
 ProductionDelegateによって、
@@ -246,8 +252,6 @@ Organization Scope：
 Person
     ↓
 Membership
-    ↓
-Role Assignment
     ↓
 Role
     ↓
@@ -310,7 +314,7 @@ STAFFであることによって、
 Production管理権限を自動的に付与してはならない。
 
 Production管理権限が必要な場合は、
-ProductionDelegateによってRoleをAssignmentする。
+ProductionDelegateによってRoleを適用する。
 
 ---
 
@@ -494,13 +498,150 @@ Rehearsalには、
 - 終了時刻
 - 場所
 - 内容
-- 対象者
 - 備考
+- Status
 
 などを設定できる。
 
+Rehearsalの参加予定者・参加実績は、
+RehearsalAttendanceによって管理する。
+
 Rehearsalの詳細なDomain Ruleは、
 Rehearsal Domainで定義する。
+
+---
+
+# Rehearsal Lifecycle
+
+Rehearsalは、
+稽古予定から実施完了までを
+一つのEntityとして管理する。
+
+稽古予定と確定稽古を、
+別Entityとして管理しない。
+
+基本的なStatus：
+
+- DRAFT
+- SCHEDULED
+- CONFIRMED
+- ACTIVE
+- COMPLETED
+- CANCELLED
+
+基本Lifecycle：
+
+DRAFT
+    ↓
+SCHEDULED
+    ↓
+CONFIRMED
+    ↓
+ACTIVE
+    ↓
+COMPLETED
+
+中止：
+
+DRAFT
+    ↓
+CANCELLED
+
+SCHEDULED
+    ↓
+CANCELLED
+
+CONFIRMED
+    ↓
+CANCELLED
+
+ACTIVE
+    ↓
+CANCELLED
+
+Statusの変更によって、
+別のRehearsal Entityを生成しない。
+
+---
+
+# Rehearsal Attendance
+
+Rehearsalへの参加予定および
+実際の出欠は、
+RehearsalAttendanceによって管理する。
+
+基本構造：
+
+Production
+    ↓
+Rehearsal
+    ↓
+RehearsalAttendance
+    ↓
+Person
+
+RehearsalAttendanceは、
+RehearsalのLifecycle全体を通じて保持する。
+
+RehearsalがCONFIRMEDになっても、
+RehearsalAttendanceを削除しない。
+
+RehearsalがACTIVEになっても、
+RehearsalAttendanceを削除しない。
+
+参加予定から実際の出欠への変化は、
+同じRehearsalAttendanceのStatus変更として扱う。
+
+---
+
+# Rehearsal Attendance Status
+
+予定段階では、
+
+- UNANSWERED
+- ATTENDING
+- NOT_ATTENDING
+
+などのStatusを使用する。
+
+実施段階では、
+
+- ATTENDED
+- LATE
+- ABSENT
+
+などのStatusを使用する。
+
+基本的な流れ：
+
+UNANSWERED
+    ↓
+ATTENDING
+    ↓
+ATTENDED
+
+または、
+
+UNANSWERED
+    ↓
+NOT_ATTENDING
+
+実施時：
+
+ATTENDING
+    ↓
+ATTENDED
+
+ATTENDING
+    ↓
+LATE
+
+ATTENDING
+    ↓
+ABSENT
+
+予定段階の参加者情報を削除して、
+別の出欠Entityを作成することはしない。
 
 ---
 
@@ -654,6 +795,11 @@ Infrastructure Layerが担当する。
 Production Domainは、
 特定CalendarサービスのAPIへ直接依存しない。
 
+RehearsalをStageArt側の正本とする。
+
+External Calendar Eventは、
+外部Artifactとして扱う。
+
 ---
 
 # Organization Scope
@@ -698,7 +844,7 @@ PrimaryManagerは、
 Productionに関する全権限を持つ。
 
 ProductionDelegateは、
-AssignmentされたRoleに含まれるPermissionのみ持つ。
+適用されたRoleに含まれるPermissionのみ持つ。
 
 ProductionDelegateのPermissionは、
 対象Productionに限定される。
@@ -712,9 +858,9 @@ Authorization Domainで定義する。
 
 ---
 
-# Production Role Assignment
+# Production Delegate
 
-Production ScopeでRoleを付与する場合は、
+Production ScopeでRoleを適用する場合は、
 ProductionDelegateを使用する。
 
 ProductionDelegateは、
@@ -732,6 +878,10 @@ Role Definitionを保持しない。
 Role Definitionは、
 Role Domainで管理する。
 
+ProductionDelegateは、
+Production Scopeにおいて
+PersonへRoleを適用する関係を表す。
+
 ---
 
 # Lifecycle and Delegate
@@ -748,8 +898,8 @@ ProductionDelegateの有効性も
 Production Lifecycle Ruleに従う。
 
 Productionが終了した場合、
-ProductionDelegateを自動的にACTIVEのまま
-新規権限として利用し続けない。
+ProductionDelegateを新規権限として
+利用し続けない。
 
 既存のProductionDelegate情報は、
 監査および履歴のため保持できる。
@@ -775,7 +925,8 @@ ProductionDelegateは、
 Production作成時には自動生成しない。
 
 必要なPersonに対して、
-PrimaryManagerなどの適切な権限者がAssignmentする。
+PrimaryManagerなどの適切な権限者が
+ProductionDelegateを設定する。
 
 ---
 
@@ -791,7 +942,7 @@ Productionの重要な管理操作について、
 - UpdatedBy
 - UpdatedAt
 
-ProductionDelegateのRole Assignmentについても、
+ProductionDelegateのRole適用についても、
 適切な監査情報を保持する。
 
 ---
@@ -845,11 +996,14 @@ Productionには、
 PrimaryManagerは、
 Productionに関する全管理権限を持つ。
 
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
+
 Production単位で管理権限を委任する場合は、
 ProductionDelegateを利用する。
 
 ProductionDelegateは、
-Production ScopeにおけるRole Assignmentである。
+Production ScopeにおいてPersonへRoleを適用する関係である。
 
 ProductionDelegateは、
 Permissionを直接定義しない。
@@ -895,6 +1049,24 @@ Production単位の予実管理を目的とする。
 Organization Accountingとは、
 異なる目的を持つ。
 
+Rehearsalは、
+稽古予定から実施完了までを
+一つのEntityとして管理する。
+
+稽古予定と確定稽古を、
+別Entityとして管理しない。
+
+RehearsalのLifecycleはStatusで管理する。
+
+RehearsalAttendanceは、
+RehearsalのLifecycle全体を通じて保持する。
+
+RehearsalがCONFIRMEDまたはACTIVEになっても、
+RehearsalAttendanceを削除しない。
+
+参加予定と実際の出欠は、
+同じRehearsalAttendanceのStatus変更で管理する。
+
 ---
 
 # Design Principles
@@ -904,13 +1076,14 @@ Organization Accountingとは、
 - Production関連DomainはProductionを通じてOrganization Scopeに属する。
 - ProductionにはPrimaryManagerが一人存在する。
 - PrimaryManagerはProductionに関する全管理権限を持つ。
-- ProductionDelegateはProduction ScopeのRole Assignmentである。
+- 一人のPersonは複数ProductionのPrimaryManagerになれる。
+- ProductionDelegateはProduction ScopeでPersonへRoleを適用する関係である。
 - ProductionDelegateはPermissionを直接定義しない。
 - RoleがPermission Setを定義する。
 - Role DefinitionはRole Domainで一元管理する。
 - DelegateRoleという別Role体系を使用しない。
 - Organization ScopeとProduction Scopeで同じRole Definitionを利用する。
-- ProductionDelegateによるRole AssignmentのPermissionは対象Productionに限定される。
+- ProductionDelegateによるRoleのPermissionは対象Productionに限定される。
 - ProductionDelegateはOrganization Membershipを変更しない。
 - ProductionDelegateはOrganization ScopeのRoleを変更しない。
 - ParticipantはProductionへの参加関係を表す。
@@ -925,5 +1098,11 @@ Organization Accountingとは、
 - CheckInCompletedをTicket Revenue連携のBusiness Eventとして扱う。
 - Production DomainはJournal Entryを直接生成しない。
 - Accounting Domainが会計仕訳を生成する。
+- Rehearsalは稽古予定から実施完了までを一つのEntityとして管理する。
+- RehearsalのLifecycleはStatusで管理する。
+- 稽古予定と確定稽古を別Entityとして管理しない。
+- RehearsalAttendanceはRehearsalのLifecycle全体を通じて保持する。
+- CONFIRMEDまたはACTIVEになってもRehearsalAttendanceを削除しない。
+- 参加予定と実際の出欠は同じRehearsalAttendanceのStatus変更で管理する。
 - Google Calendarなどの外部サービスへのAPI操作はInfrastructure Layerが担当する。
 - Blueprintを唯一の設計基準とする。
