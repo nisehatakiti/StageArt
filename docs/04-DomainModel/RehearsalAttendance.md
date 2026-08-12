@@ -1,592 +1,899 @@
 # StageArt Blueprint
 
-# Domain Model : Rehearsal Attendance
+# Domain Model : RehearsalAttendance
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
-Rehearsal Attendanceは、
-確定したRehearsalに対するPersonの
-参加予定を管理するDomainである。
+RehearsalAttendanceは、
+特定のRehearsalに対するPersonの
+参加予定および参加実績を表すEntityである。
 
-Rehearsal Attendanceは、
+RehearsalAttendanceは、
+Rehearsal Domainに属する子Entityとして扱う。
 
-「確定したこの稽古に参加するか」
+RehearsalAttendanceを独立したBusiness Domainとして扱わない。
 
-を表す。
+基本構造：
 
-Rehearsal Candidateに対する日程調整用の回答である
-Rehearsal Availabilityとは異なる。
+Production
+    ↓
+Rehearsal
+    ↓
+RehearsalAttendance
+    ↓
+Person
 
 ---
 
 # Concept
 
-Rehearsalが確定した後、
-対象Personに対して参加確認を行う。
+RehearsalAttendanceは、
+特定のRehearsalに対して
+Personが参加する予定であること、
+および実際に参加した結果を管理する。
+
+RehearsalのLifecycleに応じて、
+同じRehearsalAttendanceのStatusを変更する。
+
+稽古予定と確定稽古、
+参加予定と実績を
+別Entityとして作成しない。
+
+---
+
+# Ownership
+
+RehearsalAttendanceは、
+Rehearsalに所属する。
 
 基本構造：
 
 Rehearsal
-  ↓
-Rehearsal Attendance
-  ↓
-Person
+    ↓
+RehearsalAttendance
 
-Rehearsal Attendanceは、
-稽古実施前の参加予定を表す。
+RehearsalAttendanceは、
+Productionに直接所属するのではなく、
+Rehearsalを通じてProductionに属する。
+
+Organization Scopeについても、
+Rehearsalを通じてProduction、
+Project、
+Organizationへ遡ることができる。
 
 ---
 
-# Relationship
+# Person
 
-Rehearsal Attendanceは、
-一つのRehearsalに所属する。
+RehearsalAttendanceは、
+対象となるPersonをReferenceする。
+
+基本構造：
 
 Rehearsal
-  ↓
-Rehearsal Attendance
+    ↓
+RehearsalAttendance
+    ↓
+Person
 
-一つのRehearsalには、
-複数のPersonのAttendanceを登録できる。
+Personは、
+RehearsalAttendanceを直接所有しない。
+
+Personが複数のRehearsalへ参加する場合、
+それぞれのRehearsalについて
+RehearsalAttendanceが存在する。
 
 ---
 
-# Subject
+# Rehearsal
 
-Attendanceの対象者はPersonである。
+Rehearsalは、
+Productionに所属する稽古・活動予定を表す。
 
-対象者はProductionのParticipantを基本とする。
+基本構造：
+
+Production
+    ↓
+Rehearsal
+    ↓
+RehearsalAttendance
+
+Rehearsalは、
+稽古予定の作成から、
+日程確定、
+実施中、
+実施完了までを
+一つのEntityとして管理する。
+
+RehearsalCandidateを使用しない。
+
+RehearsalAvailabilityを使用しない。
+
+---
+
+# Rehearsal Lifecycle
+
+RehearsalはStatusによって
+Lifecycleを管理する。
+
+主なStatus：
+
+- DRAFT
+- SCHEDULED
+- CONFIRMED
+- ACTIVE
+- COMPLETED
+- CANCELLED
+
+基本Lifecycle：
+
+DRAFT
+    ↓
+SCHEDULED
+    ↓
+CONFIRMED
+    ↓
+ACTIVE
+    ↓
+COMPLETED
+
+キャンセル：
+
+DRAFT
+    ↓
+CANCELLED
+
+SCHEDULED
+    ↓
+CANCELLED
+
+CONFIRMED
+    ↓
+CANCELLED
+
+ACTIVE
+    ↓
+CANCELLED
+
+RehearsalのStatus変更によって、
+RehearsalAttendanceを別Entityへ変換しない。
+
+---
+
+# Attendance Lifecycle
+
+RehearsalAttendanceは、
+Rehearsalの予定段階から作成・保持できる。
+
+予定確認段階では、
+以下のStatusを使用する。
+
+- UNANSWERED
+- ATTENDING
+- NOT_ATTENDING
+
+基本的な状態：
+
+UNANSWERED
+    ↓
+ATTENDING
+
+または、
+
+UNANSWERED
+    ↓
+NOT_ATTENDING
+
+Personが回答を変更する場合は、
+同じRehearsalAttendanceのStatusを変更する。
 
 例えば、
 
-- キャスト
-- スタッフ
+ATTENDING
+    ↓
+NOT_ATTENDING
 
-など。
+のような変更を許可できる。
+
+---
+
+# Active Attendance
+
+RehearsalがACTIVEになった場合、
+RehearsalAttendanceは実際の参加結果を記録する。
+
+実施段階では、
+以下のStatusを使用する。
+
+- ATTENDED
+- LATE
+- ABSENT
+
+基本的な状態：
+
+ATTENDING
+    ↓
+ATTENDED
+
+または、
+
+ATTENDING
+    ↓
+LATE
+
+または、
+
+ATTENDING
+    ↓
+ABSENT
+
+実際の運用に応じて、
+必要な状態変更ルールを
+Rehearsal Domainで定義する。
+
+---
+
+# Attendance Retention
+
+RehearsalがCONFIRMEDになっても、
+RehearsalAttendanceを削除しない。
+
+RehearsalがACTIVEになっても、
+RehearsalAttendanceを削除しない。
+
+RehearsalがCOMPLETEDになっても、
+RehearsalAttendanceを削除しない。
+
+例えば、
+
+Rehearsal
+    Status = SCHEDULED
+        ↓
+RehearsalAttendance
+    Status = ATTENDING
+
+から、
+
+Rehearsal
+    Status = ACTIVE
+        ↓
+RehearsalAttendance
+    Status = ATTENDED
+
+へ、
+同じRehearsalAttendanceのStatusを変更する。
+
+これにより、
+
+- 参加予定者
+- 不参加予定者
+- 実際の参加者
+- 遅刻者
+- 欠席者
+
+を同じEntityから確認できる。
+
+---
+
+# Attendance Target
+
+RehearsalAttendanceの対象者は、
+ProductionのParticipantを基本とする。
+
+ただし、
+Production Participant全員が
+すべてのRehearsalに参加するとは限らない。
+
+そのため、
+Rehearsalごとに
+参加予定者を設定できる。
+
+基本構造：
+
+Production
+    ↓
+Participant
+    ↓
+Person
+
+Production
+    ↓
+Rehearsal
+    ↓
+RehearsalAttendance
+    ↓
+Person
+
+RehearsalAttendanceは、
+特定Rehearsalへの参加対象を表す。
 
 ---
 
 # Participant Relationship
 
-Attendance対象者は、
-Production Participantから決定できる。
+Participantは、
+PersonまたはOrganizationが
+Productionへ参加しているFactを表す。
+
+RehearsalAttendanceは、
+特定Rehearsalに対するPersonの
+参加予定・実績を表す。
+
+したがって、
+
+Participant
+    ↓
+Productionへの参加
+
+RehearsalAttendance
+    ↓
+Rehearsalへの参加
+
+という異なる責務を持つ。
+
+Participantを削除・変更することで、
+過去のRehearsalAttendanceを
+削除してはならない。
+
+過去のAttendanceは、
+過去のRehearsalにおけるFactとして保持する。
+
+---
+
+# Organization Scope
+
+RehearsalAttendanceは、
+Rehearsalを通じてOrganization Scopeを判定する。
 
 基本構造：
 
+Organization
+    ↓
+Project
+    ↓
 Production
-  ↓
-Participant
-  ↓
-Person
-
+    ↓
 Rehearsal
-  ↓
-Rehearsal Attendance
-  ↓
+    ↓
+RehearsalAttendance
+    ↓
 Person
 
-Participant Typeを利用して、
-Attendance対象者を絞り込むことができる。
+RehearsalAttendance自身に
+OrganizationIdを直接保持することを
+必須としない。
+
+---
+
+# Permission
+
+RehearsalAttendanceの参照・変更権限は、
+Rehearsalの所属するProduction Scopeおよび
+Organization ScopeのAuthorizationによって決定する。
+
+例えば、
+
+- Organization Administrator
+- Rehearsal Manager
+- Production PrimaryManager
+- 適切なProductionDelegate
+
+などが、
+RehearsalAttendanceを管理できる。
+
+具体的なPermissionは、
+Role / Authorization Domainで定義する。
+
+---
+
+# Person Self Response
+
+Person自身が
+自分のRehearsalAttendanceを回答できる。
+
+例えば、
+
+Person
+    ↓
+RehearsalAttendance
+    Status = UNANSWERED
+
+から、
+
+Person
+    ↓
+RehearsalAttendance
+    Status = ATTENDING
+
+または、
+
+Person
+    ↓
+RehearsalAttendance
+    Status = NOT_ATTENDING
+
+へ変更できる。
+
+Person自身が回答できる範囲は、
+Authorization DomainのPermissionによって決定する。
+
+---
+
+# Manager Update
+
+Rehearsalを管理する権限を持つPersonは、
+必要に応じてRehearsalAttendanceを更新できる。
+
+例えば、
+
+- Person本人の回答を代理して登録する
+- 実際の参加結果を記録する
+- Attendance Statusを修正する
+
+など。
+
+ただし、
+誰がStatusを変更したかを
+監査上必要とする場合は、
+Audit Informationとして記録する。
 
 ---
 
 # Attendance Status
 
-Attendanceには、
-確定したRehearsalへの参加予定を設定する。
+RehearsalAttendanceのStatusは、
+予定段階と実施段階を表現する。
 
-基本的な状態：
+## Planned Status
 
-- ATTENDING
-- NOT_ATTENDING
-- UNDECIDED
+### UNANSWERED
 
-日本語UIでは、
+参加予定について、
+Personからまだ回答されていない。
 
-- ○ 参加
-- × 不参加
-- △ 未定
+### ATTENDING
 
-などとして表示できる。
+Personが参加予定であることを回答している。
 
----
+### NOT_ATTENDING
 
-# Attending
-
-ATTENDINGは、
-確定したRehearsalへ参加する予定であることを表す。
+Personが参加しない予定であることを回答している。
 
 ---
 
-# Not Attending
+## Actual Status
 
-NOT_ATTENDINGは、
-確定したRehearsalへ参加しない予定であることを表す。
+### ATTENDED
+
+Personが実際にRehearsalへ参加した。
+
+### LATE
+
+Personが遅刻して参加した。
+
+### ABSENT
+
+Personが参加予定だったが、
+実際には参加しなかった。
 
 ---
 
-# Undecided
+# Status Transition
 
-UNDECIDEDは、
-確定したRehearsalへの参加予定がまだ決まっていない状態を表す。
+基本的なStatus Transitionは以下とする。
+
+UNANSWERED
+    ├──→ ATTENDING
+    └──→ NOT_ATTENDING
+
+回答変更：
+
+ATTENDING
+    └──→ NOT_ATTENDING
+
+NOT_ATTENDING
+    └──→ ATTENDING
+
+実施：
+
+ATTENDING
+    ├──→ ATTENDED
+    ├──→ LATE
+    └──→ ABSENT
 
 必要に応じて、
-管理者が未回答者として確認できる。
+ManagerによるStatus修正を許可する。
+
+Status Transitionの詳細ルールは、
+Rehearsal Domainで定義する。
 
 ---
 
-# Availability and Attendance
+# Rehearsal Cancellation
 
-Rehearsal Availabilityと
-Rehearsal Attendanceは完全に別のFactである。
+RehearsalがCANCELLEDになった場合、
+RehearsalAttendanceを削除しない。
 
-Availability：
+Attendanceは、
+そのRehearsalに対して登録されていた
+参加予定情報として保持できる。
 
-「候補日に参加できるか」
+RehearsalのStatusがCANCELLEDであることによって、
+対象Rehearsalが中止されたことを判定する。
 
-Attendance：
-
-「確定したこのRehearsalに参加するか」
-
-例えば、
-
-Rehearsal Candidate
-
-Person A
-  Availability = UNAVAILABLE
-
-↓
-
-Rehearsal確定
-
-↓
-
-Person Aが予定を調整
-
-↓
-
-Rehearsal Attendance
-  = ATTENDING
-
-という状態を許可する。
-
-逆に、
-
-Person B
-  Availability = AVAILABLE
-
-であっても、
-
-Rehearsal Attendance
-  = NOT_ATTENDING
-
-となることを許可する。
+RehearsalAttendanceのStatusを
+別のCANCELLEDへ変更することを
+必須としない。
 
 ---
 
-# Timing
+# Rehearsal Completion
 
-Rehearsal Attendanceは、
-稽古実施前に確認する。
-
-当日に初めて参加確認を行うことを
-基本としない。
-
-Rehearsal確定後、
-対象者へ事前に参加確認を依頼する。
-
----
-
-# Attendance Update
-
-Rehearsal実施前であれば、
-PersonはAttendanceを変更できる。
-
-例えば、
-
-ATTENDING
-  ↓
-NOT_ATTENDING
-
-や、
-
-NOT_ATTENDING
-  ↓
-ATTENDING
-
-など。
-
-予定変更に対応するため、
-確定後も参加予定を更新できる。
-
----
-
-# Response Deadline
-
-Attendanceには、
-回答期限を設定できる構造を持つ。
-
-ただし、
-回答期限そのものはRehearsal側で管理することを基本とする。
-
-期限を過ぎた場合でも、
-管理権限を持つPersonによる変更を
-許可できる。
-
----
-
-# Initial Attendance
-
-RehearsalがCONFIRMEDとなった場合、
-対象者にAttendance回答を依頼できる。
-
-初期状態は、
-
-UNDECIDED
-
-とすることを基本とする。
-
-ただし、
-Rehearsal確定時に対象者の参加予定が
-明らかな場合は、
-管理者が初期値を設定できる。
-
----
-
-# Target Participants
-
-Attendanceの対象者は、
-Production Participantを基本とする。
-
-例えば、
-
-Participant Type
-  = キャスト
-
-とすることで、
-キャストを対象にAttendanceを確認できる。
-
-スタッフを含める場合は、
-スタッフも対象とする。
-
----
-
-# Individual Target
-
-Participant Typeだけではなく、
-個別Personを対象に指定できる。
-
-例えば、
-
-- 主演
-- 演出
-- 音響担当
-- 制作担当
-
-など、
-特定Personだけを対象にすることができる。
-
----
-
-# Target Snapshot
-
-Rehearsal確定時点の対象者情報を、
-必要に応じてSnapshotとして保持できる。
-
-これにより、
-Rehearsal確定後にParticipantが追加・変更されても、
-すでに設定されたAttendance対象者が
-意図せず変更されることを防止できる。
-
-具体的なSnapshot実装方法は、
-Data Modelで定義する。
-
----
-
-# Attendance Count
-
-Rehearsalでは、
-Attendanceを集計して表示できる。
+RehearsalがCOMPLETEDになった場合、
+RehearsalAttendanceは
+実際の参加結果を保持する。
 
 例：
 
-- ATTENDING 8人
-- NOT_ATTENDING 2人
-- UNDECIDED 3人
+Rehearsal
+    Status = COMPLETED
 
-この集計結果は、
-稽古管理者が参加予定人数を把握するために利用する。
+RehearsalAttendance
+    Person A = ATTENDED
+    Person B = LATE
+    Person C = ABSENT
 
-集計値をAttendanceの正本として保存しない。
-
-Attendanceを正本とする。
-
----
-
-# Notification
-
-Attendance回答を依頼する場合、
-対象Personへ通知できる。
-
-通知内容には、
-
-- Production
-- Rehearsal
-- 日時
-- 場所
-- 稽古内容
-- 回答期限
-- Attendance回答画面への導線
-
-などを含めることができる。
-
-通知機能そのものはNotification Domainの責務とする。
+この情報を、
+過去のRehearsalの参加実績として参照できる。
 
 ---
 
-# Google Calendar Relationship
+# Historical Fact
 
-Google Calendarへの登録と
-Rehearsal Attendanceは別の概念である。
-
-AttendanceがATTENDINGであることだけを理由に、
-Calendarへの登録対象を限定しない。
+RehearsalAttendanceの実施結果は、
+過去のRehearsalに関するFactとなる。
 
 例えば、
 
-Attendance
-  = NOT_ATTENDING
+- Person Aが参加した
+- Person Bが遅刻した
+- Person Cが欠席した
 
-であっても、
+という情報は、
+RehearsalAttendanceから参照できる。
 
-Google Calendar
-  = 登録
+必要に応じて、
+History DomainがこれらのFactを
+活動履歴として利用できる。
 
-という状態を許可する。
-
-逆に、
-
-Attendance
-  = ATTENDING
-
-であっても、
-Google Calendarを利用しないPersonが存在してよい。
+RehearsalAttendance自身が
+Historyを直接管理することはない。
 
 ---
 
-# Calendar Registration
+# Uniqueness
 
-Google Calendar連携は、
-確定したRehearsalを対象とする。
+同一Rehearsalに対して、
+同一PersonのRehearsalAttendanceは
+原則として一つとする。
 
-基本Flow：
+論理的な一意性：
+
+RehearsalId + PersonId
+
+これにより、
+
+同一Rehearsal
+    +
+同一Person
+
+に対して複数のAttendanceが
+作成されることを防ぐ。
+
+---
+
+# Creation
+
+RehearsalAttendanceは、
+Rehearsalの参加対象者が設定された時点で
+作成できる。
+
+例えば、
 
 Rehearsal
-  ↓
-Google Calendar Integration
-  ↓
-Google Calendar Event
+    ↓
+対象Person A
+対象Person B
+対象Person C
 
-Calendar Eventの登録対象は、
-Rehearsalの共有対象者など、
-別途定義された条件によって決定する。
+に対して、
 
-Attendance自身が
-Google Calendar登録を実行することはない。
+RehearsalAttendance
+    ├── Person A
+    ├── Person B
+    └── Person C
+
+を作成する。
+
+初期Statusは、
+通常UNANSWEREDとする。
+
+Person本人が回答することで、
+ATTENDINGまたはNOT_ATTENDINGへ変更する。
 
 ---
 
-# Attendance and Actual Participation
+# Rehearsal Confirmation
 
-Rehearsal Attendanceは、
-稽古実施前の参加予定を表す。
-
-実際に稽古へ参加したという事実を
-Attendanceだけで確定しない。
+RehearsalがSCHEDULEDからCONFIRMEDになった場合も、
+RehearsalAttendanceは同じEntityを保持する。
 
 例えば、
 
+Rehearsal
+    Status = SCHEDULED
+
 Attendance
-  = ATTENDING
+    Person A = ATTENDING
+    Person B = ATTENDING
+    Person C = NOT_ATTENDING
+
+から、
+
+Rehearsal
+    Status = CONFIRMED
+
+Attendance
+    Person A = ATTENDING
+    Person B = ATTENDING
+    Person C = NOT_ATTENDING
+
+のように、
+RehearsalのStatusだけが変更される。
+
+Attendanceを新しく作成し直さない。
+
+---
+
+# Rehearsal Activation
+
+RehearsalがACTIVEになった場合も、
+RehearsalAttendanceは保持する。
+
+例えば、
+
+Rehearsal
+    Status = ACTIVE
+
+Attendance
+    Person A = ATTENDED
+    Person B = LATE
+    Person C = ABSENT
+
+のように、
+実際の参加結果を同じAttendanceへ記録する。
+
+---
+
+# Calendar Integration
+
+RehearsalAttendanceと
+Google Calendarの登録対象は、
+同一とは限らない。
+
+Google Calendarへの登録対象は、
+RehearsalのCalendar連携ルールによって決定する。
+
+例えば、
+
+RehearsalAttendance
+    Person A = ATTENDING
 
 であっても、
-実際には欠席した可能性がある。
+Calendar登録対象外となる場合がある。
 
-実際の参加実績を将来管理する場合は、
-別のAttendance Resultまたは
-Rehearsal実績Domainとして拡張する。
+逆に、
+RehearsalAttendanceのStatusだけを
+Calendar登録可否の唯一の条件としてはならない。
 
----
-
-# History
-
-Rehearsal Attendanceは、
-稽古への参加予定を表すFactである。
-
-そのため、
-ATTENDINGとなった時点で
-稽古参加履歴を確定させない。
-
-実際の参加履歴が必要となった場合は、
-稽古実施後のFactを利用する。
-
-History生成の詳細はHistory Domainで定義する。
+Google CalendarへのAPI操作は、
+Infrastructure Layerが担当する。
 
 ---
 
-# Authorization
+# External Calendar
 
-Attendanceの回答は、
-対象Person本人が行える。
+Rehearsalは、
+CONFIRMEDになった場合などに
+Google Calendarへ連携できる。
 
-Rehearsal管理権限を持つPersonは、
-必要に応じてAttendanceを確認・管理できる。
+Google Calendar Eventは、
+StageArtのRehearsalの正本ではない。
 
-Participant Typeは、
-権限を付与するものではない。
+StageArt側のRehearsalを正本とする。
 
----
-
-# Audit
-
-Attendanceには、
-変更を追跡できるよう監査情報を保持する。
-
-基本情報：
-
-- Created By
-- Created At
-- Updated By
-- Updated At
+RehearsalAttendanceは、
+Google Calendar Eventそのものを
+管理しない。
 
 ---
 
-# Deletion
+# Audit Information
 
-Attendanceは、
-稽古への参加予定という履歴情報を持つ。
+RehearsalAttendanceの重要な変更について、
+必要に応じて監査情報を記録できる。
 
-そのため、
-物理削除を基本としない。
+例：
 
-対象者が変更された場合も、
-必要に応じて状態変更や監査情報によって履歴を保持する。
+- CreatedBy
+- CreatedAt
+- UpdatedBy
+- UpdatedAt
+- AnsweredBy
+- AnsweredAt
 
----
+Status変更の履歴を保持する必要がある場合は、
+Audit DomainまたはInfrastructure側の
+監査機構によって管理する。
 
-# Business Rules
-
-- Rehearsal AttendanceはRehearsalに所属する。
-- Rehearsal AttendanceはPersonの確定稽古への参加予定を表す。
-- AttendanceはRehearsal Availabilityとは別のFactである。
-- Availabilityは候補日への回答である。
-- Attendanceは確定したRehearsalへの参加確認である。
-- CandidateでUNAVAILABLEだったPersonも、確定後にATTENDINGへ変更できる。
-- CandidateでAVAILABLEだったPersonも、確定後にNOT_ATTENDINGへ変更できる。
-- Attendanceは稽古実施前に確認する。
-- Attendance StatusはATTENDING / NOT_ATTENDING / UNDECIDEDを基本とする。
-- Rehearsal確定時の初期状態はUNDECIDEDを基本とする。
-- Rehearsal実施前であればAttendanceを変更できる。
-- Attendance対象者はProduction Participantを基本とする。
-- Participant Typeを対象者抽出条件として利用できる。
-- 個別Personを対象者として指定できる。
-- Attendanceの集計値を正本としない。
-- Attendanceを正本として参加予定人数を算出する。
-- Google Calendar登録とAttendanceは独立した概念である。
-- AttendanceがATTENDINGであることだけを理由にCalendar登録対象を限定しない。
-- AttendanceがNOT_ATTENDINGでもCalendarへ登録できる。
-- Attendanceだけでは実際の稽古参加を確定しない。
-- Attendanceから即座にHistoryを生成しない。
-- Attendanceには監査情報を保持する。
-- Attendanceは原則として物理削除しない。
-- Participant Typeは権限を付与しない。
-- Attendanceの管理権限はRehearsal管理権限に従う。
+Credentialなどの認証情報を
+Audit Informationとして記録しない。
 
 ---
 
-# Domain Events
+# Domain Boundary
 
-Rehearsal Attendanceに関する主なDomain Event：
+RehearsalAttendanceは、
+Rehearsal Domainに属する子Entityである。
 
-- RehearsalAttendanceCreated
-- RehearsalAttendanceUpdated
+RehearsalAttendanceが管理するもの：
 
-Attendance Status変更時には、
-必要に応じてStatus変更Eventを発行できる。
+- RehearsalへのPersonの参加対象
+- 参加予定
+- 不参加予定
+- 実参加
+- 遅刻
+- 欠席
+
+RehearsalAttendanceが管理しないもの：
+
+- Rehearsal自体の日時
+- Rehearsal自体のLifecycle
+- Production
+- Participantそのもの
+- Role
+- Permission
+- Google Calendar Event
+- History
+
+Rehearsal自体のLifecycleは、
+Rehearsal Domainで管理する。
+
+Productionへの参加関係は、
+Participant Domainで管理する。
+
+権限は、
+Role / Authorization Domainで管理する。
+
+外部Calendar連携は、
+ExternalConnection / Infrastructure Layerで管理する。
+
+活動履歴は、
+History Domainで管理する。
+
+---
+
+# No Candidate
+
+RehearsalAttendanceでは、
+RehearsalCandidateというEntityを使用しない。
+
+RehearsalCandidateは、
+稽古候補日を管理するための旧概念である。
+
+現在のStageArtでは、
+Rehearsal自身を作成し、
+Rehearsal Statusによって
+Lifecycleを管理する。
+
+---
+
+# No Availability
+
+RehearsalAttendanceでは、
+RehearsalAvailabilityというEntityを使用しない。
+
+参加可能日確認のために
+別Entityを作成しない。
+
+Personの参加予定は、
+RehearsalAttendanceのStatusによって管理する。
 
 ---
 
 # Design Decisions
 
-Rehearsal Attendanceは、
-確定したRehearsalへの参加予定を表す。
+RehearsalAttendanceは、
+Rehearsal Domainに属する子Entityである。
 
-Candidate段階のAvailabilityとは完全に分離する。
+RehearsalAttendanceを独立Domainとして扱わない。
 
-この分離によって、
+RehearsalCandidateは使用しない。
 
-「候補日では参加できなかったが、
-確定後に予定を調整して参加できるようになった」
+RehearsalAvailabilityは使用しない。
 
-というケースを自然に表現できる。
+稽古予定と確定稽古を別Entityに分けない。
 
-また、
+RehearsalのLifecycleはStatusで管理する。
 
-「候補日では参加可能だったが、
-確定後に参加できなくなった」
+RehearsalAttendanceは、
+Rehearsalの予定段階から作成・保持できる。
 
-というケースも表現できる。
+RehearsalがCONFIRMEDになっても、
+RehearsalAttendanceを削除しない。
 
-Attendanceは実施前の予定であり、
-実際の参加実績とは区別する。
+RehearsalがACTIVEになっても、
+RehearsalAttendanceを削除しない。
 
-Google Calendar連携もAttendanceとは分離する。
+RehearsalがCOMPLETEDになっても、
+RehearsalAttendanceを削除しない。
 
-これにより、
-Calendar登録と実際の稽古参加予定を
-独立して管理できる。
+参加予定と実参加は、
+同じRehearsalAttendanceのStatus変更で管理する。
 
----
+同一Rehearsalに対する
+同一PersonのRehearsalAttendanceは一つとする。
 
-# Future
+RehearsalAttendanceは、
+Rehearsalを通じてProductionに属する。
 
-将来的に以下へ対応できる。
+RehearsalAttendanceは、
+Rehearsalを通じてOrganization Scopeを判定する。
 
-- 回答期限
-- 自動リマインド
-- 参加予定人数の自動集計
-- Attendance変更履歴
-- 実参加結果
-- 遅刻
-- 早退
-- 実参加時間
-- 稽古実績
-- Attendanceからの稽古実績分析
+Productionへの参加関係はParticipantで管理する。
 
-ただし、
-実際の参加実績を追加する場合も、
-事前のAttendanceと混同しない。
+Rehearsalへの参加関係はRehearsalAttendanceで管理する。
+
+ParticipantとRehearsalAttendanceを同一Entityとして扱わない。
+
+RoleとPermissionはRehearsalAttendanceの責務ではない。
+
+Google Calendar EventはRehearsalAttendanceの正本ではない。
+
+StageArt上のRehearsalを正本とする。
+
+HistoryはRehearsalAttendanceの責務ではない。
 
 ---
 
 # Design Principles
 
-- Attendanceは確定したRehearsalへの参加予定である。
-- AttendanceはRehearsalに所属する。
-- AvailabilityとAttendanceを分離する。
-- CandidateでのAvailabilityと確定後のAttendanceは独立して変更できる。
-- Attendanceは稽古実施前に確認する。
-- Attendanceは実際の参加実績ではない。
-- Participant Typeを対象者抽出に利用できる。
-- Participant Typeは権限を表さない。
-- Google Calendar登録とAttendanceを分離する。
-- AttendanceがATTENDINGでもCalendar登録を必須としない。
-- AttendanceがNOT_ATTENDINGでもCalendar登録を妨げない。
-- Attendanceから実績Historyを直接生成しない。
-- Attendanceの集計値を正本としない。
-- Attendanceを正本として参加予定を判断する。
+- RehearsalAttendanceはRehearsal Domainに属する。
+- RehearsalAttendanceはRehearsalの子Entityである。
+- RehearsalAttendanceは独立Domainとして扱わない。
+- RehearsalCandidateを使用しない。
+- RehearsalAvailabilityを使用しない。
+- 稽古予定と確定稽古を別Entityに分けない。
+- RehearsalのLifecycleはStatusで管理する。
+- RehearsalAttendanceは予定段階から保持する。
+- CONFIRMEDになってもAttendanceを削除しない。
+- ACTIVEになってもAttendanceを削除しない。
+- COMPLETEDになってもAttendanceを削除しない。
+- 参加予定と実参加は同じAttendanceのStatus変更で管理する。
+- 同一Rehearsal × PersonにつきAttendanceは原則1件とする。
+- 参加予定者はRehearsalAttendanceによって管理する。
+- 実参加者もRehearsalAttendanceによって管理する。
+- ParticipantはProductionへの参加Factを表す。
+- RehearsalAttendanceはRehearsalへの参加Factを表す。
+- ParticipantとRehearsalAttendanceを混同しない。
+- Roleは権限を表し、Attendanceを管理しない。
+- PermissionはAuthorization Domainで管理する。
+- Calendar登録対象とAttendanceを同一視しない。
+- Google Calendar Eventは外部Artifactである。
+- StageArt側のRehearsalを正本とする。
+- HistoryはHistory Domainで管理する。
 - Blueprintを唯一の設計基準とする。
