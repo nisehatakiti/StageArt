@@ -2,7 +2,7 @@
 
 # Domain Model : Membership
 
-Version : 2.1
+Version : 2.2
 
 ---
 
@@ -111,6 +111,9 @@ Membership
 Organization
     ↓
 Role
+
+一つのMembershipは、
+基本的に一つのRoleを参照する。
 
 同じPersonでも、
 Organizationごとに異なるRoleを持つことができる。
@@ -446,30 +449,30 @@ Role Domainで管理する。
 
 ---
 
-# Multiple Roles
+# Role Assignment Rule
 
-一人のPersonに複数のRoleを付与できる。
+Membershipに関連付けるRoleは、
+基本的に一つとする。
+
+Roleを複数同時にMembershipへ
+直接付与する構造は採用しない。
+
+複数のPermissionが必要な場合は、
+Role Domainに定義されたRoleのPermission Setによって
+必要な権限を表現する。
 
 例えば、
 
-Person A
+Membership
+    Organization = 劇団A
+    Role = Administrator
 
-    Membership
-        Organization = 劇団A
-        Role =
-            Administrator
-            Rehearsal Manager
-            Accounting Manager
+の場合、
+Administrator Roleに定義されたPermission Setによって
+Organization内の必要な権限を取得する。
 
-という構成を許可できる。
-
-ただし、
-Administratorを持つ場合は
-Organizationの全権限を持つため、
-他のRoleを追加する必要はない。
-
-具体的なRoleの組み合わせや
-PermissionについてはRole Domainで管理する。
+別のRoleを同時にMembershipへ付与することを
+基本設計としない。
 
 ---
 
@@ -483,8 +486,8 @@ Authorizationの基礎となる。
 Membershipそのものが
 すべての権限ロジックを実装するわけではない。
 
-RoleおよびDelegateRoleによって、
-具体的な権限を決定する。
+Roleによって、
+具体的なPermissionを決定する。
 
 基本構造：
 
@@ -496,10 +499,17 @@ Organization
     ↓
 Role
     ↓
-Authorization
+Permission
 
 Production単位の権限については、
 ProductionDelegateを利用する。
+
+ProductionDelegateは、
+Production ScopeにおいてPersonへRoleを適用する。
+
+MembershipのRoleと
+ProductionDelegateのRoleは、
+同じRole Domainを利用する。
 
 ---
 
@@ -527,14 +537,23 @@ Membership / Organization Roleとは別に管理する。
 Production
     ↓
 ProductionDelegate
-    ↓
-Production Management Permission
+    ├── Person
+    └── Role
 
 ProductionDelegateは、
 Organization全体のRoleを変更しない。
 
+ProductionDelegateは、
+Production Scopeにおいて
+PersonへRoleを適用する関係を表す。
+
 例えば、
-OrganizationのMembershipを持たないPersonへ
+OrganizationのMembershipを持つPersonへ
+Production単位の権限を委任することができる。
+
+また、
+必要な設計ルールに従えば、
+OrganizationのMembershipとは独立したPersonへ
 Production単位の権限を委任することもできる。
 
 具体的なProduction単位の権限については、
@@ -696,11 +715,16 @@ Membership
 Organization
     ↓
 Role
+    ↓
+Permission
 
 RoleはPersonの属性ではない。
 
 同一Personでも、
 Organizationごとに異なるRoleを持つことができる。
+
+一つのMembershipに対しては、
+基本的に一つのRoleを適用する。
 
 Roleの具体的な定義はRole Domainで管理する。
 
@@ -724,7 +748,7 @@ Participant
     ↓
 Rehearsal
     ↓
-Rehearsal Attendance
+RehearsalAttendance
 
 MembershipがACTIVEだからといって、
 そのPersonがProductionやRehearsalへ
@@ -805,6 +829,9 @@ Membershipには、
 
 など。
 
+Role変更についても、
+必要に応じて監査情報を保持する。
+
 具体的なAudit構造は、
 共通Audit設計に従う。
 
@@ -821,6 +848,7 @@ Membershipには、
 - Organizationは複数Personを所属させることができる。
 - OrganizationごとにMembershipを持つ。
 - OrganizationごとにRoleを持つ。
+- 一つのMembershipは基本的に一つのRoleを参照する。
 - RoleはPersonの属性ではない。
 - Organization Contextによって適用されるRoleが変わる。
 - Personからの所属申請を許可する。
@@ -836,8 +864,11 @@ Membershipには、
 - RoleはMembershipに関連付ける。
 - Role変更はMembershipに対する変更として扱う。
 - Role変更によってMembershipIdを変更しない。
-- 詳細なAuthorizationはRole / DelegateRoleによって決定する。
+- 一つのMembershipへ複数Roleを直接付与する構造を基本設計としない。
+- 複数のPermissionが必要な場合はRoleのPermission Setで表現する。
+- RoleによってOrganization ScopeのPermissionを決定する。
 - Production単位の権限はProductionDelegateで管理する。
+- ProductionDelegateではMembershipと同じRole Domainを利用する。
 - Membershipが存在するだけではParticipantにはならない。
 - Membershipが存在するだけではRehearsalへの参加者にはならない。
 - Membershipが存在するだけではTimetableの対象者にはならない。
@@ -922,6 +953,9 @@ MembershipIdは変更しない。
 
 RoleはMembershipに関連付ける。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
 RoleはPerson自身の属性ではなく、
 Organization Contextにおける権限・役割である。
 
@@ -951,6 +985,9 @@ RehearsalやTimetableの対象者にはならない。
 Organization単位の権限はRoleによって管理する。
 
 Production単位の権限はProductionDelegateによって管理する。
+
+ProductionDelegateは、
+Membershipとは異なるScopeでRoleを適用する。
 
 Membership Domainは、
 具体的なPermissionや
@@ -997,6 +1034,7 @@ Organization
 - Personは複数Organizationへ所属できる。
 - OrganizationごとにMembershipを持つ。
 - OrganizationごとにRoleを持つ。
+- 一つのMembershipは基本的に一つのRoleを参照する。
 - RoleはPersonの属性ではない。
 - RoleはMembershipを通じてOrganization Contextに適用される。
 - Organization Contextによって適用されるRoleが変わる。
@@ -1009,6 +1047,8 @@ Organization
 - Membership履歴は削除しない。
 - Membershipの所属期間を管理する。
 - Role変更はMembershipに対する変更として扱う。
+- 一つのMembershipへ複数Roleを直接付与する構造を基本設計としない。
+- RoleのPermission Setによって必要な権限を表現する。
 - RoleとParticipant Typeを分離する。
 - MembershipとParticipantを分離する。
 - Membershipが存在するだけではParticipantにはならない。
@@ -1016,6 +1056,7 @@ Organization
 - Membershipが存在するだけではTimetable対象者にはならない。
 - Organization単位の権限はRoleで管理する。
 - Production単位の権限はProductionDelegateで管理する。
+- Organization ScopeとProduction Scopeで同じRole Definitionを利用できる。
 - Membership Domainは具体的なPermissionを定義しない。
 - Membershipの内部情報を公開しない。
 - Blueprintを唯一の設計基準とする。
