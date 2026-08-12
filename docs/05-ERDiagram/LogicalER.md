@@ -2,7 +2,7 @@
 
 # Logical ER Diagram
 
-Version : 4.2
+Version : 4.3
 
 ---
 
@@ -261,8 +261,15 @@ Role
 MembershipはOrganization Scopeにおける
 Personの所属関係を表す。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
 Membershipに関連するRoleは、
 Organization ScopeでPersonに適用される。
+
+同じPersonであっても、
+OrganizationごとのMembershipによって
+異なるRoleを持つことができる。
 
 RoleAssignmentという独立Entityは作成しない。
 
@@ -421,6 +428,9 @@ Production
 
 Productionは一人のPrimaryManagerを持つ。
 
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
+
 Productionには、
 
 - Participant
@@ -454,6 +464,9 @@ PrimaryManagerはProductionに関する
 
 PrimaryManagerはRoleによる
 ProductionDelegateではない。
+
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
 
 ---
 
@@ -1918,6 +1931,9 @@ PersonとOrganizationの所属関係はMembershipで管理する。
 
 Organization ScopeのRoleはMembershipを通じて適用する。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
 RoleはPermission Setを定義する。
 
 RoleはOrganization ScopeとProduction Scopeの
@@ -1933,6 +1949,9 @@ PersonへRoleを適用する。
 DelegateRoleおよびDelegateRoleIdは使用しない。
 
 PrimaryManagerはProductionに対する全権限を持つ。
+
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
 
 ParticipantとMembershipを分離する。
 
@@ -2016,6 +2035,7 @@ Public InformationとInternal Informationを分離する。
 - OrganizationはStageArtにおけるTenantである。
 - PersonとOrganizationの所属関係はMembershipで管理する。
 - Organization Scopeの権限はMembershipとRoleで管理する。
+- 一つのMembershipは基本的に一つのRoleを参照する。
 - RoleはPermission Setを定義する。
 - Role DefinitionはOrganization ScopeとProduction Scopeで共通利用する。
 - Role自身はScopeを保持しない。
@@ -2023,6 +2043,7 @@ Public InformationとInternal Informationを分離する。
 - ProductionDelegateはProduction ScopeでRoleをPersonへ適用する。
 - DelegateRoleという別のRole体系を使用しない。
 - PrimaryManagerはProductionに対する全権限を持つ。
+- 一人のPersonは複数ProductionのPrimaryManagerになれる。
 - ParticipantとMembershipを分離する。
 - ParticipantとProductionDelegateを分離する。
 - Participant TypeとRoleを分離する。
