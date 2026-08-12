@@ -2,7 +2,7 @@
 
 # 04 - Domain Model
 
-Version : 3.0
+Version : 4.0
 
 ---
 
@@ -13,54 +13,72 @@ StageArtが管理する「事実」と「業務上の概念」を定義する。
 
 Domain ModelはUIやDatabase Schemaから独立して設計する。
 
-StageArtにおけるすべてのBusiness Flowは、
+StageArtにおけるBusiness Flowは、
 Domain Modelを操作することで実現する。
+
+Domain Modelは、
+StageArtにおける業務上の責務、
+Entity間の関係、
+Lifecycle、
+Business Rule、
+Authorization、
+Domain Eventなどを定義する。
+
+個々のDomainの詳細仕様は、
+それぞれのDomain Modelドキュメントで定義する。
 
 ---
 
 # 1. Domain Architecture
 
 StageArtのDomainは、
-大きく以下の領域に分ける。
+以下の主要な領域に分ける。
 
-## Person Domain
+## Identity Domain
 
-個人Identityおよび個人に関する情報を管理する。
+Authentication IdentityとBusiness Identityを分離して管理する。
 
-- Account
+- UserAccount
+- External Identity
 - Person
 - Profile
+- HistoricalActivity
 
 ---
 
 ## Organization Domain
 
-団体と所属関係を管理する。
+団体と所属関係、
+Organization Scopeの権限を管理する。
 
 - Organization
 - Membership
 - Role
-- DelegateRole
 - Organization Invitation
 - Organization Membership Request
 
 ---
 
-## Project Domain
+## Project / Production Domain
 
-団体が行う活動・制作を管理する。
+団体が行う活動・制作と、
+具体的な公演・活動を管理する。
 
 - Project
 - Production
 - Participant
 - Subject
-- Production Delegate
+- ProductionDelegate
+- PrimaryManager
 
 ---
 
 ## Rehearsal Domain
 
-稽古および稽古日程を管理する。
+稽古日程の調整、
+確定した稽古、
+参加確認、
+日別進行を管理する。
 
 - Rehearsal Candidate
 - Rehearsal Availability
@@ -73,7 +91,11 @@ StageArtのDomainは、
 
 ## Ticket Domain
 
-公演のチケットおよび予約を管理する。
+公演、
+チケット、
+予約、
+発券、
+受付を管理する。
 
 - Ticket
 - Ticket Type
@@ -82,12 +104,13 @@ StageArtのDomainは、
 - Reservation
 - Issued Ticket
 - Check In
+- QRTicket
 
 ---
 
 ## Communication Domain
 
-公演関係者への連絡を管理する。
+公演・活動関係者への連絡を管理する。
 
 - Announcement
 - Announcement Recipient
@@ -97,7 +120,8 @@ StageArtのDomainは、
 
 ## Document Domain
 
-公演関係ファイルおよび外部ストレージとの連携を管理する。
+公演・活動に関するファイルと、
+外部ストレージとの連携を管理する。
 
 - Document
 - Document Share
@@ -108,20 +132,27 @@ StageArtのDomainは、
 
 ## Promotion Domain
 
-団体・公演の公開情報およびSNS連携を管理する。
+団体・公演の公開情報、
+SNS連携、
+検索・分類情報を管理する。
 
 - Organization Public Profile
 - Production Public Page
 - Social Post
 - Social Post Reference
+- Category
+- Genre
 - Tag
-- External Connection
 
 ---
 
 ## Accounting Domain
 
-団体会計および公演の予算・実績を管理する。
+団体会計、
+公演予算、
+実績、
+予実、
+公演単位の収支を管理する。
 
 - Accounting Period
 - Account
@@ -142,7 +173,8 @@ StageArtのDomainは、
 - Equipment
 - Equipment History
 
-備品は資産価値を管理するためのDomainではない。
+Equipmentは、
+資産価値を管理するためのDomainではない。
 
 ---
 
@@ -157,7 +189,8 @@ StageArtのDomainは、
 
 ## Survey Domain
 
-公演終了後のアンケートを管理する。
+公演終了後のアンケートと、
+公開可能な感想を管理する。
 
 - Survey
 - Survey Response
@@ -165,153 +198,9 @@ StageArtのDomainは、
 
 ---
 
-# 2. Person Axis
+# 2. Core Domain Structure
 
-PersonはStageArtにおける個人Identityである。
-
-PersonはOrganizationとは独立して存在する。
-
-一人のPersonは複数のOrganizationに所属できる。
-
----
-
-## Account
-
-StageArtへの認証Identityを表す。
-
-Accountは、
-
-- Google Account
-- Email Account
-
-などの認証手段を管理する。
-
-AccountとPersonは同一概念ではない。
-
-Accountは認証、
-PersonはStageArt上の個人Identityを表す。
-
----
-
-## Person
-
-StageArt上の個人を表す。
-
-PersonはOrganizationに直接所属しない。
-
-Organizationへの所属はMembershipによって表現する。
-
-Personは、
-
-- Profile
-- Membership
-- Participant
-- Reservation
-- Rehearsal Attendance
-
-などのDomainから参照される。
-
----
-
-## Profile
-
-Person自身が作成・管理するプロフィール情報。
-
-Profileは自動生成された出演履歴そのものではない。
-
-利用者自身が、
-
-- 氏名
-- 表示名
-- 写真
-- 自己紹介
-- 経歴
-- その他プロフィール情報
-
-などを入力・編集できる。
-
-出演実績などの履歴情報は、
-ParticipantおよびProductionの情報から生成・表示する。
-
----
-
-# 3. Organization Axis
-
-Organizationは、
-劇団・団体などの活動主体を表す。
-
-Personとは独立したDomainである。
-
----
-
-## Organization
-
-団体そのものを表す。
-
-主な情報：
-
-- 団体名
-- 団体タイプ
-- 代表者
-- 沿革
-- 公開情報
-- SNS情報
-- 規約
-- 年度計画
-
-OrganizationはProjectを保持する。
-
----
-
-## Membership
-
-PersonとOrganizationの所属関係を表す。
-
-Person
-↓
-Membership
-↓
-Organization
-
-一人のPersonは複数のOrganizationにMembershipを持つことができる。
-
-MembershipごとにRoleを持つ。
-
----
-
-## Role
-
-OrganizationにおけるPersonの権限を表す。
-
-同じPersonでも、
-Organizationごとに異なるRoleを持つことができる。
-
-例：
-
-劇団A
-→ Manager
-
-劇団B
-→ Cast
-
----
-
-## DelegateRole
-
-管理者が、
-他のPersonへ委任する権限を表す。
-
-Delegateは管理者と同等の権限を持つ場合と、
-個別の権限を組み合わせて付与する場合の
-両方に対応できる構造とする。
-
----
-
-# 4. Project / Production Axis
-
-人物軸と団体軸を混在させない。
-
-基本構造は、
+StageArtの基本構造は、
 
 Organization
 ↓
@@ -321,176 +210,803 @@ Production
 
 とする。
 
+Organizationは、
+StageArtにおけるTenantである。
+
+Projectは、
+Organizationが行う活動・制作の内部単位である。
+
+Productionは、
+Projectに所属する具体的な公演・活動を表す。
+
+Production関連Domainは、
+Productionを通じてOrganization Scopeに属する。
+
 ---
 
-## Project
+# 3. Authentication / Business Identity
 
-Organizationが行う活動・制作の内部単位。
+StageArtでは、
+
+Authentication Identity
+
+と
+
+Business Identity
+
+を分離する。
+
+基本構造：
+
+UserAccount
+↓
+Person
+
+UserAccountは、
+StageArtへのAuthentication Identityを表す。
+
+Personは、
+StageArt上のBusiness Identityを表す。
+
+UserAccountとPersonは同一概念ではない。
+
+Personは、
+必ずしもUserAccountを持つ必要はない。
+
+---
+
+# 4. UserAccount
+
+UserAccountは、
+StageArtへのログイン・認証を行うIdentityを表す。
+
+UserAccountは、
+Personに関連付ける。
+
+基本構造：
+
+UserAccount
+↓
+Person
+
+UserAccountは、
+OrganizationやProductionへ直接所属しない。
+
+Organizationへの所属は、
+Personを通じてMembershipによって管理する。
+
+Productionへの参加は、
+Personを通じてParticipantによって管理する。
+
+Production Scopeの管理権限は、
+Personを通じてProductionDelegateによって管理する。
+
+UserAccount自身に、
+Organization RoleやProduction Roleを直接付与しない。
+
+---
+
+# 5. External Identity
+
+UserAccountは、
+外部Authentication Providerと連携できる。
+
+例：
+
+- Google
+- Apple
+- Microsoft
+- Email / Password
+- その他Authentication Provider
+
+基本構造：
+
+UserAccount
+↓
+External Identity
+↓
+Provider
+
+External Identityは、
+
+- Provider
+- Provider User Identifier
+
+などによって識別する。
+
+Provider固有の認証処理やAPI仕様は、
+Infrastructure Layerで管理する。
+
+Domain Layerは、
+特定Authentication ProviderのAPIへ直接依存しない。
+
+---
+
+# 6. Person
+
+Personは、
+StageArt上の個人を表すBusiness Identityである。
+
+PersonはOrganizationとは独立して存在する。
+
+一人のPersonは、
+複数のOrganizationに所属できる。
+
+Personは、
+
+- 役者
+- スタッフ
+- 制作
+- 観客
+- その他舞台芸術関係者
+
+などを区別せず表現する。
+
+Person自身に、
+Organization固有のRoleを持たせない。
+
+OrganizationにおけるRoleは、
+Membershipを通じて適用する。
+
+Productionへの参加は、
+Participantによって表現する。
+
+Productionにおける管理権限は、
+ProductionDelegateによってRoleを適用する。
+
+---
+
+# 7. Profile
+
+Profileは、
+Person自身が作成・編集するプロフィール情報を管理する。
+
+基本構造：
+
+Person
+↓
+Profile
+
+Profileには、
+
+- 自己紹介
+- 経歴概要
+- 活動分野
+- 公開プロフィール情報
+- その他本人が入力する情報
+
+などを保持できる。
+
+Profileは、
+StageArt上で発生した活動履歴そのものを保持するDomainではない。
+
+過去の出演歴・活動実績など、
+本人が入力する過去実績はHistoricalActivityによって管理する。
+
+---
+
+# 8. Historical Activity
+
+HistoricalActivityは、
+Personが入力する過去の活動実績を表す。
+
+基本構造：
+
+Person
+↓
+HistoricalActivity
+
+HistoricalActivityには、
+
+- 出演歴
+- スタッフ歴
+- 制作歴
+- その他過去の活動実績
+
+などを登録できる。
+
+HistoricalActivityは、
+本人が入力する過去実績を主な対象とする。
+
+StageArt上で現在発生しているFactから生成される
+活動履歴とは区別する。
+
+例えば、
+StageArt上のProductionへの参加実績は、
+ParticipantなどのFactを正本とする。
+
+HistoricalActivityは、
+StageArt外で発生した過去実績など、
+本人が登録する履歴情報を対象とする。
+
+---
+
+# 9. Organization
+
+Organizationは、
+舞台芸術活動を行う団体を表す。
+
+Organizationは劇団に限定しない。
+
+例：
+
+- 劇団
+- プロデュース団体
+- ダンスカンパニー
+- 学生劇団
+- 演劇サークル
+- 実行委員会
+- 制作団体
+- その他舞台芸術団体
+
+Organizationは、
+StageArtにおけるTenantである。
+
+Organizationは、
+Personとは独立したDomainである。
+
+Organizationは、
+Projectを保持する。
+
+---
+
+# 10. Membership
+
+Membershipは、
+PersonとOrganizationの所属関係を表す。
+
+基本構造：
+
+Person
+↓
+Membership
+↓
+Organization
+
+一人のPersonは、
+複数のOrganizationにMembershipを持つことができる。
+
+Membershipは、
+
+- 所属状態
+- 所属開始
+- 所属終了
+- Organization内でのRole
+- その他所属情報
+
+などを管理する。
+
+Organization自身がPersonを直接保持するのではなく、
+Membershipによって所属関係を表現する。
+
+---
+
+# 11. Role
+
+Roleは、
+Permissionのまとまりを定義する。
+
+Role Definitionは、
+Organization RoleとProduction Roleで分けない。
+
+同じRole Definitionを、
+
+- Organization Scope
+- Production Scope
+
+の両方で利用できる。
+
+例：
+
+- Administrator
+- Rehearsal Manager
+- Accounting Manager
+- Reservation Manager
+- Participant Manager
+- Performance Manager
+
+など。
+
+RoleはPermission Setを定義する。
+
+具体的なPermissionは、
+Authorization Domainで定義する。
+
+---
+
+# 12. Role Application
+
+RoleをPersonへ適用する方法は、
+Scopeによって異なる。
+
+Organization Scopeでは、
+
+Person
+↓
+Membership
+↓
+Organization
+↓
+Role
+↓
+Permission
+
+とする。
+
+Production Scopeでは、
+
+Person
+↓
+ProductionDelegate
+↓
+Production
+↓
+Role
+↓
+Permission
+
+とする。
+
+RoleAssignmentという独立Domainは作成しない。
+
+Roleが誰にどのScopeで適用されているかは、
+MembershipまたはProductionDelegateによって表現する。
+
+---
+
+# 13. Production Delegate
+
+ProductionDelegateは、
+特定Productionに対してPersonへRoleを適用する
+Production Scopeの関係を表す。
+
+基本構造：
+
+Person
+↓
+ProductionDelegate
+↓
+Production
+↓
+Role
+↓
+Permission
+
+ProductionDelegate自身は、
+Permissionを定義しない。
+
+ProductionDelegateは、
+
+- Person
+- Production
+- Role
+- Status
+
+などを関連付ける。
+
+RoleによってPermissionを決定し、
+ProductionDelegateによってScopeをProductionに限定する。
+
+Organization全体のRoleを持つPersonとは別に、
+特定Productionだけについて管理権限を持つPersonを表現できる。
+
+---
+
+# 14. Primary Manager
+
+Productionには、
+PrimaryManagerが存在する。
+
+PrimaryManagerは、
+Productionに関する全管理権限を持つ。
+
+基本構造：
+
+Production
+↓
+PrimaryManager
+↓
+Person
+
+PrimaryManagerは、
+Organization Ownerとは異なる。
+
+Organization OwnerはOrganization Scopeの管理者。
+
+PrimaryManagerはProduction Scopeの管理者。
+
+ProductionDelegateは、
+PrimaryManagerとは別の権限経路として、
+Roleによって限定されたProduction Scopeの権限を持つ。
+
+---
+
+# 15. Authorization Structure
+
+StageArtの基本Authorization構造は、
+
+Person
+↓
+Scope
+↓
+Role
+↓
+Permission
+
+とする。
+
+Organization Scope：
+
+Person
+↓
+Membership
+↓
+Organization
+↓
+Role
+↓
+Permission
+
+Production Scope：
+
+Person
+↓
+ProductionDelegate
+↓
+Production
+↓
+Role
+↓
+Permission
+
+UserAccountは、
+Authentication IdentityとしてPersonへ接続する。
+
+UserAccount自身がAuthorizationの主体となるのではなく、
+Personを起点としてBusiness Authorizationを評価する。
+
+同じRole Definitionを、
+Organization ScopeとProduction Scopeで利用できる。
+
+DelegateRoleという別のRole体系は使用しない。
+
+RoleAssignmentという独立Domainも使用しない。
+
+---
+
+# 16. Project
+
+Projectは、
+Organizationが行う活動・制作の内部単位である。
+
+基本構造：
+
+Organization
+↓
+Project
 
 ProjectはOrganizationに所属する。
 
-Projectは一つ以上のProductionを持つことができる。
+一つのProjectは、
+一つ以上のProductionを持つことができる。
 
 Projectは、
-利用者が必ずしも意識する必要のない内部Domainである。
+利用者が必ずしも意識する必要のないInternal Domainである。
+
+利用者が「公演を作る」などの操作を行った際、
+StageArt内部でProjectとProductionの構造を管理する。
 
 ---
 
-## Production
+# 17. Production
 
+Productionは、
 具体的な公演・活動を表す。
+
+基本構造：
+
+Project
+↓
+Production
 
 ProductionはProjectに所属する。
 
+Productionは、
+StageArtにおける実際の制作・公演活動の中心となるDomainである。
+
 Productionには、
 
-- 公演情報
-- 公演日
-- Performance
 - Participant
+- ProductionDelegate
+- Performance
 - Ticket
 - Reservation
+- CheckIn
 - Rehearsal
+- Timetable
 - Budget
+- Production Actual
+- Document
+- Announcement
 - Survey
-- Public Page
-- Internal Page
 
 などが関連する。
 
-Productionは、
-StageArtにおける一つの活動Lifecycleの中心となるDomainである。
+Productionには、
+Category、
+Genre、
+Tagなどの分類情報を付与できる。
 
 ---
 
-# 5. Participant Axis
+# 18. Production Classification
+
+Productionには、
+分類情報を付与できる。
+
+主なDomain：
+
+- Category
+- Genre
+- Tag
+
+---
+
+## Category
+
+Categoryは、
+Productionの公演形態・活動形態を表す。
+
+例：
+
+- 舞台
+- ライブ
+- 映画
+- 配信
+
+---
+
+## Genre
+
+Genreは、
+Productionの作品ジャンルを表す。
+
+例：
+
+- コメディ
+- ホラー
+- ミステリー
+- ドラマ
+- 音楽
+- ダンス
+
+---
+
+## Tag
+
+Tagは、
+検索・分類用の情報を表す。
+
+Tagは必要に応じて、
+
+- Person
+- Organization
+- Production
+- Performance
+
+などに関連付ける。
+
+---
+
+# 19. Participant
 
 Participantは、
-Productionへの参加という事実を表す。
+PersonまたはOrganizationがProductionへ参加している
+というFactを表す。
+
+基本構造：
 
 Production
 ↓
 Participant
 ↓
 Subject
-├─ Person
-└─ Organization
+├── Person
+└── Organization
 
 Participantは、
-Productionへの参加者を管理する正本である。
+Productionへの参加関係を正本として管理する。
 
 ---
 
-## Subject
-
-Participantが参照する参加主体を表す。
+# 20. Subject
 
 Subjectは、
+Productionへの参加主体を表す。
+
+Subjectには、
 
 - Person
 - Organization
 
-のいずれかを表現できる。
+を指定できる。
 
-これにより、
-
-- 個人キャスト
-- 個人スタッフ
-- 客演者
-- 外部劇団
-- 制作会社
-- その他の参加団体
-
-などを同じParticipant構造で扱うことができる。
+Personだけでなく、
+団体・企業などをProductionの参加主体として
+表現できる構造とする。
 
 ---
 
-## Participant
+# 21. Participant Type
 
-Participantには、
-
-- Subject
-- Participant Type
-- Role
-- Credit Order
-- Visibility
-- Status
-
-などを持たせる。
+Participant Typeは、
+Productionにおける参加区分を表す。
 
 例：
 
+- CAST
+- STAFF
+- PARTNER
+- その他Productionで必要な参加区分
+
+Participant TypeはRoleではない。
+
+CASTであることによって、
+管理権限を自動的に付与してはならない。
+
+STAFFであることによって、
+管理権限を自動的に付与してはならない。
+
+Productionの管理権限が必要な場合は、
+ProductionDelegateによってRoleを適用する。
+
+RoleとParticipant Typeは、
+明確に分離する。
+
+---
+
+# 22. Performance
+
+Performanceは、
+Productionにおける個別の公演回を表す。
+
+基本構造：
+
 Production
-「StageArt公演」
+↓
+Performance
 
-Participant
-  Subject = Person A
-  Type = CAST
-  Role = 主演
+Performanceには、
 
-Participant
-  Subject = Person B
-  Type = STAFF
-  Role = 音響
+- 公演日時
+- 開始時刻
+- 終了時刻
+- 会場
+- 定員
+- Status
 
-Participant
-  Subject = Organization C
-  Type = PARTNER
+などを設定できる。
 
-Participantが、
-公演に誰がどのような立場で参加したかを表す。
+TicketやReservationは、
+必要に応じてPerformanceと関連する。
 
 ---
 
-# 6. Production Delegate
+# 23. Ticket
 
-Production単位の管理権限を表す。
+Ticketは、
+Productionにおけるチケット販売条件を管理する。
 
-Organizationの管理者が、
-特定のProductionについて他のPersonへ権限を委任できる。
+基本構造：
 
 Production
 ↓
-Production Delegate
+Ticket
+├── Ticket Type
+└── Price
+
+TicketはProduction単位で管理する。
+
+同じTicket Typeでも、
+ProductionごとにPriceを変更できる。
+
+例：
+
+一般 → 3,000円
+学生 → 2,000円
+当日 → 3,500円
+
+Ticketの詳細な販売ルールは、
+Ticket Domainで定義する。
+
+---
+
+# 24. Reservation
+
+Reservationは、
+観客による予約というFactを表す。
+
+Reservationは、
+
+- Person
+- Performance
+- Ticket
+- Quantity
+- Reservation Status
+
+などを参照する。
+
+Reservationは、
+チケット販売・受付における予約情報の正本である。
+
+---
+
+# 25. Issued Ticket
+
+Issued Ticketは、
+予約成立後に発行される個別チケットを表す。
+
+基本構造：
+
+Reservation
 ↓
-Person
+Issued Ticket
 
-Delegateの権限は、
-Organization全体のRoleとは別に管理する。
+QRコードなどのTicket Artifactは、
+Issued Ticketを元に生成する。
 
----
-
-# 7. Rehearsal Domain
-
-稽古は、
-Rehearsal Candidateを経由する場合と、
-直接作成する場合の両方を許容する。
+Issued Ticketは、
+実際に来場者が利用するチケットを表す。
 
 ---
 
-## Rehearsal Candidate
+# 26. QRTicket
 
-日程調整を行うための候補日。
+QRTicketは、
+Issued Ticketに関連するQR形式のTicket Artifactを表す。
 
-Rehearsal Candidate
+基本構造：
+
+Issued Ticket
 ↓
-Rehearsal Availability
+QRTicket
+
+QRTicketそのものを、
+予約やチケット販売の正本として扱わない。
+
+正本はIssued Ticketであり、
+QRコードはそのArtifactとして扱う。
+
+---
+
+# 27. Check In
+
+Check Inは、
+公演当日の来場受付というFactを表す。
+
+基本構造：
+
+Issued Ticket
 ↓
-Rehearsal
+Check In
+
+Check Inは、
+
+- QR読取
+- 予約番号検索
+- 氏名検索
+
+などによって実行できる。
+
+受付完了後、
+来場Factとして記録する。
 
 ---
 
-## Rehearsal Availability
+# 28. Rehearsal
 
-PersonがRehearsal Candidateに対して回答した情報。
-
-候補日の調整に利用する。
-
----
-
-## Rehearsal
-
-確定した稽古・予定。
+Rehearsalは、
+確定した稽古・予定を表す。
 
 Rehearsalは、
 
@@ -508,19 +1024,60 @@ Rehearsalは、
 
 ---
 
-## Rehearsal Attendance
+# 29. Rehearsal Candidate
 
-確定したRehearsalへの参加確認。
+Rehearsal Candidateは、
+稽古日程を調整するための候補日を表す。
 
-Rehearsal Candidateへの日程調整回答とは別のDomainとして扱う。
+基本構造：
+
+Rehearsal Candidate
+↓
+Rehearsal Availability
+↓
+Rehearsal
+
+候補日そのものと、
+確定したRehearsalは別の概念として扱う。
 
 ---
 
-## Timetable
+# 30. Rehearsal Availability
 
-稽古・小屋入り・本番等の日別進行を管理する。
+Rehearsal Availabilityは、
+PersonがRehearsal Candidateに対して回答した情報を表す。
+
+候補日の調整に利用する。
+
+Rehearsal Availabilityは、
+確定したRehearsalへの参加確認とは異なる。
+
+---
+
+# 31. Rehearsal Attendance
+
+Rehearsal Attendanceは、
+確定したRehearsalへの参加確認を表す。
+
+Rehearsal Candidateへの日程調整回答とは、
+別のDomainとして扱う。
+
+基本構造：
+
+Rehearsal
+↓
+Rehearsal Attendance
+↓
+Person
+
+---
+
+# 32. Timetable
 
 Timetableは、
+稽古・小屋入り・本番等の日別進行を管理する。
+
+Timetableには、
 
 - 時刻
 - 内容
@@ -529,136 +1086,70 @@ Timetableは、
 - 対象者
 - 備考
 
-などを管理する。
+などを設定できる。
+
+Timetableは、
+Rehearsalそのものとは異なる。
+
+Rehearsalが「予定」を表すのに対し、
+Timetableは、
+その日の具体的な進行を表す。
 
 ---
 
-# 8. Ticket Domain
+# 33. Budget
 
-TicketはProductionごとに管理する。
-
-Ticketの販売条件は、
-公演ごとのTicket Masterとして保持する。
-
-基本構造：
-
-Production
-↓
-Ticket
-├─ Ticket Type
-└─ Price
-
-同じTicket Typeでも、
-ProductionごとにPriceを変更できる。
-
-例：
-
-一般 → 3,000円
-学生 → 2,000円
-当日 → 3,500円
-
----
-
-## Performance
-
-Productionにおける個別の公演回を表す。
-
-例：
-
-Production
-「○○公演」
-
-Performance
-- 9/1 14:00
-- 9/1 19:00
-- 9/2 14:00
-
----
-
-## Reservation
-
-観客による予約という事実を表す。
-
-Reservationは、
-
-- Person
-- Performance
-- Ticket
-- Quantity
-- Reservation Status
-
-などを参照する。
-
----
-
-## Issued Ticket
-
-予約成立後に発行されるチケット。
-
-QRコードなどのTicket Artifactは、
-Issued Ticketを元に生成する。
-
----
-
-## Check In
-
-公演当日の来場受付という事実を表す。
-
-Check Inは、
-
-- QR読取
-- 予約番号検索
-- 氏名検索
-
-などによって実行される。
-
----
-
-# 9. Budget / Accounting Domain
-
-BudgetとAccountingは、
-異なる目的を持つ。
+Budgetは、
+Productionの予算案を表す。
 
 Budgetは、
 公演前の計画を管理する。
 
-Accountingは、
-実際に発生した収入・支出を管理する。
+一つのProductionに、
+複数のBudgetを持つことができる。
 
----
-
-## Budget
-
-Productionの予算案を表す。
-
-一つのProductionに複数のBudgetを持つことができる。
-
-Budgetには利用者が自由に名称を付ける。
+Budgetには、
+利用者が自由に名称を付ける。
 
 例：
 
-A会場案
-B会場案
-一日2公演案
+- A会場案
+- B会場案
+- 一日2公演案
+
+Budgetは、
+実際に発生した収入・支出そのものを表さない。
 
 ---
 
-## Budget Item
+# 34. Budget Item
 
+Budget Itemは、
 Budget内の費目を表す。
 
 収入・支出を費目ごとに管理する。
 
+Budget Itemは、
+Budget上の計画値を保持する。
+
+実績値は、
+Production ActualなどのAccounting側のDomainで管理する。
+
 ---
 
-## Journal Entry
+# 35. Journal Entry
 
+Journal Entryは、
 会計上の一つの仕訳を表す。
 
+Journal Entryは、
+実際に発生した会計Factを記録する。
+
 ---
 
-## Journal Entry Line
+# 36. Journal Entry Line
 
+Journal Entry Lineは、
 仕訳内の費目ごとの行を表す。
 
 費目ごとにLineを分けて管理する。
@@ -666,23 +1157,34 @@ Budget内の費目を表す。
 貸借区分はFlagで管理する。
 
 is_debit = true
+
+または
+
 is_debit = false
+
+とする。
 
 ---
 
-## Production Actual
+# 37. Production Actual
 
-Productionに紐付く実績情報。
+Production Actualは、
+Productionに紐付く実績情報を表す。
 
 実際に発生した収入・支出を管理する。
 
+Production Actualは、
+Budgetとは異なり、
+実際に発生したFactを扱う。
+
 ---
 
-## Budget vs Actual
+# 38. Budget vs Actual
 
-BudgetとActualを比較する。
+Budget vs Actualは、
+Productionにおける予算と実績を比較する。
 
-基本的な構造：
+基本構造：
 
 Budget
 ↓
@@ -690,23 +1192,120 @@ Actual
 ↓
 Variance
 
+Budgetそのものと、
+実績そのものを混在させず、
+差異を比較情報として扱う。
+
 ---
 
-## Production Settlement
+# 39. Production Settlement
 
+Production Settlementは、
 Production単位の最終的な収支を表す。
 
 団体全体のAccountingとは別の視点で、
 公演単位の収入・支出・損益を確認する。
 
+Production Settlementは、
+Productionの活動結果を確認するためのDomainである。
+
 ---
 
-# 10. Equipment Domain
+# 40. Communication
+
+Communication Domainは、
+Production・Organizationなどに関係する人物へ
+連絡を行うためのDomainである。
+
+主なDomain：
+
+- Announcement
+- Announcement Recipient
+- Announcement Delivery
+
+Announcementは、
+連絡内容を表す。
+
+Announcement Recipientは、
+誰を対象とするかを表す。
+
+Announcement Deliveryは、
+実際の送信・配信履歴を表す。
+
+---
+
+# 41. Document
+
+Document Domainは、
+公演・活動に関するファイルを管理する。
+
+主なDomain：
+
+- Document
+- Document Share
+- External Connection
+- External Storage Reference
+
+StageArtは、
+外部ストレージと連携して実ファイルを管理できる。
+
+StageArt側では、
+ファイル情報、
+関連付け、
+共有情報などを管理する。
+
+---
+
+# 42. External Connection
+
+External Connectionは、
+外部Serviceとの接続情報を表す。
+
+例：
+
+- Google Drive
+- Google Calendar
+- その他External Service
+
+外部Service固有のAPI仕様や認証処理は、
+Infrastructure Layerで管理する。
+
+Domain Layerは、
+外部ServiceのAPI仕様へ直接依存しない。
+
+---
+
+# 43. Promotion
+
+Promotion Domainは、
+OrganizationやProductionの公開情報、
+SNS連携などを管理する。
+
+主なDomain：
+
+- Organization Public Profile
+- Production Public Page
+- Social Post
+- Social Post Reference
+- Category
+- Genre
+- Tag
+
+Public Pageは、
+内部Domainをそのまま公開するものではない。
+
+公開情報として必要な内容を、
+Public Domainとして管理する。
+
+---
+
+# 44. Equipment
 
 Equipmentは、
-団体が保有・管理する備品を表す。
+Organizationが保有・管理する備品を表す。
 
-金額・資産価値は管理しない。
+Equipmentは、
+資産価値を管理するためのDomainではない。
 
 主な情報：
 
@@ -726,15 +1325,16 @@ Equipmentは、
 
 ---
 
-## Equipment History
+# 45. Equipment History
 
-Equipmentの、
+Equipment Historyは、
+Equipmentに関する変更履歴を管理する。
+
+主な履歴：
 
 - 保管場所変更
 - 管理者変更
 - 状態変更
-
-などの履歴を管理する。
 
 目的は、
 
@@ -744,330 +1344,532 @@ Equipmentの、
 
 ---
 
-# 11. Regulation Domain
+# 46. Regulation
 
-## Regulation
-
+Regulationは、
 Organizationの規約を表す。
 
+基本構造：
+
+Organization
+↓
+Regulation
+↓
+Regulation Version
+
 ---
 
-## Regulation Version
+# 47. Regulation Version
 
+Regulation Versionは、
 規約の個別Versionを表す。
 
-規約変更時には既存Versionを上書きせず、
+規約変更時には、
+既存Versionを上書きせず、
 新しいVersionを作成する。
 
-Regulation
-├─ Version 1
-├─ Version 2
-└─ Version 3
-
-現在Versionと過去Versionを区別できる。
+これにより、
+過去の規約内容を保持できる。
 
 ---
 
-# 12. Document Domain
+# 48. Survey
 
-Documentは、
-公演・団体に関連付けられたファイル情報を管理する。
+Surveyは、
+Production終了後などに実施するアンケートを表す。
 
-実ファイルはGoogle Driveで管理する。
+基本構造：
+
+Production
+↓
+Survey
+↓
+Survey Response
+
+Survey Responseは、
+回答者によるアンケート回答を表す。
+
+アンケート回答は、
+原則として公開情報ではない。
+
+---
+
+# 49. Public Testimonial
+
+Public Testimonialは、
+Survey Responseなどから、
+公開可能な感想・推薦コメントを表す。
+
+Survey Responseそのものを、
+そのまま公開するものではない。
+
+公開可能な情報だけを、
+Public Testimonialとして扱う。
+
+---
+
+# 50. Fact and Artifact
 
 StageArtでは、
+Business FactとArtifactを明確に分離する。
 
-- ファイル情報
-- 公演との関連
-- 共有対象
-- Google Drive上の参照情報
+Factとは、
+StageArt上で発生した事実を表す。
 
-などを管理する。
+例：
 
----
+- Participant
+- Reservation
+- Check In
+- Rehearsal Attendance
+- Journal Entry
 
-# 13. Communication Domain
+Artifactとは、
+FactやDomain情報をもとに生成される成果物を表す。
 
-Announcementは、
-内部関係者への連絡情報を表す。
+例：
 
-管理者または権限を持つ代理人が作成できる。
+- QRTicket
+- Public Page
+- Document Reference
+- Report
 
-対象者は、
-
-- CAST
-- STAFF
-- 制作
-- その他関係者
-
-などから指定する。
-
-送信履歴を保持する。
+Artifactを、
+元となるFactの正本として扱わない。
 
 ---
 
-# 14. Promotion Domain
+# 51. Single Source of Truth
 
-Organization Public PageおよびProduction Public Pageは、
-Domain Factから生成される公開Artifactとして扱う。
+StageArtでは、
+同じ情報を複数Domainで重複管理しない。
 
-SNS情報は、
-StageArtがSNS投稿そのものを正本として保持するのではなく、
-外部SNSへの参照情報として扱う。
+例えば、
 
----
+Productionへの参加者情報は、
+Participantを正本とする。
 
-## Social Post Reference
+予約情報は、
+Reservationを正本とする。
 
-外部SNS上の投稿を参照するための情報。
+発行済みチケットは、
+Issued Ticketを正本とする。
 
----
+来場Factは、
+Check Inを正本とする。
 
-## Tag
+実際の会計Factは、
+Journal EntryなどAccounting Domainを正本とする。
 
-SNS情報とOrganization / Productionを関連付けるために利用する。
-
----
-
-# 15. Survey Domain
-
-## Survey
-
-Production終了後に実施するアンケートを表す。
-
-Productionには終了予定時刻を設定する。
-
-終了予定時刻を基準として、
-アンケート依頼を送信する。
+表示用データやArtifactは、
+正本となるDomainから生成する。
 
 ---
 
-## Survey Response
+# 52. Domain Relationship Principles
 
-観客からのアンケート回答。
+Domain間の関係は、
+責務を明確にして定義する。
+
+基本原則：
+
+- PersonはBusiness Identity
+- UserAccountはAuthentication Identity
+- MembershipはOrganizationへの所属Fact
+- ParticipantはProductionへの参加Fact
+- ProductionDelegateはProduction Scopeの権限関係
+- RoleはPermission Set
+- PerformanceはProduction内の個別公演
+- Reservationは予約Fact
+- Issued Ticketは発行済みチケット
+- Check Inは来場Fact
+- Rehearsal Availabilityは候補日への回答
+- Rehearsal Attendanceは確定した稽古への参加確認
+- Budgetは計画
+- Production Actualは実績
+- Journal Entryは会計Fact
+- HistoricalActivityは本人が登録する過去実績
+
+それぞれのDomainは、
+他Domainの責務を代替しない。
 
 ---
 
-## Public Testimonial
+# 53. Lifecycle Principle
 
-代表者等が公開対象として選択した回答。
+StageArtでは、
+DomainのLifecycleを、
+UIの状態やDatabaseのFlagだけで表現しない。
 
-原則として、
-アンケート回答は非公開とする。
+Domain自身が、
+業務上意味のある状態遷移を管理する。
+
+例えば、
+
+Reservation
+
+→ 予約作成
+→ 予約確定
+→ キャンセル
+
+Issued Ticket
+
+→ 発行
+→ 利用
+→ 無効化
+
+Rehearsal
+
+→ 作成
+→ 確定
+→ 実施
+→ 完了
+
+など、
+各DomainのLifecycleは、
+個別Domain Modelで定義する。
 
 ---
 
-# 16. External Integration Domain
+# 54. Domain Event
 
-外部サービスとの接続を管理する。
+Domain上で重要なFactが発生した場合、
+必要に応じてDomain Eventを発行する。
 
-主な対象：
+例：
 
+- PersonCreated
+- OrganizationCreated
+- MembershipCreated
+- ProductionCreated
+- ParticipantAdded
+- ReservationCreated
+- ReservationConfirmed
+- TicketIssued
+- CheckInCompleted
+- RehearsalConfirmed
+- RehearsalCompleted
+- JournalEntryPosted
+
+Domain Eventは、
+他Domainの自動更新や外部Service連携に利用できる。
+
+ただし、
+Domain EventをBusiness Factそのものの代替として扱わない。
+
+正本は、
+発生したBusiness Factを保持するDomainである。
+
+---
+
+# 55. External Integration Principle
+
+StageArtは、
+外部Serviceと連携する。
+
+代表例：
+
+- Authentication Provider
 - Google Drive
 - Google Calendar
 - SNS
+- Email Service
 
-StageArt内部のDomainを正本とし、
-外部サービスは連携先として扱う。
+外部Serviceとの接続は、
+Domain ModelとInfrastructureを分離する。
+
+Domain Layerは、
+外部Service固有のAPI仕様を知らない。
+
+External ConnectionなどのDomainは、
+「外部Serviceとの接続」というBusiness上の概念を表現する。
+
+実際のAPI呼び出し、
+Authentication、
+Token管理などはInfrastructure Layerが担当する。
 
 ---
 
-# 17. Domain Relationship
+# 56. Authorization Principle
 
-基本的な関係は以下とする。
+Authorizationは、
+UserAccountではなくPersonを起点として評価する。
+
+基本構造：
 
 Person
-│
-├─ Profile
-│
-├─ Membership ── Organization
-│
-└─ Participant
-       │
-       └─ Subject
-              ├─ Person
-              └─ Organization
+↓
+Scope
+↓
+Role
+↓
+Permission
 
+Organization Scope：
 
+Person
+↓
+Membership
+↓
 Organization
-│
-└─ Project
-     │
-     └─ Production
-          │
-          ├─ Participant
-          ├─ Production Delegate
-          │
-          ├─ Performance
-          │    └─ Reservation
-          │         └─ Issued Ticket
-          │              └─ Check In
-          │
-          ├─ Ticket
-          │
-          ├─ Budget
-          │    └─ Budget Item
-          │
-          ├─ Production Actual
-          │
-          ├─ Budget vs Actual
-          │
-          ├─ Rehearsal Candidate
-          │    └─ Rehearsal Availability
-          │
-          ├─ Rehearsal
-          │    └─ Rehearsal Attendance
-          │
-          ├─ Timetable
-          │
-          ├─ Document
-          │
-          ├─ Announcement
-          │
-          └─ Survey
-               └─ Survey Response
+↓
+Role
+↓
+Permission
 
+Production Scope：
 
-Organization
-│
-├─ Regulation
-│    └─ Regulation Version
-│
-├─ Accounting Period
-│    └─ Journal Entry
-│         └─ Journal Entry Line
-│
-└─ Equipment
-     └─ Equipment History
-
----
-
-# 18. Important Domain Rules
-
-## PersonとOrganizationは別軸
-
-Personは個人Identity。
-
-Organizationは団体Identity。
-
-PersonがOrganizationに所属する関係は、
-Membershipで表現する。
-
----
-
-## OrganizationとProjectは親子関係
-
-基本構造は、
-
-Organization
-    ↓
-Project
-    ↓
+Person
+↓
+ProductionDelegate
+↓
 Production
-
-とする。
-
-ProjectはOrganization配下の活動・制作単位である。
-
----
-
-## Productionへの参加はParticipant
-
-Productionへの参加情報はParticipantを正本とする。
-
-ParticipantはPersonまたはOrganizationをSubjectとして参照する。
-
----
-
-## Profileは本人が管理する
-
-ProfileはPerson自身が作成・編集できる。
-
-出演実績などの履歴は、
-ParticipantおよびProductionから生成する。
-
----
-
-## RehearsalはCandidate必須ではない
-
-Rehearsalは、
-
-Candidate
 ↓
-Availability
+Role
 ↓
-Rehearsal
+Permission
 
-という流れだけでなく、
+Participant Typeによって、
+管理権限を自動付与しない。
 
-直接
-↓
-Rehearsal
+Roleによって、
+Permissionを定義する。
 
-でも作成できる。
-
----
-
-## TicketはProduction単位
-
-Ticket TypeとPriceの組み合わせは、
-ProductionごとのTicket Masterとして管理する。
+Scopeによって、
+そのPermissionが有効な範囲を限定する。
 
 ---
 
-## Budgetは複数案を持てる
+# 57. Design Decisions
 
-一つのProductionに複数のBudgetを持てる。
+StageArtでは、
+以下の設計を基本方針とする。
 
-Budgetには利用者が自由に名称を付ける。
+## AuthenticationとBusiness Identityを分離する
 
----
+UserAccountとPersonを分離する。
 
-## AccountingとBudgetは別Domain
+UserAccountはAuthentication Identity。
 
-Budgetは計画。
-
-Accountingは実績。
-
-両者をBudget vs Actualで比較する。
+PersonはBusiness Identity。
 
 ---
 
-## Equipmentは資産管理ではない
+## OrganizationとPersonを分離する
 
-Equipmentは、
+PersonはOrganizationに直接所属しない。
 
-「何を持っているか」
-「どこにあるか」
-「誰が管理しているか」
-「使える状態か」
-
-を管理する。
-
-取得価格・資産価値・減価償却は管理しない。
+Membershipによって所属関係を表現する。
 
 ---
 
-## External Serviceは正本ではない
+## ProjectとProductionを分離する
 
-Google Drive、Google Calendar、SNSなどの外部サービスは、
-StageArt Domainの正本ではない。
+Projectは内部的な活動・制作単位。
 
-StageArt内のDomain Factを正本とし、
-外部サービスは共有・保存・連携先として扱う。
+Productionは具体的な公演・活動。
 
 ---
 
-# 19. Domain Model Principle
+## ParticipantとAuthorizationを分離する
 
-Domain Modelは、
-UI、WordPress、Database Schemaに依存しない。
+Participantは、
+Productionへの参加Factを表す。
 
-Domain Modelの変更は、
-必要に応じてAPI、ER Diagram、UIなどへ反映する。
+Roleは、
+Authorizationを表す。
 
-05 ER Diagramは、
-本章で定義されたDomain Modelをデータ構造へ落とし込んだものである。
+CASTやSTAFFであること自体に、
+管理権限を持たせない。
 
-Domain ModelとER Diagramが矛盾する場合、
-Domain Modelを正とする。
+---
+
+## Organization ScopeとProduction Scopeを分離する
+
+Organization ScopeはMembershipを利用する。
+
+Production ScopeはProductionDelegateを利用する。
+
+同じRole Definitionを、
+両方のScopeで利用できる。
+
+---
+
+## DelegateRoleを作らない
+
+Production Scope専用の別Role体系は作らない。
+
+Role Definitionは共通化し、
+ProductionDelegateによってScopeを限定する。
+
+---
+
+## RoleAssignmentを作らない
+
+Roleの適用関係を独立Domainとして作成しない。
+
+Organization ScopeではMembership。
+
+Production ScopeではProductionDelegate。
+
+それぞれの関係DomainがRole Applicationを担う。
+
+---
+
+## HistoricalActivityとProduction Factを分離する
+
+本人が登録する過去実績と、
+StageArt上で発生した活動Factを分離する。
+
+StageArt上の活動実績は、
+ParticipantなどのFactを正本とする。
+
+本人が入力する過去実績は、
+HistoricalActivityで管理する。
+
+---
+
+# 58. User Experience Principle
+
+利用者は、
+Domain Modelを意識しない。
+
+利用者が行うのは、
+
+- 団体を作る
+- メンバーを管理する
+- 公演を作る
+- キャストを登録する
+- 稽古日程を調整する
+- チケットを販売する
+- 受付する
+- 予算を作る
+- 会計を記録する
+- 関係者へ連絡する
+
+などのBusiness Operationである。
+
+Project、
+Production、
+Participant、
+Reservation、
+HistoricalActivityなどの内部Domain構造は、
+StageArtが責任を持って管理する。
+
+UIは、
+内部Domain構造をそのまま利用者へ露出させない。
+
+---
+
+# 59. Domain Model Documentation
+
+各Domainの詳細仕様は、
+個別のDomain Modelドキュメントで定義する。
+
+主なドキュメント：
+
+- Account.md
+- UserAccount.md
+- Person.md
+- Profile.md
+- HistoricalActivity.md
+- Organization.md
+- Membership.md
+- Role.md
+- Project.md
+- Production.md
+- Participant.md
+- Subject.md
+- ProductionDelegate.md
+- Performance.md
+- Reservation.md
+- Ticket.md
+- QRTicket.md
+- Rehearsal.md
+- RehearsalCandidate.md
+- RehearsalAvailability.md
+- RehearsalAttendance.md
+- Timetable.md
+- Budget.md
+- JournalEntry.md
+- ProductionActual.md
+- ExternalConnection.md
+- Service.md
+- Credential.md
+- Category.md
+- Genre.md
+- Tag.md
+- History.md
+- HistoricalActivity.md
+
+Domain Modelの一覧およびDomain間の上位構造は、
+DomainMap.mdで管理する。
+
+---
+
+# 60. DomainMapとの関係
+
+DomainMapは、
+StageArt全体のDomain構造を俯瞰するための上位設計である。
+
+DomainMapは、
+個々のDomainの詳細仕様を定義しない。
+
+個々のDomainについて、
+
+- Business Rule
+- Lifecycle
+- Permission
+- Domain Event
+- Value Object
+- 詳細なRelationship
+
+などが必要な場合は、
+個別Domain Modelで定義する。
+
+DomainMapと個別Domain Modelの間で、
+責務や関係が矛盾しないことを原則とする。
+
+---
+
+# 61. Versioning
+
+Domain Model READMEのVersionは、
+Domain全体の構造に重要な変更があった場合に更新する。
+
+個別Domainの変更については、
+各Domain ModelのVersionで管理する。
+
+Domain Model全体の構造変更を行う場合は、
+
+1. DomainMapを更新する
+2. Domain Model READMEを更新する
+3. 関連する個別Domain Modelを更新する
+4. Business Flowへの影響を確認する
+5. API仕様への影響を確認する
+
+という順序を基本とする。
+
+---
+
+# 62. Design Principle
+
+StageArtのDomain Modelは、
+
+「舞台芸術活動を行う人が、
+運営業務に追われることなく、
+創作活動に集中できる時間を増やす」
+
+というStageArtの目的を実現するために存在する。
+
+Domain Modelの複雑さは、
+利用者に押し付けない。
+
+複雑な業務ルールはDomainが吸収し、
+UIは利用者が理解しやすいBusiness Operationとして提供する。
+
+StageArtは、
+舞台芸術活動に必要な業務を、
+一つのDomain構造の中で一貫して管理する。
+
+---
