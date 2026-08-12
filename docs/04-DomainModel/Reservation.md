@@ -2,7 +2,7 @@
 
 # Domain Model : Reservation
 
-Version : 5.0
+Version : 6.0
 
 ---
 
@@ -12,7 +12,7 @@ Reservationは、
 観客が特定のPerformanceへ予約するというFactを表すDomainである。
 
 Reservationは、
-「誰が」「どの公演回を」「どのTicket Typeで」予約したかを管理する。
+「誰が」「どの公演回を」「どのTicketで」予約したかを管理する。
 
 ReservationはAggregate Rootとして、
 予約に関するBusiness Ruleを管理する。
@@ -43,9 +43,9 @@ Reservationは以下を管理する。
 
 - Performance
 - Booker
-- Ticket Type
+- Ticket
+- Price Snapshot
 - Guest Count
-- QR Code
 - Status
 - Created By
 - Created At
@@ -53,6 +53,9 @@ Reservationは以下を管理する。
 - Updated At
 
 ReservationはHistoryを直接管理しない。
+
+Reservationは、
+Ticketそのものの販売条件を変更しない。
 
 ---
 
@@ -158,26 +161,26 @@ GuestCountによって表現する。
 
 ---
 
-# Ticket Type
+# Ticket
 
 Reservationには、
-利用するTicket Typeを設定する。
+利用するTicketを設定する。
 
-Ticket TypeおよびPriceは、
-Productionごとに管理される。
+Ticketは、
+Productionに所属する販売条件である。
 
 基本構造：
 
 Production
   ↓
-Ticket Type / Price
+Ticket
   ↓
 Performance
   ↓
 Reservation
 
 Reservationは、
-Productionに設定されたTicket Type / Priceの組み合わせを参照する。
+対象Performanceで利用するTicketを参照する。
 
 例えば、
 
@@ -185,35 +188,117 @@ Productionに設定されたTicket Type / Priceの組み合わせを参照する
 - 学生 / 2,000円
 - 当日券 / 3,500円
 
-など。
+などのTicketを利用できる。
 
-Ticket TypeとPriceの正本はProduction側のTicket Masterとする。
+Ticketの正本はProduction側にある。
 
-ReservationへPriceを単独のマスタとして複製しない。
-
-ただし、
-予約確定時点の販売価格をFactとして保持する必要がある場合は、
-Reservationの取引情報として記録する。
+Reservationは、
+Ticketの現在の販売条件を変更しない。
 
 ---
 
-# QR Code
+# Price Snapshot
 
-QRCodeは、
-受付時にReservationを識別するための情報である。
+Reservationは、
+予約確定時点のTicket Priceを
+取引Factとして保持する。
 
-QR TicketはReservationから生成されるArtifactとして扱う。
+基本構造：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Price Snapshot
+
+Price Snapshotは、
+Reservationが成立した時点の販売価格を表す。
+
+例えば、
+
+Ticket
+  Price = 3,000円
+
+でReservationを作成した後、
+
+Ticket
+  Price = 3,500円
+
+へ変更された場合でも、
+
+既存Reservation
+  Price Snapshot = 3,000円
+
+を維持する。
+
+Ticketの現在Priceを参照して、
+過去のReservationの価格を再計算してはならない。
+
+---
+
+# Ticket and Price
+
+TicketはProductionにおける現在の販売条件である。
+
+Reservationは、
+予約成立時点の販売条件を取引Factとして保持する。
+
+したがって、
+
+Ticket.Price
+  = 現在の販売条件
+
+Reservation.Price Snapshot
+  = 予約成立時点の取引価格
+
+として分離する。
+
+Ticket Priceを変更しても、
+過去のReservationのPrice Snapshotを変更しない。
+
+---
+
+# Issued Ticket
+
+Reservationが成立し、
+実際のチケットとして発行された場合、
+Issued Ticketとして扱う。
 
 基本構造：
 
 Reservation
   ↓
+Issued Ticket
+
+Issued Ticketは、
+実際の来場受付に使用される。
+
+Issued Ticketの詳細な管理は、
+Ticket / QRTicket関連Domainで定義する。
+
+---
+
+# QR Ticket
+
+QR Ticketは、
+Issued Ticketを特定するための受付用Artifactである。
+
+基本構造：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
 QR Ticket
 
-QRコードからReservationを特定できる。
+QRコードから、
+対象となるReservationを特定できる。
 
 QRコードそのものを、
-予約情報の正本として扱わない。
+Reservation情報の正本として扱わない。
+
+QR Ticketの詳細な管理は、
+QRTicket Domainで定義する。
 
 ---
 
@@ -315,9 +400,9 @@ Reservation作成時に以下を確定する。
 
 - Performance
 - Booker
-- Ticket Type
+- Ticket
+- Price Snapshot
 - Guest Count
-- QR Code
 - Status
 - Created By
 - Created At
@@ -341,6 +426,9 @@ Updated At
 
 とする。
 
+Reservation作成後、
+ReservationCreatedを発行する。
+
 ---
 
 # Update
@@ -351,12 +439,18 @@ Check In前であれば変更できる。
 変更可能な情報には、
 
 - Booker
-- Ticket Type
+- Ticket
 - Guest Count
 
 などを含む。
 
 ReservationのPerformanceは変更できない。
+
+ReservationのPrice Snapshotは、
+予約成立後に変更しない。
+
+Ticketの現在Priceが変更されても、
+ReservationのPrice Snapshotは変更しない。
 
 変更はAggregate RootであるReservationを経由して行う。
 
@@ -368,7 +462,10 @@ Updated At
 を更新する。
 
 変更完了後、
-ReservationUpdatedを発行する。
+
+ReservationUpdated
+
+を発行する。
 
 ---
 
@@ -380,11 +477,15 @@ CHECKED_INのReservationは変更できない。
 
 - Performance
 - Booker
-- Ticket Type
+- Ticket
+- Price Snapshot
 - Guest Count
 
 CANCELLEDのReservationについても、
 通常のReservation Updateを行わない。
+
+Price Snapshotは、
+Reservationの通常Updateによって変更しない。
 
 ---
 
@@ -541,9 +642,33 @@ Reservationは通常の変更を受け付けない。
 
 Check In完了後、
 
-ReservationCheckedIn
+CheckInCompleted
 
 を発行する。
+
+---
+
+# CheckInCompleted
+
+CheckInCompletedは、
+ReservationのCheck Inが完了したことを表すBusiness Eventである。
+
+CheckInCompletedは、
+観客が実際に来場したというFactを確定する。
+
+基本Flow：
+
+Reservation
+  ↓
+Check In
+  ↓
+CheckInCompleted
+
+CheckInCompletedは、
+Reservation Domainだけで消費するEventではない。
+
+必要な関連Domainが、
+CheckInCompletedを契機として処理を行う。
 
 ---
 
@@ -552,14 +677,14 @@ ReservationCheckedIn
 Reservationは、
 Historyを直接生成・管理しない。
 
-ReservationCheckedInを契機として、
+CheckInCompletedを契機として、
 History Domainが観劇履歴を生成する。
 
 基本Flow：
 
 Reservation
   ↓
-ReservationCheckedIn
+CheckInCompleted
   ↓
 History
   ↓
@@ -570,6 +695,59 @@ Audience History
 
 実際にCheck Inされた場合に、
 観劇したというFactとしてHistoryを生成する。
+
+---
+
+# Check In and Accounting
+
+CheckInCompletedを契機として、
+チケット売上をAccounting Domainへ連携する。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Accounting
+  ↓
+Journal Entry
+
+Ticket RevenueおよびJournal Entryは、
+Accounting Domainで管理する。
+
+Reservation Domain自身は、
+Journal Entryを管理しない。
+
+---
+
+# Ticket Revenue
+
+Ticket Revenueは、
+CheckInCompletedによって確定した
+チケット売上の会計連携用Factである。
+
+Ticket.Priceは販売条件であり、
+Ticket Revenueそのものではない。
+
+基本構造：
+
+Ticket.Price
+  ↓
+Reservation.Price Snapshot
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+
+具体的な勘定科目やDebit / Creditの処理は、
+Accounting Domainで定義する。
 
 ---
 
@@ -701,78 +879,49 @@ Production権限に従う。
 
 ---
 
-# Privacy
-
-Reservationには、
-観客の個人情報が含まれる可能性がある。
-
-そのため、
-
-- Booker
-- 予約情報
-- 連絡先
-- Memo
-- その他予約に関連する個人情報
-
-は、
-権限のないPersonへ公開してはならない。
-
-Productionの公開ページには、
-Reservation情報を表示しない。
-
----
-
-# Seat
-
-Seatは将来実装する。
-
-Version 1.0では、
-ReservationはSeatを管理しない。
-
-したがって、
-
-- ReservationSeat
-- 座席指定
-- 座席レイアウト
-- 連席管理
-- 座席単位の予約
-
-はVersion 1.0では実装しない。
-
-将来的にSeatを実装する場合も、
-ReservationをAggregate Rootとして
-Reservationとの関係を管理する。
-
----
-
 # Business Rules
 
-- ReservationはPerformanceへの予約Factである。
-- Reservationは一つのPerformanceに所属する。
-- Reservation作成後にPerformanceを変更できない。
-- ReservationはPersonをBookerとして持つ。
-- CreatedByとBookerは異なる場合がある。
-- Guest Countによって予約人数を管理する。
-- Companionを独立したDomainとして管理しない。
-- Ticket TypeはProductionごとのTicket Masterを参照する。
-- Ticket TypeとPriceの正本はProduction側で管理する。
-- ReservationはQR Ticket生成の基礎となる。
-- Reservationは予約状態をStatusで管理する。
-- RESERVEDのReservationはCheck In前であれば変更できる。
-- RESERVEDのReservationはCheck In前であればキャンセルできる。
+- ReservationはAggregate Rootである。
+- Reservationは特定のPerformanceに対する予約を表す。
+- Reservationは必ず一つのPerformanceに所属する。
+- Reservation作成後にPerformanceを変更しない。
+- 別Performanceへ変更する場合は既存Reservationをキャンセルし、新しいReservationを作成する。
+- Bookerは予約者を表す。
+- BookerはPersonを参照する。
+- BookerとCreatedByは異なることができる。
+- GuestCountは予約人数を表す。
+- Companionを独立Domainとして管理しない。
+- 同行者情報をReservation内で管理しない。
+- TicketはProductionに所属する販売条件である。
+- ReservationはTicketを参照する。
+- Ticketの正本はProduction側にある。
+- Reservationは予約成立時点のPrice Snapshotを保持する。
+- Ticketの現在Priceを変更しても過去のPrice Snapshotを変更しない。
+- ReservationはIssued Ticketと関連付けることができる。
+- QR TicketはIssued Ticketに関連する受付用Artifactである。
+- QRコードをReservation情報の正本として扱わない。
+- ReservationStatusはRESERVED、CHECKED_IN、CANCELLED、NO_SHOWを基本とする。
 - CHECKED_INのReservationは通常変更できない。
+- CANCELLEDのReservationは物理削除しない。
 - CANCELLEDのReservationはCheck Inできない。
+- NO_SHOWは公演終了時点で来場が確認できなかった状態を表す。
 - Check InはReservation単位で行う。
-- Check Inには対象Performanceの一致を検証する。
-- QR Check InとManual Check Inは同じReservation Check Inとして扱う。
-- ReservationCheckedInを契機としてHistory Domainが観劇履歴を生成する。
-- Reservation自身はHistoryを管理しない。
-- StageArtユーザーとして登録されたBookerは自身の観劇履歴を確認できる。
-- 一般観客にInternal Portalへの参加を要求しない。
-- Reservationは原則として物理削除しない。
-- Reservationには監査情報を保持する。
-- Reservationの個人情報は適切な権限のもとでのみ閲覧できる。
-- SeatおよびReservationSeatはVersion 1.0では実装しない。
+- GuestCountが複数でもReservation全体をCheck Inする。
+- Version 1.0では同行者を個別にCheck Inしない。
+- Check In時には受付中PerformanceとReservationのPerformanceが一致していることを確認する。
+- Manual Check InとQR Check Inは同じReservation Check Inとして扱う。
+- Check In完了時にReservationStatusをCHECKED_INへ変更する。
+- Check In完了時にUpdatedByとUpdatedAtを更新する。
+- Check In完了時にCheckInCompletedを発行する。
+- ReservationはHistoryを直接管理しない。
+- CheckInCompletedを契機としてHistory DomainがAudience Historyを生成する。
+- Audience HistoryのSubjectはReservation.Bookerである。
+- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
+- Reservation DomainはJournal Entryを管理しない。
+- CreatedByはReservation作成後に変更しない。
+- CreatedAtは変更しない。
+- ReservationNumberはReservationIdとは別の識別子として管理する。
+- Memoは一般観客へ公開しない。
 
 ---
 
@@ -783,90 +932,121 @@ Reservationに関する主なDomain Event：
 - ReservationCreated
 - ReservationUpdated
 - ReservationCancelled
-- ReservationCheckedIn
-- ReservationMarkedNoShow
+- CheckInCompleted
 
-ReservationCheckedInを契機として、
-History DomainがAudience Historyを生成する。
+CheckInCompletedは、
+ReservationのCheck In完了を表すBusiness Eventである。
+
+CheckInCompletedを契機として、
+
+- History Domain
+- Accounting Domain
+
+などの関連Domainが必要な処理を行う。
+
+Reservation Domain自身が、
+HistoryやJournal Entryを直接生成・更新しない。
 
 ---
 
 # Design Decisions
 
 Reservationは、
-Performanceへの予約というFactを表す。
+特定のPerformanceに対する観客の予約Factを管理する。
 
-ReservationのAggregate Rootとして、
-予約内容と予約状態の整合性を管理する。
+ReservationはAggregate Rootとして、
+予約に関するBusiness Ruleを管理する。
 
-Companionは不要なため、
-同行者を個別Entityとして管理しない。
+ReservationはPerformanceに所属し、
+作成後にPerformanceを変更しない。
 
-複数名の予約はGuestCountで表現する。
-
-SeatおよびReservationSeatは、
-Seats機能の将来実装までReservation Domainへ導入しない。
-
-Ticket Type / PriceはProductionごとのMasterを参照する。
+TicketはProduction単位で管理し、
+ReservationはそのTicketを参照する。
 
 Reservationは、
-BookerとCreatedByを分離する。
+予約成立時点のTicket PriceをPrice Snapshotとして保持する。
 
-これにより、
-観客本人による予約だけでなく、
-劇団スタッフなどによる代理予約も表現できる。
+Ticketの現在価格を変更しても、
+過去のReservationの価格を変更しない。
+
+Reservationが成立した後、
+Issued Ticketを発行できる。
+
+QR Ticketは、
+Issued Ticketを受付で特定するためのArtifactとして扱う。
 
 Check InはReservation単位で行う。
 
-予約しただけでは観劇履歴を生成せず、
-ReservationCheckedInを契機としてHistoryを生成する。
+Check Inが完了すると、
+CheckInCompletedを発行する。
+
+CheckInCompletedを契機として、
+
+- Audience History
+- Ticket Revenue
+
+をそれぞれのDomainへ連携する。
+
+ReservationはHistoryを直接管理しない。
+
+ReservationはAccountingのJournal Entryを直接管理しない。
+
+CompanionはVersion 1.0では独立管理しない。
+
+一般観客はStageArtのInternal Portalへの参加を要求しない。
+
+StageArtユーザーとして登録されたBookerは、
+自身の観劇履歴を参照できる。
 
 ---
 
 # Future
 
-将来的に以下へ対応できる構造とする。
+将来的に以下へ対応する。
 
-- Seat
-- Reservation Seat
+- 同行者管理
+- 同行者単位のCheck In
+- PerformanceごとのTicket Availability
+- Reservationごとの複数Ticket
+- Ticket数量管理
 - 座席指定
-- 連席管理
-- 同行者情報
-- 複数Ticket Type
-- 決済連携
+- Reservation Seat
 - 払い戻し
 - 振替公演
-- 自動No Show処理
-- 予約変更履歴
-- 観客向けマイページ拡張
+- 外部チケット販売サービス連携
 
 ただし、
 将来機能を追加する場合も、
-Reservationの責務を不必要に拡張しない。
+Reservationの基本責務を
+「特定Performanceへの予約Factの管理」から逸脱させない。
 
 ---
 
 # Design Principles
 
-- ReservationはPerformanceへの予約Factである。
-- ReservationはPerformanceに所属する。
-- ReservationはAggregate Rootとして予約状態を管理する。
-- Bookerは予約者を表す。
-- CreatedByは予約作成者を表す。
+- ReservationはAggregate Rootである。
+- ReservationはPerformanceへの予約Factを表す。
+- Reservationは一つのPerformanceに所属する。
+- Reservation作成後にPerformanceを変更しない。
 - BookerとCreatedByを分離する。
-- GuestCountで予約人数を管理する。
-- CompanionをVersion 1.0では管理しない。
-- Ticket Type / PriceはProduction側を正本とする。
-- ReservationはQR Ticket生成の基礎となる。
+- GuestCountによって予約人数を表現する。
+- CompanionをVersion 1.0では独立管理しない。
+- TicketはProduction単位で管理する。
+- ReservationはTicketを参照する。
+- ReservationはPrice Snapshotを保持する。
+- Ticket PriceとReservation Price Snapshotを分離する。
+- Issued TicketはReservationに基づいて発行する。
+- QR TicketはIssued Ticketの受付用Artifactである。
+- QR Ticketを予約情報の正本としない。
 - Check InはReservation単位で行う。
-- QR Check InとManual Check Inを同一のReservation Check Inとして扱う。
-- Check In時には対象Performanceを検証する。
-- ReservationCheckedInを契機としてHistoryを生成する。
-- Reservation自身はHistoryを管理しない。
-- StageArtユーザーとして登録された観客は観劇履歴を確認できる。
+- Check In時にはPerformanceを検証する。
+- Check In完了時にCheckInCompletedを発行する。
+- CheckInCompletedからAudience Historyを生成する。
+- CheckInCompletedからTicket RevenueをAccountingへ連携する。
+- Reservation DomainはHistoryを直接管理しない。
+- Reservation DomainはJournal Entryを管理しない。
+- CANCELLEDのReservationを物理削除しない。
+- CHECKED_INのReservationを通常変更しない。
 - 一般観客にInternal Portalへの参加を要求しない。
-- SeatはVersion 1.0では実装しない。
-- ReservationSeatはVersion 1.0では実装しない。
-- Reservationは過去の予約Factを保持する。
-- 個人情報を適切な権限で保護する。
+- StageArtユーザーとして登録されたBookerは自身の観劇履歴を参照できる。
 - Blueprintを唯一の設計基準とする。
