@@ -3,7 +3,7 @@
 # 10 - Architecture
 # API Architecture
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -27,6 +27,7 @@ API Architectureでは、
 - DTO
 - Business Operation
 - Check In
+- Web Check In
 - QR Reception
 - Error Handling
 - Idempotency
@@ -59,11 +60,15 @@ StageArt APIは、
 - Mobile ClientとWeb ClientでBusiness Ruleを分けない。
 - QR Codeの読み取りとCheck In Business Ruleを分離する。
 - Check Inの確定はServer Sideで行う。
+- Web ClientとMobile ClientのCheck Inは同一のApplication Use Caseを利用する。
 - APIはHTTPSを基本とする。
 - External Service APIとStageArt APIを分離する。
 - API ErrorをClient向けResponseへMappingする。
 - API Versionを管理可能な構造にする。
 - Retryを考慮し、重要なOperationではIdempotencyを確保する。
+- Web ClientからのCheck Inは一覧操作を入口とすることができる。
+- Mobile ClientからのCheck InはQR Scanを入口とすることができる。
+- Clientごとに異なるBusiness Ruleを実装しない。
 
 ---
 
@@ -192,7 +197,7 @@ Business OperationとしてAPIを定義する。
 
 ReservationのStatusを直接変更するのではなく、
 
-Check In Reservation
+Check In
 
 というUse Caseを利用する。
 
@@ -205,6 +210,13 @@ Check In Reservation
 POST /reservations/{id}/check-in
 
 のようなBusiness Operationを利用できる。
+
+また、
+Issued Ticketを直接対象とする場合は、
+
+POST /tickets/{id}/check-in
+
+のようなOperationも利用できる。
 
 このAPIは、
 
@@ -257,6 +269,7 @@ StageArt APIを利用する。
 - Rehearsal Management
 - Ticket Management
 - Reservation Management
+- Check In Management
 - Accounting
 - Communication
 - Document Management
@@ -266,7 +279,319 @@ APIを通じてApplicationを利用する。
 
 ---
 
-# 10. Mobile Client API
+# 10. Web Check In API
+
+Web Clientからも、
+Check Inを実行できる。
+
+Web Check Inでは、
+QR Codeを必須としない。
+
+基本Flow：
+
+Web Client
+↓
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Search / Filter
+↓
+Check In対象選択
+↓
+Check In API
+↓
+Application
+↓
+Domain
+↓
+Check In Result
+↓
+Web Client
+
+Web Clientでは、
+受付担当者が一覧から対象Ticketを確認し、
+Check Inを実行できる。
+
+---
+
+# 11. Web Check In List API
+
+Web Check In画面では、
+Check In対象を一覧取得できるAPIを利用する。
+
+概念的には、
+
+GET /performances/{id}/tickets
+
+または、
+
+GET /performances/{id}/reservations
+
+などのQuery APIを利用できる。
+
+一覧では、
+必要に応じて以下を取得できる。
+
+- Person
+- Reservation
+- Issued Ticket
+- Ticket Type
+- Performance
+- Check In Status
+- Check In Time
+- Ticket Identifier
+
+具体的なEndpointとResponse DTOは、
+API Contractで定義する。
+
+---
+
+# 12. Web Check In List Filtering
+
+Web Check In一覧では、
+必要に応じてFilterを利用できる。
+
+例：
+
+- 未受付
+- 受付済み
+- Person Name
+- Ticket Number
+- Ticket Type
+- Reservation Status
+- Performance
+
+Filterは、
+Request UserがAuthorization Scope内で
+参照できるDataに限定する。
+
+Clientが任意のDatabase Columnを
+直接Filter条件として指定する設計は避ける。
+
+---
+
+# 13. Web Check In Search
+
+受付担当者が、
+対象Ticketを検索できるようにする。
+
+例えば、
+
+- Person Name
+- Ticket Number
+- Reservation Number
+- Ticket Identifier
+
+など。
+
+Searchは、
+Query APIとして提供する。
+
+Search APIは、
+Check In Factを変更しない。
+
+検索結果からCheck Inを実行する場合は、
+別途Check In Command APIを呼び出す。
+
+---
+
+# 14. Web Manual Check In
+
+Web ClientからのManual Check Inは、
+QR Codeを使用しない。
+
+基本Flow：
+
+Web Client
+↓
+Reservation / Issued Ticket List
+↓
+対象Ticket選択
+↓
+Check In Action
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+↓
+CheckInCompleted
+
+Web Clientが、
+Check In Statusを直接変更しない。
+
+---
+
+# 15. Web Check In Request
+
+Web ClientからのCheck In Requestでは、
+必要なIdentifierをAPIへ送信する。
+
+概念的なRequest：
+
+Check In Request
+- Ticket Identifier
+- Performance Context
+- Client Context
+- Idempotency Information
+
+など。
+
+具体的なRequest DTOは、
+Implementation Specificationで定義する。
+
+Clientが送信したPerformanceや
+Ticket情報だけを無条件に信頼しない。
+
+Server側で、
+対象Dataの整合性を検証する。
+
+---
+
+# 16. Web Check In Server Validation
+
+Web ClientからCheck In Requestを受け取った場合、
+Serverは、
+
+- Authentication
+- Authorization
+- Ticket Existence
+- Ticket Validity
+- Performance
+- Reservation
+- Issued Ticket
+- Current Check In State
+- Business Rule
+
+などを検証する。
+
+Web Clientの一覧表示時点で
+Check In可能と判断されていても、
+Check In実行時に再度Server側で検証する。
+
+---
+
+# 17. Web Check In Result
+
+Web Clientは、
+Check In APIのResponseを利用して
+受付結果を表示する。
+
+概念的な結果：
+
+- Check In Success
+- Already Checked In
+- Invalid Ticket
+- Ticket Not Found
+- Performance Mismatch
+- Unauthorized
+- Forbidden
+- Validation Error
+- System Error
+
+一覧上の表示Stateは、
+ServerのBusiness Factから取得する。
+
+---
+
+# 18. Web Multiple Check In
+
+Web Clientでは、
+必要に応じて複数Ticketを選択して
+Check Inを実行できる。
+
+基本Flow：
+
+Web Client
+↓
+Check In List
+↓
+Multiple Ticket Selection
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Individual Check In Processing
+↓
+Result
+
+ただし、
+複数TicketのCheck Inは、
+単純なDatabase Bulk Updateとして実装しない。
+
+各Ticketについて、
+必要なBusiness Rule、
+Authorization、
+状態検証を行う。
+
+具体的なBulk APIの採用は、
+Implementation Specificationで決定する。
+
+---
+
+# 19. Web Multiple Check In Result
+
+複数Ticketを一括処理する場合、
+全件成功だけでなく、
+個別結果を返せる構造とする。
+
+例えば、
+
+Ticket A
+→ Success
+
+Ticket B
+→ Already Checked In
+
+Ticket C
+→ Invalid Ticket
+
+Ticket D
+→ Forbidden
+
+など。
+
+Response DTOでは、
+必要に応じて個別Resultを返す。
+
+---
+
+# 20. Web Check In Concurrency
+
+Web ClientからのManual Check Inと、
+Mobile ClientからのQR Check Inが
+同時に発生する可能性を考慮する。
+
+例えば、
+
+Web Client
+↓
+Ticket X
+↓
+Check In API
+
+と同時に、
+
+Mobile Client
+↓
+QR Ticket X
+↓
+Check In API
+
+が実行される場合でも、
+Check In Factを二重作成しない。
+
+具体的なLock、
+Unique Constraint、
+Transactionなどは、
+Data Architecture / Implementation Specificationで定義する。
+
+---
+
+# 21. Mobile Client API
 
 Mobile Clientは、
 Smartphoneなどから
@@ -287,7 +612,7 @@ StageArt Databaseへ直接アクセスしない。
 
 ---
 
-# 11. QR Reception API
+# 22. QR Reception API
 
 QR Receptionでは、
 Mobile ClientがQR Codeを読み取る。
@@ -321,7 +646,7 @@ Server Sideの責務。
 
 ---
 
-# 12. QR Code as Identifier
+# 23. QR Code as Identifier
 
 QR Codeは、
 Business Factそのものではない。
@@ -349,7 +674,7 @@ QR Codeの内容を、
 
 ---
 
-# 13. QR Check In Request
+# 24. QR Check In Request
 
 Mobile Clientは、
 QR Codeを読み取った後、
@@ -370,7 +695,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 14. QR Check In Server Validation
+# 25. QR Check In Server Validation
 
 Serverは、
 Check In Requestを受け取った後、
@@ -392,7 +717,48 @@ Clientが送信した情報だけを、
 
 ---
 
-# 15. Check In API Flow
+# 26. Common Check In API
+
+Web ClientとMobile Clientは、
+Check Inの入口が異なる。
+
+Web：
+
+Web Client
+↓
+Reservation / Issued Ticket List
+↓
+Check In API
+
+Mobile：
+
+Mobile Client
+↓
+QR Scanner
+↓
+Ticket Identifier
+↓
+Check In API
+
+しかし、
+API以下では同じApplication Use Caseを利用する。
+
+共通構造：
+
+Check In API
+↓
+Check In Use Case
+↓
+Check In Domain
+↓
+Check In Fact
+
+Clientによって、
+Check In Business Ruleを分けない。
+
+---
+
+# 27. Check In API Flow
 
 Check Inの基本Flow：
 
@@ -422,9 +788,13 @@ Commit
 ↓
 Response
 
+Web ClientとMobile Clientの
+どちらから呼び出されても、
+基本的なApplication Flowは共通とする。
+
 ---
 
-# 16. Check In Business Rule
+# 28. Check In Business Rule
 
 Check InのBusiness Ruleは、
 API Controllerに実装しない。
@@ -447,7 +817,7 @@ Check In Factを保存する。
 
 ---
 
-# 17. Check In Response
+# 29. Check In Response
 
 Check In APIは、
 Clientが受付結果を表示できるResponseを返す。
@@ -469,7 +839,7 @@ API Contractで定義する。
 
 ---
 
-# 18. Already Checked In
+# 30. Already Checked In
 
 同じTicketが、
 複数回読み取られる可能性がある。
@@ -478,6 +848,7 @@ API Contractで定義する。
 
 - 同じQRを連続して読む
 - 複数端末から読む
+- Web ClientとMobile Clientから同時に操作する
 - Network Retry
 - Client Timeout後の再送
 
@@ -491,10 +862,10 @@ Server側で、
 
 ---
 
-# 19. Concurrent Check In
+# 31. Concurrent Check In
 
-複数の受付端末が、
-同じTicketを同時に読み取る可能性がある。
+複数の受付端末やClientが、
+同じTicketを同時に操作する可能性がある。
 
 例えば、
 
@@ -508,6 +879,20 @@ Device B
 ↓
 Check In API
 
+または、
+
+Web Client
+↓
+Check In API
+        \
+         Ticket X
+        /
+Mobile Client
+↓
+Check In API
+
+というケース。
+
 この場合でも、
 Check In Factが二重作成されないようにする。
 
@@ -518,7 +903,7 @@ Data Architecture / Implementation Specificationで定義する。
 
 ---
 
-# 20. Idempotency
+# 32. Idempotency
 
 重要なBusiness Operationでは、
 Idempotencyを考慮する。
@@ -537,7 +922,7 @@ Business Factが不正に重複しないようにする。
 
 ---
 
-# 21. Idempotency Key
+# 33. Idempotency Key
 
 必要に応じて、
 ClientはIdempotency Keyを送信できる。
@@ -562,7 +947,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 22. QR Retry
+# 34. QR Retry
 
 Mobile Clientでは、
 Network Timeoutが発生する可能性がある。
@@ -589,7 +974,37 @@ IdempotencyまたはBusiness Stateによって、
 
 ---
 
-# 23. Authentication
+# 35. Web Retry
+
+Web Clientでも、
+Network TimeoutやBrowser側の通信失敗によって、
+Check In Requestが再送される可能性がある。
+
+例えば、
+
+Check In Action
+↓
+Check In Request
+↓
+Server Processing
+↓
+Response Timeout
+↓
+User Retry
+↓
+Check In Request
+
+というケース。
+
+Serverが既にCheck Inを確定している場合、
+Retryによって二重Check Inを作成しない。
+
+IdempotencyまたはBusiness Stateによって、
+安全に再送できる構造とする。
+
+---
+
+# 36. Authentication
 
 APIへのAccessでは、
 必要に応じてAuthenticationを行う。
@@ -614,7 +1029,7 @@ Provider固有の詳細を定義しない。
 
 ---
 
-# 24. Authentication Context
+# 37. Authentication Context
 
 API Requestでは、
 認証されたUserに関するContextを
@@ -637,7 +1052,7 @@ Application Use Caseは、
 
 ---
 
-# 25. Authentication and Person
+# 38. Authentication and Person
 
 Authentication Identityと
 Business Identityを分離する。
@@ -664,7 +1079,7 @@ Applicationへ渡す。
 
 ---
 
-# 26. Authorization
+# 39. Authorization
 
 Authentication後、
 Authorizationを実行する。
@@ -688,7 +1103,7 @@ Server Sideで必ず検証する。
 
 ---
 
-# 27. Organization Authorization
+# 40. Organization Authorization
 
 Organization Scopeでは、
 
@@ -715,7 +1130,7 @@ Production Manager
 
 ---
 
-# 28. Production Authorization
+# 41. Production Authorization
 
 Production Scopeでは、
 
@@ -737,7 +1152,7 @@ Production ScopeのFull Accessとして扱う。
 
 ---
 
-# 29. Reception Authorization
+# 42. Reception Authorization
 
 QR Receptionでは、
 QRを読み取れるだけでは
@@ -751,9 +1166,12 @@ Check Inを許可しない。
 
 をServer側で確認する。
 
+Web Receptionでも、
+同じAuthorization Ruleを適用する。
+
 ---
 
-# 30. Scope Resolution
+# 43. Scope Resolution
 
 API Requestに対して、
 必要なScopeを解決する。
@@ -776,9 +1194,13 @@ Organization
 Request Userが対象Scopeへ
 アクセス可能か確認する。
 
+Web ClientからのCheck Inでも、
+Mobile ClientからのCheck Inでも、
+同じScope Resolutionを利用する。
+
 ---
 
-# 31. Tenant Isolation
+# 44. Tenant Isolation
 
 Organizationは、
 主要なTenant Boundaryである。
@@ -799,7 +1221,7 @@ Accessを許可しない。
 
 ---
 
-# 32. Production Isolation
+# 45. Production Isolation
 
 Production Scopeについても、
 同様にIsolationを行う。
@@ -817,7 +1239,7 @@ Production B
 
 ---
 
-# 33. Public API
+# 46. Public API
 
 Public APIは、
 一般観客など、
@@ -836,7 +1258,7 @@ Internal Dataを直接返さない。
 
 ---
 
-# 34. Public API Data
+# 47. Public API Data
 
 Public APIは、
 Public Projection / DTOを利用する。
@@ -858,7 +1280,7 @@ Internal Dataの誤公開を防ぐ。
 
 ---
 
-# 35. Audience API
+# 48. Audience API
 
 Audience向けAPIでは、
 本人のDataだけを参照できることを基本とする。
@@ -877,7 +1299,7 @@ API RequestのPersonと、
 
 ---
 
-# 36. Management API
+# 49. Management API
 
 Management APIは、
 Organization / Productionの運営者向けである。
@@ -901,7 +1323,7 @@ Authorizationを必須とする。
 
 ---
 
-# 37. Mobile Reception API
+# 50. Mobile Reception API
 
 Mobile Reception Client向けAPIは、
 必要な機能に限定する。
@@ -920,7 +1342,7 @@ Mobile Clientに、
 
 ---
 
-# 38. Reception Context
+# 51. Reception Context
 
 Reception Clientは、
 受付対象となるPerformance Contextを
@@ -942,14 +1364,57 @@ Mobile Clientは、
 現在受付可能なPerformanceを
 選択できる。
 
+Web Clientについても、
+必要に応じて同じReception Contextを
+利用できる。
+
 ---
 
-# 39. Performance Context
+# 52. Web Reception Context
+
+Web Receptionでは、
+受付対象Performanceを選択し、
+対象Performanceの
+Reservation / Issued Ticket Listを取得できる。
+
+基本構造：
+
+Reception User
+↓
+Authorized Productions
+↓
+Authorized Performances
+↓
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Check In
+
+Web Clientは、
+Authorization Scope内のPerformanceのみ
+一覧に表示できる。
+
+---
+
+# 53. Performance Context
 
 Check In Requestでは、
 必要に応じてPerformance Contextを利用する。
 
 例えば、
+
+Web Client
+↓
+Performance A selected
+↓
+Ticket List
+↓
+Check In Ticket
+↓
+Server verifies Ticket belongs to Performance A
+
+または、
 
 Mobile Client
 ↓
@@ -970,7 +1435,7 @@ Ticket側のBusiness ContextをServerで検証する。
 
 ---
 
-# 40. API DTO
+# 54. API DTO
 
 APIでは、
 Domain Entityを直接Request / Responseに利用しない。
@@ -996,7 +1461,7 @@ Client Contractのために設計する。
 
 ---
 
-# 41. Request DTO
+# 55. Request DTO
 
 Request DTOは、
 Clientから送信されるDataを表す。
@@ -1010,7 +1475,7 @@ Use Caseに必要なInputだけを
 
 ---
 
-# 42. Response DTO
+# 56. Response DTO
 
 Response DTOは、
 Clientに必要なDataだけを返す。
@@ -1031,7 +1496,7 @@ Internal Database Columnを、
 
 ---
 
-# 43. API Contract
+# 57. API Contract
 
 API Contractは、
 以下を定義する。
@@ -1053,7 +1518,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 44. HTTP Method
+# 58. HTTP Method
 
 HTTP Methodは、
 Operationの意味に合わせて利用する。
@@ -1080,7 +1545,7 @@ Business Operationについては、
 
 ---
 
-# 45. Business Operation Endpoint
+# 59. Business Operation Endpoint
 
 例えばCheck Inでは、
 
@@ -1098,7 +1563,7 @@ API Contractで確定する。
 
 ---
 
-# 46. Query API
+# 60. Query API
 
 Query APIは、
 Business Factを参照する。
@@ -1111,13 +1576,41 @@ Business Factを参照する。
 - Get Reservation
 - Get Audience History
 - Get Accounting Summary
+- Get Check In List
 
 Query APIは、
 Domain Stateを変更しない。
 
 ---
 
-# 47. Command API
+# 61. Check In List Query
+
+Check In一覧を表示するQueryでは、
+必要なBusiness Dataをまとめて取得できる。
+
+例えば、
+
+- Person
+- Reservation
+- Issued Ticket
+- Ticket Type
+- Check In Status
+- Check In Time
+
+など。
+
+このQueryは、
+Web Clientの受付画面で利用できる。
+
+Queryは、
+Check Inそのものを実行しない。
+
+Check Inを実行する場合は、
+別途Command APIを呼び出す。
+
+---
+
+# 62. Command API
 
 Command APIは、
 Business Operationを実行する。
@@ -1138,7 +1631,7 @@ Command APIは、
 
 ---
 
-# 48. Pagination
+# 63. Pagination
 
 大量Dataを返すAPIでは、
 Paginationを利用する。
@@ -1151,6 +1644,7 @@ Paginationを利用する。
 - Rehearsals
 - Journal Entries
 - HistoricalActivity
+- Check In List
 
 Paginationは、
 Client PerformanceとServer Performanceのために利用する。
@@ -1160,7 +1654,7 @@ API Contractで定義する。
 
 ---
 
-# 49. Filtering
+# 64. Filtering
 
 List APIでは、
 必要に応じてFilteringを提供する。
@@ -1178,12 +1672,21 @@ Reservations
 
 などでFilterできる。
 
+Check In Listでは、
+
+- Check In Status
+- Person Name
+- Ticket Number
+- Ticket Type
+
+などでFilterできる。
+
 Filter条件は、
 Authorization Scopeを越えない。
 
 ---
 
-# 50. Sorting
+# 65. Sorting
 
 List APIでは、
 必要に応じてSortingを提供する。
@@ -1197,7 +1700,7 @@ Clientから任意のDatabase Columnを
 
 ---
 
-# 51. Search
+# 66. Search
 
 Search APIでは、
 Search Projection / Indexを利用できる。
@@ -1217,7 +1720,7 @@ Business Factの正本にしない。
 
 ---
 
-# 52. API Error Model
+# 67. API Error Model
 
 API Errorは、
 Clientが処理可能な形で返す。
@@ -1238,7 +1741,7 @@ Clientが処理可能な形で返す。
 
 ---
 
-# 53. Authentication Error
+# 68. Authentication Error
 
 Authenticationに失敗した場合、
 
@@ -1254,7 +1757,7 @@ API Contractで定義する。
 
 ---
 
-# 54. Authorization Error
+# 69. Authorization Error
 
 Authorizationに失敗した場合、
 
@@ -1271,7 +1774,7 @@ Clientへ、
 
 ---
 
-# 55. Business Rule Error
+# 70. Business Rule Error
 
 Business Rule違反は、
 Domain ErrorからAPI ErrorへMappingする。
@@ -1288,7 +1791,7 @@ Clientへ返さない。
 
 ---
 
-# 56. Conflict
+# 71. Conflict
 
 同じResourceに対して、
 競合するOperationが発生した場合、
@@ -1306,7 +1809,7 @@ API Contractで定義する。
 
 ---
 
-# 57. Validation Error
+# 72. Validation Error
 
 Request Formatに問題がある場合、
 Validation Errorとして返す。
@@ -1324,7 +1827,7 @@ Domain Rule Errorとは区別する。
 
 ---
 
-# 58. Infrastructure Error
+# 73. Infrastructure Error
 
 DatabaseやExternal Serviceなどの
 Infrastructure Errorは、
@@ -1342,7 +1845,7 @@ Database Connection Failed
 
 ---
 
-# 59. Integration Error
+# 74. Integration Error
 
 External Serviceとの通信失敗は、
 Integration Errorとして扱う。
@@ -1365,7 +1868,7 @@ Integration Errorとして扱う。
 
 ---
 
-# 60. HTTP Status Mapping
+# 75. HTTP Status Mapping
 
 APIでは、
 Application Errorを適切なHTTP Responseへ
@@ -1401,7 +1904,7 @@ API Contractで確定する。
 
 ---
 
-# 61. Security
+# 76. Security
 
 APIは、
 Security Boundaryとして扱う。
@@ -1423,7 +1926,7 @@ Clientから送られたDataを、
 
 ---
 
-# 62. HTTPS
+# 77. HTTPS
 
 Production Environmentでは、
 API通信をHTTPSで行う。
@@ -1441,7 +1944,7 @@ API通信をHTTPSで行う。
 
 ---
 
-# 63. Rate Limiting
+# 78. Rate Limiting
 
 Public APIやAuthentication APIでは、
 必要に応じてRate Limitingを行う。
@@ -1460,7 +1963,7 @@ Deployment / Security Architectureで定義する。
 
 ---
 
-# 64. QR Rate Limiting
+# 79. QR Rate Limiting
 
 QR受付では、
 同一Ticketや同一Clientからの
@@ -1475,7 +1978,7 @@ SecurityとOperational Requirementの
 
 ---
 
-# 65. Input Trust
+# 80. Input Trust
 
 API Requestの以下の情報を、
 無条件に信頼しない。
@@ -1496,7 +1999,7 @@ Server Sideで、
 
 ---
 
-# 66. Client Supplied Role
+# 81. Client Supplied Role
 
 Clientが、
 
@@ -1512,7 +2015,7 @@ Server SideでUser / Scope / Role / Permissionから
 
 ---
 
-# 67. Client Supplied Price
+# 82. Client Supplied Price
 
 ReservationやTicket処理で、
 Clientが送信したPriceを
@@ -1523,7 +2026,7 @@ Server側のTicket Price / Business Ruleを
 
 ---
 
-# 68. Client Supplied Performance
+# 83. Client Supplied Performance
 
 Check Inなどで、
 ClientがPerformance IDを送信した場合でも、
@@ -1536,7 +2039,7 @@ Business Factそのものではない。
 
 ---
 
-# 69. API Audit
+# 84. API Audit
 
 重要なAPI Operationは、
 Audit対象とする。
@@ -1557,7 +2060,7 @@ Business Factとは分離する。
 
 ---
 
-# 70. API Logging
+# 85. API Logging
 
 APIでは、
 必要なRequest / Response情報を
@@ -1575,7 +2078,7 @@ Loggingしない。
 
 ---
 
-# 71. API Versioning
+# 86. API Versioning
 
 APIは、
 将来的なVersion変更を考慮する。
@@ -1591,7 +2094,7 @@ Client Contractを安定させるために利用する。
 
 ---
 
-# 72. API Version Change
+# 87. API Version Change
 
 API Versionを変更する場合は、
 
@@ -1609,7 +2112,7 @@ API Versionに従属させない。
 
 ---
 
-# 73. Backward Compatibility
+# 88. Backward Compatibility
 
 既存Clientを壊さないことを基本とする。
 
@@ -1622,7 +2125,7 @@ API Versionに従属させない。
 
 ---
 
-# 74. Mobile API Compatibility
+# 89. Mobile API Compatibility
 
 Mobile Applicationは、
 Web Clientよりも
@@ -1640,7 +2143,7 @@ Mobile APIでは特に、
 
 ---
 
-# 75. Mobile API Offline
+# 90. Mobile API Offline
 
 初期Architectureでは、
 重要なBusiness Operationを
@@ -1660,7 +2163,7 @@ Offline Check Inを実装する場合は、
 
 ---
 
-# 76. Mobile API Session
+# 91. Mobile API Session
 
 Mobile Clientは、
 Authentication Session / Tokenを
@@ -1676,7 +2179,7 @@ Database Credentialなどを
 
 ---
 
-# 77. Reception Device Registration
+# 92. Reception Device Registration
 
 必要に応じて、
 受付端末を特定する仕組みを導入できる。
@@ -1698,7 +2201,7 @@ Business Permissionを付与しない。
 
 ---
 
-# 78. Device and User Separation
+# 93. Device and User Separation
 
 受付端末と受付担当者を分離する。
 
@@ -1718,13 +2221,14 @@ Permission：
 
 ---
 
-# 79. Check In Audit Context
+# 94. Check In Audit Context
 
 Check In APIでは、
 必要に応じて、
 
 - Person
 - Device
+- Client Type
 - Production
 - Performance
 - Ticket
@@ -1737,7 +2241,7 @@ Audit ContextとCheck In Factを混同しない。
 
 ---
 
-# 80. API Transaction Boundary
+# 95. API Transaction Boundary
 
 API Request自体を、
 Business Transactionの正本としない。
@@ -1764,7 +2268,7 @@ Commit
 
 ---
 
-# 81. API and Domain Event
+# 96. API and Domain Event
 
 APIによってBusiness Operationが成功した場合、
 Domain Eventが発生する場合がある。
@@ -1784,7 +2288,7 @@ Domain Eventを直接管理しない。
 
 ---
 
-# 82. Event Exposure
+# 97. Event Exposure
 
 Domain Eventを、
 そのままPublic API Eventとして
@@ -1798,7 +2302,7 @@ Domain EventとExternal Event Contractを
 
 ---
 
-# 83. Webhook
+# 98. Webhook
 
 将来的に、
 外部SystemへStageArtのBusiness Eventを
@@ -1820,7 +2324,7 @@ Integration Architectureで定義する。
 
 ---
 
-# 84. API and External Integration
+# 99. API and External Integration
 
 StageArt APIとExternal Service APIを分離する。
 
@@ -1851,7 +2355,7 @@ External ServiceをBusiness Ruleの正本として
 
 ---
 
-# 85. API and Database
+# 100. API and Database
 
 APIからDatabaseへ
 直接アクセスしない。
@@ -1882,7 +2386,7 @@ Business RuleをApplication / Domainへ
 
 ---
 
-# 86. API and PHP
+# 101. API and PHP
 
 StageArt ServerをPHPで実装する場合でも、
 API ArchitectureはLayered Architectureを維持する。
@@ -1907,7 +2411,7 @@ Presentation / API / Infrastructure側へ
 
 ---
 
-# 87. WordPress API Boundary
+# 102. WordPress API Boundary
 
 StageArtをWordPress Pluginとして実装する場合、
 WordPress REST APIなどを
@@ -1930,7 +2434,7 @@ Domainへ直接渡さない。
 
 ---
 
-# 88. WordPress Authentication
+# 103. WordPress Authentication
 
 WordPress Userを
 Authentication Infrastructureとして
@@ -1956,7 +2460,7 @@ Person
 
 ---
 
-# 89. Public Endpoint
+# 104. Public Endpoint
 
 Public Endpointでは、
 Authenticationを要求しない場合がある。
@@ -1975,7 +2479,7 @@ Public Projectionを利用する。
 
 ---
 
-# 90. Management Endpoint
+# 105. Management Endpoint
 
 Management Endpointでは、
 AuthenticationとAuthorizationを
@@ -1997,7 +2501,7 @@ Operation
 
 ---
 
-# 91. Audience Endpoint
+# 106. Audience Endpoint
 
 Audience Endpointでは、
 本人のDataを中心に扱う。
@@ -2018,7 +2522,7 @@ Request UserがそのPersonへ
 
 ---
 
-# 92. File API
+# 107. File API
 
 Documentに関連するFile操作も、
 Authorizationを必要とする。
@@ -2042,7 +2546,7 @@ External StorageのURLを、
 
 ---
 
-# 93. File Download
+# 108. File Download
 
 File Downloadでは、
 Document Scopeを確認する。
@@ -2062,7 +2566,7 @@ Downloadできる設計にしない。
 
 ---
 
-# 94. API Pagination and Large Data
+# 109. API Pagination and Large Data
 
 大量Dataを返すOperationでは、
 Server側のPerformanceを考慮する。
@@ -2074,6 +2578,7 @@ Server側のPerformanceを考慮する。
 - Reservation
 - Participant
 - HistoricalActivity
+- Check In List
 
 など。
 
@@ -2082,7 +2587,7 @@ Clientへ、
 
 ---
 
-# 95. API Response Stability
+# 110. API Response Stability
 
 Response DTOは、
 Domain Entityの内部構造変更から
@@ -2093,7 +2598,7 @@ API Contractが自動的に変わらないようにする。
 
 ---
 
-# 96. API Request Stability
+# 111. API Request Stability
 
 Request DTOも、
 Domain Entityと分離する。
@@ -2106,7 +2611,7 @@ Application CommandへMappingし、
 
 ---
 
-# 97. API Testing
+# 112. API Testing
 
 APIは、
 以下の観点からTestする。
@@ -2124,7 +2629,7 @@ APIは、
 
 ---
 
-# 98. Check In API Testing
+# 113. Check In API Testing
 
 Check In APIでは、
 最低限以下を検証する。
@@ -2136,13 +2641,35 @@ Check In APIでは、
 - Unauthorized User
 - Forbidden User
 - Multiple Device
+- Web Client
+- Mobile Client
 - Duplicate Request
 - Network Retry
 - Concurrent Request
 
 ---
 
-# 99. API Contract Testing
+# 114. Web Check In API Testing
+
+Web Check Inでは、
+最低限以下を検証する。
+
+- Performance Selection
+- Check In List取得
+- Search
+- Filtering
+- Individual Check In
+- Multiple Check In
+- Already Checked In
+- Unauthorized User
+- Forbidden User
+- Concurrent Check In
+- Network Retry
+- Duplicate Request
+
+---
+
+# 115. API Contract Testing
 
 ClientとServer間のContractを、
 Testで保証する。
@@ -2156,9 +2683,14 @@ Testで保証する。
 
 を確認する。
 
+Web Clientについても、
+Check In List APIと
+Check In Command APIの
+Contractを確認する。
+
 ---
 
-# 100. API Security Testing
+# 116. API Security Testing
 
 API Security Testでは、
 
@@ -2170,12 +2702,14 @@ API Security Testでは、
 - Token Abuse
 - Replay
 - Duplicate Request
+- Web Check In Authorization
+- QR Check In Authorization
 
 などを検証する。
 
 ---
 
-# 101. API Architecture and Domain Model
+# 117. API Architecture and Domain Model
 
 API Architectureは、
 Domain Modelを変更しない。
@@ -2200,7 +2734,7 @@ DTO / Mappingを利用する。
 
 ---
 
-# 102. API Architecture and Application Architecture
+# 118. API Architecture and Application Architecture
 
 Application Architecture：
 
@@ -2226,7 +2760,7 @@ Business Ruleの実装場所ではない。
 
 ---
 
-# 103. API Architecture and Data Architecture
+# 119. API Architecture and Data Architecture
 
 Data Architecture：
 
@@ -2254,7 +2788,7 @@ Database Schemaを直接公開しない。
 
 ---
 
-# 104. API Architecture and Mobile Client
+# 120. API Architecture and Mobile Client
 
 Mobile Clientでは、
 
@@ -2290,7 +2824,32 @@ Domain
 
 ---
 
-# 105. API Architecture and Accounting
+# 121. API Architecture and Web Client
+
+Web Clientでは、
+
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Search / Filter
+↓
+Ticket Selection
+↓
+Check In API
+
+という流れを利用できる。
+
+Web Clientは、
+QR Codeを必須としない。
+
+Web ClientのCheck Inも、
+Mobile ClientのQR Check Inも、
+同じCheck In Use Caseを利用する。
+
+---
+
+# 122. API Architecture and Accounting
 
 Check In APIが成功すると、
 
@@ -2305,13 +2864,14 @@ Journal Entry
 というApplication Processを
 起動できる。
 
-Mobile Clientは、
+Web Clientでも、
+Mobile Clientでも、
 Accounting APIを直接呼び出して
 Ticket Revenueを作成しない。
 
 ---
 
-# 106. API Architecture and History
+# 123. API Architecture and History
 
 Check In APIが成功すると、
 
@@ -2324,12 +2884,13 @@ Audience History
 というApplication Processを
 起動できる。
 
-Mobile Clientは、
+Web Clientでも、
+Mobile Clientでも、
 Audience Historyを直接作成しない。
 
 ---
 
-# 107. API Entry Point Consistency
+# 124. API Entry Point Consistency
 
 同じBusiness Operationについては、
 Clientが異なっても
@@ -2359,7 +2920,341 @@ Check In Use Case
 
 ---
 
-# 108. API Architecture Principle
+# 125. Web and Mobile Check In Consistency
+
+Web ClientとMobile Clientでは、
+Check Inの操作方法は異なる。
+
+Web：
+
+一覧から対象Ticketを選択する。
+
+Mobile：
+
+QR CodeをScanしてTicketを識別する。
+
+しかし、
+Check In後に生成されるBusiness Factは
+同一である。
+
+基本構造：
+
+Web Client
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+
+Mobile Client
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+
+どちらの場合も、
+
+Check In
+↓
+CheckInCompleted
+├── History
+└── Accounting
+
+という後続処理を利用する。
+
+---
+
+# 126. Web Reception Operation
+
+Web Receptionでは、
+受付担当者がBrowserから
+受付操作を行える。
+
+基本Flow：
+
+Reception User
+↓
+Authentication
+↓
+Authorization
+↓
+Performance Selection
+↓
+Reservation / Issued Ticket List
+↓
+Search / Filter
+↓
+Ticket Selection
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In Result
+
+Web Clientは、
+受付専用の画面を提供できる。
+
+ただし、
+Business Ruleは
+Application / Domainに保持する。
+
+---
+
+# 127. Mobile QR Reception Operation
+
+Mobile QR Receptionでは、
+受付担当者がSmartphoneから
+QR受付を行える。
+
+基本Flow：
+
+Reception User
+↓
+Authentication
+↓
+Authorization
+↓
+Performance Context
+↓
+Camera
+↓
+QR Scanner
+↓
+Ticket Identifier
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In Result
+
+Web Receptionと同じ
+Check In Business Ruleを利用する。
+
+---
+
+# 128. Check In Result Consistency
+
+Web ClientとMobile Clientで、
+同じTicketを操作した場合、
+Server SideのBusiness Factを正本とする。
+
+例えば、
+
+Web Client
+→ Ticket XをCheck In
+
+その直後に、
+
+Mobile Client
+→ Ticket XをScan
+
+した場合、
+
+Mobile Clientには
+「Already Checked In」
+
+などのResultを返す。
+
+逆の場合も同様とする。
+
+Client側の表示Stateだけで、
+Check In済みかどうかを判断しない。
+
+---
+
+# 129. API and Accounting Timing
+
+Check In APIが成功し、
+CheckInCompletedが確定した後、
+
+Ticket Revenue
+↓
+Journal Entry
+
+へのAccounting Processを実行する。
+
+Accountingの具体的なTiming、
+Transaction、
+Journal Entry Ruleは、
+Accounting Architecture / Implementation Specificationで定義する。
+
+APIは、
+Accounting内部のData Structureを
+直接操作しない。
+
+---
+
+# 130. API and History Timing
+
+Check In APIが成功し、
+CheckInCompletedが確定した後、
+
+Audience History
+
+へのProcessを実行する。
+
+Historyの具体的なData Structureは、
+Data Architecture / Domain Modelで定義する。
+
+APIは、
+History内部のData Structureを
+直接操作しない。
+
+---
+
+# 131. API Architecture and PHP Server
+
+StageArt ServerをPHPで実装する場合、
+Web ClientとMobile Clientの双方から
+同じPHP APIを利用できる。
+
+基本構造：
+
+Web Client
+↓
+HTTPS
+↓
+PHP API
+↓
+Application
+↓
+Domain
+↓
+Repository
+↓
+Database
+
+Mobile Client
+↓
+HTTPS
+↓
+PHP API
+↓
+Application
+↓
+Domain
+↓
+Repository
+↓
+Database
+
+Clientごとに、
+別のBusiness RuleをPHP側へ実装しない。
+
+---
+
+# 132. API Architecture and WordPress
+
+StageArtをWordPress Pluginとして実装する場合でも、
+Web ClientとMobile Clientは、
+StageArt API Boundaryを利用する。
+
+基本構造：
+
+Web Client
+↓
+WordPress / StageArt API
+↓
+Application
+↓
+Domain
+
+Mobile Client
+↓
+WordPress / StageArt API
+↓
+Application
+↓
+Domain
+
+WordPressのREST APIや
+Authentication機能は、
+Infrastructureとして利用できる。
+
+---
+
+# 133. API Architecture and Accounting
+
+Check In APIが成功すると、
+
+CheckInCompleted
+↓
+Accounting Process
+↓
+Ticket Revenue
+↓
+Journal Entry
+
+というApplication Processを
+起動できる。
+
+Mobile Clientは、
+Accounting APIを直接呼び出して
+Ticket Revenueを作成しない。
+
+Web Clientも同様に、
+Accounting APIを直接呼び出して
+Ticket Revenueを作成しない。
+
+---
+
+# 134. API Architecture and History
+
+Check In APIが成功すると、
+
+CheckInCompleted
+↓
+History Process
+↓
+Audience History
+
+というApplication Processを
+起動できる。
+
+Mobile Clientは、
+Audience Historyを直接作成しない。
+
+Web Clientも同様に、
+Audience Historyを直接作成しない。
+
+---
+
+# 135. API Entry Point Consistency
+
+同じBusiness Operationについては、
+Clientが異なっても
+同じApplication Use Caseを利用する。
+
+例えば、
+
+Web Client
+↓
+Check In API
+↓
+Check In Use Case
+
+Mobile Client
+↓
+Check In API
+↓
+Check In Use Case
+
+Administrative Client
+↓
+Check In API
+↓
+Check In Use Case
+
+とする。
+
+---
+
+# 136. API Architecture Principle
 
 StageArt APIの最重要原則：
 
@@ -2378,35 +3273,53 @@ Domain
 
 という構造を維持する。
 
-さらにQR受付では、
+Check Inについては、
+WebとMobileで入口が異なっても、
+API以下を共通化する。
 
-Camera
+Web：
+
+Performance
+↓
+Reservation / Issued Ticket List
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+
+Mobile：
+
+Performance Context
 ↓
 QR Scanner
 ↓
 Check In API
 ↓
-Application
+Check In Use Case
 ↓
-Domain
-↓
+Check In
+
+さらに、
+
 Check In
 ↓
 CheckInCompleted
 ├── History
 └── Accounting
 
-という構造を維持する。
+というBusiness Flowを共通化する。
 
 これにより、
 
-Web Client、
-Mobile Client、
-QR Scanner、
-PHP Server、
-WordPress、
-Database、
-External Service
+- Web Client
+- Mobile Client
+- QR Scanner
+- PHP Server
+- WordPress
+- Database
+- External Service
 
 が変更されても、
 StageArtのBusiness Ruleと
