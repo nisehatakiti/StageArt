@@ -2,20 +2,23 @@
 
 # Domain Model : QR Ticket
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
 QR Ticketは、
-Reservationから生成される
+Issued Ticketから生成される
 電子チケットArtifactである。
 
 QR Ticketは予約そのものを表すFactではない。
 
-Reservationが正本であり、
-QR TicketはReservationを識別し、
+Reservationが予約に関する正本であり、
+Issued Ticketが実際に発行されたチケットを表す。
+
+QR Ticketは、
+Issued Ticketを識別し、
 公演当日の受付を簡単に行うために生成される。
 
 ---
@@ -30,25 +33,36 @@ Performance
   ↓
 Reservation
   ↓
+Issued Ticket
+  ↓
 QR Ticket
   ↓
 Check In
+  ↓
+CheckInCompleted
 
 QR Ticketは、
-Reservationから生成されるArtifactとして扱う。
+Issued Ticketから生成されるArtifactとして扱う。
 
 ---
 
 # Relationship
 
-QR Ticketは一つのReservationに関連付けられる。
+QR Ticketは一つのIssued Ticketに関連付けられる。
+
+基本構造：
 
 Reservation
   ↓
+Issued Ticket
+  ↓
 QR Ticket
 
-一つのReservationに対して、
+一つのIssued Ticketに対して、
 基本的に一つの有効なQR Ticketを発行する。
+
+QR Ticketを再発行した場合でも、
+ReservationやIssued Ticketそのものを新しく作成しない。
 
 ---
 
@@ -57,36 +71,65 @@ QR Ticket
 Reservationは、
 予約に関する唯一の正本である。
 
-QR Ticketには、
-Reservationの情報を複製して
-予約情報そのものを管理しない。
+Issued Ticketは、
+Reservationに基づいて発行された
+実際のチケットを表す。
+
+QR Ticketは、
+予約情報やチケット情報そのものを
+正本として管理しない。
 
 例えば、
 
 - Booker
 - Performance
-- Ticket Type
+- Ticket
 - Guest Count
 - Reservation Status
 
-などの正本はReservation側に存在する。
+などの正本は、
+ReservationまたはTicket側に存在する。
 
 QR Ticketは、
-Reservationを参照するための
+Issued Ticketを経由して
+対象Reservationを特定するための
 識別情報を保持する。
+
+---
+
+# Issued Ticket
+
+Issued Ticketは、
+Reservationに基づいて発行された
+実際のチケットを表す。
+
+基本構造：
+
+Reservation
+  ↓
+Issued Ticket
+
+Issued Ticketは、
+受付に利用できるチケットとして扱う。
+
+QR Ticketは、
+Issued Ticketをデジタルに提示するための
+Artifactである。
 
 ---
 
 # QR Code
 
 QR Codeは、
-受付時にReservationを識別するために利用する。
+受付時にIssued Ticketおよび
+関連するReservationを識別するために利用する。
 
 QR Codeそのものを
 ReservationのPrimary Keyとして扱わない。
 
 QR Codeから、
-StageArt上のReservationを特定できる。
+StageArt上のIssued Ticketおよび
+関連Reservationを特定できる。
 
 ---
 
@@ -100,7 +143,7 @@ QR Codeへ、
 
 例えば、
 
-- Reservation ID
+- Issued Ticket ID
 - Ticket Token
 - Verification Token
 
@@ -117,7 +160,7 @@ QR Ticketには、
 必要に応じて一意のTicket Tokenを持たせる。
 
 Tokenは、
-QR CodeからReservationを安全に識別するために利用できる。
+QR CodeからIssued Ticketを安全に識別するために利用できる。
 
 Tokenへ
 個人情報を直接埋め込まない。
@@ -133,7 +176,7 @@ QR Payloadに個人情報を直接含めない。
 
 受付時には、
 QR Codeから取得した識別情報を利用して
-StageArt側のReservationを検証する。
+StageArt側のIssued TicketおよびReservationを検証する。
 
 ---
 
@@ -143,10 +186,11 @@ QR Ticketを読み取った場合、
 StageArtは以下を検証する。
 
 - QR Ticketが有効であること
+- Issued Ticketが存在すること
 - Reservationが存在すること
 - ReservationがCANCELLEDではないこと
 - 対象Performanceが一致すること
-- 既にCheck Inされていないこと
+- ReservationがまだCheck Inされていないこと
 
 すべての条件を満たした場合、
 Check Inを実行できる。
@@ -188,14 +232,23 @@ Check Inの正本はReservationである。
 
 QR Ticket Scan
   ↓
+Issued Ticket取得
+  ↓
 Reservation取得
   ↓
 Reservation Validation
+  ↓
+Performance Validation
   ↓
 Reservation Check In
   ↓
 Reservation Status
   = CHECKED_IN
+  ↓
+CheckInCompleted
+
+QR Ticketは、
+Check Inを実行するための識別・認証手段である。
 
 ---
 
@@ -214,18 +267,27 @@ Reservation Status
 QR Ticketを再発行することで、
 Check In状態をリセットしてはならない。
 
+また、
+同一CheckInCompletedから
+チケット売上の会計仕訳を
+二重生成してはならない。
+
 ---
 
 # Cancelled Reservation
 
 CANCELLED状態のReservationに
-紐付いたQR Ticketは利用できない。
+紐付いたIssued TicketおよびQR Ticketは
+Check Inに利用できない。
 
 QR Ticketを読み取った場合、
 
 「この予約はキャンセルされています」
 
 などの状態を表示できる。
+
+QR Ticketを無効化しても、
+Reservationそのものを削除しない。
 
 ---
 
@@ -237,7 +299,8 @@ QR Ticketを読み取った場合、
 ただし、
 QR Ticket自体を削除する必要はない。
 
-過去のReservationと
+過去のReservation、
+Issued Ticket、
 受付履歴を確認するために保持する。
 
 ---
@@ -257,6 +320,10 @@ QR Ticketを再発行できる構造を持つ。
 再発行しても、
 Reservationそのものは新しく作成しない。
 
+Issued Ticketについても、
+再発行だけを理由として
+新しいIssued Ticketを作成しない。
+
 ---
 
 # Reissue and Check In
@@ -268,7 +335,7 @@ ReservationのCheck In状態を変更しない。
 
 旧QR Ticket
   ↓
-未使用
+無効
 
 新QR Ticket
   ↓
@@ -300,9 +367,9 @@ QR Ticketを無効化できる構造を持つ。
 
 など。
 
-ただし、
-QR Ticketを無効化しても
-Reservationそのものを削除しない。
+QR Ticketを無効化しても、
+Issued TicketやReservationそのものを
+削除しない。
 
 ---
 
@@ -322,12 +389,16 @@ QR Ticket Version 2
 どのQR Ticketが現在有効かを
 管理できる。
 
+Version管理を行う場合でも、
+ReservationおよびIssued Ticketの
+Identityは変更しない。
+
 ---
 
 # Guest Count
 
 QR Ticketは、
-Reservation全体を識別する。
+Issued Ticketおよび関連するReservation全体を識別する。
 
 ReservationのGuest Countが複数であっても、
 Version 1.0では
@@ -341,6 +412,9 @@ Guest Count
 の場合でも、
 
 Reservation
+  = 1件
+
+Issued Ticket
   = 1件
 
 QR Ticket
@@ -357,6 +431,9 @@ QR Ticket Domainでは管理しない。
 
 同行者を個別Personとして
 QR Ticketへ紐付けない。
+
+複数名の来場については、
+ReservationのGuest Countを利用する。
 
 ---
 
@@ -376,8 +453,13 @@ QR Ticketには、
 
 など。
 
-これらはReservationなどの
+これらはReservation、
+Ticket、
+Performanceなどの
 正本情報から表示する。
+
+QR Ticket内に、
+これらの情報を正本として複製しない。
 
 ---
 
@@ -389,6 +471,9 @@ Reservation Numberを表示できる。
 QR Codeが利用できない場合でも、
 Reservation Numberを利用して
 受付を行える。
+
+Reservation Numberは、
+Reservation Domainが正本として管理する。
 
 ---
 
@@ -417,6 +502,8 @@ QR Check In：
 
 QR Ticket
   ↓
+Issued Ticket
+  ↓
 Reservation
   ↓
 Check In
@@ -430,6 +517,10 @@ Check In
 どちらも、
 同じReservation Statusを更新する。
 
+どちらの場合も、
+Check In完了時に
+CheckInCompletedを発行する。
+
 ---
 
 # Audience History
@@ -438,20 +529,91 @@ QR Ticketを発行しただけでは、
 観劇履歴を生成しない。
 
 実際にCheck Inされた場合に、
-ReservationCheckedInを契機として
+CheckInCompletedを契機として
 History Domainが観劇履歴を生成する。
 
 基本Flow：
 
 QR Ticket
   ↓
+Issued Ticket
+  ↓
 Reservation
   ↓
 Check In
   ↓
-ReservationCheckedIn
+CheckInCompleted
   ↓
 History
+  ↓
+Audience History
+
+---
+
+# Accounting
+
+QR Ticketを発行しただけでは、
+チケット売上を会計へ計上しない。
+
+実際にCheck Inされた場合に、
+CheckInCompletedを契機として
+Accounting Domainへ連携する。
+
+基本Flow：
+
+QR Ticket
+  ↓
+Issued Ticket
+  ↓
+Reservation
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Journal Entry
+
+QR Ticket Domain自身は、
+Journal Entryを管理しない。
+
+Ticket Revenueおよび
+Journal Entryの詳細は、
+Accounting Domainで管理する。
+
+---
+
+# Revenue Amount
+
+Ticket Revenueに利用する金額は、
+Reservationに保持された
+予約時点の取引価格を利用する。
+
+Ticketの現在価格を参照して、
+過去のReservationの売上金額を
+再計算してはならない。
+
+例えば、
+
+Ticket
+  一般 3,000円
+
+予約後に、
+
+Ticket
+  一般 3,500円
+
+へ変更された場合でも、
+
+Check Inされた既存Reservationの売上
+  = 3,000円
+
+とする。
+
+QR Ticketは、
+この金額を独自に保持するのではなく、
+Reservationの取引Factを参照する。
 
 ---
 
@@ -488,6 +650,7 @@ QR TicketはArtifactである。
 Fact：
 
 - Reservation
+- Issued Ticket
 - Check In
 
 Artifact：
@@ -498,7 +661,7 @@ Artifact：
 ArtifactはFactから生成される。
 
 QR Ticketを削除・再生成しても、
-Reservation Factは変更しない。
+ReservationおよびIssued TicketのFactは変更しない。
 
 ---
 
@@ -519,14 +682,15 @@ QR Ticketには、
 
 # Business Rules
 
-- QR TicketはReservationから生成されるArtifactである。
-- Reservationが正本である。
+- QR TicketはIssued Ticketから生成されるArtifactである。
+- Reservationが予約Factの正本である。
+- Issued TicketはReservationに基づいて発行される。
 - QR Ticketは予約Factそのものではない。
-- QR Ticketは一つのReservationに関連付ける。
-- QR CodeからReservationを識別できる。
+- QR Ticketは一つのIssued Ticketに関連付ける。
+- QR CodeからIssued TicketおよびReservationを識別できる。
 - QR Codeへ個人情報を直接格納しない。
 - QR Payloadは必要最小限とする。
-- QR TicketによるCheck InではReservationを検証する。
+- QR TicketによるCheck InではIssued TicketとReservationを検証する。
 - 対象Performanceが一致しない場合はCheck Inできない。
 - CANCELLEDのReservationはCheck Inできない。
 - CHECKED_INのReservationを二重Check Inしない。
@@ -535,13 +699,18 @@ QR Ticketには、
 - CompanionをQR Ticketへ紐付けない。
 - QR Ticketを利用できない場合はReservation Number等によるManual Check Inを許可する。
 - QR Check InとManual Check Inは同じReservation Check Inとして扱う。
+- どちらのCheck In方法でもCheckInCompletedを発行する。
 - QR Ticket発行だけではHistoryを生成しない。
-- Check InされたReservationを契機としてHistoryを生成する。
+- CheckInCompletedを契機としてHistory DomainがAudience Historyを生成する。
+- QR Ticket発行だけではTicket Revenueを会計計上しない。
+- CheckInCompletedを契機としてAccounting DomainへTicket Revenueを連携する。
+- Ticket Revenueの金額はReservationのPrice Snapshotを基礎とする。
+- QR Ticket DomainはJournal Entryを管理しない。
 - QR Ticketはスマートフォン表示を前提とする。
 - QR Ticketは一般公開しない。
 - QR Ticketは原則として物理削除しない。
 - QR Ticketには監査情報を保持する。
-- QR Ticketの無効化はReservationの削除を意味しない。
+- QR Ticketの無効化はReservationやIssued Ticketの削除を意味しない。
 
 ---
 
@@ -553,8 +722,16 @@ QR Ticketに関する主なDomain Event：
 - QRTicketReissued
 - QRTicketRevoked
 
-Check Inに関するEventは
-Reservation Domainで管理する。
+Check Inに関するEventは、
+CheckIn / Reservation Domainで管理する。
+
+Check In完了時に発生するEvent：
+
+- CheckInCompleted
+
+CheckInCompletedは、
+History Domainおよび
+Accounting Domainが利用できる。
 
 QR Ticketの発行・再発行・無効化は、
 Reservationの状態を直接変更しない。
@@ -564,9 +741,20 @@ Reservationの状態を直接変更しない。
 # Design Decisions
 
 QR Ticketは、
-Reservationから生成されるArtifactとして扱う。
+Issued Ticketから生成されるArtifactとして扱う。
 
-ReservationとQR Ticketを分離することで、
+Reservationは、
+予約に関する正本である。
+
+Issued Ticketは、
+Reservationに基づいて発行された
+実際のチケットを表す。
+
+QR Ticketは、
+Issued Ticketをデジタルに提示するための
+Artifactとして扱う。
+
+この構造により、
 
 - QR Ticketの再発行
 - QR Ticketの無効化
@@ -574,7 +762,8 @@ ReservationとQR Ticketを分離することで、
 - QR Ticketの再送
 
 などが発生しても、
-予約Factを変更せずに対応できる。
+ReservationおよびIssued TicketのFactを
+変更せずに対応できる。
 
 Check Inの正本はReservationであり、
 QR TicketはCheck Inを行うための
@@ -583,6 +772,19 @@ QR TicketはCheck Inを行うための
 QR Check InとManual Check Inを
 同じReservation Check Inとして扱うことで、
 受付方法によってDomain Factが分裂することを防ぐ。
+
+Check Inが完了すると、
+CheckInCompletedが発生する。
+
+CheckInCompletedを契機として、
+
+- Audience History
+- Ticket Revenue
+
+をそれぞれのDomainへ連携する。
+
+QR Ticket Domainは、
+HistoryやJournal Entryを直接生成・更新しない。
 
 ---
 
@@ -607,22 +809,36 @@ QR Check InとManual Check Inを
 将来機能を追加する場合も、
 Reservationを予約Factの正本とする。
 
+Issued Ticketを、
+実際に発行されたチケットの正本として扱う。
+
+QR Ticketは、
+引き続き受付用Artifactとして扱う。
+
 ---
 
 # Design Principles
 
 - QR TicketはArtifactである。
-- Reservationが正本である。
-- QR TicketからReservationを識別する。
+- Reservationが予約Factの正本である。
+- Issued Ticketは発行済みチケットを表す。
+- QR TicketはIssued Ticketに関連付ける。
+- QR TicketからIssued TicketおよびReservationを識別する。
 - QR Codeへ個人情報を直接格納しない。
 - QR TicketとReservationを分離する。
 - QR Check InとManual Check Inを同じReservation Check Inとして扱う。
 - Check Inの正本はReservationである。
+- CheckInCompletedはCheck In完了を表すBusiness Eventである。
 - QR Ticketの再発行でReservationの状態を変更しない。
+- QR Ticketの再発行でIssued Ticketを新規作成しない。
 - QR Ticket発行だけでは観劇履歴を生成しない。
-- ReservationCheckedInを契機としてHistoryを生成する。
+- CheckInCompletedからAudience Historyを生成する。
+- QR Ticket発行だけではTicket Revenueを会計計上しない。
+- CheckInCompletedからTicket RevenueをAccountingへ連携する。
+- Ticket RevenueはReservationのPrice Snapshotを基礎とする。
 - Guest CountとQR Ticketを1対1で対応させない。
 - CompanionをQR Ticket Domainへ導入しない。
 - SeatはVersion 1.0では実装しない。
-- QR Ticketはスマートフォン利用を前提とする。
+- QR Ticketはスマートフォン表示を前提とする。
+- QR Ticketは一般公開しない。
 - Blueprintを唯一の設計基準とする。
