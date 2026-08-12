@@ -2,7 +2,7 @@
 
 # Domain Model : Project
 
-Version : 2.0
+Version : 2.1
 
 ---
 
@@ -278,8 +278,19 @@ Rehearsal
 
 RehearsalはProjectに直接所属するものとして管理しない。
 
-Rehearsal Candidateを経由して作成する場合と、
-直接作成する場合の両方に対応する。
+Rehearsalは、
+稽古予定から実施完了までを一つのEntityとして管理する。
+
+稽古予定と確定稽古を、
+別Entityとして管理しない。
+
+RehearsalのLifecycleはStatusによって管理する。
+
+Rehearsalの参加予定者および実際の出欠は、
+RehearsalAttendanceによって管理する。
+
+RehearsalがCONFIRMEDやACTIVEへ変更されても、
+RehearsalAttendanceを別Entityへ移行したり削除したりしない。
 
 Rehearsalの詳細はRehearsal Domainで定義する。
 
@@ -337,6 +348,45 @@ ProjectはReservationを直接管理しない。
 
 ---
 
+# Project and Ticket
+
+TicketはProductionまたはPerformanceに関連する
+チケット情報を表す。
+
+基本構造：
+
+Project
+  ↓
+Production
+  ↓
+Ticket
+
+Performance単位で販売条件などを管理する場合は、
+Performanceとの関連を持つ。
+
+ProjectはTicketを直接管理しない。
+
+---
+
+# Project and Timetable
+
+TimetableはProductionにおける
+活動予定を表す。
+
+基本構造：
+
+Project
+  ↓
+Production
+  ↓
+Timetable
+
+ProjectはTimetableを直接管理しない。
+
+Timetableの詳細はTimetable Domainで定義する。
+
+---
+
 # Project and Accounting
 
 Organizationの会計は、
@@ -364,6 +414,10 @@ Project
 Production
   ├── Budget
   └── Production Actual
+
+ProjectがJournal EntryやAccountを直接管理することはしない。
+
+AccountはAccounting Domainにおける会計科目として管理する。
 
 ---
 
@@ -431,6 +485,9 @@ Projectに関連する主要な活動が終了した状態。
 
 などの処理を行うことができる。
 
+ProjectがClosedになっても、
+Productionや関連Factを削除してはならない。
+
 ---
 
 # Archived
@@ -450,6 +507,16 @@ Projectは、
 
 ProjectをClosedまたはArchivedにしても、
 過去のProductionやHistoryなどのFactを削除してはならない。
+
+ProjectのLifecycleとProductionのLifecycleは、
+別々のDomainとして管理する。
+
+ProductionがCompletedになったことと、
+ProjectがClosedになることは同一ではない。
+
+一つのProjectに複数Productionが存在する場合、
+すべてのProductionの状態を考慮して
+ProjectのLifecycleを管理する。
 
 ---
 
@@ -500,6 +567,209 @@ Productionを通じてOrganization Scopeに属する。
 
 ---
 
+# Authorization
+
+ProjectはOrganization Scopeに属する。
+
+Projectへのアクセスは、
+Projectが所属するOrganizationに対する
+Authorizationによって制御する。
+
+基本構造：
+
+Person
+  ↓
+Membership
+  ↓
+Organization
+  ↓
+Project
+
+Membershipに関連付けられたRoleによって、
+Projectに対するPermissionを判定する。
+
+Production Scopeの権限は、
+Projectそのものの権限とは分離する。
+
+Productionに対する権限は、
+ProductionDelegateまたはPrimaryManagerによって判定する。
+
+---
+
+# Production Scope
+
+Projectに所属するProductionは、
+Production ScopeのResourceである。
+
+基本構造：
+
+Organization
+  ↓
+Project
+  ↓
+Production
+
+Productionに対する権限は、
+Production ScopeのAuthorizationによって管理する。
+
+ProjectのOrganization Scope権限を持つことだけで、
+Productionの管理権限を自動的に付与するとは限らない。
+
+Productionに対する具体的な権限は、
+Production DomainおよびAuthorization Domainで定義する。
+
+---
+
+# Production Delegate
+
+ProductionDelegateは、
+Production ScopeにおいてPersonへRoleを適用する関係である。
+
+ProjectはProductionDelegateを直接管理しない。
+
+基本構造：
+
+Project
+  ↓
+Production
+  ↓
+ProductionDelegate
+  ├── Person
+  └── Role
+
+ProductionDelegateの詳細はProduction Domainで定義する。
+
+Projectは、
+Productionの管理権限そのものを定義しない。
+
+---
+
+# Project and Production Lifecycle
+
+ProjectとProductionは、
+それぞれ独立したLifecycleを持つ。
+
+Project：
+
+DRAFT
+  ↓
+ACTIVE
+  ↓
+CLOSED
+  ↓
+ARCHIVED
+
+Production：
+
+DRAFT
+  ↓
+PLANNING
+  ↓
+ACTIVE
+  ↓
+COMPLETED
+  ↓
+ARCHIVED
+
+ProjectのLifecycle変更によって、
+ProductionのStatusを自動的に同じ値へ変更することはしない。
+
+ProductionのLifecycle変更によって、
+ProjectのStatusを自動的に同じ値へ変更することもしない。
+
+ただし、
+Project Lifecycle Ruleによって
+関連Productionの状態を考慮することができる。
+
+---
+
+# Rehearsal Relationship
+
+ProjectはRehearsalを直接管理しない。
+
+基本構造：
+
+Project
+  ↓
+Production
+  ↓
+Rehearsal
+  ↓
+RehearsalAttendance
+  ↓
+Person
+
+RehearsalはProductionに属する。
+
+Rehearsalの予定・確定・実施は、
+Rehearsal自身のStatus変更によって管理する。
+
+RehearsalAttendanceは、
+RehearsalのLifecycleを通じて保持する。
+
+---
+
+# External Calendar
+
+Projectに関連するProductionの予定を、
+Google Calendarなどの外部Calendarへ連携できる。
+
+External CalendarへのAPI操作は、
+Infrastructure Layerが担当する。
+
+Project Domainは、
+特定CalendarサービスのAPIへ直接依存しない。
+
+StageArt側のProductionおよびRehearsalを
+正本として扱う。
+
+External Calendar Eventは、
+外部Artifactとして扱う。
+
+---
+
+# Document
+
+Projectに関連するDocumentを管理できる。
+
+Documentの実ファイルは、
+Google Driveなどの外部ストレージで管理できる。
+
+Projectに関連するDocumentと、
+Productionに関連するDocumentを区別できる。
+
+基本構造：
+
+Project
+  ↓
+Document
+
+Production
+  ↓
+Document
+
+Document Domainの詳細は、
+Document Domainで定義する。
+
+---
+
+# Audit Information
+
+Projectの重要な管理操作について、
+監査情報を記録できるようにする。
+
+基本的な監査情報：
+
+- CreatedBy
+- CreatedAt
+- UpdatedBy
+- UpdatedAt
+
+Lifecycle変更についても、
+必要に応じて監査情報を保持する。
+
+---
+
 # Business Rules
 
 - ProjectはOrganizationに所属する。
@@ -515,13 +785,27 @@ Productionを通じてOrganization Scopeに属する。
 - RehearsalはProduction単位で管理する。
 - ParticipantはProduction単位で管理する。
 - PerformanceはProduction単位で管理する。
+- TicketはProductionまたはPerformanceに関連して管理する。
 - ReservationはPerformance単位で管理する。
+- TimetableはProduction単位で管理する。
 - Organization AccountingはOrganization単位で管理する。
 - Project単位でAccountingを管理しない。
+- ProjectにJournal EntryやAccountを直接持たせない。
 - Projectに関連するProductionやFactからHistoryを生成・参照できる。
 - Projectは原則として物理削除しない。
 - 過去のProjectは履歴として保持する。
 - ProjectはOrganization Scopeに属する。
+- ProjectとProductionは独立したLifecycleを持つ。
+- ProjectのLifecycleとProductionのLifecycleを同一視しない。
+- RehearsalはProductionに所属する。
+- Rehearsalは一つのEntityとしてLifecycleを管理する。
+- 稽古予定と確定稽古を別Entityとして管理しない。
+- RehearsalのLifecycleはStatusで管理する。
+- RehearsalAttendanceはRehearsalのLifecycleを通じて保持する。
+- ProjectはRehearsalAttendanceを直接管理しない。
+- ProductionDelegateはProductionに所属する。
+- ProjectはProductionDelegateを直接管理しない。
+- Production Scopeの権限とProjectのOrganization Scope権限を分離する。
 
 ---
 
@@ -537,6 +821,10 @@ Projectに関する主なDomain Event：
 
 Project生成時にProductionを同時生成する場合は、
 Production DomainのEventを別途発生させる。
+
+ProjectのLifecycle変更によって、
+関連するProductionのLifecycleを自動的に変更する場合は、
+各DomainのBusiness Ruleに従ってEventを発生させる。
 
 ---
 
@@ -572,6 +860,7 @@ ProjectとProductionの両方で重複管理しない。
 - Reservation
 - Budget
 - Actual
+- Timetable
 
 などはProductionを中心に管理する。
 
@@ -579,6 +868,17 @@ Organization AccountingはProjectから分離する。
 
 Projectは履歴を保持するために永続化し、
 過去の制作情報を失わない。
+
+RehearsalはProductionに所属し、
+Rehearsal自身のStatusによってLifecycleを管理する。
+
+RehearsalAttendanceは、
+RehearsalのLifecycle全体を通じて保持する。
+
+稽古予定と確定稽古を別Domainとして扱わない。
+
+Production ScopeのAuthorizationは、
+ProjectのOrganization Scope Authorizationとは分離する。
 
 ---
 
@@ -614,10 +914,19 @@ Production固有のDomainをProjectへ移動させることはしない。
 - RehearsalはProduction単位で管理する。
 - ParticipantはProduction単位で管理する。
 - PerformanceはProduction単位で管理する。
+- TicketはProductionまたはPerformanceに関連して管理する。
 - ReservationはPerformance単位で管理する。
+- TimetableはProduction単位で管理する。
 - Organization AccountingはOrganization単位で管理する。
 - ProjectにAccountingを直接持たせない。
+- ProjectにJournal EntryやAccountを直接持たせない。
 - Projectに関連するFactからHistoryを生成・参照する。
 - Projectは過去の制作履歴として保持する。
 - ProjectはOrganization Scopeに属する。
+- ProjectとProductionのLifecycleを分離する。
+- Rehearsalは一つのEntityとしてLifecycleを管理する。
+- 稽古予定と確定稽古を別Entityとして管理しない。
+- RehearsalAttendanceはLifecycleを通じて保持する。
+- ProductionDelegateはProduction Scopeで管理する。
+- ProjectはProduction Scopeの権限を直接定義しない。
 - Blueprintを唯一の設計基準とする。
