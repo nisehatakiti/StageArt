@@ -2,7 +2,7 @@
 
 # DomainMap
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -54,30 +54,109 @@ Productionを通じてOrganization Scopeに属する。
 
 ---
 
-# 2. Identity Structure
+# 2. Authentication / Business Identity Structure
 
 StageArtでは、
-認証IdentityとBusiness Identityを分離する。
+Authentication IdentityとBusiness Identityを分離する。
 
 基本構造：
 
-Account
+UserAccount
 ↓
 Person
 
-AccountはStageArtへの認証Identityを表す。
+UserAccountは、
+StageArtへのAuthentication Identityを表す。
 
-PersonはStageArt上の個人Identityを表す。
+Personは、
+StageArt上のBusiness Identityを表す。
 
-PersonはOrganizationとは独立して存在する。
+UserAccountはPersonそのものではない。
 
-Personは複数のOrganizationに所属できる。
-
-Organizationへの所属関係はMembershipによって管理する。
+Personは、
+必ずしもUserAccountを持つ必要はない。
 
 ---
 
-# 3. Person Axis
+# 3. UserAccount
+
+UserAccountは、
+StageArtへのログイン・認証を行うIdentityを表す。
+
+UserAccountは、
+Personに関連付ける。
+
+基本構造：
+
+UserAccount
+↓
+Person
+
+UserAccountは、
+OrganizationやProductionへ直接所属しない。
+
+Organizationへの所属は、
+Personを通じてMembershipによって管理する。
+
+Productionへの参加は、
+Personを通じてParticipantによって管理する。
+
+Production Scopeの管理権限は、
+Personを通じてProductionDelegateによって管理する。
+
+UserAccount自身に、
+Organization RoleやProduction Roleを直接付与しない。
+
+---
+
+# 4. Authentication Provider
+
+UserAccountは、
+外部Authentication Providerと連携できる。
+
+例：
+
+- Google
+- Apple
+- Microsoft
+- Email / Password
+- その他Authentication Provider
+
+外部Provider固有の認証処理は、
+Infrastructure Layerが担当する。
+
+Domain Layerは、
+特定Authentication ProviderのAPIへ
+直接依存しない。
+
+---
+
+# 5. External Identity
+
+外部Authentication Provider上のIdentityは、
+UserAccountに関連付ける。
+
+基本構造：
+
+UserAccount
+↓
+External Identity
+↓
+Provider
+
+External Identityは、
+
+- Provider
+- Provider User Identifier
+
+などによって識別する。
+
+Provider固有のAPI仕様は、
+Infrastructure Layerで管理する。
+
+---
+
+# 6. Person Axis
 
 Personは、
 StageArt上の個人を表す。
@@ -105,29 +184,16 @@ ProductionDelegateを通じてRoleをAssignmentする。
 
 ---
 
-# 4. Account
-
-Accountは、
-StageArtへの認証Identityを表す。
-
-AccountはPersonそのものではない。
-
-Accountは、
-
-- Google Account
-- Email Account
-
-などの認証手段とPersonを関連付ける。
-
-認証方式や外部Identity Providerの詳細は、
-Authentication / Infrastructure Layerで管理する。
-
----
-
-# 5. Profile
+# 7. Profile
 
 Profileは、
 Person自身が作成・編集するプロフィール情報を管理する。
+
+基本構造：
+
+Person
+↓
+Profile
 
 Profileには、
 
@@ -146,7 +212,7 @@ Profileそのものには保持しない。
 
 ---
 
-# 6. Historical Activity
+# 8. Historical Activity
 
 HistoricalActivityは、
 Personの過去の活動実績を表す。
@@ -174,7 +240,7 @@ StageArt上で現在発生しているFactから生成される
 
 ---
 
-# 7. Organization Axis
+# 9. Organization Axis
 
 Organizationは、
 舞台芸術活動を行う団体を表す。
@@ -196,7 +262,7 @@ OrganizationはStageArtにおけるTenantである。
 
 ---
 
-# 8. Membership
+# 10. Membership
 
 Membershipは、
 PersonとOrganizationの所属関係を表す。
@@ -227,39 +293,34 @@ Membershipによって所属関係を表現する。
 
 ---
 
-# 9. Organization Role
+# 11. Organization Role
 
 Organization内における管理・運営上の権限は、
 Roleによって表現する。
 
 基本構造：
 
+UserAccount
+↓
 Person
 ↓
 Membership
 ↓
 Organization
 ↓
-Role Assignment
-↓
 Role
 ↓
 Permission
 
-Roleは、
+UserAccountは認証Identityであり、
+Organization Roleの主体ではない。
 
-「何ができるか」
-
-を定義する。
-
-RoleそのものはScopeを持たない。
-
-Organization ScopeでRoleをAssignmentする場合は、
-Membershipを通じて適用する。
+PersonがMembershipを通じて
+Organization ScopeのRoleを持つ。
 
 ---
 
-# 10. Role
+# 12. Role
 
 Roleは、
 Permissionのまとまりを定義する。
@@ -290,7 +351,7 @@ Role Domainで定義する。
 
 ---
 
-# 11. Role Assignment
+# 13. Role Assignment
 
 Role Assignmentは、
 RoleをPersonへ適用する関係を表す。
@@ -318,7 +379,7 @@ ProductionDelegateを通じてRoleをAssignmentする。
 
 ---
 
-# 12. Production Delegate
+# 14. Production Delegate
 
 ProductionDelegateは、
 特定Productionに対するRole Assignmentを表す。
@@ -352,7 +413,7 @@ ProductionDelegateによってScopeをProductionに限定する。
 
 ---
 
-# 13. Primary Manager
+# 15. Primary Manager
 
 Productionには、
 PrimaryManagerが存在する。
@@ -381,7 +442,7 @@ Production ScopeのRole Assignmentを表す。
 
 ---
 
-# 14. Authorization Structure
+# 16. Authorization Structure
 
 StageArtの基本Authorization構造は、
 
@@ -421,6 +482,12 @@ Role
 ↓
 Permission
 
+UserAccountは、
+Authentication IdentityとしてPersonへ接続する。
+
+UserAccount自身がAuthorizationの主体となるのではなく、
+Personを起点としてBusiness Authorizationを評価する。
+
 同じRole Definitionを、
 Organization ScopeとProduction Scopeで利用できる。
 
@@ -428,7 +495,7 @@ DelegateRoleという別のRole体系は使用しない。
 
 ---
 
-# 15. Project / Production Axis
+# 17. Project / Production Axis
 
 基本構造：
 
@@ -486,7 +553,7 @@ Productionには、
 
 ---
 
-# 16. Production Classification
+# 18. Production Classification
 
 Productionには、
 分類情報を付与できる。
@@ -539,7 +606,7 @@ Tagは必要に応じて、
 
 ---
 
-# 17. Participant Axis
+# 19. Participant Axis
 
 Participantは、
 PersonまたはOrganizationがProductionへ参加しているというFactを表す。
@@ -559,7 +626,7 @@ Productionへの参加関係を正本として管理する。
 
 ---
 
-# 18. Subject
+# 20. Subject
 
 Subjectは、
 Productionへの参加主体を表す。
@@ -577,7 +644,7 @@ Personだけでなく、
 
 ---
 
-# 19. Participant Type
+# 21. Participant Type
 
 Participant Typeは、
 Productionにおける参加区分を表す。
@@ -603,7 +670,7 @@ RoleとParticipant Typeは、
 
 ---
 
-# 20. Performance Axis
+# 22. Performance Axis
 
 Performanceは、
 Productionにおける個別の公演回を表す。
@@ -630,7 +697,7 @@ TicketやReservationは、
 
 ---
 
-# 21. Ticket Axis
+# 23. Ticket Axis
 
 Ticketは、
 Productionにおけるチケット販売・利用を管理する。
@@ -660,7 +727,7 @@ Ticket Domainで定義する。
 
 ---
 
-# 22. Reservation
+# 24. Reservation
 
 Reservationは、
 観客によるチケット予約というFactを表す。
@@ -687,7 +754,7 @@ Reservation Domainで定義する。
 
 ---
 
-# 23. Issued Ticket
+# 25. Issued Ticket
 
 Issued Ticketは、
 Reservation成立後などに発行される
@@ -701,7 +768,7 @@ QRTicketなどのArtifactをIssued Ticketから生成できる。
 
 ---
 
-# 24. CheckIn
+# 26. CheckIn
 
 CheckInは、
 公演当日の入場受付というFactを表す。
@@ -728,7 +795,7 @@ CheckInCompletedを発生させる。
 
 ---
 
-# 25. Ticket Revenue / Accounting Flow
+# 27. Ticket Revenue / Accounting Flow
 
 CheckInCompletedを契機として、
 Ticket Revenueを会計側へ連携する。
@@ -755,7 +822,7 @@ Accounting Domainの責務とする。
 
 ---
 
-# 26. Seat Axis
+# 28. Seat Axis
 
 Seatは、
 Performanceにおける座席を表す。
@@ -778,7 +845,7 @@ Seatを使用しない。
 
 ---
 
-# 27. Rehearsal Axis
+# 29. Rehearsal Axis
 
 Rehearsal関連Domainは、
 
@@ -798,7 +865,7 @@ RehearsalはCandidateを経由せず、
 
 ---
 
-# 28. Rehearsal Candidate
+# 30. Rehearsal Candidate
 
 RehearsalCandidateは、
 稽古候補日を表す。
@@ -807,7 +874,7 @@ RehearsalCandidateは、
 
 ---
 
-# 29. Rehearsal Availability
+# 31. Rehearsal Availability
 
 RehearsalAvailabilityは、
 PersonがRehearsalCandidateに対して回答した
@@ -817,7 +884,7 @@ PersonがRehearsalCandidateに対して回答した
 
 ---
 
-# 30. Rehearsal
+# 32. Rehearsal
 
 Rehearsalは、
 確定した稽古・予定を表す。
@@ -829,7 +896,7 @@ Candidateから生成する場合と、
 
 ---
 
-# 31. Rehearsal Attendance
+# 33. Rehearsal Attendance
 
 RehearsalAttendanceは、
 確定したRehearsalへの参加状況を表す。
@@ -839,7 +906,7 @@ RehearsalCandidateへの日程調整回答とは、
 
 ---
 
-# 32. Timetable
+# 34. Timetable
 
 Timetableは、
 Productionにおける日別進行・予定を管理する。
@@ -861,14 +928,14 @@ Production Activityと関連する。
 
 ---
 
-# 33. Timetable Item
+# 35. Timetable Item
 
 Timetable Itemは、
 Timetable内の個別項目を表す。
 
 ---
 
-# 34. Budget / Actual / Accounting
+# 36. Budget / Actual / Accounting
 
 BudgetとAccountingは、
 異なる目的を持つ。
@@ -891,7 +958,7 @@ Production
 
 ---
 
-# 35. Budget
+# 37. Budget
 
 Budgetは、
 Productionの予算案を表す。
@@ -910,14 +977,14 @@ Budgetには、
 
 ---
 
-# 36. Budget Item
+# 38. Budget Item
 
 Budget Itemは、
 Budget内の個別費目を表す。
 
 ---
 
-# 37. Production Actual
+# 39. Production Actual
 
 Production Actualは、
 Productionにおける実績金額を表す。
@@ -930,7 +997,7 @@ Journal Entryとは異なる概念である。
 
 ---
 
-# 38. Budget vs Actual
+# 40. Budget vs Actual
 
 Budget vs Actualは、
 Productionの計画と実績を比較する。
@@ -943,7 +1010,7 @@ Productionの計画と実績を比較する。
 
 ---
 
-# 39. Production Settlement
+# 41. Production Settlement
 
 Production Settlementは、
 Production単位の最終的な収支を確定するために利用する。
@@ -957,7 +1024,7 @@ Organization Accountingそのものではない。
 
 ---
 
-# 40. Accounting Axis
+# 42. Accounting Axis
 
 Accountingは、
 Organization単位で管理する。
@@ -971,6 +1038,22 @@ Accounting Period
 Journal Entry
 ↓
 Journal Entry Line
+
+Accountは、
+Organizationに所属する会計上の勘定科目を表す。
+
+基本構造：
+
+Organization
+↓
+Account
+↓
+Journal Entry Line
+
+AccountingにおけるAccountは、
+Authentication Identityではない。
+
+UserAccountとは完全に別のDomainである。
 
 主なDomain：
 
@@ -987,21 +1070,36 @@ Production単位のBudgetおよびActualとは、
 
 ---
 
-# 41. Accounting Period
+# 43. Accounting Period
 
 Accounting Periodは、
 Organizationにおける会計期間を表す。
 
 ---
 
-# 42. Account
+# 44. Account
 
 Accountは、
 会計上の勘定科目を表す。
 
+AccountはOrganizationに所属する。
+
+Accountは、
+
+- 資産
+- 負債
+- 純資産
+- 収益
+- 費用
+
+などの会計上の分類に利用する。
+
+AccountとUserAccountは、
+完全に異なるDomainである。
+
 ---
 
-# 43. Journal Entry
+# 45. Journal Entry
 
 Journal Entryは、
 会計上の仕訳を表す。
@@ -1017,14 +1115,17 @@ Accounting DomainがJournal Entryへ反映する。
 
 ---
 
-# 44. Journal Entry Line
+# 46. Journal Entry Line
 
 Journal Entry Lineは、
 Journal Entryを構成する借方・貸方の明細を表す。
 
+Journal Entry Lineは、
+必要に応じてAccountを参照する。
+
 ---
 
-# 45. Equipment
+# 47. Equipment
 
 Equipmentは、
 Organizationが保有・管理する備品を表す。
@@ -1049,7 +1150,7 @@ Equipmentの取得価格、
 
 ---
 
-# 46. Equipment History
+# 48. Equipment History
 
 Equipmentの移動・状態変更などの履歴を管理する。
 
@@ -1058,7 +1159,7 @@ Equipmentの管理履歴を表す。
 
 ---
 
-# 47. Regulation
+# 49. Regulation
 
 Regulationは、
 Organizationの規約を表す。
@@ -1076,7 +1177,7 @@ Regulation Version
 
 ---
 
-# 48. Document
+# 50. Document
 
 Documentは、
 Organization、Project、Productionなどに関連する
@@ -1110,7 +1211,7 @@ StageArtの正本として保持することを前提としない。
 
 ---
 
-# 49. Announcement
+# 51. Announcement
 
 Announcementは、
 OrganizationまたはProductionの関係者へ送信する
@@ -1136,7 +1237,7 @@ Announcement作成には、
 
 ---
 
-# 50. Survey
+# 52. Survey
 
 Surveyは、
 OrganizationまたはProductionの関係者から
@@ -1160,7 +1261,7 @@ Survey Response
 
 ---
 
-# 51. Public Information
+# 53. Public Information
 
 StageArtでは、
 Internal InformationとPublic Informationを分離する。
@@ -1173,7 +1274,7 @@ Public Informationとして公開してはならない。
 
 ---
 
-# 52. Organization Public Profile
+# 54. Organization Public Profile
 
 Organization Public Profileは、
 Organizationの公開情報を表示するPublic Artifactである。
@@ -1192,7 +1293,7 @@ Organizationおよび関連DomainのFactから生成・参照する。
 
 ---
 
-# 53. Production Public Page
+# 55. Production Public Page
 
 Production Public Pageは、
 Productionの公開情報を表示するPublic Artifactである。
@@ -1204,7 +1305,7 @@ Production Public Pageには、
 
 ---
 
-# 54. External Connection
+# 56. External Connection
 
 ExternalConnectionは、
 Organizationと外部サービスとの接続を管理する。
@@ -1222,7 +1323,7 @@ SNS専用のDomainではない。
 
 ---
 
-# 55. Service
+# 57. Service
 
 Serviceは、
 外部サービスの種類を識別する。
@@ -1244,7 +1345,7 @@ Organization Domainへ持ち込まない。
 
 ---
 
-# 56. Credential
+# 58. Credential
 
 Credentialは、
 ExternalConnectionに属する認証情報を表す。
@@ -1265,7 +1366,7 @@ Infrastructure Layerで管理する。
 
 ---
 
-# 57. External Connection Scope
+# 59. External Connection Scope
 
 ExternalConnectionは、
 Organizationに所属する。
@@ -1292,7 +1393,7 @@ Organization Bから利用することはできない。
 
 ---
 
-# 58. External Service Operations
+# 60. External Service Operations
 
 外部サービスへの実際のAPI呼び出しは、
 Infrastructure Layerが担当する。
@@ -1309,7 +1410,7 @@ Domain Layerは、
 
 ---
 
-# 59. SNS
+# 61. SNS
 
 SNSは、
 ExternalConnectionの特別な子Domainとして扱わない。
@@ -1326,7 +1427,7 @@ StageArtのDomain上の正本として管理しない。
 
 ---
 
-# 60. Google Drive
+# 62. Google Drive
 
 Google Driveは、
 Documentの外部保存先として利用できる。
@@ -1348,7 +1449,7 @@ StageArtの正本として管理しない。
 
 ---
 
-# 61. Google Calendar
+# 63. Google Calendar
 
 Google Calendarは、
 Rehearsalなどの予定を外部Calendarへ連携するために利用できる。
@@ -1361,7 +1462,7 @@ Infrastructure Layerが担当する。
 
 ---
 
-# 62. Domain Event Structure
+# 64. Domain Event Structure
 
 Domain間の状態変化は、
 Domain Eventによって連携できる。
@@ -1398,22 +1499,36 @@ CheckInCompleted
 
 ---
 
-# 63. Major Business Flow
+# 65. Major Business Flow
 
 StageArtの主要なBusiness Flowは、
 以下のように整理する。
 
 ---
 
+## Authentication Flow
+
+UserAccount
+↓
+Person
+↓
+Business Authorization
+
+---
+
 ## Organization Flow
 
-Organization
+UserAccount
+↓
+Person
 ↓
 Membership
 ↓
+Organization
+↓
 Role
 ↓
-Organization Management
+Permission
 
 ---
 
@@ -1433,14 +1548,8 @@ Performance / Rehearsal / Ticket / Reservation
 
 ## Production Authorization Flow
 
-Person
+UserAccount
 ↓
-Membership
-↓
-Organization Role
-
-または、
-
 Person
 ↓
 ProductionDelegate
@@ -1448,6 +1557,8 @@ ProductionDelegate
 Production
 ↓
 Role
+↓
+Permission
 
 ---
 
@@ -1508,10 +1619,40 @@ HistoricalActivityは、
 
 ---
 
-# 64. Scope Structure
+# 66. Scope Structure
 
 StageArtでは、
 Scopeを明確に分離する。
+
+---
+
+## Authentication Scope
+
+UserAccountを管理する。
+
+主な対象：
+
+- UserAccount
+- External Identity
+- Authentication Status
+
+Authentication Scopeの情報は、
+Business Domainの公開情報とは分離する。
+
+---
+
+## Person Scope
+
+Person自身の情報を管理する。
+
+主な対象：
+
+- Person
+- Profile
+- HistoricalActivity
+
+OrganizationやProductionの権限は、
+Person自身のScopeには持たせない。
 
 ---
 
@@ -1558,21 +1699,7 @@ Productionを通じてOrganization Scopeに属する。
 
 ---
 
-## Person Scope
-
-Person自身の情報を管理する。
-
-主な対象：
-
-- Profile
-- HistoricalActivity
-
-OrganizationやProductionの権限は、
-Person自身のScopeには持たせない。
-
----
-
-# 65. Domain Ownership
+# 67. Domain Ownership
 
 Domainの基本的な所属関係は、
 
@@ -1583,6 +1710,16 @@ Project
 Production
 
 を中心とする。
+
+Authentication Scopeが管理するDomain：
+
+- UserAccount
+- External Identity
+
+Personに関連するDomain：
+
+- Profile
+- HistoricalActivity
 
 Organizationが直接管理するDomain：
 
@@ -1618,8 +1755,6 @@ Productionに所属するDomain：
 
 Personに関連するDomain：
 
-- Profile
-- HistoricalActivity
 - Membership
 - Participant
 - Reservation
@@ -1634,7 +1769,7 @@ PersonがこれらのDomainを直接所有するわけではない。
 
 ---
 
-# 66. Domain Separation Principles
+# 68. Domain Separation Principles
 
 StageArtでは、
 異なる意味を持つDomainを統合しない。
@@ -1643,9 +1778,9 @@ StageArtでは、
 
 ---
 
-## Person / Account
+## UserAccount / Person
 
-Accountは認証Identity。
+UserAccountはAuthentication Identity。
 
 PersonはBusiness Identity。
 
@@ -1719,7 +1854,17 @@ Performanceは個別の公演回。
 
 ---
 
-# 67. History Principles
+## UserAccount / Account
+
+UserAccountはAuthentication Identity。
+
+AccountはAccounting上の勘定科目。
+
+両者は完全に異なるDomainである。
+
+---
+
+# 69. History Principles
 
 StageArtでは、
 「現在のFact」と「過去の活動実績」を区別する。
@@ -1739,7 +1884,7 @@ Historyは、
 
 ---
 
-# 68. Public / Internal Separation
+# 70. Public / Internal Separation
 
 StageArtでは、
 Public InformationとInternal Informationを明確に分離する。
@@ -1754,6 +1899,8 @@ Public Information：
 
 Internal Information：
 
+- UserAccount
+- Authentication Information
 - Role
 - Permission
 - Membership情報
@@ -1765,12 +1912,15 @@ Internal Information：
 - 内部Announcement
 - その他管理情報
 
+Authentication Informationを、
+Public Artifactへ直接公開してはならない。
+
 Internal Informationを、
 Public Artifactへ直接公開してはならない。
 
 ---
 
-# 69. External Integration Principles
+# 71. External Integration Principles
 
 External Serviceは、
 StageArt Domainの正本ではない。
@@ -1791,10 +1941,17 @@ Google DriveはDocumentの外部保存先として利用する。
 
 Google CalendarはRehearsalなどの外部Calendar連携先として利用する。
 
+Authentication Providerは、
+UserAccountのAuthentication Identityを提供する。
+
+Authentication Provider固有のAPI処理は、
+Infrastructure Layerで実装する。
+
 ---
 
-# 70. Lifecycle Principles
+# 72. Lifecycle Principles
 
+UserAccount、
 Organization、
 Project、
 Productionなどの主要Domainは、
@@ -1811,12 +1968,15 @@ Lifecycleによって、
 
 などを制御する。
 
+UserAccountのLifecycleと、
+PersonのLifecycleは分離する。
+
 具体的なLifecycle Ruleは、
 各Domainで定義する。
 
 ---
 
-# 71. Audit Principles
+# 73. Audit Principles
 
 重要なBusiness Dataには、
 必要に応じてAudit Informationを保持する。
@@ -1828,26 +1988,28 @@ Lifecycleによって、
 - UpdatedBy
 - UpdatedAt
 
-権限変更、
-Role Assignment、
-ProductionDelegateなどの
-重要な管理操作についても、
-適切な監査情報を記録する。
+UserAccountについては、
+Authentication / Security Auditを
+必要に応じてBusiness Auditと分離する。
 
 Credentialそのものを
 Audit Informationとして記録しない。
 
 ---
 
-# 72. DomainMap Design Decisions
+# 74. DomainMap Design Decisions
 
 StageArtのTenantはOrganizationである。
 
 Organizationは劇団に限定しない。
 
-PersonとOrganizationは別のIdentityとして管理する。
+UserAccountはAuthentication Identityである。
 
-AccountとPersonを分離する。
+PersonはBusiness Identityである。
+
+UserAccountとPersonを分離する。
+
+PersonとOrganizationは別のIdentityとして管理する。
 
 PersonとOrganizationの所属関係はMembershipで管理する。
 
@@ -1882,6 +2044,12 @@ Production関連DomainはProductionを通じてOrganization Scopeに属する。
 
 AccountingはOrganization単位で管理する。
 
+AccountはAccounting上の勘定科目である。
+
+AccountはAuthentication Identityではない。
+
+UserAccountとAccountを明確に分離する。
+
 BudgetおよびProduction ActualはProduction単位で管理する。
 
 Ticket Revenueの会計連携は、
@@ -1903,16 +2071,20 @@ Credentialは平文保存しない。
 
 外部サービスへのAPIアクセスはInfrastructure Layerが担当する。
 
+Authentication Provider固有の処理はInfrastructure Layerが担当する。
+
 Blueprintを唯一の設計基準とする。
 
 ---
 
-# 73. Design Principles
+# 75. Design Principles
 
 - OrganizationはStageArtにおけるTenantである。
 - Organizationは劇団に限定しない。
+- UserAccountはAuthentication Identityである。
+- PersonはBusiness Identityである。
+- UserAccountとPersonを分離する。
 - PersonとOrganizationは別のIdentityとして管理する。
-- AccountとPersonを分離する。
 - PersonとOrganizationの所属関係はMembershipで管理する。
 - Organization内の権限はRoleで管理する。
 - RoleはPermission Setを定義する。
@@ -1935,6 +2107,8 @@ Blueprintを唯一の設計基準とする。
 - CheckInは入場Factを表す。
 - CheckInCompletedはTicket Revenue連携のBusiness Eventとなる。
 - AccountingはOrganization単位で管理する。
+- AccountはAccounting上の勘定科目である。
+- UserAccountはAuthentication Identityであり、Accountとは異なる。
 - Journal EntryはAccounting Domainで管理する。
 - BudgetはProduction単位の計画である。
 - Production ActualはProduction単位の実績である。
@@ -1943,6 +2117,7 @@ Blueprintを唯一の設計基準とする。
 - HistoricalActivityは過去の活動実績を管理する。
 - HistoryをBusiness Dataの正本として使用しない。
 - Public InformationとInternal Informationを分離する。
+- Authentication InformationをPublic Informationとして扱わない。
 - Organization Public Profileは公開対象情報のみを表示する。
 - Production Public Pageは公開対象情報のみを表示する。
 - ExternalConnectionはOrganizationの子Entityである。
@@ -1951,6 +2126,7 @@ Blueprintを唯一の設計基準とする。
 - Credentialは外部サービスの認証情報を管理する。
 - Credentialは平文保存しない。
 - 外部サービス固有のAPI処理はInfrastructure Layerで実装する。
+- Authentication Provider固有のAPI処理はInfrastructure Layerで実装する。
 - Google DriveはDocumentの外部保存先として利用する。
 - Google CalendarはRehearsalなどの外部連携先として利用する。
 - SNS投稿内容はStageArtの正本として管理しない。
