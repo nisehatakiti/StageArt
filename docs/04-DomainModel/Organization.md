@@ -2,7 +2,7 @@
 
 # Domain Model : Organization
 
-Version : 3.0
+Version : 3.1
 
 ---
 
@@ -89,13 +89,13 @@ Personは複数のOrganizationへ所属できる。
 
 所属関係はMembershipによって管理する。
 
-```text
+基本構造：
+
 Person
     ↓
 Membership
     ↓
 Organization
-```
 
 Organization自身は、
 Personを直接保持しない。
@@ -110,19 +110,23 @@ Membershipは、
 
 を管理する。
 
+Membershipの詳細なLifecycleは、
+Membership Domainで定義する。
+
 ---
 
 # Role
 
-Organization内におけるPersonの権限・役割は、
+Organization内におけるPersonの管理・運営上の権限は、
 Membershipに関連するRoleによって管理する。
+
+RoleはPerson自身の属性ではない。
 
 同じPersonでも、
 Organizationごとに異なるRoleを持つことができる。
 
 例：
 
-```text
 Person A
     │
     ├── Membership
@@ -131,11 +135,64 @@ Person A
     │
     └── Membership
            └── 劇団B
-                  └── Role = キャスト
-```
+                  └── Role = 稽古管理者
 
-Organization自身がRoleを保持するのではなく、
-Membershipを通じてPersonのOrganization内権限を管理する。
+RoleはOrganization Contextにおける
+権限・役割を表す。
+
+Organization自身がRoleをPersonの属性として保持するのではなく、
+Membershipを通じてPersonへ適用する。
+
+Roleの定義およびPermission Setは、
+Role Domainで管理する。
+
+---
+
+# Role and Participant Type
+
+RoleとParticipant Typeは、
+異なる概念として扱う。
+
+Role：
+
+Organizationにおける
+管理・運営上の権限を表す。
+
+Participant Type：
+
+Productionにおける
+参加区分を表す。
+
+基本構造：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+
+一方、
+
+Production
+    ↓
+Participant
+    ↓
+Participant Type
+
+となる。
+
+Participant Typeの例：
+
+- CAST
+- STAFF
+
+Participant Typeによって、
+Organizationの管理権限を付与してはならない。
+
+Roleによって、
+Productionへの参加区分を自動的に決定してはならない。
 
 ---
 
@@ -152,6 +209,12 @@ Organization自身にOwnerIdを直接保持しない。
 Ownerが変更された場合も、
 MembershipのRole変更として管理できる構造とする。
 
+OwnerはOrganizationにおける
+全権限を持つ管理者として扱う。
+
+具体的なRoleとPermissionの定義は、
+Role Domainに従う。
+
 ---
 
 # Delegate
@@ -159,7 +222,8 @@ MembershipのRole変更として管理できる構造とする。
 Organizationの管理権限の一部を、
 他のPersonへ委任できる。
 
-委任権限はDelegateRoleによって管理する。
+Organization全体のDelegateは、
+DelegateRoleによって管理する。
 
 DelegateRoleは、
 
@@ -171,6 +235,74 @@ DelegateRoleは、
 Organization全体のDelegateと、
 Production単位のProductionDelegateは区別する。
 
+Organization DelegateはOrganization Scopeの権限を扱い、
+ProductionDelegateは特定Production Scopeの権限を扱う。
+
+Delegateによって付与される権限は、
+Membership上の通常Roleとは別の委任権限として扱う。
+
+---
+
+# Organization Delegate and Role
+
+Organization Delegateは、
+Membershipに付与される通常のRoleとは異なる。
+
+通常のOrganization Role：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
+
+Organization Delegate：
+
+Person
+    ↓
+Organization Delegate
+    ↓
+DelegateRole
+    ↓
+Organization Permission
+
+Roleは、
+Organizationにおける通常の役割・権限を表す。
+
+DelegateRoleは、
+Organizationの管理権限を特定のPersonへ委任するために使用する。
+
+両者を同一の概念として扱わない。
+
+---
+
+# Production Delegate
+
+Production単位の権限は、
+Organization RoleやOrganization Delegateとは別に管理する。
+
+基本構造：
+
+Production
+    ↓
+ProductionDelegate
+    ↓
+Production Management Permission
+
+ProductionDelegateは、
+特定Productionの管理権限を委任する。
+
+ProductionDelegateは、
+Organization全体のRoleを変更しない。
+
+ProductionDelegateによって、
+Organization全体の権限を与えずに、
+特定Productionのみを管理できる。
+
 ---
 
 # Project
@@ -179,13 +311,11 @@ OrganizationはProjectを保持する。
 
 基本構造は、
 
-```text
 Organization
     ↓
 Project
     ↓
 Production
-```
 
 とする。
 
@@ -208,13 +338,11 @@ Productionは、
 
 OrganizationがProductionを直接所有するのではなく、
 
-```text
 Organization
     ↓
 Project
     ↓
 Production
-```
 
 という階層で管理する。
 
@@ -385,14 +513,12 @@ RegulationはOrganizationに所属する。
 既存Versionを上書きせず、
 新しいRegulation Versionを作成する。
 
-```text
 Organization
     ↓
 Regulation
     ├── Version 1
     ├── Version 2
     └── Version 3
-```
 
 ---
 
@@ -424,12 +550,15 @@ Announcementを作成できる。
 
 対象者は、
 
-- キャスト
-- スタッフ
+- CAST
+- STAFF
 - 制作
 - その他関係者
 
 などから指定できる。
+
+ここでのCAST / STAFFは、
+ProductionにおけるParticipant Typeを意味する。
 
 ---
 
@@ -440,14 +569,14 @@ ExternalConnectionとして管理する。
 
 ExternalConnectionはOrganizationの子Entityである。
 
-```text
+基本構造：
+
 Organization
     ↓
 ExternalConnection
     ├── Service
     ├── Account Identifier
     └── Credential
-```
 
 ExternalConnectionはSNS専用のDomainではない。
 
@@ -494,12 +623,10 @@ ExternalConnectionは、
 
 基本構造：
 
-```text
 ExternalConnection
     ├── Service
     ├── Account Identifier
     └── Credential
-```
 
 Account Identifierは、
 
@@ -547,7 +674,6 @@ ExternalConnectionはOrganizationに所属する。
 
 例：
 
-```text
 Organization A
     └── ExternalConnection
             └── Instagram A
@@ -555,7 +681,6 @@ Organization A
 Organization B
     └── ExternalConnection
             └── Instagram B
-```
 
 Organization Aの認証情報を、
 Organization Bから利用することはできない。
@@ -767,7 +892,25 @@ PersonとOrganizationは別のIdentityとして管理する。
 
 Personとの所属関係はMembershipで管理する。
 
-Organization内の権限はMembershipに関連するRoleで管理する。
+Organization内の通常の権限・役割は、
+Membershipに関連するRoleで管理する。
+
+RoleはPerson自身の属性ではなく、
+Organization Contextにおける権限・役割を表す。
+
+RoleとParticipant Typeは明確に分離する。
+
+RoleはOrganizationにおける管理・運営上の権限を表し、
+Participant TypeはProductionへの参加区分を表す。
+
+Organization Delegateは、
+Organization全体の権限を委任するために利用する。
+
+Production単位の権限は、
+ProductionDelegateによって管理する。
+
+Organization DelegateとProductionDelegateは、
+異なるScopeを持つ。
 
 OwnerもMembership / Roleによって表現する。
 
@@ -777,13 +920,11 @@ ProductionはProjectに所属する。
 
 基本構造は、
 
-```text
 Organization
     ↓
 Project
     ↓
 Production
-```
 
 である。
 
@@ -827,11 +968,19 @@ Public InformationとInternal Informationを明確に分離する。
 - Organizationは劇団に限定しない。
 - PersonとOrganizationは別軸として管理する。
 - Personとの所属関係はMembershipで管理する。
-- Organization内の権限はRoleで管理する。
+- Organization内の通常の権限・役割はRoleで管理する。
+- RoleはPersonの属性ではない。
+- RoleはMembershipを通じてOrganization Contextに適用する。
 - OwnerはMembership / Roleによって表現する。
+- Organization Delegateと通常のOrganization Roleを分離する。
+- Organization DelegateとProductionDelegateを分離する。
 - Organizationの活動・制作はProjectで管理する。
 - Projectの下にProductionを持つ。
 - Production関連DomainはProductionを通じてOrganization Scopeに属する。
+- RoleとParticipant Typeを分離する。
+- Participant TypeはProductionへの参加区分を表す。
+- Participant TypeはOrganizationの権限を付与しない。
+- RoleはProductionへの参加区分を自動的に決定しない。
 - Organizationは内部情報と公開情報を分離する。
 - Organization Public Profileは公開対象情報のみを表示する。
 - AccountingはOrganization単位で管理する。
