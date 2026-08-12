@@ -2,58 +2,53 @@
 
 # Domain Model : Ticket
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
 Ticketは、
-Productionごとに設定される
-チケット販売条件を管理するDomainである。
+Productionにおけるチケット販売条件を管理するDomainである。
 
 Ticketは、
+「このProductionにおいて、どの種類のチケットを、いくらで販売するか」
+を表す。
 
-「この公演で、どのTicket Typeを、いくらで販売するか」
-
-というFactを表す。
-
-Ticketは一般的なチケット商品そのものではなく、
-Productionごとの販売設定を表す。
+TicketはProductionに所属する。
 
 ---
 
 # Concept
 
-TicketはProductionに所属する。
+Ticketは、
+Productionごとに設定される販売条件である。
+
+Ticketは一般的な共通商品マスターではなく、
+Production固有の販売設定として管理する。
 
 基本構造：
 
-Organization
-  ↓
-Project
-  ↓
 Production
   ↓
 Ticket
+  ↓
+Performance
+  ↓
+Reservation
 
-Ticketは、
-Ticket TypeとPriceの組み合わせとして管理する。
+---
 
-例えば、
+# Identity
 
-Production A
+TicketはTicketIdによって一意に識別する。
 
-  一般
-    3,000円
+TicketIdは変更しない。
 
-  学生
-    2,000円
+Ticket TypeやPriceは識別子ではない。
 
-  当日
-    3,500円
-
-という販売設定を持つ。
+同じTicket Typeや同じPriceを持つTicketが
+別のProductionに存在しても問題ない。
 
 ---
 
@@ -65,14 +60,25 @@ Production
   ↓
 Ticket
 
-一つのProductionには、
-複数のTicketを設定できる。
+Performanceは、
+所属するProductionのTicketを販売対象として利用する。
 
-TicketはProductionをまたいで
-共有するものではない。
+Production
+  ↓
+Ticket
+  ↓
+Performance
 
-同じ「一般」というTicket Typeであっても、
-Productionごとに異なるPriceを設定できる。
+Reservationは、
+Performanceおよび選択されたTicketを参照する。
+
+Production
+  ↓
+Performance
+  ↓
+Reservation
+       ↓
+     Ticket
 
 ---
 
@@ -85,174 +91,107 @@ Ticket Typeは、
 
 - 一般
 - 学生
-- シニア
-- U-18
 - 当日
 - 招待
 - 関係者
+- モニター
 
-Ticket Typeの名称は、
-Productionごとの販売条件に合わせて設定できる。
+Ticket Typeは、
+Productionにおける販売条件の一部として管理する。
 
----
-
-# Price
-
-Priceは、
-Ticketの販売価格を表す。
-
-例えば、
-
-Ticket Type
-  一般
-
-Price
-  3,000円
-
-という組み合わせを持つ。
-
-Priceは金額として管理し、
-表示用文字列を正本としない。
-
----
-
-# Ticket Master
-
-Productionは、
-公演ごとにTicket Masterを持つ。
-
-基本構造：
-
-Production
-  ↓
-Ticket Master
-  ↓
-Ticket
-
-Ticket Masterには、
-そのProductionで販売するTicketの一覧が登録される。
-
-Ticket Masterの内容は、
-他のProductionへ自動的に共有しない。
-
----
-
-# Ticket Identity
-
-TicketはTicketIdによって
-一意に識別する。
-
-TicketIdは変更しない。
-
-Ticket Typeの名称やPriceを
-識別子として利用しない。
+Ticket Type自体を、
+Productionをまたいで共有するMaster Entityとはしない。
 
 ---
 
 # Display Name
 
-Ticketには、
-観客向けに表示する名称を設定できる。
+Ticketは、
+観客向けの表示名称を持つことができる。
 
-例えば、
+例：
 
-- 一般
-- 学生
-- 前売一般
-- 当日一般
+- 一般前売
+- 学生前売
+- 一般当日券
+- 関係者招待
 
-など。
-
-内部のTicket Typeと
-表示名称を分離する必要がある場合に対応できる。
+内部的なTicket Typeと、
+観客向けのDisplay Nameは分離できる。
 
 ---
 
-# Sale Price
+# Price
 
-Ticketには、
-販売価格を設定する。
+Ticketは販売価格を保持する。
 
-Sale Priceは、
-ProductionにおけるTicketの販売条件の一部である。
+PriceはTicketに設定される。
 
-Reservationが作成された場合、
-Reservationは利用したTicketを参照する。
+Price = 0を許可する。
 
----
+無料Ticketの例：
 
-# Reservation Relationship
+- 招待
+- 関係者
+- モニター
 
-Reservationは、
-Productionに設定されたTicketを利用する。
-
-基本構造：
-
-Production
-  ↓
-Ticket
-  ↓
-Performance
-  ↓
-Reservation
-
-Reservationは、
-どのTicket Type / Priceで予約されたかを識別できる。
+Priceは、
+Productionにおける販売条件として管理する。
 
 ---
 
-# Performance Relationship
+# Ticket Price and Reservation
 
-TicketはProduction単位で管理する。
-
-PerformanceごとにTicket Masterを複製しない。
-
-基本構造：
-
-Production
-  ↓
-Ticket
-  ↓
-Performance
-  ↓
-Reservation
-
-同じTicketを複数のPerformanceで利用できる。
-
----
-
-# Performance Availability
-
-将来的に、
-特定のTicketを特定のPerformanceだけで
-販売する必要が生じた場合に対応できる構造とする。
+Reservationが作成された時点で、
+そのReservationに適用されたTicketの価格を
+取引Factとして保持する。
 
 例えば、
 
 Ticket
-  一般 3,000円
+  Price = 3,000円
 
-Performance A
-  販売
+の後に、
 
-Performance B
-  販売
+Ticket
+  Price = 3,500円
 
-Performance C
-  販売しない
+へ変更された場合でも、
 
-など。
+既存Reservation
+  Price = 3,000円
 
-ただし、
-Version 1.0では詳細なTicket Availabilityを
-必須Domainとしない。
+を維持する。
+
+Ticketの現在価格を変更することによって、
+過去のReservationの価格を変更してはならない。
 
 ---
 
-# Sales Status
+# Price Snapshot
 
-Ticketには、
-販売状態を設定できる。
+Reservationは、
+予約時点の価格情報を保持する。
+
+基本構造：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Price Snapshot
+
+Price Snapshotは、
+Reservationが成立した時点の取引条件を保持するための情報である。
+
+Price SnapshotはTicketの現在値を参照して
+過去の取引価格を再計算するためのものではない。
+
+---
+
+# Ticket Status
+
+Ticketは販売状態を持つ。
 
 基本的な状態：
 
@@ -265,349 +204,363 @@ Ticketには、
 
 # Draft
 
-DRAFTは、
 Ticketが作成されたが、
-まだ販売開始していない状態。
+まだ販売開始されていない状態。
 
 ---
 
 # On Sale
 
-ON_SALEは、
 Ticketが販売可能な状態。
 
-Reservationで利用できる。
+対象となるPerformanceが公開され、
+Reservationを受け付ける場合に利用する。
 
 ---
 
 # Suspended
 
-SUSPENDEDは、
 一時的に販売を停止している状態。
 
-Ticketそのものは削除しない。
+Ticket自体を削除せず、
+販売停止という状態を保持する。
 
 ---
 
 # Closed
 
-CLOSEDは、
 販売を終了した状態。
 
-過去のReservationから
-利用されたTicket情報を確認できるよう、
-Ticket自体は削除しない。
-
----
-
-# Sales Period
-
-将来的に、
-Ticketごとの販売期間を設定できる。
-
-例えば、
-
-前売券
-  8/1 〜 9/10
-
-当日券
-  9/11のみ
-
-など。
-
-Version 1.0で販売期間を実装する場合は、
-Ticketの販売条件として管理する。
-
----
-
-# Ticket and Reservation Price
-
-TicketのPriceは、
-Productionにおける販売価格の正本である。
-
-Reservationが作成された後に
-TicketのPriceが変更された場合でも、
-過去のReservationの取引価格を
-変更してはならない。
-
-そのため、
-
-Ticket
-  = 現在の販売条件
-
-Reservation
-  = 予約時点の取引Fact
-
-として扱う。
-
-Reservation側には、
-予約確定時点の販売価格を
-取引情報として保持できる。
-
----
-
-# Price Change
-
-TicketのPriceは、
-販売中でも変更される可能性がある。
-
-ただし、
-既存Reservationに遡及して適用してはならない。
-
-例えば、
-
-Ticket
-  一般 3,000円
-
-から、
-
-Ticket
-  一般 3,500円
-
-へ変更した場合、
-
-変更後に作成されるReservation
-  → 3,500円
-
-変更前に作成されたReservation
-  → 3,000円
-
-となる。
-
----
-
-# Ticket Type Change
-
-Ticket Typeの名称や内容を変更する場合も、
-既存ReservationのFactを変更しない。
-
-過去のReservationは、
-予約時点のTicket情報を基準として扱う。
-
-必要に応じて、
-Ticketの履歴またはVersionを利用する。
-
----
-
-# Free Ticket
-
-Price = 0
-
-のTicketを許可する。
-
-例えば、
-
-- 招待
-- 関係者
-- モニター
-
-など。
-
-Priceが0円であっても、
-Ticketとして管理する。
-
----
-
-# Invitation
-
-招待券もTicketとして管理できる。
-
-例えば、
-
-Ticket Type
-  = 招待
-
-Price
-  = 0円
-
-とする。
-
-招待の対象者や配布管理については、
-別Domainとして必要になった時点で設計する。
+過去のReservationから参照されているTicketを
+物理削除しない。
 
 ---
 
 # Public Visibility
 
-Ticketには、
-観客向けに公開するかどうかを設定できる。
-
-例えば、
-
-公開：
-
-- 一般
-- 学生
-
-非公開：
-
-- 関係者
-- 招待
-
-など。
-
-非公開Ticketは、
-一般観客向け予約画面に表示しない。
-
-ただし、
-管理者による予約や代理予約などで
-利用できる場合がある。
-
----
-
-# Order
-
-Ticketには、
-表示順を設定できる。
-
-例えば、
-
-1. 一般
-2. 学生
-3. U-18
-4. 当日
-
-など。
-
-Orderは、
-観客向けTicket選択画面の表示順などに利用する。
-
----
-
-# Description
-
-Ticketには、
-観客向けの説明を設定できる。
-
-例えば、
-
-「高校生以下」
-
-「当日受付で学生証をご提示ください」
-
-など。
-
-説明文はTicketの表示情報として扱う。
-
----
-
-# Ticket Artifact
-
 Ticketは、
-販売条件を表すDomainである。
+一般観客向けに表示するかどうかを管理できる。
 
-QR Ticketは、
-Reservationから生成されるArtifactであり、
-Ticket Domainそのものではない。
+Public Visibilityは、
+内部向けTicketと公開Ticketを区別するために利用する。
+
+例えば、
+
+- 一般公開Ticket
+- 関係者Ticket
+- 招待Ticket
+
+などを区別できる。
+
+---
+
+# Performance Relationship
+
+Performanceは、
+Productionに所属するTicketを販売対象として利用する。
 
 基本構造：
 
+Production
+  ↓
 Ticket
   ↓
-Reservation
-  ↓
-QR Ticket
+Performance
 
-QR Ticketは、
-Ticket Masterの情報を直接管理するものではない。
+Performanceごとに、
+利用可能なTicketを制御する必要がある場合は、
+Performance側の販売設定として将来的に拡張する。
+
+Version 1.0では、
+TicketをPerformanceごとに複製しない。
 
 ---
 
-# Seat
+# Performance Availability
 
-TicketとSeatは、
-現時点では直接結び付けない。
+Performanceごとに、
+利用可能なTicket Typeを設定できる構造を将来的に持たせる。
 
-Version 1.0ではSeat機能を実装しない。
+例えば、
 
-将来的に座席指定を実装する場合は、
+Production
+  ├── 一般
+  ├── 学生
+  └── 招待
 
-Ticket
-  ↓
-Reservation
-  ↓
-Reservation Seat
-  ↓
-Seat
+が存在し、
 
-などへ拡張できる。
+Performance A
+  ├── 一般
+  └── 学生
+
+Performance B
+  ├── 一般
+  └── 招待
+
+のように販売対象を変更できる。
+
+ただし、
+Ticketそのものの正本はProduction側にある。
 
 ---
 
-# Audit
+# Sales Period
 
 Ticketには、
-変更を追跡できるよう監査情報を保持する。
+販売期間を設定できる構造を将来的に持たせる。
 
-基本情報：
+例：
 
-- Created By
-- Created At
-- Updated By
-- Updated At
+販売開始
+  ↓
+2026-08-01
+
+販売終了
+  ↓
+2026-08-20
+
+Version 1.0では、
+必須機能として実装しない。
 
 ---
 
-# Deletion
+# Ticket and Reservation
+
+Reservationは、
+選択したTicketを参照する。
+
+基本構造：
+
+Production
+  ↓
+Performance
+  ↓
+Reservation
+  ↓
+Ticket
+
+Reservationは、
+予約時点のTicket情報を取引Factとして保持する。
+
+Ticketの現在状態や現在価格を変更しても、
+過去のReservationを変更しない。
+
+---
+
+# Ticket and Issued Ticket
+
+Reservationが成立し、
+実際のチケットとして発行された場合、
+Issued Ticketとして扱う。
+
+基本Flow：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Issued Ticket
+
+Issued Ticketは、
+実際の来場受付に使用される。
+
+QR Ticketなどの受付用Artifactは、
+Issued Ticketに関連付ける。
+
+---
+
+# QR Ticket
+
+QR Ticketは、
+Issued Ticketを特定するための受付用Artifactである。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+QR Ticket
+  ↓
+Check In
+
+QR情報そのものをTicketの正本として扱わない。
+
+QR Ticketの詳細な管理は、
+QRTicket Domainで定義する。
+
+---
+
+# Check In
+
+TicketそのものをCheck Inするのではなく、
+Issued Ticketに対応するReservationを
+Check Inする。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+
+Check Inの詳細なルールは、
+CheckIn Domainで管理する。
+
+---
+
+# CheckInCompleted
+
+Check Inが完了すると、
+CheckInCompletedが発生する。
+
+CheckInCompletedは、
+実際に観客が来場したというFactを確定する。
+
+基本Flow：
+
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+
+---
+
+# Ticket Revenue
+
+CheckInCompletedは、
+チケット売上をAccounting Domainへ連携する契機となる。
+
+基本Flow：
+
+Ticket
+  ↓
+Reservation
+  ↓
+Issued Ticket
+  ↓
+Check In
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Accounting
+  ↓
+Journal Entry
+
+Ticket Domain自身は、
+Journal Entryを管理しない。
 
 Ticketは、
-過去のReservationから参照される可能性がある。
+販売条件としてのPriceを提供する。
 
-そのため、
-販売終了後に物理削除しない。
+Ticket Revenueは、
+CheckInCompletedによって確定した
+チケット売上の会計連携用Factである。
 
-販売終了したTicketは、
-CLOSEDなどの状態で保持する。
+具体的な勘定科目やDebit / Creditの処理は、
+Accounting Domainで定義する。
 
 ---
 
-# Authorization
+# Ticket Price and Revenue
 
-Ticketの作成・変更・販売状態変更は、
-Productionを管理する権限を持つPersonが行う。
+Ticket.PriceとTicket Revenueは、
+同じものではない。
 
-Organization管理者は、
-自身のOrganizationについて
-全権限を持つ。
+Ticket.Price：
 
-Production Delegateとして
-公演管理権限を委任することもできる。
+Productionにおける
+チケット販売条件としての価格。
 
-Participant Typeは、
-Ticket管理権限を付与するものではない。
+Ticket Revenue：
+
+CheckInCompletedによって確定した
+実際のチケット売上Fact。
+
+基本構造：
+
+Ticket.Price
+  ↓
+Reservation Price Snapshot
+  ↓
+CheckInCompleted
+  ↓
+Ticket Revenue
+  ↓
+Accounting
+
+Ticket.Priceを変更しても、
+過去のReservationや確定済みTicket Revenueを変更しない。
+
+---
+
+# Refund
+
+Refundは、
+Ticketそのものの責務として管理しない。
+
+ReservationのCancellationや
+Ticket Revenueの返金処理などと連携して扱う。
+
+Refundの詳細なルールは、
+Reservation / Accountingなどの関連Domainで定義する。
+
+---
+
+# Ticket Deletion
+
+過去のReservationから参照されているTicketを
+物理削除してはならない。
+
+販売終了したTicketは、
+StatusをCLOSEDとして保持する。
+
+これにより、
+過去のReservationがどのTicket条件で成立したかを
+追跡できる。
 
 ---
 
 # Business Rules
 
 - TicketはProductionに所属する。
-- TicketはProductionごとの販売条件を表す。
-- TicketはTicket TypeとPriceの組み合わせとして管理する。
-- ProductionごとにTicket Masterを持つ。
-- TicketはProductionをまたいで自動共有しない。
-- TicketIdによって一意に識別する。
+- TicketはProduction固有の販売条件を表す。
+- TicketはTicketIdによって一意に識別する。
 - Ticket Typeは販売区分を表す。
-- Priceは販売価格を表す。
+- Ticket TypeをProduction横断のMaster Entityとして共有しない。
+- Ticketは観客向けDisplay Nameを持つことができる。
+- TicketはPriceを持つ。
 - Price = 0を許可する。
-- 招待券などをTicketとして管理できる。
-- TicketはDRAFT / ON_SALE / SUSPENDED / CLOSEDの状態を持つ。
-- ON_SALEのTicketをReservationで利用できる。
-- CLOSEDのTicketを新規Reservationで利用しない。
-- TicketのPrice変更を既存Reservationへ遡及させない。
-- Reservationは予約時点の取引価格を保持できる。
-- Ticket Typeの変更を既存Reservationへ遡及させない。
-- Ticketは複数Performanceで利用できる。
-- TicketのPerformance単位販売制御は将来拡張とする。
-- Ticketには公開・非公開を設定できる。
-- Ticketには表示順を設定できる。
-- Ticketには説明文を設定できる。
-- QR TicketはReservationから生成されるArtifactである。
-- TicketはQR Ticketそのものではない。
-- SeatはVersion 1.0では実装しない。
-- Ticketは原則として物理削除しない。
-- Ticketには監査情報を保持する。
-- Ticket管理権限はRoleまたはProduction Delegateで管理する。
-- Participant Typeは権限を付与しない。
+- Reservationは予約時点のPriceを保持する。
+- Ticketの現在Priceを変更しても過去のReservationを変更しない。
+- ReservationのPrice Snapshotは取引Factとして保持する。
+- Ticketは販売状態を持つ。
+- TicketはPublic Visibilityを持つことができる。
+- PerformanceはProductionのTicketを販売対象として利用する。
+- TicketをPerformanceごとに複製しない。
+- PerformanceごとのTicket Availabilityは将来拡張する。
+- Sales Periodは将来拡張する。
+- ReservationはTicketを参照する。
+- Issued TicketはReservationに基づいて発行する。
+- QR TicketはIssued Ticketに関連付ける。
+- TicketそのものをCheck Inしない。
+- Check InはReservation単位で実施する。
+- CheckInCompletedは観劇実績を確定する。
+- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
+- Ticket DomainはJournal Entryを管理しない。
+- Ticket.PriceとTicket Revenueを同一視しない。
+- Ticket RevenueはAccounting Domainで管理する。
+- 過去のReservationから参照されるTicketを物理削除しない。
+- 販売終了したTicketはCLOSEDとして保持する。
 
 ---
 
@@ -620,75 +573,101 @@ Ticketに関する主なDomain Event：
 - TicketPublished
 - TicketSuspended
 - TicketClosed
-- TicketPriceChanged
 
-Ticketの変更によって、
-必要に応じてReservationや
-Public Production Pageへ影響を通知する。
+Check Inに関するEvent：
+
+- CheckInCompleted
+
+CheckInCompletedは、
+Ticket RevenueのAccounting連携を開始する契機となる。
+
+Ticket Domain自身が、
+Journal Entryを直接生成・更新しない。
 
 ---
 
 # Design Decisions
 
 Ticketは、
-ProductionごとのTicket Type / Priceの
-組み合わせを管理する。
+Production固有の販売条件を管理する。
 
-Ticket TypeやPriceを
-システム全体の共通マスタとして管理しない。
+Ticketは、
+共通商品MasterではなくProductionに所属する。
 
-同じ「一般」というTicket Typeでも、
-Productionごとに異なる価格や販売条件を
-設定できる。
+Ticket Typeは、
+Productionにおける販売区分として扱う。
 
-TicketはProductionの販売条件の正本である。
+Ticket Priceは、
+Productionにおける販売条件として管理する。
 
-一方、
-Reservationは実際の予約というFactであり、
-予約時点の取引価格を保持する。
+Reservation成立時には、
+その時点の価格をPrice Snapshotとして保持する。
 
-この分離により、
-将来Ticket価格が変更された場合でも、
-過去のReservationの取引Factを壊さない。
+これにより、
+将来Ticket Priceが変更されても、
+過去のReservationの取引価格を変更しない。
+
+Performanceは、
+Productionに所属するTicketを販売対象として利用する。
+
+PerformanceごとのTicket Availabilityは、
+将来的に実装する。
+
+Ticketが実際の売上として会計へ連携されるのは、
+CheckInCompletedが発生した時点である。
+
+Ticket.Priceは販売条件であり、
+Ticket Revenueは会計上の売上Factである。
+
+Ticket Domainは、
+Accounting DomainのJournal Entryを直接管理しない。
+
+Ticketは、
+過去のReservationから参照される可能性があるため、
+物理削除しない。
 
 ---
 
 # Future
 
-将来的に以下へ対応できる。
+将来的に以下へ対応する。
 
-- Ticket販売期間
-- Performance単位の販売可否
-- 前売 / 当日価格
-- 割引
-- クーポン
-- 招待券配布
-- Ticket販売枚数制限
-- Ticket販売チャネル
-- 外部販売サイト連携
-- 座席指定
-- Ticket Version
-- Price History
+- PerformanceごとのTicket Availability
+- Ticket Sales Period
+- Ticketごとの販売数制限
+- 販売チャネル
+- オンライン販売
+- 当日販売
+- 外部販売サービス連携
+- 座席指定Ticket
+- Ticket Bundle
+- Discount
+- Coupon
+- Promotional Price
 
 ただし、
 将来機能を追加する場合も、
-Ticketを不必要に複雑化しない。
+Ticketの基本責務を
+Productionにおける販売条件の管理から逸脱させない。
 
 ---
 
 # Design Principles
 
-- TicketはProduction単位の販売条件である。
-- TicketはTicket TypeとPriceの組み合わせである。
-- Ticket MasterはProductionごとに持つ。
-- Ticket TypeとPriceをGlobal Masterとして管理しない。
-- Ticketの正本はProductionに所属するTicketである。
-- Reservationは予約時点の取引Factである。
-- Ticket価格変更を過去Reservationへ遡及させない。
-- Ticket Type変更を過去Reservationへ遡及させない。
-- QR TicketはReservationから生成されるArtifactである。
-- SeatはVersion 1.0では実装しない。
-- Ticketは原則として物理削除しない。
-- Ticket管理権限はRoleまたはProduction Delegateで管理する。
-- Participant Typeは権限を表さない。
+- TicketはProductionに所属する。
+- TicketはProduction固有の販売条件を表す。
+- Ticket TypeとPriceをTicketの主要な販売条件とする。
+- Ticket TypeをProduction横断のMaster Entityとして共有しない。
+- Ticket PriceとReservation Price Snapshotを分離する。
+- 過去のReservationの価格を変更しない。
+- PerformanceはProductionのTicketを利用する。
+- TicketをPerformanceごとに複製しない。
+- Issued TicketはReservationに基づいて発行する。
+- QR TicketはIssued Ticketの受付用Artifactである。
+- Check InはReservation単位で行う。
+- CheckInCompletedは観劇実績を確定する。
+- CheckInCompletedをTicket RevenueのAccounting連携契機とする。
+- Ticket.PriceとTicket Revenueを分離する。
+- Ticket DomainはJournal Entryを管理しない。
+- 過去のReservationから参照されるTicketを物理削除しない。
 - Blueprintを唯一の設計基準とする。
