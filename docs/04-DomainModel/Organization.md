@@ -2,7 +2,7 @@
 
 # Domain Model : Organization
 
-Version : 3.1
+Version : 3.2
 
 ---
 
@@ -71,6 +71,7 @@ Organization Scopeの対象には、
 - Document
 - External Connection
 - Regulation
+- Announcement
 
 などが含まれる。
 
@@ -130,15 +131,15 @@ Organizationごとに異なるRoleを持つことができる。
 Person A
     │
     ├── Membership
-    │      └── 劇団A
-    │             └── Role = 管理者
+    │      └── Organization A
+    │             └── Role = Administrator
     │
     └── Membership
-           └── 劇団B
-                  └── Role = 稽古管理者
+           └── Organization B
+                  └── Role = Rehearsal Manager
 
-RoleはOrganization Contextにおける
-権限・役割を表す。
+RoleはOrganization Scopeにおける
+Permission Setを表す。
 
 Organization自身がRoleをPersonの属性として保持するのではなく、
 Membershipを通じてPersonへ適用する。
@@ -155,7 +156,7 @@ RoleとParticipant Typeは、
 
 Role：
 
-Organizationにおける
+OrganizationまたはProductionにおける
 管理・運営上の権限を表す。
 
 Participant Type：
@@ -206,49 +207,35 @@ OwnerはOrganizationに対する管理権限を持つPersonである。
 Owner情報はMembershipおよびRoleによって表現し、
 Organization自身にOwnerIdを直接保持しない。
 
-Ownerが変更された場合も、
-MembershipのRole変更として管理できる構造とする。
+基本構造：
 
-OwnerはOrganizationにおける
-全権限を持つ管理者として扱う。
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
 
-具体的なRoleとPermissionの定義は、
-Role Domainに従う。
+Ownerは、
+Organization Scopeにおける全管理権限を持つ。
 
----
+Ownerを変更する場合も、
+Membershipに適用されているRoleの変更として管理できる。
 
-# Delegate
+Organization Ownerという独立したRole体系は作成しない。
 
-Organizationの管理権限の一部を、
-他のPersonへ委任できる。
-
-Organization全体のDelegateは、
-DelegateRoleによって管理する。
-
-DelegateRoleは、
-
-- 管理者と同等の権限
-- 個別に選択した権限
-
-の両方を表現できる構造とする。
-
-Organization全体のDelegateと、
-Production単位のProductionDelegateは区別する。
-
-Organization DelegateはOrganization Scopeの権限を扱い、
-ProductionDelegateは特定Production Scopeの権限を扱う。
-
-Delegateによって付与される権限は、
-Membership上の通常Roleとは別の委任権限として扱う。
+Ownerに必要な具体的なRoleとPermissionは、
+Role DomainおよびAuthorization Domainで定義する。
 
 ---
 
-# Organization Delegate and Role
+# Organization Administration
 
-Organization Delegateは、
-Membershipに付与される通常のRoleとは異なる。
+Organizationの管理権限は、
+MembershipとRoleによって管理する。
 
-通常のOrganization Role：
+基本構造：
 
 Person
     ↓
@@ -260,41 +247,83 @@ Role
     ↓
 Permission
 
-Organization Delegate：
+Organizationの管理権限を他のPersonへ委任する場合も、
+別のDelegateRoleを作成しない。
+
+対象PersonのMembershipに、
+必要なRoleを適用する。
+
+例えば、
+
+Person A
+    ↓
+Membership
+    ↓
+Organization A
+    ↓
+Role = Administrator
+
+Person B
+    ↓
+Membership
+    ↓
+Organization A
+    ↓
+Role = Rehearsal Manager
+
+のように、
+Personごとに必要なRoleを適用できる。
+
+---
+
+# Organization Role Scope
+
+Roleは、
+Organization ScopeにおいてMembershipを通じて適用する。
+
+RoleそのものはOrganizationIdを保持しない。
+
+基本構造：
 
 Person
     ↓
-Organization Delegate
+Membership
     ↓
-DelegateRole
+Organization
     ↓
-Organization Permission
+Role
+    ↓
+Permission
 
-Roleは、
-Organizationにおける通常の役割・権限を表す。
+Role Definitionは、
+Role Domainで共通管理する。
 
-DelegateRoleは、
-Organizationの管理権限を特定のPersonへ委任するために使用する。
+同じRole Definitionを、
+複数のOrganizationで利用できる。
 
-両者を同一の概念として扱わない。
+OrganizationごとにRole Definitionを複製する必要はない。
 
 ---
 
 # Production Delegate
 
 Production単位の権限は、
-Organization RoleやOrganization Delegateとは別に管理する。
+Organization ScopeのMembershipとは別に管理する。
 
 基本構造：
 
-Production
+Person
     ↓
 ProductionDelegate
     ↓
-Production Management Permission
+Production
+    ↓
+Role
+    ↓
+Permission
 
 ProductionDelegateは、
-特定Productionの管理権限を委任する。
+特定Productionの管理権限をPersonへ適用する。
 
 ProductionDelegateは、
 Organization全体のRoleを変更しない。
@@ -302,6 +331,100 @@ Organization全体のRoleを変更しない。
 ProductionDelegateによって、
 Organization全体の権限を与えずに、
 特定Productionのみを管理できる。
+
+ProductionDelegateの詳細な構造は、
+ProductionDelegate Domainで定義する。
+
+---
+
+# Organization Scope and Production Scope
+
+Organization ScopeとProduction Scopeは、
+明確に区別する。
+
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
+
+Production Scope：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+Role Definitionは共通とする。
+
+Organization Scope専用のDelegateRoleや、
+Production Scope専用の別Role体系は作成しない。
+
+---
+
+# RoleAssignment
+
+Organization Domainでは、
+RoleAssignmentという独立Domainを作成しない。
+
+RoleがPersonへ適用される関係は、
+Membershipによって表現する。
+
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Role
+
+Production Scope：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Role
+
+RoleAssignmentという中間Domainを追加して、
+Role適用を別管理する構造にはしない。
+
+---
+
+# DelegateRole
+
+DelegateRoleという独立したRole体系は使用しない。
+
+Organizationの管理権限を委任する場合も、
+通常のRole Definitionを使用する。
+
+例えば、
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role = Rehearsal Manager
+
+のように、
+必要なPermission Setを持つRoleを
+Membershipへ適用する。
+
+Delegateであること自体を表すために、
+別のRole Definitionを作成しない。
 
 ---
 
@@ -354,11 +477,38 @@ Productionに関連する、
 - Reservation
 - Rehearsal
 - Budget
+- Production Actual
 - Document
 - Announcement
 - Survey
 
 などはProductionに関連付けて管理する。
+
+---
+
+# Production Scope
+
+Productionに関連するBusiness Dataは、
+Production Scopeの中で管理する。
+
+主なDomain：
+
+- Participant
+- ProductionDelegate
+- Performance
+- Ticket
+- Reservation
+- CheckIn
+- Rehearsal
+- Timetable
+- Budget
+- Production Actual
+- Document
+- Announcement
+- Survey
+
+Production関連Domainは、
+Productionを通じてOrganization Scopeに属する。
 
 ---
 
@@ -473,8 +623,15 @@ Organizationは団体全体の会計を管理する。
 
 AccountingはOrganization単位で管理する。
 
-Production単位のBudgetおよびActualとは、
+Production単位のBudgetおよびProduction Actualとは、
 異なる目的を持つ。
+
+AccountはAccounting Domainにおける
+勘定科目を表す。
+
+AccountはAuthentication Identityではない。
+
+Authentication IdentityはUserAccountで管理する。
 
 ---
 
@@ -545,7 +702,7 @@ StageArtでは、
 OrganizationまたはProductionの関係者へ、
 内部のお知らせを送信できる。
 
-管理者または適切な権限を持つDelegateが、
+適切なRole / Permissionを持つPersonが、
 Announcementを作成できる。
 
 対象者は、
@@ -559,6 +716,10 @@ Announcementを作成できる。
 
 ここでのCAST / STAFFは、
 ProductionにおけるParticipant Typeを意味する。
+
+Announcementの作成権限は、
+Organization ScopeまたはProduction Scopeの
+Role / Permissionによって決定する。
 
 ---
 
@@ -696,13 +857,16 @@ ExternalConnectionは以下の状態を持つ。
 - ERROR
 
 CONNECTED：
+
 外部サービスとの接続が有効。
 
 DISCONNECTED：
+
 接続情報は保持するが、
 外部サービスへの操作は実行しない。
 
 ERROR：
+
 認証期限切れなどにより、
 再認証等が必要な状態。
 
@@ -773,10 +937,16 @@ StageArtでは、
 Google Calendarは、
 Rehearsalを外部Calendarへ連携するために利用する。
 
-確定したRehearsalをGoogle Calendarへ登録できる。
+CONFIRMEDとなったRehearsalを、
+Google Calendarへ登録できる。
 
 Google Calendarへの登録対象は、
-Rehearsalの参加者だけに限定しない。
+RehearsalAttendanceの参加予定者だけに限定しない。
+
+Google Calendar Eventは、
+StageArt上のRehearsalとは別のExternal Artifactとして扱う。
+
+StageArt上のRehearsalを正本とする。
 
 ---
 
@@ -789,13 +959,11 @@ Organizationを管理する権限を持つPersonが実行できる。
 
 - Organization Owner
 - 適切なOrganization Role
-- 適切なDelegate
+- 適切なPermission
 
-が対象となる。
+を持つPersonが対象となる。
 
-権限の詳細はAuthorization Domainで定義する。
-
-ProductionDelegateについては、
+ProductionDelegateによるProduction Scopeの権限は、
 Organization全体のExternalConnection操作権限とは別に扱う。
 
 ---
@@ -811,6 +979,9 @@ StageArtは必要な基本情報を自動生成する。
 - Default Role
 - Default Settings
 
+Owner Membershipには、
+Organization管理に必要なRoleを適用する。
+
 ProjectやProductionを作成する場合は、
 それぞれのDomainのBusiness Ruleに従って関連Domainを生成する。
 
@@ -818,7 +989,7 @@ ExternalConnectionは、
 Organization作成時には自動生成しない。
 
 外部サービスとの接続は、
-Organization管理者が必要に応じて設定する。
+Organization管理権限を持つPersonが必要に応じて設定する。
 
 ---
 
@@ -892,27 +1063,25 @@ PersonとOrganizationは別のIdentityとして管理する。
 
 Personとの所属関係はMembershipで管理する。
 
-Organization内の通常の権限・役割は、
-Membershipに関連するRoleで管理する。
+Organization内の権限はMembershipに関連するRoleで管理する。
 
-RoleはPerson自身の属性ではなく、
-Organization Contextにおける権限・役割を表す。
+Role DefinitionはRole Domainで管理する。
 
-RoleとParticipant Typeは明確に分離する。
+RoleはPermission Setを定義する。
 
-RoleはOrganizationにおける管理・運営上の権限を表し、
-Participant TypeはProductionへの参加区分を表す。
+Organization ScopeのRole適用はMembershipによって表現する。
 
-Organization Delegateは、
-Organization全体の権限を委任するために利用する。
+Organization Delegateという独立Domainは作成しない。
 
-Production単位の権限は、
-ProductionDelegateによって管理する。
+DelegateRoleという別のRole体系は使用しない。
 
-Organization DelegateとProductionDelegateは、
-異なるScopeを持つ。
+RoleAssignmentという独立Domainは作成しない。
 
-OwnerもMembership / Roleによって表現する。
+Production ScopeのRole適用はProductionDelegateによって表現する。
+
+Organization OwnerもMembership / Roleによって表現する。
+
+Organization自身にOwnerIdを直接保持しない。
 
 Organizationの活動・制作はProjectによって管理する。
 
@@ -953,7 +1122,7 @@ Credentialは平文保存しない。
 
 外部サービスへのAPIアクセスはInfrastructure Layerが担当する。
 
-SNS投稿内容そのものはStageArtの正本として管理しない。
+SNS投稿内容はStageArtの正本として管理しない。
 
 Public InformationとInternal Informationを明確に分離する。
 
@@ -968,22 +1137,27 @@ Public InformationとInternal Informationを明確に分離する。
 - Organizationは劇団に限定しない。
 - PersonとOrganizationは別軸として管理する。
 - Personとの所属関係はMembershipで管理する。
-- Organization内の通常の権限・役割はRoleで管理する。
-- RoleはPersonの属性ではない。
-- RoleはMembershipを通じてOrganization Contextに適用する。
-- OwnerはMembership / Roleによって表現する。
-- Organization Delegateと通常のOrganization Roleを分離する。
-- Organization DelegateとProductionDelegateを分離する。
+- Organization内の権限はRoleで管理する。
+- RoleはPermission Setを定義する。
+- Organization ScopeのRole適用はMembershipで管理する。
+- Organization OwnerはMembership / Roleによって表現する。
+- Organization自身にOwnerIdを直接保持しない。
+- Organization Delegateという独立Domainを作成しない。
+- DelegateRoleという別のRole体系を使用しない。
+- RoleAssignmentという独立Domainを作成しない。
+- Production ScopeのRole適用はProductionDelegateで管理する。
+- Role DefinitionはOrganization ScopeとProduction Scopeで共通利用する。
+- ParticipantとMembershipを分離する。
+- Participant TypeとRoleを分離する。
+- CAST / STAFFはParticipant TypeでありRoleではない。
 - Organizationの活動・制作はProjectで管理する。
 - Projectの下にProductionを持つ。
 - Production関連DomainはProductionを通じてOrganization Scopeに属する。
-- RoleとParticipant Typeを分離する。
-- Participant TypeはProductionへの参加区分を表す。
-- Participant TypeはOrganizationの権限を付与しない。
-- RoleはProductionへの参加区分を自動的に決定しない。
-- Organizationは内部情報と公開情報を分離する。
-- Organization Public Profileは公開対象情報のみを表示する。
+- Historyは独立Domainとして管理する。
 - AccountingはOrganization単位で管理する。
+- AccountはAccounting Domainの勘定科目である。
+- AccountとUserAccountを分離する。
+- BudgetおよびProduction ActualはProduction単位で管理する。
 - Equipmentは資産管理を目的としない。
 - ExternalConnectionはOrganizationの子Entityである。
 - ExternalConnectionはSNSに限定しない。
