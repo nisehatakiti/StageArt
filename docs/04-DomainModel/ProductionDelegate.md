@@ -2,14 +2,14 @@
 
 # Domain Model : ProductionDelegate
 
-Version : 2.0
+Version : 2.1
 
 ---
 
 # Purpose
 
 ProductionDelegateは、
-特定のProductionに対してRoleをAssignmentされたPersonを表すDomainである。
+特定のProductionに対してRoleを適用されたPersonを表すDomainである。
 
 ProductionDelegateは、
 Productionの管理業務を特定のPersonへ委任するために使用する。
@@ -21,7 +21,7 @@ ProductionDelegate自身は権限の内容を定義しない。
 RoleはRole Domainで一元管理する。
 
 ProductionDelegateは、
-Production ScopeにおけるRole Assignmentとして扱う。
+Production ScopeにおいてPersonへRoleを適用する関係として扱う。
 
 ---
 
@@ -73,7 +73,7 @@ ProductionDelegateは以下を管理する。
 - UpdatedAt
 
 ProductionDelegateは、
-Production単位のRole Assignmentを表す。
+Production単位でPersonにRoleを適用する関係を表す。
 
 ProductionDelegateは、
 Permissionそのものを直接保持しない。
@@ -95,7 +95,7 @@ ProductionDelegateは、
 - Role
 
 の組み合わせによって、
-一つのProduction ScopeにおけるRole Assignmentを表す。
+一つのProduction ScopeにおけるRoleの適用関係を表す。
 
 ---
 
@@ -108,7 +108,7 @@ ProductionDelegateはProductionから独立して存在できない。
 ProductionDelegateの追加・変更・削除は、
 Productionを経由して管理する。
 
-ProductionDelegateによってAssignmentされたRoleの権限は、
+ProductionDelegateによって適用されたRoleの権限は、
 所属するProductionに対してのみ有効である。
 
 ---
@@ -147,7 +147,7 @@ Person自身にProduction ScopeのRoleを設定することはしない。
 ProductionDelegateは一つのRoleを参照する。
 
 Roleは、
-PersonにAssignmentされる権限セットを定義するMasterである。
+Personに適用される権限セットを定義するMasterである。
 
 RoleはProductionDelegate専用ではない。
 
@@ -173,10 +173,10 @@ Roleの具体的な定義はRole Domainで管理する。
 
 ---
 
-# Role Assignment
+# Role Application
 
 ProductionDelegateは、
-Production ScopeにおけるRole Assignmentである。
+Production ScopeにおいてPersonへRoleを適用する関係である。
 
 基本構造：
 
@@ -194,7 +194,7 @@ ProductionDelegateは、
 Roleそのものを作成しない。
 
 既存のRole Definitionを、
-特定Productionに対してPersonへAssignmentする。
+特定Productionに対してPersonへ適用する。
 
 ---
 
@@ -202,7 +202,7 @@ Roleそのものを作成しない。
 
 Role DefinitionそのものはScopeを持たない。
 
-ProductionDelegateによってAssignmentされたRoleは、
+ProductionDelegateによって適用されたRoleは、
 Production Scopeで有効になる。
 
 例えば、
@@ -225,8 +225,8 @@ Person AがProduction Bについて
 
 # Organization Role Relationship
 
-ProductionDelegateによるRole Assignmentと、
-OrganizationのMembershipによるRole Assignmentは、
+ProductionDelegateによるRoleの適用と、
+OrganizationのMembershipによるRoleの適用は、
 異なるScopeとして管理する。
 
 Organization Scope：
@@ -236,8 +236,6 @@ Person
 Membership
     ↓
 Organization
-    ↓
-Role Assignment
     ↓
 Role
     ↓
@@ -271,7 +269,7 @@ PersonがOrganizationに所属していることを表す。
 
 ProductionDelegateは、
 Personが特定のProductionに対して
-RoleをAssignmentされていることを表す。
+Roleを適用されていることを表す。
 
 例えば、
 
@@ -291,7 +289,7 @@ Role = Rehearsal Manager
 
 という関係を持つことができる。
 
-ProductionDelegateによるRole Assignmentは、
+ProductionDelegateによるRoleの適用は、
 PersonのOrganization Membershipを変更しない。
 
 ProductionDelegateの存在によって、
@@ -309,7 +307,7 @@ ProductionDelegate Domain自身は、
 Membershipの有無をRole Definitionの条件として扱わない。
 
 ProductionDelegateは、
-PersonにProduction ScopeのRoleをAssignmentする
+PersonにProduction ScopeのRoleを適用する
 Domainとして扱う。
 
 ---
@@ -343,7 +341,7 @@ PrimaryManagerと同等の権限を自動的には持たない。
 # Authorization
 
 ProductionDelegateの権限は、
-AssignmentされたRoleによって決定する。
+適用されたRoleによって決定する。
 
 Roleに定義されていない操作は実行できない。
 
@@ -351,7 +349,7 @@ PrimaryManagerは、
 Productionの全権限を持つ。
 
 ProductionDelegateは、
-AssignmentされたRoleに含まれるPermissionのみを持つ。
+適用されたRoleに含まれるPermissionのみを持つ。
 
 ProductionDelegateのPermissionは、
 Production Scopeに限定される。
@@ -361,7 +359,7 @@ Production Scopeに限定される。
 # Permission Scope
 
 ProductionDelegateのPermissionは、
-AssignmentされたProductionに対してのみ有効である。
+Roleが適用されたProductionに対してのみ有効である。
 
 例えば、
 
@@ -374,7 +372,7 @@ ProductionDelegate
 
 Production B
     ↓
-Role Assignmentなし
+Roleの適用なし
 
 という状態の場合、
 
@@ -387,7 +385,7 @@ Production Bについて同じPermissionを持たない。
 # Multiple Roles
 
 同一Personに対して、
-同一Production内で複数のRoleをAssignmentできる。
+同一Production内で複数のRoleを適用できる。
 
 例えば、
 
@@ -413,7 +411,7 @@ Production A
 
 # Role Change
 
-ProductionDelegateにAssignmentされているRoleは、
+ProductionDelegateに適用されているRoleは、
 必要に応じて変更できる。
 
 例えば、
@@ -435,7 +433,8 @@ Roleを変更すると、
 
 Role Definitionそのものが変更されるわけではない。
 
-変更されるのはRole Assignmentである。
+変更されるのは、
+ProductionDelegateに適用するRoleである。
 
 ---
 
@@ -449,7 +448,7 @@ ProductionDelegateは状態を持つ。
 - INACTIVE
 
 ACTIVEの場合、
-AssignmentされたRoleのPermissionを有効とする。
+適用されたRoleのPermissionを有効とする。
 
 INACTIVEの場合、
 ProductionDelegateは保持されるが、
@@ -509,7 +508,7 @@ Roleを変更すると、
 そのPersonにProduction Scopeで適用されるPermissionも変更される。
 
 StatusをINACTIVEに変更すると、
-ProductionDelegateによるRole Assignmentは無効になる。
+ProductionDelegateによるRoleの適用は無効になる。
 
 変更時には、
 
@@ -528,7 +527,7 @@ Productionから削除できる。
 削除はProductionを経由して行う。
 
 削除されたProductionDelegateは、
-そのProductionに対するRole Assignmentを失う。
+そのProductionに対するRoleの適用を失う。
 
 過去に実行された操作のCreatedByおよびUpdatedByは
 変更しない。
@@ -545,7 +544,7 @@ Participantは、
 PersonまたはOrganizationがProductionへ参加していることを表す。
 
 ProductionDelegateは、
-PersonがProduction ScopeでRoleをAssignmentされていることを表す。
+PersonがProduction ScopeでRoleを適用されていることを表す。
 
 同一Personが、
 
@@ -645,7 +644,7 @@ UpdatedAt
 ProductionDelegateが最後に変更された日時を表す。
 
 これらの情報は、
-Production ScopeにおけるRole Assignmentの
+Production ScopeにおけるRoleの適用状態の
 管理履歴を確認するために利用する。
 
 ---
@@ -681,7 +680,7 @@ ProductionDelegateは、
 Personの公演参加実績を表すものではない。
 
 ProductionDelegateは、
-Productionに対するRole Assignmentを表す。
+Productionに対するRoleの適用関係を表す。
 
 したがって、
 
@@ -707,20 +706,20 @@ Productionに対するRole Assignmentを表す。
 - ProductionDelegateは権限そのものを保持しない。
 - RoleがPermission Setを定義する。
 - Role DefinitionはRole Domainで一元管理する。
-- ProductionDelegateはProduction ScopeのRole Assignmentである。
+- ProductionDelegateはProduction ScopeにおいてPersonへRoleを適用する。
 - Role DefinitionはProductionDelegate専用ではない。
 - 同じRole DefinitionをOrganization ScopeとProduction Scopeで利用できる。
 - ProductionDelegateによるRoleのPermissionは所属Productionに対してのみ有効である。
 - 同一Personを複数ProductionのProductionDelegateとして登録できる。
-- 同一PersonがProductionごとに異なるRoleをAssignmentされることを許可する。
-- 同一Personに同一Production内で複数のRoleをAssignmentできる。
+- 同一PersonがProductionごとに異なるRoleを適用されることを許可する。
+- 同一Personに同一Production内で複数のRoleを適用できる。
 - Person自身にProduction ScopeのRoleを設定しない。
-- ProductionDelegateによるRole AssignmentはMembershipを変更しない。
-- ProductionDelegateによるRole AssignmentはOrganization ScopeのRoleを変更しない。
+- ProductionDelegateによるRoleの適用はMembershipを変更しない。
+- ProductionDelegateによるRoleの適用はOrganization ScopeのRoleを変更しない。
 - PrimaryManagerはProductionに一人だけ存在する。
 - PrimaryManagerはProductionに関する全権限を持つ。
 - ProductionDelegateはPrimaryManagerと同等の権限を自動的には持たない。
-- ProductionDelegateはAssignmentされたRoleに含まれるPermissionのみ持つ。
+- ProductionDelegateは適用されたRoleに含まれるPermissionのみ持つ。
 - ACTIVEのProductionDelegateのみRoleのPermissionを有効とする。
 - INACTIVEのProductionDelegateはRoleのPermissionを持たない。
 - ParticipantとProductionDelegateは異なる概念である。
@@ -746,7 +745,7 @@ Productionに対する管理権限の委任を表す。
 ProductionDelegateはProductionの子Entityとして管理する。
 
 ProductionDelegateは、
-Production ScopeにおけるRole Assignmentである。
+Production ScopeにおいてPersonへRoleを適用する関係である。
 
 Roleは、
 「何ができるか」を定義する。
@@ -770,8 +769,6 @@ Person
 Membership
     ↓
 Organization
-    ↓
-Role Assignment
     ↓
 Role
     ↓
@@ -831,21 +828,21 @@ Roleは、
 - Participant管理権限
 - Performance管理権限
 - Document管理権限
-- Role Assignment History
-- Role Assignmentの有効期間
+- Role適用履歴
+- Role適用の有効期間
 - より細かなScope
 
 Roleの具体的な定義はRole Domainで管理する。
 
 ProductionDelegateは、
 Role Definitionを増やすためのDomainではなく、
-既存RoleをProduction ScopeへAssignmentするためのDomainとして維持する。
+既存RoleをProduction Scopeへ適用するためのDomainとして維持する。
 
 ---
 
 # Design Principles
 
-- ProductionDelegateはProductionに対するRole Assignmentである。
+- ProductionDelegateはProduction ScopeにおいてPersonへRoleを適用する関係である。
 - ProductionDelegateはProductionの子Entityである。
 - ProductionDelegateはPersonを参照する。
 - ProductionDelegateはRoleを参照する。
@@ -857,18 +854,3 @@ Role Definitionを増やすためのDomainではなく、
 - ProductionDelegateはRoleそのものではない。
 - ProductionDelegateは「誰に、どのProductionで、どのRoleを与えたか」を表す。
 - ProductionDelegateのPermissionはProduction Scopeに限定される。
-- PrimaryManagerはProductionに一人だけ存在する。
-- PrimaryManagerはProductionに関する全権限を持つ。
-- ProductionDelegateはPrimaryManagerと同等の権限を自動的には持たない。
-- Organization MembershipとProductionDelegateを分離する。
-- ParticipantとProductionDelegateを分離する。
-- Participant TypeとRoleを分離する。
-- CAST / STAFFはParticipant TypeでありRoleではない。
-- ProductionDelegateによるRole AssignmentはMembershipを変更しない。
-- ProductionDelegateによるRole AssignmentはOrganization ScopeのRoleを変更しない。
-- 同一Personが複数Productionで異なるRoleを持つことを許可する。
-- 同一Personに同一Production内で複数RoleをAssignmentできる。
-- ProductionDelegateはProductionを経由して管理する。
-- ProductionDelegateは監査情報を保持する。
-- ProductionDelegateはPersonのParticipation Historyを生成しない。
-- Blueprintを唯一の設計基準とする。
