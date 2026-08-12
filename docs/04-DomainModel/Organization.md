@@ -2,7 +2,7 @@
 
 # Domain Model : Organization
 
-Version : 3.2
+Version : 3.3
 
 ---
 
@@ -114,6 +114,9 @@ Membershipは、
 Membershipの詳細なLifecycleは、
 Membership Domainで定義する。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
 ---
 
 # Role
@@ -146,6 +149,12 @@ Membershipを通じてPersonへ適用する。
 
 Roleの定義およびPermission Setは、
 Role Domainで管理する。
+
+一つのMembershipへ複数Roleを
+直接付与する構造は基本設計としない。
+
+複数のPermissionが必要な場合は、
+RoleのPermission Setによって表現する。
 
 ---
 
@@ -323,7 +332,7 @@ Role
 Permission
 
 ProductionDelegateは、
-特定Productionの管理権限をPersonへ適用する。
+特定Productionの管理権限をPersonへ適用する関係を表す。
 
 ProductionDelegateは、
 Organization全体のRoleを変更しない。
@@ -333,7 +342,7 @@ Organization全体の権限を与えずに、
 特定Productionのみを管理できる。
 
 ProductionDelegateの詳細な構造は、
-ProductionDelegate Domainで定義する。
+Production Domainで定義する。
 
 ---
 
@@ -370,6 +379,12 @@ Role Definitionは共通とする。
 
 Organization Scope専用のDelegateRoleや、
 Production Scope専用の別Role体系は作成しない。
+
+Organization ScopeのRoleは、
+Production Scopeへ自動的に継承されない。
+
+Production ScopeのRoleも、
+Organization Scopeへ自動的に継承されない。
 
 ---
 
@@ -423,6 +438,9 @@ Role = Rehearsal Manager
 必要なPermission Setを持つRoleを
 Membershipへ適用する。
 
+Production単位の権限についても、
+ProductionDelegateから通常のRoleを参照する。
+
 Delegateであること自体を表すために、
 別のRole Definitionを作成しない。
 
@@ -450,6 +468,8 @@ Projectは一つ以上のProductionを持つことができる。
 Projectは利用者が必ずしも意識する必要のないInternal Domainであり、
 UI上では必要に応じてStageArtが適切な名称・表示方法で扱う。
 
+Projectの詳細はProject Domainで定義する。
+
 ---
 
 # Production
@@ -475,14 +495,20 @@ Productionに関連する、
 - Performance
 - Ticket
 - Reservation
+- CheckIn
 - Rehearsal
+- Timetable
 - Budget
 - Production Actual
 - Document
 - Announcement
 - Survey
+- ProductionDelegate
 
 などはProductionに関連付けて管理する。
+
+これらのProduction関連Domainを、
+Organizationの直接の子Domainとして重複管理しない。
 
 ---
 
@@ -509,6 +535,48 @@ Production Scopeの中で管理する。
 
 Production関連Domainは、
 Productionを通じてOrganization Scopeに属する。
+
+例えば、
+
+Organization
+    ↓
+Project
+    ↓
+Production
+    ↓
+Rehearsal
+
+という関係において、
+RehearsalのOrganization Scopeは
+Productionから解決する。
+
+---
+
+# Production Primary Manager
+
+Productionには、
+PrimaryManagerが存在する。
+
+PrimaryManagerは、
+Productionに関する全管理権限を持つ。
+
+PrimaryManagerは、
+Organization Ownerとは異なる。
+
+Organization Owner：
+
+Organization Scopeの管理者
+
+PrimaryManager：
+
+Production Scopeの管理者
+
+ProductionDelegateとは異なり、
+PrimaryManagerはRoleによる限定権限ではなく、
+Production Scopeの全管理権限を持つ。
+
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
 
 ---
 
@@ -538,13 +606,19 @@ Organization内部のFactから生成・参照する。
 # Public Profile
 
 Organizationの公開ページは、
-OrganizationのFactおよび関連Domainから生成されるPublic Artifactとして扱う。
+OrganizationのFactおよび関連Domainから生成される
+Public Artifactとして扱う。
 
 Organization Public Profileでは、
 団体の公開情報を表示する。
 
 公開ページに表示する情報は、
 公開対象として定義された情報に限定する。
+
+Membershipの内部StatusやPermission、
+Accounting情報、
+Credentialなどの内部情報を
+Public Profileへ公開してはならない。
 
 ---
 
@@ -633,6 +707,9 @@ AccountはAuthentication Identityではない。
 
 Authentication IdentityはUserAccountで管理する。
 
+AccountとUserAccountは、
+同じ「Account」という意味で混在させない。
+
 ---
 
 # Equipment
@@ -695,6 +772,9 @@ StageArtでは、
 
 などを管理する。
 
+Documentの実ファイルそのものは、
+StageArtの正本として保持しない。
+
 ---
 
 # Announcement
@@ -705,313 +785,197 @@ OrganizationまたはProductionの関係者へ、
 適切なRole / Permissionを持つPersonが、
 Announcementを作成できる。
 
-対象者は、
+Organization ScopeのAnnouncementと、
+Production ScopeのAnnouncementを区別する。
 
-- CAST
-- STAFF
-- 制作
-- その他関係者
-
-などから指定できる。
-
-ここでのCAST / STAFFは、
-ProductionにおけるParticipant Typeを意味する。
-
-Announcementの作成権限は、
-Organization ScopeまたはProduction Scopeの
-Role / Permissionによって決定する。
+Productionに関するAnnouncementは、
+Productionを関連先として管理する。
 
 ---
 
 # External Connection
 
-Organizationは外部サービスとの接続を、
-ExternalConnectionとして管理する。
-
-ExternalConnectionはOrganizationの子Entityである。
-
-基本構造：
-
-Organization
-    ↓
-ExternalConnection
-    ├── Service
-    ├── Account Identifier
-    └── Credential
-
-ExternalConnectionはSNS専用のDomainではない。
-
-例えば、
-
-- X
-- Instagram
-- Facebook
-- YouTube
-- TikTok
-- LINE
-- Google
-- Google Drive
-- Google Calendar
-
-などを外部Serviceとして扱うことができる。
-
----
-
-# External Service
-
-外部サービスの種類はServiceによって管理する。
-
-Serviceは、
-
-- X
-- Instagram
-- Facebook
-- Google
-- Google Drive
-- Google Calendar
-
-などの外部サービスを識別する。
-
-特定サービス固有のBusiness Logicは、
-Organization Domainへ持ち込まない。
-
----
-
-# External Account
-
-ExternalConnectionは、
-外部サービス上のAccountを識別するための情報を保持する。
-
-基本構造：
-
-ExternalConnection
-    ├── Service
-    ├── Account Identifier
-    └── Credential
-
-Account Identifierは、
-
-- 外部サービスのAccount ID
-- ユーザー名
-- Page ID
-- その他外部サービス上の識別子
-
-などを表す。
-
-StageArt内部のAccountとは別の概念である。
-
----
-
-# Credential
-
-Credentialは、
-ExternalConnectionに属する外部サービスの認証情報を表す。
-
-Credentialには必要に応じて、
-
-- OAuth Token
-- Access Token
-- Refresh Token
-- Secret
-
-などを保持する。
-
-認証情報は平文で保存しない。
-
-暗号化、
-Secret管理、
-Token更新などの具体的な実装はInfrastructure Layerで管理する。
-
-Domain Modelは、
-特定の認証方式へ直接依存しない。
-
----
-
-# External Connection Scope
-
-ExternalConnectionはOrganizationに所属する。
-
-異なるOrganizationのExternalConnectionを共有してはならない。
+Organizationは、
+外部サービスとのConnectionを管理できる。
 
 例：
 
-Organization A
-    └── ExternalConnection
-            └── Instagram A
-
-Organization B
-    └── ExternalConnection
-            └── Instagram B
-
-Organization Aの認証情報を、
-Organization Bから利用することはできない。
-
----
-
-# External Connection Lifecycle
-
-ExternalConnectionは以下の状態を持つ。
-
-- CONNECTED
-- DISCONNECTED
-- ERROR
-
-CONNECTED：
-
-外部サービスとの接続が有効。
-
-DISCONNECTED：
-
-接続情報は保持するが、
-外部サービスへの操作は実行しない。
-
-ERROR：
-
-認証期限切れなどにより、
-再認証等が必要な状態。
-
-具体的な状態遷移はExternalConnection Domainで定義する。
-
----
-
-# External Service Operations
-
-外部サービスへの実際のAPI呼び出しは、
-Infrastructure Layerが担当する。
-
-Domain Layerは、
-
-- X
-- Instagram
 - Google
 - Google Drive
 - Google Calendar
+- LINE
+- SNS
+- その他外部サービス
 
-などの特定サービスへ直接依存しない。
+External Connectionは、
+Organization単位で管理する。
 
-ExternalConnectionは、
-外部サービスを操作するために必要な接続情報を提供する。
+External Connectionに必要なCredentialは、
+平文で保存しない。
+
+Secret情報は、
+Secret Management / Infrastructure Layerで安全に管理する。
+
+External Connectionの詳細は、
+External Connection Domainで定義する。
 
 ---
 
 # SNS
 
-SNSはExternalConnectionの特別な子Entityとして扱わない。
+Organizationは、
+SNSなどのExternal Serviceを管理できる。
 
-SNSも外部サービスの一種としてServiceで管理する。
+SNSはOrganizationに関連するExternal Connectionとして扱う。
 
-OrganizationのPublic ProfileにSNS情報を表示する場合は、
-公開対象となるアカウント情報のみを参照する。
+基本構造：
 
-Credentialや内部接続情報を公開してはならない。
+Organization
+    ↓
+External Connection
+    ↓
+External Service
 
-StageArtはSNS投稿内容そのものをDomainの正本として管理しない。
+SNSの公開情報と認証情報を分離する。
 
-SNSへの投稿機能を提供する場合も、
-投稿本文などをStageArt内のSocial Post Domainとして永続管理することを前提としない。
+公開情報として、
 
----
+- Site
+- Account Identifier
+- Public URL
 
-# Google Drive
+などを管理できる。
 
-Google Driveは、
-Documentの外部保存先として利用する。
+Credentialは公開情報として扱わない。
 
-StageArtはGoogle Drive上の実ファイルそのものを正本として管理しない。
+Credentialは暗号化されたSecret Storageなどで管理する。
 
-StageArtでは、
-
-- File Identifier
-- File Name
-- File Type
-- External URL / Reference
-- Project / Productionとの関連
-- 共有対象
-
-などの情報を管理する。
+StageArtからSNSへの投稿など、
+外部サービスへのAPI操作はInfrastructure Layerが担当する。
 
 ---
 
-# Google Calendar
+# Authorization
 
-Google Calendarは、
-Rehearsalを外部Calendarへ連携するために利用する。
+Organizationに対するAuthorizationは、
+Membershipを起点として判定する。
 
-CONFIRMEDとなったRehearsalを、
-Google Calendarへ登録できる。
+基本構造：
 
-Google Calendarへの登録対象は、
-RehearsalAttendanceの参加予定者だけに限定しない。
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
 
-Google Calendar Eventは、
-StageArt上のRehearsalとは別のExternal Artifactとして扱う。
+MembershipがACTIVEであることを基本条件とし、
+Roleに含まれるPermissionによって操作可否を判定する。
 
-StageArt上のRehearsalを正本とする。
+一つのMembershipは、
+基本的に一つのRoleを参照する。
 
----
+Organization ScopeのRoleは、
+Production Scopeへ自動継承されない。
 
-# External Connection Authorization
+Production Scopeの権限は、
+ProductionDelegateまたはPrimaryManagerによって判定する。
 
-ExternalConnectionの管理は、
-Organizationを管理する権限を持つPersonが実行できる。
-
-基本的には、
-
-- Organization Owner
-- 適切なOrganization Role
-- 適切なPermission
-
-を持つPersonが対象となる。
-
-ProductionDelegateによるProduction Scopeの権限は、
-Organization全体のExternalConnection操作権限とは別に扱う。
+Authorizationの詳細はAuthorization Domainで定義する。
 
 ---
 
-# Automatically Generated
+# Organization Scope Boundary
 
-Organization作成時、
-StageArtは必要な基本情報を自動生成する。
+Organization Scopeでは、
+Organizationそのものと、
+Organizationに属するInternal Domainを管理する。
 
-例：
+Organization Scopeの代表的なDomain：
 
-- Owner Membership
-- Default Role
-- Default Settings
+- Membership
+- Project
+- Accounting
+- Equipment
+- Document
+- External Connection
+- Regulation
+- Announcement
 
-Owner Membershipには、
-Organization管理に必要なRoleを適用する。
+Production関連Domainについては、
+Productionを経由してOrganization Scopeに属する。
 
-ProjectやProductionを作成する場合は、
-それぞれのDomainのBusiness Ruleに従って関連Domainを生成する。
-
-ExternalConnectionは、
-Organization作成時には自動生成しない。
-
-外部サービスとの接続は、
-Organization管理権限を持つPersonが必要に応じて設定する。
+Production Scopeの権限を、
+Organization Scopeの権限と混同しない。
 
 ---
 
 # Lifecycle
 
-Organizationは以下の状態を持つ。
+Organizationは、
+団体そのもののLifecycleを管理する。
+
+基本的な状態：
 
 - ACTIVE
+- INACTIVE
 - ARCHIVED
-- DELETED
 
-DELETEDは論理削除とする。
-
+Organizationを利用停止またはArchiveしても、
 過去のProject、
 Production、
-Accountingなどの履歴との整合性を維持する。
+Accounting、
+HistoryなどのFactを削除してはならない。
 
-OrganizationがArchivedまたはDeletedになった場合、
-新規Business Activityの作成を制限する。
+OrganizationのLifecycleと、
+MembershipやProductionのLifecycleは、
+それぞれ独立して管理する。
 
-既存データの参照可否は、
-LifecycleおよびAuthorizationのルールに従う。
+---
+
+# Organization and Membership Lifecycle
+
+OrganizationがACTIVEである場合、
+Membershipを通常どおり利用できる。
+
+OrganizationがINACTIVEまたはARCHIVEDになった場合、
+新規Membership操作やBusiness Activityを制限できる。
+
+既存Membershipの履歴は保持する。
+
+OrganizationのStatus変更によって、
+Membershipそのものを物理削除しない。
+
+---
+
+# Organization and Project Lifecycle
+
+OrganizationはProjectを保持する。
+
+ProjectのLifecycleは、
+OrganizationのLifecycleとは分離する。
+
+OrganizationがArchiveされた場合でも、
+過去Projectは履歴として保持する。
+
+Projectの詳細なLifecycleはProject Domainで定義する。
+
+---
+
+# Organization and Production Lifecycle
+
+ProductionはProjectに所属する。
+
+ProductionのLifecycleは、
+OrganizationおよびProjectとは独立して管理する。
+
+OrganizationのStatus変更によって、
+ProductionのStatusを自動的に同一化しない。
+
+Productionの詳細なLifecycleはProduction Domainで定義する。
 
 ---
 
@@ -1020,17 +984,17 @@ LifecycleおよびAuthorizationのルールに従う。
 Organizationの重要な管理操作について、
 監査情報を記録できるようにする。
 
-基本的な監査情報として、
+基本的な監査情報：
 
 - CreatedBy
 - CreatedAt
 - UpdatedBy
 - UpdatedAt
 
-を利用する。
-
-Credentialなどの認証情報そのものを
-監査情報として記録しない。
+OrganizationのLifecycle変更、
+Owner変更、
+重要な設定変更などについても、
+必要に応じて監査情報を保持する。
 
 ---
 
@@ -1040,14 +1004,90 @@ Organizationに関する主なDomain Event：
 
 - OrganizationCreated
 - OrganizationUpdated
+- OrganizationActivated
+- OrganizationDeactivated
 - OrganizationArchived
-- OrganizationDeleted
-- MembershipCreated
-- MembershipUpdated
-- MembershipRemoved
 
-ExternalConnectionに関するEventは、
-ExternalConnection Domainで定義する。
+Organizationの関連Domainでは、
+各DomainのEventを別途定義する。
+
+例えば：
+
+Membership：
+
+- MembershipRequested
+- MembershipInvited
+- MembershipApproved
+- MembershipRejected
+- MembershipSuspended
+- MembershipReactivated
+- MembershipLeft
+- MembershipRoleChanged
+
+Project：
+
+- ProjectCreated
+- ProjectUpdated
+- ProjectClosed
+- ProjectArchived
+
+Production：
+
+- ProductionCreated
+- ProductionUpdated
+- ProductionCompleted
+- ProductionCancelled
+- ProductionArchived
+
+Organization Domain自身が、
+これらの関連DomainのEventを直接管理するわけではない。
+
+---
+
+# Business Rules
+
+- Organizationは舞台芸術活動を行う団体を表す。
+- OrganizationはStageArtにおけるTenantである。
+- Organizationは劇団に限定しない。
+- OrganizationIdは変更しない。
+- Organization Nameは変更できる。
+- Organizationに属するBusiness DataはOrganization Scopeで管理する。
+- PersonとOrganizationの所属関係はMembershipで管理する。
+- OrganizationはPersonを直接保持しない。
+- Personは複数Organizationへ所属できる。
+- 一つのMembershipは基本的に一つのRoleを参照する。
+- RoleはPersonの属性ではない。
+- RoleはMembershipを通じてOrganization Scopeへ適用する。
+- 一つのMembershipへ複数Roleを直接付与する構造を基本設計としない。
+- Role DefinitionはRole Domainで共通管理する。
+- RoleAssignmentという独立Domainを作成しない。
+- DelegateRoleという独立Role体系を作成しない。
+- Production単位のRole適用はProductionDelegateで管理する。
+- ProductionDelegateはOrganization ScopeのMembershipとは別の関係である。
+- ProductionDelegateのRoleはOrganization Scopeへ自動継承されない。
+- Organization ScopeのRoleはProduction Scopeへ自動継承されない。
+- Organization Ownerは独立したRole体系として作成しない。
+- Organization OwnerはMembershipとRoleによって表現する。
+- Production PrimaryManagerはOrganization Ownerとは異なる。
+- ProjectはOrganizationに所属する。
+- ProductionはProjectに所属する。
+- Production関連DomainはProductionを中心に管理する。
+- Production関連DomainをOrganizationの直接の子Domainとして重複管理しない。
+- Organization AccountingはOrganization単位で管理する。
+- AccountはAccounting Domainの勘定科目である。
+- AccountとUserAccountを混同しない。
+- Authentication IdentityはUserAccountで管理する。
+- ProjectのBudgetとProductionのBudgetを混同しない。
+- Production単位のBudget / Production ActualはProduction Scopeで管理する。
+- Organization Public Profileには公開対象情報のみ表示する。
+- Membershipの内部権限情報をPublic Profileへ公開しない。
+- Accounting情報をPublic Profileへ公開しない。
+- External ConnectionのCredentialをPublic Profileへ公開しない。
+- External ConnectionのCredentialを平文で保存しない。
+- OrganizationのLifecycleとMembershipのLifecycleを分離する。
+- OrganizationのLifecycleとProjectのLifecycleを分離する。
+- OrganizationのLifecycleとProductionのLifecycleを分離する。
+- Organizationを物理削除することで過去のBusiness Factを破壊しない。
 
 ---
 
@@ -1055,39 +1095,57 @@ ExternalConnection Domainで定義する。
 
 OrganizationはStageArtにおけるTenantである。
 
-Organizationは団体を表すBusiness Domainである。
+Organizationは、
+Personの集合そのものではない。
 
-Organizationは「劇団」に限定しない。
+PersonとOrganizationの関係は、
+Membershipという独立した所属関係によって表現する。
 
-PersonとOrganizationは別のIdentityとして管理する。
+基本構造：
 
-Personとの所属関係はMembershipで管理する。
+Person
+    ↓
+Membership
+    ↓
+Organization
 
-Organization内の権限はMembershipに関連するRoleで管理する。
+Organization Scopeの権限は、
 
-Role DefinitionはRole Domainで管理する。
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role
+    ↓
+Permission
 
-RoleはPermission Setを定義する。
+によって判定する。
 
-Organization ScopeのRole適用はMembershipによって表現する。
-
-Organization Delegateという独立Domainは作成しない。
-
-DelegateRoleという別のRole体系は使用しない。
+一つのMembershipは、
+基本的に一つのRoleを参照する。
 
 RoleAssignmentという独立Domainは作成しない。
 
-Production ScopeのRole適用はProductionDelegateによって表現する。
+Production単位の権限は、
 
-Organization OwnerもMembership / Roleによって表現する。
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
 
-Organization自身にOwnerIdを直接保持しない。
+によって判定する。
 
-Organizationの活動・制作はProjectによって管理する。
+Organization OwnerとProduction PrimaryManagerは、
+異なるScopeの管理者である。
 
-ProductionはProjectに所属する。
-
-基本構造は、
+OrganizationはProjectを保持し、
 
 Organization
     ↓
@@ -1095,77 +1153,111 @@ Project
     ↓
 Production
 
-である。
+という階層を形成する。
 
-Production関連Domainは、
-Productionを通じてOrganization Scopeに属する。
+Productionに関連する、
 
-OrganizationはMemberやProductionを直接保持するのではなく、
-それぞれのDomainを通じて関連付ける。
+- Participant
+- Performance
+- Ticket
+- Reservation
+- CheckIn
+- Rehearsal
+- Timetable
+- Budget
+- Production Actual
+- Document
+- Announcement
+- Survey
 
-Historyは独立Domainとして管理する。
+などはProductionを中心に管理する。
 
-AccountingはOrganization単位で管理する。
+稽古については、
+RehearsalをProductionの一つのEntityとして管理する。
 
-BudgetおよびProduction ActualはProduction単位で管理する。
+稽古予定と確定稽古を別Entityとして作成しない。
 
-EquipmentはOrganizationに所属するが、
-資産管理Domainではない。
+RehearsalのLifecycleはStatusで管理し、
+RehearsalAttendanceはLifecycle全体を通じて保持する。
 
-ExternalConnectionはOrganizationの子Entityである。
+Organization Accountingは、
+ProjectおよびProductionの予算・実績とは分離する。
 
-ExternalConnectionはSNS専用ではない。
+AccountingのAccountとAuthenticationのUserAccountは、
+完全に別の概念として扱う。
 
-SNS、Google Drive、Google CalendarなどはServiceとして扱う。
+Organization Public Profileは、
+Organizationおよび関連Domainの公開対象情報から生成する。
 
-Credentialは平文保存しない。
+内部管理情報、
+権限情報、
+会計情報、
+Credentialなどは公開しない。
 
-外部サービスへのAPIアクセスはInfrastructure Layerが担当する。
+---
 
-SNS投稿内容はStageArtの正本として管理しない。
+# Future
 
-Public InformationとInternal Informationを明確に分離する。
+将来的にOrganization単位で、
 
-内部情報をPublic Profileへ公開してはならない。
+- 複数Project
+- 複数Production
+- 複数Membership
+- Organization独自Role
+- External Connection
+- SNS連携
+- 会計
+- 備品管理
+- 規約管理
+- ドキュメント管理
+- 内部Announcement
+- Organization Public Profile
+
+などを拡張できる構造とする。
+
+ただし、
+Production固有のDomainをOrganizationへ移動させない。
+
+また、
+Production ScopeのRoleをOrganization ScopeのRoleへ統合しない。
+
+Organization ScopeとProduction Scopeを明確に分離する。
 
 ---
 
 # Design Principles
 
-- OrganizationはTenantである。
-- Organizationは団体を表すBusiness Domainである。
+- OrganizationはStageArtにおけるTenantである。
+- Organizationは舞台芸術活動を行う団体を表す。
 - Organizationは劇団に限定しない。
-- PersonとOrganizationは別軸として管理する。
-- Personとの所属関係はMembershipで管理する。
-- Organization内の権限はRoleで管理する。
-- RoleはPermission Setを定義する。
-- Organization ScopeのRole適用はMembershipで管理する。
-- Organization OwnerはMembership / Roleによって表現する。
-- Organization自身にOwnerIdを直接保持しない。
-- Organization Delegateという独立Domainを作成しない。
-- DelegateRoleという別のRole体系を使用しない。
+- OrganizationはPersonを直接保持しない。
+- PersonとOrganizationの関係はMembershipで管理する。
+- Personは複数Organizationへ所属できる。
+- 一つのMembershipは基本的に一つのRoleを参照する。
+- RoleはPersonの属性ではない。
+- RoleはMembershipを通じて適用する。
+- Role Definitionは共通管理する。
 - RoleAssignmentという独立Domainを作成しない。
-- Production ScopeのRole適用はProductionDelegateで管理する。
-- Role DefinitionはOrganization ScopeとProduction Scopeで共通利用する。
-- ParticipantとMembershipを分離する。
-- Participant TypeとRoleを分離する。
-- CAST / STAFFはParticipant TypeでありRoleではない。
-- Organizationの活動・制作はProjectで管理する。
-- Projectの下にProductionを持つ。
-- Production関連DomainはProductionを通じてOrganization Scopeに属する。
-- Historyは独立Domainとして管理する。
-- AccountingはOrganization単位で管理する。
-- AccountはAccounting Domainの勘定科目である。
-- AccountとUserAccountを分離する。
-- BudgetおよびProduction ActualはProduction単位で管理する。
-- Equipmentは資産管理を目的としない。
-- ExternalConnectionはOrganizationの子Entityである。
-- ExternalConnectionはSNSに限定しない。
-- 外部サービスの種類はServiceで管理する。
-- 外部サービスの認証情報はCredentialで管理する。
-- Credentialは平文保存しない。
-- 外部サービス固有のAPI処理はInfrastructure Layerで実装する。
-- SNS投稿内容はStageArtの正本として管理しない。
-- Google DriveはDocumentの外部保存先として利用する。
-- Google CalendarはRehearsalの外部連携先として利用する。
+- DelegateRoleという別Role体系を作成しない。
+- Organization ScopeとProduction Scopeを分離する。
+- Production単位の権限はProductionDelegateで管理する。
+- ProductionDelegateは通常のRole Definitionを利用する。
+- Organization OwnerはMembershipとRoleによって表現する。
+- Production PrimaryManagerはOrganization Ownerとは別概念である。
+- OrganizationはProjectを保持する。
+- ProjectはProductionを保持する。
+- Production関連DomainはProductionを中心に管理する。
+- Production関連DomainをOrganization直下で重複管理しない。
+- Organization AccountingとProduction Budget / Actualを分離する。
+- Accounting AccountとAuthentication UserAccountを明確に分離する。
+- Organization Public Profileには公開対象情報のみ表示する。
+- 内部権限情報を公開しない。
+- Credentialを公開しない。
+- External ConnectionのSecretを平文保存しない。
+- Organization LifecycleとMembership Lifecycleを分離する。
+- Organization LifecycleとProject Lifecycleを分離する。
+- Organization LifecycleとProduction Lifecycleを分離する。
+- RehearsalはProductionに所属する。
+- Rehearsalは一つのEntityとしてLifecycleを管理する。
+- RehearsalAttendanceはRehearsalのLifecycleを通じて保持する。
 - Blueprintを唯一の設計基準とする。
