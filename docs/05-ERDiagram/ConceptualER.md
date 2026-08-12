@@ -1,7 +1,8 @@
 # StageArt Blueprint
+
 # Conceptual ER Diagram
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -18,22 +19,23 @@ Business上の概念と関係性を示す。
 
     erDiagram
 
-        Account ||--o| Person : authenticates
+        UserAccount ||--o| Person : authenticates
 
         Person ||--o{ Membership : belongs_to
         Organization ||--o{ Membership : has
+        Membership }o--o{ Role : applies
 
         Organization ||--o{ ExternalConnection : has
         ExternalConnection }o--|| Service : uses
         ExternalConnection ||--|| Credential : has
 
         Organization ||--o{ Project : owns
-        Project ||--|| Production : manages
+        Project ||--|{ Production : has
 
         Production ||--|| Person : primary_manager
         Production ||--o{ ProductionDelegate : has
         ProductionDelegate }o--|| Person : assigned_to
-        ProductionDelegate }o--|| DelegateRole : has
+        ProductionDelegate }o--|| Role : applies
 
         Production ||--o{ Performance : has
         Production ||--o{ Participant : has
@@ -57,19 +59,23 @@ Business上の概念と関係性を示す。
 
 # Relationship Definitions
 
-## Account - Person
+## UserAccount - Person
 
-    Account
+    UserAccount
         ↓
     Person
 
-Accountは認証情報を表す。
+UserAccountはAuthentication Identityを表す。
 
 PersonはBusiness上の人物を表す。
 
-AccountとPersonは独立した概念であり、
-Accountは認証用途、
+UserAccountとPersonは独立した概念であり、
+UserAccountはAuthentication用途、
 PersonはBusiness用途で利用する。
+
+PersonはUserAccountを持たなくてもよい。
+
+UserAccountはOrganizationやProductionに直接所属しない。
 
 ---
 
@@ -86,6 +92,37 @@ PersonはBusiness用途で利用する。
 MembershipはPersonとOrganizationの所属関係を表す。
 
 PersonとOrganizationはMembershipを介して関連付けられる。
+
+Personは複数のOrganizationに所属できる。
+
+Organizationは複数のPersonをMembershipによって保持できる。
+
+---
+
+## Membership - Role
+
+    Person
+        │
+        ▼
+    Membership
+        │
+        ▼
+      Role
+        │
+        ▼
+    Permission
+
+Membershipに関連するRoleは、
+Organization ScopeでPersonに適用される。
+
+RoleはPermission Setを定義する。
+
+Role自体はOrganization ScopeやProduction Scopeを保持しない。
+
+RoleをどのScopeで誰に適用するかは、
+MembershipまたはProductionDelegateとの関係によって表現する。
+
+RoleAssignmentという独立したDomain Entityは作成しない。
 
 ---
 
@@ -127,7 +164,8 @@ Serviceは外部サービスの種類を表すMaster Domainである。
         ├── TikTok
         ├── LINE
         ├── Google
-        └── Google Drive
+        ├── Google Drive
+        └── Google Calendar
 
 などを表現する。
 
@@ -171,8 +209,9 @@ Credentialには、
 
     Organization
         │
-        ▼
-    Project
+        ├── Project
+        ├── Project
+        └── Project
 
 Organizationは複数のProjectを管理できる。
 
@@ -184,8 +223,11 @@ Projectは制作活動を管理するInternal Domainである。
 
     Project
         │
-        ▼
-    Production
+        ├── Production
+        ├── Production
+        └── Production
+
+一つのProjectは一つ以上のProductionを持つことができる。
 
 ProjectはProductionの制作活動を管理する。
 
@@ -213,7 +255,7 @@ PrimaryManagerはPersonを参照する。
 
 PrimaryManagerはProductionに対する全権限を持つ。
 
-PrimaryManagerはDelegateRoleによって権限を制限されない。
+PrimaryManagerはProductionDelegateによって制限される権限ではない。
 
 ---
 
@@ -228,9 +270,12 @@ PrimaryManagerはDelegateRoleによって権限を制限されない。
 Productionは複数のProductionDelegateを持つことができる。
 
 ProductionDelegateは、
-PrimaryManagerからProductionの管理権限を委任されたPersonを表す。
+Production ScopeにおいてPersonへRoleを適用する関係を表す。
 
 ProductionDelegateはProductionの子Entityとして管理する。
+
+ProductionDelegateはPrimaryManagerと異なり、
+適用されたRoleに定義されたPermissionのみを持つ。
 
 ---
 
@@ -247,41 +292,49 @@ ProductionDelegateは一人のPersonを参照する。
 ProductionDelegateとして登録できる。
 
 また、同一Personであっても、
-Productionごとに異なるDelegateRoleを設定できる。
+Productionごとに異なるRoleを適用できる。
 
 ---
 
-## ProductionDelegate - DelegateRole
+## ProductionDelegate - Role
 
     ProductionDelegate
         │
         ▼
-    DelegateRole
+       Role
 
-ProductionDelegateは一つのDelegateRoleを参照する。
+ProductionDelegateは一つのRoleを参照する。
 
-DelegateRoleは、
-ProductionDelegateに付与する権限セットを表す。
+Roleは、
+ProductionDelegateに適用するPermission Setを定義する。
 
-DelegateRoleはPersonに直接紐付かない。
+RoleはPersonに直接紐付かない。
 
 ProductionDelegateを介して、
-特定ProductionにおけるPersonの権限を定義する。
+特定ProductionにおけるPersonへRoleを適用する。
+
+RoleそのものはProduction専用ではない。
+
+Organization ScopeとProduction Scopeの
+両方で同じRole Definitionを利用できる。
 
 ---
 
-## DelegateRole - Permission
+## Role - Permission
 
-    DelegateRole
+    Role
         │
         ▼
     Permission Set
+        │
+        ▼
+    Permission
 
-DelegateRoleは、
-あらかじめ定義された権限セットを持つ。
+Roleは、
+あらかじめ定義されたPermission Setを持つ。
 
-DelegateRoleはProductionDelegateへ
-定義済みの権限を付与する。
+RoleはMembershipまたはProductionDelegateを介して、
+Personへ適用される。
 
 Permissionの具体的な構造はAuthorization設計で定義する。
 
@@ -454,6 +507,35 @@ Production単位の活動ではPerformanceを持たない。
 
 ---
 
+# Accounting Concept
+
+AccountはAccounting Domainに属する
+会計上の勘定科目を表す。
+
+AccountはAuthentication Identityではない。
+
+Authentication IdentityはUserAccountによって表現する。
+
+したがって、
+
+    UserAccount
+        ↓
+      Person
+
+と、
+
+    Organization
+        ↓
+    Accounting
+        ↓
+      Account
+
+は完全に別の概念として管理する。
+
+AccountとUserAccountを統合しない。
+
+---
+
 # External Connection Concept
 
 ExternalConnectionは、
@@ -522,6 +604,29 @@ Infrastructure Layerで管理する。
 
 ---
 
+# Organization Role Boundary
+
+Organizationの管理権限は、
+MembershipとRoleによって管理する。
+
+    Person
+        ↓
+    Membership
+        ↓
+    Organization
+        ↓
+       Role
+        ↓
+    Permission
+
+MembershipはOrganizationへの所属関係を表す。
+
+RoleはPermission Setを定義する。
+
+RoleAssignmentという独立Domainは作成しない。
+
+---
+
 # Production Management Boundary
 
 Productionの管理権限は、
@@ -537,17 +642,17 @@ Production単位の管理権限を管理する。
         │
         └── ProductionDelegate
                 ├── Person
-                └── DelegateRole
+                └── Role
 
 PrimaryManagerはProductionに対する全権限を持つ。
 
-ProductionDelegateはDelegateRoleによって
-あらかじめ定義された権限のみを持つ。
+ProductionDelegateはRoleによって
+あらかじめ定義されたPermissionのみを持つ。
 
-DelegateRoleはProduction単位で適用される。
+RoleはProduction Scopeで適用される。
 
 同一Personが複数ProductionのDelegateになる場合、
-Productionごとに異なるDelegateRoleを持つことができる。
+Productionごとに異なるRoleを適用できる。
 
 ---
 
@@ -578,13 +683,23 @@ Domain間のBusiness上の関係のみを表現する。
         ├── Service
         └── Credential
 
+    Organization
+        ↓
+    Membership
+        ↓
+    Role
+        ↓
+    Permission
+
     Production
         ├── PrimaryManager
         │       └── Person
         │
         └── ProductionDelegate
                 ├── Person
-                └── DelegateRole
+                └── Role
+                        ↓
+                    Permission
 
 HistoryはParticipantやReservationの子Entityではない。
 
@@ -602,8 +717,8 @@ ProductionDelegateはProductionの子Entityである。
 
 PrimaryManagerはProductionからPersonを参照する。
 
-DelegateRoleはProductionDelegateに付与される
-権限セットを表す。
+RoleはMembershipまたはProductionDelegateを介して
+Personへ適用される。
 
 ---
 
@@ -612,6 +727,11 @@ DelegateRoleはProductionDelegateに付与される
 - Conceptual ERはBusiness上の関係を表現する。
 - Databaseの物理構造は表現しない。
 - Foreign KeyはLogical ERで定義する。
+- UserAccountはAuthentication Identityを表す。
+- PersonはBusiness Identityを表す。
+- UserAccountとPersonを分離する。
+- AccountはAccounting上の勘定科目を表す。
+- AccountとUserAccountを分離する。
 - ParticipantはSubjectを介して活動主体を参照する。
 - SubjectはPersonまたはOrganizationを表す。
 - Reservationは任意のHandledParticipantを持つ。
@@ -633,16 +753,20 @@ DelegateRoleはProductionDelegateに付与される
 - Credentialは平文で保存しない。
 - ExternalConnectionはServiceを参照する。
 - 外部サービス固有のAPI仕様はConceptual ERでは表現しない。
+- OrganizationのRoleはMembershipを介してPersonへ適用する。
+- RoleはPermission Setを定義する。
+- RoleAssignmentという独立Domainを作成しない。
 - Productionは一人のPrimaryManagerを持つ。
 - PrimaryManagerはPersonを参照する。
 - PrimaryManagerはProductionに対する全権限を持つ。
 - Productionは複数のProductionDelegateを持つことができる。
 - ProductionDelegateはProductionの子Entityである。
 - ProductionDelegateはPersonを参照する。
-- ProductionDelegateはDelegateRoleを参照する。
-- DelegateRoleはあらかじめ定義された権限セットを表す。
-- DelegateRoleはProduction単位で適用される。
-- 同一Personが複数Productionで異なるDelegateRoleを持つことを許可する。
+- ProductionDelegateはRoleを参照する。
+- Roleはあらかじめ定義されたPermission Setを表す。
+- RoleはOrganization ScopeとProduction Scopeで共通利用できる。
+- RoleはMembershipまたはProductionDelegateを介して適用される。
+- 同一Personが複数Productionで異なるRoleを適用されることを許可する。
 - Organization MembershipとProduction単位の管理権限を分離する。
-- PrimaryManagerはDelegateRoleによる制限を受けない。
-- ProductionDelegateはDelegateRoleによって権限を制限する。
+- PrimaryManagerはProductionDelegateによるRoleの制限を受けない。
+- ProductionDelegateは適用されたRoleによって権限を制限する。
