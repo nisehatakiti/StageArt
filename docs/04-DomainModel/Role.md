@@ -2,7 +2,7 @@
 
 # Domain Model : Role
 
-Version : 3.0
+Version : 3.1
 
 ---
 
@@ -189,6 +189,13 @@ Roleは、
 そのMembershipを通じて
 Organization ScopeにおけるPersonの権限を決定する。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
+同じPersonであっても、
+OrganizationごとのMembershipによって
+異なるRoleを持つことができる。
+
 例えば、
 
 Person A
@@ -229,6 +236,16 @@ Role Definitionそのものを定義しない。
 Membershipは、
 既存のRole Definitionを
 Organization ScopeにおいてPersonへ適用する。
+
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
+一つのMembershipへ複数のRoleを
+直接付与する構造は基本設計としない。
+
+複数のPermissionが必要な場合は、
+Roleに定義されたPermission Setによって
+必要な権限を表現する。
 
 RoleAssignmentという独立Entityは作成しない。
 
@@ -442,6 +459,13 @@ Organization Scopeの管理者である。
 
 PrimaryManagerは、
 Production Scopeの管理者である。
+
+PrimaryManagerは、
+Roleによる限定権限ではなく、
+Production Scopeにおける全管理権限を持つ。
+
+一人のPersonは、
+複数のProductionのPrimaryManagerになることができる。
 
 ---
 
@@ -798,6 +822,9 @@ Permission
 
 とする。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
 Production Scopeでは、
 
 Person
@@ -822,6 +849,8 @@ Person
 
 によって表現する。
 
+PrimaryManagerはRoleではない。
+
 RoleはScopeを持たない。
 
 RoleはPersonに直接付与しない。
@@ -835,3 +864,6 @@ Organization ScopeとProduction Scopeの両方で利用する。
 
 RoleとParticipant Typeは、
 明確に分離する。
+
+一つのMembershipへ複数Roleを
+直接付与する構造は基本設計としない。
