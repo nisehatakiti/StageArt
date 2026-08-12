@@ -3,7 +3,7 @@
 # 10 - Architecture
 # Application Architecture
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -38,6 +38,18 @@ Mobile Clientだけの機能とはせず、
 Web ClientとMobile Clientの双方から
 同一のApplication Use Caseを利用できる構造とする。
 
+さらに、
+Check Inの受付方法と
+Check InそのもののBusiness Operationを分離する。
+
+QR Code、
+Reservation Number、
+Booker Name、
+Manual Selectionなど、
+受付入口が異なっても、
+最終的にはReservationを特定し、
+共通のCheck In Use Caseを実行する。
+
 ---
 
 # 1. Application Architecture Principles
@@ -65,6 +77,12 @@ StageArt Applicationは、
 - Client側でBusiness Factを確定しない。
 - Check InはClient固有機能ではなく、共通Business Operationとして扱う。
 - Web ClientとMobile ClientでCheck In Business Ruleを分けない。
+- Check Inの受付方法とCheck In Business Operationを分離する。
+- Reservation ResolutionをApplication Operationとして扱う。
+- Issued TicketをCheck Inそのものとして扱わない。
+- QR CodeをCheck In Business Factそのものとして扱わない。
+- Scope外のDataをApplicationから取得できない構造とする。
+- 同一Business Operationに対してClientごとに異なるBusiness Ruleを実装しない。
 
 ---
 
@@ -98,6 +116,10 @@ Public Client
 ↓
 StageArt API
 
+Administrative Client
+↓
+StageArt API
+
 Infrastructureは、
 必要に応じて以下へ接続する。
 
@@ -111,7 +133,96 @@ Infrastructureは、
 
 ---
 
-# 3. Client Architecture
+# 3. Layer Responsibilities
+
+各Layerの責務を明確に分離する。
+
+Presentation：
+
+- UI
+- User Interaction
+- Navigation
+- Device Feature
+- Client State
+- API Response Display
+
+API：
+
+- HTTP Request受付
+- Authentication Context
+- Authorization Context
+- Request Validation
+- DTO Mapping
+- Application Use Case呼び出し
+- Response Mapping
+- Error Mapping
+
+Application：
+
+- Business OperationのOrchestration
+- Use Case実行
+- Transaction Boundary
+- Authorization Contextの適用
+- Domain Objectの組み合わせ
+- Repository / Gateway利用
+- Domain Event発行
+- Application Result生成
+
+Domain：
+
+- Business Rule
+- Business Entity
+- Value Object
+- Domain Service
+- Domain Event
+- Business State
+
+Infrastructure：
+
+- Database
+- File Storage
+- External Service
+- Authentication Provider
+- Message / Mail Service
+- その他Technical Implementation
+
+---
+
+# 4. Dependency Direction
+
+基本的な依存方向は、
+
+Presentation
+↓
+API
+↓
+Application
+↓
+Domain
+
+とする。
+
+Infrastructureは、
+Application / Domainが定義した
+Interfaceを実装する。
+
+基本構造：
+
+Application
+↓
+Repository Interface
+
+Infrastructure
+↓
+Repository Implementation
+
+Domainから、
+DatabaseやExternal Serviceの
+具体的なImplementationへ直接依存しない。
+
+---
+
+# 5. Client Architecture
 
 StageArtは、
 複数のClientから利用できる構造とする。
@@ -122,6 +233,7 @@ StageArtは、
 - Smartphone / Mobile Client
 - Administrative Client
 - QR Reception Client
+- Public Client
 
 これらのClientは、
 基本的にStageArt APIを通じて
@@ -142,7 +254,7 @@ Domain
 
 ---
 
-# 4. Web Client
+# 6. Web Client
 
 Web Clientは、
 Browser上でStageArtを利用する。
@@ -170,7 +282,7 @@ Server Sideで実行する。
 
 ---
 
-# 5. Web Check In Client
+# 7. Web Check In Client
 
 Web Clientからも、
 Check Inを実行できるものとする。
@@ -184,13 +296,15 @@ Performance
 ↓
 Reservation / Issued Ticket List
 ↓
-対象Ticket検索
+Search / Filter
 ↓
-Check In操作
+対象Reservation / Ticket選択
 ↓
-Check In API
+Reservation Resolution
 ↓
-Check In Use Case
+Check In
+↓
+Check In Result
 
 というFlowを利用する。
 
@@ -200,19 +314,20 @@ Web Clientでは、
 
 ---
 
-# 6. Web Check In List
+# 8. Web Check In List
 
 Web ClientのCheck In画面では、
 必要に応じて以下の情報を一覧表示できる。
 
 - Reservation
 - Person
-- Ticket
+- Issued Ticket
 - Ticket Type
 - Performance
 - Check In Status
 - Check In Time
 - Ticket Identifier
+- Reservation Number
 
 また、
 必要に応じて以下のFilterを提供できる。
@@ -221,15 +336,19 @@ Web ClientのCheck In画面では、
 - 受付済み
 - Reservation Status
 - Ticket Type
-- Name
+- Person Name
 - Ticket Number
+- Reservation Number
 
 具体的なUI仕様は、
 Frontend Architectureで定義する。
 
+一覧表示はQuery Operationであり、
+Check In Business Factを変更しない。
+
 ---
 
-# 7. Web Manual Check In
+# 9. Web Manual Check In
 
 Web ClientからのManual Check Inも、
 Mobile ClientからのQR Check Inと
@@ -241,7 +360,9 @@ Web Client
 ↓
 Reservation / Ticket List
 ↓
-Check In Action
+対象選択
+↓
+Reservation Resolution
 ↓
 Check In API
 ↓
@@ -254,7 +375,7 @@ Check In Statusを変更しない。
 
 ---
 
-# 8. Mobile Client
+# 10. Mobile Client
 
 Mobile Clientは、
 SmartphoneなどのMobile Deviceから
@@ -285,7 +406,7 @@ StageArt Domainへ直接アクセスしない。
 
 ---
 
-# 9. Mobile Client Responsibilities
+# 11. Mobile Client Responsibilities
 
 Mobile Clientは、
 以下のようなClient-side機能を担当する。
@@ -318,7 +439,7 @@ Check In Business Operationへの
 
 ---
 
-# 10. QR Scanner
+# 12. QR Scanner
 
 QR Scannerは、
 Mobile ClientのDevice機能を利用して
@@ -331,6 +452,8 @@ Camera
 QR Code Scan
 ↓
 QR Payload
+↓
+Ticket Identifier
 ↓
 Check In API
 ↓
@@ -347,7 +470,7 @@ Serverへ渡すことである。
 
 ---
 
-# 11. QR Code Boundary
+# 13. QR Code Boundary
 
 QR Codeは、
 Business Factそのものではない。
@@ -368,7 +491,11 @@ Mobile Scanner
 ↓
 Ticket Identifier
 ↓
-Check In API
+Reservation Resolution
+↓
+Reservation
+↓
+Check In
 
 QR Codeがコピーされた場合でも、
 Server SideでTicketの状態と
@@ -376,7 +503,7 @@ Authorizationを検証する。
 
 ---
 
-# 12. QR Code Validation
+# 14. QR Code Validation
 
 QR Codeを読み取っただけでは、
 Check Inを成立させない。
@@ -387,6 +514,8 @@ Server Sideで、
 - Ticketの有効性
 - Ticketの対象Performance
 - Ticketの利用状態
+- Reservationの存在
+- Reservationとの整合性
 - Check In済みか
 - 必要なAuthorization
 - その他Business Rule
@@ -398,7 +527,33 @@ QR Codeに含まれる情報を、
 
 ---
 
-# 13. Check In as Common Business Operation
+# 15. Application Use Case
+
+Application Layerでは、
+Client Requestを
+Business Operationとして扱う。
+
+代表的なUse Case：
+
+- Create Reservation
+- Confirm Reservation
+- Cancel Reservation
+- Issue Ticket
+- Check In
+- Create Rehearsal
+- Confirm Rehearsal
+- Record Attendance
+- Create Journal Entry
+- Publish Announcement
+- Create Document
+
+Use Caseは、
+Business Operationを
+Application LayerでOrchestrateする。
+
+---
+
+# 16. Check In as Common Business Operation
 
 Check Inは、
 Mobile Client固有の機能ではない。
@@ -439,102 +594,216 @@ Check In Use Case
 
 ---
 
-# 14. Check In Client Entry
+# 17. Check In Entry Methods
 
 Check InのClient側の入口は、
 Clientによって異なってよい。
 
-Web：
+利用可能な入口には、
+以下を含む。
 
-Reservation / Issued Ticket List
-↓
-Check In Action
+- QR Code
+- Reservation Number
+- Booker Name
+- Manual Selection
+- Reservation Identifier
 
-Mobile：
-
-QR Scanner
-↓
-Check In Action
-
-Administrative：
-
-Ticket / Reservation Search
-↓
-Check In Action
+それぞれの入口では、
+Reservationを特定する方法が異なる。
 
 しかし、
-最終的なBusiness Operationは、
-同じCheck In Use Caseとする。
+最終的なBusiness Operationは
+共通のCheck In Use Caseとする。
 
 ---
 
-# 15. Check In Architecture
+# 18. Reservation Resolution
 
-Check In全体の基本構造：
+Reservation Resolutionは、
+受付Inputから対象Reservationを
+特定するApplication Operationである。
 
-Web Client
-├── Reservation / Ticket List
-│
-└── Check In Action
-          │
-          ▼
-     Check In API
-          ▲
-          │
-Mobile Client
-├── QR Scanner
-│
-└── Check In Action
-          │
-          ▼
-     Check In API
-          │
-          ▼
-   Check In Use Case
-          │
-          ▼
-    Check In Domain
-          │
-          ▼
-      Check In
-          │
-          ▼
-  CheckInCompleted
-      ├── History
-      └── Accounting
+基本構造：
 
-Clientによって
-Check Inの入口は異なるが、
-Business Ruleは共通とする。
+受付Input
+↓
+Reservation Resolution
+↓
+Reservation
+↓
+Check In Use Case
+↓
+Check In
+
+Reservation ResolutionへのInputには、
+
+- Reservation Identifier
+- Reservation Number
+- Booker Name
+- Issued Ticket Identifier
+- Manual Selection
+
+などを利用できる。
+
+Reservation Resolutionは、
+Check Inそのものとは分離する。
 
 ---
 
-# 16. Check In API
+# 19. Reservation Resolution and QR
 
-Check Inは、
-Business OperationとしてAPIへ公開する。
+QR受付の場合は、
+以下のResolutionを行う。
 
-概念的なAPI：
+QR Code
+↓
+Ticket Identifier
+↓
+Issued Ticket
+↓
+Reservation
+↓
+Check In Use Case
 
-POST /tickets/{id}/check-in
+Issued Ticketを経由して
+Reservationを特定する。
 
-または、
-
-POST /reservations/{id}/check-in
-
-などのBusiness Operationを中心とした
-API設計とする。
-
-具体的なEndpoint構造は、
-API Architectureで確定する。
-
-APIは、
-単純なStatus変更ではなく、
-Check In Use Caseを実行する入口とする。
+Issued Ticket自体を、
+Check In Business Factとはしない。
 
 ---
 
-# 17. Check In Application Flow
+# 20. Reservation Number Resolution
+
+Reservation Numberを利用する場合は、
+
+Reservation Number
+↓
+Reservation Search
+↓
+Reservation Resolution
+↓
+Reservation
+↓
+Check In Use Case
+↓
+Check In
+
+というFlowを利用する。
+
+Reservation Numberは、
+Check In Factそのものではない。
+
+Reservation Numberから、
+対象Reservationを特定するために利用する。
+
+---
+
+# 21. Booker Name Resolution
+
+Booker Nameを利用する場合は、
+
+Booker Name
+↓
+Reservation Search
+↓
+Candidate Reservations
+↓
+Reservation Selection
+↓
+Reservation Resolution
+↓
+Check In Use Case
+↓
+Check In
+
+というFlowを利用する。
+
+Booker Nameだけでは、
+Reservationを一意に特定できない場合がある。
+
+その場合は、
+候補一覧から受付担当者が対象を確認する。
+
+Booker Name Searchは、
+Query Operationであり、
+Check In Factを直接変更しない。
+
+---
+
+# 22. Manual Selection Resolution
+
+Manual Selectionでは、
+Performanceに紐づくReservation一覧から
+対象Reservationを選択する。
+
+基本Flow：
+
+Performance
+↓
+Reservation List
+↓
+Reservation Selection
+↓
+Reservation Resolution
+↓
+Check In Use Case
+↓
+Check In
+
+一覧から選択された場合でも、
+Server Sideで対象Reservationを再確認する。
+
+---
+
+# 23. Reservation Resolution Responsibility
+
+Reservation Resolutionでは、
+以下をApplication Boundaryで扱う。
+
+- Inputの解釈
+- Reservation候補取得
+- Identifier Resolution
+- Scope確認
+- Resource存在確認
+- Reservationとの関連確認
+- Performance Context確認
+
+Reservation Resolutionは、
+Client側だけで完結させない。
+
+Clientが保持するReservation IDや
+Ticket IDを無条件に信頼しない。
+
+---
+
+# 24. Reservation Resolution and Authorization
+
+Reservation Resolutionでは、
+Authorization Scopeを適用する。
+
+例えば、
+
+受付担当者
+↓
+Production Scope
+↓
+Performance Scope
+↓
+Reservation
+
+というScopeを確認する。
+
+Scope外のReservationを、
+Reservation Resolutionによって
+取得できない構造とする。
+
+Resource IDを知っているだけでは、
+Reservationを取得できない。
+
+---
+
+# 25. Check In Application Flow
 
 Check Inの基本Application Flow：
 
@@ -546,11 +815,21 @@ Authentication
 ↓
 Authorization
 ↓
-Load Issued Ticket
+Reservation Resolution
 ↓
-Validate Ticket
+Load Reservation
 ↓
-Check In
+Load Issued Ticket if applicable
+↓
+Validate Reservation
+↓
+Validate Ticket if applicable
+↓
+Validate Performance
+↓
+Check In Use Case
+↓
+Check In Domain
 ↓
 Persist Check In
 ↓
@@ -558,587 +837,902 @@ Publish CheckInCompleted
 ↓
 Commit
 ↓
+Application Result
+↓
 API Response
 ↓
 Client
-↓
-受付結果表示
 
 ClientがWebでもMobileでも、
-このApplication Flowは共通とする。
+Application以下のBusiness Operationは共通とする。
 
 ---
 
-# 18. Check In Server Responsibility
+# 26. Check In Application Use Case
 
-Check In処理において、
-Server Sideは以下を担当する。
+Check In Use Caseは、
+Check Inに必要なBusiness Operationを
+Orchestrateする。
 
-- Ticketの存在確認
-- Ticketの有効性確認
-- 対象Performance確認
-- Ticket利用状態確認
-- Check In済み確認
-- Authorization確認
-- Business Rule確認
-- Check In Fact作成
+基本的な責務：
+
+- Authorization Context確認
+- Reservation Resolution
+- Reservation取得
+- Issued Ticket取得
+- Business State確認
+- Check In Domain Operation実行
+- Transaction Boundary管理
 - CheckInCompleted発行
-- Transaction管理
-- Result返却
+- Application Result生成
 
-これらを、
-Clientだけで判断しない。
+Check In Use Case自身が、
+Domain Business Ruleをすべて実装するわけではない。
 
----
-
-# 19. Check In Client Responsibility
-
-Clientは、
-Check Inの入力と結果表示を担当する。
-
-Web Client：
-
-- Reservation / Ticket List表示
-- Search
-- Filter
-- 対象Ticket選択
-- Check In Action
-- Result Display
-
-Mobile Client：
-
-- Camera起動
-- QR Code読み取り
-- QR Payload取得
-- Check In API呼び出し
-- Processing表示
-- Result Display
-
-どちらのClientも、
-以下を最終決定しない。
-
-- Ticketが有効か
-- Check In可能か
-- Check In済みか
-- Revenueを作成するか
-- Historyを作成するか
-
-これらはServer Sideで決定する。
+Business Ruleは、
+Domain Layerへ委譲する。
 
 ---
 
-# 20. QR Reception
+# 27. Check In Domain Boundary
 
-QR Receptionは、
-Check In Business Operationの
-一つの入力方法である。
+Application Layerは、
+Check In Domainへ
+Business Operationを委譲する。
 
-QR Reception：
+基本構造：
 
-Mobile Client
+Check In Use Case
 ↓
-Camera
+Check In Domain
+↓
+Check In Business Rule
+↓
+Check In Fact
+
+Application Layerは、
+Domain Entityの内部状態を
+直接書き換えない。
+
+---
+
+# 28. Check In Canonical Relationship
+
+Check InのCanonical Relationshipは、
+
+Reservation
+↓
+Check In
+
+である。
+
+Issued Ticketは、
+
+Ticket
+↓
+Issued Ticket
+↓
+Reservation
+
+というRelationshipを持つ。
+
+QR Ticketは、
+
+Issued Ticket
+↓
+QR Ticket
 ↓
 QR Code
+
+というArtifactとして扱う。
+
+したがって、
+
+QR Code
 ↓
-Ticket Identifier
+Check In
+
+を直接のDomain Relationshipとはしない。
+
+QR Codeは、
+Reservationを特定するための
+入力経路である。
+
+---
+
+# 29. Issued Ticket and Check In
+
+Issued Ticketは、
+Check Inの必須Entityではない。
+
+QR受付などでは、
+
+QR Code
 ↓
-Check In API
+Issued Ticket
 ↓
-Check In Use Case
+Reservation
 
-QR ReceptionとCheck Inを
-同一概念として扱わない。
+というResolutionを行う。
 
-QR Reception：
+一方、
 
-「Ticketを識別する方法」
+Reservation Number
+↓
+Reservation
 
-Check In：
+Booker Name
+↓
+Reservation
 
-「Ticketを受付したというBusiness Fact」
+Manual Selection
+↓
+Reservation
+
+というResolutionも可能である。
+
+したがって、
+
+Issued Ticket
+≠
+Check In
 
 である。
 
 ---
 
-# 21. Web Reception
+# 30. Check In and Performance
 
-Web Receptionは、
-Check In Business Operationの
-もう一つの入力方法である。
+Check Inは、
+対象Performanceとの整合性を確認する。
 
-Web Reception：
+基本関係：
 
-Web Client
+Production
 ↓
 Performance
 ↓
-Reservation / Issued Ticket List
-↓
-Ticket Selection
-↓
-Check In API
-↓
-Check In Use Case
-
-Web Receptionでは、
-QR Codeを使用しなくても
-Check Inできる。
-
----
-
-# 22. Reception Operation
-
-Reception Operationは、
-WebとMobileの双方から
-利用できる。
-
-Mobile：
-
-QRによる高速受付。
-
-Web：
-
-一覧による検索・確認・Manual受付。
-
-両方とも、
-Server SideのCheck In Business Ruleを
-利用する。
-
----
-
-# 23. Reception Staff
-
-受付スタッフが、
-Web ClientまたはMobile Clientを利用して
-Check Inを行う。
-
-基本Flow：
-
-Reception Staff
-↓
-Authentication
-↓
-Authorization
-↓
-Production / Performance Scope
-↓
-Check In
-↓
-Check In API
-↓
-Check In Use Case
-
-受付スタッフが、
-どのPerformanceを受付可能かは、
-Authorizationによって決定する。
-
----
-
-# 24. Reception Scope
-
-受付スタッフは、
-必要なPerformanceまたはProductionに対して
-Check In権限を持つ。
-
-基本的には、
-
-Person
-↓
-Organization / Production Scope
-↓
-Role
-↓
-Permission
+Reservation
 ↓
 Check In
 
-という流れでAuthorizationする。
-
-「QRを読み取れる端末を持っている」
-だけでは、
-Check In権限を与えない。
-
-Web Clientについても同様に、
-Check In権限をServer側で確認する。
+Check In Requestで指定された
+Performance Contextと、
+Reservationが紐づくPerformanceが
+一致していることを確認する。
 
 ---
 
-# 25. Web and Mobile Consistency
+# 31. Check In and Reservation State
 
-Web ClientとMobile Clientで、
-Check Inの結果が異ならないようにする。
+Check In実行時には、
+Reservationの状態を
+Server Sideで検証する。
+
+例えば、
+
+- Cancelled
+- Invalid
+- Expired
+- Already Checked In
+
+など。
+
+具体的なState Ruleは、
+Reservation / Check In Domainで定義する。
+
+---
+
+# 32. Check In and Ticket State
+
+Issued Ticketを利用する受付方法では、
+Ticket Stateも検証する。
+
+例えば、
+
+- Issued
+- Valid
+- Cancelled
+- Already Used
+
+など。
+
+具体的なTicket State Ruleは、
+Ticket Domainで定義する。
+
+---
+
+# 33. Check In Result
+
+Check In Use Caseは、
+Application Resultを生成する。
+
+概念的には、
+
+- Check In Identifier
+- Reservation Identifier
+- Performance Identifier
+- Check In Status
+- Check In Time
+- Result
+
+などを含む。
+
+Application Resultは、
+API Response DTOへMappingされる。
+
+Domain Entityを、
+そのままClientへ返さない。
+
+---
+
+# 34. Already Checked In
+
+対象Reservationが、
+すでにCheck In済みの場合、
+同一Business Factを二重作成しない。
+
+Application Layerでは、
+Domainから返されたStateを
+Application ResultへMappingする。
+
+例えば、
+
+Already Checked In
+
+というResultを、
+API Layerへ渡すことができる。
+
+これは、
+Client側だけで判断するものではない。
+
+---
+
+# 35. Check In Idempotency
+
+Check Inは、
+RetryやDouble Submitが発生しやすいため、
+Idempotencyを考慮する。
+
+基本構造：
+
+Client
+↓
+Check In Request
+↓
+Timeout
+↓
+Client Retry
+↓
+Same Operation
+↓
+Existing Check In確認
+↓
+Duplicate Factを作成しない
+
+Idempotencyの具体的なImplementationは、
+Infrastructure / Data Architectureと連携して定義する。
+
+---
+
+# 36. Check In Concurrency
+
+複数Clientが、
+同一Reservationに対して
+同時にCheck Inを実行する可能性を考慮する。
 
 例えば、
 
 Web Client
-→ Ticket XをCheck In
+↓
+Reservation A
+↓
+Check In
 
-その直後に、
+と同時に、
 
 Mobile Client
-→ Ticket XをScan
+↓
+QR Ticket A
+↓
+Check In
 
-した場合、
+が発生する場合でも、
+Check In Factを二重作成しない。
 
-Mobile Client側でも
-「既にCheck In済み」
-として扱われる。
-
-これは、
-Server SideのCheck In Factを
-正本とすることで保証する。
-
----
-
-# 26. Application Layer
-
-Application Layerは、
-StageArtにおけるBusiness Operationを
-Use Caseとして提供する。
-
-Application Layerの責務：
-
-- Use Case
-- Transaction Boundary
-- Authorization Context
-- Domain Object取得
-- Domain Operation呼び出し
-- 複数DomainのOrchestration
-- Domain Event処理
-- Integration呼び出し
-
-Application Layerは、
-Business Ruleの正本ではない。
+Application Layerでは、
+Transaction Boundaryを明確にし、
+Domain / Persistence Layerと連携して
+Consistencyを保証する。
 
 ---
 
-# 27. Use Case
+# 37. Check In Transaction Boundary
 
-Use Caseは、
-利用者がStageArt上で行う一つの
-Business Operationを表す。
+Check In Use Caseは、
+必要なBusiness Factを
+一貫したTransaction Boundaryで確定する。
 
-例：
+概念的には、
 
-- Create Organization
-- Update Organization
-- Add Member
-- Create Production
-- Update Production
-- Add Participant
-- Assign Production Role
-- Create Performance
-- Create Ticket
-- Create Reservation
-- Confirm Reservation
-- Check In
-- Create Rehearsal Candidate
-- Submit Rehearsal Availability
-- Confirm Rehearsal
-- Record Attendance
-- Create Budget
-- Record Journal Entry
-- Create Announcement
-- Upload Document
-- Publish Production
-- Create Survey
+Load Reservation
+↓
+Resolve
+↓
+Validate
+↓
+Check Existing Check In
+↓
+Create Check In
+↓
+Update Required State
+↓
+Commit
 
-Use Caseは、
-必要に応じて複数Domainを操作する。
+という構造を採用する。
+
+具体的なTransaction、
+Lock、
+Isolation Levelなどは、
+Data Architecture / Backend Architectureで定義する。
 
 ---
 
-# 28. Use Case Naming
+# 38. CheckInCompleted
 
-Use Caseは、
-CRUDではなくBusiness Operationを中心に命名する。
+Check Inが確定すると、
+
+CheckInCompleted
+
+を発行する。
+
+基本構造：
+
+Check In
+↓
+CheckInCompleted
+
+CheckInCompletedは、
+後続Application Processの起点として利用できる。
 
 例えば、
 
-Create Reservation
+CheckInCompleted
+├── Audience History
+└── Accounting Process
 
-は、
-ReservationというBusiness Objectを作成するOperation。
-
-Check In
-
-は、
-Issued Ticket / Reservationに対する
-Business Operation。
-
-Confirm Rehearsal
-
-は、
-Rehearsalを確定するBusiness Operation。
-
-Use Case名は、
-利用者が何をするかを表現する。
+など。
 
 ---
 
-# 29. Command
+# 39. CheckInCompleted Boundary
 
-Application Layerでは、
-Use Caseへの入力をCommandとして表現できる。
+CheckInCompletedは、
+Check In Business Factが確定した後に
+発行する。
+
+Check Inそのものと、
+後続処理を分離する。
+
+例えば、
+
+Check In
+↓
+Commit
+↓
+CheckInCompleted
+↓
+History
+↓
+Accounting
+
+という構造を採用できる。
+
+具体的なEvent Delivery Strategyは、
+Integration Architecture / Backend Architectureで定義する。
+
+---
+
+# 40. Audience History
+
+Audience Historyは、
+Check In Business Factを起点として
+生成・参照する。
+
+基本構造：
+
+Check In
+↓
+CheckInCompleted
+↓
+Audience History
+
+Ticket購入だけでは、
+Audience Historyを確定しない。
+
+Audience Historyの詳細なDomain Ruleは、
+History Domainで定義する。
+
+---
+
+# 41. Accounting Integration
+
+Check InとAccountingは、
+Application上でもDomainとして分離する。
+
+基本構造：
+
+Check In
+↓
+CheckInCompleted
+↓
+Accounting Process
+↓
+Ticket Revenue
+↓
+Journal Entry
+
+Check In Use Caseが、
+Journal Entryの内部構造を
+直接操作しない。
+
+Accounting処理は、
+Accounting Application Processへ委譲する。
+
+---
+
+# 42. Application Command
+
+Business Operationの実行には、
+Commandを利用できる。
+
+例えば、
+
+- CreateReservationCommand
+- ConfirmReservationCommand
+- IssueTicketCommand
+- CheckInCommand
+- ConfirmRehearsalCommand
+- RecordAttendanceCommand
+
+など。
 
 Commandは、
-Use Caseに必要なInputを保持する。
+Client Request DTOと
+Domain Entityを直接同一視しない。
 
-例：
+基本構造：
 
-CreateProductionCommand
+API Request
+↓
+Request DTO
+↓
+Application Command
+↓
+Use Case
+↓
+Domain
 
-CreateReservationCommand
+---
+
+# 43. CheckInCommand
+
+Check Inでは、
+CheckInCommandを利用する。
+
+概念的には、
 
 CheckInCommand
 
-ConfirmRehearsalCommand
+として、
 
-Commandは、
-Domain Entityそのものではない。
+- Reservation Identifier
+- Performance Context
+- Issued Ticket Identifier if applicable
+- Source
+- Idempotency Information
+- Authorization Context
+
+などをApplicationへ渡す。
+
+具体的なCommand DTOは、
+API Contract / Implementation Specificationで定義する。
 
 ---
 
-# 30. Query
+# 44. Check In Source
 
-参照系のOperationは、
-Queryとして分離できる。
+Check Inが、
+どの受付経路から実行されたかを
+必要に応じてApplication Contextとして扱う。
+
+例：
+
+- WEB_MANUAL
+- WEB_SEARCH
+- WEB_RESERVATION_NUMBER
+- WEB_BOOKER_NAME
+- MOBILE_QR
+- ADMIN
+
+Sourceは、
+Business Ruleそのものを変更する値ではない。
+
+Sourceは、
+Audit / Operation Contextなどの
+補助情報として扱う。
+
+---
+
+# 45. Query and Command
+
+Application Architectureでは、
+QueryとCommandを分離する。
+
+Query：
+
+- Reservation Search
+- Performance List
+- Check In List
+- Ticket Search
+- Participant List
+
+Command：
+
+- Create Reservation
+- Confirm Reservation
+- Issue Ticket
+- Check In
+- Cancel Reservation
 
 Queryは、
 Business Factを変更しない。
 
-例：
-
-- Get Production
-- List Productions
-- Get Participants
-- Get Performances
-- Get Reservations
-- Get Rehearsal Schedule
-- Get Budget
-- Get Accounting Summary
-- Get Audience History
-- Get Check In List
-
-Command：
-
-Stateを変更する。
-
-Query：
-
-Stateを参照する。
-
----
-
-# 31. Command / Query Separation
-
-CommandとQueryは、
-責務を分離する。
-
-Command：
-
+Commandは、
 Business Operationを実行する。
 
-Query：
-
-必要な情報を取得する。
-
-Queryは、
-Domain Entityの状態を変更しない。
-
-Commandは、
-必要なBusiness RuleをDomainへ委譲する。
-
 ---
 
-# 32. Domain Layer
+# 46. Check In List Query
 
-Domain Layerは、
-StageArtのBusiness Ruleを保持する。
-
-主な構成：
-
-- Entity
-- Value Object
-- Domain Service
-- Domain Event
-- Repository Interface
-- Business Rule
-
-Domain Layerは、
-Application Use Caseの詳細を知らない。
-
-Domainは、
-
-「誰がこの画面を押したか」
-
-ではなく、
-
-「このBusiness Operationが成立する条件は何か」
-
-を扱う。
-
----
-
-# 33. Entity Operation
-
-Entityの状態変更は、
-Application Layerから直接Propertyを書き換えるのではなく、
-Domain Operationとして実行することを基本とする。
-
-例えば、
-
-Reservation.status = checked_in
-
-のような直接変更ではなく、
-
-Reservation.checkIn()
-
-など、
-Business Meaningを持つOperationを通じて状態を変更する。
-
-具体的なMethod名は、
-Implementation Specificationで定義する。
-
----
-
-# 34. Value Object
-
-Business上意味を持つ値は、
-必要に応じてValue Objectとして扱う。
-
-例：
-
-- Money
-- EmailAddress
-- DateRange
-- TimeRange
-- Quantity
-- Address
-
-Value Objectは、
-Domain Ruleを保持できる。
-
-例えばMoneyであれば、
-
-- Currency
-- Amount
-- 加算
-- 比較
-
-などをDomain側で扱える。
-
----
-
-# 35. Domain Service
-
-複数EntityにまたがるBusiness Ruleで、
-特定Entityへ責務を置くことが不自然な場合、
-Domain Serviceを利用する。
-
-Domain Serviceは、
-Application WorkflowをOrchestrateするものではない。
-
-Business Ruleそのものを扱う。
-
----
-
-# 36. Application Service
-
-Application Serviceは、
-Use Caseを実行する。
-
-Application Serviceの責務：
-
-- Transaction開始
-- Authorization確認
-- RepositoryからEntity取得
-- Domain Operation実行
-- 複数Domainの連携
-- Repositoryへの保存
-- Domain Event処理
-
-Application Serviceは、
-Domain Ruleを再実装しない。
-
----
-
-# 37. Repository Interface
-
-Repository Interfaceは、
-DomainまたはApplicationが必要とする
-Persistence操作を定義する。
-
-例：
-
-- PersonRepository
-- OrganizationRepository
-- MembershipRepository
-- ProductionRepository
-- ParticipantRepository
-- PerformanceRepository
-- ReservationRepository
-- TicketRepository
-- RehearsalRepository
-- CheckInRepository
-- JournalEntryRepository
-
-Repository Interfaceは、
-Database Technologyを公開しない。
-
----
-
-# 38. Repository Implementation
-
-Repository Interfaceの具体実装は、
-Infrastructure Layerに置く。
+Web Check In一覧は、
+Query Operationとして扱う。
 
 基本構造：
 
-Application / Domain
+Web Client
 ↓
-Repository Interface
+Check In List API
 ↓
-Infrastructure Repository
+Check In List Query
 ↓
-Database
+Authorized Read Model
+↓
+Web Client
+
+一覧には、
+
+- Reservation
+- Person
+- Issued Ticket
+- Performance
+- Check In Status
+
+などを表示できる。
+
+ただし、
+一覧表示時点のStateを
+Check In確定の根拠として無条件に利用しない。
+
+---
+
+# 47. Check In List and Read Model
+
+Check In一覧では、
+必要に応じてRead Model / Projectionを利用できる。
+
+例えば、
+
+Performance
++
+Reservation
++
+Person
++
+Issued Ticket
++
+Check In Status
+
+を、
+受付画面用Read Modelとして提供できる。
+
+ただし、
+Check In実行時には、
+最新Business Factを再検証する。
+
+---
+
+# 48. Scope-aware Application
+
+Application Use Caseは、
+Authorization Scopeを考慮して
+Operationを実行する。
+
+基本構造：
+
+Authenticated Principal
+↓
+Organization Scope
+↓
+Project Scope
+↓
+Production Scope
+↓
+Permission
+↓
+Use Case
+↓
+Resource
+
+Scope外Dataを、
+Application Layerで取得できない構造とする。
+
+---
+
+# 49. Authorization Context
+
+Application Use Caseには、
+必要に応じてAuthorization Contextを渡す。
+
+Authorization Contextには、
+
+- Person
+- Organization
+- Role
+- Permission
+- Production Scope
+- Project Scope
+
+などの情報を含めることができる。
 
 Applicationは、
-MySQLやWordPress Database APIなどの
-具体的なDatabase実装を直接知らない。
+このContextを利用して
+Use Case実行可能性を判断する。
 
 ---
 
-# 39. Infrastructure Layer
+# 50. Scope Isolation
 
-Infrastructure Layerは、
-Applicationを実行するための
-技術的機能を提供する。
+Resource IDを知っているだけでは、
+Application Operationを実行できない。
 
-主な責務：
+例えば、
 
-- Database Access
-- File Storage
-- Authentication Provider
-- External API
-- Email
-- Calendar
-- Social Media
-- Queue
-- Cache
-- Logging
+Organization A User
+↓
+Reservation B
 
-Infrastructureは、
-Business Ruleを定義しない。
+というRequestがあった場合、
+Reservation Bが存在していても、
+適切なScopeがなければ
+Use Caseを実行できない。
+
+Scope Isolationは、
+APIだけでなくApplicationでも維持する。
 
 ---
 
-# 40. Integration Layer
+# 51. Domain Module Structure
 
-External Serviceとの接続は、
-Integration Layerで扱う。
+StageArt Domainは、
+Business Capabilityごとに
+Moduleを分離する。
+
+例：
+
+- Identity
+- Organization
+- Project
+- Production
+- Performance
+- Person
+- Participant
+- Ticket
+- Reservation
+- Check In
+- Rehearsal
+- History
+- Accounting
+- Communication
+- Document
+- Promotion
+
+具体的なModule境界は、
+Domain Architectureで定義する。
+
+---
+
+# 52. Module Ownership
+
+各Moduleは、
+自身のBusiness Ruleと
+Business Dataを所有する。
+
+例えば、
+
+Reservation Module
+→ Reservation Business Rule
+
+Ticket Module
+→ Ticket Business Rule
+
+Check In Module
+→ Check In Business Rule
+
+Accounting Module
+→ Accounting Business Rule
+
+というOwnershipを維持する。
+
+他ModuleのPersistence Modelを
+直接操作しない。
+
+---
+
+# 53. Cross Module Operation
+
+複数ModuleにまたがるBusiness Operationは、
+Application LayerでOrchestrateする。
+
+例えばCheck Inでは、
+
+Reservation
+↓
+Ticket
+↓
+Check In
+↓
+History
+↓
+Accounting
+
+という複数Moduleの関係を扱う。
+
+ただし、
+各ModuleのBusiness Ruleは
+それぞれのDomainへ委譲する。
+
+---
+
+# 54. Cross Module Dependency
+
+Module間の直接依存を最小化する。
+
+例えば、
+
+Check In Module
+↓
+Reservation Module
+
+という関係が必要な場合でも、
+Reservation Moduleの内部Persistenceを
+直接参照しない。
+
+Application Interface、
+Domain Service、
+Domain Eventなどを利用して連携する。
+
+---
+
+# 55. Domain Events
+
+Business Factの確定後に、
+Domain Eventを発行できる。
+
+例：
+
+- ReservationConfirmed
+- TicketIssued
+- CheckInCompleted
+- RehearsalConfirmed
+- AttendanceRecorded
+
+Domain Eventは、
+Client API Responseとは異なる
+内部Application Eventとして扱う。
+
+---
+
+# 56. Application Event Handling
+
+Domain Eventを受けて、
+後続Application Processを実行できる。
+
+例えば、
+
+CheckInCompleted
+↓
+Audience History Process
+
+または、
+
+CheckInCompleted
+↓
+Accounting Process
+
+など。
+
+後続Processは、
+元のDomainの内部Implementationを
+直接操作しない。
+
+---
+
+# 57. Transaction and Events
+
+Transaction Boundaryと
+Event発行タイミングを明確にする。
+
+基本的には、
+
+Business Fact確定
+↓
+Transaction Commit
+↓
+Event Delivery
+
+というConsistencyを考慮する。
+
+具体的なOutboxなどの実装方式は、
+Backend Architectureで定義する。
+
+---
+
+# 58. Application and Repository
+
+Application Layerは、
+必要なData取得のために
+Repository Interfaceを利用できる。
+
+例えば、
+
+- ReservationRepository
+- TicketRepository
+- CheckInRepository
+- PerformanceRepository
+
+など。
+
+Repositoryの具体的なDatabase実装は、
+Infrastructure Layerに置く。
+
+---
+
+# 59. Application and Gateway
+
+External Serviceへのアクセスには、
+Gateway / Portを利用する。
+
+例えば、
+
+- Mail Gateway
+- Calendar Gateway
+- File Storage Gateway
+- Payment Gateway
+- Social Media Gateway
+
+など。
+
+Application / Domainから、
+External Serviceの具体的SDKへ
+直接依存しない。
+
+---
+
+# 60. Integration Boundary
+
+External ServiceとのIntegrationは、
+ApplicationとInfrastructureの境界で分離する。
 
 基本構造：
 
@@ -1146,1581 +1740,1333 @@ Application
 ↓
 Integration Interface
 ↓
-Infrastructure Adapter
+Integration Implementation
 ↓
 External Service
 
-例えば、
-
-Application
-↓
-Calendar Integration Interface
-↓
-Google Calendar Adapter
-↓
-Google Calendar
-
-とする。
+External ServiceのAPI Contractを、
+StageArt Domainへ直接持ち込まない。
 
 ---
 
-# 41. Integration Interface
-
-Application Layerは、
-External Service固有のAPIを直接利用しない。
-
-必要なOperationを、
-Integration Interfaceとして定義する。
-
-例：
-
-Calendar Integration
-
-- Create Event
-- Update Event
-- Delete Event
-- Find Event
-
-実際のGoogle Calendar APIなどは、
-Infrastructure Adapterで実装する。
-
----
-
-# 42. Transaction
-
-基本的なTransaction Boundaryは、
-Application Use Caseとする。
-
-例：
-
-Create Reservation
-
-Begin Transaction
-↓
-Validate Authorization
-↓
-Load Performance
-↓
-Load Ticket
-↓
-Validate Reservation Rule
-↓
-Create Reservation
-↓
-Persist Reservation
-↓
-Commit
-
-Transaction内では、
-Business Factの整合性を保つ。
-
----
-
-# 43. Cross Domain Transaction
-
-複数DomainをまたぐOperationでは、
-Transaction Boundaryを明確にする。
-
-例えばCheck Inでは、
-
-Reservation / Issued Ticket
-↓
-Check In
-↓
-CheckInCompleted
-
-というBusiness Factを確定する。
-
-その後、
-
-History
-Accounting
-
-などの処理を、
-Domain Event / Application Processによって
-連携できる。
-
----
-
-# 44. CheckInCompleted Handling
-
-CheckInCompletedが発生した場合、
-
-History Handler
-
-によって、
-観劇履歴を作成・更新する。
-
-Accounting Handler
-
-によって、
-Ticket Revenueを作成し、
-必要なJournal Entryへ連携する。
-
-基本構造：
-
-CheckInCompleted
-├── History Handler
-│      ↓
-│   Audience History
-│
-└── Accounting Handler
-       ↓
-    Ticket Revenue
-       ↓
-    Journal Entry
-
-Handlerは、
-Check In DomainのBusiness Ruleを
-再実装しない。
-
----
-
-# 45. Authorization in Application Layer
-
-Authorizationは、
-Application Use Caseの入口で確認する。
-
-基本Flow：
-
-Authentication
-↓
-Person
-↓
-Scope
-↓
-Role
-↓
-Permission
-↓
-Use Case
-
-Use Case内部で、
-必要に応じて追加のDomain Ruleを検証する。
-
----
-
-# 46. Organization Authorization
-
-Organization Scopeでは、
-Membershipを利用する。
-
-基本構造：
-
-Person
-↓
-Membership
-↓
-Organization
-↓
-Role
-↓
-Permission
-
-Organization AdministratorなどのRoleは、
-Membershipを通じて適用する。
-
----
-
-# 47. Production Authorization
-
-Production Scopeでは、
-ProductionDelegateを利用する。
-
-基本構造：
-
-Person
-↓
-ProductionDelegate
-↓
-Production
-↓
-Role
-↓
-Permission
-
-PrimaryManagerは、
-Production ScopeのFull Accessとして扱う。
-
-Participant Typeは、
-Authorizationを決定しない。
-
----
-
-# 48. Participant and Authorization
-
-ParticipantとAuthorizationを分離する。
-
-Participant：
-
-「このPerson / Organizationが
-Productionへ参加している」
-
-Role：
-
-「このPersonが
-このScopeで何を操作できる」
-
-を表す。
-
-CAST / STAFFなどのParticipant Typeだけでは、
-Management Permissionを付与しない。
-
----
-
-# 49. Query Architecture
-
-Queryは、
-利用者が必要とする情報を取得する。
-
-Queryは、
-必ずしも一つのDomain Entityだけを
-取得するとは限らない。
-
-例えばProduction Dashboardでは、
-
-- Production
-- Participant
-- Performance
-- Rehearsal
-- Ticket
-- Reservation
-- Accounting Summary
-- Check In Summary
-
-など、
-複数Domainの情報を組み合わせる場合がある。
-
-Query側で、
-表示に必要なData ModelへMappingする。
-
----
-
-# 50. Check In List Query
-
-Web Receptionでは、
-Check In対象を一覧表示するための
-Queryを利用できる。
-
-基本構造：
-
-Performance
-↓
-Reservation / Issued Ticket
-↓
-Check In Status
-↓
-Reception List
-
-Queryは、
-Check In状態を参照する。
-
-Query自体は、
-Check In Factを変更しない。
-
-Web Clientで
-「受付」ボタンが押された場合は、
-QueryではなくCheck In Commandを実行する。
-
----
-
-# 51. Read Model
-
-複雑なDashboardやReportでは、
-Read Modelを利用できる。
-
-Read Modelは、
-表示・検索・集計のためのModelである。
-
-Read Modelを、
-Business Factの正本として扱わない。
-
-基本構造：
-
-Domain Fact
-↓
-Query / Projection
-↓
-Read Model
-↓
-Presentation
-
----
-
-# 52. Domain Entity and DTO
-
-Domain EntityとDTOを分離する。
-
-Domain Entity：
-
-Business Ruleを持つ。
-
-DTO：
-
-Layer間でDataを受け渡す。
+# 61. Error Handling
+
+Application Layerでは、
+Infrastructure Exceptionや
+Domain Errorを
+Application Result / ExceptionへMappingする。
+
+Clientへ、
+Internal Exceptionを直接返さない。
 
 例えば、
 
-API Request DTO
+Database Exception
 ↓
-Application Command
-↓
-Domain Entity
+Application Error
 
-Responseでは、
+External API Error
+↓
+Integration Error
 
-Domain Entity
+Domain Business Rule Error
 ↓
-Application Result
-↓
-Response DTO
+Business Error
 
 というMappingを行う。
 
 ---
 
-# 53. Domain Entity and Database Model
-
-Domain EntityとDatabase Modelを分離する。
-
-Domain Entity：
-
-Business Conceptを表現する。
-
-Database Model：
-
-Persistence Structureを表現する。
-
-DatabaseのColumn構造を、
-そのままDomain EntityのInterfaceとして
-公開しない。
-
----
-
-# 54. Domain Module Structure
-
-Application内部では、
-DomainごとのLogical Moduleを形成する。
-
-例：
-
-Identity
-Organization
-Project
-Production
-Participant
-Rehearsal
-Performance
-Ticket
-Reservation
-Check In
-History
-Accounting
-Communication
-Document
-Promotion
-Equipment
-Regulation
-Survey
-
-各Moduleは、
-自分の責務を持つ。
-
----
-
-# 55. Identity Module
-
-Identity Moduleは、
-AuthenticationとBusiness Identityを
-StageArt Domainとして扱う。
-
-主なConcept：
-
-- UserAccount
-- External Identity
-- Person
-- Profile
-- HistoricalActivity
-
-Authentication Provider固有の処理は、
-Infrastructureへ分離する。
-
----
-
-# 56. Organization Module
-
-Organization Moduleは、
-団体と所属関係を管理する。
-
-主なConcept：
-
-- Organization
-- Membership
-- Role
-- Organization Invitation
-- Organization Membership Request
-
-Organization ScopeのAuthorizationも、
-このModuleとAuthorization機構が連携する。
-
----
-
-# 57. Production Module
-
-Production Moduleは、
-Project / Productionに関するCore Businessを管理する。
-
-主なConcept：
-
-- Project
-- Production
-- Participant
-- Subject
-- ProductionDelegate
-- PrimaryManager
-
-Production Scopeの権限は、
-Authorization機構と連携する。
-
----
-
-# 58. Rehearsal Module
-
-Rehearsal Moduleは、
-稽古日程と参加確認を管理する。
-
-主なConcept：
-
-- Rehearsal Candidate
-- Rehearsal Availability
-- Rehearsal
-- Rehearsal Attendance
-- Timetable
-- Timetable Item
-
-Candidateと確定したRehearsalを分離する。
-
----
-
-# 59. Ticket Module
-
-Ticket Moduleは、
-公演チケットに関するBusiness Ruleを管理する。
-
-主なConcept：
-
-- Ticket
-- Ticket Type
-- Ticket Price
-- Performance
-- Reservation
-- Issued Ticket
-- Check In
-- QR Ticket
-
-Ticket販売、
-Reservation、
-Issued Ticket、
-Check Inの責務を分離する。
-
----
-
-# 60. Accounting Module
-
-Accounting Moduleは、
-会計FactとProduction Accountingを管理する。
-
-主なConcept：
-
-- Accounting Period
-- Account
-- Journal Entry
-- Journal Entry Line
-- Budget
-- Budget Item
-- Production Actual
-- Budget vs Actual
-- Production Settlement
-
-Accounting Ruleは、
-UIやTicket Moduleへ分散させない。
-
----
-
-# 61. Communication Module
-
-Communication Moduleは、
-連絡と配信を管理する。
-
-主なConcept：
-
-- Announcement
-- Announcement Recipient
-- Announcement Delivery
-
-EmailなどのDelivery処理は、
-Integration Layerと連携する。
-
----
-
-# 62. Document Module
-
-Document Moduleは、
-ファイルと外部Storageとの関係を管理する。
-
-主なConcept：
-
-- Document
-- Document Share
-- External Connection
-- External Storage Reference
-
-実際のFile Storage処理は、
-Infrastructureへ分離する。
-
----
-
-# 63. Promotion Module
-
-Promotion Moduleは、
-公開情報とPromotionを管理する。
-
-主なConcept：
-
-- Organization Public Profile
-- Production Public Page
-- Social Post
-- Social Post Reference
-- Category
-- Genre
-- Tag
-
-SNS APIなどは、
-Integration Layerへ分離する。
-
----
-
-# 64. Equipment Module
-
-Equipment Moduleは、
-団体が保有・管理する備品を管理する。
-
-主なConcept：
-
-- Equipment
-- Equipment History
-
-Equipmentは、
-資産会計そのものを担当しない。
-
----
-
-# 65. Regulation Module
-
-Regulation Moduleは、
-Organization規約を管理する。
-
-主なConcept：
-
-- Regulation
-- Regulation Version
-
-Versioning Ruleは、
-Domain Layerで管理する。
-
----
-
-# 66. Survey Module
-
-Survey Moduleは、
-アンケートと公開可能な感想を管理する。
-
-主なConcept：
-
-- Survey
-- Survey Response
-- Public Testimonial
-
-Public Testimonialは、
-Survey Responseそのものを
-直接公開するものではない。
-
----
-
-# 67. Module Dependency
-
-Module間の依存は、
-必要最小限とする。
+# 62. Business Error
+
+Business Ruleに違反した場合、
+Application Layerは
+Client向けに処理可能なResultへ
+Mappingできる。
 
 例えば、
 
-Ticket
-↓
-Reservation
-↓
-Check In
-↓
-History / Accounting
+- Reservation Not Found
+- Invalid Reservation
+- Invalid Ticket
+- Already Checked In
+- Check In Not Allowed
+- Forbidden
 
-というBusiness Flow上の依存は存在する。
-
-ただし、
-History ModuleがTicket Moduleの
-内部実装へ直接依存するような構造は避ける。
-
-Domain EventやApplication Layerを利用して、
-Module間を疎結合にする。
+など。
 
 ---
 
-# 68. Domain Event as Module Boundary
-
-Domain Eventは、
-Module間連携の重要なBoundaryとなる。
-
-例えば、
-
-CheckInCompleted
-
-は、
-
-Check In
-↓
-History
-
-および、
-
-Check In
-↓
-Accounting
-
-を連携する。
-
-Eventを利用することで、
-Check In ModuleがHistoryやAccountingの
-内部構造を知る必要がなくなる。
-
----
-
-# 69. Shared Kernel
-
-複数Domainで共有する必要がある
-基本的なValueやInfrastructure Interfaceは、
-Shared Kernelとして管理できる。
-
-ただし、
-Shared KernelへBusiness Ruleを
-無制限に追加しない。
-
-Shared Kernelは、
-依存関係を増やす可能性があるため、
-必要最小限にする。
-
----
-
-# 70. Domain Isolation
-
-Domain Moduleは、
-以下を直接行わない。
-
-- Database Tableへの直接アクセス
-- WordPress API呼び出し
-- Google API呼び出し
-- Email API呼び出し
-- SNS API呼び出し
-- File Storage API呼び出し
-- HTTP Request処理
-
-これらは、
-Application / Infrastructure / Integration Layerで処理する。
-
----
-
-# 71. Error Boundary
-
-Errorは、
-Layerごとに変換する。
-
-Domain Error：
-
-Business Rule違反。
-
-Application Error：
-
-Use Case実行上のError。
-
-Infrastructure Error：
-
-Database / External Serviceなどの技術的Error。
-
-API Error：
-
-Clientへ返すResponse Error。
-
-Presentation Error：
-
-Userへ表示するMessage。
-
-内部Errorを、
-そのままClientへ返さない。
-
----
-
-# 72. Validation Boundary
-
-Validationは、
-目的によってLayerを分ける。
-
-Presentation：
-
-入力支援。
-
-API：
-
-Request Format。
-
-Application：
-
-Use Case Input。
-
-Domain：
-
-Business Rule。
-
-Infrastructure：
-
-Persistence / External Service制約。
-
-同じValidationを、
-すべてのLayerへ無秩序に重複させない。
-
----
-
-# 73. Logging Boundary
-
-Loggingは、
-Infrastructure / Applicationを中心に実装する。
-
-記録対象：
-
-- Authentication
-- Authorization Failure
-- Use Case
-- Domain Error
-- Integration
-- Infrastructure Error
-- Background Job
-
-Domain Entity自身が、
-直接Log Serviceへ依存することは避ける。
-
----
-
-# 74. Audit Boundary
-
-Audit情報は、
-必要なBusiness Operationについて記録する。
-
-Auditには、
-
-- Person
-- Operation
-- Scope
-- Timestamp
-- Target
-- Result
-
-などを記録できる。
-
-Auditは、
-Domain Factそのものとは分離する。
-
----
-
-# 75. Background Processing
-
-Applicationは、
-必要に応じてBackground Jobを利用できる。
-
-対象例：
-
-- Email Delivery
-- External Calendar Synchronization
-- Social Media Publishing
-- File Processing
-- Report Generation
-- Notification
-
-基本構造：
-
-Domain Event
-↓
-Application Event Handler
-↓
-Queue
-↓
-Worker
-↓
-Integration
-
----
-
-# 76. Idempotency
-
-External IntegrationやBackground Jobでは、
-同一処理が複数回実行されても
-Business Factが重複しないようにする。
+# 63. Idempotency Boundary
+
+Idempotencyは、
+Application Use Caseの
+Business Operation単位で考慮する。
 
 特に、
 
-- Ticket Revenue
+- Check In
+- Reservation Confirmation
+- Ticket Issuance
 - Journal Entry
-- Email Delivery
-- Calendar Event
-- Social Media Post
 
 などは、
-Idempotencyを考慮する。
+Retryによる重複処理を防ぐ必要がある。
 
-CheckInなどのBusiness Operationでも、
-同一Requestの再送を考慮する。
+具体的なStorageやUnique Constraintは、
+Data / Backend Architectureで定義する。
 
 ---
 
-# 77. Check In Idempotency
+# 64. Concurrency Boundary
 
-Check Inは、
-Web / Mobileの双方から実行できるため、
-同一Ticketへの重複Requestを考慮する。
+Concurrent Operationが発生する可能性のある
+Business Operationでは、
+Application Transaction Boundaryを明確にする。
+
+特に、
+
+- Check In
+- Ticket Issuance
+- Reservation Update
+- Journal Entry
+
+など。
+
+Application Layerは、
+Domain / Persistence Layerと連携して
+Consistencyを保証する。
+
+---
+
+# 65. Application and Persistence
+
+Application Layerは、
+Persistenceの具体構造を知らない。
 
 例えば、
 
-Web Client
+Application
 ↓
-Check In Request
+ReservationRepository
 
-と同時に、
+とし、
 
-Mobile Client
+ReservationRepository
 ↓
-QR Scan
-↓
-Check In Request
+Database
 
-が発生する場合でも、
-同一Ticketに対して
-Check In Factを二重作成しない。
+の具体的なMappingは、
+Infrastructure Layerで実装する。
 
-具体的なConcurrency Controlは、
-Data Architecture / Implementation Specificationで定義する。
+Applicationは、
+TableやSQLの構造を
+Business Ruleとして扱わない。
 
 ---
 
-# 78. Application State
+# 66. Application and Database
 
-Application Stateは、
-以下に分類する。
+Applicationは、
+Databaseの直接操作を行わない。
 
-UI State：
+以下のような構造を基本とする。
 
-画面表示のためのState。
+Application
+↓
+Repository
+↓
+Infrastructure
+↓
+Database
 
-Session State：
+Client
+↓
+API
+↓
+Application
+↓
+Repository
+↓
+Database
 
-Authentication / Sessionに関するState。
-
-Domain State：
-
-Business Fact。
-
-Integration State：
-
-External Serviceとの同期状態。
-
-Cache State：
-
-Performance向上のための一時State。
-
-これらを混同しない。
+ClientからDatabaseへの
+Direct Accessは禁止する。
 
 ---
 
-# 79. Configuration Boundary
+# 67. Application and WordPress
 
-Application Configurationは、
-Environment Configurationとして管理する。
+WordPressをInfrastructureとして
+利用する場合でも、
+
+Application
+↓
+Repository Interface
+↓
+WordPress Repository
+↓
+WordPress Database
+
+というBoundaryを維持する。
+
+WordPressの内部Database Structureを、
+Application Business Ruleへ直接持ち込まない。
+
+---
+
+# 68. PHP Server
+
+PHPをServer-side Technologyとして
+利用する場合でも、
+Application Architectureの
+Layer Separationを維持する。
+
+基本構造：
+
+PHP API Controller
+↓
+Application Use Case
+↓
+Domain
+↓
+Repository
+↓
+Infrastructure
+
+PHP Frameworkの具体的な選択は、
+Backend Architectureで定義する。
+
+---
+
+# 69. Mobile and Web Common Use Case
+
+Web ClientとMobile Clientは、
+同一Business Operationについて
+同一Application Use Caseを利用する。
+
+例えばCheck Inでは、
+
+Web
+↓
+Check In API
+↓
+Check In Use Case
+
+Mobile
+↓
+Check In API
+↓
+Check In Use Case
+
+とする。
+
+Clientごとに、
+
+WebCheckInUseCase
+
+MobileCheckInUseCase
+
+のような別Business Ruleを
+原則として作らない。
+
+---
+
+# 70. Client-specific Adapter
+
+Client固有の入力形式が必要な場合は、
+Application Boundaryの手前で
+Adapterを利用できる。
+
+例えば、
+
+QR Payload
+↓
+QR Adapter
+↓
+Ticket Identifier
+
+または、
+
+Booker Name Input
+↓
+Reservation Search Adapter
+↓
+Reservation Candidate
+
+など。
+
+ただし、
+AdapterはBusiness Ruleを所有しない。
+
+---
+
+# 71. Check In Entry Adapter
+
+受付方法が異なる場合でも、
+最終的に共通CommandへMappingする。
+
+QR：
+
+QR Payload
+↓
+Ticket Identifier
+↓
+Reservation Resolution
+↓
+CheckInCommand
+
+Reservation Number：
+
+Reservation Number
+↓
+Reservation Resolution
+↓
+CheckInCommand
+
+Booker Name：
+
+Booker Name
+↓
+Candidate Reservation
+↓
+Reservation Resolution
+↓
+CheckInCommand
+
+Manual Selection：
+
+Reservation Selection
+↓
+Reservation Resolution
+↓
+CheckInCommand
+
+---
+
+# 72. Check In Source Independence
+
+Check In Sourceによって、
+Business Ruleを変更しない。
+
+例えば、
+
+MOBILE_QRだから許可する
+
+WEB_MANUALだから別Ruleを適用する
+
+という構造にしない。
+
+Sourceは、
+Audit / Reporting / Operation Contextのために
+利用する補助情報である。
+
+---
+
+# 73. Check In Result Consistency
+
+Check In Resultは、
+Server SideのBusiness Factを基準とする。
+
+Clientが保持する、
+
+- Local State
+- Cached State
+- Previous Response
+
+などを、
+Server Business Factより優先しない。
+
+---
+
+# 74. Application Cache
+
+Cacheは、
+ApplicationのPerformance改善に
+利用できる。
+
+ただし、
+CacheをBusiness Factの正本としない。
+
+特にCheck In Statusなど、
+Consistencyが重要なDataについては、
+Cache利用時のStalenessを考慮する。
+
+---
+
+# 75. Read Model
+
+List / Search / Dashboardなどでは、
+Read Model / Projectionを利用できる。
+
+基本構造：
+
+Domain Fact
+↓
+Projection
+↓
+Read Model
+↓
+Application Query
+↓
+API
+↓
+Client
+
+Read Modelは、
+Business Factの正本ではない。
+
+---
+
+# 76. Check In Read Model
+
+Web Check In一覧では、
+必要に応じて受付用Read Modelを利用できる。
+
+例えば、
+
+Performance
++
+Reservation
++
+Person
++
+Issued Ticket
++
+Check In Status
+
+を組み合わせたRead Modelを利用する。
+
+ただし、
+Check In実行時には、
+最新Business Factを再検証する。
+
+---
+
+# 77. Application Security Boundary
+
+Applicationは、
+Security Boundaryの一部として扱う。
+
+Authenticationだけでは、
+Use Case実行を許可しない。
+
+基本構造：
+
+Authentication
+↓
+Authorization
+↓
+Scope
+↓
+Use Case
+↓
+Domain
+
+Clientから送信されたIdentifierだけを
+信頼してBusiness Operationを実行しない。
+
+---
+
+# 78. Personal Data
+
+Personに関するApplication Operationでは、
+必要なPersonal Dataだけを扱う。
+
+特に、
+
+- Person Name
+- Contact Information
+- Reservation Information
+- Audience History
+
+などは、
+Authorization Scopeを適用する。
+
+Public Clientへ返すDataは、
+Public Projectionを利用する。
+
+---
+
+# 79. Public Application Boundary
+
+Public ClientからのRequestでは、
+Public Operationのみを公開する。
+
+基本構造：
+
+Public Client
+↓
+Public API
+↓
+Public Application Use Case
+↓
+Public Projection / Domain
+
+Internal Management Use Caseを、
+Public Clientから直接実行できる構造にしない。
+
+---
+
+# 80. Management Application Boundary
+
+Management Clientからは、
+Authorization Scope内で
+Management Use Caseを実行する。
 
 例：
 
-- Database Connection
-- Application URL
-- External Service Endpoint
-- Feature Flag
-- Storage Configuration
+- Organization Management
+- Project Management
+- Production Management
+- Participant Management
+- Ticket Management
+- Reservation Management
+- Check In Management
+- Accounting Management
 
-Secret情報は、
-通常のApplication Configurationと分離する。
-
----
-
-# 80. Feature Flag
-
-将来的に段階的なFeature Releaseが必要になった場合、
-Feature Flagを利用できる。
-
-Feature Flagは、
-Business Ruleの代替ではない。
-
-Feature Flagによって、
-一時的にFeatureのAvailabilityを制御する。
+Management Use Caseでも、
+Domain Business Ruleを
+Applicationから直接複製しない。
 
 ---
 
-# 81. Application Observability
+# 81. Application Logging
 
-Applicationは、
-必要な範囲で以下を観測できる構造とする。
+Application Operationでは、
+必要なOperational Contextを
+Logへ記録できる。
 
-- Error
-- Performance
-- Request
-- Use Case
-- Background Job
-- External Integration
-- Database Operation
+例：
 
-Observability Dataは、
-Business Dataとは分離する。
+- Request ID
+- User
+- Operation
+- Resource
+- Scope
+- Result
+- Timestamp
+- Error Category
 
----
+ただし、
 
-# 82. Performance Principle
+- Password
+- Token
+- Secret
+- 不要なPersonal Data
 
-初期段階では、
-単純なApplication構造を優先する。
-
-必要以上に、
-
-- Microservices
-- Distributed Database
-- Event Sourcing
-- CQRS
-- Complex Cache
-- Message Broker
-
-などを導入しない。
-
-必要性が明確になった場合に、
-Architectureとして追加する。
+などをLogへ出力しない。
 
 ---
 
-# 83. Modular Monolith
+# 82. Application Observability
 
-StageArtの初期Architectureは、
-Modular Monolithを基本方針とする。
+重要なApplication Use Caseについて、
+以下を観測できる構造とする。
 
-一つのApplicationとしてDeployしながら、
-内部ではDomain Moduleを分離する。
+- Execution Count
+- Execution Time
+- Success Count
+- Failure Count
+- Business Error
+- Authorization Error
+- Integration Error
+
+特にCheck Inについては、
+
+- Check In Count
+- Already Checked In
+- Invalid Ticket
+- Authorization Failure
+- System Failure
+
+などを把握できるようにする。
+
+---
+
+# 83. Application Testing
+
+Application Layerでは、
+Use Case単位でテストできる構造とする。
+
+主な対象：
+
+- Create Reservation
+- Confirm Reservation
+- Issue Ticket
+- Check In
+- Confirm Rehearsal
+- Record Attendance
+- Accounting Operation
+
+Check Inでは特に、
+
+- QR Check In
+- Reservation Number Check In
+- Booker Name Check In
+- Manual Selection Check In
+- Already Checked In
+- Invalid Reservation
+- Invalid Ticket
+- Performance Mismatch
+- Scope Violation
+- Concurrent Check In
+- Retry / Idempotency
+
+をテスト対象とする。
+
+---
+
+# 84. Check In Testing Boundary
+
+異なる受付入口でも、
+同じCheck In Use Caseに到達することを確認する。
+
+例えば、
+
+QR
+↓
+Reservation Resolution
+↓
+CheckInCommand
+↓
+Check In Use Case
+
+Reservation Number
+↓
+Reservation Resolution
+↓
+CheckInCommand
+↓
+Check In Use Case
+
+Manual Selection
+↓
+Reservation Resolution
+↓
+CheckInCommand
+↓
+Check In Use Case
+
+という構造をテストする。
+
+---
+
+# 85. Application Architecture and API Architecture
+
+API Architectureは、
+ClientからApplicationへの
+External Boundaryを定義する。
+
+Application Architectureは、
+APIからDomainまでの
+Internal Boundaryを定義する。
+
+基本構造：
+
+Client
+↓
+API Architecture
+↓
+Application Architecture
+↓
+Domain Architecture
+↓
+Data Architecture
+↓
+Infrastructure
+
+APIが、
+Application Use Caseを呼び出し、
+Applicationが、
+Domain Business OperationをOrchestrateする。
+
+---
+
+# 86. Application Architecture and Data Architecture
+
+Application Architectureは、
+Data Architectureで定義された
+Business Ownershipを尊重する。
+
+例えば、
+
+Person
+→ Person Domain
+
+Reservation
+→ Reservation Domain
+
+Issued Ticket
+→ Ticket Domain
+
+Check In
+→ Check In Domain
+
+Accounting
+→ Accounting Domain
+
+というOwnershipを維持する。
+
+Applicationが、
+他DomainのDataを
+直接更新しない。
+
+---
+
+# 87. Application Architecture and Backend Architecture
+
+Application Architectureは、
+Business Operationと
+Layer Boundaryを定義する。
+
+Backend Architectureは、
+そのApplicationを
+Server-sideでどのように実装するかを定義する。
+
+例えば、
+
+Application Architecture：
+
+Check In Use Case
+↓
+Check In Domain
+
+Backend Architecture：
+
+Controller
+↓
+Application Service
+↓
+Domain Service
+↓
+Repository
+↓
+Database
+
+という関係になる。
+
+---
+
+# 88. Application Architecture and Frontend Architecture
+
+Frontend Architectureは、
+Client UIとUser Interactionを定義する。
+
+Application Architectureは、
+Clientから呼び出される
+Business Operationを定義する。
+
+例えばWeb Check Inでは、
+
+Frontend：
+
+Performance選択
+↓
+Reservation List
+↓
+Filter
+↓
+Check In Button
+
+Application：
+
+Reservation Resolution
+↓
+Check In Use Case
+↓
+Check In Domain
+
+という分担になる。
+
+---
+
+# 89. Application Architecture and Integration Architecture
+
+Applicationが
+External Serviceを必要とする場合は、
+
+Application
+↓
+Integration Interface
+↓
+Integration Layer
+↓
+External Service
+
+というBoundaryを利用する。
+
+External Serviceの障害によって、
+Core Business Factを
+不必要に失わせない。
+
+---
+
+# 90. Check In and Integration
+
+Check InとExternal Integrationは、
+Application上でも分離する。
+
+基本構造：
+
+Check In
+↓
+CheckInCompleted
+↓
+Integration / History / Accounting
+
+External Serviceが失敗しても、
+Check In Business Factそのものを
+不必要にRollbackしない設計を検討する。
+
+具体的なFailure Strategyは、
+Integration Architectureで定義する。
+
+---
+
+# 91. Application Transaction Boundary
+
+Application Use Caseは、
+Business Operation単位で
+Transaction Boundaryを持つ。
+
+代表例：
+
+Check In
+↓
+Transaction
+
+Reservation Confirmation
+↓
+Transaction
+
+Ticket Issuance
+↓
+Transaction
+
+Journal Entry
+↓
+Transaction
+
+複数のUse Caseを、
+不必要に一つの巨大Transactionへ
+まとめない。
+
+---
+
+# 92. Application Background Processing
+
+以下のような処理は、
+必要に応じてBackground Processingへ
+委譲できる。
+
+- Email Delivery
+- External Synchronization
+- Social Media Posting
+- Report Generation
+- Large Export
+- Accounting Projection
+
+ただし、
+Check InそのもののBusiness Fact確定を
+Background Jobだけに依存しない。
+
+---
+
+# 93. Synchronous Business Operation
+
+Receptionなど、
+即時結果が必要なOperationは、
+可能な限り同期的にResultを返す。
+
+Check In：
+
+Client
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+↓
+Result
+
+というFlowを基本とする。
+
+---
+
+# 94. Application Timeout
+
+External Serviceや
+長時間処理を伴うOperationでは、
+Timeoutを考慮する。
+
+長時間処理は、
+必要に応じてBackground Processingへ
+委譲する。
+
+Check Inについては、
+受付担当者がその場で結果を確認できるよう、
+同期Operationとして扱うことを基本とする。
+
+---
+
+# 95. Application Availability
+
+Reception時間帯では、
+以下のApplication Operationの
+Availabilityが重要となる。
+
+- Reservation Query
+- Ticket Query
+- Check In
+- Check In Result
+
+特にCheck Inについては、
+External Serviceの障害によって
+Core Reception Operationが
+不必要に停止しない構造を目指す。
+
+Infrastructure / Backend側で
+Availability Strategyを定義する。
+
+---
+
+# 96. Application Module Evolution
+
+Application Moduleは、
+将来的に必要に応じて
+独立Serviceへ分離できる構造を目指す。
+
+ただし初期段階では、
+Modular Monolithを基本とする。
 
 基本構造：
 
 StageArt Application
 ├── Identity
 ├── Organization
+├── Project
 ├── Production
-├── Rehearsal
+├── Performance
+├── Person
+├── Participant
 ├── Ticket
 ├── Reservation
 ├── Check In
+├── Rehearsal
 ├── History
 ├── Accounting
 ├── Communication
 ├── Document
-├── Promotion
-├── Equipment
-├── Regulation
-└── Survey
+└── Promotion
 
-Module内部では、
-Domain / Application / Infrastructureの責務を
-可能な限り分離する。
+Module間のBoundaryを維持することで、
+将来的な分離可能性を確保する。
 
 ---
 
-# 84. Why Modular Monolith
+# 97. Modular Monolith
 
-StageArtは、
-初期段階では一つのApplicationとして
-開発・Deployできることを優先する。
+初期Architectureでは、
+Modular Monolithとして
+StageArt Applicationを構築できる。
 
-理由：
+同一Application内に
+複数Domain Moduleを配置するが、
 
-- 開発コストを抑えられる。
-- Domain Boundaryを維持しやすい。
-- Debugが容易。
-- Transactionを扱いやすい。
-- Deploymentが単純。
-- ClaudeなどのAI Coding Agentでも
-  全体構造を把握しやすい。
+- Business Ownership
+- Repository Boundary
+- Application Boundary
+- Domain Boundary
+- Event Boundary
 
-将来的に必要性が生じた場合、
-一部Moduleを外部Serviceへ分離できる構造を目指す。
+を維持する。
 
----
-
-# 85. WordPress Plugin Structure
-
-WordPress Pluginとして実装する場合でも、
-PluginのFile Structureと
-Domain Structureを混同しない。
-
-概念構造：
-
-StageArt Plugin
-├── Presentation
-├── API
-├── Application
-├── Domain
-│   ├── Identity
-│   ├── Organization
-│   ├── Production
-│   ├── Rehearsal
-│   ├── Ticket
-│   ├── Reservation
-│   ├── Check In
-│   ├── History
-│   ├── Accounting
-│   ├── Communication
-│   ├── Document
-│   ├── Promotion
-│   ├── Equipment
-│   ├── Regulation
-│   └── Survey
-└── Infrastructure
-
-具体的なDirectory構造は、
-Implementation Specificationで確定する。
+「同じApplicationに存在する」
+ことと、
+「何でも直接参照できる」
+ことは同義ではない。
 
 ---
 
-# 86. WordPress Adapter
+# 98. Application Operation Naming
 
-WordPress固有機能は、
-AdapterとしてApplication / Infrastructureへ接続する。
-
-例：
-
-- WordPress User Adapter
-- WordPress Database Adapter
-- WordPress Media Adapter
-- WordPress HTTP Adapter
-- WordPress Scheduler Adapter
-
-Domain Layerは、
-これらのAdapterを直接知らない。
-
----
-
-# 87. Application Entry Point
-
-Applicationへの入口は、
-原則として以下に限定する。
-
-- API
-- Background Job
-- Scheduled Job
-- Internal Application Process
-- CLI / Administrative Operation
-
-どの入口から実行されても、
-同じApplication Use Caseを利用する。
-
-Business Ruleを、
-Entry Pointごとに重複実装しない。
-
----
-
-# 88. Scheduled Process
-
-定期処理が必要な場合、
-Scheduled ProcessとしてApplication Use Caseを呼び出す。
-
-例：
-
-- Reservation Reminder
-- Calendar Synchronization
-- Expired Reservation Processing
-- Report Generation
-- Notification
-
-Scheduled Processは、
-Business Ruleを独自に実装しない。
-
----
-
-# 89. Internal Application Process
-
-Domain Eventによって、
-Application内部のProcessを起動できる。
-
-例：
-
-CheckInCompleted
-↓
-History Update
-↓
-Accounting Update
-
-Application Processは、
-必要なDomainをOrchestrateする。
-
----
-
-# 90. Application Consistency
-
-Applicationは、
-同じBusiness Operationについて、
-どのEntry Pointから実行されても
-同じBusiness Ruleが適用される構造を維持する。
-
-例えばCheck Inが、
-
-- Web Management Portal
-- Web Reception List
-- Mobile Client
-- QR Scanner
-- Administrative Tool
-
-のいずれから実行されても、
-同じCheck In Use Caseを経由する。
-
----
-
-# 91. Client Specific Presentation
-
-Clientによって、
-UIや操作方法は異なってよい。
+Application Use Caseは、
+Business Operationを表す名前とする。
 
 例えば、
 
-Web：
+CreateReservation
 
-Performance選択
-↓
-Reservation / Ticket一覧
-↓
-検索 / Filter
-↓
-Check In Action
-↓
-Result
+ConfirmReservation
 
-Mobile：
+CancelReservation
 
-Performance Context
-↓
-Camera
-↓
-QR Scan
-↓
-Check In Action
-↓
-Result
+IssueTicket
 
-という違いがある。
+CheckIn
 
-しかし、
-最終的に実行するBusiness Operationは、
-同じCheck In Use Caseとする。
+ConfirmRehearsal
 
----
+RecordAttendance
 
-# 92. Application Service Independence
-
-Application Serviceは、
-Clientの種類を意識しないことを基本とする。
-
-例えばCheck In Use Caseは、
-
-「Mobileから呼ばれた」
-
-「Webから呼ばれた」
-
-という情報を、
-Business Ruleとして必要としない。
-
-必要なAuthorization Contextだけを受け取る。
-
----
-
-# 93. API Authentication
-
-Mobile ClientからAPIへアクセスする場合も、
-Authenticationを必要とする。
-
-Web ClientからAPIへアクセスする場合も、
-必要なAuthenticationを行う。
-
-基本構造：
-
-Client
-↓
-Authentication
-↓
-Access Token / Session
-↓
-StageArt API
-↓
-UserAccount
-↓
-Person
-
-Authentication方式は、
-具体的なTechnology選定時に確定する。
-
----
-
-# 94. Mobile Session
-
-Mobile Clientでは、
-Session / Tokenの安全な管理を行う。
-
-Mobile Clientに、
-
-- Password
-- Secret
-- API Key
-- Database Credential
-
-などを埋め込まない。
-
-Authentication Credentialは、
-Secure Storageなどを利用して管理する。
-
-具体的な方式は、
-Security Architectureで定義する。
-
----
-
-# 95. API Response
-
-Check In APIは、
-Web / Mobile Client双方が
-受付結果を判断できるResponseを返す。
-
-例えば、
-
-- Success
-- Already Checked In
-- Invalid Ticket
-- Ticket Not Found
-- Unauthorized
-- Forbidden
-- Performance Mismatch
-- System Error
+CreateJournalEntry
 
 など。
 
-ただし、
-内部Domain Errorをそのまま返すのではなく、
-API ResponseとしてMappingする。
+単純な、
+
+UpdateStatus
+
+UpdateRecord
+
+ProcessData
+
+などのTechnical Operationを
+Business Use Caseの中心にしない。
 
 ---
 
-# 96. API and Client Error Handling
+# 99. Check In Operation Naming
 
-Clientは、
-API Responseに基づいてUIを表示する。
+Check InのApplication Use Caseは、
 
-Web：
+CheckIn
 
-Success
-→ 「受付完了」
+をCanonical Operationとして扱う。
 
+受付方法によって、
+
+QRCheckIn
+
+WebCheckIn
+
+ManualCheckIn
+
+などの別Business Ruleを
+作らない。
+
+必要な場合でも、
+
+受付入口
+↓
+Reservation Resolution
+↓
+CheckIn
+
+という構造を維持する。
+
+---
+
+# 100. Application Result
+
+Application Use Caseは、
+Domain Entityそのものではなく、
+Application Resultを返す。
+
+基本構造：
+
+Domain Operation
+↓
+Application Result
+↓
+API Response DTO
+
+Application Resultは、
+Clientが必要とするBusiness Resultを
+表現する。
+
+---
+
+# 101. Check In Result Mapping
+
+Check In Use CaseのResultは、
+API LayerでResponse DTOへMappingする。
+
+例えば、
+
+Check In Success
 Already Checked In
-→ 「このチケットは受付済みです」
-
+Invalid Reservation
 Invalid Ticket
-→ 「利用できないチケットです」
-
+Performance Mismatch
 Forbidden
-→ 「この公演の受付権限がありません」
 
-Mobile：
+など。
 
-Network Error
-→ 「通信できませんでした。再試行してください」
-
-Web：
-
-Network Error
-→ 「通信できませんでした。再試行してください」
-
-表示文言は、
-Presentation Layerで管理する。
+Domain Exceptionや
+Infrastructure Exceptionを
+そのままClientへ公開しない。
 
 ---
 
-# 97. Testing Boundary
+# 102. Application Error Boundary
 
-Application Architectureは、
-LayerごとにTesting可能であることを目指す。
+Application Layerでは、
+以下を分離する。
 
-Domain Test：
-
-Business Rule。
-
-Application Test：
-
-Use Case。
-
-Integration Test：
-
-External Service / Database。
-
-API Test：
-
-API Contract。
-
-E2E Test：
-
-User Operation。
-
-Mobile Client Test：
-
-- QR Scan
-- API Communication
-- Authentication
-- Error Handling
-- Reception UI
-
-Web Reception Test：
-
-- Performance Selection
-- Reservation / Ticket List
-- Search
-- Filter
-- Check In Action
-- Result Display
-
----
-
-# 98. Testability
-
-Application Layerは、
-Infrastructureから独立してTestできる構造を目指す。
-
-Repository InterfaceやIntegration Interfaceを
-利用することで、
-Test Doubleを利用できるようにする。
-
-Domain Testでは、
-External Serviceを必要としない。
-
-Mobile Client Testでは、
-CameraやNetworkをMockできる構造を目指す。
-
-Web Reception Testでは、
-API ResponseをMockして
-一覧・検索・Check In UIを検証できる構造を目指す。
-
----
-
-# 99. Architecture Decision Rule
-
-新しいClass、
-Module、
-Service、
-Libraryなどを追加する場合は、
-
-「どのLayerの責務か」
-
-を最初に判断する。
-
-判断基準：
-
-Business Rule
-→ Domain
-
-Business Operation
-→ Application
-
-External Request / Response
-→ API
-
-Web UI
-→ Presentation
-
-Mobile UI
-→ Mobile Presentation
-
-Device Feature
-→ Client
-
-Database / External API
-→ Infrastructure
-
-External Business Service
-→ Integration
-
----
-
-# 100. Anti Pattern
-
-以下の構造を避ける。
-
-## Fat Controller
-
-ControllerにBusiness Logicを集中させる。
-
-## Fat Component
-
-UI ComponentにBusiness Ruleを実装する。
-
-## Fat Mobile Client
-
-Mobile ClientにCheck Inなどの
-Business Ruleを実装する。
-
-## Fat Web Client
-
-Web ClientにCheck Inなどの
-Business Ruleを実装する。
-
-## Active Record Dependency
-
-DomainがDatabase Modelへ直接依存する。
-
-## Service Locator
-
-どこからでもGlobal Serviceを取得する。
-
-## God Service
-
-すべてのBusiness Logicを一つのServiceへ集約する。
-
-## Domain Infrastructure Dependency
-
-DomainからWordPress / Database / External APIを直接呼び出す。
-
-## Permission in UI Only
-
-UIだけでPermissionを制御する。
-
-## Client as Source of Truth
-
-Mobile ClientやWeb Clientの状態を、
-Business Factの正本にする。
-
-## External Service as Source of Truth
-
-Google CalendarやSNSなどを
-StageArt Business Factの正本にする。
-
-## Client Specific Business Rule
-
-Web ClientとMobile Clientで、
-同じBusiness Operationに対して
-異なるBusiness Ruleを実装する。
-
----
-
-# 101. Business Rule Location
-
-Business Ruleを、
-最も意味の近いLayerへ置く。
-
-例：
-
-「予約は販売期間内でなければ確定できない」
-
-→ Reservation / Ticket Domain
-
-「このPersonはこのProductionを管理できる」
-
-→ Authorization
-
-「Check Inされたら観劇実績が発生する」
-
-→ Check In Domain
-
-「CheckInCompletedを契機に会計処理を行う」
-
-→ Application / Accounting Integration
-
-「QR Codeを読み取ったら受付可能か判定する」
-
-→ Check In Application / Domain
-
-QR Codeの読み取り自体：
-
-→ Mobile Client
-
-Web一覧から対象Ticketを選択すること：
-
-→ Web Client
-
----
-
-# 102. Mobile Client Architecture Summary
-
-Mobile Clientは、
-StageArt ApplicationのClientの一つである。
-
-Mobile Client
+Domain Business Error
 ↓
-HTTPS
+Application Business Error
+
+Infrastructure Error
 ↓
-StageArt API
+Application Technical Error
+
+Integration Error
+↓
+Application Integration Error
+
+API Layerは、
+これらをHTTP / API ErrorへMappingする。
+
+---
+
+# 103. Application API Independence
+
+Application Use Caseは、
+特定のClient UIに依存しない。
+
+例えばCheck In Use Caseは、
+
+Web Button
+
+Mobile QR
+
+Administrative Screen
+
+のどれから呼ばれても、
+同じBusiness Operationとして動作する。
+
+Application Use Caseが、
+BrowserやMobile Deviceを
+直接操作しない。
+
+---
+
+# 104. Device Feature Boundary
+
+Camera、
+QR Scanner、
+Notification、
+Local Storageなどの
+Device Featureは、
+Client側の責務とする。
+
+Applicationは、
+Device Featureの具体Implementationを知らない。
+
+例えば、
+
+Camera
+↓
+QR Payload
+↓
+Application
+
+であり、
+
+Application
+↓
+Camera
+
+という依存を作らない。
+
+---
+
+# 105. API Request to Application Command
+
+API Requestは、
+Application CommandへMappingする。
+
+例えば、
+
+Web Request
+↓
+CheckInRequestDTO
+↓
+CheckInCommand
+↓
+CheckInUseCase
+
+Mobile Request
+↓
+CheckInRequestDTO
+↓
+CheckInCommand
+↓
+CheckInUseCase
+
+とする。
+
+Clientごとに、
+異なるBusiness Commandを
+原則として作らない。
+
+---
+
+# 106. Query Model
+
+Queryは、
+必要に応じてRead Modelへ
+直接アクセスできる。
+
+例えば、
+
+Check In List
+↓
+CheckInReadModel
+
+Reservation Search
+↓
+ReservationReadModel
+
+Performance List
+↓
+PerformanceReadModel
+
+など。
+
+Read Modelは、
+Write Modelと分離できる。
+
+---
+
+# 107. Write Model
+
+Business Operationの確定には、
+Domain Modelを利用する。
+
+例えば、
+
+Check In
+↓
+Check In Domain
+↓
+Check In Fact
+
+Reservation Confirmation
+↓
+Reservation Domain
+↓
+Reservation State
+
+など。
+
+Query用Read Modelを、
+Business FactのWrite Sourceとして利用しない。
+
+---
+
+# 108. Application Consistency
+
+Applicationは、
+Business FactのConsistencyを
+Server Sideで保証する。
+
+Client側の、
+
+- Cache
+- Local State
+- UI State
+- Previous Response
+
+を、
+Business Factの正本としない。
+
+---
+
+# 109. Application Audit Context
+
+重要なBusiness Operationでは、
+必要に応じてAudit Contextを保持する。
+
+例えば、
+
+- Actor
+- Organization
+- Production
+- Operation
+- Resource
+- Source
+- Timestamp
+
+など。
+
+特にCheck Inでは、
+Web / Mobile / Administrativeなどの
+受付Sourceを記録できる。
+
+---
+
+# 110. Check In Audit
+
+Check Inについて、
+必要に応じて以下をAudit情報として扱う。
+
+- Check In Actor
+- Reservation
+- Performance
+- Source
+- Client
+- Timestamp
+- Result
+
+Audit情報は、
+Check In Business Factそのものとは
+分離して扱う。
+
+---
+
+# 111. Application Architecture Rules
+
+Application Architectureでは、
+以下を禁止または原則禁止とする。
+
+- ClientからDatabaseへの直接アクセス
+- ClientからDomainへの直接アクセス
+- API ControllerへのBusiness Rule実装
+- UIへのBusiness Rule実装
+- DomainからDatabase SDKへの直接依存
+- DomainからExternal Service SDKへの直接依存
+- Module間のPersistence直接操作
+- Scope外Dataの取得
+- Client側だけでのCheck In確定
+- QR Codeだけを根拠にしたCheck In確定
+- Issued TicketだけをCheck In Business Factとして扱うこと
+- WebとMobileで別々のCheck In Business Ruleを実装すること
+
+---
+
+# 112. Application Architecture Summary
+
+StageArt Application Architectureでは、
+
+Client
+↓
+API
 ↓
 Application
 ↓
 Domain
-
-Mobile Clientは、
-
-- Camera
-- QR Scanner
-- Touch UI
-- Local UI State
-
-などのDevice / Presentation機能を担当する。
-
-StageArt Serverは、
-
-- Authentication
-- Authorization
-- Ticket Validation
-- Check In
-- Business Rule
-- History
-- Accounting
-- Persistence
-
-を担当する。
-
----
-
-# 103. Web Client Check In Architecture Summary
-
-Web Clientは、
-QRを利用しなくても
-Check Inを実行できる。
-
-基本構造：
-
-Web Client
 ↓
-Performance Selection
+Infrastructure
+
+というLayer Boundaryを維持する。
+
+Web Client、
+Mobile Client、
+Administrative Client、
+Public Clientなど、
+Clientが異なっても、
+Business RuleをClient側へ分散させない。
+
+特にCheck Inでは、
+
+受付Input
 ↓
-Reservation / Issued Ticket List
-↓
-Search / Filter
-↓
-Ticket Selection
-↓
-Check In API
+Reservation Resolution
 ↓
 Check In Use Case
 ↓
@@ -2729,206 +3075,216 @@ Check In Domain
 Check In
 ↓
 CheckInCompleted
-├── History
-└── Accounting
-↓
-API Response
-↓
-Web Client
-↓
-受付結果表示
 
----
+という共通構造を採用する。
 
-# 104. QR Reception Architecture Summary
+受付Inputには、
 
-QR受付の基本構造：
+- QR Code
+- Reservation Number
+- Booker Name
+- Manual Selection
+- Reservation Identifier
 
-Reception Staff
-↓
-Mobile Client
-↓
-Camera
-↓
+などを利用できる。
+
+QR受付では、
+
 QR Code
 ↓
-QR Payload
+Issued Ticket
 ↓
-Check In API
+Reservation
 ↓
+Check In
+
+というResolutionを行う。
+
+Reservation Number受付では、
+
+Reservation Number
+↓
+Reservation
+↓
+Check In
+
+となる。
+
+Booker Name受付では、
+
+Booker Name
+↓
+Candidate Reservations
+↓
+Reservation Selection
+↓
+Reservation
+↓
+Check In
+
+となる。
+
+Manual Selectionでは、
+
+Performance
+↓
+Reservation List
+↓
+Reservation Selection
+↓
+Reservation
+↓
+Check In
+
+となる。
+
+すべての受付方法において、
+最終的なBusiness Operationは、
+
+Check In
+
+として共通化する。
+
+Check InのCanonical Relationshipは、
+
+Reservation
+↓
+Check In
+
+である。
+
+Issued Ticketは、
+QRなどの受付経路で
+Reservationを特定するために利用する。
+
+したがって、
+
+Issued Ticket
+≠
+Check In
+
+である。
+
+また、
+
+QR Code
+≠
+Check In
+
+である。
+
+QR Codeは、
+Issued Ticketなどを識別するための
+Artifactとして扱う。
+
+Check Inが確定すると、
+
+Check In
+↓
+CheckInCompleted
+├── Audience History
+└── Accounting Process
+
+という後続処理を実行できる。
+
+Application Layerでは、
+
+- Use Case
+- Command
+- Query
+- Authorization Context
+- Reservation Resolution
+- Transaction Boundary
+- Application Result
+- Domain Event
+
+を利用して、
+Business OperationをOrchestrateする。
+
+Domain Layerでは、
+Business Ruleを保持する。
+
+Infrastructure Layerでは、
+Database、
+File Storage、
+External Serviceなどの
+Technical Implementationを担当する。
+
+Authorizationについては、
+
 Authentication
 ↓
 Authorization
 ↓
-Check In Use Case
+Scope
 ↓
-Ticket / Reservation Validation
+Use Case
 ↓
-Check In
-↓
-CheckInCompleted
-├── History
-└── Accounting
-↓
-API Response
-↓
-Mobile Client
-↓
-受付結果表示
+Domain
 
----
+というBoundaryを維持し、
+Resource IDを知っているだけでは
+Scope外Dataへアクセスできない構造とする。
 
-# 105. Common Check In Architecture
-
-Web受付とQR受付は、
-入口が異なるだけで、
-Check InのBusiness Operationは共通とする。
-
-Web：
+Check Inでは特に、
 
 Web Client
 ↓
-Ticket / Reservation List
+Reservation / Ticket List
 ↓
-Check In API
+Reservation Resolution
+↓
+Check In Use Case
 
-Mobile：
+と、
 
 Mobile Client
 ↓
 QR Scanner
 ↓
-Check In API
-
-共通：
-
-Check In API
+Reservation Resolution
 ↓
 Check In Use Case
-↓
-Check In Domain
-↓
-Check In
-↓
-CheckInCompleted
-├── History
-└── Accounting
 
-この構造を、
-StageArtの正式なCheck In Architectureとする。
+を同一Business Operationへ
+集約する。
 
----
+この構造により、
 
-# 106. Application Boundary Summary
-
-StageArt Applicationは、
-
-Client
-↓
-Presentation
-↓
-API
-↓
-Application
-↓
-Domain
-↓
-Infrastructure
-
-というLayer構造を持つ。
-
-Clientには、
-
-- Web Client
-- Mobile Client
-- QR Reception Client
-- Administrative Client
-
-が含まれる。
-
-Application Layerは、
-Business OperationをOrchestrateする。
-
-Domain Layerは、
-Business RuleとBusiness Factを管理する。
-
-Infrastructure Layerは、
-技術的な実装を提供する。
-
-Integration Layerは、
-External Serviceとの境界を提供する。
-
----
-
-# 107. Architecture Principle
-
-StageArt Application Architectureの最重要原則：
-
-「Business Ruleを、
-利用者Interfaceや技術Infrastructureから
-独立させる。」
-
-そのため、
-
-User
-↓
-Client
-↓
-Presentation
-↓
-API
-↓
-Application
-↓
-Domain
-
-というBusiness Operationの流れと、
-
-Domain
-↓
-Repository / Integration Interface
-↓
-Infrastructure
-↓
-Database / External Service
-
-という技術実装の流れを分離する。
-
-Web ClientとMobile Clientは、
-同じApplication Use Caseを利用する。
-
-QR Codeは、
-Business Factではなく、
-Ticketを識別するためのArtifactとして扱う。
-
-QRの読み取りはMobile Clientで行うが、
-Check Inの確定はServer Sideで行う。
-
-Web Clientでは、
-Reservation / Issued Ticketの一覧から
-Check Inを実行できる。
-
-Web ClientとMobile Clientの
-Check In結果は、
-同じServer Side Business Factを
-参照する。
-
-Check Inが確定した後は、
-CheckInCompletedを起点として、
-HistoryやAccountingなどのDomainへ連携する。
-
-この責務分離を維持することで、
-Web Client、
-Mobile Client、
-QR Scanner、
-PHP Server、
-WordPress、
-Database、
+Web Client
+Mobile Client
+QR Scanner
+PHP Server
+WordPress
+Database
 External Service
 
-が変更されても、
-StageArtのBusiness Ruleと
-Business Factを一貫して管理できる
-Application Architectureを目指す。
+などのTechnologyやInterfaceが変更されても、
+
+Reservation
+Check In
+Ticket
+History
+Accounting
+Authorization
+
+などのBusiness Boundaryを維持できる。
+
+Application Architectureの最重要原則は、
+
+「ClientやAPIをBusiness Ruleの実装場所にせず、
+Application Use CaseをBusiness Operationの入口とし、
+DomainをBusiness Ruleの正本とする」
+
+ことである。
+
+また、
+
+「受付方法とBusiness Operationを分離し、
+どの受付方法からでも共通のCheck In Use Caseへ到達できる」
+
+ことを、
+StageArtのCheck In Architectureにおける
+重要な原則とする。
 
 ---
