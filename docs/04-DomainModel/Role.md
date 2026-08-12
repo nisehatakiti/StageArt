@@ -2,45 +2,76 @@
 
 # Domain Model : Role
 
-Version : 2.1
+Version : 3.0
 
 ---
 
 # Purpose
 
 Roleは、
-Personに付与される権限のまとまりを定義するDomainである。
+StageArtにおける権限のまとまりを定義するDomainである。
 
 RoleはPerson自身の属性ではない。
 
 Roleは、
-「何ができるか」を定義する。
+「何ができるか」
+を定義する。
 
 Roleが誰に、
-どのOrganizationまたはProductionのScopeで
-適用されているかは、
-RoleそのものではなくAssignmentによって管理する。
+どのScopeで適用されているかは、
+Roleそのものではなく、
+MembershipまたはProductionDelegateとの関係によって決定する。
 
 基本構造：
 
 Role
-  ↓
+    ↓
 Permission Set
+    ↓
+Permission
 
-Role Assignment
-  ↓
-Role
-  ↓
-Scope
+Roleの適用：
+
+Organization Scope
+    Person
+        ↓
+    Membership
+        ↓
+    Organization
+        ↓
+    Role
+        ↓
+    Permission
+
+Production Scope
+    Person
+        ↓
+    ProductionDelegate
+        ↓
+    Production
+        ↓
+    Role
+        ↓
+    Permission
+
+RoleAssignmentという独立Domainは作成しない。
+
+DelegateRoleという別のRole体系も使用しない。
 
 ---
 
 # Concept
 
 Roleは、
-Permissionのまとまりとして定義する。
+複数のPermissionをまとめた
+Permission Setを定義する。
 
-RoleそのものはScopeを持たない。
+Roleそのものは、
+OrganizationやProductionなどのScopeを持たない。
+
+Roleは、
+どのScopeで使用されるかを意識せず、
+権限の内容だけを定義する。
 
 例えば、
 
@@ -53,11 +84,15 @@ RoleそのものはScopeを持たない。
 
 などをRoleとして定義できる。
 
-Roleは、
-Personに直接所有されるものではない。
+Role Definitionは、
+Personごとに複製しない。
 
-Role Definitionと、
-RoleがPersonへ適用されている状態を分離する。
+同じRole Definitionを、
+
+- Organization Scope
+- Production Scope
+
+の両方で利用できる。
 
 ---
 
@@ -69,15 +104,15 @@ Roleが持つPermission Setを定義する。
 基本構造：
 
 Role
-  ↓
+    ↓
 Permission Set
-  ↓
+    ↓
 Permission
 
 例えば、
 
 Rehearsal Manager
-  ↓
+    ↓
 Rehearsal Management Permissions
 
 として、
@@ -93,73 +128,88 @@ Rehearsal Management Permissions
 などを定義する。
 
 Role Definitionは、
-Personごとに複製しない。
+PersonやMembershipごとに複製しない。
+
+Role Definitionを変更した場合、
+そのRoleを適用しているScopeのPermissionにも反映される。
 
 ---
 
 # Scope
 
-RoleはScopeを持たない。
+Role Definition自身は、
+Scopeを持たない。
 
-Roleが実際に適用されるScopeは、
-Role Assignmentによって決定する。
+Roleが実際にどのScopeで有効になるかは、
+Roleを適用する関係によって決定する。
 
-主なScopeは、
+StageArtでは、
+主に以下のScopeを使用する。
 
-- Organization
-- Production
+- Organization Scope
+- Production Scope
 
-とする。
+Organization Scopeでは、
+Membershipを通じてRoleを適用する。
 
-例えば、
+Production Scopeでは、
+ProductionDelegateを通じてRoleを適用する。
 
-Role = Rehearsal Manager
+Roleそのものに、
 
-を、
+- OrganizationId
+- ProductionId
+- ScopeType
 
-Organization Scopeで適用することもできる。
-
-また、
-
-Production Scopeで適用することもできる。
-
-Roleそのものは、
-どちらのScopeなのかを意識しない。
+などを持たせない。
 
 ---
 
-# Organization Role Assignment
+# Organization Scope
 
-OrganizationにおけるRoleは、
+Organization ScopeにおけるRoleは、
 Membershipを通じてPersonへ適用する。
 
 基本構造：
 
 Person
-  ↓
+    ↓
 Membership
-  ↓
+    ↓
 Organization
-  ↓
-Role Assignment
-  ↓
+    ↓
 Role
-  ↓
+    ↓
 Permission
 
 Membershipは、
-PersonのOrganizationへの所属を表す。
+PersonとOrganizationの所属関係を表す。
 
-Role Assignmentは、
-そのMembershipに対して
-どのRoleを付与しているかを表す。
+Roleは、
+そのMembershipを通じて
+Organization ScopeにおけるPersonの権限を決定する。
+
+例えば、
+
+Person A
+    ↓
+Membership
+    ↓
+Organization A
+    ↓
+Role = Administrator
+
+の場合、
+
+Person AはOrganization Aにおいて
+AdministratorのPermissionを持つ。
 
 ---
 
 # Membership and Role
 
 MembershipとRoleは、
-異なる責務を持つ。
+それぞれ異なる責務を持つ。
 
 Membership：
 
@@ -167,80 +217,387 @@ Membership：
 - 所属状態
 - 所属開始
 - 所属終了
-- その他所属に関する情報
+- Organization内でのRole
 
 Role：
 
-- Organization内で何ができるか
+- OrganizationまたはProductionで利用するPermission Set
 
-Role Assignment：
+Membershipは、
+Role Definitionそのものを定義しない。
 
-- そのMembershipにどのRoleを適用するか
+Membershipは、
+既存のRole Definitionを
+Organization ScopeにおいてPersonへ適用する。
 
-基本構造：
-
-Person
-  ↓
-Membership
-  ↓
-Organization
-  ↓
-Role Assignment
-  ↓
-Role
+RoleAssignmentという独立Entityは作成しない。
 
 ---
 
-# Organization Roles
+# Organization Role
 
-StageArtの基本Organization Roleは、
-以下を提供する。
+StageArtでは、
+Organization Scopeにおける基本Roleを定義できる。
+
+例：
 
 - Administrator
 - Rehearsal Manager
 - Accounting Manager
+- Reservation Manager
+- Participant Manager
+- Performance Manager
 
 必要に応じて、
-その他のOrganization Roleを追加できる。
+Organizationの運営に必要なRoleを追加できる。
+
+具体的なPermissionは、
+Authorization Domainで定義する。
 
 ---
 
 # Administrator
 
 Administratorは、
-Organizationにおける全管理権限を持つRoleである。
+Organization Scopeにおける
+全般的な管理権限を持つRoleである。
 
 主な対象：
 
 - Organization管理
 - Membership管理
-- Role管理
 - Project管理
 - Production管理
 - Participant管理
 - Rehearsal管理
-- Timetable管理
+- Reservation管理
+- Performance管理
 - Accounting管理
-- Budget管理
-- Production Actual管理
-- Equipment管理
 - Document管理
 - Announcement管理
-- Regulation管理
-- その他Organizationにおける管理機能
+- その他Organization Scopeの管理対象
 
-Administratorは、
-Organization Scopeにおける
-全Permissionを持つ。
+具体的なPermissionは、
+Authorization Domainで定義する。
 
 ---
 
-# Rehearsal Manager
+# Organization Owner
 
-Rehearsal Managerは、
-稽古および稽古関連情報を管理するRoleである。
+Organization Ownerは、
+Organization Scopeにおける
+全権限を持つ管理者として扱う。
 
-主なPermission：
+Organization Ownerという独立したRole体系は作成しない。
+
+Owner情報は、
+Membershipに適用されたRoleによって表現する。
+
+基本構造：
+
+Person
+    ↓
+Membership
+    ↓
+Organization
+    ↓
+Role = Administrator
+    ↓
+Permission
+
+したがって、
+Organization自身にOwnerIdを直接保持しない。
+
+Ownerを変更する場合も、
+Membershipに適用されているRoleの変更として管理できる。
+
+Organization OwnerとProduction PrimaryManagerは、
+異なる概念として扱う。
+
+Organization Owner：
+
+Organization Scopeの管理者
+
+PrimaryManager：
+
+Production Scopeの管理者
+
+---
+
+# Production Scope
+
+Production ScopeにおけるRoleは、
+ProductionDelegateを通じてPersonへ適用する。
+
+基本構造：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+ProductionDelegateは、
+特定Productionに対して
+PersonへRoleを適用する関係を表す。
+
+ProductionDelegate自身は、
+Permissionを定義しない。
+
+Permissionは、
+ProductionDelegateが参照するRoleによって決定する。
+
+---
+
+# Production Delegate
+
+ProductionDelegateは、
+特定Productionに対して
+PersonへRoleを適用する。
+
+例えば、
+
+Production A
+    ↓
+ProductionDelegate
+    ├── Person A
+    └── Role = Rehearsal Manager
+
+の場合、
+
+Person AはProduction Aについて
+Rehearsal ManagerのPermissionを持つ。
+
+同じPersonを、
+複数のProductionへ
+ProductionDelegateとして登録できる。
+
+例えば、
+
+Production A
+    ↓
+ProductionDelegate
+    ├── Person A
+    └── Role = Rehearsal Manager
+
+Production B
+    ↓
+ProductionDelegate
+    ├── Person A
+    └── Role = Reservation Manager
+
+という状態を許可する。
+
+ProductionDelegateによって適用されたRoleは、
+そのProduction Scopeにおいてのみ有効である。
+
+---
+
+# PrimaryManager
+
+Productionには、
+PrimaryManagerが存在する。
+
+PrimaryManagerは、
+Productionに関する全管理権限を持つ。
+
+PrimaryManagerは、
+ProductionDelegateとは異なる。
+
+PrimaryManager：
+
+Production Scopeにおける
+全管理権限を持つ。
+
+ProductionDelegate：
+
+Roleによって限定された
+Production Scopeの権限を持つ。
+
+基本構造：
+
+Production
+    ↓
+PrimaryManager
+    ↓
+Person
+
+Production
+    ↓
+ProductionDelegate
+    ├── Person
+    └── Role
+            ↓
+        Permission
+
+PrimaryManagerは、
+Organization Ownerとは異なる。
+
+Organization Ownerは、
+Organization Scopeの管理者である。
+
+PrimaryManagerは、
+Production Scopeの管理者である。
+
+---
+
+# Role and Participant Type
+
+RoleとParticipant Typeは、
+明確に分離する。
+
+Role：
+
+管理・運営上の権限を表す。
+
+Participant Type：
+
+Productionへの参加区分を表す。
+
+例えば、
+
+Participant Type = CAST
+
+であっても、
+Productionの管理権限は自動的に付与されない。
+
+Participant Type = STAFF
+
+であっても、
+Productionの管理権限は自動的に付与されない。
+
+Productionの管理権限が必要な場合は、
+ProductionDelegateによってRoleを適用する。
+
+基本構造：
+
+Production
+    ↓
+Participant
+    ↓
+Participant Type
+
+一方、
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
+
+となる。
+
+Roleによって、
+Productionへの参加区分を自動的に決定してはならない。
+
+Participant Typeによって、
+管理権限を自動的に付与してはならない。
+
+---
+
+# Role Reuse
+
+Role Definitionは、
+Organization ScopeとProduction Scopeで共通して利用できる。
+
+例えば、
+
+Rehearsal Manager
+
+というRole Definitionを、
+
+Organization Scope：
+
+Person A
+    ↓
+Membership
+    ↓
+Organization A
+    ↓
+Role = Rehearsal Manager
+
+として適用することもできる。
+
+また、
+
+Production Scope：
+
+Person B
+    ↓
+ProductionDelegate
+    ↓
+Production A
+    ↓
+Role = Rehearsal Manager
+
+として適用することもできる。
+
+この場合、
+Role Definition自体は同一である。
+
+ScopeによってRole Definitionを複製しない。
+
+---
+
+# Role Independence
+
+Roleは、
+Personに直接所有されない。
+
+Person自身にRoleを設定しない。
+
+例えば、
+
+Person
+    ↓
+Role
+
+という直接関係は作成しない。
+
+Roleは、
+
+Organization Scope：
+
+Person
+    ↓
+Membership
+    ↓
+Role
+
+Production Scope：
+
+Person
+    ↓
+ProductionDelegate
+    ↓
+Role
+
+という関係によって適用する。
+
+これにより、
+同じPersonがOrganizationごと、
+Productionごとに異なる権限を持つことができる。
+
+---
+
+# Permission
+
+Permissionは、
+Business Resourceに対して
+実行可能な操作を表す。
+
+Permissionの詳細な定義は、
+Authorization Domainで管理する。
+
+例：
 
 - Rehearsal.Read
 - Rehearsal.Create
@@ -249,897 +606,232 @@ Rehearsal Managerは、
 - Timetable.Read
 - Timetable.Create
 - Timetable.Update
+- Participant.Read
+- Participant.Create
+- Participant.Update
+- Reservation.Read
+- Reservation.Create
+- Reservation.Update
+- Reservation.Cancel
+- Reservation.CheckIn
 
-必要に応じて、
-Attendanceなどの稽古関連Permissionを含める。
-
-Rehearsal Managerは、
-独立したEntityではない。
-
-Role Definitionとして管理する。
-
----
-
-# Accounting Manager
-
-Accounting Managerは、
-会計・予算・予実に関する管理権限を持つRoleである。
-
-主な対象：
-
-- Accounting Period
-- Account
-- Journal Entry
-- Journal Entry Line
-- Budget
-- Budget Item
-- Production Actual
-- Budget vs Actual
-- Production Settlement
-
-Accounting Managerは、
-Accounting関連Permissionを持つ。
-
-Accounting Managerは、
-Organization全体の管理権限を持つわけではない。
+Roleは、
+これらのPermissionをまとめた
+Permission Setを定義する。
 
 ---
 
-# Production Roles
+# Authorization Relationship
 
-Production単位でも、
-Organization Roleと同じRole Definitionを利用できる。
+StageArtにおけるRole適用の基本構造は以下とする。
 
-例えば、
-
-Role = Rehearsal Manager
-
-を特定Productionに対して
-Assignmentすることができる。
-
-これにより、
-Productionごとに異なる管理担当者を
-設定できる。
-
-Production専用の別Role Definitionを
-作成する必要はない。
-
----
-
-# ProductionDelegate
-
-ProductionDelegateは、
-特定Productionに対してRoleを
-PersonへAssignmentするためのDomainである。
-
-ProductionDelegateは、
-Role Definitionではない。
-
-ProductionDelegateは、
-「誰に、どのProductionについて、
-どのRoleを与えたか」
-を表現する。
-
-基本構造：
+## Organization Scope
 
 Person
-  ↓
-ProductionDelegate
-  ↓
-Production
-  ↓
+    ↓
+Membership
+    ↓
+Organization
+    ↓
 Role
-  ↓
+    ↓
 Permission
 
-ProductionDelegateは、
-Production ScopeのRole Assignmentとして扱う。
+## Production Scope
 
----
+Person
+    ↓
+ProductionDelegate
+    ↓
+Production
+    ↓
+Role
+    ↓
+Permission
 
-# ProductionDelegate Example
-
-例えば、
-
-Production：
-
-「12人のうかれる人々」
-
-Person：
-
-田中
-
-Role：
-
-Rehearsal Manager
-
-の場合、
-
-田中に対して、
+## PrimaryManager
 
 Production
-  ↓
-ProductionDelegate
-  ↓
-Role = Rehearsal Manager
+    ↓
+PrimaryManager
+    ↓
+Person
+    ↓
+全Production Permission
 
-をAssignmentする。
-
-これにより田中は、
-このProductionについて、
-
-- Rehearsalの参照
-- Rehearsalの作成
-- Rehearsalの変更
-- Rehearsalの削除
-- Timetableの管理
-
-などのPermissionを持つ。
+PrimaryManagerは、
+Roleによる限定権限ではなく、
+Production Scopeの全管理権限を持つ。
 
 ---
 
-# Production Scope
+# No RoleAssignment
 
-ProductionDelegateによって
-AssignmentされたRoleのPermissionは、
-対象Productionに限定される。
+StageArtでは、
+RoleAssignmentという独立Domain Entityを作成しない。
 
-例えば、
-
-Person A
-  ↓
-ProductionDelegate
-  ↓
-Production A
-  ↓
-Role = Rehearsal Manager
-
-の場合、
-
-Person AはProduction Aについて
-Rehearsal ManagerのPermissionを持つ。
-
-Person Aが別のProduction Bについて
-同じPermissionを持つとは限らない。
-
----
-
-# ProductionDelegate and Organization Role
-
-Organization RoleとProductionDelegateは、
-AssignmentのScopeが異なる。
+Roleの適用関係は、
+Scopeごとの既存Entityによって表現する。
 
 Organization Scope：
 
-Person
-  ↓
 Membership
-  ↓
-Organization
-  ↓
-Role
-  ↓
-Permission
 
 Production Scope：
 
-Person
-  ↓
 ProductionDelegate
-  ↓
-Production
-  ↓
-Role
-  ↓
-Permission
 
-同じRole Definitionを、
-異なるScopeで利用できる。
-
----
-
-# ProductionDelegate Does Not Change Membership
-
-ProductionDelegateによって
-RoleをAssignmentしても、
-PersonのMembershipは変更されない。
-
-例えば、
-
-Person A
-  ↓
-Membership
-  ↓
-Organization A
-  ↓
-Role = Member
-
-という状態のPersonに対して、
-
-Production A
-  ↓
-ProductionDelegate
-  ↓
-Role = Rehearsal Manager
-
-をAssignmentすることができる。
-
-この場合、
-
-Organization AにおけるRole
-
-と、
-
-Production AにおけるRole
-
-は別のAssignmentである。
-
----
-
-# Role and Participant Type
-
-RoleとParticipant Typeは、
-完全に別の概念として扱う。
-
-Role：
-
-何ができるか。
-
-Participant Type：
-
-Productionにどう参加しているか。
-
-基本構造：
+したがって、
 
 Person
-  ↓
-Membership
-  ↓
-Organization
-  ↓
-Role Assignment
-  ↓
+    ↓
+RoleAssignment
+    ↓
 Role
 
-一方、
-
-Production
-  ↓
-Participant
-  ↓
-Participant Type
-
-となる。
-
-Participant Typeの例：
-
-- CAST
-- STAFF
-
-CASTであることは、
-Roleではない。
-
-STAFFであることも、
-Roleではない。
-
-Participant Typeによって、
-管理権限を自動的に付与してはならない。
-
-Roleによって、
-Participant Typeを自動的に決定してはならない。
+という構造は使用しない。
 
 ---
 
-# Example : Cast
-
-Person AがProduction Aに出演する場合：
-
-Person A
-  ↓
-Participant
-  ↓
-Production A
-  ↓
-Participant Type = CAST
-
-となる。
-
-このことによって、
-Person Aに管理権限が付与されるわけではない。
-
-Person Aが稽古管理を担当する場合は、
-別途、
-
-Person A
-  ↓
-ProductionDelegate
-  ↓
-Production A
-  ↓
-Role = Rehearsal Manager
-
-をAssignmentする。
-
----
-
-# Example : Staff
-
-Person BがProduction Aのスタッフである場合：
-
-Person B
-  ↓
-Participant
-  ↓
-Production A
-  ↓
-Participant Type = STAFF
-
-となる。
-
-Person Bが予約管理を担当する場合は、
-
-Person B
-  ↓
-ProductionDelegate
-  ↓
-Production A
-  ↓
-Role = Reservation Manager
-
-をAssignmentする。
-
----
-
-# Multiple Roles
-
-一人のPersonに複数のRoleを
-Assignmentできる。
-
-例えば、
-
-Person A
-  ↓
-ProductionDelegate
-  ├── Role = Rehearsal Manager
-  ├── Role = Reservation Manager
-  └── Role = Participant Manager
-
-という状態を作ることができる。
-
-これにより、
-一人のPersonが複数の管理領域を担当できる。
-
----
-
-# Role Assignment and Scope
-
-Role Assignmentは、
-必ずScopeを持つ。
-
-Organization Role Assignmentの場合：
-
-Scope = Organization
-
-Production Role Assignmentの場合：
-
-Scope = Production
-
-Role Definition自体には、
-Scopeを持たせない。
-
-これにより、
-Role Definitionと
-権限の適用範囲を分離する。
-
----
-
-# Permission
-
-Permissionは、
-Roleが持つ具体的な操作権限を表す。
-
-基本構造：
-
-Role
-  ↓
-Permission Set
-  ↓
-Permission
-
-例えば、
-
-Rehearsal Manager
-  ↓
-Rehearsal Management Permission Set
-  ↓
-- Rehearsal.Read
-- Rehearsal.Create
-- Rehearsal.Update
-- Rehearsal.Delete
-
-など。
-
-Permissionの具体的な粒度は、
-Authorization設計に従う。
-
----
-
-# Permission Scope
-
-Permissionの有効範囲は、
-Role AssignmentのScopeによって決定される。
-
-例えば、
-
-Organization Scopeで
-
-Role = Rehearsal Manager
-
-がAssignmentされている場合、
-
-そのPermissionは
-Organization内の対象Rehearsalに対して
-適用される。
-
-Production Scopeで
-
-Role = Rehearsal Manager
-
-がAssignmentされている場合、
-
-そのPermissionは
-AssignmentされたProductionに
-限定される。
-
----
-
-# Administrator Scope
-
-Administratorは、
-Organization ScopeでAssignmentされた場合、
-Organization全体のPermissionを持つ。
-
-基本構造：
-
-Membership
-  ↓
-Role Assignment
-  ↓
-Role = Administrator
-  ↓
-All Organization Permissions
-
-ProductionDelegateによって
-Administrator RoleをProduction Scopeで
-Assignmentすることも可能とする。
-
-その場合、
-AdministratorのPermissionは
-対象ProductionのScopeに限定される。
-
-つまり、
-
-Role = Administrator
-
-そのものが全権限なのではなく、
-
-Role + Scope
-
-によって実際の権限範囲が決定される。
-
----
-
-# Role Assignment Lifecycle
-
-Role Assignmentには、
-AssignmentのLifecycleを持たせることができる。
-
-基本的な情報：
-
-- AssignedAt
-- AssignedBy
-- EffectiveFrom
-- EffectiveUntil
-- RemovedAt
-- RemovedBy
-
-具体的なAudit構造は、
-共通Audit設計に従う。
-
----
-
-# Role Assignment Removal
-
-Role Assignmentを解除しても、
-Role Definitionそのものは削除しない。
-
-例えば、
-
-Person A
-  ↓
-ProductionDelegate
-  ↓
-Production A
-  ↓
-Role = Rehearsal Manager
-
-を解除した場合、
-
-Rehearsal Manager Role自体は
-引き続き存在する。
-
-削除されるのは、
-Person AへのAssignmentだけである。
-
----
-
-# Role Definition Lifecycle
-
-Role Definitionは、
-OrganizationやPersonごとに複製しない。
-
-Role Definitionを変更した場合、
-そのRoleを利用しているAssignmentにも
-影響する。
-
-Role Definitionの変更については、
-必要に応じてVersioningやAuditを行う。
-
----
-
-# Custom Role
-
-将来的に、
-Organization独自のRoleを作成する必要が発生した場合は、
-Custom Roleを追加できる。
-
-ただし、
-初期実装ではCustom Roleを必須としない。
-
-基本Roleを利用する。
-
----
-
-# Permission Override
-
-初期実装では、
-Person単位のPermission Overrideを
-必須としない。
-
-基本構造は、
-
-Role
-  ↓
-Permission Set
-
-とする。
-
-個別Personの例外権限が必要になった場合のみ、
-Permission Overrideを検討する。
-
----
-
-# Role and ProductionDelegate
-
-ProductionDelegateは、
-Role Definitionを新しく定義するものではない。
-
-ProductionDelegateは、
-既存RoleをProduction Scopeへ
-Assignmentするための仕組みである。
-
-そのため、
-
-DelegateRole
-
-という別のRole Definitionは存在しない。
-
-Role Definitionは、
-Organization ScopeとProduction Scopeで
-共通して利用する。
-
----
-
-# Role and Organization Delegate
-
-Organization Scopeにおいて、
-ProductionDelegateと同様の
-別Role Definitionを作成しない。
-
-Organizationの通常権限は、
-
-Membership
-  ↓
-Role Assignment
-  ↓
-Role
-
-で管理する。
-
-Production単位で追加権限を与える場合のみ、
-
-ProductionDelegate
-  ↓
-Role
-
-を利用する。
-
-OrganizationとProductionで
-Role Definitionを分裂させない。
-
----
-
-# Authorization Model
-
-StageArtの基本Authorization構造は、
-
-Person
-  ↓
-Role Assignment
-  ↓
-Role
-  ↓
-Permission
-  ↓
-Scope
-
-とする。
-
-Organization Scopeでは、
-MembershipがRole Assignmentの
-所属Contextを提供する。
-
-Production Scopeでは、
-ProductionDelegateがRole Assignmentの
-所属Contextを提供する。
-
----
-
-# Business Rules
-
-- RoleはPermissionのまとまりを定義する。
-- RoleはPerson自身の属性ではない。
-- Role DefinitionはScopeを持たない。
-- Role DefinitionはPersonごとに複製しない。
-- Role AssignmentによってRoleをPersonへ適用する。
-- Organization ScopeのRole AssignmentはMembershipを通じて管理する。
-- Production ScopeのRole AssignmentはProductionDelegateを通じて管理する。
-- ProductionDelegateはRole Definitionではない。
-- ProductionDelegateはProduction ScopeのRole Assignmentを表す。
-- DelegateRoleという別のRole Definitionは作成しない。
-- Organization RoleとProduction RoleでRole Definitionを分けない。
-- 同じRole DefinitionをOrganization ScopeとProduction Scopeで利用できる。
-- Role + Scopeによって実際のPermission範囲が決定される。
-- 一人のPersonに複数のRoleをAssignmentできる。
-- Participant TypeはRoleではない。
-- CASTはRoleではなくParticipant Typeである。
-- STAFFはRoleではなくParticipant Typeである。
-- Participant Typeによって管理権限を自動付与しない。
-- RoleによってParticipant Typeを自動決定しない。
-- ProductionDelegateによるRole AssignmentはMembershipを変更しない。
-- ProductionDelegateによるRole AssignmentはOrganization全体の権限を変更しない。
-- Organization ScopeのAdministratorはOrganization全体のPermissionを持つ。
-- Production ScopeのAdministratorは対象ProductionのScopeに限定される。
-- Role Assignmentを解除してもRole Definitionは削除しない。
-- 初期実装ではCustom Roleを必須としない。
-- 初期実装ではPermission Overrideを必須としない。
-- Role変更・Assignment変更は必要に応じてAudit対象とする。
-
----
-
-# Domain Events
-
-Roleに関連する主なDomain Event：
-
-- RoleAssigned
-- RoleChanged
-- RoleRemoved
-
-ProductionDelegateに関連する主なEvent：
-
-- ProductionRoleAssigned
-- ProductionRoleChanged
-- ProductionRoleRemoved
-
-Role Definition自体の変更については、
-必要に応じてAuditする。
-
----
-
-# Event Meaning
-
-RoleAssigned
-
-Organization Scopeまたはその他のRole Assignment Contextにおいて、
-PersonへRoleがAssignmentされたことを表す。
-
-RoleChanged
-
-Role AssignmentにおけるRoleが
-変更されたことを表す。
-
-RoleRemoved
-
-Role AssignmentからRoleが解除されたことを表す。
-
-ProductionRoleAssigned
-
-Production Scopeにおいて、
-PersonへRoleがAssignmentされたことを表す。
-
-ProductionRoleChanged
-
-Production ScopeにおけるRole Assignmentの
-Roleが変更されたことを表す。
-
-ProductionRoleRemoved
-
-Production ScopeからRole Assignmentが
-解除されたことを表す。
-
----
-
-# Design Decisions
+# No DelegateRole
 
 StageArtでは、
-RoleとDelegateRoleを別々のRole体系として管理しない。
+DelegateRoleという別のRole体系を作成しない。
 
-Roleを唯一のRole Definitionとして扱う。
+Organization Delegateや
+Production Delegateのために、
+Role Definitionを別体系として複製しない。
 
-Roleは、
+すべてのRoleは、
+共通のRole Definitionを利用する。
 
-「何ができるか」
+Organization Scope：
 
-を定義する。
+Membership
+    ↓
+Role
 
-Role Assignmentは、
+Production Scope：
 
-「誰に、どのScopeで、そのRoleを与えたか」
+ProductionDelegate
+    ↓
+Role
 
-を表す。
+という構造に統一する。
+
+---
+
+# Lifecycle
+
+Role Definition自体のLifecycleは、
+Role Domainで管理する。
+
+RoleがOrganizationまたはProductionから
+参照されている場合、
+Role Definitionの変更が
+既存のRole適用へ影響する可能性がある。
+
+そのため、
+Role Definitionの変更・廃止については、
+Authorization Domainで定義する
+PermissionおよびRole管理ルールに従う。
+
+Roleを削除する場合は、
+既存のMembershipやProductionDelegateから
+参照されている状態を考慮する。
+
+---
+
+# Boundary
+
+Role Domainは、
+以下を管理する。
+
+- Role Definition
+- Role Name
+- Role Description
+- Permission Set
+- RoleのLifecycle
+- Role Definitionの有効状態
+
+Role Domainは、
+以下を管理しない。
+
+- Personへの直接的なRole付与
+- Organizationへの所属
+- Productionへの参加
+- Production Scopeの委任関係
+- Permissionの認可判定そのもの
+
+OrganizationへのRole適用はMembershipが管理する。
+
+ProductionへのRole適用はProductionDelegateが管理する。
+
+Permissionの詳細な定義と認可判定は、
+Authorization Domainで管理する。
+
+---
+
+# Summary
+
+StageArtにおけるRoleの基本構造は、
+
+Role
+    ↓
+Permission Set
+    ↓
+Permission
+
+である。
 
 Organization Scopeでは、
 
 Person
-  ↓
+    ↓
 Membership
-  ↓
-Role Assignment
-  ↓
+    ↓
+Organization
+    ↓
 Role
-  ↓
+    ↓
 Permission
 
-という構造を使用する。
+とする。
 
 Production Scopeでは、
 
 Person
-  ↓
+    ↓
 ProductionDelegate
-  ↓
+    ↓
+Production
+    ↓
 Role
-  ↓
+    ↓
 Permission
 
-という構造を使用する。
+とする。
 
-ProductionDelegateは、
-Production単位のRole Assignmentを表す。
+Productionの全管理権限は、
 
-ProductionDelegateは、
-独立した権限体系を持たない。
+Production
+    ↓
+PrimaryManager
+    ↓
+Person
 
-DelegateRoleという別Role Definitionは作成しない。
+によって表現する。
 
-Organization RoleとProduction Roleは、
-同じRole Definitionを利用する。
+RoleはScopeを持たない。
 
-これにより、
+RoleはPersonに直接付与しない。
 
-- Role Definitionの重複を防ぐ
-- Permission Setの重複を防ぐ
-- OrganizationとProductionの権限体系を統一する
-- Participant TypeとRoleを明確に分離する
-- Production単位の権限委任を実現する
+RoleAssignmentという独立Domainは作成しない。
 
-ことができる。
+DelegateRoleという別のRole体系は使用しない。
 
----
+同じRole Definitionを、
+Organization ScopeとProduction Scopeの両方で利用する。
 
-# Example
-
-Organization：
-
-劇団A
-
-Person：
-
-田中
-
-Organization Membership：
-
-Role = Member
-
-Production：
-
-公演A
-
-Participant：
-
-Participant Type = CAST
-
-Production Role Assignment：
-
-Role = Rehearsal Manager
-
-最終的な状態：
-
-田中
-  ├── Organization Membership
-  │      └── Role = Member
-  │
-  ├── Production Participant
-  │      └── Participant Type = CAST
-  │
-  └── ProductionDelegate
-         └── Role = Rehearsal Manager
-
-この状態により、
-
-田中は劇団Aの一般メンバーであり、
-公演AにはCASTとして参加し、
-同時に公演Aの稽古管理を担当できる。
-
-これら3つの意味を、
-それぞれ別のDomainとして表現できる。
-
----
-
-# Future
-
-将来的に必要となった場合、
-
-- より細かなPermission
-- Custom Role
-- Role Template
-- Role Versioning
-- Permission Override
-- Role Assignment History
-- Roleごとの通知設定
-- RoleごとのDashboard
-- より細かなScope
-
-などへ拡張できる。
-
-ただし、
-初期実装ではRole体系を複雑化しない。
-
-Role Definitionを一本化し、
-Scopeによって権限の適用範囲を制御する。
-
----
-
-# Design Principles
-
-- Roleは「何ができるか」を定義する。
-- RoleはPermission Setのまとまりである。
-- Role DefinitionはScopeを持たない。
-- Role DefinitionはPersonごとに複製しない。
-- Role Assignmentは「誰に、どのScopeでRoleを与えたか」を表す。
-- Organization ScopeのRole AssignmentはMembershipを通じて管理する。
-- Production ScopeのRole AssignmentはProductionDelegateを通じて管理する。
-- ProductionDelegateはRole Definitionではない。
-- DelegateRoleという別Role Definitionを作成しない。
-- Organization RoleとProduction Roleは同じRole Definitionを利用する。
-- Role + Scopeによって実際のPermission範囲を決定する。
-- Participant TypeとRoleを分離する。
-- CAST / STAFFはParticipant TypeでありRoleではない。
-- ProductionDelegateによるRole AssignmentはMembershipを変更しない。
-- ProductionDelegateによるRole AssignmentはOrganization全体の権限を変更しない。
-- Organization AdministratorはOrganization Scopeの全Permissionを持つ。
-- Production ScopeでAssignmentされたAdministratorは対象Productionに限定される。
-- Role Assignmentを解除してもRole Definitionは削除しない。
-- 初期実装ではCustom Roleを必須としない。
-- 初期実装ではPermission Overrideを必須としない。
-- Blueprintを唯一の設計基準とする。
+RoleとParticipant Typeは、
+明確に分離する。
