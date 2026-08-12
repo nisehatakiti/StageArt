@@ -1,7 +1,8 @@
 # StageArt Blueprint
+
 # Domain Model : History
 
-Version : 5.0
+Version : 6.0
 
 ---
 
@@ -10,7 +11,7 @@ Version : 5.0
 HistoryはStageArtにおける活動履歴を表す独立したDomainである。
 
 HistoryはPersonやOrganizationの子Entityではなく、
-Subjectを中心として活動履歴を管理する。
+Subjectを中心としてStageArt上で発生した活動履歴を管理する。
 
 Historyは利用者が直接作成・編集するDomainではない。
 
@@ -19,14 +20,17 @@ Domain Eventを契機として、
 History Domainが必要な履歴を生成・更新する。
 
 本人が入力する自己紹介や、
-StageArt外で過去に行った活動実績は、
+StageArt登録前などの過去の活動実績は、
 HistoryではなくProfileで管理する。
 
 ---
 
 # Concept
 
-HistoryはSubjectがStageArt上で行った活動を記録する。
+Historyは、
+SubjectがStageArt上で行った活動を記録する。
+
+基本構造：
 
 Subject
     │
@@ -54,7 +58,8 @@ Historyは以下を管理する。
 - Performance
 - EventDateTime
 
-Historyは活動履歴の記録を担当する。
+Historyは、
+StageArt上で発生した活動Factの履歴を担当する。
 
 ParticipantやReservationなど、
 他DomainのBusiness Ruleは管理しない。
@@ -71,8 +76,11 @@ HistoryはHistoryIdによって識別する。
 HistoryIdは変更できない。
 
 同一の活動を重複して記録しないよう、
-必要に応じてDomain Eventとの対応関係を利用して
+生成元となるDomain Eventとの対応関係を利用して
 冪等性を確保する。
+
+Historyは、
+同一のDomain Eventから複数生成されない。
 
 ---
 
@@ -90,7 +98,8 @@ SubjectTypeは以下をサポートする。
 - PERSON
 - ORGANIZATION
 
-HistoryはPersonやOrganizationを直接参照しない。
+HistoryはPersonやOrganizationを
+History自身の属性として複製保持しない。
 
 Subjectを介して活動主体を参照する。
 
@@ -125,6 +134,10 @@ Participantによって発生する。
 
 などの参加実績を表現できる。
 
+PARTICIPATION Historyは、
+StageArt上でParticipantとして
+Productionに参加したというFactを記録する。
+
 ---
 
 # AUDIENCE
@@ -134,6 +147,18 @@ Participantによって発生する。
 Check In完了を契機として発生する。
 
 予約しただけではAudience Historyを生成しない。
+
+ReservationCreatedだけでは、
+Audience Historyを生成しない。
+
+ReservationUpdatedだけでは、
+Audience Historyを生成しない。
+
+ReservationCancelledだけでは、
+Audience Historyを生成しない。
+
+CheckInCompletedによって、
+実際に来場したというFactを確定する。
 
 ---
 
@@ -156,7 +181,8 @@ ParticipantTypeはProductionへの参加区分を表す。
 
 ParticipantTypeはParticipantで定義される値を使用する。
 
-HistoryはParticipantTypeそのもののBusiness Ruleを定義しない。
+HistoryはParticipantTypeそのものの
+Business Ruleを定義しない。
 
 HistoryTypeがAUDIENCEの場合、
 ParticipantTypeは保持しない。
@@ -184,23 +210,25 @@ Production単位の活動ではPerformanceを保持しない。
 
 特定の公演回に紐付く活動ではPerformanceを保持する。
 
-例：
+例えば、
 
-出演実績
+出演実績：
 
 Production
-    = 12人のうかれる人々
+    = Production A
 
 Performance
     = NULL
 
-観劇履歴
+観劇履歴：
 
 Production
-    = 12人のうかれる人々
+    = Production A
 
 Performance
-    = 2026-10-12 18:00
+    = Performance A
+
+となる。
 
 ---
 
@@ -212,14 +240,18 @@ Historyが表す活動が発生した日時を記録する。
 活動の性質に応じて、
 ProductionまたはPerformanceに関連する日時を使用する。
 
-Audience Historyでは、
+PARTICIPATION Historyでは、
+その活動が成立した日時を基準とする。
+
+AUDIENCE Historyでは、
 CheckInCompletedが発生した日時を基準とする。
 
 ---
 
 # Generation
 
-HistoryはDomain Eventを契機として生成・更新される。
+HistoryはDomain Eventを契機として
+生成・更新される。
 
 Historyを生成する元のDomainが、
 Historyを直接操作することはない。
@@ -298,6 +330,8 @@ Check Inが完了した時点で、
 Audience HistoryのSubjectは、
 ReservationのBookerを使用する。
 
+基本構造：
+
 Reservation
     ↓
 Booker
@@ -309,9 +343,6 @@ Audience History.Subject
 Booker
     = Person A
 
-HandledParticipant
-    = Participant B
-
 の場合、
 
 Audience History.Subject
@@ -319,12 +350,28 @@ Audience History.Subject
 
 となる。
 
-HandledParticipantは、
-Audience HistoryのSubjectにはならない。
+Audience HistoryのSubjectは、
+実際に観客として予約したBookerを表す。
 
-HandledParticipantは予約における
-「○○扱い」を表す情報であり、
-観客としての活動主体を表すものではない。
+---
+
+# Handled Participant
+
+HandledParticipantは、
+Reservationにおける予約の「扱い」を表す。
+
+HandledParticipantはParticipantを参照する。
+
+HandledParticipantは、
+予約を担当するParticipantを表すが、
+それ自体は観客としての活動を意味しない。
+
+そのため、
+HandledParticipantの指定や変更だけでは
+Audience Historyを生成・更新しない。
+
+Audience HistoryのSubjectは、
+Reservation.Bookerである。
 
 ---
 
@@ -339,6 +386,18 @@ History Domainは、
 CheckInCompletedを契機として
 Audience Historyを生成する。
 
+基本構造：
+
+Reservation
+    ↓
+Check In
+    ↓
+CheckInCompleted
+    ↓
+History
+    ↓
+Audience History
+
 以下のEventではAudience Historyを生成しない。
 
 - ReservationCreated
@@ -348,7 +407,8 @@ Audience Historyを生成する。
 予約した事実、
 予約内容を変更した事実、
 予約をキャンセルした事実と、
-実際に観劇した事実は別の概念として扱う。
+実際に観劇した事実は
+別の概念として扱う。
 
 ---
 
@@ -440,6 +500,115 @@ Audience Historyは生成・更新しない。
 
 ---
 
+# History and Ticket
+
+Ticketは、
+Productionにおける販売条件を表す。
+
+Ticket自体はHistoryを生成しない。
+
+ReservationがTicketを参照し、
+そのReservationがCheck Inされた場合に、
+CheckInCompletedを契機として
+Audience Historyを生成する。
+
+基本構造：
+
+Ticket
+    ↓
+Reservation
+    ↓
+Check In
+    ↓
+CheckInCompleted
+    ↓
+Audience History
+
+TicketのPrice変更や販売状態変更だけでは、
+Audience Historyを生成・更新しない。
+
+---
+
+# History and Issued Ticket
+
+Issued Ticketは、
+Reservationに基づいて発行された
+実際のチケットを表す。
+
+Issued Ticket自体は、
+観劇履歴を生成するFactではない。
+
+基本構造：
+
+Reservation
+    ↓
+Issued Ticket
+    ↓
+QR Ticket
+
+Check Inによって
+Reservationの来場が確定した場合に、
+
+CheckInCompleted
+    ↓
+Audience History
+
+を生成する。
+
+---
+
+# History and QR Ticket
+
+QR Ticketは、
+Issued Ticketを識別するための
+受付用Artifactである。
+
+QR Ticketを発行しただけでは、
+Audience Historyを生成しない。
+
+QR Ticketを再発行しても、
+Audience Historyを新たに生成しない。
+
+QR Check InによってReservationの
+Check Inが完了した場合のみ、
+
+CheckInCompleted
+    ↓
+Audience History
+
+を生成する。
+
+---
+
+# Check In and Accounting
+
+CheckInCompletedは、
+History Domainだけでなく
+Accounting Domainからも利用される。
+
+基本構造：
+
+                    ┌→ History
+                    │
+CheckInCompleted ───┤
+                    │
+                    └→ Accounting
+                          ↓
+                     Ticket Revenue
+
+History Domainは、
+CheckInCompletedを契機として
+Audience Historyを生成する。
+
+Accounting Domainは、
+CheckInCompletedを契機として
+Ticket Revenueを処理する。
+
+History Domainは、
+Journal Entryを管理しない。
+
+---
+
 # History and Profile
 
 ProfileはPerson自身が作成・編集できる。
@@ -463,6 +632,28 @@ StageArt上で自動生成されない過去の活動実績を
 
 ---
 
+# Profile and Historical Activity
+
+本人が入力する過去の出演歴などは、
+Profile配下のHistoricalActivityとして管理する。
+
+基本構造：
+
+Person
+  ↓
+Profile
+  ↓
+HistoricalActivity
+
+HistoricalActivityは、
+本人が入力・編集する過去の活動実績である。
+
+HistoricalActivityは、
+StageArt上でDomain Eventによって
+自動生成されるHistoryとは異なる。
+
+---
+
 # Profile and History
 
 ProfileとHistoryは、
@@ -471,6 +662,11 @@ ProfileとHistoryは、
 Profile：
 
 本人が入力・編集する情報。
+
+HistoricalActivity：
+
+本人が入力する
+StageArt登録前などの過去の活動実績。
 
 History：
 
@@ -484,6 +680,8 @@ StageArt上で発生したFactから
 Person
   ↓
 Profile
+  ↓
+HistoricalActivity
 
 StageArt上の活動
 
@@ -494,22 +692,25 @@ Domain Event
 History
 
 これにより、
-本人が入力した過去実績と、
+
+本人が申告した過去実績と、
 StageArt上で確認できる活動実績を
 明確に区別する。
 
 ---
 
-# Profile Historical Activity
+# Historical Activity
 
 StageArt登録前など、
 Historyの生成元となるFactが存在しない
 過去の活動については、
-Profileで本人が入力できる。
+HistoricalActivityで本人が入力できる。
 
 例えば、
 
 Profile
+  ↓
+HistoricalActivity
 
 出演歴：
 
@@ -540,8 +741,12 @@ Audience History
 として自動的に記録する。
 
 本人が過去の観劇履歴を
-Profileへ入力する仕組みは、
-Version 1.0では設けない。
+HistoricalActivityへ入力することで
+StageArt上のAudience Historyとして扱うことはしない。
+
+StageArt上の観劇履歴は、
+CheckInCompletedによって生成されたHistoryを
+正本とする。
 
 ---
 
@@ -549,13 +754,14 @@ Version 1.0では設けない。
 
 Historyは読み取りを中心としたDomainである。
 
-Historyそのものを編集するための公開APIは提供しない。
+Historyそのものを編集するための
+公開APIは提供しない。
 
 必要に応じて、
 他のBusiness Resource APIが
 Historyを集約して返す。
 
-例：
+例えば、
 
 Person API
     ↓
@@ -575,57 +781,185 @@ Business Resourceを通して参照できる。
 
 ---
 
+# History Generation
+
+History生成の基本原則：
+
+StageArt上で活動Factが発生する
+        ↓
+Domain Event
+        ↓
+History Domain
+        ↓
+History
+
+History Domainが、
+元DomainのBusiness Ruleを直接実行することはない。
+
+Historyは、
+元となるDomain Eventの結果として
+生成される活動履歴である。
+
+---
+
+# Idempotency
+
+同一のDomain Eventを複数回受信した場合でも、
+同じHistoryを重複生成しない。
+
+History生成時には、
+必要に応じて以下を利用して
+冪等性を確保する。
+
+- Source Event ID
+- Source Entity ID
+- History Type
+- Activity Context
+
+Historyの重複生成を防止する。
+
+---
+
+# History Persistence
+
+Historyは、
+生成された後も保持する。
+
+元となったParticipantが削除された場合でも、
+過去のParticipation Historyを削除しない。
+
+元となったReservationがキャンセルされた場合でも、
+それだけではAudience Historyを生成しない。
+
+Check In済みのReservationが
+後から変更・削除されることによって、
+既に生成されたAudience Historyを
+自動的に削除しない。
+
+過去に発生した活動Factは、
+履歴として保持する。
+
+---
+
 # Business Rules
 
-Historyは必ず一つのSubjectに属する。
+- Historyは独立したDomainである。
+- HistoryはPersonやOrganizationの子Entityではない。
+- HistoryはSubjectを中心として活動履歴を管理する。
+- SubjectはPersonまたはOrganizationである。
+- HistoryはProductionを必ず参照する。
+- Performanceは任意である。
+- HistoryTypeはPARTICIPATIONまたはAUDIENCEである。
+- PARTICIPATIONではParticipantTypeを保持する。
+- AUDIENCEではParticipantTypeを保持しない。
+- ParticipantAddedを契機としてParticipation Historyを生成する。
+- ParticipantUpdatedに応じて必要なHistoryを更新する。
+- ParticipantRemovedによって過去のHistoryを削除しない。
+- ReservationCreatedだけではAudience Historyを生成しない。
+- ReservationUpdatedだけではAudience Historyを生成しない。
+- ReservationCancelledだけではAudience Historyを生成しない。
+- CheckInCompletedによってAudience Historyを生成する。
+- Audience HistoryのSubjectはReservation.Bookerである。
+- HandledParticipantはAudience HistoryのSubjectにならない。
+- CreatedByはAudience HistoryのSubjectにならない。
+- UpdatedByはAudience HistoryのSubjectにならない。
+- Ticketの作成・変更・価格変更だけではHistoryを生成しない。
+- Issued Ticketの発行だけではAudience Historyを生成しない。
+- QR Ticketの発行だけではAudience Historyを生成しない。
+- QR Ticketの再発行だけではAudience Historyを生成しない。
+- QR Check Inが完了した場合も、Manual Check Inと同じCheckInCompletedを利用する。
+- CheckInCompletedを契機としてAudience Historyを生成する。
+- CheckInCompletedはAccounting Domainでも利用できる。
+- History DomainはJournal Entryを管理しない。
+- Historyは利用者が直接作成・編集・削除しない。
+- HistoryはDomain Eventを契機として生成・更新する。
+- 同一Domain EventからHistoryを重複生成しない。
+- 過去のHistoryは原則として削除しない。
+- Profileは本人入力情報を管理する。
+- HistoricalActivityは本人が入力する過去の活動実績を管理する。
+- HistoricalActivityをHistoryへ自動変換しない。
+- StageArt上の活動実績はHistoryで管理する。
+- StageArt登録前などの本人申告による過去実績はHistoricalActivityで管理する。
+- StageArt上のAudience HistoryはCheckInCompletedを正本となる生成契機とする。
 
-Historyは必ず一つのProductionを参照する。
+---
 
-Performanceは任意である。
+# Domain Events
 
-HistoryTypeがPARTICIPATIONの場合、
-ParticipantTypeを保持する。
+History Domain自身が
+活動Factを発生させることはない。
 
-HistoryTypeがAUDIENCEの場合、
-ParticipantTypeは保持しない。
+Historyは他DomainのEventを受信して生成・更新する。
 
-Historyは利用者が直接作成・編集・削除しない。
+主なEvent：
 
-HistoryはDomain Eventを契機として生成・更新する。
+- ParticipantAdded
+- ParticipantUpdated
+- ParticipantRemoved
+- CheckInCompleted
 
-ParticipantRemovedによって過去のHistoryを削除しない。
+---
 
-ReservationCreatedだけではAudience Historyを生成しない。
+# Participant Events
 
-ReservationUpdatedだけではAudience Historyを生成しない。
+ParticipantAdded
+    ↓
+History
+    ↓
+HistoryType = PARTICIPATION
 
-ReservationCancelledだけではAudience Historyを生成しない。
+ParticipantUpdated
+    ↓
+必要に応じてHistory更新
 
-CheckInCompletedによってAudience Historyを生成する。
+ParticipantRemoved
+    ↓
+過去Historyは保持
 
-Audience HistoryのSubjectはReservation.Bookerである。
+---
 
-HandledParticipantはAudience HistoryのSubjectにならない。
+# Check In Event
 
-CreatedByはAudience HistoryのSubjectにならない。
+CheckInCompleted
+    ↓
+History
+    ↓
+HistoryType = AUDIENCE
 
-UpdatedByはAudience HistoryのSubjectにならない。
+CheckInCompletedは、
+観客が実際に来場したというFactを確定する。
 
-HandledParticipantの指定・変更だけでは
-Historyを生成・更新しない。
+ReservationCreatedではなく、
+CheckInCompletedをAudience History生成の
+正式な契機とする。
 
-Reservationの変更だけでは
-Audience Historyを生成・更新しない。
+---
 
-ReservationのCheck In完了によって
-観劇実績を確定する。
+# Event Consumption
 
-本人が入力する自己紹介・過去実績はProfileで管理する。
+CheckInCompletedは、
+複数のDomainが利用できる。
 
-Profileに入力された過去実績をHistoryへ変換しない。
+基本構造：
 
-HistoryはStageArt上で発生した活動Factを
-もとに生成する。
+CheckInCompleted
+       │
+       ├── History
+       │     └── Audience History
+       │
+       └── Accounting
+             └── Ticket Revenue
+
+History Domainは、
+CheckInCompletedを受信して
+Audience Historyを生成する。
+
+Accounting Domainは、
+同じEventを受信して
+Ticket Revenueを処理する。
+
+各Domainは、
+それぞれの責務を独立して処理する。
 
 ---
 
@@ -646,17 +980,17 @@ HistoryはStageArt上で発生した活動Factを
 
 ---
 
-## Staff History
+## Performance Participation History
 
 {
   "historyType": "PARTICIPATION",
   "subject": {
     "type": "PERSON",
-    "id": "person-002"
+    "id": "person-001"
   },
-  "participantType": "STAFF",
+  "participantType": "CAST",
   "productionId": "production-001",
-  "performanceId": null
+  "performanceId": "performance-001"
 }
 
 ---
@@ -667,183 +1001,200 @@ HistoryはStageArt上で発生した活動Factを
   "historyType": "AUDIENCE",
   "subject": {
     "type": "PERSON",
-    "id": "person-003"
+    "id": "person-001"
   },
   "participantType": null,
   "productionId": "production-001",
-  "performanceId": "performance-002"
+  "performanceId": "performance-001"
 }
 
 ---
 
-# Domain Boundaries
+# Data Source
 
-History Domainは以下のDomainから
-Domain Eventを受け取る。
+Historyのデータソースは、
+History自身ではない。
+
+PARTICIPATION：
 
 Participant
-    ↓
-ParticipantAdded
-ParticipantUpdated
-ParticipantRemoved
-    ↓
-History Domain
+  ↓
+Participant Event
+  ↓
+History
 
+AUDIENCE：
+
+Reservation
+  ↓
 Check In
-    ↓
+  ↓
 CheckInCompleted
-    ↓
-History Domain
+  ↓
+History
+
+Profile：
+
+Person
+  ↓
+Profile
+  ↓
+HistoricalActivity
+
+それぞれの情報源を混在させない。
+
+---
+
+# Domain Boundary
 
 History Domainは、
-これらのDomainへ直接依存しない。
+以下を直接管理しない。
 
-History Domainは受け取ったEventをもとに
-Historyを生成・更新する。
+- Person Profile
+- HistoricalActivity
+- Participant
+- Reservation
+- Ticket
+- Issued Ticket
+- QR Ticket
+- Check In
+- Accounting
+- Journal Entry
 
----
+これらはそれぞれのDomainが正本として管理する。
 
-# Domain Events
-
-History Domainが利用する主なDomain Event：
-
-- ParticipantAdded
-- ParticipantUpdated
-- ParticipantRemoved
-- CheckInCompleted
-
-ReservationCreated、
-ReservationUpdated、
-ReservationCancelledは、
-Audience History生成の契機として使用しない。
-
-History Domain自身が
-これらの元Domainへ直接変更を要求することはない。
-
----
-
-# Idempotency
-
-History生成処理は冪等であること。
-
-同一のDomain Eventが複数回処理された場合でも、
-同一の活動を重複してHistoryへ記録しない。
-
-特にCheckInCompletedについては、
-同一Check Inから
-同一Audience Historyを複数生成しない。
-
----
-
-# Check In Reversal
-
-Check InがREVERSEDされた場合、
-対応するAudience Historyについても
-適切に反映する。
-
-例えば、
-
-Check In
-    = COMPLETED
-
-↓
-
-Audience History
-    = generated
-
-↓
-
-Check In
-    = REVERSED
-
-の場合、
-その観劇実績を有効な履歴として
-表示し続けない。
-
-ただし、
-Historyを物理削除するか、
-無効状態として保持するかは
-History実装で決定する。
-
-元となるCheck In Factの状態を
-正本とする。
+Historyは、
+それらのDomain Eventを受信し、
+活動履歴として必要な情報を保持する。
 
 ---
 
 # Design Decisions
 
-Historyは独立したDomainとして管理する。
+Historyは、
+StageArt上で発生した活動Factの履歴を管理する。
 
-HistoryはPersonやOrganizationの子Entityではない。
+本人が入力する自己紹介や
+StageArt登録前などの過去実績は、
+Profile配下のHistoricalActivityで管理する。
 
-HistoryはSubjectを介して活動主体を参照する。
+HistoryとHistoricalActivityを混同しない。
 
-HistoryTypeは活動の種類を表す。
+Participation Historyは、
+Participantに起因するDomain Eventから生成する。
 
-ParticipantTypeはProductionへの参加区分を表す。
+Audience Historyは、
+CheckInCompletedを契機として生成する。
 
-HistoryTypeとParticipantTypeは異なる責務を持つ。
+予約しただけでは、
+観劇履歴を生成しない。
 
-HistoryはParticipantやReservationのBusiness Ruleを持たない。
+Ticketを購入・予約しただけでは、
+Audience Historyを生成しない。
 
-History生成はDomain Eventを契機として行う。
+Issued Ticketを発行しただけでは、
+Audience Historyを生成しない。
 
-過去の活動実績は原則として削除しない。
+QR Ticketを発行しただけでは、
+Audience Historyを生成しない。
 
-HandledParticipantはHistoryの活動主体ではない。
+Check Inが完了した時点で、
+観劇実績として扱う。
 
-BookerはAudience Historyの活動主体である。
+Audience HistoryのSubjectは、
+Reservation.Bookerである。
 
-CreatedByはAudience Historyの活動主体ではない。
+HandledParticipant、
+CreatedBy、
+UpdatedByは、
+Audience HistoryのSubjectにならない。
 
-UpdatedByはAudience Historyの活動主体ではない。
+CheckInCompletedは、
+History Domainだけでなく
+Accounting Domainでも利用する。
 
-予約と観劇実績を分離して管理する。
+History Domainは、
+AccountingのJournal Entryを管理しない。
 
-本人が入力する自己紹介・過去実績はProfileで管理する。
+Historyは、
+生成元となったDomainのBusiness Ruleを
+直接管理しない。
 
-Profileで入力した過去実績をHistoryとして扱わない。
+Historyは、
+活動Factを読み取り可能な形で保持する
+履歴Domainとして機能する。
 
-StageArt上で発生した活動実績はHistoryとして自動生成する。
+---
+
+# Future
+
+将来的に以下へ対応できる。
+
+- Activity Category
+- Achievement Type
+- Organization Activity History
+- Production Archive
+- Performance Archive
+- 出演回数集計
+- 観劇回数集計
+- 年別活動集計
+- Person Timeline
+- Organization Timeline
+- Activity Search
+- Activity Filtering
+- 外部活動履歴との連携
+
+ただし、
+将来機能を追加する場合も、
+
+StageArt上で発生したFact
+    ↓
+Domain Event
+    ↓
+History
+
+という基本構造を維持する。
+
+本人申告の過去実績については、
+
+Person
+  ↓
+Profile
+  ↓
+HistoricalActivity
+
+という構造を維持する。
 
 ---
 
 # Design Principles
 
-- Historyは活動履歴を表す独立Domainである。
-- HistoryはSubjectを中心として管理する。
-- HistoryはPersonおよびOrganizationへ直接依存しない。
-- HistoryTypeは活動の種類を表す。
-- ParticipantTypeは参加区分を表す。
-- ParticipantTypeはPARTICIPATIONの場合のみ使用する。
+- Historyは独立したDomainである。
+- HistoryはPersonやOrganizationの子Entityではない。
+- HistoryはSubjectと活動の関係を記録する。
+- SubjectはPersonまたはOrganizationである。
 - HistoryはProductionを必ず参照する。
 - Performanceは必要な場合のみ参照する。
-- Historyは利用者が直接編集しない。
-- HistoryはDomain Eventによって生成・更新される。
-- ParticipantはHistoryを管理しない。
-- ReservationはHistoryを管理しない。
-- CheckInCompletedをAudience History生成の契機とする。
-- ReservationCreatedではAudience Historyを生成しない。
-- ReservationUpdatedではAudience Historyを生成しない。
-- ReservationCancelledではAudience Historyを生成しない。
-- ReservationのCheck In完了によって観劇実績を確定する。
+- PARTICIPATIONとAUDIENCEをHistoryTypeで区別する。
+- PARTICIPATIONではParticipantTypeを保持する。
+- AUDIENCEではParticipantTypeを保持しない。
+- Participant EventからParticipation Historyを生成する。
+- CheckInCompletedからAudience Historyを生成する。
+- ReservationCreatedからAudience Historyを生成しない。
+- TicketやIssued Ticketから直接Audience Historyを生成しない。
+- QR Ticketから直接Audience Historyを生成しない。
 - Audience HistoryのSubjectはReservation.Bookerである。
-- HandledParticipantはAudience HistoryのSubjectにならない。
-- CreatedByはAudience HistoryのSubjectにならない。
-- UpdatedByはAudience HistoryのSubjectにならない。
-- Guest Countが複数でも同行者を個別PersonとしてHistoryへ登録しない。
-- Companion Domainを設けない。
-- ParticipantからParticipation Historyを生成できる。
-- ParticipantTypeをParticipation Historyへ反映する。
-- ParticipantRemovedによって過去Historyを削除しない。
-- Historyは元となるFactから再構築できる構造を維持する。
-- 同一Domain EventからHistoryを二重生成しない。
-- HistoryはSource Eventとの関連を追跡できる。
-- Check Inの取消をAudience Historyへ反映する。
-- 本人が入力する自己紹介はProfileで管理する。
-- 本人が入力する過去実績はProfileで管理する。
-- Profileの過去実績をHistoryへ変換しない。
-- StageArt上で発生した活動実績と本人入力の過去実績を区別する。
-- HistoryはMulti TenantのScopeを維持する。
-- Audience Historyの公開範囲を適切に制御する。
+- HandledParticipantをAudience HistoryのSubjectにしない。
+- CreatedByをAudience HistoryのSubjectにしない。
+- UpdatedByをAudience HistoryのSubjectにしない。
+- ProfileとHistoryを分離する。
+- HistoricalActivityとHistoryを分離する。
+- 本人入力の過去実績はHistoricalActivityで管理する。
+- StageArt上で発生した活動実績はHistoryで管理する。
+- Historyを利用者が直接編集しない。
+- HistoryはDomain Eventから生成する。
+- 同一EventからHistoryを重複生成しない。
+- 過去のHistoryを原則として削除しない。
+- CheckInCompletedはHistoryとAccountingの共通Eventとして利用できる。
+- History DomainはJournal Entryを管理しない。
 - Blueprintを唯一の設計基準とする。
