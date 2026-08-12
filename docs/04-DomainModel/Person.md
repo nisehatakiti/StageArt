@@ -2,7 +2,7 @@
 
 # Domain Model : Person
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -10,7 +10,7 @@ Version : 4.0
 
 PersonはStageArtにおける個人Identityを表すDomainである。
 
-Personは認証情報(Account)とは独立したBusiness Domainであり、
+Personは認証情報(UserAccount)とは独立したBusiness Domainであり、
 舞台芸術活動、Organizationへの所属、Productionへの参加、
 観客としての利用など、StageArt上の個人に関するBusiness Activityの主体となる。
 
@@ -35,12 +35,12 @@ Personは、
 
 などを区別せず、一つのPersonとして扱う。
 
-認証(Account)とは独立して存在し、
+認証(UserAccount)とは独立して存在し、
 Business上の主体として利用される。
 
 基本構造：
 
-Account
+UserAccount
     │
     ▼
   Person
@@ -97,27 +97,27 @@ PersonはPersonIdによって識別する。
 
 PersonIdは変更できない。
 
-PersonとAccountは同一概念ではない。
+PersonとUserAccountは同一概念ではない。
 
-Accountは認証Identityを表し、
+UserAccountは認証Identityを表し、
 PersonはStageArt上のBusiness Identityを表す。
 
 ---
 
-# Account Relationship
+# UserAccount Relationship
 
-Accountは認証情報を表す。
+UserAccountは認証情報を表す。
 
 PersonはBusiness上の個人Identityを表す。
 
 基本構造：
 
-Account
+UserAccount
     │
     ▼
 Person
 
-Accountが存在することと、
+UserAccountが存在することと、
 PersonがStageArt上でどのBusiness Activityを行うかは
 別の概念として扱う。
 
@@ -410,6 +410,13 @@ Membershipによって、
 
 などを管理する。
 
+一つのMembershipは、
+基本的に一つのRoleを参照する。
+
+同じPersonであっても、
+OrganizationごとのMembershipによって
+異なるRoleを持つことができる。
+
 Membershipの詳細な管理ルールは
 Membership Domainで定義する。
 
@@ -636,11 +643,14 @@ ProfileやHistoricalActivityの変更については、
 
 PersonはStageArt上の個人Business Identityを表す。
 
-PersonはAccountとは独立して存在する。
+PersonはUserAccountとは独立して存在する。
 
 Personは複数のOrganizationへ所属できる。
 
 Organizationへの所属はMembershipで管理する。
+
+一つのMembershipは、
+基本的に一つのRoleを参照する。
 
 PersonはProductionへ参加できる。
 
@@ -723,9 +733,9 @@ Person Domain自身がHistoryを直接生成・更新しない。
 
 Personは人物を表すBusiness Domainである。
 
-PersonはAccountとは独立したDomainである。
+PersonはUserAccountとは独立したDomainである。
 
-Accountは認証Identity、
+UserAccountは認証Identity、
 PersonはBusiness Identityを表す。
 
 PersonとOrganizationの関係はMembershipで管理する。
@@ -788,10 +798,11 @@ Companion Domainは設けない。
 # Design Principles
 
 - Personは個人Business Identityを表す。
-- PersonはAccountとは独立する。
-- Accountは認証Identity、PersonはBusiness Identityを表す。
+- PersonはUserAccountとは独立する。
+- UserAccountは認証Identity、PersonはBusiness Identityを表す。
 - PersonはBusiness Activityの主体である。
 - PersonとOrganizationの関係はMembershipで管理する。
+- 一つのMembershipは基本的に一つのRoleを参照する。
 - PersonとProductionの関係はParticipantで管理する。
 - PersonはReservationのBookerになれる。
 - ProfileはPerson本人が作成・編集できる。
