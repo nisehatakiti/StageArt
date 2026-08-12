@@ -2,28 +2,28 @@
 
 # Domain Model : Timetable
 
-Version : 1.0
+Version : 2.0
 
 ---
 
 # Purpose
 
 Timetableは、
-RehearsalやProductionにおける
-時間単位の予定・進行内容を管理するDomainである。
+Rehearsalの詳細な進行内容を管理するDomainである。
 
 Timetableは、
 
-「その日に何を、何時から、どの順番で行うか」
+「そのRehearsalの中で、何を、何時から、どの順番で行うか」
 
 を管理する。
 
 Rehearsalが
-「その日に稽古を行う」という予定そのものを表すのに対し、
+「いつ、どこで、何をする予定か」
+という稽古そのものを表すのに対し、
 
 Timetableは
 「そのRehearsalの中で何を行うか」
-を表す。
+という詳細な進行を表す。
 
 ---
 
@@ -41,6 +41,8 @@ Timetable Item
 
 Timetableは、
 Rehearsalの詳細な進行を管理する。
+
+Timetableの基本的な親DomainはRehearsalである。
 
 ---
 
@@ -63,6 +65,31 @@ Timetableが不要なRehearsalも許可する。
 
 だけを登録し、
 詳細な進行を設定しないこともできる。
+
+---
+
+# Timetable and Production
+
+Timetableは、
+Productionに直接所属する独立した予定表としては扱わない。
+
+Productionの稽古・活動を詳細化する場合は、
+Rehearsalを介してTimetableを関連付ける。
+
+基本構造：
+
+Production
+  ↓
+Rehearsal
+  ↓
+Timetable
+
+本番期間の進行管理など、
+Rehearsalだけでは表現できない活動については、
+将来的に別のActivity Domainなどで拡張する。
+
+Version 2.0では、
+Timetableの親をRehearsalに統一する。
 
 ---
 
@@ -115,6 +142,9 @@ Timetable Itemは、
 必要に応じて、
 所要時間からEnd Timeを自動計算できる。
 
+Timetable Itemの時間情報は、
+Rehearsalの開始・終了時刻の範囲内で設定することを基本とする。
+
 ---
 
 # Title
@@ -149,6 +179,9 @@ Timetable Itemには、
 - 必要な道具
 - 持ち物
 
+Descriptionは、
+Timetable Itemの補足情報として扱う。
+
 ---
 
 # Order
@@ -160,6 +193,9 @@ Timetable Itemには、
 
 同時刻に複数Itemが存在する場合は、
 Orderによって表示順を決定する。
+
+Orderは、
+時間情報とは別の表示上の順序を表す。
 
 ---
 
@@ -182,47 +218,8 @@ Timetable Itemには、
 Categoryは、
 表示や集計に利用できる。
 
----
-
-# Rehearsal Relationship
-
-Timetableは、
-Rehearsalの詳細な進行を表す。
-
-基本構造：
-
-Rehearsal
-  ↓
-Timetable
-  ↓
-Timetable Item
-
-Rehearsalの日時が変更された場合、
-Timetableの時間情報との整合性を確認する。
-
----
-
-# Production Timetable
-
-Timetableは、
-通常の稽古だけでなく、
-本番期間の進行管理にも利用できる。
-
-例えば、
-
-- 小屋入り
-- 搬入
-- 仕込み
-- 場当たり
-- ゲネプロ
-- 本番
-- 撤収
-
-など。
-
-その場合も、
-RehearsalまたはProductionの活動予定に
-Timetableを関連付けて管理できる。
+Categoryは、
+権限や参加区分を表すものではない。
 
 ---
 
@@ -258,6 +255,7 @@ Timetable Itemには、
 第一場
 
 対象：
+
 キャストA
 キャストB
 キャストC
@@ -269,12 +267,12 @@ Timetable Itemには、
 # Participant Type
 
 個別Personだけでなく、
-Participant Typeを対象条件として利用できる。
+Participantの参加区分を対象条件として利用できる。
 
 例えば、
 
 Participant Type
-  = キャスト
+  = CAST
 
 とすることで、
 キャスト全体を対象とできる。
@@ -282,9 +280,15 @@ Participant Type
 スタッフを対象とする場合は、
 
 Participant Type
-  = スタッフ
+  = STAFF
 
 とする。
+
+Participant Typeは、
+Timetable Itemの対象者を決定するために利用する。
+
+Participant Type自体は、
+権限を付与するものではない。
 
 ---
 
@@ -296,7 +300,70 @@ Participantそのものを複製して保持しない。
 ProductionのParticipantを参照して、
 対象者を決定する。
 
-Participant情報の正本はParticipant Domainである。
+Participant情報の正本は、
+Participant Domainである。
+
+Participantの名前や所属などを
+Timetable Itemへ複製して保持しない。
+
+---
+
+# Role and Timetable
+
+Roleは、
+Timetableへのアクセスや操作権限を決定する。
+
+RoleとParticipant Typeは、
+異なる責務を持つ。
+
+Role：
+
+誰がTimetableを作成・変更・公開できるかを決定する。
+
+Participant Type：
+
+誰をTimetable Itemの対象者とするかを決定する。
+
+例えば、
+
+Role
+  = Rehearsal Manager
+
+によって、
+Timetableを管理する権限を付与できる。
+
+一方、
+
+Participant Type
+  = CAST
+
+は、
+そのTimetable Itemの対象者を
+キャスト全体として指定するために利用する。
+
+Participant Typeによって、
+Timetable管理権限を付与してはならない。
+
+---
+
+# Authorization
+
+Timetableの作成・変更・公開は、
+稽古管理権限を持つPersonが行う。
+
+権限はRoleを通じて管理する。
+
+Organization管理者は、
+自身のOrganizationについて
+全権限を持つ。
+
+Production Delegateとして、
+稽古管理権限を委任することもできる。
+
+Timetable Domain自身は、
+RoleやPermissionの定義を管理しない。
+
+権限の正本はRole / Permission Domainである。
 
 ---
 
@@ -334,47 +401,82 @@ Timetable Itemには、
 
 ---
 
-# Template
+# Rehearsal Relationship
 
-将来的に、
-TimetableをTemplateとして保存できる構造を持つ。
+Timetableは、
+Rehearsalの詳細な進行を表す。
 
-例えば、
+基本構造：
 
-「通常稽古」
+Rehearsal
+  ↓
+Timetable
+  ↓
+Timetable Item
 
-Template：
+Rehearsalの日時が変更された場合、
+Timetableの時間情報との整合性を確認する。
 
-19:00 集合
-19:15 発声
-19:30 稽古
-20:30 休憩
-20:45 稽古
-21:45 振り返り
-22:00 終了
+Timetableは、
+Rehearsalの日時そのものを正本として保持しない。
 
-Templateから新しいTimetableを作成できる。
-
-ただし、
-Template自体はVersion 1.0の必須機能ではない。
+Rehearsalが、
+稽古日時の正本である。
 
 ---
 
-# Copy
+# Rehearsal as Source of Truth
 
-既存Timetableを複製して、
-別のRehearsalへ利用できる構造を持つ。
+Rehearsalは、
+稽古の基本予定を管理する。
 
 例えば、
 
-8/20のTimetable
+- Date
+- Start Time
+- End Time
+- Venue
+- Rehearsal Type
+- Status
 
-↓
+など。
 
-8/21のTimetable
+Timetableは、
+Rehearsalに関連する詳細な進行を管理する。
 
-としてコピーし、
-必要な部分だけ変更できる。
+そのため、
+
+Rehearsal
+  = 稽古予定の正本
+
+Timetable
+  = 稽古進行の正本
+
+として責務を分離する。
+
+---
+
+# Production Activity
+
+Productionに関する活動のうち、
+Rehearsalとして管理されるものについては、
+Timetableを利用できる。
+
+例えば、
+
+- 稽古
+- 通し稽古
+- 場当たり
+- ゲネプロ
+
+など。
+
+本番期間の活動について、
+Rehearsalでは表現できない要件が発生した場合は、
+将来的に別のActivity Domainなどで管理する。
+
+TimetableをProduction直下へ直接関連付ける構造は、
+Version 2.0では採用しない。
 
 ---
 
@@ -408,6 +510,9 @@ Timetableは、
 Participant Typeを
 共有対象条件として利用できる。
 
+共有対象の指定と、
+Timetableの編集権限は別に管理する。
+
 ---
 
 # Notification
@@ -417,6 +522,9 @@ Timetableが作成・変更された場合、
 
 通知機能そのものは、
 Notification Domainの責務とする。
+
+Timetable Domainは、
+通知処理そのものを管理しない。
 
 ---
 
@@ -451,6 +559,12 @@ Google Calendar側を正本にはしない。
 
 StageArtのRehearsal / Timetableを正本とする。
 
+Rehearsalの日時変更は、
+Rehearsalを正本としてCalendarへ反映する。
+
+Timetableの変更は、
+必要に応じてCalendar Eventの詳細情報へ反映する。
+
 ---
 
 # Status
@@ -479,6 +593,12 @@ PUBLISHEDは、
 確定したTimetableを表す。
 
 対象者へ共有できる。
+
+PUBLISHEDになった後も、
+権限を持つPersonは必要に応じて変更できる。
+
+変更した場合は、
+必要に応じて再度共有・通知を行う。
 
 ---
 
@@ -526,27 +646,69 @@ Timetableには、
 
 ---
 
-# Authorization
+# Template
 
-Timetableの作成・変更・公開は、
-稽古管理権限を持つPersonが行う。
+将来的に、
+TimetableをTemplateとして保存できる構造を持つ。
 
-Organization管理者は、
-自身のOrganizationについて
-全権限を持つ。
+例えば、
 
-Production Delegateとして
-稽古管理権限を委任することもできる。
+「通常稽古」
 
-Participant Typeは、
-権限を付与するものではない。
+Template：
+
+19:00 集合
+19:15 発声
+19:30 稽古
+20:30 休憩
+20:45 稽古
+21:45 振り返り
+22:00 終了
+
+Templateから新しいTimetableを作成できる。
+
+ただし、
+Template自体はVersion 2.0の必須機能ではない。
+
+---
+
+# Copy
+
+既存Timetableを複製して、
+別のRehearsalへ利用できる構造を持つ。
+
+例えば、
+
+8/20のTimetable
+
+↓
+
+8/21のTimetable
+
+としてコピーし、
+必要な部分だけ変更できる。
+
+Copyによって、
+元のTimetableを変更しない。
+
+---
+
+# Timetable Item Copy
+
+Timetable全体だけでなく、
+Timetable Itemを複製できる構造を持つ。
+
+ただし、
+CopyされたItemは新しいTimetable Itemとして扱う。
+
+元のTimetable ItemとのIdentityを共有しない。
 
 ---
 
 # Business Rules
 
 - TimetableはRehearsalの詳細な進行を管理する。
-- TimetableはRehearsalに関連付けることができる。
+- Timetableの基本的な親DomainはRehearsalである。
 - Timetableが存在しないRehearsalも許可する。
 - Timetableは複数のTimetable Itemから構成される。
 - Timetable Itemは時間帯ごとの活動を表す。
@@ -561,17 +723,25 @@ Participant Typeは、
 - 個別Personを対象者として指定できる。
 - Participant情報をTimetable内へ複製しない。
 - Participantの正本はParticipant Domainである。
+- Participant Typeは対象者を決定するために利用する。
+- Participant Typeは権限を付与しない。
+- RoleはTimetableの操作権限を決定する。
+- Timetable DomainはRoleやPermissionを定義しない。
+- Organization管理者は自身のOrganizationについて全権限を持つ。
+- Production Delegateとして稽古管理権限を委任できる。
 - Timetableは内部共有を基本とする。
 - Timetableを一般観客向けに自動公開しない。
+- Timetableの共有対象と編集権限を分離する。
 - TimetableはGoogle Calendar Eventそのものではない。
 - Google Calendar連携の正本はRehearsalである。
-- Timetable変更時には必要に応じてCalendar Eventを更新できる。
 - Google Calendar側をStageArtの正本としない。
+- Timetable変更時には必要に応じてCalendar Eventを更新できる。
 - TimetableはDRAFT / PUBLISHED / ARCHIVEDの状態を持つ。
 - Timetableは原則として物理削除しない。
 - Timetableには監査情報を保持する。
-- Timetable管理権限はRoleまたはProduction Delegateで管理する。
-- Participant Typeは権限を付与しない。
+- Timetable TemplateはVersion 2.0では必須ではない。
+- Timetable Copyでは元のTimetableを変更しない。
+- Timetable ItemをCopyした場合は新しいIdentityを持つ。
 
 ---
 
@@ -588,6 +758,10 @@ Timetable変更によって、
 必要に応じてNotificationや
 External Calendar Integrationを実行できる。
 
+Timetable Domain自身が、
+NotificationやGoogle Calendarの
+処理を直接管理することはない。
+
 ---
 
 # Design Decisions
@@ -596,23 +770,44 @@ Timetableは、
 Rehearsalそのものではなく、
 Rehearsalの詳細な進行内容を管理する。
 
-Rehearsalは
+Rehearsalは、
+
 「いつ、どこで、何をする予定か」
+
 を表す。
 
-Timetableは
+Timetableは、
+
 「その時間の中で、何を、どの順番で行うか」
+
 を表す。
 
 この2つを分離する。
 
-また、
-Timetableは通常の稽古だけでなく、
-小屋入り後の進行管理にも利用できる。
+Timetableの基本的な親はRehearsalとする。
+
+Productionから直接Timetableを参照する
+独立したProduction Timetableは、
+Version 2.0では採用しない。
+
+本番期間など、
+Rehearsalでは表現できない活動については、
+将来的に別のActivity Domainなどで拡張する。
+
+Participant Typeは、
+Timetable Itemの対象者指定に利用する。
+
+Roleは、
+Timetableを操作できる主体の権限管理に利用する。
+
+Participant TypeとRoleを混同しない。
 
 Google Calendarの正本はRehearsalであり、
 TimetableはCalendar Eventへ反映される
 詳細情報として扱う。
+
+Timetableの共有対象と、
+Timetableの編集権限は分離する。
 
 ---
 
@@ -627,7 +822,8 @@ TimetableはCalendar Eventへ反映される
 - 参加者別表示
 - キャスト別スケジュール
 - スタッフ別スケジュール
-- 小屋入り専用タイムテーブル
+- 本番進行専用Activity
+- 小屋入り専用Activity
 - 搬入・仕込み管理
 - 場当たり管理
 - ゲネプロ管理
@@ -636,22 +832,34 @@ TimetableはCalendar Eventへ反映される
 - 印刷用タイムテーブル
 - Google Calendarへの詳細反映
 
+将来、
+本番期間の進行管理を追加する場合も、
+RehearsalとTimetableの責務を混同しない。
+
 ---
 
 # Design Principles
 
 - TimetableはRehearsalの詳細な進行を表す。
 - RehearsalとTimetableを分離する。
-- Timetableは複数のTimetable Itemから構成する。
-- Timetable Itemは時間単位の活動を表す。
-- Timetable Itemに対象者を設定できる。
-- Participant Typeを対象者条件として利用できる。
-- Participant情報をTimetableへ複製しない。
+- Rehearsalは稽古予定の正本である。
+- Timetableは稽古進行の正本である。
+- Timetableの基本的な親はRehearsalである。
+- TimetableをProduction直下の独立予定表として扱わない。
+- Timetableは複数のTimetable Itemから構成される。
+- Timetable Itemは時間帯ごとの活動を表す。
+- Participant情報をTimetable内へ複製しない。
+- Participantの正本はParticipant Domainである。
+- Participant Typeは対象者指定に利用する。
+- Participant Typeは権限を付与しない。
+- RoleはTimetableの操作権限を管理する。
+- Timetable DomainはRoleやPermissionを定義しない。
+- Timetableの共有対象と編集権限を分離する。
 - Timetableは内部共有を基本とする。
 - Timetableを一般観客向けに自動公開しない。
-- Google Calendarの正本はRehearsalである。
-- TimetableはGoogle Calendar Eventそのものではない。
-- Timetableの詳細をCalendar Eventへ反映できる。
-- Timetable管理権限はRoleまたはProduction Delegateで管理する。
-- Participant Typeは権限を表さない。
+- Google Calendar EventはTimetableの正本ではない。
+- Google Calendar連携の正本はRehearsalである。
+- Timetable変更を必要に応じてCalendarへ反映する。
+- TimetableはDRAFT / PUBLISHED / ARCHIVEDで管理する。
+- Timetableは原則として物理削除しない。
 - Blueprintを唯一の設計基準とする。
