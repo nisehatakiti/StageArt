@@ -2,7 +2,7 @@
 
 # Domain Model : UserAccount
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -367,6 +367,13 @@ Role
 
 によって表現する。
 
+ProductionDelegateは、
+Production ScopeにおいてPersonへ
+Roleを適用する関係を表す。
+
+UserAccountは、
+Production ScopeのRoleを直接保持しない。
+
 ---
 
 # Profile Relationship
@@ -560,7 +567,8 @@ Roleは、
 Permission Setを管理する。
 
 ProductionDelegateは、
-Production ScopeのRole Assignmentを管理する。
+Production ScopeにおけるPersonへの
+Role適用関係を管理する。
 
 これらを統合しない。
 
@@ -595,6 +603,7 @@ Authentication / Security Domainで管理する。
 - UserAccountはProductionに直接所属しない。
 - Productionへの参加はParticipantで管理する。
 - Production Scopeの権限はProductionDelegateで管理する。
+- ProductionDelegateはProduction ScopeでPersonへRoleを適用する。
 - UserAccount自身にRoleを直接付与しない。
 - AuthorizationはPersonを起点として評価する。
 - ProfileはPersonに所属する。
@@ -714,6 +723,7 @@ Authentication IdentityにはUserAccountという名称を使用する。
 - UserAccountはProductionに直接所属しない。
 - Productionへの参加はParticipantで管理する。
 - Production Scopeの権限はProductionDelegateで管理する。
+- ProductionDelegateはProduction ScopeでPersonへRoleを適用する。
 - RoleはPermission Setを定義する。
 - UserAccount自身にRoleを直接付与しない。
 - AuthorizationはPersonを起点として評価する。
