@@ -2,7 +2,7 @@
 
 # Conceptual ER Diagram
 
-Version : 4.1
+Version : 4.2
 
 ---
 
@@ -44,6 +44,12 @@ Business上の概念と関係性を示す。
         Subject ||--o| Person : refers_to
         Subject ||--o| Organization : refers_to
 
+        Production ||--o{ Rehearsal : has
+        Rehearsal ||--o{ RehearsalAttendance : has
+        RehearsalAttendance }o--|| Person : attends
+
+        Rehearsal ||--o| Timetable : has
+
         Performance ||--o{ Reservation : accepts
 
         Reservation }o--o| Participant : handled_by
@@ -51,7 +57,6 @@ Business上の概念と関係性を示す。
         Reservation ||--o{ ReservationSeat : has
 
         Subject ||--o{ History : has
-
         Production ||--o{ History : relates_to
         Performance ||--o{ History : relates_to
 
@@ -391,6 +396,232 @@ PersonとOrganizationの双方を
 
 ---
 
+## Production - Rehearsal
+
+    Production
+        │
+        ├── Rehearsal
+        ├── Rehearsal
+        └── Rehearsal
+
+一つのProductionは複数のRehearsalを持つ。
+
+RehearsalはProductionに所属する
+稽古・活動予定を表す。
+
+稽古予定と確定稽古を、
+別Entityまたは別Domainとして分離しない。
+
+Rehearsal自身のStatusによって、
+現在のLifecycleを表現する。
+
+Rehearsalは、
+
+- DRAFT
+- SCHEDULED
+- CONFIRMED
+- ACTIVE
+- COMPLETED
+- CANCELLED
+
+などの状態を持つ。
+
+---
+
+## Rehearsal - RehearsalAttendance
+
+    Rehearsal
+        │
+        ├── RehearsalAttendance
+        ├── RehearsalAttendance
+        └── RehearsalAttendance
+
+一つのRehearsalは複数のRehearsalAttendanceを持つ。
+
+RehearsalAttendanceは、
+そのRehearsalに対するPersonの参加状態を表す。
+
+RehearsalAttendanceは、
+Rehearsalの子Entityとして管理する。
+
+RehearsalAttendanceを
+独立したDomain Entityとして扱わない。
+
+---
+
+## RehearsalAttendance - Person
+
+    RehearsalAttendance
+        │
+        ▼
+      Person
+
+RehearsalAttendanceは一人のPersonを参照する。
+
+同一Personは、
+複数のRehearsalに対して
+RehearsalAttendanceを持つことができる。
+
+同一Rehearsalにおける
+一人のPersonの参加状態は、
+一つのRehearsalAttendanceで管理する。
+
+---
+
+## Rehearsal Attendance Status
+
+RehearsalAttendanceは、
+Rehearsalの予定段階から存在できる。
+
+予定確認段階では、
+
+- UNANSWERED
+- ATTENDING
+- NOT_ATTENDING
+
+などの状態を持つ。
+
+RehearsalがACTIVEになった場合、
+同じRehearsalAttendanceのStatusを
+実際の出欠状態へ変更する。
+
+例えば、
+
+    ATTENDING
+        ↓
+    ATTENDED
+
+    ATTENDING
+        ↓
+    LATE
+
+    ATTENDING
+        ↓
+    ABSENT
+
+など。
+
+予定段階のRehearsalAttendanceを削除して、
+別の出欠Entityを作成することはしない。
+
+---
+
+## RehearsalAttendance Retention
+
+RehearsalがCONFIRMEDになっても、
+RehearsalAttendanceは保持する。
+
+RehearsalがACTIVEになっても、
+RehearsalAttendanceは保持する。
+
+RehearsalがCOMPLETEDになった後も、
+RehearsalAttendanceは保持する。
+
+これにより、
+
+- 参加予定者
+- 実際の参加者
+- 欠席者
+- 遅刻者
+
+などを同じRehearsalAttendanceから参照できる。
+
+---
+
+## Rehearsal - Participant
+
+    Production
+        │
+        ├── Participant
+        │
+        └── Rehearsal
+                │
+                └── RehearsalAttendance
+                        │
+                        ▼
+                      Person
+
+RehearsalはParticipantを直接所有しない。
+
+RehearsalAttendanceの対象者は、
+ProductionのParticipantを基本とする。
+
+ただし、
+Production Participant全員が
+すべてのRehearsalへ参加するとは限らない。
+
+Rehearsalごとに、
+参加予定者を設定できる。
+
+---
+
+## Rehearsal - Timetable
+
+    Rehearsal
+        │
+        ▼
+    Timetable
+        │
+        ▼
+    Timetable Item
+
+Rehearsal内の詳細な時間割・進行は、
+Timetable Domainで管理する。
+
+Rehearsalは稽古そのものの予定を管理する。
+
+Timetableは、
+そのRehearsal内の詳細な進行を管理する。
+
+TimetableはRehearsalそのもののLifecycleを
+管理しない。
+
+---
+
+## Rehearsal - Google Calendar
+
+    Rehearsal
+        │
+        ▼
+    External Calendar Event
+        │
+        ▼
+    Google Calendar
+
+CONFIRMEDとなったRehearsalは、
+Google Calendarへ連携できる。
+
+Google Calendar Eventは、
+Rehearsalそのものではない。
+
+StageArt上のRehearsalを正本とする。
+
+Google CalendarへのAPI呼び出しは、
+Infrastructure Layerが担当する。
+
+---
+
+## Rehearsal - Calendar Target
+
+Google Calendarへの登録対象は、
+RehearsalAttendanceと完全には一致しない。
+
+Rehearsalの共有対象となるPersonを、
+Calendar連携対象として指定できる。
+
+したがって、
+
+    RehearsalAttendance
+        Status = NOT_ATTENDING
+
+であるPersonであっても、
+必要に応じてCalendarへ予定を登録できる。
+
+Calendar登録対象と
+稽古参加予定は別の概念として扱う。
+
+---
+
 ## Performance - Reservation
 
     Performance
@@ -485,7 +716,7 @@ HistoryはPersonやOrganizationの子Entityではなく、
         ▼
     Production
 
-Historyは必ず一つのProductionに関連する。
+HistoryはProductionに関連付けることができる。
 
 Productionによって、
 どの公演・作品に関する活動だったかを識別する。
@@ -552,7 +783,8 @@ ExternalConnectionはSNS専用ではない。
 
 SNS、動画サービス、クラウドサービス、
 メッセージングサービスなど、
-StageArtが外部連携するサービスを共通の構造で扱う。
+StageArtが外部連携するサービスを
+共通の構造で扱う。
 
 Serviceは外部サービスの種類を表す。
 
@@ -656,6 +888,66 @@ Productionごとに異なるRoleを適用できる。
 
 ---
 
+# Rehearsal Boundary
+
+RehearsalはProduction Scopeに属する。
+
+    Organization
+        ↓
+    Project
+        ↓
+    Production
+        ↓
+    Rehearsal
+        ↓
+    RehearsalAttendance
+        ↓
+    Person
+
+RehearsalのStatusによって、
+稽古予定から実施完了までのLifecycleを表現する。
+
+稽古予定と確定稽古を別Entityとして管理しない。
+
+RehearsalCandidateは作成しない。
+
+RehearsalAvailabilityは作成しない。
+
+RehearsalAttendanceは、
+Rehearsalに属する子Entityとして管理する。
+
+---
+
+# Rehearsal Attendance Boundary
+
+RehearsalAttendanceは、
+予定確認と実際の出欠を一つの関係として管理する。
+
+    Rehearsal
+        ↓
+    RehearsalAttendance
+        ↓
+      Person
+
+予定確認時：
+
+    UNANSWERED
+    ATTENDING
+    NOT_ATTENDING
+
+実施時：
+
+    ATTENDED
+    LATE
+    ABSENT
+
+RehearsalがACTIVEになっても、
+RehearsalAttendanceそのものは削除しない。
+
+Statusだけを変更する。
+
+---
+
 # Domain Boundaries
 
 Conceptual ERでは、
@@ -663,33 +955,25 @@ Domain間のBusiness上の関係のみを表現する。
 
 以下の関係は特に重要である。
 
-    Participant
+    UserAccount
         ↓
-    Subject
+      Person
 
-    Reservation
-        ↓
-    HandledParticipant
-        ↓
-    Participant
-
-    Subject
-        ↓
-    History
-
-    Organization
-        ↓
-    ExternalConnection
-        ├── Service
-        └── Credential
-
-    Organization
+    Person
         ↓
     Membership
         ↓
-    Role
+    Organization
+        ↓
+       Role
         ↓
     Permission
+
+    Organization
+        ↓
+    Project
+        ↓
+    Production
 
     Production
         ├── PrimaryManager
@@ -701,72 +985,176 @@ Domain間のBusiness上の関係のみを表現する。
                         ↓
                     Permission
 
-HistoryはParticipantやReservationの子Entityではない。
+    Production
+        ↓
+    Participant
+        ↓
+      Subject
+        ├── Person
+        └── Organization
 
-HistoryはDomain Eventを契機として
-独立して生成・更新される。
+    Production
+        ↓
+    Rehearsal
+        ↓
+    RehearsalAttendance
+        ↓
+      Person
 
-ExternalConnectionはOrganizationの子Entityである。
+    Rehearsal
+        ↓
+    Timetable
+        ↓
+    Timetable Item
 
-CredentialはExternalConnectionの子Entityである。
+    Production
+        ↓
+    Performance
+        ↓
+    Reservation
 
-ServiceはMaster Domainとして管理され、
-複数のExternalConnectionから参照される。
+    Reservation
+        ↓
+    HandledParticipant
+        ↓
+    Participant
 
-ProductionDelegateはProductionの子Entityである。
+    Organization
+        ↓
+    ExternalConnection
+        ├── Service
+        └── Credential
 
-PrimaryManagerはProductionからPersonを参照する。
+    Subject
+        ↓
+    History
 
-RoleはMembershipまたはProductionDelegateを介して
-Personへ適用される。
+    Production
+        ↓
+    History
+
+    Performance
+        ↓
+    History
+
+---
+
+# Design Decisions
+
+UserAccountとPersonを分離する。
+
+AccountとUserAccountを分離する。
+
+OrganizationはTenantである。
+
+OrganizationとPersonの所属関係はMembershipで管理する。
+
+Organization Scopeの権限はMembershipとRoleによって管理する。
+
+RoleはPermission Setを定義する。
+
+RoleはOrganization ScopeとProduction Scopeで共通利用する。
+
+RoleAssignmentという独立Domain Entityは作成しない。
+
+Production ScopeのRole適用はProductionDelegateによって表現する。
+
+PrimaryManagerはProductionに対する全権限を持つ。
+
+ParticipantとMembershipを分離する。
+
+Participant TypeとRoleを分離する。
+
+ProductionはProjectに所属する。
+
+PerformanceはProductionに所属する。
+
+ReservationはPerformanceに所属する。
+
+RehearsalはProductionに所属する。
+
+Rehearsalは稽古予定から実施完了までを一つのEntityとして管理する。
+
+RehearsalCandidateを作成しない。
+
+RehearsalAvailabilityを作成しない。
+
+RehearsalのLifecycleはStatusで管理する。
+
+RehearsalAttendanceはRehearsalの子Entityである。
+
+RehearsalAttendanceは予定段階から保持する。
+
+RehearsalがCONFIRMEDになってもRehearsalAttendanceを削除しない。
+
+RehearsalがACTIVEになってもRehearsalAttendanceを削除しない。
+
+参加予定と実際の出欠は、
+同じRehearsalAttendanceのStatus変更で管理する。
+
+TimetableはRehearsal内の詳細な進行を管理する。
+
+Google Calendar EventはRehearsalの正本ではない。
+
+RehearsalをStageArt側の正本とする。
+
+ExternalConnectionはOrganizationに所属する。
+
+ExternalConnectionはSNS専用ではない。
+
+CredentialはExternalConnectionに属する。
+
+Credentialは平文保存しない。
+
+AccountはAccounting Domainの勘定科目である。
+
+Historyは独立Domainとして管理する。
 
 ---
 
 # Design Principles
 
-- Conceptual ERはBusiness上の関係を表現する。
-- Databaseの物理構造は表現しない。
-- Foreign KeyはLogical ERで定義する。
-- UserAccountはAuthentication Identityを表す。
-- PersonはBusiness Identityを表す。
+- Conceptual ERはBusiness上の概念と関係性を表現する。
+- 実装やDatabase構造を直接表現しない。
 - UserAccountとPersonを分離する。
-- AccountはAccounting上の勘定科目を表す。
 - AccountとUserAccountを分離する。
-- ParticipantはSubjectを介して活動主体を参照する。
-- SubjectはPersonまたはOrganizationを表す。
-- Reservationは任意のHandledParticipantを持つ。
-- HandledParticipantはReservationとParticipantのBusiness上の関係を表す。
-- CompanionはReservationに属する。
-- ReservationSeatはReservationに属する。
-- Historyは独立したDomainである。
-- HistoryはSubjectを介してPersonまたはOrganizationと関連する。
-- HistoryはProductionを必ず参照する。
-- PerformanceはHistoryに対して任意である。
-- ExternalConnectionはOrganizationの子Entityである。
-- ExternalConnectionは外部サービスとの接続を表す。
-- ExternalConnectionはSNSに限定しない。
-- Serviceは外部サービスの種類を表すMaster Domainである。
-- Serviceは複数のExternalConnectionから参照できる。
-- CredentialはExternalConnectionに属する。
-- Credentialは単独のPublic Resourceではない。
-- Credentialは外部サービスへの認証情報を表す。
-- Credentialは平文で保存しない。
-- ExternalConnectionはServiceを参照する。
-- 外部サービス固有のAPI仕様はConceptual ERでは表現しない。
-- OrganizationのRoleはMembershipを介してPersonへ適用する。
+- OrganizationはStageArtにおけるTenantである。
+- PersonとOrganizationの所属関係はMembershipで管理する。
+- Organization Scopeの権限はMembershipとRoleで管理する。
 - RoleはPermission Setを定義する。
-- RoleAssignmentという独立Domainを作成しない。
-- Productionは一人のPrimaryManagerを持つ。
-- PrimaryManagerはPersonを参照する。
+- Role DefinitionはOrganization ScopeとProduction Scopeで共通利用する。
+- RoleAssignmentという独立Domain Entityを作成しない。
+- ProductionDelegateはProduction ScopeでRoleをPersonへ適用する。
+- DelegateRoleという別のRole体系を使用しない。
 - PrimaryManagerはProductionに対する全権限を持つ。
-- Productionは複数のProductionDelegateを持つことができる。
-- ProductionDelegateはProductionの子Entityである。
-- ProductionDelegateはPersonを参照する。
-- ProductionDelegateはRoleを参照する。
-- Roleはあらかじめ定義されたPermission Setを表す。
-- RoleはOrganization ScopeとProduction Scopeで共通利用できる。
-- RoleはMembershipまたはProductionDelegateを介して適用される。
-- 同一Personが複数Productionで異なるRoleを適用されることを許可する。
-- Organization MembershipとProduction単位の管理権限を分離する。
-- PrimaryManagerはProductionDelegateによるRoleの制限を受けない。
-- ProductionDelegateは適用されたRoleによって権限を制限する。
+- ParticipantとMembershipを分離する。
+- ParticipantとProductionDelegateを分離する。
+- Participant TypeとRoleを分離する。
+- ProductionはProjectに所属する。
+- PerformanceはProductionに所属する。
+- ReservationはPerformanceに所属する。
+- RehearsalはProductionに所属する。
+- Rehearsalは稽古予定から実施完了までを一つのEntityとして管理する。
+- 稽古予定と確定稽古を別Entityとして管理しない。
+- Rehearsal Candidateを使用しない。
+- Rehearsal Availabilityを使用しない。
+- RehearsalのLifecycleはStatusで管理する。
+- RehearsalAttendanceはRehearsalの子Entityである。
+- RehearsalAttendanceは予定段階から保持する。
+- CONFIRMEDになってもRehearsalAttendanceを削除しない。
+- ACTIVEになってもRehearsalAttendanceを削除しない。
+- 同じRehearsalAttendanceのStatusを予定状態から実績状態へ変更する。
+- Rehearsalごとに参加予定者を管理する。
+- Production Participant全員がすべてのRehearsalへ参加するとは限らない。
+- TimetableはRehearsal内の詳細な進行を管理する。
+- Google Calendar EventはRehearsalの正本ではない。
+- RehearsalをStageArt側の正本とする。
+- Calendar登録対象とRehearsalAttendanceを同一視しない。
+- ExternalConnectionはOrganizationの子Entityである。
+- ExternalConnectionはSNSに限定しない。
+- Serviceは外部サービスの種類を表す。
+- CredentialはExternalConnectionに属する。
+- Credentialは平文保存しない。
+- AccountはAccounting Domainの勘定科目である。
+- Historyは独立Domainとして管理する。
+- Blueprintを唯一の設計基準とする。
