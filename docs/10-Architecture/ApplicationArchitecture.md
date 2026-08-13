@@ -3,7 +3,7 @@
 # 10 - Architecture
 # Application Architecture
 
-Version : 1.3
+Version : 1.4
 
 ---
 
@@ -28,10 +28,27 @@ Application Architectureは、
 
 を定義する。
 
-また、
 StageArtはWeb Browserだけでなく、
 SmartphoneなどのMobile Clientからも
 Business Operationを実行できる構造とする。
+
+Mobile Clientは、
+受付専用Applicationではない。
+
+公演関係者が日常的に利用する
+StageArtのMobile Applicationとして構成し、
+
+- 稽古情報の確認
+- 公演情報の確認
+- 自分の予定確認
+- 連絡事項の確認
+- その他Production関連情報の確認
+
+などを通常利用できる。
+
+公演当日など必要な場合には、
+同じMobile Clientを
+Reception Modeへ切り替えて利用できる。
 
 Check Inについては、
 Mobile Clientだけの機能とはせず、
@@ -49,6 +66,32 @@ Manual Selectionなど、
 受付入口が異なっても、
 最終的にはReservationを特定し、
 共通のCheck In Use Caseを実行する。
+
+System Administratorについては、
+通常のOrganization Administratorとは
+異なるSystem-levelの入口を持つ。
+
+ただし、
+Organizationの業務管理について
+System Administrator専用の
+別Management UIを作るのではなく、
+
+System Administrator
+↓
+Organization List
+↓
+Organization Selection
+↓
+Selected Organization Context
+↓
+通常Management Client
+
+という構造を基本とする。
+
+Organizationを選択した後は、
+そのOrganizationの
+Organization Administrator相当のContextで
+通常のManagement Clientを利用する。
 
 ---
 
@@ -72,6 +115,8 @@ StageArt Applicationは、
 - UIから直接External Serviceへアクセスしない。
 - Domain EntityをAPI Responseとして直接公開しない。
 - Web ClientとMobile Clientを同じApplication Boundaryから利用できる構造とする。
+- Mobile Clientを受付専用Applicationとして分離しない。
+- Mobile ClientはNormal ModeとReception Modeを持つ。
 - QR Codeの読み取り処理とBusiness Ruleを分離する。
 - Check Inの最終的な確定処理はServer Sideで実行する。
 - Client側でBusiness Factを確定しない。
@@ -83,6 +128,9 @@ StageArt Applicationは、
 - QR CodeをCheck In Business Factそのものとして扱わない。
 - Scope外のDataをApplicationから取得できない構造とする。
 - 同一Business Operationに対してClientごとに異なるBusiness Ruleを実装しない。
+- System Administrator専用のBusiness Management Use Caseを重複して作らない。
+- System AdministratorによるOrganization選択後は、通常のManagement Use Caseを利用する。
+- Backup、Replication、Mirror、Restore、Failover、RecoveryなどのSystem OperationsをBusiness ApplicationのDomain Ruleと混在させない。
 
 ---
 
@@ -116,7 +164,7 @@ Public Client
 ↓
 StageArt API
 
-Administrative Client
+System Administration
 ↓
 StageArt API
 
@@ -130,6 +178,14 @@ Infrastructureは、
 - Social Media
 - Email Service
 - その他External Service
+
+System Administrationでは、
+System-wideなOperationと
+Organization Selectorを提供する。
+
+OrganizationのBusiness Managementについては、
+Organization Selection後、
+通常のManagement Clientを利用する。
 
 ---
 
@@ -145,6 +201,7 @@ Presentation：
 - Device Feature
 - Client State
 - API Response Display
+- Mode Switching
 
 API：
 
@@ -163,6 +220,7 @@ Application：
 - Use Case実行
 - Transaction Boundary
 - Authorization Contextの適用
+- Selected Organization Contextの適用
 - Domain Objectの組み合わせ
 - Repository / Gateway利用
 - Domain Event発行
@@ -185,6 +243,22 @@ Infrastructure：
 - Authentication Provider
 - Message / Mail Service
 - その他Technical Implementation
+
+System Operations：
+
+- Backup
+- Restore
+- Replication
+- Mirror
+- Failover
+- Recovery
+- Monitoring
+- Logging
+- Deployment
+
+System Operationsは、
+Business DomainのBusiness Ruleとは
+分離する。
 
 ---
 
@@ -220,6 +294,10 @@ Domainから、
 DatabaseやExternal Serviceの
 具体的なImplementationへ直接依存しない。
 
+System Operationsについても、
+Business Domainの内部Ruleを
+直接実装する場所とはしない。
+
 ---
 
 # 5. Client Architecture
@@ -229,28 +307,53 @@ StageArtは、
 
 主なClient：
 
-- Web Browser
-- Smartphone / Mobile Client
-- Administrative Client
-- QR Reception Client
+- Web Client
+- Mobile Client
 - Public Client
+- System Administration
 
-これらのClientは、
-基本的にStageArt APIを通じて
-Applicationを利用する。
+Receptionは、
+独立したClientではない。
 
-ClientごとにBusiness Ruleを
-個別実装しない。
+Receptionは、
+Mobile ClientのOperational Modeとして提供する。
 
 基本構造：
 
-Client
+Web Client
 ↓
 API
 ↓
 Application
 ↓
 Domain
+
+Mobile Client
+↓
+API
+↓
+Application
+↓
+Domain
+
+Public Client
+↓
+API
+↓
+Application
+↓
+Domain
+
+System Administration
+↓
+API
+↓
+Application
+↓
+System Operation / Organization Selection
+
+ClientごとにBusiness Ruleを
+個別実装しない。
 
 ---
 
@@ -382,12 +485,26 @@ SmartphoneなどのMobile Deviceから
 StageArtを利用するためのClientである。
 
 Mobile Clientは、
-専用Mobile Applicationとして
-実装することができる。
+公演関係者が日常的に利用する
+StageArt Mobile Applicationとして実装する。
 
-ただし、
-Mobile Client固有のUIやDevice機能と、
-StageArt Business Ruleを分離する。
+Mobile Clientは、
+受付専用Applicationではない。
+
+通常時から、
+
+- 稽古情報
+- 公演情報
+- 自分の予定
+- Production情報
+- Performance情報
+- 連絡事項
+
+などを確認できる。
+
+必要な場合には、
+同じMobile Clientを
+Reception Modeへ切り替える。
 
 基本構造：
 
@@ -414,6 +531,7 @@ Mobile Clientは、
 - User Interface
 - Authentication UI
 - Navigation
+- Mode Switching
 - QR Code Scan
 - Camera Access
 - User Input
@@ -422,6 +540,7 @@ Mobile Clientは、
 - Connection State
 - Loading State
 - Error State
+- Local Presentation State
 
 Mobile Clientは、
 Business Factの最終的な正本を保持しない。
@@ -439,7 +558,184 @@ Check In Business Operationへの
 
 ---
 
-# 12. QR Scanner
+# 12. Mobile Normal Mode
+
+Mobile Clientの通常Modeを、
+Normal Modeとする。
+
+Normal Modeでは、
+公演関係者が日常的にStageArtを利用する。
+
+主な情報：
+
+- Home
+- 今日の稽古
+- 次回の稽古
+- Production情報
+- Performance情報
+- 自分の予定
+- 連絡事項
+
+など。
+
+Normal Modeは、
+PC版Management Clientの
+すべての管理機能を置き換えるものではない。
+
+Mobile Clientでは、
+現場で必要な情報を
+簡易的かつ迅速に確認することを重視する。
+
+---
+
+# 13. Mobile Rehearsal
+
+Mobile Clientでは、
+Rehearsal情報を簡易的に確認できる。
+
+例えば、
+
+- 今日の稽古
+- 次回の稽古
+- 開始時刻
+- 終了時刻
+- 場所
+- 対象Production
+- 稽古内容
+- 参加予定
+- 連絡事項
+
+など。
+
+Mobile Clientは、
+Rehearsal Managementの
+すべての管理機能を実装する必要はない。
+
+詳細なRehearsal Managementは、
+Web Management Clientで行う。
+
+Mobile Clientは、
+現場確認を主な目的とする。
+
+---
+
+# 14. Mobile Production / Performance
+
+Mobile Clientでは、
+ユーザーが関係するProductionやPerformanceについて、
+必要な情報を確認できる。
+
+例えば、
+
+- Production Name
+- Performance Date
+- Performance Time
+- Venue
+- Related Rehearsal
+- Personal Participation
+- Production Communication
+
+など。
+
+具体的な表示項目は、
+Frontend Architectureで定義する。
+
+Application Architectureでは、
+Mobile Clientが
+Production / Performance情報を
+取得できるApplication Queryを提供することを定義する。
+
+---
+
+# 15. Mobile Reception Mode
+
+Receptionは、
+独立したMobile Applicationではなく、
+Mobile ClientのOperational Modeとして提供する。
+
+基本構造：
+
+Mobile Client
+↓
+Performance
+↓
+Reception Mode
+
+Reception Modeでは、
+必要に応じて、
+
+- QR Code Scan
+- Reservation Search
+- Reservation Number Search
+- Booker Name Search
+- Manual Selection
+- Check In
+- Reception Status
+
+などを利用できる。
+
+Reception Modeは、
+通常のMobile Clientと
+同じAuthentication / Authorization Boundaryを利用する。
+
+---
+
+# 16. Reception Mode Activation
+
+Reception Modeは、
+適切なPerformance Scopeおよび
+Reception Permissionを持つUserが利用できる。
+
+基本構造：
+
+Person
+↓
+Organization / Production Scope
+↓
+Performance
+↓
+Reception Permission
+↓
+Reception Mode
+
+権限のないUserには、
+Reception Modeを表示または利用させない。
+
+Client側のUI制御だけではなく、
+Server SideでもAuthorizationを検証する。
+
+---
+
+# 17. Reception Mode Boundary
+
+Reception Modeは、
+Client側のOperational Modeである。
+
+Check In Business Ruleは、
+Reception Modeには存在しない。
+
+基本構造：
+
+Mobile Client
+↓
+Reception Mode
+↓
+Check In API
+↓
+Application
+↓
+Check In Domain
+
+Reception Modeは、
+Check In Business Operationへの
+UI / Device側の入口である。
+
+Check In Business Factは、
+Server Sideで確定する。
+
+---
+
+# 18. QR Scanner
 
 QR Scannerは、
 Mobile ClientのDevice機能を利用して
@@ -470,7 +766,7 @@ Serverへ渡すことである。
 
 ---
 
-# 13. QR Code Boundary
+# 19. QR Code Boundary
 
 QR Codeは、
 Business Factそのものではない。
@@ -503,7 +799,7 @@ Authorizationを検証する。
 
 ---
 
-# 14. QR Code Validation
+# 20. QR Code Validation
 
 QR Codeを読み取っただけでは、
 Check Inを成立させない。
@@ -527,7 +823,7 @@ QR Codeに含まれる情報を、
 
 ---
 
-# 15. Application Use Case
+# 21. Application Use Case
 
 Application Layerでは、
 Client Requestを
@@ -553,7 +849,7 @@ Application LayerでOrchestrateする。
 
 ---
 
-# 16. Check In as Common Business Operation
+# 22. Check In as Common Business Operation
 
 Check Inは、
 Mobile Client固有の機能ではない。
@@ -565,7 +861,7 @@ Check Inへの入口は、
 
 - Web Client
 - Mobile Client
-- Administrative Client
+- System AdministrationからのOrganization Context
 
 など複数存在できる。
 
@@ -586,7 +882,13 @@ Check In API
 ↓
 Check In Use Case
 
-Administrative Client
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization Context
+↓
+Management Client
 ↓
 Check In API
 ↓
@@ -594,7 +896,7 @@ Check In Use Case
 
 ---
 
-# 17. Check In Entry Methods
+# 23. Check In Entry Methods
 
 Check InのClient側の入口は、
 Clientによって異なってよい。
@@ -617,7 +919,7 @@ Reservationを特定する方法が異なる。
 
 ---
 
-# 18. Reservation Resolution
+# 24. Reservation Resolution
 
 Reservation Resolutionは、
 受付Inputから対象Reservationを
@@ -650,7 +952,7 @@ Check Inそのものとは分離する。
 
 ---
 
-# 19. Reservation Resolution and QR
+# 25. Reservation Resolution and QR
 
 QR受付の場合は、
 以下のResolutionを行う。
@@ -673,7 +975,7 @@ Check In Business Factとはしない。
 
 ---
 
-# 20. Reservation Number Resolution
+# 26. Reservation Number Resolution
 
 Reservation Numberを利用する場合は、
 
@@ -699,7 +1001,7 @@ Reservation Numberから、
 
 ---
 
-# 21. Booker Name Resolution
+# 27. Booker Name Resolution
 
 Booker Nameを利用する場合は、
 
@@ -731,7 +1033,7 @@ Check In Factを直接変更しない。
 
 ---
 
-# 22. Manual Selection Resolution
+# 28. Manual Selection Resolution
 
 Manual Selectionでは、
 Performanceに紐づくReservation一覧から
@@ -756,7 +1058,7 @@ Server Sideで対象Reservationを再確認する。
 
 ---
 
-# 23. Reservation Resolution Responsibility
+# 29. Reservation Resolution Responsibility
 
 Reservation Resolutionでは、
 以下をApplication Boundaryで扱う。
@@ -777,7 +1079,7 @@ Ticket IDを無条件に信頼しない。
 
 ---
 
-# 24. Reservation Resolution and Authorization
+# 30. Reservation Resolution and Authorization
 
 Reservation Resolutionでは、
 Authorization Scopeを適用する。
@@ -803,7 +1105,7 @@ Reservationを取得できない。
 
 ---
 
-# 25. Check In Application Flow
+# 31. Check In Application Flow
 
 Check Inの基本Application Flow：
 
@@ -848,7 +1150,7 @@ Application以下のBusiness Operationは共通とする。
 
 ---
 
-# 26. Check In Application Use Case
+# 32. Check In Application Use Case
 
 Check In Use Caseは、
 Check Inに必要なBusiness Operationを
@@ -874,7 +1176,7 @@ Domain Layerへ委譲する。
 
 ---
 
-# 27. Check In Domain Boundary
+# 33. Check In Domain Boundary
 
 Application Layerは、
 Check In Domainへ
@@ -896,7 +1198,7 @@ Domain Entityの内部状態を
 
 ---
 
-# 28. Check In Canonical Relationship
+# 34. Check In Canonical Relationship
 
 Check InのCanonical Relationshipは、
 
@@ -940,7 +1242,7 @@ Reservationを特定するための
 
 ---
 
-# 29. Issued Ticket and Check In
+# 35. Issued Ticket and Check In
 
 Issued Ticketは、
 Check Inの必須Entityではない。
@@ -981,7 +1283,7 @@ Check In
 
 ---
 
-# 30. Check In and Performance
+# 36. Check In and Performance
 
 Check Inは、
 対象Performanceとの整合性を確認する。
@@ -1003,7 +1305,7 @@ Reservationが紐づくPerformanceが
 
 ---
 
-# 31. Check In and Reservation State
+# 37. Check In and Reservation State
 
 Check In実行時には、
 Reservationの状態を
@@ -1023,7 +1325,7 @@ Reservation / Check In Domainで定義する。
 
 ---
 
-# 32. Check In and Ticket State
+# 38. Check In and Ticket State
 
 Issued Ticketを利用する受付方法では、
 Ticket Stateも検証する。
@@ -1042,7 +1344,7 @@ Ticket Domainで定義する。
 
 ---
 
-# 33. Check In Result
+# 39. Check In Result
 
 Check In Use Caseは、
 Application Resultを生成する。
@@ -1066,7 +1368,7 @@ Domain Entityを、
 
 ---
 
-# 34. Already Checked In
+# 40. Already Checked In
 
 対象Reservationが、
 すでにCheck In済みの場合、
@@ -1088,7 +1390,7 @@ Client側だけで判断するものではない。
 
 ---
 
-# 35. Check In Idempotency
+# 41. Check In Idempotency
 
 Check Inは、
 RetryやDouble Submitが発生しやすいため、
@@ -1115,7 +1417,7 @@ Infrastructure / Data Architectureと連携して定義する。
 
 ---
 
-# 36. Check In Concurrency
+# 42. Check In Concurrency
 
 複数Clientが、
 同一Reservationに対して
@@ -1147,7 +1449,7 @@ Consistencyを保証する。
 
 ---
 
-# 37. Check In Transaction Boundary
+# 43. Check In Transaction Boundary
 
 Check In Use Caseは、
 必要なBusiness Factを
@@ -1178,7 +1480,7 @@ Data Architecture / Backend Architectureで定義する。
 
 ---
 
-# 38. CheckInCompleted
+# 44. CheckInCompleted
 
 Check Inが確定すると、
 
@@ -1205,7 +1507,7 @@ CheckInCompleted
 
 ---
 
-# 39. CheckInCompleted Boundary
+# 45. CheckInCompleted Boundary
 
 CheckInCompletedは、
 Check In Business Factが確定した後に
@@ -1233,7 +1535,7 @@ Integration Architecture / Backend Architectureで定義する。
 
 ---
 
-# 40. Audience History
+# 46. Audience History
 
 Audience Historyは、
 Check In Business Factを起点として
@@ -1255,7 +1557,7 @@ History Domainで定義する。
 
 ---
 
-# 41. Accounting Integration
+# 47. Accounting Integration
 
 Check InとAccountingは、
 Application上でもDomainとして分離する。
@@ -1281,7 +1583,7 @@ Accounting Application Processへ委譲する。
 
 ---
 
-# 42. Application Command
+# 48. Application Command
 
 Business Operationの実行には、
 Commandを利用できる。
@@ -1315,7 +1617,7 @@ Domain
 
 ---
 
-# 43. CheckInCommand
+# 49. CheckInCommand
 
 Check Inでは、
 CheckInCommandを利用する。
@@ -1340,7 +1642,7 @@ API Contract / Implementation Specificationで定義する。
 
 ---
 
-# 44. Check In Source
+# 50. Check In Source
 
 Check Inが、
 どの受付経路から実行されたかを
@@ -1353,7 +1655,7 @@ Check Inが、
 - WEB_RESERVATION_NUMBER
 - WEB_BOOKER_NAME
 - MOBILE_QR
-- ADMIN
+- SYSTEM_ADMIN_CONTEXT
 
 Sourceは、
 Business Ruleそのものを変更する値ではない。
@@ -1364,7 +1666,7 @@ Audit / Operation Contextなどの
 
 ---
 
-# 45. Query and Command
+# 51. Query and Command
 
 Application Architectureでは、
 QueryとCommandを分離する。
@@ -1376,6 +1678,9 @@ Query：
 - Check In List
 - Ticket Search
 - Participant List
+- Rehearsal List
+- Personal Schedule
+- Production Information
 
 Command：
 
@@ -1384,6 +1689,8 @@ Command：
 - Issue Ticket
 - Check In
 - Cancel Reservation
+- Confirm Rehearsal
+- Record Attendance
 
 Queryは、
 Business Factを変更しない。
@@ -1393,7 +1700,7 @@ Business Operationを実行する。
 
 ---
 
-# 46. Check In List Query
+# 52. Check In List Query
 
 Web Check In一覧は、
 Query Operationとして扱う。
@@ -1426,7 +1733,7 @@ Check In確定の根拠として無条件に利用しない。
 
 ---
 
-# 47. Check In List and Read Model
+# 53. Check In List and Read Model
 
 Check In一覧では、
 必要に応じてRead Model / Projectionを利用できる。
@@ -1452,7 +1759,30 @@ Check In実行時には、
 
 ---
 
-# 48. Scope-aware Application
+# 54. Mobile Query Operations
+
+Mobile ClientのNormal Modeでは、
+現場確認に必要なQueryを利用する。
+
+例：
+
+- Today's Rehearsal
+- Upcoming Rehearsal
+- My Schedule
+- Production Information
+- Performance Information
+- Communication
+
+これらは、
+Mobile Client専用のBusiness Ruleではない。
+
+既存のDomain Dataを、
+Mobile向けQuery / Read Modelとして
+提供する。
+
+---
+
+# 55. Scope-aware Application
 
 Application Use Caseは、
 Authorization Scopeを考慮して
@@ -1479,7 +1809,7 @@ Application Layerで取得できない構造とする。
 
 ---
 
-# 49. Authorization Context
+# 56. Authorization Context
 
 Application Use Caseには、
 必要に応じてAuthorization Contextを渡す。
@@ -1492,6 +1822,7 @@ Authorization Contextには、
 - Permission
 - Production Scope
 - Project Scope
+- Selected Organization
 
 などの情報を含めることができる。
 
@@ -1501,7 +1832,136 @@ Use Case実行可能性を判断する。
 
 ---
 
-# 50. Scope Isolation
+# 57. System Administrator Context
+
+System Administratorは、
+通常のOrganization Userとは異なる
+System-level Roleを持つ。
+
+ただし、
+OrganizationのBusiness Operationについては、
+System Administrator専用の
+別Business Ruleを作らない。
+
+基本構造：
+
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization
+↓
+Selected Organization Context
+↓
+Organization Administrator相当
+↓
+Management Client
+↓
+通常のApplication Use Case
+
+Selected Organization Contextは、
+そのOrganizationに対する
+Organization Administrator相当の
+Authorization Contextとして扱う。
+
+---
+
+# 58. Organization Selector Application Operation
+
+Organization Selectorは、
+System Administratorだけが利用できる
+System-level Query / Selection Operationである。
+
+基本構造：
+
+System Administrator
+↓
+Organization List Query
+↓
+Organization Selection
+↓
+Selected Organization Context
+
+Organization Listは、
+通常UserのScope制御を受ける
+Business Queryとは異なる。
+
+System Administratorだけが、
+全Organizationを一覧から選択できる。
+
+ただし、
+Organization Selection後のBusiness Data操作は、
+通常のOrganization Scope / Permission Boundaryを利用する。
+
+---
+
+# 59. Selected Organization Context
+
+Selected Organization Contextは、
+System Administratorが
+選択したOrganizationについて
+通常のManagement Clientを利用するためのContextである。
+
+基本構造：
+
+System Administrator
+↓
+Selected Organization
+↓
+Organization Administrator Context
+↓
+Management Client
+
+このContextを利用することで、
+
+- Organization Management
+- Production Management
+- Rehearsal Management
+- Performance Management
+- Ticket Management
+- Reservation Management
+- Check In Management
+- Accounting
+- Communication
+- Document Management
+
+などを、
+既存のManagement Clientで利用できる。
+
+System Administrator専用の
+重複したBusiness Management UIを作らない。
+
+---
+
+# 60. System Administrator and Business Rule
+
+System Administratorであることによって、
+Business Ruleそのものを変更しない。
+
+例えば、
+
+Organization Administrator
+↓
+Check In
+
+と、
+
+System Administrator
+↓
+Selected Organization Context
+↓
+Check In
+
+は、
+同じCheck In Use Caseを利用する。
+
+System Administratorだからといって、
+Check InのBusiness Ruleを
+Bypassしない。
+
+---
+
+# 61. Scope Isolation
 
 Resource IDを知っているだけでは、
 Application Operationを実行できない。
@@ -1517,12 +1977,16 @@ Reservation Bが存在していても、
 適切なScopeがなければ
 Use Caseを実行できない。
 
+System Administratorについては、
+Organization Selectorによって
+Selected Organization Contextを明示的に生成する。
+
 Scope Isolationは、
 APIだけでなくApplicationでも維持する。
 
 ---
 
-# 51. Domain Module Structure
+# 62. Domain Module Structure
 
 StageArt Domainは、
 Business Capabilityごとに
@@ -1552,7 +2016,7 @@ Domain Architectureで定義する。
 
 ---
 
-# 52. Module Ownership
+# 63. Module Ownership
 
 各Moduleは、
 自身のBusiness Ruleと
@@ -1579,7 +2043,7 @@ Accounting Module
 
 ---
 
-# 53. Cross Module Operation
+# 64. Cross Module Operation
 
 複数ModuleにまたがるBusiness Operationは、
 Application LayerでOrchestrateする。
@@ -1604,7 +2068,7 @@ Accounting
 
 ---
 
-# 54. Cross Module Dependency
+# 65. Cross Module Dependency
 
 Module間の直接依存を最小化する。
 
@@ -1624,7 +2088,7 @@ Domain Eventなどを利用して連携する。
 
 ---
 
-# 55. Domain Events
+# 66. Domain Events
 
 Business Factの確定後に、
 Domain Eventを発行できる。
@@ -1643,7 +2107,7 @@ Client API Responseとは異なる
 
 ---
 
-# 56. Application Event Handling
+# 67. Application Event Handling
 
 Domain Eventを受けて、
 後続Application Processを実行できる。
@@ -1668,7 +2132,7 @@ Accounting Process
 
 ---
 
-# 57. Transaction and Events
+# 68. Transaction and Events
 
 Transaction Boundaryと
 Event発行タイミングを明確にする。
@@ -1688,7 +2152,7 @@ Backend Architectureで定義する。
 
 ---
 
-# 58. Application and Repository
+# 69. Application and Repository
 
 Application Layerは、
 必要なData取得のために
@@ -1700,6 +2164,8 @@ Repository Interfaceを利用できる。
 - TicketRepository
 - CheckInRepository
 - PerformanceRepository
+- RehearsalRepository
+- OrganizationRepository
 
 など。
 
@@ -1708,7 +2174,7 @@ Infrastructure Layerに置く。
 
 ---
 
-# 59. Application and Gateway
+# 70. Application and Gateway
 
 External Serviceへのアクセスには、
 Gateway / Portを利用する。
@@ -1729,7 +2195,7 @@ External Serviceの具体的SDKへ
 
 ---
 
-# 60. Integration Boundary
+# 71. Integration Boundary
 
 External ServiceとのIntegrationは、
 ApplicationとInfrastructureの境界で分離する。
@@ -1749,7 +2215,7 @@ StageArt Domainへ直接持ち込まない。
 
 ---
 
-# 61. Error Handling
+# 72. Error Handling
 
 Application Layerでは、
 Infrastructure Exceptionや
@@ -1777,7 +2243,7 @@ Business Error
 
 ---
 
-# 62. Business Error
+# 73. Business Error
 
 Business Ruleに違反した場合、
 Application Layerは
@@ -1792,12 +2258,13 @@ Mappingできる。
 - Already Checked In
 - Check In Not Allowed
 - Forbidden
+- Scope Violation
 
 など。
 
 ---
 
-# 63. Idempotency Boundary
+# 74. Idempotency Boundary
 
 Idempotencyは、
 Application Use Caseの
@@ -1818,7 +2285,7 @@ Data / Backend Architectureで定義する。
 
 ---
 
-# 64. Concurrency Boundary
+# 75. Concurrency Boundary
 
 Concurrent Operationが発生する可能性のある
 Business Operationでは、
@@ -1839,7 +2306,7 @@ Consistencyを保証する。
 
 ---
 
-# 65. Application and Persistence
+# 76. Application and Persistence
 
 Application Layerは、
 Persistenceの具体構造を知らない。
@@ -1865,7 +2332,7 @@ Business Ruleとして扱わない。
 
 ---
 
-# 66. Application and Database
+# 77. Application and Database
 
 Applicationは、
 Databaseの直接操作を行わない。
@@ -1895,7 +2362,7 @@ Direct Accessは禁止する。
 
 ---
 
-# 67. Application and WordPress
+# 78. Application and WordPress
 
 WordPressをInfrastructureとして
 利用する場合でも、
@@ -1915,7 +2382,7 @@ Application Business Ruleへ直接持ち込まない。
 
 ---
 
-# 68. PHP Server
+# 79. PHP Server
 
 PHPをServer-side Technologyとして
 利用する場合でも、
@@ -1939,7 +2406,7 @@ Backend Architectureで定義する。
 
 ---
 
-# 69. Mobile and Web Common Use Case
+# 80. Mobile and Web Common Use Case
 
 Web ClientとMobile Clientは、
 同一Business Operationについて
@@ -1972,7 +2439,7 @@ MobileCheckInUseCase
 
 ---
 
-# 70. Client-specific Adapter
+# 81. Client-specific Adapter
 
 Client固有の入力形式が必要な場合は、
 Application Boundaryの手前で
@@ -2001,7 +2468,7 @@ AdapterはBusiness Ruleを所有しない。
 
 ---
 
-# 71. Check In Entry Adapter
+# 82. Check In Entry Adapter
 
 受付方法が異なる場合でも、
 最終的に共通CommandへMappingする。
@@ -2044,7 +2511,7 @@ CheckInCommand
 
 ---
 
-# 72. Check In Source Independence
+# 83. Check In Source Independence
 
 Check In Sourceによって、
 Business Ruleを変更しない。
@@ -2063,7 +2530,7 @@ Audit / Reporting / Operation Contextのために
 
 ---
 
-# 73. Check In Result Consistency
+# 84. Check In Result Consistency
 
 Check In Resultは、
 Server SideのBusiness Factを基準とする。
@@ -2079,7 +2546,7 @@ Server Business Factより優先しない。
 
 ---
 
-# 74. Application Cache
+# 85. Application Cache
 
 Cacheは、
 ApplicationのPerformance改善に
@@ -2094,7 +2561,7 @@ Cache利用時のStalenessを考慮する。
 
 ---
 
-# 75. Read Model
+# 86. Read Model
 
 List / Search / Dashboardなどでは、
 Read Model / Projectionを利用できる。
@@ -2118,7 +2585,7 @@ Business Factの正本ではない。
 
 ---
 
-# 76. Check In Read Model
+# 87. Check In Read Model
 
 Web Check In一覧では、
 必要に応じて受付用Read Modelを利用できる。
@@ -2143,7 +2610,7 @@ Check In実行時には、
 
 ---
 
-# 77. Application Security Boundary
+# 88. Application Security Boundary
 
 Applicationは、
 Security Boundaryの一部として扱う。
@@ -2168,7 +2635,7 @@ Clientから送信されたIdentifierだけを
 
 ---
 
-# 78. Personal Data
+# 89. Personal Data
 
 Personに関するApplication Operationでは、
 必要なPersonal Dataだけを扱う。
@@ -2188,7 +2655,7 @@ Public Projectionを利用する。
 
 ---
 
-# 79. Public Application Boundary
+# 90. Public Application Boundary
 
 Public ClientからのRequestでは、
 Public Operationのみを公開する。
@@ -2208,7 +2675,7 @@ Public Clientから直接実行できる構造にしない。
 
 ---
 
-# 80. Management Application Boundary
+# 91. Management Application Boundary
 
 Management Clientからは、
 Authorization Scope内で
@@ -2224,6 +2691,9 @@ Management Use Caseを実行する。
 - Reservation Management
 - Check In Management
 - Accounting Management
+- Rehearsal Management
+- Communication Management
+- Document Management
 
 Management Use Caseでも、
 Domain Business Ruleを
@@ -2231,7 +2701,207 @@ Applicationから直接複製しない。
 
 ---
 
-# 81. Application Logging
+# 92. System Administration Application Boundary
+
+System Administrationは、
+Business Managementとは
+異なるApplication Boundaryを持つ。
+
+主なSystem Administration Operation：
+
+- Organization List
+- Organization Selection
+- System Health
+- Backup Status
+- Replication Status
+- Mirror Status
+- Recovery Status
+- Operational Log
+
+OrganizationのBusiness Managementは、
+System Administration内に
+重複実装しない。
+
+Organizationを選択した後は、
+
+Selected Organization Context
+↓
+Management Client
+
+へ移行する。
+
+---
+
+# 93. System Administration and Business Management
+
+System Administration：
+
+StageArt全体を確認し、
+Organizationを選択する。
+
+Business Management：
+
+選択されたOrganizationについて、
+通常のManagement Clientを利用する。
+
+基本構造：
+
+System Administration
+↓
+Organization Selector
+↓
+Selected Organization
+↓
+Management Client
+
+この構造により、
+System Administrator専用の
+Organization / Production / Rehearsal / Reservation
+などの重複UIを作らない。
+
+---
+
+# 94. System Operations Boundary
+
+System Operationsは、
+Business Operationsとは分離する。
+
+Business Operations：
+
+- Create Reservation
+- Confirm Reservation
+- Issue Ticket
+- Check In
+- Record Attendance
+- Create Journal Entry
+
+System Operations：
+
+- Backup
+- Restore
+- Replication
+- Failover
+- Recovery
+- Deployment
+- Monitoring
+- Maintenance
+
+System Operationsを、
+Business Domain Entityの
+Business Ruleとして実装しない。
+
+---
+
+# 95. Backup Boundary
+
+Backupは、
+Application Business Operationとは
+別のSystem Operationとして扱う。
+
+基本構造：
+
+Primary
+↓
+Backup Process
+↓
+Backup Storage
+
+Backup対象には、
+必要に応じて、
+
+- Database
+- Business Data
+- Uploaded Files
+- Configuration
+- Operational Data
+
+などを含める。
+
+具体的なBackup Strategyは、
+Operations Architectureで定義する。
+
+---
+
+# 96. Replication Boundary
+
+Replicationは、
+Primary Environmentから
+Mirror Environmentへ
+Dataを同期するSystem Operationである。
+
+基本構造：
+
+Primary
+↓
+Replication
+↓
+Mirror
+
+Replicationは、
+Backupとは異なる。
+
+Replicationは、
+主としてAvailability / Failoverを目的とする。
+
+---
+
+# 97. Mirror Boundary
+
+Mirror Environmentは、
+Primary Environmentの
+代替環境として構成できる。
+
+Mirrorには、
+必要に応じて、
+
+- Application
+- Database
+- Configuration
+- Storage
+
+などを同期する。
+
+具体的なMirror方式は、
+Operations Architectureで定義する。
+
+---
+
+# 98. Recovery Boundary
+
+Recoveryは、
+障害発生時にStageArtを
+利用可能な状態へ戻すSystem Operationである。
+
+例えば、
+
+Primary Failure
+↓
+Mirror
+↓
+Failover
+↓
+Service Recovery
+
+または、
+
+Data Corruption
+↓
+Backup
+↓
+Restore
+↓
+Consistency Check
+↓
+Recovery
+
+など。
+
+具体的なRecovery Strategyは、
+Operations Architectureで定義する。
+
+---
+
+# 99. Application Logging
 
 Application Operationでは、
 必要なOperational Contextを
@@ -2259,7 +2929,7 @@ Logへ記録できる。
 
 ---
 
-# 82. Application Observability
+# 100. Application Observability
 
 重要なApplication Use Caseについて、
 以下を観測できる構造とする。
@@ -2284,7 +2954,7 @@ Logへ記録できる。
 
 ---
 
-# 83. Application Testing
+# 101. Application Testing
 
 Application Layerでは、
 Use Case単位でテストできる構造とする。
@@ -2298,6 +2968,8 @@ Use Case単位でテストできる構造とする。
 - Confirm Rehearsal
 - Record Attendance
 - Accounting Operation
+- Organization Selection
+- Selected Organization Context
 
 Check Inでは特に、
 
@@ -2315,9 +2987,19 @@ Check Inでは特に、
 
 をテスト対象とする。
 
+System Administratorについては、
+
+- Organization List取得
+- Organization Selection
+- Selected Organization Context生成
+- Organization Administrator相当のAuthorization
+- Selected Organization外へのAccess拒否
+
+をテスト対象とする。
+
 ---
 
-# 84. Check In Testing Boundary
+# 102. Check In Testing Boundary
 
 異なる受付入口でも、
 同じCheck In Use Caseに到達することを確認する。
@@ -2352,7 +3034,7 @@ Check In Use Case
 
 ---
 
-# 85. Application Architecture and API Architecture
+# 103. Application Architecture and API Architecture
 
 API Architectureは、
 ClientからApplicationへの
@@ -2383,7 +3065,7 @@ Domain Business OperationをOrchestrateする。
 
 ---
 
-# 86. Application Architecture and Data Architecture
+# 104. Application Architecture and Data Architecture
 
 Application Architectureは、
 Data Architectureで定義された
@@ -2414,7 +3096,7 @@ Applicationが、
 
 ---
 
-# 87. Application Architecture and Backend Architecture
+# 105. Application Architecture and Backend Architecture
 
 Application Architectureは、
 Business Operationと
@@ -2448,7 +3130,7 @@ Database
 
 ---
 
-# 88. Application Architecture and Frontend Architecture
+# 106. Application Architecture and Frontend Architecture
 
 Frontend Architectureは、
 Client UIとUser Interactionを定義する。
@@ -2479,9 +3161,31 @@ Check In Domain
 
 という分担になる。
 
+Mobileでは、
+
+Frontend：
+
+Mobile Home
+↓
+Rehearsal
+↓
+Performance
+↓
+Reception Mode
+
+Application：
+
+Query
+↓
+Application Use Case
+↓
+Domain / Read Model
+
+という分担になる。
+
 ---
 
-# 89. Application Architecture and Integration Architecture
+# 107. Application Architecture and Integration Architecture
 
 Applicationが
 External Serviceを必要とする場合は、
@@ -2502,7 +3206,7 @@ Core Business Factを
 
 ---
 
-# 90. Check In and Integration
+# 108. Check In and Integration
 
 Check InとExternal Integrationは、
 Application上でも分離する。
@@ -2524,7 +3228,7 @@ Integration Architectureで定義する。
 
 ---
 
-# 91. Application Transaction Boundary
+# 109. Application Transaction Boundary
 
 Application Use Caseは、
 Business Operation単位で
@@ -2548,13 +3252,17 @@ Journal Entry
 ↓
 Transaction
 
-複数のUse Caseを、
+Organization Selection
+↓
+Context Operation
+
+複数のBusiness Use Caseを、
 不必要に一つの巨大Transactionへ
 まとめない。
 
 ---
 
-# 92. Application Background Processing
+# 110. Application Background Processing
 
 以下のような処理は、
 必要に応じてBackground Processingへ
@@ -2566,6 +3274,7 @@ Transaction
 - Report Generation
 - Large Export
 - Accounting Projection
+- Notification Delivery
 
 ただし、
 Check InそのもののBusiness Fact確定を
@@ -2573,7 +3282,7 @@ Background Jobだけに依存しない。
 
 ---
 
-# 93. Synchronous Business Operation
+# 111. Synchronous Business Operation
 
 Receptionなど、
 即時結果が必要なOperationは、
@@ -2595,7 +3304,7 @@ Result
 
 ---
 
-# 94. Application Timeout
+# 112. Application Timeout
 
 External Serviceや
 長時間処理を伴うOperationでは、
@@ -2611,7 +3320,7 @@ Check Inについては、
 
 ---
 
-# 95. Application Availability
+# 113. Application Availability
 
 Reception時間帯では、
 以下のApplication Operationの
@@ -2632,7 +3341,7 @@ Availability Strategyを定義する。
 
 ---
 
-# 96. Application Module Evolution
+# 114. Application Module Evolution
 
 Application Moduleは、
 将来的に必要に応じて
@@ -2666,7 +3375,7 @@ Module間のBoundaryを維持することで、
 
 ---
 
-# 97. Modular Monolith
+# 115. Modular Monolith
 
 初期Architectureでは、
 Modular Monolithとして
@@ -2685,12 +3394,14 @@ StageArt Applicationを構築できる。
 
 「同じApplicationに存在する」
 ことと、
+
 「何でも直接参照できる」
+
 ことは同義ではない。
 
 ---
 
-# 98. Application Operation Naming
+# 116. Application Operation Naming
 
 Application Use Caseは、
 Business Operationを表す名前とする。
@@ -2728,7 +3439,7 @@ Business Use Caseの中心にしない。
 
 ---
 
-# 99. Check In Operation Naming
+# 117. Check In Operation Naming
 
 Check InのApplication Use Caseは、
 
@@ -2759,7 +3470,7 @@ CheckIn
 
 ---
 
-# 100. Application Result
+# 118. Application Result
 
 Application Use Caseは、
 Domain Entityそのものではなく、
@@ -2779,7 +3490,7 @@ Clientが必要とするBusiness Resultを
 
 ---
 
-# 101. Check In Result Mapping
+# 119. Check In Result Mapping
 
 Check In Use CaseのResultは、
 API LayerでResponse DTOへMappingする。
@@ -2801,29 +3512,7 @@ Infrastructure Exceptionを
 
 ---
 
-# 102. Application Error Boundary
-
-Application Layerでは、
-以下を分離する。
-
-Domain Business Error
-↓
-Application Business Error
-
-Infrastructure Error
-↓
-Application Technical Error
-
-Integration Error
-↓
-Application Integration Error
-
-API Layerは、
-これらをHTTP / API ErrorへMappingする。
-
----
-
-# 103. Application API Independence
+# 120. Application API Independence
 
 Application Use Caseは、
 特定のClient UIに依存しない。
@@ -2834,7 +3523,7 @@ Web Button
 
 Mobile QR
 
-Administrative Screen
+Management Screen
 
 のどれから呼ばれても、
 同じBusiness Operationとして動作する。
@@ -2845,7 +3534,7 @@ BrowserやMobile Deviceを
 
 ---
 
-# 104. Device Feature Boundary
+# 121. Device Feature Boundary
 
 Camera、
 QR Scanner、
@@ -2875,7 +3564,7 @@ Camera
 
 ---
 
-# 105. API Request to Application Command
+# 122. API Request to Application Command
 
 API Requestは、
 Application CommandへMappingする。
@@ -2906,7 +3595,7 @@ Clientごとに、
 
 ---
 
-# 106. Query Model
+# 123. Query Model
 
 Queryは、
 必要に応じてRead Modelへ
@@ -2926,6 +3615,10 @@ Performance List
 ↓
 PerformanceReadModel
 
+Rehearsal List
+↓
+RehearsalReadModel
+
 など。
 
 Read Modelは、
@@ -2933,7 +3626,7 @@ Write Modelと分離できる。
 
 ---
 
-# 107. Write Model
+# 124. Write Model
 
 Business Operationの確定には、
 Domain Modelを利用する。
@@ -2959,7 +3652,7 @@ Business FactのWrite Sourceとして利用しない。
 
 ---
 
-# 108. Application Consistency
+# 125. Application Consistency
 
 Applicationは、
 Business FactのConsistencyを
@@ -2977,7 +3670,7 @@ Business Factの正本としない。
 
 ---
 
-# 109. Application Audit Context
+# 126. Application Audit Context
 
 重要なBusiness Operationでは、
 必要に応じてAudit Contextを保持する。
@@ -2995,12 +3688,12 @@ Business Factの正本としない。
 など。
 
 特にCheck Inでは、
-Web / Mobile / Administrativeなどの
+Web / Mobile / System Administration Contextなどの
 受付Sourceを記録できる。
 
 ---
 
-# 110. Check In Audit
+# 127. Check In Audit
 
 Check Inについて、
 必要に応じて以下をAudit情報として扱う。
@@ -3019,7 +3712,7 @@ Check In Business Factそのものとは
 
 ---
 
-# 111. Application Architecture Rules
+# 128. Application Architecture Rules
 
 Application Architectureでは、
 以下を禁止または原則禁止とする。
@@ -3036,10 +3729,14 @@ Application Architectureでは、
 - QR Codeだけを根拠にしたCheck In確定
 - Issued TicketだけをCheck In Business Factとして扱うこと
 - WebとMobileで別々のCheck In Business Ruleを実装すること
+- Receptionを独立Business Domainとして扱うこと
+- System Administrator専用の重複したOrganization Management Use Caseを作ること
+- Selected Organization Contextを無視したBusiness Data Access
+- System OperationsをBusiness Domain Ruleへ混在させること
 
 ---
 
-# 112. Application Architecture Summary
+# 129. Application Architecture Summary
 
 StageArt Application Architectureでは、
 
@@ -3057,12 +3754,34 @@ Infrastructure
 
 Web Client、
 Mobile Client、
-Administrative Client、
-Public Clientなど、
-Clientが異なっても、
+Public Client、
+System Administrationなど、
+Client / Entry Pointが異なっても、
 Business RuleをClient側へ分散させない。
 
-特にCheck Inでは、
+Mobile Clientは、
+受付専用Applicationではない。
+
+公演関係者が日常的に利用する
+StageArt Mobile Applicationとして、
+
+Normal Mode
+↓
+Rehearsal / Production / Performance / Schedule / Communication
+
+と、
+
+Reception Mode
+↓
+QR / Reservation Search / Check In
+
+を同一Application内で提供する。
+
+Receptionは、
+独立したClientやBusiness Domainではなく、
+Mobile ClientのOperational Modeとして扱う。
+
+Check Inでは、
 
 受付Input
 ↓
@@ -3193,6 +3912,7 @@ Application Layerでは、
 - Command
 - Query
 - Authorization Context
+- Selected Organization Context
 - Reservation Resolution
 - Transaction Boundary
 - Application Result
@@ -3210,65 +3930,90 @@ File Storage、
 External Serviceなどの
 Technical Implementationを担当する。
 
-Authorizationについては、
+System Administratorについては、
 
-Authentication
+System Administrator
 ↓
-Authorization
+Organization List
 ↓
-Scope
+Organization Selection
 ↓
-Use Case
+Selected Organization Context
 ↓
-Domain
-
-というBoundaryを維持し、
-Resource IDを知っているだけでは
-Scope外Dataへアクセスできない構造とする。
-
-Check Inでは特に、
-
-Web Client
+Organization Administrator相当
 ↓
-Reservation / Ticket List
-↓
-Reservation Resolution
-↓
-Check In Use Case
+通常Management Client
 
-と、
+という構造を採用する。
 
-Mobile Client
-↓
-QR Scanner
-↓
-Reservation Resolution
-↓
-Check In Use Case
+System Administratorは、
+全Organizationを選択できる。
 
-を同一Business Operationへ
-集約する。
+ただし、
+全OrganizationのBusiness Dataを
+専用の横断Management UIで
+直接操作する構造にはしない。
 
-この構造により、
+Organizationを選択した後は、
+通常のManagement Clientを利用する。
 
-Web Client
-Mobile Client
-QR Scanner
-PHP Server
-WordPress
-Database
-External Service
+そのため、
 
-などのTechnologyやInterfaceが変更されても、
+- Organization Management
+- Production Management
+- Rehearsal Management
+- Performance Management
+- Ticket Management
+- Reservation Management
+- Check In Management
+- Accounting
+- Communication
+- Document Management
 
-Reservation
+などのBusiness Management画面を、
+System Administrator専用に
+重複して作る必要はない。
+
+System Administratorの特別なGlobal Scopeは、
+主として、
+
+- Organization Selector
+- System-wide Operational Information
+
+に利用する。
+
+System Operationsについては、
+
+- Backup
+- Restore
+- Replication
+- Mirror
+- Failover
+- Recovery
+- Monitoring
+- Logging
+- Deployment
+
+などをBusiness Operationsとは分離する。
+
+Business Operation：
+
 Check In
+Reservation
 Ticket
-History
+Rehearsal
 Accounting
-Authorization
 
-などのBusiness Boundaryを維持できる。
+System Operation：
+
+Backup
+Restore
+Replication
+Failover
+Recovery
+Deployment
+
+という責務分離を維持する。
 
 Application Architectureの最重要原則は、
 
@@ -3286,5 +4031,25 @@ DomainをBusiness Ruleの正本とする」
 ことを、
 StageArtのCheck In Architectureにおける
 重要な原則とする。
+
+さらに、
+
+「Mobile Clientは受付専用Applicationではなく、
+公演関係者が日常的に利用するApplicationとし、
+必要な場合だけReception Modeへ切り替える」
+
+ことを、
+StageArt Mobile Architectureの基本方針とする。
+
+そして、
+
+「System Administratorは全Organizationを選択できるが、
+Organizationを選択した後は通常のManagement Clientを利用し、
+そのOrganizationのOrganization Administrator相当のContextで
+Business Operationを実行する」
+
+ことを、
+StageArt System Administrationの
+Application Architecture上の基本方針とする。
 
 ---
