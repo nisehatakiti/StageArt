@@ -3,27 +3,29 @@
 # 10 - Architecture
 # Backend Architecture
 
-Version : 1.0
+Version : 1.1
 
 ---
 
 # Purpose
 
 Backend Architectureは、
-StageArtにおけるServer Side Applicationの構造と責務を定義する。
+StageArtにおけるServer Side Applicationの
+構造と責務を定義する。
 
 Backend Architectureでは、
 
 - API
 - Application
 - Domain
-- Repository
+- Repository Interface
 - Infrastructure
 - Persistence
 - Authentication
 - Authorization
 - Transaction
 - Domain Event
+- Event Dispatch
 - Background Process
 - Integration
 - Error Handling
@@ -41,6 +43,14 @@ Backend Architectureでは、
 Database製品、
 Cloud Providerなどの選定までは確定しない。
 
+Backend Architectureは、
+Application Architecture、
+API Architecture、
+Data Architecture、
+Integration Architecture、
+Security Architecture、
+System Boundaryと整合する構造を基本とする。
+
 ---
 
 # 1. Backend Architecture Principles
@@ -53,25 +63,33 @@ StageArt Backendは、
 - API ControllerにBusiness Ruleを実装しない。
 - Application LayerでUse CaseをOrchestrateする。
 - Domain LayerでBusiness Ruleを管理する。
-- Repositoryを通じてPersistenceへアクセスする。
+- Repository InterfaceをPersistence Boundaryとして利用する。
+- Repository Implementationなどの具体的なPersistence処理をInfrastructureへ置く。
 - Infrastructure DetailをDomainから分離する。
 - Database SchemaをDomain Modelの代わりにしない。
-- Transaction BoundaryはApplication Operationを基準に考える。
+- Transaction BoundaryはApplication Use Caseを基準に考える。
 - Business FactはServer SideをSource of Truthとする。
 - AuthenticationとAuthorizationをServer Sideで実行する。
 - Web ClientとMobile ClientでBusiness Ruleを分けない。
 - Client固有の操作方法をBackend Business Ruleへ持ち込まない。
+- Domain Eventの生成とEvent Dispatchを分離する。
 - Domain Eventによって後続Processを疎結合にできる構造とする。
 - External Serviceへの依存をInfrastructureへ閉じ込める。
+- Scope外Dataを取得してからClient側でFilterする設計を基本としない。
+- Query段階でAuthorization Scopeを適用する。
+- Cross DomainのBusiness Factを他Domainが直接更新しない。
 - PHPはImplementation Technologyであり、Business Architectureそのものではない。
 - WordPressを利用する場合もStageArt Business LogicとWordPress Infrastructureを分離する。
+- QueueやBackground WorkerはBusiness Factの正本にならない。
+- ClientはBusiness Operationを要求し、BackendがBusiness Ruleを実行する。
+- DomainがBusiness Factを管理する。
 
 ---
 
-# 2. Backend Layer
+# 2. Backend Architecture Structure
 
 Backendは、
-概念的に以下のLayerへ分離する。
+以下の構造を基本とする。
 
 API
 ↓
@@ -79,48 +97,212 @@ Application
 ↓
 Domain
 ↓
-Repository
-↓
 Infrastructure
 ↓
-Persistence
+Persistence / External Service
 
-基本的な責務：
+Repositoryは、
+Domain / ApplicationとInfrastructureの間に存在する
+Persistence Boundaryとして扱う。
+
+概念構造：
 
 API
-→ ClientとのCommunication
+↓
+Application
+↓
+Domain
+↓
+Repository Interface
+↓
+Infrastructure
+↓
+Persistence
+
+または、
 
 Application
-→ Use CaseのOrchestration
+↓
+Integration Interface
+↓
+Infrastructure Adapter
+↓
+External Service
 
-Domain
-→ Business Rule
+とする。
 
-Repository
-→ Domain ObjectのPersistence Boundary
+Repositoryは、
+独立したBusiness Layerではない。
 
-Infrastructure
-→ Technical Implementation
+Repository Interfaceは、
+Domain / Application側で定義できる。
 
-Persistence
-→ Database / Storage
+Repository Implementationは、
+Infrastructure側で実装する。
 
 ---
 
-# 3. API Layer
+# 3. Backend Layer Responsibilities
+
+## API
+
+ClientとのCommunication Boundaryを担当する。
+
+主な責務：
+
+- HTTP Request
+- Authentication Context取得
+- Request Validation
+- DTO Mapping
+- Application Use Case呼び出し
+- Response Mapping
+- Error Mapping
+
+APIはBusiness Ruleを保持しない。
+
+---
+
+## Application
+
+Business OperationをUse Caseとして実行する。
+
+主な責務：
+
+- Use Case Orchestration
+- Authorization Contextの適用
+- Scope Contextの適用
+- Domain Objectの組み合わせ
+- Transaction Boundary
+- Repository利用
+- Integration Interface利用
+- Domain Event生成の起点
+- Application Result生成
+- Background ProcessへのDispatch
+
+Application自身をBusiness Ruleの正本としない。
+
+---
+
+## Domain
+
+StageArtのBusiness RuleとBusiness Factを管理する。
+
+主な構成：
+
+- Entity
+- Value Object
+- Domain Service
+- Domain Event
+- Domain Rule
+- Business State
+
+DomainはFramework、
+HTTP、
+Database、
+WordPress、
+External APIなどのTechnical Detailへ依存しない。
+
+---
+
+## Infrastructure
+
+Technical Implementationを担当する。
+
+主な責務：
+
+- Database
+- Repository Implementation
+- ORM / Query
+- Authentication Provider
+- External API
+- File Storage
+- Queue
+- Cache
+- Logging
+- Mail
+- Calendar
+- Social Media
+- WordPress
+- その他Technical Service
+
+InfrastructureはBusiness Ruleの正本にならない。
+
+---
+
+## Persistence
+
+Business Factを永続化するためのTechnical Layerである。
+
+Database Schemaは、
+Domain Modelと同一ではない。
+
+Persistenceには、
+
+- Primary Key
+- Foreign Key
+- Index
+- Constraint
+- Audit Information
+
+などのPersistence Concernを持たせる。
+
+---
+
+# 4. Dependency Direction
+
+基本的な依存方向は、
+
+API
+↓
+Application
+↓
+Domain
+
+とする。
+
+Infrastructureは、
+Application / Domainが定義したInterfaceを実装する。
+
+例えば、
+
+Application
+↓
+Repository Interface
+
+Infrastructure
+↓
+Repository Implementation
+
+という関係とする。
+
+Domainから、
+
+- Database
+- ORM
+- WordPress
+- HTTP Client
+- External API
+- File System
+- Queue Product
+
+などの具体的Implementationへ直接依存しない。
+
+---
+
+# 5. API Layer
 
 API Layerは、
-ClientからのRequestを受け付ける。
+ClientからのRequestを受け取り、
+Application Layerへ処理を委譲する。
 
 責務：
 
 - HTTP Request
 - Authentication Context
-- Authorization Context
-- Request Validation
+- Request Parsing
+- Input Validation
 - DTO Mapping
-- Application Command
-- Query
+- Application Use Case呼び出し
 - Response Mapping
 - Error Mapping
 
@@ -129,7 +311,7 @@ Business Ruleを実装しない。
 
 ---
 
-# 4. API Controller
+# 6. API Controller
 
 API Controllerは、
 薄いControllerを基本とする。
@@ -144,7 +326,7 @@ Request DTO
 ↓
 Application Use Case
 ↓
-Result
+Application Result
 ↓
 Response DTO
 ↓
@@ -156,89 +338,115 @@ Controller内で、
 - Business Rule
 - Accounting Rule
 - Check In Rule
+- Authorization Rule
 
 などを直接実装しない。
 
 ---
 
-# 5. Application Layer
+# 7. Application Layer
 
 Application Layerは、
 StageArtのBusiness Operationを
 Use Caseとして実行する。
 
-例えば、
+例：
 
+- Create Organization
+- Add Organization Member
+- Create Project
 - Create Production
+- Add Participant
+- Create Performance
+- Create Ticket
 - Create Reservation
 - Confirm Reservation
 - Issue Ticket
 - Check In
 - Record Attendance
+- Create Rehearsal
+- Confirm Rehearsal
 - Create Journal Entry
-
-など。
+- Create Announcement
 
 Application Layerは、
-Domain Objectを組み合わせて
-Use Caseを実行する。
+複数DomainをまたぐBusiness Processを
+Orchestrateできる。
 
 ---
 
-# 6. Application Use Case
+# 8. Application Use Case
 
 Use Caseは、
 UserまたはSystemが実行する
 Business Operationを表す。
 
-例えば、
+例えばCheck Inでは、
 
-Check In
+Request Context取得
+↓
+Authentication
+↓
+Authorization
+↓
+Scope Resolution
+↓
+Ticket / Reservation取得
+↓
+Business Validation
+↓
+Domain Operation
+↓
+Persistence
+↓
+Domain Event生成
+↓
+Transaction Commit
+↓
+Event Dispatch
 
-というUse Caseは、
+という構造を基本とする。
 
-- Request Context取得
-- Authorization確認
-- Ticket取得
-- Reservation確認
-- Performance確認
-- Domain Operation
-- Persistence
-- Event発行
-
-などをOrchestrateする。
+Use Caseは、
+Domain Ruleそのものではない。
 
 ---
 
-# 7. Application Command
+# 9. Application Command
 
 Commandは、
 Business Operationを実行するためのInputである。
 
-例えばCheck Inでは、
+例えば、
 
 CheckInCommand
+
+には必要に応じて、
+
 - Ticket Identifier
 - Performance Context
 - Actor
 - Client Context
 - Idempotency Information
+- Correlation ID
 
-など。
+などを含める。
 
 Commandは、
 API Request DTOと同一とは限らない。
 
 ---
 
-# 8. Application Query
+# 10. Application Query
 
 Queryは、
 Business Dataを参照する。
 
-例えば、
+例：
 
+- Get Organization
 - Get Production
+- List Productions
 - List Performances
 - List Reservations
 - List Issued Tickets
@@ -246,14 +454,15 @@ Business Dataを参照する。
 - Get Audience History
 - Get Accounting Summary
 
-など。
-
 Queryは、
 Business Factを変更しない。
 
+Queryでも、
+Authorization Scopeを必ず適用する。
+
 ---
 
-# 9. Command and Query Separation
+# 11. Command and Query Separation
 
 Command：
 
@@ -283,13 +492,54 @@ Display
 
 POST Check In
 ↓
-Check In Use Case
+CheckInUseCase
 
 を分離する。
 
+Queryは、
+Commandの代わりにBusiness Factを変更しない。
+
 ---
 
-# 10. Domain Layer
+# 12. Scope-aware Query
+
+Queryは、
+Request UserのAuthorization Scopeを考慮する。
+
+例えば、
+
+GET /productions
+
+であっても、
+
+「すべてのProduction」
+
+を返すのではなく、
+
+「Request UserがAccess可能なProduction」
+
+だけを返す。
+
+基本構造：
+
+Request
+↓
+Authentication
+↓
+Authorization
+↓
+Scope Resolution
+↓
+Scope-aware Query
+↓
+Response
+
+Client側で全Dataを取得してからFilterする方式を
+Security Boundaryとして利用しない。
+
+---
+
+# 13. Domain Layer
 
 Domain Layerは、
 StageArtのBusiness Ruleを管理する。
@@ -301,6 +551,7 @@ Domain Layerには、
 - Domain Service
 - Domain Event
 - Domain Rule
+- Business State
 
 などを配置できる。
 
@@ -310,53 +561,60 @@ Technical Detailに依存しない。
 
 ---
 
-# 11. Domain Entity
+# 14. Domain Entity
 
 Domain Entityは、
 Business Identityを持つ。
 
-例えば、
+例：
 
 - Person
 - Organization
+- Project
 - Production
+- Participant
 - Performance
+- Ticket
 - Reservation
 - Issued Ticket
 - Check In
-
-など。
+- Rehearsal
+- Journal Entry
 
 Domain Entityの内部構造を、
 API DTOやDatabase Rowと同一視しない。
 
+Entityの状態変更は、
+Business Ruleに従って行う。
+
 ---
 
-# 12. Value Object
+# 15. Value Object
 
 Value Objectは、
-Business上意味を持つ値を表す。
+Identityを持たないBusiness Valueを表す。
 
-例えば、
+例：
 
 - Money
-- Date Range
+- DateRange
+- TimeRange
 - Ticket Identifier
 - Email Address
 - Person Name
 - Organization Identifier
+- Percentage
+- Quantity
 
-など。
-
-具体的なValue Objectは、
-Domain Modelで定義する。
+Value Objectは、
+Immutableとして扱うことを基本とする。
 
 ---
 
-# 13. Domain Service
+# 16. Domain Service
 
-Entity単体では表現しにくい
-Business Ruleは、
+Entity単体では表現しにくく、
+複数EntityにまたがるBusiness Ruleは、
 Domain Serviceとして表現できる。
 
 ただし、
@@ -368,25 +626,291 @@ Business Meaningを持つ処理に限定する。
 
 ---
 
-# 14. Domain Event
-
-Business Factが成立した場合、
-Domain Eventを発行できる。
-
-例えば、
-
-CheckInCompleted
-
-など。
+# 17. Domain Event
 
 Domain Eventは、
-「何が起きたか」を表す。
+Business Factが成立したことを表す。
 
-後続Processの具体的な実装とは分離する。
+例：
+
+- ProductionCreated
+- ReservationCreated
+- TicketIssued
+- CheckInCompleted
+- RehearsalConfirmed
+- JournalEntryPosted
+
+Domain Eventは、
+
+「何が起きたか」
+
+を表す。
+
+Domain Eventそのものを、
+Business Factの正本とはしない。
+
+正本は、
+該当DomainのBusiness Factである。
 
 ---
 
-# 15. Check In Backend
+# 18. Domain Event Creation and Dispatch
+
+Domain Eventの、
+
+「生成」
+
+と、
+
+「Dispatch」
+
+を分離する。
+
+Domain / Applicationでは、
+Business Factが成立した際に
+Domain Eventを生成できる。
+
+しかし、
+Domain自身が、
+
+- Queue
+- Email
+- External API
+- Worker
+
+などへ直接Dispatchしない。
+
+基本構造：
+
+Business Operation
+↓
+Business Fact確定
+↓
+Domain Event生成
+↓
+Event記録
+↓
+Transaction Commit
+↓
+Event Dispatch
+↓
+Event Handler / Application Process
+
+とする。
+
+---
+
+# 19. Event Dispatch
+
+Event Dispatchは、
+Domain Eventを後続Processへ渡す処理である。
+
+Event Handler / Application Processは、
+Eventを受け取って、
+
+- History
+- Accounting
+- Notification
+- Communication
+- External Integration
+
+などを実行できる。
+
+Event Handlerは、
+元Domainの責務を奪わない。
+
+---
+
+# 20. Event and Business Fact
+
+Domain Eventは、
+Business Factの代替ではない。
+
+例えば、
+
+Check In
+→ Check In Business Fact
+
+CheckInCompleted
+→ Check Inが成立したことを示すEvent
+
+とする。
+
+QueueやEventが消失しても、
+Check In Business Factそのものを失わない構造とする。
+
+---
+
+# 21. Transaction Boundary
+
+Transaction Boundaryは、
+Application Use Caseを基本単位とする。
+
+例えばCheck Inでは、
+
+Begin Transaction
+↓
+Load Business Data
+↓
+Validate
+↓
+Check In Domain Operation
+↓
+Persist Check In
+↓
+Record Event
+↓
+Commit
+
+という処理を基本とする。
+
+Transactionの具体的な実装は、
+Infrastructure / Persistenceで定義する。
+
+---
+
+# 22. Transaction and Event
+
+Business Factと、
+それに対応するEvent Recordを
+同一Transactionで確定できる構造を基本とする。
+
+基本構造：
+
+Transaction
+├── Business Fact
+└── Event Record
+        ↓
+      Commit
+        ↓
+ Event Dispatch
+        ↓
+ Event Handler
+
+これにより、
+
+Business FactはCommitされたがEventが失われる
+
+という状態を防ぎやすくする。
+
+---
+
+# 23. Outbox Pattern
+
+Eventの信頼性が必要な場合、
+Outbox Patternを利用できる。
+
+基本構造：
+
+Transaction
+├── Business Fact
+└── Outbox Event
+        ↓
+      COMMIT
+        ↓
+ Event Dispatcher
+        ↓
+ Queue / Worker
+        ↓
+ Event Handler
+        ↓
+ Application Process
+
+Outboxは、
+Business Factの代替ではない。
+
+Outboxの具体的な採用方法は、
+Implementation / Deployment要件に応じて決定する。
+
+---
+
+# 24. Background Processing
+
+同期実行が不要、
+または時間のかかる処理は、
+Background Processへ切り出せる。
+
+例：
+
+- Email Delivery
+- Notification
+- External Integration
+- Report Generation
+- Document Processing
+- Event Handling
+
+Business OperationのCritical Pathへ、
+Heavy Processingを無条件に含めない。
+
+---
+
+# 25. Queue
+
+非同期処理が必要な場合、
+Queueを利用できる。
+
+基本構造：
+
+Application
+↓
+Event / Job
+↓
+Queue
+↓
+Worker
+↓
+Application Process
+
+Queue Messageには、
+必要なIdentifierとContextを含める。
+
+Queue自体を、
+Business Factの正本としない。
+
+---
+
+# 26. Retry
+
+Background Processでは、
+Retry可能な処理と
+Retryしても意味がない処理を区別する。
+
+例えば、
+
+External API Timeout
+→ Retry可能
+
+Temporary Database Failure
+→ Retry可能
+
+Invalid Business Data
+→ Retryしても改善しない
+
+など。
+
+Retryによって、
+Business Factを重複生成しない構造とする。
+
+---
+
+# 27. Dead Letter
+
+Repeated Failureする
+Background Jobについては、
+
+- Dead Letter
+- Failed Queue
+- Failed Job Record
+
+などを利用できる。
+
+Operational Userが、
+失敗内容を確認し、
+必要に応じて再実行できる構造を検討する。
+
+---
+
+# 28. Check In Backend
 
 Check Inは、
 Backendにおける代表的なBusiness Operationである。
@@ -412,41 +936,18 @@ Check In API
 
 ---
 
-# 16. Check In Use Case
+# 29. Reception Boundary
 
-基本構造：
+Receptionは、
+独立したBackend Business Applicationではない。
 
-Check In API
-↓
-CheckInUseCase
-↓
-Load Issued Ticket
-↓
-Load Reservation
-↓
-Validate Performance
-↓
-Validate Authorization
-↓
-Check In Domain Operation
-↓
-Persist Check In
-↓
-Publish CheckInCompleted
-↓
-Commit
+Receptionは、
+Web ClientまたはMobile Clientから
+Check In Business Operationを実行するための
+Operational Mode / UI Entryである。
 
-Clientによって、
-Check In Ruleを変更しない。
+Web：
 
----
-
-# 17. Web Check In Backend
-
-Web ClientからのCheck In：
-
-Web Client
-↓
 Performance
 ↓
 Reservation / Issued Ticket List
@@ -454,75 +955,69 @@ Reservation / Issued Ticket List
 Ticket Selection
 ↓
 Check In API
+
+Mobile：
+
+Performance
 ↓
-CheckInUseCase
-
-Backendでは、
-Web Clientがどの画面から操作したかを
-Business Ruleとして扱わない。
-
----
-
-# 18. Mobile QR Check In Backend
-
-Mobile ClientからのCheck In：
-
-Mobile Client
+Reception Mode
 ↓
 QR Scanner
 ↓
 Ticket Identifier
 ↓
 Check In API
-↓
-CheckInUseCase
 
-QR Codeの読み取り自体は
-Mobile Clientの責務。
-
-QR PayloadのValidationと
-Check In確定はBackendの責務。
+Backendでは、
+どちらも同じCheckInUseCaseを利用する。
 
 ---
 
-# 19. Common Check In Use Case
+# 30. Check In Use Case
 
-WebとMobileは、
-入口が異なる。
-
-Web：
-
-Ticket Selection
-↓
-Check In API
-
-Mobile：
-
-QR Scan
-↓
-Check In API
-
-しかし、
+基本構造：
 
 Check In API
 ↓
 CheckInUseCase
 ↓
-Check In
+Authentication
+↓
+Authorization
+↓
+Scope Resolution
+↓
+Load Issued Ticket
+↓
+Load Reservation
+↓
+Validate Performance
+↓
+Validate Ticket State
+↓
+Check In Domain Operation
+↓
+Persist Check In
+↓
+Record CheckInCompleted
+↓
+Commit
+↓
+Event Dispatch
+↓
+Response
 
-は共通とする。
-
-これにより、
-ClientごとにBusiness Ruleが分裂することを防ぐ。
+Clientによって、
+Check In Ruleを変更しない。
 
 ---
 
-# 20. Check In Validation
+# 31. Check In Validation
 
 CheckInUseCaseでは、
 必要なBusiness Contextを確認する。
 
-例えば、
+例：
 
 - Ticket Existence
 - Ticket Validity
@@ -532,14 +1027,12 @@ CheckInUseCaseでは、
 - Authorization
 - Current Check In State
 
-など。
-
 Clientから送信されたDataだけを
 無条件に信頼しない。
 
 ---
 
-# 21. Check In Authorization
+# 32. Check In Authorization
 
 Check Inを実行するActorについて、
 
@@ -558,7 +1051,7 @@ Backendで必ず検証する。
 
 ---
 
-# 22. Check In State
+# 33. Check In State
 
 Check Inでは、
 既存のCheck In Stateを確認する。
@@ -579,7 +1072,7 @@ Ticket
 
 ---
 
-# 23. Already Checked In
+# 34. Already Checked In
 
 既にCheck In済みの場合、
 
@@ -596,10 +1089,10 @@ Already Checked In Result
 
 ---
 
-# 24. Check In Concurrency
+# 35. Check In Concurrency
 
 同じTicketに対して、
-複数のRequestが同時に到達する可能性がある。
+複数Requestが同時に到達する可能性がある。
 
 例えば、
 
@@ -619,12 +1112,14 @@ Backendでは、
 同じTicketについて
 Check In Factが二重作成されないようにする。
 
-具体的なLockやDatabase Constraintは、
+具体的なLock、
+Unique Constraint、
+Isolation Levelなどは、
 Persistence / Implementationで定義する。
 
 ---
 
-# 25. Check In Idempotency
+# 36. Check In Idempotency
 
 Check In Requestは、
 Network Retryなどによって
@@ -642,48 +1137,53 @@ Backendでは、
 
 ---
 
-# 26. Check In Transaction
+# 37. Check In Critical Path
 
-Check InのBusiness Operationは、
-必要な処理をTransaction Boundary内で
-一貫して扱う。
+Check Inでは、
+受付結果を即時に返す必要がある。
 
-概念的には、
+基本Critical Path：
 
-Begin Transaction
+Request
 ↓
-Validate
+Authentication
 ↓
-Create Check In
+Authorization
+↓
+Ticket / Reservation Validation
+↓
+Check In Domain Operation
 ↓
 Persist
 ↓
-Prepare Event
-↓
 Commit
+↓
+Response
 
-とする。
-
-具体的なTransaction方式は、
-Infrastructure / Persistenceで定義する。
+History、
+Accounting、
+Notification、
+External IntegrationなどのHeavy Processを
+Critical Pathへ無条件に含めない。
 
 ---
 
-# 27. CheckInCompleted
+# 38. CheckInCompleted
 
 Check Inが正常に確定した場合、
 
 CheckInCompleted
 
-Domain Eventを発行できる。
+Domain Eventを生成する。
 
 基本構造：
 
 Check In
 ↓
 CheckInCompleted
-├── History
-└── Accounting
+├── History Process
+├── Accounting Process
+└── Notification / Integration Process
 
 後続処理は、
 Check In API Controllerから
@@ -691,7 +1191,7 @@ Check In API Controllerから
 
 ---
 
-# 28. History Process
+# 39. History Process
 
 CheckInCompletedを受けて、
 必要に応じてHistory Processを実行する。
@@ -707,9 +1207,12 @@ Audience History
 Historyの具体的なData Modelは、
 Domain Model / Data Architectureで定義する。
 
+History Processの失敗によって、
+確定済みCheck In Factを不正にRollbackしない。
+
 ---
 
-# 29. Accounting Process
+# 40. Accounting Process
 
 CheckInCompletedを受けて、
 必要に応じてAccounting Processを実行する。
@@ -727,12 +1230,24 @@ Journal Entry
 Accounting Ruleは、
 Accounting Domain / Application側で管理する。
 
+Accounting Processの失敗によって、
+確定済みCheck In Factを不正にRollbackしない。
+
+必要に応じて、
+
+- Pending
+- Retry
+- Failed
+- Rebuild
+
+などを利用する。
+
 ---
 
-# 30. Check In and Accounting
+# 41. Check In and Accounting
 
-Check In APIが成功したからといって、
-Clientが直接Accounting APIを呼び出す設計にはしない。
+Clientが直接Accounting APIを呼び出して、
+Accounting Factを生成する設計にはしない。
 
 正しい構造：
 
@@ -750,15 +1265,13 @@ Accounting Process
 ↓
 Journal Entry
 
-これにより、
-Web / Mobile双方で
-Accounting連動を統一できる。
+Web / Mobile双方で、
+同じAccounting Processへ到達する。
 
 ---
 
-# 31. Check In and History
+# 42. Check In and History
 
-Check In APIが成功したからといって、
 Clientが直接Historyを作成する設計にはしない。
 
 正しい構造：
@@ -779,29 +1292,33 @@ Audience History
 
 ---
 
-# 32. Repository
+# 43. Repository Interface
 
 Repositoryは、
-Domain / ApplicationとPersistenceの
-Boundaryである。
-
-例えば、
-
-PersonRepository
-ProductionRepository
-PerformanceRepository
-ReservationRepository
-IssuedTicketRepository
-CheckInRepository
-
-など。
+Domain / Applicationと
+PersistenceのBoundaryである。
 
 Repository Interfaceは、
 Domain / Application側に定義できる。
 
+例：
+
+- PersonRepository
+- OrganizationRepository
+- ProjectRepository
+- ProductionRepository
+- ParticipantRepository
+- PerformanceRepository
+- TicketRepository
+- ReservationRepository
+- IssuedTicketRepository
+- CheckInRepository
+- RehearsalRepository
+- JournalEntryRepository
+
 ---
 
-# 33. Repository Responsibility
+# 44. Repository Responsibility
 
 Repositoryは、
 EntityやAggregateを
@@ -822,38 +1339,92 @@ Domain / Application側で判断する。
 
 ---
 
-# 34. Repository and Database
+# 45. Scope-aware Repository
 
-Repository Implementationが、
-Databaseへの具体的なアクセスを担当する。
+Repositoryは、
+必要に応じてScope Contextを受け取る。
+
+例えば、
+
+findAccessibleProductions(scopeContext)
+
+findAccessibleReservations(scopeContext)
+
+findAccessibleTickets(scopeContext)
+
+など。
+
+Applicationから、
+
+findAllProductions()
+
+してからClient側でFilterする設計を
+Security Boundaryとして採用しない。
+
+Scope Filterは、
+可能な限りPersistence Queryの段階で適用する。
+
+---
+
+# 46. Repository and Authorization
+
+Repositoryは、
+AuthorizationそのものをDomain Ruleとして実装するものではない。
 
 基本構造：
 
+Request
+↓
+Authentication
+↓
+Authorization
+↓
+Scope Resolution
+↓
 Application
+↓
+Scope-aware Repository Query
+↓
+Authorized Data
+
+Repositoryは、
+Applicationから渡されたScope Contextに基づき、
+取得対象を制限できる。
+
+---
+
+# 47. Repository Implementation
+
+Repository Implementationは、
+Infrastructure側に配置する。
+
+基本構造：
+
+Application / Domain
 ↓
 Repository Interface
 ↓
 Repository Implementation
 ↓
-Database
+Database / Persistence
 
-Applicationが、
-SQLやWordPress Query APIへ
-直接依存しない。
+Repository Implementationは、
+
+- SQL
+- ORM
+- WordPress Query
+- Database API
+
+などの具体的Technical Detailを扱える。
 
 ---
 
-# 35. Query Repository
+# 48. Query Repository / Read Model
 
 Read-heavyなOperationでは、
-Query専用Repository / Read Modelを
-利用できる。
+Query専用RepositoryやRead Modelを利用できる。
 
-例えば、
-
-Check In List
-
-では、
+例えばCheck In Listでは、
 
 Person
 +
@@ -863,15 +1434,14 @@ Issued Ticket
 +
 Check In Status
 
-を効率的に取得する
-Read Modelを利用できる。
+を効率的に取得するRead Modelを利用できる。
 
 ただし、
 Read ModelをBusiness Factの正本としない。
 
 ---
 
-# 36. Web Check In List Query
+# 49. Web Check In List Query
 
 Web Receptionでは、
 一覧表示のためのQueryを利用する。
@@ -884,6 +1454,8 @@ Check In List API
 ↓
 CheckInListQuery
 ↓
+Scope-aware Query
+↓
 Read Model / Repository
 ↓
 Response DTO
@@ -893,23 +1465,23 @@ Check In Operationとは分離する。
 
 ---
 
-# 37. Bulk Check In
+# 50. Bulk Check In
 
 Web Clientでは、
 複数Ticketを選択して
 Check Inすることができる。
 
-Backendでは、
 Bulk Operationを導入する場合でも、
 単純なDatabase Bulk Updateにしない。
 
 各Ticketについて、
-必要なValidationとBusiness Ruleを
-適用する。
+必要なAuthorization、
+Validation、
+Business Ruleを適用する。
 
 ---
 
-# 38. Bulk Check In Result
+# 51. Bulk Check In Result
 
 Bulk Check Inでは、
 個別Resultを返せる構造とする。
@@ -935,7 +1507,7 @@ Ticket D
 
 ---
 
-# 39. Authentication
+# 52. Authentication
 
 Authenticationは、
 Backend Security Boundaryである。
@@ -957,7 +1529,7 @@ Infrastructureで実装する。
 
 ---
 
-# 40. Authentication Context
+# 53. Authentication Context
 
 Applicationへ渡すContextには、
 必要に応じて、
@@ -966,15 +1538,17 @@ Applicationへ渡すContextには、
 - Person
 - Authentication Method
 - Session / Token Context
+- Client Type
+- Device Context
 
 などを含める。
 
-Applicationは、
-必要なIdentity Contextを利用する。
+Clientから送信されたRoleやPermissionを、
+Security Contextの正本として扱わない。
 
 ---
 
-# 41. Person and UserAccount
+# 54. Person and UserAccount
 
 Authentication Identityと
 Business Identityを分離する。
@@ -993,7 +1567,7 @@ Domainへ直接渡さない。
 
 ---
 
-# 42. Authorization
+# 55. Authorization
 
 Authorizationは、
 Authentication後に実行する。
@@ -1002,9 +1576,7 @@ Authentication後に実行する。
 
 Person
 ↓
-Organization Scope
-↓
-Production Scope
+Scope
 ↓
 Role
 ↓
@@ -1012,14 +1584,7 @@ Permission
 ↓
 Use Case
 
-Authorizationを、
-Frontendだけに任せない。
-
----
-
-# 43. Organization Authorization
-
-Organization Scopeでは、
+Organization Scope：
 
 Person
 ↓
@@ -1031,14 +1596,7 @@ Role
 ↓
 Permission
 
-によって、
-Operationの可否を判断する。
-
----
-
-# 44. Production Authorization
-
-Production Scopeでは、
+Production Scope：
 
 Person
 ↓
@@ -1050,17 +1608,14 @@ Role
 ↓
 Permission
 
-によって、
-Operationの可否を判断する。
-
 ---
 
-# 45. Check In Authorization Context
+# 56. Scope Resolution
 
-Check Inでは、
-TicketのBusiness Contextを解決する。
+API Requestごとに、
+必要なScopeを解決する。
 
-例えば、
+例えばTicketへのAccessでは、
 
 Ticket
 ↓
@@ -1068,17 +1623,23 @@ Performance
 ↓
 Production
 ↓
+Project
+↓
 Organization
 
-というScopeを確認する。
+を解決する。
 
-Actorが、
-対象ScopeでCheck Inを実行できるかを
-Server側で検証する。
+そのうえで、
+
+Request Person
+↓
+Authorized Scope
+
+とのAccessを確認する。
 
 ---
 
-# 46. Tenant Isolation
+# 57. Tenant Isolation
 
 Organizationは、
 主要なTenant Boundaryである。
@@ -1088,12 +1649,12 @@ Request UserのScopeを確認し、
 別OrganizationのDataへ
 アクセスできないようにする。
 
-IDを知っているだけでは、
+Resource IDを知っているだけでは、
 Accessを許可しない。
 
 ---
 
-# 47. Production Isolation
+# 58. Production Isolation
 
 Productionについても、
 Scope Isolationを行う。
@@ -1104,7 +1665,7 @@ Production BのDataを
 
 ---
 
-# 48. Domain Independence
+# 59. Domain Independence
 
 Domain Layerは、
 以下へ直接依存しないことを基本とする。
@@ -1116,13 +1677,15 @@ Domain Layerは、
 - ORM
 - External API
 - File System
+- Queue Product
+- Cache Product
 
 これらは、
 Infrastructure Boundaryの外側に置く。
 
 ---
 
-# 49. PHP as Implementation Technology
+# 60. PHP as Implementation Technology
 
 StageArt BackendをPHPで実装できる。
 
@@ -1140,20 +1703,10 @@ Technologyとして扱う。
 
 ---
 
-# 50. PHP Application Structure
+# 61. PHP Application Structure
 
 PHP Serverでは、
 概念的に以下の構造を採用できる。
-
-API
-↓
-Application
-↓
-Domain
-↓
-Infrastructure
-
-例えば、
 
 src/
 ├── Api/
@@ -1161,14 +1714,15 @@ src/
 ├── Domain/
 └── Infrastructure/
 
-など。
+Repository Interfaceは、
+DomainまたはApplicationの責務に応じて配置する。
 
 具体的なDirectory Structureは、
 Implementation Specificationで決定する。
 
 ---
 
-# 51. Framework Independence
+# 62. Framework Independence
 
 PHP Frameworkを利用する場合でも、
 Framework固有のCodeを
@@ -1182,6 +1736,9 @@ Controller
 Repository Implementation
 → Framework / Database依存
 
+Infrastructure Adapter
+→ Framework / Provider依存
+
 Domain Entity
 → Framework非依存
 
@@ -1189,7 +1746,7 @@ Domain Entity
 
 ---
 
-# 52. WordPress Integration
+# 63. WordPress Integration
 
 StageArtをWordPress Pluginとして
 実装する場合でも、
@@ -1197,9 +1754,9 @@ WordPressをInfrastructureとして扱う。
 
 基本構造：
 
-WordPress REST API
+WordPress
 ↓
-StageArt API Adapter
+StageArt API / Adapter
 ↓
 Application
 ↓
@@ -1210,7 +1767,7 @@ Domain Layerへ直接渡さない。
 
 ---
 
-# 53. WordPress User Integration
+# 64. WordPress User Integration
 
 WordPress Userを
 Authentication Infrastructureとして
@@ -1236,7 +1793,7 @@ Person
 
 ---
 
-# 54. WordPress Data Access
+# 65. WordPress Data Access
 
 WordPress Databaseを利用する場合でも、
 Application / Domainから
@@ -1248,7 +1805,7 @@ Application
 ↓
 Repository Interface
 ↓
-WordPress Repository Adapter
+WordPress Repository Implementation
 ↓
 WordPress Data Access
 ↓
@@ -1256,7 +1813,7 @@ Database
 
 ---
 
-# 55. Infrastructure Layer
+# 66. Infrastructure Layer
 
 Infrastructure Layerは、
 Technical Detailを担当する。
@@ -1264,6 +1821,7 @@ Technical Detailを担当する。
 例えば、
 
 - Database
+- Repository Implementation
 - WordPress
 - HTTP Client
 - Mail
@@ -1272,6 +1830,8 @@ Technical Detailを担当する。
 - Queue
 - Cache
 - Logging
+- Calendar
+- Social Media
 
 など。
 
@@ -1280,14 +1840,14 @@ Domain Business Ruleを実装しない。
 
 ---
 
-# 56. Database Infrastructure
+# 67. Database Infrastructure
 
 Database Accessは、
 Infrastructureへ閉じ込める。
 
 基本構造：
 
-Repository
+Repository Implementation
 ↓
 Database Adapter
 ↓
@@ -1298,7 +1858,7 @@ Domain Layerへ直接影響しない構造を目指す。
 
 ---
 
-# 57. External Service Integration
+# 68. External Service Integration
 
 External Serviceは、
 Infrastructure Boundaryから利用する。
@@ -1308,9 +1868,11 @@ Infrastructure Boundaryから利用する。
 - Email
 - Calendar
 - Storage
-- SNS
+- Social Media
 - Payment
 - Authentication
+- Messaging
+- External Ticketing
 
 など。
 
@@ -1319,17 +1881,19 @@ Integration Interfaceを通じて利用する。
 
 ---
 
-# 58. Integration Interface
+# 69. Integration Interface
 
 External Serviceへの依存は、
 Interfaceで抽象化できる。
 
 例えば、
 
-NotificationService
-CalendarService
-FileStorage
-PaymentService
+- NotificationService
+- CalendarService
+- FileStorage
+- PaymentService
+- MessagingService
+- TicketingService
 
 など。
 
@@ -1338,7 +1902,7 @@ Applicationは、
 
 ---
 
-# 59. External API Failure
+# 70. External API Failure
 
 External APIが失敗した場合でも、
 Domain Business Ruleを壊さない。
@@ -1357,195 +1921,7 @@ Application / Infrastructureで処理する。
 
 ---
 
-# 60. Transaction Boundary
-
-Transaction Boundaryは、
-Business Operationを基準に設定する。
-
-例えば、
-
-Check In
-
-というUse Caseでは、
-Check In Factの確定を
-Transactionとして扱う。
-
----
-
-# 61. Transaction and Event
-
-Transaction内でBusiness Factを確定し、
-その後のEvent処理を
-適切な方式で実行する。
-
-基本的な考え方：
-
-Business Fact
-↓
-Commit
-↓
-Event Processing
-
-Event処理によって、
-Business Factの正本を不安定にしない。
-
----
-
-# 62. Outbox Pattern
-
-将来的にEventの信頼性が必要になった場合、
-Outbox Patternを利用できる。
-
-基本構造：
-
-Transaction
-├── Business Fact
-└── Outbox Event
-        ↓
-      Commit
-        ↓
- Event Processor
-        ↓
- Subscribers
-
-具体的な採用は、
-Implementation / Deployment要件に応じて決定する。
-
----
-
-# 63. Background Processing
-
-時間のかかる処理や、
-同期実行が不要な処理は、
-Background Processへ切り出せる。
-
-例えば、
-
-- Email Delivery
-- Notification
-- External Integration
-- Report Generation
-- Document Processing
-
-など。
-
----
-
-# 64. Check In Background Processing
-
-Check Inそのものは、
-受付結果を即時に返す必要がある。
-
-そのため、
-
-Check In
-↓
-Immediate Business Fact
-
-を基本とする。
-
-一方、
-
-CheckInCompleted
-↓
-History Process
-↓
-Accounting Process
-↓
-Notification
-
-などは、
-要件に応じて同期 / 非同期を選択できる。
-
----
-
-# 65. Check In Response Timing
-
-受付業務では、
-Userへ短時間で結果を返すことを重視する。
-
-基本：
-
-Request
-↓
-Check In Validation
-↓
-Check In Fact
-↓
-Response
-
-後続のHeavy Processを、
-Check In ResponseのCritical Pathへ
-無条件に含めない。
-
----
-
-# 66. Accounting Failure
-
-Check In後のAccounting Processで
-External / Infrastructure Errorが発生しても、
-Check In Factを
-不正にRollbackする設計にはしない。
-
-基本的には、
-
-Check In
-→ Business Fact確定
-
-その後、
-
-Accounting Process
-→ Pending / Retry / Failed
-
-などで処理できる構造を検討する。
-
-Accountingの最終的なTransaction Policyは、
-Accounting Architectureで定義する。
-
----
-
-# 67. History Failure
-
-History ProcessでErrorが発生した場合も、
-Check In Factそのものを
-不正に削除しない。
-
-必要に応じて、
-
-- Retry
-- Pending
-- Failed
-- Rebuild
-
-などを利用する。
-
----
-
-# 68. Eventual Consistency
-
-CheckInCompleted後の
-HistoryやAccountingが
-非同期処理になる場合、
-一時的に、
-
-Check In
-→ Completed
-
-History
-→ Pending
-
-Accounting
-→ Pending
-
-という状態が存在する可能性がある。
-
-この場合、
-Business FactとProjection / Process Resultを
-区別する。
-
----
-
-# 69. Error Handling
+# 71. Error Handling
 
 Backend Errorは、
 以下を区別する。
@@ -1564,14 +1940,16 @@ Backend Errorは、
 
 ---
 
-# 70. Domain Error
+# 72. Domain Error
 
 Domain Rule違反は、
 Domain Errorとして表現できる。
 
 例えば、
 
-Already Checked In
+- Already Checked In
+- Invalid Ticket
+- Performance Mismatch
 
 など。
 
@@ -1580,7 +1958,7 @@ API向けErrorへMappingする。
 
 ---
 
-# 71. Application Error
+# 73. Application Error
 
 Application Layerでは、
 Use Case実行上のErrorを扱う。
@@ -1590,13 +1968,13 @@ Use Case実行上のErrorを扱う。
 - Authorization
 - Resource Missing
 - Conflict
-- External Dependency
+- External Dependency Failure
 
 など。
 
 ---
 
-# 72. Infrastructure Error
+# 74. Infrastructure Error
 
 Infrastructure Errorには、
 
@@ -1604,16 +1982,16 @@ Infrastructure Errorには、
 - Network Failure
 - Storage Failure
 - External API Failure
+- Queue Failure
 
 などがある。
 
-Backendでは、
-Technical DetailをLogへ記録し、
+Technical DetailはLogへ記録し、
 Clientには必要なErrorだけを返す。
 
 ---
 
-# 73. Logging
+# 75. Logging
 
 Backendでは、
 重要なOperationをLoggingする。
@@ -1627,12 +2005,13 @@ Backendでは、
 - Reservation
 - Journal Entry
 - Integration Error
+- Background Job Failure
 
 など。
 
 ---
 
-# 74. Audit
+# 76. Audit
 
 Business上重要なOperationについて、
 Auditを記録する。
@@ -1646,6 +2025,7 @@ Auditを記録する。
 - Scope
 - Client
 - Device
+- Correlation ID
 
 など。
 
@@ -1654,7 +2034,7 @@ AuditとApplication Logを
 
 ---
 
-# 75. Check In Audit
+# 77. Check In Audit
 
 Check Inでは、
 必要に応じて、
@@ -1667,12 +2047,13 @@ Check Inでは、
 - Timestamp
 - Client Type
 - Device
+- Correlation ID
 
 などをAudit Contextとして記録する。
 
 ---
 
-# 76. Correlation ID
+# 78. Correlation ID
 
 API Requestには、
 必要に応じてCorrelation IDを持たせる。
@@ -1691,13 +2072,12 @@ Domain / Infrastructure
 ↓
 Log
 
-これにより、
-一つのBusiness Operationを
-複数LayerのLogから追跡できる。
+Background Processへ引き継ぐ場合も、
+Correlation IDを可能な限り保持する。
 
 ---
 
-# 77. Observability
+# 79. Observability
 
 Backendでは、
 必要に応じて以下をMonitoringする。
@@ -1707,34 +2087,17 @@ Backendでは、
 - Error Rate
 - Database Performance
 - Queue
+- Background Job
 - External API
 - Check In Success
 - Check In Failure
 
----
-
-# 78. Check In Monitoring
-
-受付Operationでは、
-Operational Monitoringを行える。
-
-例えば、
-
-- Check In Count
-- Check In Error
-- Already Checked In
-- Network Error
-- API Latency
-
-など。
-
-ただし、
-Monitoring Dataを
+Monitoring Dataを、
 Business Factの正本としない。
 
 ---
 
-# 79. Security Boundary
+# 80. Security Boundary
 
 Backendは、
 主要なSecurity Boundaryである。
@@ -1744,7 +2107,9 @@ Clientから送信された、
 - User ID
 - Person ID
 - Organization ID
+- Project ID
 - Production ID
+- Performance ID
 - Ticket ID
 - Role
 - Permission
@@ -1754,9 +2119,14 @@ Clientから送信された、
 などを、
 無条件に信頼しない。
 
+Server側で、
+Authentication Context、
+Authorization Context、
+Domain Dataから再検証する。
+
 ---
 
-# 80. Input Validation
+# 81. Input Validation
 
 Request Inputは、
 API Layerで基本Validationを行う。
@@ -1779,7 +2149,7 @@ TicketがCheck In可能か
 
 ---
 
-# 81. Output Filtering
+# 82. Output Filtering
 
 Backendは、
 Clientへ必要なDataだけを返す。
@@ -1788,9 +2158,12 @@ Internal Database Columnや、
 Security Sensitive Dataを
 Responseへ含めない。
 
+Domain Entityを、
+そのままAPI Responseとして公開しない。
+
 ---
 
-# 82. Secret Management
+# 83. Secret Management
 
 BackendのSecretは、
 Source CodeへHard Codeしない。
@@ -1802,15 +2175,14 @@ Source CodeへHard Codeしない。
 - OAuth Secret
 - Encryption Key
 - Mail Credential
-
-など。
+- External Service Credential
 
 具体的なSecret Storageは、
 Deployment / Security Architectureで定義する。
 
 ---
 
-# 83. Rate Limiting
+# 84. Rate Limiting
 
 必要に応じて、
 APIへのRate Limitingを行う。
@@ -1824,11 +2196,11 @@ APIへのRate Limitingを行う。
 - Check In
 - QR Reception
 
-など。
+などを考慮する。
 
 ---
 
-# 84. QR Reception Security
+# 85. QR Reception Security
 
 QR Payloadは、
 Business Factとして信頼しない。
@@ -1849,9 +2221,12 @@ Check In
 
 という検証を行う。
 
+QR Codeそのものを、
+Check In Factとして扱わない。
+
 ---
 
-# 85. Replay Protection
+# 86. Replay Protection
 
 QRやCheck In Requestの
 Replayを考慮する。
@@ -1862,6 +2237,7 @@ Replayを考慮する。
 - Idempotency
 - Expiration
 - Ticket State
+- Request Uniqueness
 
 など。
 
@@ -1870,7 +2246,7 @@ Security Architectureで定義する。
 
 ---
 
-# 86. API Versioning
+# 87. API Versioning
 
 Backend APIは、
 Version Boundaryを持てる構造とする。
@@ -1886,7 +2262,7 @@ Domain ModelをVersion依存にしない。
 
 ---
 
-# 87. Backend Compatibility
+# 88. Backend Compatibility
 
 Mobile Clientは、
 旧VersionのAPIを利用する可能性がある。
@@ -1902,7 +2278,7 @@ Mobile Clientは、
 
 ---
 
-# 88. Configuration
+# 89. Configuration
 
 Backend Configurationは、
 Environmentごとに分離する。
@@ -1921,7 +2297,7 @@ ConfigurationとSecretを
 
 ---
 
-# 89. Environment
+# 90. Environment
 
 Backendでは、
 Environmentによって、
@@ -1939,7 +2315,7 @@ ProductionとDevelopmentのDataを
 
 ---
 
-# 90. Feature Flag
+# 91. Feature Flag
 
 Feature Flagは、
 段階的なFeature Releaseに利用できる。
@@ -1957,7 +2333,7 @@ Security Boundaryではない。
 
 ---
 
-# 91. Backend Testing
+# 92. Backend Testing
 
 Backendでは、
 以下をTestする。
@@ -1972,10 +2348,12 @@ Backendでは、
 - Check In
 - Accounting
 - History
+- Event Dispatch
+- Background Process
 
 ---
 
-# 92. Domain Testing
+# 93. Domain Testing
 
 Domain Testでは、
 Business Ruleを中心にTestする。
@@ -1994,29 +2372,28 @@ Testを基本とする。
 
 ---
 
-# 93. Application Testing
+# 94. Application Testing
 
 Application Testでは、
 Use CaseのOrchestrationをTestする。
 
-例えば、
+例えばCheckInUseCaseについて、
 
-CheckInUseCase
-
-について、
-
+- Authentication Context
 - Authorization
+- Scope Resolution
 - Ticket Load
+- Reservation Load
 - Validation
 - Check In
 - Persistence
-- Event
+- Event Generation
 
-など。
+などを確認する。
 
 ---
 
-# 94. API Testing
+# 95. API Testing
 
 API Testでは、
 
@@ -2026,12 +2403,13 @@ API Testでは、
 - Validation
 - Response
 - Error
+- API Version
 
 などを確認する。
 
 ---
 
-# 95. Repository Testing
+# 96. Repository Testing
 
 Repository Testでは、
 PersistenceとのMappingを確認する。
@@ -2046,9 +2424,12 @@ Domain Entity
 
 のMappingが正しいことを確認する。
 
+Scope-aware Queryについても、
+Authorization ScopeがQueryへ正しく反映されることを確認する。
+
 ---
 
-# 96. Integration Testing
+# 97. Integration Testing
 
 Integration Testでは、
 
@@ -2057,12 +2438,13 @@ Integration Testでは、
 - External API
 - Storage
 - Queue
+- Event Dispatcher
 
 などとの接続を確認する。
 
 ---
 
-# 97. Check In Testing
+# 98. Check In Testing
 
 Check In Backendでは、
 最低限以下をTestする。
@@ -2078,10 +2460,13 @@ Check In Backendでは、
 - Concurrent Request
 - Web Client
 - Mobile Client
+- QR Payload Validation
+- Event Generation
+- Event Dispatch
 
 ---
 
-# 98. Check In and Accounting Testing
+# 99. Check In and Accounting Testing
 
 Check In成功後に、
 
@@ -2097,9 +2482,12 @@ WebとMobileのどちらから
 Check Inしても、
 同じAccounting Processへ到達することを確認する。
 
+Accounting Processが失敗した場合でも、
+確定済みCheck In Factが不正に失われないことを確認する。
+
 ---
 
-# 99. Check In and History Testing
+# 100. Check In and History Testing
 
 Check In成功後に、
 
@@ -2111,9 +2499,38 @@ Audience History
 
 が正しく処理されることをTestする。
 
+History Processが失敗した場合でも、
+確定済みCheck In Factが不正に失われないことを確認する。
+
 ---
 
-# 100. End-to-End Backend Flow
+# 101. Event and Outbox Testing
+
+Outboxを採用する場合、
+
+Transaction
+├── Business Fact
+└── Outbox Event
+        ↓
+      Commit
+        ↓
+ Event Dispatcher
+
+という一連の処理をTestする。
+
+特に、
+
+- Transaction Rollback
+- Duplicate Dispatch
+- Retry
+- Worker Failure
+- Event Handler Failure
+
+を確認する。
+
+---
+
+# 102. End-to-End Backend Flow
 
 代表的なBackend Flow：
 
@@ -2128,8 +2545,12 @@ CheckInUseCase
 Check In
 ↓
 CheckInCompleted
-├── History
-└── Accounting
+↓
+Commit
+↓
+Event Dispatch
+├── History Process
+└── Accounting Process
 
 Mobile：
 
@@ -2144,12 +2565,20 @@ CheckInUseCase
 Check In
 ↓
 CheckInCompleted
-├── History
-└── Accounting
+↓
+Commit
+↓
+Event Dispatch
+├── History Process
+└── Accounting Process
+
+WebとMobileでは、
+受付方法だけが異なり、
+Business Operationは共通とする。
 
 ---
 
-# 101. Backend and Frontend
+# 103. Backend and Frontend
 
 Frontendは、
 Backend APIを利用する。
@@ -2178,7 +2607,7 @@ Backend Domain Modelへ
 
 ---
 
-# 102. Backend and Domain Model
+# 104. Backend and Domain Model
 
 Backendは、
 Domain ModelをApplicationから利用する。
@@ -2195,14 +2624,26 @@ Application
 ↓
 Domain
 ↓
-Repository
+Repository Interface
+↓
+Infrastructure
 
 ---
 
-# 103. Backend and Data Architecture
+# 105. Backend and Data Architecture
 
 Data Architectureは、
-PersistenceとBusiness Factを定義する。
+
+- Business Fact
+- Data Ownership
+- Source of Truth
+- Scope
+- Persistence
+- History
+- Accounting Data
+- Read Model
+
+などを定義する。
 
 Backendは、
 
@@ -2210,7 +2651,9 @@ Application
 ↓
 Domain
 ↓
-Repository
+Repository Interface
+↓
+Repository Implementation
 ↓
 Persistence
 
@@ -2221,7 +2664,7 @@ Business APIの直接の契約としない。
 
 ---
 
-# 104. Backend and API Architecture
+# 106. Backend and API Architecture
 
 API Architectureは、
 ClientとのCommunication Boundaryを定義する。
@@ -2241,7 +2684,7 @@ Domain / Data Architecture
 
 ---
 
-# 105. Backend and Accounting
+# 107. Backend and Accounting
 
 Accountingは、
 BackendのApplication / Domain Processとして扱う。
@@ -2262,7 +2705,7 @@ ClientがAccounting Factを直接生成しない。
 
 ---
 
-# 106. Backend and History
+# 108. Backend and History
 
 Historyは、
 BackendのApplication Processとして扱う。
@@ -2281,7 +2724,7 @@ Audience History
 
 ---
 
-# 107. Backend and Integration
+# 109. Backend and Integration
 
 External Serviceは、
 Backend Integration Boundaryから利用する。
@@ -2303,7 +2746,7 @@ External APIへ直接アクセスしない。
 
 ---
 
-# 108. Backend and WordPress
+# 110. Backend and WordPress
 
 WordPressを利用する場合、
 
@@ -2327,7 +2770,7 @@ Domainへ持ち込まない。
 
 ---
 
-# 109. Backend and PHP
+# 111. Backend and PHP
 
 PHPは、
 Backend実装の主要Technologyとして
@@ -2339,13 +2782,14 @@ PHP Framework
 ↓
 Application / Domain
 
-という直接依存を避け、
-Framework固有処理を
-Infrastructure / APIへ閉じ込める。
+という直接依存を避ける。
+
+Framework固有処理を、
+API / Infrastructureへ閉じ込める。
 
 ---
 
-# 110. Backend Deployment Boundary
+# 112. Backend Deployment Boundary
 
 Backendは、
 独立したDeployable Unitとして
@@ -2370,7 +2814,7 @@ Deployment Architectureで定義する。
 
 ---
 
-# 111. Background Worker
+# 113. Background Worker
 
 必要に応じて、
 BackendにBackground Workerを導入する。
@@ -2394,30 +2838,12 @@ Application Process
 - Document Processing
 - Event Handling
 
----
-
-# 112. Queue
-
-非同期処理が必要な場合、
-Queueを利用できる。
-
-基本構造：
-
-Application
-↓
-Queue
-↓
-Worker
-↓
-Application Process
-
-Queue Messageには、
-必要なIdentifierとContextだけを
-含める。
+Workerは、
+Business Factの正本を保持する場所ではない。
 
 ---
 
-# 113. Queue and Business Fact
+# 114. Queue and Business Fact
 
 Queueは、
 Business Factの正本ではない。
@@ -2437,34 +2863,26 @@ Outboxなどを利用する。
 
 ---
 
-# 114. Retry
+# 115. Background Retry
 
 Background Processでは、
-Retry可能な処理と
-Retry不能な処理を区別する。
+Retryによる重複実行を考慮する。
 
 例えば、
 
-External API Timeout
-→ Retry可能
+Event Dispatch
+↓
+External API
+↓
+Timeout
+↓
+Retry
 
-Invalid Business Data
-→ Retryしても改善しない
+が発生しても、
+同一Business Factを重複生成しない。
 
-など。
-
----
-
-# 115. Dead Letter
-
-Repeated Failureする
-Background Jobについては、
-Dead Letter / Failed Queueを
-利用できる。
-
-Operational Userが、
-失敗を確認・再実行できる仕組みを
-必要に応じて設ける。
+Integration Operationには、
+必要に応じてIdempotencyを適用する。
 
 ---
 
@@ -2552,8 +2970,13 @@ Web Clientから
 必要に応じてBulk Operationを設計する。
 
 ただし、
-Business RuleとAuthorizationを
-省略しない。
+
+- Business Rule
+- Authorization
+- Validation
+- Idempotency
+
+を省略しない。
 
 ---
 
@@ -2573,6 +2996,7 @@ Observabilityを提供する。
 - Duration
 - Result
 - Error
+- Queue Job ID
 
 など。
 
@@ -2623,23 +3047,29 @@ Failure Strategyを定義する。
 # 123. Data Consistency
 
 Backendでは、
-Business FactとProjectionを区別する。
+Business FactとProjection / Process Resultを区別する。
 
 例えば、
 
 Check In Fact
 → Source of Truth
 
-History
-→ Derived / Processed Data
+Audience History
+→ History DomainのBusiness Fact
 
-Accounting
-→ Accounting Fact
+Journal Entry
+→ Accounting DomainのBusiness Fact
 
-など。
+Read Model
+→ Projection
 
-具体的なConsistency Ruleは、
-Data / Accounting Architectureで定義する。
+Queue
+→ Processing Infrastructure
+
+Outbox Event
+→ Event Delivery用のInfrastructure Data
+
+とする。
 
 ---
 
@@ -2659,6 +3089,12 @@ Journal Entry
 Audience History
 → History Domain
 
+Reservation
+→ Reservation Domain
+
+Issued Ticket
+→ Ticket Domain
+
 など。
 
 別Domainが、
@@ -2677,9 +3113,9 @@ Check In
 ↓
 CheckInCompleted
 ↓
-History
+History Process
 ↓
-Accounting
+Accounting Process
 
 のようなProcess。
 
@@ -2709,6 +3145,9 @@ History Domain
 Event / Application Processによって
 連携する。
 
+Domainから別DomainのPersistenceへ
+直接アクセスしない。
+
 ---
 
 # 127. Backend Architecture Decision
@@ -2716,23 +3155,43 @@ Event / Application Processによって
 Backendでは、
 以下のArchitectureを基本とする。
 
+Client
+↓
 API
 ↓
 Application
 ↓
 Domain
 ↓
-Repository
+Repository Interface
 ↓
 Infrastructure
 ↓
 Persistence
 
-Client：
+External Integration：
 
-Web / Mobile
+Application
 ↓
-API
+Integration Interface
+↓
+Infrastructure Adapter
+↓
+External Service
+
+Authorization：
+
+Authentication
+↓
+Person
+↓
+Scope
+↓
+Role
+↓
+Permission
+↓
+Use Case
 
 Business Operation：
 
@@ -2741,12 +3200,20 @@ API
 Use Case
 ↓
 Domain
+↓
+Persistence
 
 Event：
 
 Business Fact
 ↓
 Domain Event
+↓
+Event Record / Outbox
+↓
+Commit
+↓
+Event Dispatch
 ↓
 Application / Background Process
 
@@ -2764,13 +3231,15 @@ Application
 ↓
 Domain
 ↓
-Repository
-↓
 Infrastructure
 ↓
-Persistence
+Persistence / External Service
 
 というLayered Architectureを基本とする。
+
+Repositoryは、
+Domain / Applicationと
+PersistenceのBoundaryとして扱う。
 
 Web ClientとMobile Clientは、
 異なる操作方法を持つ。
@@ -2789,6 +3258,8 @@ Mobile：
 
 Performance
 ↓
+Reception Mode
+↓
 QR Scanner
 ↓
 Ticket Identifier
@@ -2800,7 +3271,7 @@ Backendでは同じ、
 
 CheckInUseCase
 ↓
-Check In
+Check In Domain Operation
 
 を利用する。
 
@@ -2809,10 +3280,20 @@ Check In成功後は、
 Check In
 ↓
 CheckInCompleted
+↓
+Commit
+↓
+Event Dispatch
 ├── History Process
-└── Accounting Process
+├── Accounting Process
+└── Notification / Integration Process
 
 という構造を利用する。
+
+Domain Eventの生成とDispatchを分離し、
+必要に応じてOutbox、
+Queue、
+Background Workerを利用する。
 
 Backendの最重要原則は、
 
@@ -2821,6 +3302,20 @@ BackendがBusiness Ruleを実行し、
 DomainがBusiness Factを管理する。」
 
 ことである。
+
+また、
+
+「RepositoryはPersistence Boundaryであり、
+具体的なPersistence ImplementationはInfrastructureに置く。」
+
+ことを原則とする。
+
+さらに、
+
+「Domain EventはBusiness Factそのものではなく、
+Business Factが成立したことを後続Processへ伝えるための仕組みである。」
+
+ことを原則とする。
 
 また、
 
@@ -2837,6 +3332,7 @@ Business Architectureそのものではない。」
 - WordPress
 - Database
 - External Service
+- Queue
 - Background Worker
 
 などのTechnologyが変更されても、
