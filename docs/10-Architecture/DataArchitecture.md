@@ -3,7 +3,7 @@
 # 10 - Architecture
 # Data Architecture
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -28,15 +28,27 @@ Data Architectureでは、
 - History
 - Accounting Data
 - Integration Data
+- Read Model
+- Operational Data
 
 を定義する。
 
 Data Architectureでは、
-具体的なDatabase TableやColumnをまだ確定しない。
+具体的なDatabase TableやColumnを
+まだ確定しない。
 
 Database Schemaは、
 本Architectureを基準として
 Implementation Specificationで定義する。
+
+Data Architectureの最重要原則は、
+
+「Business Factの正本と、
+そのBusiness Factを表示・検索・連携するための
+Projection / Artifact / Cache / External Representationを
+明確に分離する」
+
+ことである。
 
 ---
 
@@ -51,14 +63,18 @@ StageArtのData Architectureは、
 - EntityはBusiness Identityを持つ。
 - DomainごとにData Ownershipを明確にする。
 - 他DomainのDataを直接書き換えない。
-- Organization ScopeをTenant Boundaryとして扱う。
+- Organization Scopeを主要なTenant Boundaryとして扱う。
+- Project ScopeをOrganization内の上位Business Contextとして扱う。
 - Production Scopeを必要に応じてAuthorization Boundaryとして扱う。
+- Performance Scopeを受付・公演単位のOperation Boundaryとして扱う。
 - External ServiceをBusiness Factの正本にしない。
 - ArtifactとBusiness Factを分離する。
 - Historyを現在状態の代替として扱わない。
 - Accounting Dataを通常のBusiness Dataと混同しない。
 - Audit DataとBusiness Factを分離する。
 - Client側のStateをBusiness Factの正本にしない。
+- Read ModelをBusiness Factの正本にしない。
+- CacheをBusiness Factの正本にしない。
 - Transaction BoundaryをApplication Use Caseと整合させる。
 - Data IntegrityをApplicationとDatabaseの双方で保証する。
 - Check InはClient固有のDataではなく、Server Sideで確定するBusiness Factとして管理する。
@@ -69,6 +85,11 @@ StageArtのData Architectureは、
 - Issued Ticketは、発行されたTicketを表すBusiness Dataであり、Check Inそのものではない。
 - ProjectをProductionの上位Business Contextとして扱う。
 - Organization → Project → ProductionのScope構造を維持する。
+- System AdministratorのOrganization Selectionは、Business DataそのものではなくContext Selectionとして扱う。
+- System Operational DataとBusiness Dataを分離する。
+- Backup DataとReplication DataをBusiness Factの別Versionとして扱わない。
+- Mirror Dataを通常運用時のBusiness Factの正本としない。
+- RestoreされたDataは、復旧後にStageArtの正本として利用できる状態へ検証する。
 
 ---
 
@@ -96,8 +117,16 @@ Domain BのDataを直接更新しない。
 - Application Service
 - Domain Event
 - Application Process
+- Domain Reference
 
 などを利用する。
+
+Data OwnershipとData Referenceを
+混同しない。
+
+他DomainのEntityを参照することはできるが、
+そのEntityの内部Stateを
+直接変更してはならない。
 
 ---
 
@@ -178,6 +207,10 @@ UI StateやLocal Stateを正本としない。
 Reservationについては、
 Client上の予約表示やTicket表示を
 Reservation Business Factの代わりにしない。
+
+Check In ListやDashboardなどの
+Read Modelも、
+Check In Business Factの正本ではない。
 
 ---
 
@@ -284,6 +317,19 @@ Survey：
 - Survey Response
 - Public Testimonial
 
+System Operations：
+
+- Audit Log
+- Backup Metadata
+- Replication Status
+- Recovery History
+- System Health Snapshot
+- Operational Job Status
+
+System Operations Dataは、
+Business Domain Dataとは
+別の責務として扱う。
+
 ---
 
 # 5. Identity Data
@@ -313,7 +359,36 @@ Personの過去の活動実績を表す。
 
 ---
 
-# 6. Person
+# 6. UserAccount
+
+UserAccountは、
+StageArt Applicationへの
+Authentication Identityを表す。
+
+UserAccountは、
+
+- Login Identity
+- Authentication Provider Reference
+- Authentication State
+
+などを管理できる。
+
+UserAccountとPersonは、
+同一概念として扱わない。
+
+UserAccount：
+
+Authentication Identity
+
+Person：
+
+Business Identity
+
+という責務分離を維持する。
+
+---
+
+# 7. Person
 
 Personは、
 StageArtにおけるBusiness Identityである。
@@ -337,7 +412,8 @@ PersonのIDは、
 Business Referenceとして利用する。
 
 Personそのものを、
-WordPress UserなどのExternal Identityと同一視しない。
+WordPress UserなどのExternal Identityと
+同一視しない。
 
 Personは、
 Authentication Identityではなく、
@@ -345,7 +421,7 @@ Business DomainにおけるPerson Identityである。
 
 ---
 
-# 7. Profile
+# 8. Profile
 
 Profileは、
 Personの現在のProfile情報を管理する。
@@ -365,11 +441,12 @@ Profileには、
 
 Profileは、
 過去の出演履歴などの
-Historical Factそのものを直接保持する場所ではない。
+Historical Factそのものを
+直接保持する場所ではない。
 
 ---
 
-# 8. HistoricalActivity
+# 9. HistoricalActivity
 
 HistoricalActivityは、
 Personの過去の活動実績を管理する。
@@ -406,12 +483,9 @@ Personに紐づく過去のBusiness Factを表す。
 過去のHistoricalActivityを
 自動的に変更しない。
 
-HistoricalActivityの具体的な属性は、
-Domain Model / Implementation Specificationで定義する。
-
 ---
 
-# 9. Organization Data
+# 10. Organization Data
 
 Organizationは、
 StageArtにおける主要なTenant Boundaryである。
@@ -442,7 +516,7 @@ Scope判定に必要なDataとして扱う。
 
 ---
 
-# 10. Membership
+# 11. Membership
 
 Membershipは、
 PersonとOrganizationの所属関係を表す。
@@ -470,7 +544,7 @@ PersonがOrganization Scopeに入るための
 
 ---
 
-# 11. Organization Role
+# 12. Organization Role
 
 Organization Roleは、
 Organization ScopeにおけるAuthorizationを表す。
@@ -500,7 +574,7 @@ Organization Scopeに適用する。
 
 ---
 
-# 12. Project Data
+# 13. Project Data
 
 Projectは、
 Organization内で行われる
@@ -525,7 +599,7 @@ Projectは、
 
 ---
 
-# 13. Production Data
+# 14. Production Data
 
 Productionは、
 Project内で行われる具体的な
@@ -555,7 +629,7 @@ Production Scopeによって管理する。
 
 ---
 
-# 14. Production Scope
+# 15. Production Scope
 
 Productionに関連するDataは、
 必要に応じてProduction Scopeを持つ。
@@ -579,7 +653,7 @@ Production DataへのAccessを許可しない。
 
 ---
 
-# 15. Participant
+# 16. Participant
 
 Participantは、
 PersonまたはOrganizationが
@@ -612,7 +686,7 @@ Role
 
 ---
 
-# 16. ProductionDelegate
+# 17. ProductionDelegate
 
 ProductionDelegateは、
 Personが特定Productionを
@@ -640,7 +714,7 @@ Production Scope Authorizationとして扱う。
 
 ---
 
-# 17. Performance
+# 18. Performance
 
 Performanceは、
 Production内の具体的な公演回を表す。
@@ -666,7 +740,7 @@ Performanceに対するReservationの
 
 ---
 
-# 18. Ticket Data
+# 19. Ticket Data
 
 Ticketは、
 販売可能なチケットに関するBusiness Dataを管理する。
@@ -700,7 +774,74 @@ ReservationやCheck Inと
 
 ---
 
-# 19. Reservation
+# 20. Ticket
+
+Ticketは、
+Performanceに対して提供される
+販売対象としてのTicketを表す。
+
+Ticketは、
+Ticket TypeやTicket Priceなどと
+関連する。
+
+Ticketは、
+特定の観客によるReservationや
+特定のIssued Ticketそのものとは異なる。
+
+基本構造：
+
+Performance
+↓
+Ticket
+├── Ticket Type
+└── Ticket Price
+
+---
+
+# 21. Ticket Type
+
+Ticket Typeは、
+Ticketの分類を表す。
+
+例：
+
+- 一般
+- 学生
+- 子供
+- 招待
+- その他
+
+Ticket Typeは、
+Ticketそのものや
+Reservationそのものとは分離する。
+
+---
+
+# 22. Ticket Price
+
+Ticket Priceは、
+Ticketに適用される価格情報を表す。
+
+価格は、
+後からTicket Priceが変更されても、
+過去のReservationやAccountingに
+必要な価格情報が維持できるようにする。
+
+必要に応じて、
+
+Price Definition
+↓
+Price Snapshot
+
+という構造を利用する。
+
+過去のTransactionが、
+現在のPrice Master変更によって
+書き換わらないようにする。
+
+---
+
+# 23. Reservation
 
 Reservationは、
 観客がPerformanceに対して行った
@@ -727,7 +868,6 @@ Reservationには、
 - Price Snapshot
 - Status
 - Issued Ticket Reference
-- Check In Status
 
 などを関連付ける。
 
@@ -740,7 +880,55 @@ Business Factとして存在できる。
 
 ---
 
-# 20. Issued Ticket
+# 24. Reservation Identity
+
+Reservationは、
+内部Identityと
+必要に応じて外部利用可能な
+Reservation Numberを持つ。
+
+内部Identity：
+
+Application / Domainが
+Reservationを一意に識別するために利用する。
+
+Reservation Number：
+
+観客・受付担当者・管理者などが
+Reservationを検索するために利用できる
+Business Identifier。
+
+Reservation Numberを知っているだけでは、
+Authorization Scopeを越えた
+Reservation Accessを許可しない。
+
+---
+
+# 25. Reservation State
+
+Reservationは、
+Business Stateを持つ。
+
+例えば、
+
+- Draft
+- Confirmed
+- Cancelled
+- Completed
+- Other Defined State
+
+など。
+
+具体的なStateと遷移条件は、
+Reservation Domainで定義する。
+
+ClientのUI Stateと、
+Reservation Business Stateを
+同一視しない。
+
+---
+
+# 26. Issued Ticket
 
 Issued Ticketは、
 実際に発行されたTicketを表す。
@@ -767,7 +955,7 @@ Check In Factと同一視しない。
 
 ---
 
-# 21. QR Ticket
+# 27. QR Ticket
 
 QR Ticketは、
 Issued Ticketを識別するための
@@ -788,250 +976,432 @@ QR Codeが削除・再発行されても、
 Issued TicketやReservationの
 Business Factそのものは維持できる構造とする。
 
-QR Codeの利用は、
-Mobile Clientに限定されるものではない。
+---
+
+# 28. QR Code
+
+QR Codeは、
+受付時にIssued Ticketなどを
+識別するためのArtifactである。
+
+QR Codeには、
+必要に応じて、
+
+- Ticket Identifier
+- Validation Information
+- Version
+- Other Verification Data
+
+などを含めることができる。
 
 ただし、
-QR Codeを読み取るDevice側で
-Check In Factを確定してはならない。
+QR Codeの内容を
+Business Factそのものとして扱わない。
+
+QR Codeの情報を受け取った後、
+Server Sideで対象Dataを解決し、
+Business Ruleを検証する。
 
 ---
 
-# 22. Check In
+# 29. QR Code and Check In
 
-Check Inは、
-Reservationが実際に受付されたという
-Business Factを表す。
+QR Codeは、
+Check Inそのものではない。
 
 基本構造：
 
-Reservation
-↓
-Check In
-
-Check Inは、
-
-「Ticketを購入した」
-
-とは異なる。
-
-Check Inは、
-
-「Reservationが実際に受付された」
-
-という事実を表す。
-
-Check Inは、
-Web ClientまたはMobile Clientなど、
-複数のClientから実行できる。
-
-ただし、
-どのClientから実行された場合でも、
-生成されるCheck In Business Factは
-同一のものとする。
-
-Issued TicketやQR Codeは、
-Check Inを特定するための
-入力経路として利用できる。
-
----
-
-# 23. Check In Ownership
-
-Check In Dataは、
-Check In DomainがOwnershipを持つ。
-
-Ticket DomainやReservation Domainが、
-Check In Factを直接更新しない。
-
-Check Inを発生させるOperationは、
-Application Layerから実行する。
-
-Web ClientからのCheck In：
-
-Web Client
-↓
-Performance
-↓
-Reservation / Issued Ticket List
-↓
-対象Reservation / Ticket選択
-↓
-Check In Use Case
-↓
-Check In
-
-Mobile ClientからのCheck In：
-
-Mobile Client
-↓
-QR Scanner
-↓
 QR Code
-↓
-Issued Ticket Identifier
 ↓
 Issued Ticket
 ↓
 Reservation
 ↓
-Check In Use Case
-↓
 Check In
 
-どちらの場合も、
-最終的なCheck In Factは
-Server Sideで確定する。
+QR Codeを読み取っただけでは、
+Check In Business Factは生成されない。
+
+Server Sideで、
+
+- Ticket存在
+- Ticket有効性
+- Performance
+- Reservation
+- Check In State
+- Authorization
+
+などを検証した上で、
+Check Inを確定する。
 
 ---
 
-# 24. Check In and Reservation
+# 30. Check In Data
 
 Check Inは、
-Reservationに対する受付Factとして管理する。
+Reservationに対する
+受付というBusiness Factを表す。
 
-基本構造：
+Canonical Relationship：
 
 Reservation
 ↓
 Check In
 
-Check Inが成功すると、
-Reservationの現在状態として
-CHECKED_INを反映できる。
+Check Inは、
+ClientのReception Modeに
+所有されるDataではない。
 
-ただし、
+Web Clientから実行しても、
+Mobile Clientから実行しても、
+同一のCheck In Business Factとして保存する。
 
-Reservation Status
+---
+
+# 31. Check In Source of Truth
+
+Check InのSource of Truthは、
+StageArt Server Sideの
+Check In Dataとする。
+
+以下を正本としない。
+
+- Mobile Local State
+- Web UI State
+- QR Scanner State
+- Browser Cache
+- Client Cache
+- Read Model
+- External Service
+
+Check Inの確定は、
+Application Use CaseとDomain Ruleを通して
+Server Sideで行う。
+
+---
+
+# 32. Check In Relationship
+
+Check InのCanonical Relationshipは、
+
+Reservation
+↓
+Check In
+
+である。
+
+必要に応じて、
+
+Check In
+├── Reservation
+├── Performance
+├── Person / Booker
+└── Issued Ticket Reference
+
+などを参照する。
+
+Issued Ticketは、
+受付経路によって利用される
+識別情報であり、
+Check Inそのものではない。
+
+---
+
+# 33. Check In and Performance
+
+Check Inは、
+対象Performanceとの整合性を持つ。
+
+基本構造：
+
+Production
+↓
+Performance
+↓
+Reservation
+↓
+Check In
+
+Check In実行時には、
+対象Reservationが
+対象Performanceに属していることを
+Server Sideで確認する。
+
+異なるPerformanceのReservationを、
+現在の受付対象として
+Check Inできないようにする。
+
+---
+
+# 34. Check In and Issued Ticket
+
+Issued Ticketを利用する受付では、
+
+Issued Ticket
+↓
+Reservation
+↓
+Check In
+
+というResolutionを行う。
+
+Issued Ticketが存在していても、
+以下の場合はCheck Inを許可しない。
+
+- Invalid Ticket
+- Cancelled Ticket
+- Wrong Performance
+- Already Checked In
+- Unauthorized Operation
+- Other Business Rule Violation
+
+Issued TicketのStateと
+Check InのStateを
+同一視しない。
+
+---
+
+# 35. Check In and Reservation
+
+Check Inは、
+Reservationに対する受付Factである。
+
+基本関係：
+
+Reservation
+↓
+Check In
+
+ReservationがCancelledなど、
+Check Inを許可できないStateの場合、
+Check Inを生成できない。
+
+具体的なState Ruleは、
+Reservation Domainと
+Check In Domainで定義する。
+
+---
+
+# 36. Check In Uniqueness
+
+同一Reservationについて、
+同一Performanceに対する
+Check In Business Factが
+不必要に複数生成されないようにする。
+
+Application Layerでは、
+Idempotencyを考慮する。
+
+Database Layerでは、
+必要に応じてUnique Constraintなどを利用する。
+
+Client側のDouble Submit対策だけに依存しない。
+
+---
+
+# 37. Check In Idempotency
+
+Check Inは、
+Timeoutや通信Retryによって
+同一Operationが複数回送信される可能性がある。
+
+そのため、
+
+Check In Request
+↓
+Retry
+↓
+同一Operation判定
+↓
+既存Check In確認
+↓
+Duplicate Factを生成しない
+
+という構造を考慮する。
+
+Idempotency Keyなどの
+具体的なImplementationは、
+Backend / Database Architectureで定義する。
+
+---
+
+# 38. Check In Concurrency
+
+複数受付端末から、
+同一Reservationに対する
+Check Inが同時に発生する可能性がある。
+
+例えば、
+
+Mobile Client
+↓
+QR Check In
+
+と同時に、
+
+Web Client
+↓
+Manual Check In
+
+が同一Reservationに対して
+実行される場合がある。
+
+この場合でも、
+同一Reservationに対して
+不整合なCheck In Factを
+複数生成しない構造とする。
+
+Transaction、
+Lock、
+Unique Constraintなどの
+具体的なImplementationは、
+Database Architectureで定義する。
+
+---
+
+# 39. Check In Timestamp
+
+Check Inには、
+必要に応じて受付時刻を保持する。
+
+Check In Timestampは、
+Client端末のClockを
+無条件に正本としない。
+
+Server SideのTimestampを
+基本とする。
+
+Client Timeが必要な場合は、
+補助情報として扱う。
+
+---
+
+# 40. Check In Actor
+
+Check Inには、
+必要に応じてOperationを実行した
+Actorを記録する。
+
+例えば、
+
+- Staff
+- Production Manager
+- Reception Operator
+- System Administrator Context
+
+など。
+
+Actor情報は、
+Check In Business Factと
+Audit Contextを適切に分離して管理する。
+
+---
+
+# 41. Check In Source
+
+Check Inには、
+必要に応じて受付経路を記録できる。
+
+例：
+
+- WEB_MANUAL
+- WEB_SEARCH
+- WEB_RESERVATION_NUMBER
+- WEB_BOOKER_NAME
+- MOBILE_QR
+- MOBILE_MANUAL
+- SYSTEM_ADMIN_CONTEXT
+
+Sourceは、
+Check In Business Ruleそのものではない。
+
+Sourceは、
+Audit、
+Reporting、
+Operation Contextなどに利用する。
+
+---
+
+# 42. Web and Mobile Check In
+
+Web ClientとMobile Clientは、
+同一のCheck In Business Factを生成する。
+
+Web：
+
+Web Client
+↓
+Reservation / Ticket
+↓
+Check In
+
+Mobile：
+
+Mobile Client
+↓
+Reception Mode
+↓
+QR / Search
+↓
+Reservation
+↓
+Check In
+
+両者で、
+別のCheck In Entityや
+別のCheck In Tableを作らない。
+
+---
+
+# 43. Reception Mode Data Boundary
+
+Reception Modeは、
+Mobile ClientのUI / Operational Modeである。
+
+Reception Mode自体を、
+Business Data Entityとして
+保存する必要はない。
+
+必要な場合、
+
+Reception Operation
+↓
+Check In Source
+
+などのAudit Contextとして
+受付Modeを記録できる。
+
+しかし、
+
+Reception Mode
 ≠
-Check In History
-
-とする。
-
-Reservationの現在状態は、
-現在の予約状態を表す。
-
-Check Inは、
-実際に受付されたBusiness Factを表す。
-
----
-
-# 25. Check In and History
-
-Check Inが確定すると、
-
-CheckInCompleted
-
-を発生させる。
-
-基本構造：
-
 Check In
-↓
-CheckInCompleted
-↓
-Audience History
 
-Historyは、
-Check InのBusiness Factを起点として
-観劇実績を記録する。
-
-Ticket購入だけでは、
-観劇履歴を確定しない。
-
-Web ClientからのManual Check Inでも、
-Mobile ClientからのQR Check Inでも、
-同じCheckInCompletedを起点とする。
+である。
 
 ---
 
-# 26. Audience History
+# 44. Rehearsal Data
 
-Audience Historyは、
-Personの観劇実績を管理する。
+Rehearsalは、
+Productionに関連する
+稽古・活動予定を表す。
 
 基本構造：
 
-Person
-↓
-Reservation
-↓
-Check In
-↓
-Audience History
-
-Audience Historyは、
-ReservationやTicketの現在状態を
-代替するものではない。
-
-「購入した」
-
-と
-
-「観劇した」
-
-を区別するためのDataとして扱う。
-
----
-
-# 27. History Data Principle
-
-Historyは、
-現在状態を保存するための
-Generic Logとして扱わない。
-
-Historyは、
-Business上意味のある過去のFactを
-記録する。
-
-例えばAudience Historyは、
-
-「このPersonが、
-このPerformanceを観劇した」
-
-というFactを表す。
-
-Historyは、
-現在のReservation Statusや
-Profile情報から
-後から推測する代替Dataではない。
-
----
-
-# 28. Rehearsal Data
-
-Rehearsal関連Dataは、
-候補と確定した稽古を分離する。
-
-基本構造：
-
-Rehearsal Candidate
-↓
-Rehearsal Availability
+Production
 ↓
 Rehearsal
-↓
-Rehearsal Attendance
+├── Rehearsal Availability
+├── Participant
+└── Rehearsal Attendance
 
-Candidate：
-
-稽古候補。
-
-Availability：
-
-参加可能状況。
-
-Rehearsal：
-
-確定した稽古。
-
-Attendance：
-
-実際の参加状況。
+Rehearsalは、
+Performanceとは別のBusiness Factである。
 
 ---
 
-# 29. Rehearsal Attendance
+# 45. Rehearsal Attendance
 
 Rehearsal Attendanceは、
 PersonがRehearsalに参加したという
@@ -1039,100 +1409,137 @@ Business Factを表す。
 
 基本構造：
 
-Person
+Rehearsal
 ↓
 Rehearsal Attendance
 ↓
-Rehearsal
+Person / Participant
 
-Rehearsalへの参加予定と、
-実際の参加結果を分離する。
+Rehearsal Attendanceは、
+Check Inとは異なる。
+
+Rehearsal Attendance
+≠
+Performance Check In
 
 ---
 
-# 30. Accounting Data
+# 46. Timetable
+
+Timetableは、
+ProductionまたはRehearsalに関連する
+Schedule情報を管理する。
+
+Timetableは、
+Schedule Projectionとして利用できるが、
+Business Factを持つ場合は、
+そのOwnershipを明確にする。
+
+External Calendar上のEventは、
+StageArt Timetableの
+External Representationとして扱う。
+
+---
+
+# 47. Audience History
+
+Audience Historyは、
+観客の過去のStageArt利用履歴を管理する。
+
+例えば、
+
+- Reservation
+- Ticket
+- Check In
+- Performance Participation
+
+などを起点として生成・参照できる。
+
+Audience Historyは、
+ReservationやCheck Inの
+代替Source of Truthではない。
+
+基本構造：
+
+Business Fact
+↓
+History Projection / Record
+↓
+Audience History
+
+---
+
+# 48. History and Current State
+
+HistoryとCurrent Stateを分離する。
+
+例えば、
+
+Reservation
+→ Current Reservation State
+
+Check In
+→ Current Check In Fact
+
+Audience History
+→ Past Activity
+
+というように、
+現在状態と履歴を同一Dataとして扱わない。
+
+Historyを変更して、
+現在のBusiness Factを
+逆算して変更する構造にしない。
+
+---
+
+# 49. Accounting Data
 
 Accountingは、
-Financial Business Factを管理する。
+Business Operationから生成される
+Financial Dataを管理する。
 
-基本構造：
+主なData：
 
-Business Event
-↓
-Accounting
-↓
-Journal Entry
-↓
-Journal Entry Line
+- Account
+- Accounting Period
+- Journal Entry
+- Journal Entry Line
+- Budget
+- Budget Item
+- Production Actual
+- Production Settlement
 
 Accounting Dataは、
-単純なProductionの属性として
-保持しない。
-
-ProductionとAccountingは、
-Referenceによって関連付ける。
+ReservationやCheck Inの
+単純な属性として扱わない。
 
 ---
 
-# 31. Journal Entry
+# 50. Journal Entry
 
 Journal Entryは、
-会計上のTransactionを表す。
-
-Journal Entryは、
-複数のJournal Entry Lineから構成される。
+Accounting上のBusiness Factを表す。
 
 基本構造：
 
 Journal Entry
 ├── Journal Entry Line
-├── Journal Entry Line
-└── Journal Entry Line
+├── Accounting Period
+└── Account
 
-Debit / Creditの整合性は、
-Accounting Domainで保証する。
+Journal Entryは、
+Check InやReservationの
+内部Stateを直接置き換えるものではない。
 
 ---
 
-# 32. Ticket Revenue
+# 51. Accounting and Check In
 
-Ticket Revenueは、
-Ticket販売・利用に関する
-Accounting Factとして扱う。
-
-Check Inを契機として、
-必要なRevenue処理を実行する。
+Check Inを起点として、
+Accounting Processが実行される場合がある。
 
 基本構造：
-
-CheckInCompleted
-↓
-Ticket Revenue
-↓
-Journal Entry
-↓
-Journal Entry Line
-
-具体的な勘定科目や
-売上認識ルールは、
-Accounting Domainで定義する。
-
----
-
-# 33. Check In and Accounting
-
-Check InとAccountingは、
-同一Domainに統合しない。
-
-Check In：
-
-観客が実際に受付されたというFact。
-
-Accounting：
-
-会計上のRevenue / Journalを管理する。
-
-連携：
 
 Check In
 ↓
@@ -1140,108 +1547,85 @@ CheckInCompleted
 ↓
 Accounting Process
 ↓
-Ticket Revenue
-↓
 Journal Entry
 
-この構造によって、
-Check In Domainが
-会計内部構造を知る必要がなくなる。
+Check In Domainが、
+Journal Entryの内部Dataを
+直接更新しない。
 
-Web ClientからのCheck Inでも、
-Mobile ClientからのCheck Inでも、
-Accounting Processは同一とする。
-
----
-
-# 34. Production Accounting
-
-Production単位の会計情報は、
-Accounting Domainで管理する。
-
-主なData：
-
-- Budget
-- Budget Item
-- Production Actual
-- Budget vs Actual
-- Production Settlement
-
-Productionは、
-Accounting Dataを直接所有しない。
-
-ProductionとAccountingは、
-Production IDなどのReferenceによって関連付ける。
+Accounting Domainが、
+Accounting Business Ruleを所有する。
 
 ---
 
-# 35. Budget
+# 52. Price Snapshot
 
-Budgetは、
-計画された金額を表す。
+ReservationやAccountingでは、
+将来のMaster Data変更から
+過去のTransactionを保護するため、
+必要な価格情報をSnapshotとして保持する。
 
-Budgetは、
-Actualと分離する。
+例えば、
+
+Ticket Price
+↓
+Reservation
+↓
+Price Snapshot
+
+という構造。
+
+現在のTicket Priceを変更しても、
+過去のReservationの
+確定価格を自動変更しない。
+
+---
+
+# 53. Document Data
+
+Documentは、
+StageArt上のDocument Metadataと
+File Referenceを管理する。
 
 基本構造：
 
-Production
-↓
-Budget
-↓
-Budget Item
+Document
+├── Document Share
+└── External Storage Reference
 
-Budgetは、
-実際のJournal Entryを表すものではない。
-
----
-
-# 36. Production Actual
-
-Production Actualは、
-Productionに関連する実績を表す。
-
-Accounting Factとの関係を明確にし、
-
-Budget
-≠
-Production Actual
-≠
-Journal Entry
-
-として扱う。
-
-必要な集計は、
-Accounting Query / Projectionによって行う。
+Documentは、
+File Binaryそのものと
+同一概念として扱わない。
 
 ---
 
-# 37. Production Settlement
+# 54. External Storage Reference
 
-Production Settlementは、
-Production単位の最終的な収支を表す。
-
-Settlementは、
-複数のAccounting Factを集計した
-Business Resultとして扱う。
+External Storage Referenceは、
+外部Storage上のFileを
+StageArt Documentと関連付ける。
 
 基本構造：
 
-Production
+Document
 ↓
-Accounting Facts
+External Storage Reference
 ↓
-Production Settlement
+External Storage
 
-Settlementの詳細な計算Ruleは、
-Accounting Domainで定義する。
+External StorageのFile IDは、
+StageArtのBusiness Identityそのものではない。
+
+External Storageを変更しても、
+Document Business Contextを
+失わない構造とする。
 
 ---
 
-# 38. Communication Data
+# 55. Communication Data
 
-Communication Domainでは、
-AnnouncementをBusiness Factとして管理する。
+Communication Domainは、
+AnnouncementとDelivery情報を管理する。
 
 基本構造：
 
@@ -1252,2099 +1636,92 @@ Announcement Recipient
 Announcement Delivery
 
 Announcementは、
-「何を伝えたか」を管理する。
+EmailやSNSのMessageそのものではない。
 
-Deliveryは、
-「誰へ、どのChannelで、どのように送信したか」
-を管理する。
-
----
-
-# 39. Announcement Delivery
-
-EmailなどのExternal Serviceへの送信結果は、
-Announcement Deliveryとして記録できる。
-
-External Email ServiceのMessage IDなどは、
-Integration Referenceとして保持できる。
-
-External ServiceのMessage自体を、
-Announcementの正本にしない。
+External Deliveryは、
+Announcementの外部Representationとして扱う。
 
 ---
 
-# 40. Document Data
-
-Documentは、
-Business ContextとFile Storageを分離する。
-
-基本構造：
-
-Document
-↓
-Storage Reference
-↓
-External Storage
-
-Documentは、
-
-- Name
-- Type
-- Business Context
-- Owner
-- Scope
-- Access
-
-などを管理する。
-
-実ファイルそのものの保存方式は、
-Infrastructureで決定する。
-
----
-
-# 41. Document Share
-
-Document Shareは、
-Documentへの共有関係を管理する。
-
-基本構造：
-
-Document
-↓
-Document Share
-↓
-Person / Organization / Scope
-
-Document Shareは、
-通常のDocument Ownershipとは分離する。
-
----
-
-# 42. External Storage Reference
-
-External Storage Referenceは、
-外部Storage上のFileと
-StageArt Documentを関連付ける。
-
-例：
-
-Document
-↓
-External Storage Reference
-↓
-External File
-
-External File IDやURLなどは、
-Integration Dataとして扱う。
-
-External File IDを、
-StageArt Business Identityの代わりにしない。
-
----
-
-# 43. Promotion Data
+# 56. Promotion Data
 
 Promotion Domainでは、
-公開用情報とExternal SNS情報を分離する。
 
-例えば、
-
-- Organization Public Profile
-- Production Public Page
+- Public Profile
+- Public Page
 - Social Post
+- Social Post Reference
 
 などを管理する。
 
-Social Media上のPostは、
-StageArtのPromotion Factの
-External Representationである。
+Public PageやSocial Postは、
+Production / Organizationの
+公開Representationである。
+
+SNS上のPostを、
+ProductionのBusiness Factの正本としない。
 
 ---
 
-# 44. Public Data
-
-Public Dataは、
-Internal Dataとは分離して扱う。
-
-Public APIでは、
-内部Entityを直接返さない。
-
-基本構造：
-
-Internal Domain Data
-↓
-Public Projection / DTO
-↓
-Public API
-↓
-Public Client
-
-これにより、
-Internal Dataを誤って公開することを防ぐ。
-
----
-
-# 45. Equipment Data
+# 57. Equipment Data
 
 Equipmentは、
-Organizationが管理する備品を表す。
-
-基本構造：
-
-Organization
-↓
-Equipment
-↓
-Equipment History
+OrganizationまたはProductionで
+利用する機材・備品などを管理する。
 
 Equipment Historyは、
-備品の過去状態・移動・利用などを記録できる。
+Equipmentの過去状態や利用履歴を表す。
 
-Equipmentを、
-Accounting Assetと同一概念にはしない。
+Current Equipment Stateと
+Equipment Historyを分離する。
 
 ---
 
-# 46. Regulation Data
+# 58. Regulation Data
 
 Regulationは、
-Organizationの規約を管理する。
+Organization内の規程・ルールを管理する。
 
-基本構造：
+Regulation Versionは、
+規程のVersionを管理する。
 
-Organization
-↓
-Regulation
-↓
-Regulation Version
+現在Versionと
+過去Versionを分離する。
 
-Regulation Versionによって、
-過去の規約を保持できる。
-
-現在Versionと過去Versionを
-区別して管理する。
+過去Versionを、
+現在Versionの上書きによって
+失わない構造とする。
 
 ---
 
-# 47. Survey Data
+# 59. Survey Data
 
-Survey Domainは、
-アンケートと回答を管理する。
+Surveyは、
+Question / Responseを管理する。
 
-基本構造：
+主なData：
 
-Survey
-↓
-Survey Response
-↓
-Public Testimonial
+- Survey
+- Survey Response
+- Public Testimonial
 
 Survey Responseは、
-回答そのものを表す。
+PersonやAudienceのResponse Factとして扱う。
 
 Public Testimonialは、
-公開可能な感想として
-必要な情報だけを切り出したBusiness Dataとする。
+Public表示可能なDataとして
+別のScope / Publication Stateを持たせる。
 
 ---
 
-# 48. External Reference
-
-External ServiceのIDは、
-必要に応じてExternal Referenceとして保持する。
-
-例えば、
-
-- External User ID
-- External File ID
-- External Calendar Event ID
-- External Social Post ID
-- External Message ID
-
-など。
-
-External Referenceは、
-StageArtのBusiness Identityとは分離する。
-
----
-
-# 49. External Reference Principle
-
-External Referenceは、
-External Serviceとの連携を行うための
-Integration Dataである。
-
-External Referenceを、
-
-- Person ID
-- Production ID
-- Reservation ID
-- Ticket ID
-- Check In ID
-
-などのStageArt Identityの代わりにしない。
-
----
-
-# 50. Entity Identity
-
-StageArtのEntityは、
-Application内部で安定したIdentityを持つ。
-
-Identityは、
-外部サービスやDatabase上のPhysical Structureから
-独立させる。
-
-例えばPersonのIdentityは、
-
-Person
-→ Person ID
-
-として管理する。
-
-WordPress User IDやExternal Provider IDを、
-Person IDとして直接利用しない。
-
----
-
-# 51. Identifier Principle
-
-Identifierは、
-Business IdentityとTechnical Identityを
-必要に応じて分離できる設計とする。
-
-Database Primary Keyの具体形式は、
-Implementation Specificationで決定する。
-
-Domain Architectureでは、
-Entityを一意に識別できることを要求する。
-
----
-
-# 52. Relationship Principle
-
-Entity間のRelationshipは、
-Business Meaningを持つものとして扱う。
-
-例えば、
-
-Person
-↓
-Membership
-↓
-Organization
-
-は、
-単なるForeign Keyではなく、
-
-「PersonがOrganizationに所属している」
-
-というBusiness Factである。
-
-同様に、
-
-Performance
-↓
-Reservation
-
-は、
-
-「このReservationがこのPerformanceを対象としている」
-
-というBusiness Relationshipを表す。
-
-Reservation
-↓
-Check In
-
-は、
-
-「このReservationが実際に受付された」
-
-というBusiness Factを表す。
-
-Database Relationshipだけを見て、
-Domain Relationshipを定義しない。
-
----
-
-# 53. Aggregate Boundary
-
-Domain Entityの中には、
-Aggregateとして扱うものが存在する。
-
-Aggregateは、
-Business Rule上、
-一貫性を維持する単位として定義する。
-
-Aggregate Boundaryを越えた更新は、
-Application ProcessやDomain Eventを利用する。
-
-Reservationなど、
-Domain Model上でAggregate Rootとして定義されているものは、
-そのBoundaryを尊重する。
-
-具体的なAggregate定義は、
-Domain ModelとImplementation Specificationで確定する。
-
----
-
-# 54. Aggregate Principle
-
-Aggregate Rootは、
-外部から直接内部Entityを変更させない。
-
-基本構造：
-
-Aggregate Root
-↓
-Child Entity
-
-Child Entityの変更は、
-Aggregate Rootを通して行うことを基本とする。
-
-ただし、
-すべてのEntityを無理にAggregateへまとめない。
-
----
-
-# 55. Transaction Boundary
-
-Application Use Caseを、
-基本的なTransaction Boundaryとする。
-
-例えば、
-Check Inでは、
-
-Load Reservation
-↓
-Validate
-↓
-Create Check In
-↓
-Update Reservation State
-↓
-Persist
-↓
-Publish Event
-↓
-Commit
-
-という一連の処理を、
-必要な範囲で一貫して扱う。
-
-Check InのBusiness Factと
-Reservationの必要な状態変更については、
-二重受付が発生しないよう
-同一のConsistency Boundaryで扱う。
-
----
-
-# 56. Cross Domain Transaction
-
-複数Domainをまたぐ処理では、
-すべてを一つの巨大Transactionにしない。
-
-例えば、
-
-Check In
-↓
-CheckInCompleted
-↓
-History
-↓
-Accounting
-
-という処理では、
-Check InのBusiness Factを
-最初に確定する。
-
-その後のHistory / Accounting処理は、
-Event HandlerやApplication Processで
-連携できる。
-
----
-
-# 57. Eventual Consistency
-
-Domain Eventを利用する処理では、
-必要に応じてEventual Consistencyを許容する。
-
-例えば、
-Check Inが確定した直後に、
-
-History
-Accounting
-
-のProjectionや関連処理が
-わずかに遅れて反映される可能性がある。
-
-ただし、
-Business上即時整合性が必要なDataについては、
-同一Transaction内で確定する。
-
-Check Inそのもの、
-および二重受付防止に必要なDataについては、
-強いConsistencyを確保する。
-
----
-
-# 58. Check In Consistency
-
-Check Inについては、
-二重受付を防ぐため、
-Server Sideで強いConsistencyを確保する。
-
-複数端末から
-同じReservation / Ticketを同時に読み取った場合でも、
-
-「Check In済み」
-
-という状態が競合しないようにする。
-
-Web ClientからManual Check Inを行う場合と、
-Mobile ClientからQR Check Inを行う場合も、
-同じConsistency Ruleを適用する。
-
-例えば、
-
-Web Client
-↓
-Reservation X
-↓
-Check In
-
-と同時に、
-
-Mobile Client
-↓
-QR Ticket X
-↓
-Check In
-
-が実行された場合でも、
-Check In Factを二重作成しない。
-
-具体的なDatabase Lockや
-Unique Constraintなどは、
-Implementation Specificationで定義する。
-
----
-
-# 59. Idempotency Data
-
-同じRequestやEventが
-複数回処理される可能性を考慮する。
-
-対象：
-
-- Check In
-- Ticket Revenue
-- Journal Entry
-- Announcement Delivery
-- Calendar Integration
-- Social Media Integration
-
-必要に応じて、
-Idempotency KeyやExternal Event IDなどを
-保持する。
-
-Check Inでは、
-Web ClientとMobile Clientの双方から
-同一Reservation / Ticketに対するRequestが
-送信される可能性を考慮する。
-
----
-
-# 60. Audit Data
-
-Audit Dataは、
-Business Factとは分離する。
-
-Auditは、
-
-- Who
-- What
-- When
-- Scope
-- Target
-- Result
-
-などを記録する。
-
-例えば、
-
-Person A
-↓
-Check In Operation
-↓
-Performance X
-↓
-Timestamp
-
-という操作履歴を記録できる。
-
-Auditを、
-Check In Factそのものとして扱わない。
-
-Web ClientからのCheck Inでも、
-Mobile ClientからのCheck Inでも、
-必要に応じて同じAudit Ruleを適用する。
-
----
-
-# 61. Created / Updated Information
-
-Persistent Entityは、
-必要に応じて、
-
-- Created At
-- Updated At
-- Created By
-- Updated By
-
-などのMetadataを保持できる。
-
-ただし、
-すべてのEntityに同じAudit項目が必要とは限らない。
-
-Business Meaningを持つTimestampは、
-通常のUpdated Atとは分離する。
-
----
-
-# 62. Business Timestamp
-
-例えば、
-
-- Check In Time
-- Performance Start Time
-- Rehearsal Start Time
-- Reservation Time
-- Journal Entry Date
-
-などは、
-Business Factに固有のTimestampとして管理する。
-
-単純なUpdated Atと混同しない。
-
----
-
-# 63. Soft Delete
-
-Business Dataの削除については、
-EntityごとにRuleを定義する。
-
-すべてのDataに対して、
-一律にSoft Deleteを適用しない。
-
-特に、
-
-- Accounting
-- Check In
-- HistoricalActivity
-- Audit
-
-など、
-過去のFactとして残す必要があるDataについては、
-物理削除を慎重に扱う。
-
----
-
-# 64. Historical Data
-
-過去のBusiness Factは、
-現在状態と分離して保持する。
-
-例えば、
-
-Profile
-≠
-HistoricalActivity
-
-Reservation
-≠
-Audience History
-
-Current Regulation
-≠
-Regulation Version History
-
-というように、
-現在の状態と過去のFactを混同しない。
-
----
-
-# 65. Data Retention
-
-Data Retentionは、
-Dataの種類ごとに定義する。
-
-例えば、
-
-Business Fact：
-
-長期保存を基本とする。
-
-Accounting：
-
-法的・業務的要件に従って保存する。
-
-Audit：
-
-必要な期間保持する。
-
-Temporary Data：
-
-必要に応じて削除する。
-
-具体的なRetention Periodは、
-別途Policy / Compliance Architectureで定義する。
-
----
-
-# 66. Personal Data
-
-Personに関連するDataには、
-個人情報が含まれる可能性がある。
-
-Data Architectureでは、
-必要以上のPersonal Dataを保存しない。
-
-必要なDataだけを保持する。
-
-また、
-
-- Access Control
-- Data Scope
-- Logging
-- Export
-- Deletion
-- Retention
-
-などを考慮する。
-
-具体的なPrivacy Policyは、
-Architectureとは別に定義する。
-
----
-
-# 67. Data Access Scope
-
-Data Accessは、
-Scopeによって制御する。
-
-基本Scope：
-
-- Public
-- Person
-- Organization
-- Project
-- Production
-- System
-
-例えば、
-
-Public Data
-→ 誰でも参照可能なData
-
-Person Data
-→ 本人中心のData
-
-Organization Data
-→ Organization Member / Authorized User
-
-Project Data
-→ Project ScopeのAuthorized User
-
-Production Data
-→ Production ScopeのAuthorized User
-
-System Data
-→ System Administrator
-
-というように、
-Data ScopeとAuthorizationを連携させる。
-
----
-
-# 68. Tenant Isolation
-
-Organization ScopeのDataは、
-別Organizationから参照できないことを基本とする。
-
-例えば、
-
-Organization A
-↓
-Project A
-↓
-Production A
-↓
-Reservation A
-
-Organization B
-↓
-Project B
-↓
-Production B
-↓
-Reservation B
-
-というDataが存在する場合、
-Organization AのUserが
-Reservation BをID指定だけで取得できないようにする。
-
-「見せない」のではなく、
-Authorization Scope外のDataそのものを
-取得できない構造を基本とする。
-
----
-
-# 69. Tenant Boundary Enforcement
-
-Tenant Isolationは、
-Application LayerとPersistence Layerの
-両方で考慮する。
-
-Application：
-
-Authorization Scopeを確認する。
-
-Persistence：
-
-Organization Scopeを条件として
-適切にDataを取得する。
-
-IDだけでDataを取得して、
-後からAuthorizationを確認する構造を
-可能な限り避ける。
-
-Organization Scopeを
-Query条件に含めることを基本とする。
-
----
-
-# 70. Project Isolation
-
-Project Scopeを持つDataについては、
-Project Scopeを越えたAccessを
-自動的に許可しない。
-
-Projectは、
-Organization Scopeの下位Business Contextである。
-
-Organizationに所属しているだけで、
-すべてのProject Dataへ
-無条件にAccessできるとは限らない。
-
-必要な場合は、
-Project単位のAuthorizationを適用する。
-
----
-
-# 71. Production Isolation
-
-Production Scopeについても、
-Authorization Boundaryを維持する。
-
-Production AにDelegationされたPersonが、
-Production BのDataへ
-自動的にアクセスできるようにはしない。
-
-Production IDを知っているだけでは、
-Accessを許可しない。
-
-Production Scope外のDataは、
-Application QueryおよびPersistence Queryの双方で
-取得対象から除外する。
-
----
-
-# 72. Public Data Isolation
-
-Public APIからは、
-Internal Dataを直接返さない。
-
-基本構造：
-
-Internal Entity
-↓
-Public Projection
-↓
-Public DTO
-↓
-Public API
-
-Public Projectionでは、
-公開可能な情報だけを選択する。
-
----
-
-# 73. Client Data
-
-Web ClientやMobile Clientは、
-Business Factの一部を取得・表示できる。
-
-ただし、
-Client DataをSource of Truthとしない。
-
-例えばMobile Clientが、
-
-「このTicketは受付済み」
-
-と保持していても、
-Server上のCheck In Factを優先する。
-
-Web Clientが一覧上で、
-
-「受付済み」
-
-と表示していても、
-その表示自体をBusiness Factの正本としない。
-
----
-
-# 74. Offline Data
-
-初期Architectureでは、
-Offline状態でのBusiness Fact確定を
-基本的に行わない。
-
-特に、
-
-- Check In
-- Accounting
-- Reservation
-- Ticket Issuance
-
-などは、
-Server Sideで確定する。
-
-Offline Supportが必要になった場合は、
-別途Consistency Architectureを定義する。
-
----
-
-# 75. Cache Data
-
-Cacheは、
-Performance改善のためのTemporary Dataである。
-
-Cacheは、
-Business Factの正本ではない。
-
-Cacheが削除されても、
-
-Domain Fact
-↓
-再取得
-
-によってApplicationを
-継続できる構造を目指す。
-
----
-
-# 76. Read Model
-
-DashboardやReportなどでは、
-Read Modelを利用できる。
-
-Read Modelは、
-
-- Search
-- Aggregation
-- Dashboard
-- Report
-- Public View
-
-などの用途に利用する。
-
-Read Modelは、
-Domain Factから生成する。
-
-Read Modelを、
-Business Factの正本にしない。
-
----
-
-# 77. Projection
-
-Projectionは、
-複数DomainのDataを
-表示・検索用にまとめるために利用できる。
-
-例えばProduction Dashboard：
-
-Production
-+
-Participant
-+
-Performance
-+
-Rehearsal
-+
-Ticket
-+
-Reservation
-+
-Accounting
-
-を一つのRead Modelとして
-提供できる。
-
-Projectionを、
-Business Factの正本にしない。
-
----
-
-# 78. Database Constraint
-
-Databaseは、
-Data Integrityを保証するために利用する。
-
-例：
-
-- NOT NULL
-- UNIQUE
-- Foreign Key
-- Check Constraint
-
-など。
-
-ただし、
-複雑なBusiness Ruleを
-Database Constraintだけに依存しない。
-
-Check Inの二重受付防止など、
-Data Integrity上重要なConstraintは
-Databaseでも可能な限り保証する。
-
----
-
-# 79. Application Validation
-
-Application Layerでは、
-Use Caseに必要なValidationを行う。
-
-例えば、
-
-- User Permission
-- Scope
-- Entity Existence
-- Operation Eligibility
-
-など。
-
-Business Ruleそのものは、
-Domain Layerで検証する。
-
----
-
-# 80. Domain Validation
-
-Domain Layerでは、
-Business Ruleを検証する。
-
-例えばCheck Inなら、
-
-- Reservationが存在するか
-- Reservationが対象Performanceに紐づいているか
-- Check In可能な状態か
-- 既にCheck Inされていないか
-- 対象Ticketが有効か
-- ReservationとIssued Ticketの関係が正しいか
-
-など。
-
-具体的なRuleは、
-Ticket / Reservation / Check In Domainで定義する。
-
-Web ClientからのManual Check Inと、
-Mobile ClientからのQR Check Inで、
-Business Ruleを分けない。
-
----
-
-# 81. Persistence Model
-
-Persistence Modelは、
-Databaseへ保存するためのModelである。
-
-Persistence Modelは、
-Domain Entityと異なる可能性がある。
-
-例えば、
-
-Domain Entity
-↓
-Repository
-↓
-Persistence Model
-↓
-Database
-
-というMappingを行う。
-
----
-
-# 82. Database Schema Independence
-
-Database Schemaは、
-Domain Modelから導出するが、
-完全な1対1対応を要求しない。
-
-例えば、
-
-一つのDomain Entityが
-複数Tableへ分割されることがある。
-
-逆に、
-複数のTechnical Dataを
-一つのPersistence Structureへ
-まとめる場合もある。
-
-ただし、
-Business Ownershipを曖昧にしない。
-
----
-
-# 83. Migration
-
-Database Schema変更は、
-Migrationとして管理する。
-
-Migrationは、
-既存Dataを壊さないことを基本とする。
-
-Schema変更時には、
-
-- Existing Data
-- Referential Integrity
-- Index
-- Constraint
-- Rollback Strategy
-
-を確認する。
-
----
-
-# 84. Data Migration
-
-Domain Modelの変更によって、
-既存DataのMigrationが必要になる場合がある。
-
-その場合、
-
-Domain Model Change
-↓
-Data Migration Plan
-↓
-Database Migration
-↓
-Application Update
-
-という順序を基本とする。
-
-Data Migrationを、
-Application起動時に無秩序に実行しない。
-
----
-
-# 85. Import / Export
+# 60. Scope Data
 
 StageArtでは、
-必要に応じてData Import / Exportを提供できる。
+Data Scopeを明確にする。
 
-対象例：
+主要Scope：
 
-- Person
-- Organization
-- Project
-- Production
-- Participant
-- Performance
-- Ticket
-- Reservation
-- Accounting
-
-Import / Exportは、
-Application Use Caseとして扱う。
-
-直接DatabaseへCSVを流し込むことを、
-通常のBusiness Operationとしない。
-
----
-
-# 86. Data Ownership and Import
-
-External DataをImportする場合でも、
-StageArt側のBusiness Ruleを適用する。
-
-例えばPersonをImportする場合、
-
-External Data
-↓
-Mapping
-↓
-Validation
-↓
-Person Use Case
-↓
-Person
-
-とする。
-
-External Dataを、
-そのままDatabaseへ投入しない。
-
----
-
-# 87. External Synchronization
-
-External ServiceとのSynchronizationでは、
-StageArt側のBusiness Factを優先する。
-
-基本構造：
-
-StageArt Fact
-↓
-Integration Mapping
-↓
-External Representation
-
-External ServiceからDataを取得する場合も、
-必要なBusiness Ruleを通して
-StageArt Dataへ反映する。
-
----
-
-# 88. Synchronization State
-
-External Integrationが必要な場合、
-必要に応じてSynchronization Stateを管理する。
-
-例：
-
-- Pending
-- Synced
-- Failed
-- Retry Required
-
-Synchronization Stateは、
-Business Factそのものではなく、
-Integration Stateとして扱う。
-
----
-
-# 89. Data Consistency Priority
-
-Data Consistencyには、
-優先順位を設ける。
-
-最重要：
-
-- Check In
-- Reservation
-- Issued Ticket
-- Accounting Fact
-
-次に、
-
-- Production
-- Participant
-- Rehearsal
-- Communication
-
-Integration DataやCacheは、
-必要に応じてEventual Consistencyを許容する。
-
----
-
-# 90. Check In Data Flow
-
-Check Inに関するData Flowは、
-Clientによって入口が異なる。
-
-Web Reception：
-
-Web Client
-↓
-Performance
-↓
-Reservation / Issued Ticket List
-↓
-Reservation / Ticket Selection
-↓
-Check In Use Case
-↓
-Reservation
-↓
-Check In
-↓
-CheckInCompleted
-├── Audience History
-└── Accounting
-
-Mobile QR Reception：
-
-Mobile Client
-↓
-QR Scanner
-↓
-QR Code
-↓
-Issued Ticket Identifier
-↓
-Issued Ticket
-↓
-Reservation
-↓
-Check In Use Case
-↓
-Check In
-↓
-CheckInCompleted
-├── Audience History
-└── Accounting
-
-両方とも、
-同じCheck In Business Factを生成する。
-
-QR Code自体は、
-Business Factではない。
-
----
-
-# 91. Accounting Data Flow
-
-Ticket Revenueの基本Data Flow：
-
-CheckInCompleted
-↓
-Accounting Process
-↓
-Ticket Revenue
-↓
-Journal Entry
-↓
-Journal Entry Line
-
-Journal Entryは、
-Accounting Domainの正本である。
-
-Ticket Domainは、
-Journal Entryの内部構造を管理しない。
-
----
-
-# 92. History Data Flow
-
-Audience Historyの基本Data Flow：
-
-Person
-↓
-Reservation
-↓
-Check In
-↓
-CheckInCompleted
-↓
-Audience History
-
-購入だけでは、
-Audience Historyを確定しない。
-
-実際のCheck Inを、
-観劇実績の起点とする。
-
-Web ClientからのManual Check Inでも、
-Mobile ClientからのQR Check Inでも、
-同じCheckInCompletedを起点とする。
-
-Issued Ticketは、
-QR受付等でReservationを特定するための
-関連Dataとして利用できる。
-
----
-
-# 93. Data Deletion Principle
-
-Data削除は、
-Business Meaningを考慮して行う。
-
-削除してよいTemporary Dataと、
-保存すべきBusiness Factを分離する。
-
-特に、
-
-- Accounting
-- Check In
-- HistoricalActivity
-- Audit
-- Regulation Version
-
-などは、
-安易に削除しない。
-
----
-
-# 94. Referential Integrity
-
-Domain間のReferenceは、
-Data Integrityを維持する。
-
-例えば、
-
-Reservation
-→ Performance
-
-Issued Ticket
-→ Reservation
-
-Check In
-→ Reservation
-
-Check In
-→ Performance
-
-Audience History
-→ Check In / Performance / Person
-
-など。
-
-具体的なForeign Key設計は、
-Database Implementationで定義する。
-
----
-
-# 95. Orphan Data
-
-Business Entityが参照する
-Parent Entityが存在しない状態を、
-原則として作らない。
-
-ただし、
-External ServiceやArchiveなど、
-意図的にReferenceが切れる場合は、
-明示的なStateを管理する。
-
----
-
-# 96. Data Archive
-
-大量の過去DataをArchiveする必要が生じた場合でも、
-Business Factの意味を失わないようにする。
-
-Archiveは、
-
-Active Data
-↓
-Archive Data
-
-というPersistence上の最適化として扱う。
-
-Domain Model上では、
-必要なBusiness Factを維持する。
-
----
-
-# 97. Data Security
-
-Data Securityは、
-Data ScopeとAuthorizationを中心に設計する。
-
-重要なData：
-
-- Personal Data
-- Reservation
-- Ticket
-- Accounting
-- Documents
-- Organization Internal Data
-
-について、
-適切なAccess Controlを適用する。
-
-Scope外のDataは、
-Client側で非表示にするだけではなく、
-Server Sideで取得を拒否する。
-
----
-
-# 98. Sensitive Data
-
-Password、
-Token、
-Secret、
-API KeyなどのCredential Dataは、
-通常のBusiness Dataとは分離する。
-
-Databaseに保存する必要がある場合も、
-適切なSecret Management / Encryptionを利用する。
-
-Domain Entityに、
-Secretそのものを持たせない。
-
----
-
-# 99. Data Encryption
-
-必要に応じて、
-保存時・通信時のEncryptionを利用する。
-
-特に、
-
-- Authentication Credential
-- Sensitive Personal Data
-- External Token
-
-など。
-
-具体的なEncryption方式は、
-Security Architecture / Infrastructure Architectureで定義する。
-
----
-
-# 100. Backup
-
-Business Factを復旧できることを優先する。
-
-重要Data：
-
-- Person
-- Organization
-- Membership
-- Project
-- Production
-- Participant
-- Performance
-- Reservation
-- Issued Ticket
-- Check In
-- Rehearsal
-- Accounting
-
-CacheやExternal Artifactは、
-必要に応じて再構築できることを基本とする。
-
----
-
-# 101. Recovery
-
-障害発生時には、
-Business Factを優先して復旧する。
-
-復旧対象の優先順位は、
-業務上の重要度に応じて定義する。
-
-特に、
-
-Check In
-Reservation
-Accounting
-
-については、
-Data Integrityを最優先する。
-
----
-
-# 102. Data Observability
-
-Data関連の問題を調査できるように、
-
-- Data Access
-- Migration
-- Integration
-- Background Processing
-- Failed Transaction
-- Data Integrity Error
-
-などを適切にLoggingする。
-
-ただし、
-Personal DataやSecretを
-不要にLogへ出力しない。
-
----
-
-# 103. Data Architecture and API
-
-APIは、
-Database Schemaを直接公開しない。
-
-基本構造：
-
-Database
-↓
-Persistence Model
-↓
-Domain Entity
-↓
-Application Result
-↓
-Response DTO
-↓
-API
-
-API Contractは、
-Business OperationとClient Requirementを
-基準として定義する。
-
-Check In APIは、
-Web ClientとMobile Clientの双方から
-利用できる共通Application Boundaryとする。
-
----
-
-# 104. Data Architecture and Mobile Client
-
-Mobile Clientは、
-StageArt Dataの一部を取得・表示できる。
-
-ただし、
-
-Mobile Client
-≠
-Data Source of Truth
-
-とする。
-
-例えばQR受付では、
-
-Mobile Client
-↓
-QR Identifier
-↓
-API
-↓
-Server Data
-↓
-Reservation
-↓
-Check In
-↓
-CheckInCompleted
-
-という構造を維持する。
-
-Mobile Clientが、
-Check In済みという状態を
-独自に確定しない。
-
----
-
-# 105. Data Architecture and Web Client
-
-Web Clientは、
-QR Codeを利用せず、
-Reservation / Issued Ticketの一覧から
-Check Inを実行できる。
-
-基本構造：
-
-Web Client
-↓
-Performance
-↓
-Reservation / Issued Ticket List
-↓
-Search / Filter
-↓
-Reservation / Ticket Selection
-↓
-Check In API
-↓
-Check In
-↓
-CheckInCompleted
-
-Web Client上の一覧表示は、
-Query / Read Modelを利用できる。
-
-ただし、
-一覧上のCheck In Statusを
-Business Factの正本としない。
-
-Check Inの確定は、
-Server SideのCheck In Use Caseで行う。
-
----
-
-# 106. Data Architecture and WordPress
-
-WordPress Databaseを利用する場合でも、
-WordPress Database Structureと
-StageArt Domain Modelを同一視しない。
-
-WordPressは、
-Persistence Infrastructureとして利用できる。
-
-StageArt Domain
-↓
-Repository
-↓
-WordPress Database Adapter
-↓
-Database
-
-という境界を維持する。
-
----
-
-# 107. Data Architecture and PHP
-
-PHP Server側では、
-Application / Domain / Infrastructureの
-責務を分離する。
-
-PHPでDatabaseへアクセスする場合も、
-
-Application
-↓
-Repository Interface
-↓
-Infrastructure
-↓
-Database
-
-という構造を基本とする。
-
-PHPであること自体は、
-Domain Modelの構造を変更しない。
-
----
-
-# 108. Data Architecture and Modular Monolith
-
-Modular Monolithでは、
-Databaseを一つにまとめることができる。
-
-ただし、
-Databaseが一つだからといって、
-Domain Ownershipまで共有しない。
-
-Logical Ownership：
-
-Identity
-Organization
-Project
-Production
-Ticket
-Reservation
-Check In
-History
-Accounting
-etc.
-
-を維持する。
-
----
-
-# 109. Cross Module Data Access
-
-Module間でDataを参照する場合は、
-必要な情報だけを取得する。
-
-他Moduleの内部Persistence Modelを
-直接利用しない。
-
-例えばHistory Moduleが、
-
-Ticket Database Table
-
-を直接Queryして
-Business Logicを実行することを避ける。
-
-必要なBusiness Informationを、
-Application / Domain Interfaceを通して取得する。
-
----
-
-# 110. Reporting Data
-
-Reportは、
-Business Factから生成する。
-
-例えば、
-
-売上Report：
-
-Journal Entry
-↓
-Accounting Query
-↓
-Revenue Report
-
-観劇者Report：
-
-Check In
-↓
-History Query
-↓
-Audience Report
-
-など。
-
-Report自体を、
-Business Factの正本にしない。
-
----
-
-# 111. Dashboard Data
-
-Dashboardは、
-複数DomainのRead Modelを
-利用できる。
-
-例えばProduction Dashboard：
-
-Production
-+
-Participant
-+
-Rehearsal
-+
-Performance
-+
-Ticket
-+
-Reservation
-+
-Accounting
-
-を表示する。
-
-Dashboard Dataは、
-Presentation / Query用Dataであり、
-Business Factの正本ではない。
-
----
-
-# 112. Search Data
-
-検索機能では、
-複数DomainのDataを検索できる。
-
-ただし、
-Search IndexをBusiness Factの正本にしない。
-
-基本構造：
-
-Business Fact
-↓
-Search Projection
-↓
-Search Index
-↓
-Search Result
-
-Indexが失われても、
-Business Factから再構築できることを目指す。
-
----
-
-# 113. Data Versioning
-
-Version管理が必要なBusiness Dataは、
-明示的にVersionを管理する。
-
-例：
-
-- Regulation
-- Document
-- Public Page
-- Production Information
-
-Versionは、
-単なるUpdated Atとは異なる。
-
-VersioningがBusiness Meaningを持つ場合、
-Domain Entityとして扱う。
-
----
-
-# 114. Immutable Fact
-
-変更してはいけないBusiness Factは、
-Immutableとして扱う。
-
-特に、
-
-- Journal Entry
-- Check In
-- HistoricalActivity
-- Audit
-
-などは、
-現在状態を上書きして過去を消す設計を避ける。
-
-訂正が必要な場合は、
-Correction / Reversalなどの
-Business Operationを利用する。
-
----
-
-# 115. Accounting Immutability
-
-Journal Entryは、
-原則として過去の会計Factを
-直接上書きしない。
-
-訂正が必要な場合は、
-
-Original Journal Entry
-↓
-Correction / Reversal
-↓
-New Journal Entry
-
-などの方法を利用する。
-
-具体的なAccounting Ruleは、
-Accounting Domainで定義する。
-
----
-
-# 116. Check In Immutability
-
-Check Inは、
-
-「いつ、どのReservationが受付されたか」
-
-というBusiness Factを表す。
-
-必要な場合でも、
-過去のCheck In Factを直接書き換えず、
-Correction Operationを利用する。
-
-Reservationの現在Status変更と、
-過去のCheck In Factの変更を
-同一視しない。
-
-具体的なCorrection Ruleは、
-Check In Domainで定義する。
-
----
-
-# 117. HistoricalActivity Immutability
-
-HistoricalActivityは、
-過去の活動実績を表す。
-
-現在のProfile情報を変更しても、
-過去のHistoricalActivityを
-自動的に変更しない。
-
-HistoricalActivityの修正は、
-明示的なBusiness Operationとして扱う。
-
----
-
-# 118. Data Lifecycle
-
-Business Dataは、
-Lifecycleを持つ場合がある。
-
-例：
-
-Reservation
-
-Created
-↓
-Confirmed
-↓
-Issued
-↓
-Checked In
-
-Rehearsal
-
-Candidate
-↓
-Confirmed
-↓
-Completed
-
-Document
-
-Created
-↓
-Published
-↓
-Archived
-
-Lifecycle Stateは、
-Domain Ruleとして管理する。
-
----
-
-# 119. State and History
-
-Current StateとHistoryを分離する。
-
-例えばReservationのState：
-
-Current State
-→ Confirmed
-
-Check In：
-
-Historical Fact
-→ Checked In at specific time
-
-Current Stateだけから、
-必要な過去Factを推測しない。
-
-Reservation Statusは
-現在の予約状態を表し、
-Check Inは実際の受付Factを表す。
-
----
-
-# 120. Data State Machine
-
-Stateを持つEntityについては、
-許可されるState Transitionを
-Domainで管理する。
-
-例えば、
-
-Reservation
-Created
-↓
-Confirmed
-↓
-Cancelled
-
-Check Inについては、
-
-Not Checked In
-↓
-Checked In
-
-などのBusiness Transitionを
-Domain Ruleとして管理する。
-
-不正なState Transitionを、
-Databaseへの直接Updateで許可しない。
-
----
-
-# 121. Data Architecture Summary
-
-StageArt Data Architectureでは、
-
-Business Fact
-↓
-Domain Ownership
-↓
-Repository
-↓
-Persistence
-
-という構造を基本とする。
-
-Domain間連携は、
-
-Business Event
-↓
-Application Process
-↓
-Related Domain
-
-を基本とする。
-
-External Serviceとの連携は、
-
-StageArt Data
-↓
-Integration Mapping
-↓
-External Reference
-
-とする。
-
-Core Business Structureは、
-
-Organization
-↓
-Project
-↓
-Production
-↓
-Performance
-↓
-Reservation
-↓
-Check In
-
-を基本とする。
-
-Ticket関連では、
-
-Ticket
-↓
-Issued Ticket
-↓
-QR Ticket
-
-を別概念として扱う。
-
-Check Inの入口は、
-
-Web Client
-↓
-Reservation / Issued Ticket List
-↓
-Check In Use Case
-
-または、
-
-Mobile Client
-↓
-QR Scanner
-↓
-Issued Ticket Identifier
-↓
-Reservation
-↓
-Check In Use Case
-
-という複数の入口を持つ。
-
-しかし、
-どの入口から実行されても、
-
-Check In
-↓
-CheckInCompleted
-
-という同一のBusiness Factを生成する。
-
-このBusiness Eventを起点として、
-
-CheckInCompleted
-├── Audience History
-└── Accounting Process
-
-へ連携する。
-
-各Business Factは、
-それぞれのDomainがOwnershipを持つ。
-
----
-
-# 122. Data Access Isolation Principle
-
-StageArtのData Accessでは、
-Scope外のDataを単にUI上で非表示にするだけでは不十分とする。
-
-基本原則：
-
-User
-↓
-Authorization Context
+Global System Scope
 ↓
 Organization Scope
 ↓
@@ -3352,375 +1729,2003 @@ Project Scope
 ↓
 Production Scope
 ↓
-Data Query
+Performance Scope
 
-という順序で、
-Access可能なData Scopeを決定する。
+ただし、
+すべてのDataが
+すべてのScopeを持つわけではない。
+
+各EntityのScopeは、
+Domain Ownershipに応じて定義する。
+
+---
+
+# 61. Organization Scope
+
+Organization Scopeは、
+StageArtの主要Tenant Boundaryである。
+
+通常Userは、
+自身がMembershipを持つOrganizationの
+Business Dataだけを参照できる。
+
+Organization IDは、
+Scope Isolationに利用する。
+
+Organization Scope外のDataを、
+Resource IDだけで取得できない構造とする。
+
+---
+
+# 62. Project Scope
+
+Projectは、
+Organization内部の上位Business Contextである。
+
+Project Scopeを持つDataは、
+
+Organization
+↓
+Project
+↓
+Data
+
+というRelationshipで
+Scopeを確認できる。
+
+Project Scopeは、
+Organization Scopeの下位Scopeである。
+
+---
+
+# 63. Production Scope
+
+Production Scopeは、
+Productionに関連するDataを
+管理するScopeである。
+
+例えば、
+
+- Participant
+- ProductionDelegate
+- Rehearsal
+- Performance
+- Ticket
+- Reservation
+- Check In
+
+など。
+
+Production Scope外のDataへ
+通常Userがアクセスできないようにする。
+
+---
+
+# 64. Performance Scope
+
+Performance Scopeは、
+特定の公演回に関連する
+受付・Ticket・Reservationなどを
+管理するScopeである。
+
+例えば、
+
+Performance
+↓
+Reservation
+↓
+Check In
+
+という構造。
+
+Reception Operatorは、
+許可されたPerformance Scopeに対してのみ
+受付Operationを実行できる。
+
+---
+
+# 65. System Administrator Data Scope
+
+System Administratorは、
+全Organizationを選択できる
+System-level Accessを持つ。
+
+ただし、
+Organization Selection自体は、
+Business Factではない。
+
+基本構造：
+
+System Administrator
+↓
+Organization List
+↓
+Selected Organization
+↓
+Organization Context
+
+Selected Organization Contextは、
+Application Authorization Contextとして扱う。
+
+Organizationを選択した後は、
+そのOrganizationの
+Organization Administrator相当のScopeで
+Business Dataへアクセスする。
+
+---
+
+# 66. Selected Organization Context
+
+Selected Organization Contextは、
+System Administratorが
+特定Organizationを操作対象として
+選択した状態を表す。
+
+これは、
+Organization Membershipそのものを
+新たに生成するBusiness Factではない。
+
+基本構造：
+
+System Administrator
+↓
+Selected Organization
+↓
+Organization Administrator Context
+↓
+Business Operation
+
+Contextは、
+Request / Session / Application Operationなどの
+Runtime Contextとして管理できる。
+
+必要な場合は、
+AuditにSelected Organizationを記録する。
+
+---
+
+# 67. System Administrator and Data Ownership
+
+System Administratorであっても、
+Business DomainのData Ownershipを
+変更しない。
+
+System Administratorが
+Organization Aを選択した場合、
+
+Organization A
+↓
+通常のOrganization Scope
+↓
+通常のDomain Ownership
+
+という構造を利用する。
+
+System Administratorだからといって、
+すべてのDomain Dataを
+直接書き換える権限を
+Data Layerに与えない。
+
+---
+
+# 68. Data Access Isolation
+
+Data Accessでは、
+以下のScopeを考慮する。
+
+- Actor
+- Organization
+- Project
+- Production
+- Performance
+- Role
+- Permission
+- Selected Organization Context
+
+Resource IDを知っているだけでは、
+Accessを許可しない。
+
+Data AccessのScope判定は、
+Application Authorizationと
+Persistence Queryの双方で考慮する。
+
+---
+
+# 69. Cross Organization Isolation
+
+通常Userは、
+所属していないOrganizationの
+Business Dataを参照できない。
 
 例えば、
 
 Organization A User
 ↓
-Organization A
-↓
-Project A
-↓
+Organization B Reservation
+
+というAccessは拒否する。
+
+Organization AとBの
+同一人物が別Membershipを持っている場合でも、
+各Membershipに基づいてScopeを判定する。
+
+---
+
+# 70. Cross Production Isolation
+
+Production Scopeを必要とするDataについては、
+Production AのUserが
+Production BのDataへ
+自動的にアクセスできない。
+
+例えば、
+
 Production A
 ↓
 Reservation A
 
-というAccessは許可できる。
-
-一方、
-
-Organization A User
+Production B
 ↓
 Reservation B
 
-がOrganization BのDataである場合、
-Reservation IDを直接指定したとしても取得できない。
+が存在する場合、
 
-同様に、
+Production A Scope
+→ Reservation A
 
-Production A Delegate
-↓
-Production A Data
+Production B Scope
+→ Reservation B
 
-は許可できるが、
-
-Production A Delegate
-↓
-Production B Data
-
-は、
-別途Authorizationがなければ許可しない。
-
-このIsolationは、
-
-- Application Layer
-- API Layer
-- Persistence Query
-- Read Model
-- Search Projection
-
-の各段階で維持する。
+と分離する。
 
 ---
 
-# 123. Data Architecture and Check In Entry Points
+# 71. Data Reference
 
-Check Inは、
-Clientによって入口が異なっても、
-Business RuleとData Ownershipを共通化する。
+Domain間でDataを参照する場合は、
+Business Identityまたは
+明示的なReferenceを利用する。
 
-Web Manual Check In：
+例えば、
 
-Web Client
+Reservation
+→ Performance ID
+
+Reservation
+→ Person ID
+
+Check In
+→ Reservation ID
+
+Issued Ticket
+→ Reservation ID
+
+など。
+
+他DomainのEntity内部構造を
+直接埋め込まない。
+
+---
+
+# 72. Data Duplication
+
+Read Performanceや
+外部連携のために、
+必要なDataをProjectionとして
+複製することは許容する。
+
+ただし、
+ProjectionはSource of Truthではない。
+
+基本構造：
+
+Source Domain
+↓
+Domain Event
+↓
+Projection
+↓
+Read Model
+
+Projectionの更新が遅れても、
+Business Factそのものを
+変更しない。
+
+---
+
+# 73. Read Model
+
+Read Modelは、
+QueryやList表示に適した
+Data Projectionである。
+
+例えば、
+
+- Check In List
+- Reservation Search
+- Performance Dashboard
+- Rehearsal Schedule
+- Mobile Home
+- Production Dashboard
+
+など。
+
+Read Modelは、
+複数DomainのDataを
+表示目的で組み合わせることができる。
+
+---
+
+# 74. Read Model and Source of Truth
+
+Read Modelは、
+Business Factの正本ではない。
+
+例えば、
+
+Check In List
+↓
+Check In Read Model
+
+であっても、
+
+Check In Read Model
+≠
+Check In Source of Truth
+
+である。
+
+Check In実行時には、
+必要に応じて最新Business Factを
+再検証する。
+
+---
+
+# 75. Mobile Read Model
+
+Mobile ClientのNormal Modeでは、
+現場確認に必要な情報を
+Read Modelとして提供できる。
+
+例えば、
+
+- Today's Rehearsal
+- Upcoming Rehearsal
+- My Schedule
+- Production Information
+- Performance Information
+- Communication
+
+など。
+
+Mobile Read Modelは、
+既存Business Factを
+Mobile向けにProjectionしたものとする。
+
+---
+
+# 76. Check In Read Model
+
+Web Check In画面では、
+受付用Read Modelを利用できる。
+
+例えば、
+
+Performance
++
+Reservation
++
+Person
++
+Issued Ticket
++
+Check In Status
+
+をまとめて表示する。
+
+ただし、
+表示されたCheck In Statusを
+そのままUpdateの根拠として
+無条件に信頼しない。
+
+Check In実行時に、
+最新Business Factを再検証する。
+
+---
+
+# 77. Cache Data
+
+Cacheは、
+Performance改善のために利用できる。
+
+Cacheは、
+Business Factの正本ではない。
+
+特に、
+
+- Check In
+- Reservation Status
+- Ticket State
+- Accounting State
+
+などConsistencyが重要なDataについては、
+CacheのStalenessを考慮する。
+
+---
+
+# 78. External Data
+
+External Serviceから取得したDataは、
+そのままStageArt Business Factとはしない。
+
+基本構造：
+
+External Data
+↓
+Integration Mapping
+↓
+StageArt Domain Data
+
+External DataのIDは、
+必要に応じてExternal Referenceとして
+保存する。
+
+---
+
+# 79. External Reference
+
+External Referenceは、
+StageArt Dataと
+External Service Dataの関係を表す。
+
+例えば、
+
+Document
+↓
+External Storage Reference
+
+Person
+↓
+External Identity
+
+Announcement
+↓
+External Delivery Reference
+
+など。
+
+External Referenceは、
+StageArt Business Identityとは
+分離する。
+
+---
+
+# 80. External Service Failure
+
+External Serviceが停止しても、
+StageArtのCore Business Factを
+不必要に失わせない。
+
+例えば、
+
+Check In
+↓
+CheckInCompleted
+↓
+External Integration
+
+の後段Integrationが失敗しても、
+すでに確定したCheck In Factを
+自動的に消去しない。
+
+必要に応じて、
+Retry / Recoveryを行う。
+
+---
+
+# 81. Audit Data
+
+Audit Dataは、
+Business Factとは分離する。
+
+Audit対象には、
+
+- Login
+- Authorization Change
+- Organization Selection
+- Data Change
+- Check In
+- Reservation Change
+- Ticket Operation
+- Backup
+- Restore
+- Replication
+- Recovery
+- Configuration Change
+
+などを含めることができる。
+
+Auditは、
+「何が起きたか」を記録するための
+Operational Dataである。
+
+---
+
+# 82. Audit and Business Fact
+
+Audit Logは、
+Business Factの代替ではない。
+
+例えば、
+
+Check In
+↓
+Audit Log
+
+としても、
+
+Audit Log
+≠
+Check In
+
+である。
+
+Business Factは、
+Domain Dataとして管理する。
+
+Auditは、
+Operation Contextとして管理する。
+
+---
+
+# 83. Audit Actor
+
+Auditでは、
+必要に応じて、
+
+- Actor
+- Organization
+- Production
+- Performance
+- Operation
+- Resource
+- Source
+- Timestamp
+
+などを記録する。
+
+System Administratorの場合は、
+Selected Organization Contextを
+Auditへ記録できる。
+
+---
+
+# 84. System Operational Data
+
+System Operationsでは、
+Business Dataとは別に
+Operational Dataを管理する。
+
+例えば、
+
+- Backup Metadata
+- Replication Status
+- Mirror Status
+- Recovery History
+- Job Status
+- System Health
+- Application Error
+- Deployment History
+
+など。
+
+Operational Dataは、
+Business Domain Dataの
+一部として扱わない。
+
+---
+
+# 85. Backup Data
+
+Backupは、
+Business DataのRecovery用Copyである。
+
+基本構造：
+
+Primary Data
+↓
+Backup
+↓
+Backup Storage
+
+Backup Dataは、
+通常運用時のBusiness Factの
+別Source of Truthではない。
+
+BackupからRestoreした後、
+Consistency Checkを行い、
+復旧したDatabase / Storageを
+新しいPrimaryとして利用する。
+
+---
+
+# 86. Backup and History
+
+Backupは、
+History Dataそのものではない。
+
+Backup：
+
+障害時にDataを復旧するためのCopy。
+
+History：
+
+Business上の過去のActivityやStateを表すData。
+
+両者を同一概念として扱わない。
+
+---
+
+# 87. Replication Data
+
+Replicationは、
+Primary DataをMirror Environmentへ
+同期するためのData Flowである。
+
+基本構造：
+
+Primary
+↓
+Replication
+↓
+Mirror
+
+ReplicationされたDataは、
+Mirror Environmentの
+Operationally AvailableなCopyである。
+
+---
+
+# 88. Mirror Data
+
+Mirror Dataは、
+Primary Dataの代替Copyである。
+
+通常運用時は、
+Primary DataをSource of Truthとする。
+
+Failoverした場合には、
+Mirrorを新しいPrimaryとして
+昇格させることができる。
+
+具体的なFailover方式は、
+Operations Architectureで定義する。
+
+---
+
+# 89. Backup and Mirror Separation
+
+BackupとMirrorは、
+目的を分離する。
+
+Mirror：
+
+- Availability
+- Failover
+- Service Continuity
+
+Backup：
+
+- Data Recovery
+- Point-in-Time Recovery
+- Disaster Recovery
+
+MirrorだけをBackupの代わりにしない。
+
+BackupだけをMirrorの代わりにしない。
+
+---
+
+# 90. Recovery Data
+
+Recoveryでは、
+BackupまたはMirrorから
+StageArt Dataを復旧する。
+
+基本構造：
+
+Backup
+↓
+Restore
+↓
+Consistency Check
+↓
+Recovered Primary
+
+または、
+
+Primary Failure
+↓
+Mirror
+↓
+Failover
+↓
+Recovered Service
+
+Recovery後には、
+Data Consistencyを確認する。
+
+---
+
+# 91. File Data and Database Data
+
+StageArtでは、
+Database DataとFile Dataを
+必要に応じて分離する。
+
+Database：
+
+- Business Entity
+- Relationship
+- State
+- Reference
+- Metadata
+
+File Storage：
+
+- Document Binary
+- Image
+- Other Media
+
+DatabaseとFile Storageの
+Consistencyを考慮する。
+
+---
+
+# 92. Data Integrity
+
+Data Integrityは、
+ApplicationとDatabaseの双方で保証する。
+
+Application：
+
+- Business Rule
+- Authorization
+- State Transition
+- Cross Domain Validation
+
+Database：
+
+- Primary Key
+- Foreign Key
+- Unique Constraint
+- Not Null
+- Transaction
+- Referential Integrity
+
+など。
+
+Database Constraintだけに
+Business Ruleを依存しない。
+
+---
+
+# 93. Referential Integrity
+
+Domain Referenceを持つDataについては、
+参照整合性を維持する。
+
+例えば、
+
+Reservation
+→ Performance
+
+Check In
+→ Reservation
+
+Issued Ticket
+→ Reservation
+
+など。
+
+ただし、
+Domain境界を越えた直接Foreign Keyの
+具体的な採用については、
+Implementation Specificationで決定する。
+
+---
+
+# 94. Soft Delete
+
+Business Dataの削除では、
+必要に応じてSoft Deleteや
+状態変更を利用する。
+
+特に、
+
+- Reservation
+- Ticket
+- Check In
+- Accounting
+- Audit
+
+など、
+履歴・整合性が重要なDataについては、
+物理削除を慎重に扱う。
+
+具体的なDeletion Policyは、
+Domainごとに定義する。
+
+---
+
+# 95. Business Fact Immutability
+
+確定済みBusiness Factについては、
+後から意味を変えるような
+直接上書きを避ける。
+
+例えば、
+
+Journal Entry
+Check In
+Audit Log
+
+など。
+
+訂正が必要な場合は、
+Domain Ruleに従って
+Correction / Reversal / New Factなどを
+利用する。
+
+---
+
+# 96. Check In Immutability
+
+Check Inが確定した後、
+そのFactをClient側から
+直接書き換えない。
+
+例えば、
+
+Mobile Client
+↓
+Local State変更
+
+によって、
+Check Inを取消・変更しない。
+
+取消やCorrectionが必要な場合は、
+Server SideのBusiness Operationを
+利用する。
+
+---
+
+# 97. Reservation and Check In Lifecycle
+
+基本的なLifecycleは、
+
+Performance
+↓
+Reservation
+↓
+Issued Ticket
+↓
+Check In
+
+とする。
+
+ただし、
+
+Issued Ticketが必須でない受付経路では、
+
+Performance
+↓
+Reservation
+↓
+Check In
+
+も可能とする。
+
+したがって、
+
+Reservation
+↓
+Check In
+
+がCanonical Relationshipであり、
+
+Reservation
+↓
+Issued Ticket
+↓
+Check In
+
+は受付方法の一つである。
+
+---
+
+# 98. Check In and QR Lifecycle
+
+QR受付の場合、
+
+Ticket
+↓
+Issued Ticket
+↓
+QR Ticket
+↓
+QR Code
+↓
+Scan
+↓
+Issued Ticket Resolution
+↓
+Reservation Resolution
+↓
+Check In
+
+となる。
+
+QR Codeは、
+このLifecycleの中の
+識別Artifactである。
+
+QR Codeそのものが、
+Check In Factを生成したことを
+意味しない。
+
+---
+
+# 99. Data Transaction Boundary
+
+Transaction Boundaryは、
+Application Use Caseと整合させる。
+
+代表例：
+
+Check In
+↓
+Transaction
+
+Reservation Confirmation
+↓
+Transaction
+
+Ticket Issuance
+↓
+Transaction
+
+Journal Entry
+↓
+Transaction
+
+複数のBusiness Operationを
+不必要に一つの巨大Transactionへ
+まとめない。
+
+---
+
+# 100. Check In Transaction
+
+Check Inでは、
+必要なDataを一貫したTransactionで
+確定する。
+
+概念的には、
+
+Load Reservation
+↓
+Validate
+↓
+Check Existing Check In
+↓
+Create Check In
+↓
+Persist
+↓
+Commit
+
+という構造。
+
+Concurrent Check Inへの対策は、
+Application / Database双方で行う。
+
+---
+
+# 101. Event and Data Consistency
+
+Business Fact確定後に、
+Domain Eventを発行できる。
+
+例えば、
+
+Check In
+↓
+CheckInCompleted
+
+CheckInCompletedを起点として、
+
+- Audience History
+- Accounting
+- Notification
+- Reporting
+
+などを更新できる。
+
+後続Projectionが遅延しても、
+元のBusiness Factを変更しない。
+
+---
+
+# 102. Eventual Consistency
+
+Read ModelやProjectionでは、
+Eventual Consistencyを許容できる。
+
+例えば、
+
+Check In
+↓
+CheckInCompleted
+↓
+Check In Read Model
+
+という場合、
+一時的にRead Modelが遅れてもよい。
+
+ただし、
+受付結果など、
+即時Consistencyが必要なOperationでは、
+最新のSource of Truthを利用する。
+
+---
+
+# 103. Data Migration
+
+Data Schema変更では、
+既存Business Factを壊さない。
+
+Migrationでは、
+
+- Schema Migration
+- Data Migration
+- Backfill
+- Validation
+- Rollback Strategy
+
+などを考慮する。
+
+Migrationは、
+Application Versionと
+Data VersionのCompatibilityを考慮する。
+
+---
+
+# 104. Data Versioning
+
+以下のようなDataでは、
+Versionを持つことを検討する。
+
+- Regulation
+- Document
+- Public Page
+- Configuration
+- Price
+- Other Versioned Business Data
+
+VersioningとHistoryを
+同一概念として扱わない。
+
+---
+
+# 105. Data Export
+
+Business Dataを
+Exportする場合でも、
+Scopeを維持する。
+
+例えば、
+
+Organization Export
+↓
+Organization Scope
+
+Production Export
+↓
+Production Scope
+
+Audience Export
+↓
+Authorized Audience Scope
+
+など。
+
+System Administratorが
+Organizationを選択して
+Exportする場合も、
+Selected Organization Contextを
+利用する。
+
+---
+
+# 106. Data Import
+
+Data Importでは、
+External Dataを
+そのままBusiness Factとしない。
+
+基本構造：
+
+Import File
+↓
+Validation
+↓
+Mapping
+↓
+Domain Operation
+↓
+Business Fact
+
+Import時にも、
+Authorization Scopeを確認する。
+
+---
+
+# 107. Data Privacy
+
+Person、
+Reservation、
+Audience HistoryなどのDataは、
+必要なScopeでのみ参照できる。
+
+Public Clientへ返すDataは、
+Public Projectionを利用する。
+
+Internal Management Dataを、
+そのままPublic Dataとして
+公開しない。
+
+---
+
+# 108. Personal Data Separation
+
+PersonのPersonal Dataと、
+Production / Performanceの
+Business Dataを適切に分離する。
+
+例えば、
+
+Person
+→ Identity
+
+Reservation
+→ Performanceに対する予約
+
+Check In
+→ Reservationに対する受付
+
+というOwnershipを維持する。
+
+Person情報を、
+ReservationやCheck Inに
+無制限に複製しない。
+
+必要な場合は、
+ReferenceまたはSnapshotを利用する。
+
+---
+
+# 109. Snapshot Data
+
+Business Transactionに必要な
+過去時点の情報については、
+Snapshotを保持できる。
+
+例えば、
+
+- Ticket Price Snapshot
+- Booker Information Snapshot
+- Address Snapshot
+- Other Transactional Snapshot
+
+など。
+
+Snapshotは、
+現在のMaster Dataとは異なる。
+
+---
+
+# 110. Current Data and Snapshot
+
+Current Master Data：
+
+現在の最新情報。
+
+Snapshot：
+
+Transaction時点の情報。
+
+例えば、
+
+Person
+↓
+Current Profile
+
+Reservation
+↓
+Booker Snapshot
+
+という構造を利用できる。
+
+過去Transactionの意味が、
+現在Profileの変更によって
+変わらないようにする。
+
+---
+
+# 111. Data Architecture and Application Architecture
+
+Application Architectureでは、
+
+Client
+↓
+API
+↓
+Application
+↓
+Domain
+↓
+Persistence
+
+というLayerを定義する。
+
+Data Architectureでは、
+そのApplicationが扱うDataについて、
+
+- Ownership
+- Source of Truth
+- Relationship
+- Scope
+- Integrity
+- Persistence
+
+を定義する。
+
+Application Use Caseは、
+Data Ownershipを越えて
+直接Dataを書き換えない。
+
+---
+
+# 112. Data Architecture and Authorization
+
+Authorizationは、
+Data Scopeと連携する。
+
+基本構造：
+
+Person
+↓
+Membership
+↓
+Organization
+↓
+Project
+↓
+Production
+↓
+Performance
+↓
+Resource
+
+System Administratorの場合：
+
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization
+↓
+Organization Administrator Context
+↓
+Resource
+
+Selected Organization Contextは、
+Data Ownershipそのものではない。
+
+---
+
+# 113. System Administrator Data Access
+
+System Administratorが
+Organization Aを選択した場合、
+
+Selected Organization = A
+
+として、
+
+Organization A
+↓
+Project
+↓
+Production
+↓
+Performance
+↓
+Reservation
+↓
+Check In
+
+という通常のScopeを利用する。
+
+Organization BのDataは、
+別途Organization Bを選択しない限り、
+通常のManagement Contextから
+混在して表示しない。
+
+---
+
+# 114. System Administrator and Cross Organization View
+
+System-wide Dashboardなど、
+System Administrator専用の
+集計情報を提供することはできる。
+
+ただし、
+個々のOrganization Business Dataを
+無制限に横断表示することとは分離する。
+
+System-wide View：
+
+- Organization Count
+- Production Count
+- System Health
+- Backup Status
+- Replication Status
+
+など。
+
+Organization Business Data：
+
+Organization Selector
+↓
+Selected Organization
+↓
+Management Client
+
+という構造で扱う。
+
+---
+
+# 115. Operational Data Ownership
+
+System Operational Dataは、
+Business Domain Dataとは分離する。
+
+例えば、
+
+Backup Status
+→ System Operations
+
+Replication Status
+→ System Operations
+
+Recovery History
+→ System Operations
+
+Audit Log
+→ System Operations / Audit
+
+とする。
+
+これらを、
+Organization Business Dataの
+Entityとして扱わない。
+
+---
+
+# 116. Operational Data and Organization Scope
+
+Operational Dataの中には、
+Organizationと関連するものが存在する。
+
+例えば、
+
+Organization Export Job
+Organization Backup Metadata
+
+など。
+
+この場合でも、
+
+System Operational Data
++
+Organization Reference
+
+として扱う。
+
+Operational Dataが、
+Organization Business Factそのものになるわけではない。
+
+---
+
+# 117. Database Persistence
+
+Databaseは、
+StageArt Business Dataの
+主要Persistenceとして利用する。
+
+Databaseには、
+
+- Entity
+- Relationship
+- State
+- Reference
+- Transaction Data
+
+などを保存する。
+
+Database Schemaは、
+Domain Modelと同一ではない。
+
+---
+
+# 118. File Storage Persistence
+
+File Storageには、
+
+- Document
+- Image
+- Media
+- Export File
+- Other Binary Data
+
+などを保存できる。
+
+Databaseには、
+必要なMetadataと
+Storage Referenceを保存する。
+
+---
+
+# 119. Backup Persistence
+
+Backup Storageは、
+Primary Database / File Storageとは
+別のRecovery Boundaryとして
+構成する。
+
+基本構造：
+
+Primary Database
+↓
+Backup
+↓
+Backup Storage
+
+Primary File Storage
+↓
+Backup
+↓
+Backup Storage
+
+DatabaseとFile Storageの
+Backup Consistencyを考慮する。
+
+---
+
+# 120. Data Integrity and Backup
+
+Backupが成功しただけでは、
+Recovery可能性を保証したとはみなさない。
+
+必要に応じて、
+
+Backup
+↓
+Validation
+↓
+Restore Test
+↓
+Recovery Verification
+
+を行う。
+
+具体的な運用Policyは、
+Operations Architectureで定義する。
+
+---
+
+# 121. Data Retention
+
+Data Retentionは、
+Domainごとに定義する。
+
+例えば、
+
+- Business Data
+- Audit Data
+- Accounting Data
+- Backup Data
+- Operational Log
+- Temporary Data
+
+では、
+保持期間が異なる可能性がある。
+
+Retention Policyは、
+Security / Operations / Domain Policyと
+整合させる。
+
+---
+
+# 122. Data Deletion
+
+Data Deletionでは、
+
+- Business Rule
+- Referential Integrity
+- Audit
+- History
+- Accounting
+- Legal / Operational Retention
+
+を考慮する。
+
+特にAccountingやAuditについては、
+単純な物理削除を行わない。
+
+---
+
+# 123. Data Correction
+
+Business Factに誤りがある場合でも、
+Databaseを直接修正することを
+通常のBusiness Operationとしない。
+
+基本構造：
+
+Correction Request
+↓
+Application Operation
+↓
+Domain Rule
+↓
+Correction / Reversal / New Fact
+
+System Administratorであっても、
+Business Ruleを迂回した
+直接Database Updateを
+通常Operationとして提供しない。
+
+---
+
+# 124. Data Consistency Rules
+
+以下のConsistencyを維持する。
+
+- Reservationは正しいPerformanceに属する。
+- Issued Ticketは正しいReservationに関連する。
+- Check Inは正しいReservationに関連する。
+- Check Inは正しいPerformance Contextを持つ。
+- Organization Scopeを越えたAccessを許可しない。
+- Production Scopeを越えたAccessを許可しない。
+- Check Inの重複を防ぐ。
+- Accounting Dataと元Business FactのReferenceを維持する。
+- HistoryがCurrent Stateを勝手に変更しない。
+- Read ModelがSource of Truthにならない。
+- External DataがBusiness Factを上書きしない。
+
+---
+
+# 125. Canonical Relationship Summary
+
+StageArtの主要Relationshipは、
+
+Organization
+↓
+Project
+↓
+Production
+↓
+Performance
+↓
+Reservation
+↓
+Check In
+
+を基本とする。
+
+Ticket系では、
+
+Performance
+↓
+Ticket
+↓
+Issued Ticket
+↓
+Reservation
+
+という関係を持つ。
+
+QR受付では、
+
+Issued Ticket
+↓
+QR Ticket
+↓
+QR Code
+
+というArtifact Relationshipを持つ。
+
+したがって、
+
+Reservation
+↓
+Check In
+
+がCheck InのCanonical Relationshipであり、
+
+QR Code
+↓
+Check In
+
+という直接のDomain Relationshipは持たない。
+
+---
+
+# 126. Check In Data Model Summary
+
+Check Inの基本Data構造：
+
+Reservation
+↓
+Check In
+
+必要に応じて、
+
+Check In
+├── Performance Reference
+├── Person / Booker Reference
+├── Issued Ticket Reference
+├── Actor Reference
+├── Source
+└── Timestamp
+
+などを持つ。
+
+Issued Ticketは、
+Check Inの入力経路として利用できるが、
+Check Inそのものではない。
+
+---
+
+# 127. Check In and Mobile Architecture
+
+Mobile Clientでは、
+
+Mobile
+↓
+Reception Mode
+↓
+QR Scan
+↓
+Issued Ticket Resolution
+↓
+Reservation Resolution
+↓
+Check In
+
+というData Flowを利用する。
+
+Mobile Local Stateは、
+Check In Business Factの正本ではない。
+
+---
+
+# 128. Check In and Web Architecture
+
+Web Clientでは、
+
+Web
 ↓
 Performance
 ↓
 Reservation List
 ↓
-Search / Filter
-↓
 Reservation Selection
 ↓
-Check In Use Case
+Reservation Resolution
 ↓
 Check In
 
-Mobile QR Check In：
+というData Flowを利用する。
+
+Web Read Modelは、
+Check In Business Factの正本ではない。
+
+---
+
+# 129. Data Flow Principle
+
+StageArtのData Flowでは、
+
+Input
+↓
+Resolution
+↓
+Authorization
+↓
+Business Operation
+↓
+Business Fact
+↓
+Projection / Event / Integration
+
+という順序を基本とする。
+
+Client Inputを
+そのままBusiness Factとして保存しない。
+
+---
+
+# 130. Data Architecture Rules
+
+Data Architectureでは、
+以下を禁止または原則禁止とする。
+
+- Client StateをBusiness Factの正本とすること
+- QR CodeをCheck In Factとして扱うこと
+- Issued TicketをCheck Inと同一視すること
+- Read ModelをSource of Truthとして扱うこと
+- CacheをBusiness Factの正本とすること
+- External Service DataをBusiness Factの正本とすること
+- Domain AがDomain BのDataを直接更新すること
+- Resource IDだけでScope外Dataへアクセスできる構造
+- System Administratorだからという理由だけでDatabaseを直接更新すること
+- Backup Dataを通常Business Dataと同一視すること
+- Mirror Dataを常時Primary Dataとして扱うこと
+- HistoryをCurrent Stateの代替として扱うこと
+- Audit LogをBusiness Factの代替として扱うこと
+- Accounting DataをReservation / Check Inの単純な属性として扱うこと
+- Clientごとに別のCheck In Business Factを持つこと
+- Web Check InとMobile Check Inで異なるCheck In Data Modelを作ること
+
+---
+
+# 131. Data Architecture Summary
+
+StageArtのData Architectureでは、
+
+Business Fact
+↓
+Domain Ownership
+↓
+Persistence
+
+という構造を基本とする。
+
+主要なBusiness Scopeは、
+
+Organization
+↓
+Project
+↓
+Production
+↓
+Performance
+
+である。
+
+通常Userは、
+自身が所属するOrganization、
+および許可されたProject / Production /
+Performance ScopeのDataだけを
+参照・操作できる。
+
+System Administratorは、
+全Organizationを選択できる。
+
+ただし、
+System Administratorによる
+Organization Selectionは、
+Business Data Ownershipを変更するものではない。
+
+System Administratorは、
+
+System Administration
+↓
+Organization List
+↓
+Organization Selection
+↓
+Selected Organization Context
+↓
+Organization Administrator相当
+↓
+通常Management Client
+
+というFlowを利用する。
+
+選択されたOrganizationのBusiness Dataは、
+通常のOrganization Scope、
+Production Scope、
+Performance Scopeを通して管理する。
+
+Check Inについては、
+
+Reservation
+↓
+Check In
+
+をCanonical Relationshipとする。
+
+Check Inは、
+Performanceに対するReservationの
+受付というBusiness Factである。
+
+Issued Ticketは、
+発行されたTicketを表すBusiness Dataであり、
+Check Inそのものではない。
+
+QR Ticket / QR Codeは、
+Issued Ticketを識別するための
+受付Artifactである。
+
+QR受付では、
+
+QR Code
+↓
+Issued Ticket
+↓
+Reservation
+↓
+Check In
+
+というResolutionを行う。
+
+Web受付では、
+
+Reservation Search / Manual Selection
+↓
+Reservation
+↓
+Check In
+
+というResolutionを行う。
+
+Mobile ClientとWeb Clientは、
+異なる入口を持つが、
+最終的には同一のCheck In Business Factを生成する。
+
+Mobile Clientは、
+受付専用Applicationではない。
+
+公演関係者が日常的に利用する
+Mobile Applicationとして、
+
+- Rehearsal
+- Production
+- Performance
+- Schedule
+- Communication
+
+などの情報を扱う。
+
+必要な場合のみ、
 
 Mobile Client
 ↓
-QR Scanner
-↓
-QR Code
-↓
-Issued Ticket Identifier
-↓
-Issued Ticket
-↓
-Reservation
-↓
-Check In Use Case
+Reception Mode
 ↓
 Check In
 
-共通部分：
+として利用する。
 
-Check In Use Case
-↓
-Validation
-↓
-Check In Business Fact
-↓
-Reservation State Update
-↓
-CheckInCompleted
+Read Model、
+Cache、
+External Data、
+Audit、
+History、
+Backup、
+Mirrorなどは、
+Business Factの正本とは分離する。
 
-Clientごとに
-別のCheck In Business Ruleを作らない。
+Read Modelは、
+検索・一覧・Dashboard・Mobile表示などの
+Query用途に利用する。
 
----
+Cacheは、
+Performance向上のために利用する。
 
-# 124. Data Architecture and Reservation
+Auditは、
+Operationの記録として利用する。
 
-Reservationは、
-Performanceに対する予約Business Factとして扱う。
+Historyは、
+過去のBusiness Activityを管理する。
 
-基本構造：
+Backupは、
+RecoveryのためのCopyである。
 
-Production
-↓
-Performance
-↓
-Reservation
+Mirrorは、
+Availability / FailoverのためのCopyである。
 
-Reservationには、
-予約成立時点で必要なBusiness Factを保持する。
+External Dataは、
+必要に応じてMappingして
+StageArt Business Dataへ取り込む。
 
-例えば、
+Accounting Dataは、
+Accounting DomainがOwnershipを持つ。
 
-- Booker
-- Guest Count
-- Reservation Number
-- Price Snapshot
-- Status
+Document Binaryは、
+必要に応じてExternal Storageへ保存し、
+StageArt側ではDocument Metadataと
+External Storage Referenceを管理する。
 
-など。
+Data Integrityは、
 
-Ticket発行情報は、
-必要に応じてIssued Ticketとして分離する。
-
-Check Inは、
-Reservationの実際の受付Factとして
-別のBusiness Factとして管理する。
-
----
-
-# 125. Data Architecture and Issued Ticket
-
-Issued Ticketは、
-Reservationに対して発行された
-具体的なTicketを表す。
-
-基本構造：
-
-Reservation
-↓
-Issued Ticket
-↓
-QR Ticket
-
-Issued Ticketは、
-Reservationそのものではない。
-
-QR Ticketは、
-Issued Ticketを識別するためのArtifactであり、
-QR CodeそのものをBusiness Factとしない。
-
-QR Codeが変更されても、
-
-Reservation
-↓
-Issued Ticket
-
-というBusiness Relationshipは維持する。
-
----
-
-# 126. Data Architecture and Audience History
-
-Audience Historyは、
-Personの過去の観劇実績を表す。
-
-基本構造：
-
-Person
-↓
-Performance
-↓
-Check In
-↓
-Audience History
-
-Audience Historyは、
-ReservationやIssued Ticketの
-現在状態から生成する単なるReportではない。
-
-Check Inという
-実際の受付Business Factを起点として、
-観劇実績を確定する。
-
----
-
-# 127. Data Architecture and HistoricalActivity
-
-HistoricalActivityは、
-Personの過去の活動実績を表す。
-
-Audience Historyとは別概念である。
-
-HistoricalActivity：
-
-Person自身の過去の舞台活動。
-
-Audience History：
-
-Personが観客として
-Performanceを観劇した実績。
-
-したがって、
-
-Person
-├── HistoricalActivity
-└── Audience History
-
-として分離する。
-
-HistoricalActivityは、
-ProfileのText Fieldへ
-出演履歴をまとめて保存する方式を基本としない。
-
----
-
-# 128. Data Architecture and Domain Boundaries
-
-Data Architectureでは、
-Domain BoundaryとData Ownershipを一致させることを基本とする。
-
-例えば、
-
-Identity
-→ Person
-
-Organization
-→ Membership
-
-Production
-→ Production / Participant / ProductionDelegate
-
-Performance
-→ Performance
-
-Ticket
-→ Ticket / Issued Ticket / QR Ticket
-
-Reservation
-→ Reservation
-
-Check In
-→ Check In
-
-History
-→ Audience History
-
-Accounting
-→ Journal Entry
-
-というように、
-Business FactのOwnershipを明確にする。
-
-他DomainのPersistence Modelを
-直接更新しない。
-
----
-
-# 129. Data Architecture and Database
-
-Databaseは、
-StageArt Business Factを永続化するための
-Infrastructureとして扱う。
-
-Database Schemaは、
-Domain Modelそのものではない。
-
-基本構造：
-
-Domain Entity
-↓
-Repository
-↓
-Persistence Model
-↓
+Application
++
 Database
 
-Database Tableの存在だけを理由として、
-Domain Entityを追加しない。
+の双方で保証する。
 
-また、
-Domain Entityが一つだからといって、
-Database Tableが一つである必要もない。
+特に、
 
----
+- Organization Scope
+- Production Scope
+- Performance Scope
+- Reservation Integrity
+- Ticket Integrity
+- Check In Uniqueness
+- Accounting Integrity
 
-# 130. Data Architecture and Implementation
+を重要なConsistency Boundaryとする。
 
-具体的なImplementationでは、
-以下を別途定義する。
+Data Architectureの最重要原則は、
 
-- Database Engine
-- Table
-- Column
-- Primary Key
-- Foreign Key
-- Index
-- Unique Constraint
-- Check Constraint
-- Transaction
-- Lock
-- Migration
-- Backup
-- Restore
-- Repository Implementation
-
-Data Architectureでは、
-これらの具体的なPhysical Designを
-先に固定しない。
-
----
-
-# 131. Data Architecture Principle
-
-StageArt Data Architectureの最重要原則：
-
-「Business Factを正本として管理し、
-Presentation、
+「Business Factの正本をDomainに保持し、
 Client、
+Read Model、
 Cache、
 External Service、
-Database Structure
+Artifact、
+History、
+Audit、
+Backup、
+Mirrorなどの
+周辺Dataと明確に分離する」
 
-をBusiness Factの代替にしない。」
+ことである。
 
 また、
 
-「現在の状態と過去のFactを分離し、
-DomainごとのData Ownershipを維持する。」
+「Reservation → Check Inを
+Check InのCanonical Relationshipとし、
+Issued TicketやQR Codeを
+Check Inそのものとしない」
+
+ことを、
+StageArtの受付Data Modelにおける
+基本原則とする。
 
 さらに、
 
-「Organization → Project → ProductionのScope構造を維持し、
-Scope外Dataを取得できないようにする。」
+「Web ClientとMobile Clientは
+同一のCheck In Business Factを生成し、
+受付方法だけを異なる入口として扱う」
+
+ことを、
+Data Architectureの基本方針とする。
 
 そして、
 
-「Check Inの入口がWebでもMobileでも、
-同一のCheck In Business FactをServer Sideで確定する。」
+「System Administratorは全Organizationを選択できるが、
+選択後のBusiness Dataは通常の
+Organization / Production / Performance Scopeを通して扱う」
 
-これにより、
-
-- Web Client
-- Mobile Client
-- QR Scanner
-- PHP Application
-- WordPress
-- Database
-- External Service
-
-のいずれかが変更されても、
-StageArtのBusiness Dataを
-長期的に維持できる構造を目指す。
+ことを、
+System Administrationにおける
+Data Scopeの基本方針とする。
 
 ---
