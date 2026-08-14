@@ -40,3 +40,15 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Flutter (mobile/) - generated/build artifacts and machine-specific files;
+# platform-level details (Android/iOS/etc.) are covered by mobile/**/.gitignore.
+/mobile/build/
+/mobile/.dart_tool/
+/mobile/.flutter-plugins
+/mobile/.flutter-plugins-dependencies
+/mobile/.pub-cache/
+/mobile/.pub/
+*.iml
+*.ipr
+*.iws
