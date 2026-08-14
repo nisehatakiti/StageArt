@@ -3,7 +3,7 @@
 # 10 - Architecture
 # Integration Architecture
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -31,12 +31,18 @@ Integration Architectureでは、
 - Payment
 - Accounting
 - Notification
+- Messaging
 - WordPress
-- LINEなどのMessaging Service
+- External Ticketing
+- Social Media
+- Backup Storage
+- Mirror Environment
+- Monitoring
 - Error Handling
 - Retry
 - Idempotency
-- Integration Monitoring
+- Synchronization
+- Recovery
 
 を定義する。
 
@@ -66,7 +72,15 @@ StageArt Integrationは、
 - External Systemとの同期状態とStageArtのBusiness Factを区別する。
 - Integrationの成功 / 失敗をMonitoringできるようにする。
 - SecretやCredentialをDomain / Clientへ公開しない。
-- External Serviceを変更してもStageArt Core Business Logicへ影響を最小化する。
+- External Serviceを変更してもStageArt Core Business Logicへの影響を最小化する。
+- External Serviceの障害によってCore Business Factを不必要に失敗させない。
+- External ServiceのStateをStageArt Business Stateと同一視しない。
+- External IdentifierをStageArt Business Identifierと同一視しない。
+- Integration RetryによってBusiness Factを重複生成しない。
+- Integrationの非同期処理と同期処理を明確に区別する。
+- Integration DataとBusiness Dataを分離する。
+- Integration LogとAudit Logを必要に応じて分離する。
+- System OperationsとBusiness Operationsを混在させない。
 
 ---
 
@@ -92,6 +106,8 @@ External Service
 Webhook / API
 ↓
 Integration Adapter
+↓
+Validation
 ↓
 Application
 ↓
@@ -122,7 +138,11 @@ Infrastructure
 ├── External API Adapter
 ├── File Storage Adapter
 ├── Mail Adapter
-└── Authentication Adapter
+├── Authentication Adapter
+├── Calendar Adapter
+├── Messaging Adapter
+├── Payment Adapter
+└── Accounting Adapter
 
 External Service固有の実装は、
 Adapter側へ閉じ込める。
@@ -136,12 +156,16 @@ Integration Interfaceを利用する。
 
 例えば、
 
-NotificationService
+AuthenticationService
 EmailService
+NotificationService
 CalendarService
 FileStorage
 PaymentService
 AccountingService
+MessagingService
+TicketingService
+SocialMediaService
 
 など。
 
@@ -153,7 +177,7 @@ Applicationは、
 # 5. Adapter
 
 Adapterは、
-StageArtのInterfaceと
+StageArtのIntegration Interfaceと
 External Service APIの差異を吸収する。
 
 基本構造：
@@ -173,7 +197,9 @@ Adapterでは、
 - Authentication
 - Error Mapping
 - Retry
+- Idempotency
 - Provider Specific Logic
+- External Identifier Mapping
 
 などを扱う。
 
@@ -184,22 +210,52 @@ Adapterでは、
 External ServiceのData Modelを、
 そのままStageArt Domain Entityとして利用しない。
 
-例えば、
+基本構造：
 
-External Ticket
+External Data
 ↓
 Adapter
 ↓
-StageArt Ticket Context
-
-など。
+Integration DTO
+↓
+Application
+↓
+Domain Data
 
 External ServiceのField追加や変更が、
 Domain Modelへ直接波及しない構造を目指す。
 
 ---
 
-# 7. External System Categories
+# 7. External Identifier
+
+External Serviceが持つIdentifierは、
+StageArtのBusiness Identityとは分離する。
+
+例えば、
+
+External User ID
+External Ticket ID
+External File ID
+External Calendar Event ID
+External Payment ID
+External Message ID
+
+など。
+
+必要に応じて、
+
+StageArt Entity
+↓
+External Reference
+↓
+External Identifier
+
+というMappingを保持する。
+
+---
+
+# 8. External System Categories
 
 StageArtでは、
 以下のExternal SystemとのIntegrationが
@@ -217,13 +273,16 @@ StageArtでは、
 - Social Media
 - External Ticketing System
 - Reporting System
+- Backup Storage
+- Mirror Environment
+- Monitoring Service
 
 実際に採用するServiceは、
-別途Implementation Specificationで決定する。
+Implementation Specificationで決定する。
 
 ---
 
-# 8. Authentication Integration
+# 9. Authentication Integration
 
 Authentication Providerを
 External Serviceとして利用できる。
@@ -243,9 +302,12 @@ Person
 Authentication Provider固有のIdentityを、
 StageArt Personと直接同一視しない。
 
+Authentication Identityと
+Business Identityを分離する。
+
 ---
 
-# 9. Authentication Adapter
+# 10. Authentication Adapter
 
 Authentication Providerを利用する場合、
 
@@ -264,7 +326,18 @@ Domain Modelが変更されない構造を基本とする。
 
 ---
 
-# 10. WordPress Integration
+# 11. Authentication Failure
+
+Authentication Providerが停止した場合でも、
+既存SessionやStageArt Business Dataを
+不正に変更しない。
+
+Authentication Failureと
+Business Operation Failureを分離する。
+
+---
+
+# 12. WordPress Integration
 
 WordPressをStageArtの
 Infrastructureとして利用できる。
@@ -277,16 +350,21 @@ Infrastructureとして利用できる。
 - Plugin Runtime
 - File Storage
 - Database
+- Public Web
 
 など。
 
 ただし、
-WordPress固有のConceptと
-StageArt Domain Conceptを分離する。
+
+WordPress Concept
+≠
+StageArt Domain Concept
+
+とする。
 
 ---
 
-# 11. WordPress API Integration
+# 13. WordPress API Integration
 
 WordPress REST APIを利用する場合、
 
@@ -303,7 +381,7 @@ WordPress REST APIへ直接アクセスしない。
 
 ---
 
-# 12. WordPress Plugin Integration
+# 14. WordPress Plugin Integration
 
 StageArtをWordPress Pluginとして
 実装する場合でも、
@@ -330,7 +408,7 @@ Domainへ直接渡さない。
 
 ---
 
-# 13. WordPress User Integration
+# 15. WordPress User Integration
 
 WordPress Userを
 Authentication Infrastructureとして
@@ -350,7 +428,26 @@ Person IDを同一のBusiness Identityとして
 
 ---
 
-# 14. Email Integration
+# 16. WordPress Database Boundary
+
+WordPress Databaseを
+StageArt Persistenceとして利用する場合でも、
+
+WordPress Database Schema
+≠
+StageArt Domain Model
+
+とする。
+
+WordPress固有のTable、
+Option、
+Meta、
+Post Structureなどを、
+Domain Logicから直接利用しない。
+
+---
+
+# 17. Email Integration
 
 Email Serviceは、
 Notification / Communicationの
@@ -371,7 +468,7 @@ SMTPやProvider APIを直接操作しない。
 
 ---
 
-# 15. Email Delivery
+# 18. Email Delivery
 
 Email送信は、
 必要に応じて非同期処理とする。
@@ -391,11 +488,11 @@ Email Service
 など。
 
 Business OperationのCritical Pathを
-Email Serviceに依存させない。
+Email Serviceに不必要に依存させない。
 
 ---
 
-# 16. Email Failure
+# 19. Email Failure
 
 Email送信に失敗しても、
 Business Factを不正にRollbackしない。
@@ -418,7 +515,7 @@ Email
 
 ---
 
-# 17. Notification Integration
+# 20. Notification Integration
 
 Notificationは、
 Business EventをTriggerとして
@@ -430,6 +527,7 @@ ReservationConfirmed
 CheckInCompleted
 RehearsalChanged
 PerformanceChanged
+AnnouncementPublished
 
 など。
 
@@ -445,7 +543,7 @@ External Service
 
 ---
 
-# 18. Messaging Integration
+# 21. Messaging Integration
 
 将来的に、
 
@@ -453,6 +551,7 @@ External Service
 - SMS
 - Push Notification
 - Chat Service
+- Other Messaging Service
 
 などを利用する可能性がある。
 
@@ -465,7 +564,7 @@ Applicationから、
 
 ---
 
-# 19. LINE Integration
+# 22. LINE Integration
 
 LINEなどのMessaging Serviceを利用する場合、
 
@@ -484,7 +583,7 @@ Person IDと直接同一視しない。
 
 ---
 
-# 20. Messaging Identity
+# 23. Messaging Identity
 
 External Messaging Identityは、
 StageArt Person Identityと分離する。
@@ -504,11 +603,36 @@ Person Domainを変更しない。
 
 ---
 
-# 21. Calendar Integration
+# 24. Push Notification
+
+Mobile Push Notificationを利用する場合、
+
+StageArt
+↓
+Notification Interface
+↓
+Push Adapter
+↓
+Push Provider
+↓
+Mobile Device
+
+という構造を利用する。
+
+Push NotificationのDelivery Stateと、
+StageArt Business Factを分離する。
+
+Push失敗によって、
+RehearsalやPerformanceなどの
+Business Dataを変更しない。
+
+---
+
+# 25. Calendar Integration
 
 Calendar ServiceとのIntegrationでは、
 
-StageArt Event
+StageArt Schedule
 ↓
 Calendar Adapter
 ↓
@@ -516,7 +640,7 @@ External Calendar API
 
 という構造を利用する。
 
-例えば、
+対象例：
 
 - Rehearsal
 - Performance
@@ -527,7 +651,7 @@ External Calendar API
 
 ---
 
-# 22. Calendar Synchronization
+# 26. Calendar Synchronization
 
 Calendar Integrationでは、
 StageArt Scheduleと
@@ -547,9 +671,10 @@ StageArt Scheduleの正本としない。
 
 ---
 
-# 23. Calendar External Changes
+# 27. Calendar External Changes
 
-External Calendar側で変更が行われる場合、
+External Calendar側で
+変更が行われる場合、
 Webhookなどによって
 StageArtへ通知できる。
 
@@ -561,11 +686,33 @@ StageArt Business Fact
 
 と無条件に同期しない。
 
-必要なValidationとAuthorizationを行う。
+必要なValidation、
+Authorization、
+Conflict Resolutionを行う。
 
 ---
 
-# 24. File Storage Integration
+# 28. Calendar Conflict
+
+StageArt Scheduleと
+External Calendar Scheduleに
+矛盾が発生した場合、
+どちらを正本とするかを
+明確にする。
+
+基本原則：
+
+StageArt Business Schedule
+→ StageArtが正本
+
+External Calendar
+→ External Representation
+
+とする。
+
+---
+
+# 29. File Storage Integration
 
 Document / Fileは、
 External Storageへ保存できる。
@@ -591,7 +738,7 @@ External Storage
 
 ---
 
-# 25. File Storage Boundary
+# 30. File Storage Boundary
 
 Domainでは、
 FileそのもののStorage Detailを
@@ -610,7 +757,7 @@ Storage Provider
 
 ---
 
-# 26. File Upload
+# 31. File Upload
 
 File Uploadでは、
 
@@ -628,15 +775,14 @@ Storage
 
 という構造を基本とする。
 
-Clientから、
-External Storageへ直接Uploadする方式を
-採用する場合でも、
+ClientからExternal Storageへ
+直接Uploadする方式を採用する場合でも、
 AuthorizationとUpload Policyを
 StageArt側で管理する。
 
 ---
 
-# 27. File Download
+# 32. File Download
 
 File Downloadでは、
 DocumentへのAuthorizationを確認する。
@@ -660,7 +806,36 @@ External Storage URLを、
 
 ---
 
-# 28. Payment Integration
+# 33. File Storage Failure
+
+File StorageへのUpload / Downloadに
+失敗した場合でも、
+既存Business Factを不正に変更しない。
+
+Document Metadataと
+File BinaryのConsistencyを
+考慮する。
+
+---
+
+# 34. File Storage Reference
+
+StageArtでは、
+
+Document
+↓
+External Storage Reference
+↓
+External File
+
+という関係を持てる。
+
+External StorageのFile IDは、
+StageArt Document Identityそのものではない。
+
+---
+
+# 35. Payment Integration
 
 将来的にPayment Serviceを
 利用する場合でも、
@@ -686,7 +861,7 @@ StageArt Domainへ直接持ち込まない。
 
 ---
 
-# 29. Payment Webhook
+# 36. Payment Webhook
 
 Payment Providerから
 Webhookを受信する場合、
@@ -710,7 +885,7 @@ Webhook Payloadを、
 
 ---
 
-# 30. Payment Idempotency
+# 37. Payment Idempotency
 
 Payment Integrationでは、
 RetryやWebhook再送を考慮する。
@@ -724,14 +899,32 @@ Webhook
 StageArt
 
 が複数回送信されても、
-同じPayment Factを重複作成しない。
+同じPayment Factを
+重複作成しない。
 
 External Transaction IDなどを利用して、
 Idempotencyを確保する。
 
 ---
 
-# 31. Accounting Integration
+# 38. Payment and Reservation
+
+PaymentがReservationと関連する場合でも、
+
+Payment
+≠
+Reservation
+
+とする。
+
+Payment成功によって
+Reservation Stateが変更される場合は、
+Application Processを通して
+Domain Ruleを適用する。
+
+---
+
+# 39. Accounting Integration
 
 Accounting Systemと連携する場合、
 
@@ -751,7 +944,29 @@ Data Modelを分離する。
 
 ---
 
-# 32. Check In and Accounting Integration
+# 40. Accounting Integration Source
+
+Accounting Integrationでは、
+StageArt側のAccounting Dataを
+基本的なSourceとする。
+
+例えば、
+
+Journal Entry
+↓
+Accounting Adapter
+↓
+External Accounting System
+
+とする。
+
+External Accounting Systemの
+内部Dataを、
+StageArt Journal Entryの正本としない。
+
+---
+
+# 41. Check In and Accounting Integration
 
 Check Inが成功した場合、
 
@@ -775,12 +990,12 @@ Check In Factを直接変更しない。
 
 ---
 
-# 33. Accounting Failure
+# 42. Accounting Failure
 
 External Accounting Systemが
 停止している場合でも、
 Check Inそのものを
-不要に失敗させない構造を検討する。
+不要に失敗させない構造を基本とする。
 
 例えば、
 
@@ -795,12 +1010,26 @@ External Accounting
 
 など。
 
-具体的なAccounting Consistency Ruleは、
-Accounting Architectureで定義する。
+---
+
+# 43. Accounting Retry
+
+Accounting IntegrationのRetryでは、
+同じJournal Entryを
+重複送信しない。
+
+必要に応じて、
+
+- Journal Entry ID
+- External Reference
+- Idempotency Key
+- Delivery Status
+
+などを利用する。
 
 ---
 
-# 34. Ticketing Integration
+# 44. Ticketing Integration
 
 External Ticketing Systemを
 利用する場合、
@@ -821,7 +1050,7 @@ StageArt Issued Ticket IDと
 
 ---
 
-# 35. External Ticketing and Check In
+# 45. External Ticketing and Reservation
 
 External Ticketing Systemから
 Ticket Informationを取得する場合でも、
@@ -832,17 +1061,62 @@ Adapter
 ↓
 StageArt Ticket Context
 ↓
-Check In Use Case
+Reservation Resolution
 
 という構造とする。
 
-External Systemが
-Check In Business Ruleそのものを
+External Ticketing Systemが、
+StageArt Reservation / Check In Business Ruleそのものを
 所有する構造にはしない。
 
 ---
 
-# 36. External Ticketing Webhook
+# 46. External Ticketing and Check In
+
+External Ticketing SystemのTicketを
+受付に利用する場合でも、
+
+External Ticket
+↓
+External Reference
+↓
+Issued Ticket / Reservation Resolution
+↓
+Check In Use Case
+↓
+Check In
+
+という構造を基本とする。
+
+External Ticketそのものを
+Check In Factとして扱わない。
+
+---
+
+# 47. QR and External Ticketing
+
+External Ticketing Systemから
+QR Ticketが提供される場合でも、
+QR CodeをそのままCheck In Factとしない。
+
+基本構造：
+
+External QR
+↓
+External Ticket Identifier
+↓
+Ticketing Adapter
+↓
+Issued Ticket / Reservation Resolution
+↓
+Check In
+
+StageArt側で必要なBusiness Ruleを
+Server Sideで検証する。
+
+---
+
+# 48. External Ticketing Webhook
 
 External Ticketing Systemから
 Webhookを受信する場合、
@@ -864,7 +1138,7 @@ Webhook Eventを
 
 ---
 
-# 37. Social Media Integration
+# 49. Social Media Integration
 
 SNSへInformationをPublishする場合、
 
@@ -883,251 +1157,118 @@ Domainへ持ち込まない。
 
 ---
 
-# 38. Social Media Failure
+# 50. Social Media Failure
 
 SNS Publishに失敗しても、
 ProductionやPerformanceなどの
 Business FactをRollbackしない。
 
-Social Publishは、
-必要に応じて、
+例えば、
 
-- Pending
-- Retry
-- Failed
+Announcement Published
+↓
+Social Media Publish Failed
 
-として管理する。
+の場合、
 
----
+Announcement
+→ Published
 
-# 39. External API Authentication
+Social Post
+→ Pending / Failed / Retry
 
-External APIへのAccessでは、
-必要に応じて、
-
-- API Key
-- OAuth
-- Access Token
-- Service Account
-
-などを利用する。
-
-Credentialは、
-Source CodeへHard Codeしない。
-
-具体的なSecret Managementは、
-Security / Deployment Architectureで定義する。
+と分離できる構造とする。
 
 ---
 
-# 40. External API Timeout
+# 51. Reporting Integration
 
-External APIには、
-Timeoutを設定する。
+External Reporting Systemへ
+Dataを提供する場合、
 
-External APIのResponseを
-無期限に待たない。
+StageArt Business Fact
+↓
+Reporting Projection
+↓
+Export / API
+↓
+External Reporting System
 
-Timeout発生時には、
+という構造を利用する。
 
-- Retry
-- Queue
-- Failed
-- Pending
-
-など、
-Operationの性質に応じた処理を行う。
+External Reporting Systemを、
+Business Factの正本としない。
 
 ---
 
-# 41. External API Retry
+# 52. Data Export Integration
 
-Retryは、
-すべてのErrorに対して
-無条件に実行しない。
+External SystemへDataをExportする場合、
+Scopeを維持する。
 
 例えば、
 
-Network Timeout
-→ Retry可能
+Organization Export
+↓
+Organization Scope
 
-Rate Limit
-→ Backoff後Retry
-
-Authentication Failure
-→ Credential確認
-
-Invalid Request
-→ Retry不要
+Production Export
+↓
+Production Scope
 
 など。
 
----
-
-# 42. Exponential Backoff
-
-External API Retryでは、
-必要に応じてExponential Backoffを利用する。
-
-基本：
-
-Retry 1
-↓
-Retry 2
-↓
-Retry 3
-↓
-Failed
-
-具体的なRetry回数と
-Backoff時間は、
-Implementation Specificationで定義する。
+Export処理では、
+Authorizationを確認する。
 
 ---
 
-# 43. Circuit Breaker
+# 53. Data Import Integration
 
-External Serviceが
-継続的にFailureしている場合、
-Circuit Breakerを利用できる。
+External SystemからDataをImportする場合、
 
-例えば、
-
-StageArt
+External Data
 ↓
-External Service
+Import Adapter
 ↓
-Repeated Failure
+Validation
 ↓
-Circuit Open
+Mapping
+↓
+Application Operation
+↓
+Business Fact
 
-とする。
+という構造を利用する。
 
-External Serviceの障害によって、
-StageArt全体が不要に
-連鎖Failureしないようにする。
+External Dataを、
+そのままDatabaseへInsertしない。
 
 ---
 
-# 44. Queue Integration
+# 54. Import Validation
 
-External Integrationでは、
-必要に応じてQueueを利用する。
+Importでは、
 
-基本構造：
+- Schema Validation
+- Identifier Validation
+- Scope Validation
+- Business Rule Validation
+- Duplicate Detection
+- Reference Validation
 
-Application
-↓
-Queue
-↓
-Integration Worker
-↓
-External API
+などを行う。
 
-用途：
-
-- Email
-- Notification
-- Calendar
-- Accounting
-- SNS
-- File Processing
-
-など。
+Invalid Dataは、
+Business Factとして確定しない。
 
 ---
 
-# 45. Queue Message
+# 55. Webhook Boundary
 
-Queue Messageには、
-必要なIdentifierとContextだけを
-含める。
-
-例えば、
-
-- Event ID
-- Entity ID
-- Operation
-- Timestamp
-- Correlation ID
-
-など。
-
-大きなDomain Entityそのものを、
-無条件にMessageへ詰め込まない。
-
----
-
-# 46. Queue Idempotency
-
-Queue Messageは、
-複数回Deliveryされる可能性を考慮する。
-
-同じMessageを複数回処理しても、
-External Side Effectが
-不正に重複しないようにする。
-
----
-
-# 47. Queue Failure
-
-Queue処理が失敗した場合、
-
-- Retry
-- Dead Letter
-- Manual Retry
-- Alert
-
-などを利用できる。
-
-Business Fact自体を
-不正に削除しない。
-
----
-
-# 48. Domain Event and Integration
-
-Domain Eventは、
-External IntegrationのTriggerとして
-利用できる。
-
-例えば、
-
-CheckInCompleted
-↓
-Notification
-↓
-Email
-
-など。
-
-Domain Event自体は、
-External ProviderのAPI Contractではない。
-
----
-
-# 49. Event Mapping
-
-Domain Eventを
-External EventへMappingする。
-
-例えば、
-
-CheckInCompleted
-↓
-Notification Event
-↓
-Email Adapter
-
-というように、
-Domain EventとProvider Payloadを分離する。
-
----
-
-# 50. Webhook Reception
-
-Webhookを受信する場合、
-専用のIntegration Endpointを設ける。
+Webhookは、
+External ServiceからStageArtへ
+Dataを送信するIntegration Boundaryである。
 
 基本構造：
 
@@ -1135,972 +1276,7 @@ External Service
 ↓
 Webhook Endpoint
 ↓
-Signature Verification
-↓
-Event Mapping
-↓
-Application
-↓
-Domain
-
-Webhook Controllerに、
-Business Ruleを実装しない。
-
----
-
-# 51. Webhook Security
-
-Webhookでは、
-必要に応じて、
-
-- Signature Verification
-- Shared Secret
-- Timestamp
-- Replay Protection
-- Source Validation
-
-などを行う。
-
-Webhook Payloadを、
-無条件に信頼しない。
-
----
-
-# 52. Webhook Idempotency
-
-Webhook Providerが
-同じEventを複数回送信する可能性を考慮する。
-
-例えば、
-
-External Event ID
-↓
-Processed Event Check
-↓
-Already Processed
-または
-Process
-
-とする。
-
----
-
-# 53. Webhook Processing
-
-Webhookの基本Flow：
-
-Webhook
-↓
-Authentication / Signature
-↓
-Payload Validation
-↓
-Event ID Validation
-↓
-Mapping
-↓
-Application Use Case
-↓
-Domain Operation
-↓
-Result
-
-External Payloadを、
-直接DatabaseへInsertしない。
-
----
-
-# 54. External Event Ordering
-
-External Eventの到着順序が
-保証されない可能性を考慮する。
-
-例えば、
-
-Update A
-Update B
-
-が逆順に到着する場合。
-
-Event Timestamp / Version / Sequenceなどを
-必要に応じて利用する。
-
----
-
-# 55. External System as Source of Truth
-
-Integrationでは、
-External SystemがSource of Truthとなる場合がある。
-
-例えば、
-
-Payment Provider
-→ Payment Transaction
-
-など。
-
-一方、
-
-StageArt Business Fact
-→ StageArt Domain
-
-とする。
-
-Source of Truthを
-Integration単位で明確にする。
-
----
-
-# 56. Source of Truth Matrix
-
-Integrationごとに、
-Source of Truthを明確にする。
-
-例：
-
-Person
-→ StageArt
-
-Production
-→ StageArt
-
-Performance
-→ StageArt
-
-Check In
-→ StageArt
-
-Journal Entry
-→ StageArt Accounting
-
-Payment Transaction
-→ Payment Provider / StageArt Payment Integration
-必要に応じて定義
-
-Calendar Event
-→ StageArt Scheduleを基本とする
-
-File Binary
-→ Storage Provider
-
-など。
-
-具体的な最終定義は、
-各Domain / Integration Specificationで確定する。
-
----
-
-# 57. Synchronization Model
-
-External Systemとの同期には、
-以下の方式を利用できる。
-
-- Request / Response
-- Polling
-- Webhook
-- Queue
-- Batch
-- Scheduled Job
-
-Operationの性質に応じて選択する。
-
----
-
-# 58. Synchronous Integration
-
-即時Responseが必要な場合、
-Synchronous Integrationを利用する。
-
-例えば、
-
-StageArt
-↓
-Payment API
-↓
-Immediate Result
-
-など。
-
-ただし、
-External Service Failureが
-User Operationへ直接影響するため、
-Critical Pathへ入れるIntegrationは慎重に設計する。
-
----
-
-# 59. Asynchronous Integration
-
-即時Responseが不要な場合、
-Asynchronous Integrationを利用する。
-
-例えば、
-
-CheckInCompleted
-↓
-Queue
-↓
-Email
-
-など。
-
-Asynchronous Integrationでは、
-Pending / Failed / Retryを管理できる構造とする。
-
----
-
-# 60. Batch Integration
-
-大量Dataの連携では、
-Batch Integrationを利用できる。
-
-例えば、
-
-- Accounting Export
-- Reporting
-- Historical Data
-- Bulk Synchronization
-
-など。
-
-Batch処理は、
-通常のUser Requestから分離する。
-
----
-
-# 61. Scheduled Integration
-
-定期的なExternal Syncでは、
-Scheduled Jobを利用できる。
-
-例えば、
-
-Daily
-↓
-External Calendar Sync
-
-など。
-
-Scheduled Jobでも、
-IdempotencyとRetryを考慮する。
-
----
-
-# 62. Integration Status
-
-必要に応じて、
-External Integrationの状態を管理する。
-
-例えば、
-
-- Pending
-- Processing
-- Succeeded
-- Failed
-- Retry Scheduled
-- Cancelled
-
-など。
-
-Integration Statusと
-Business Fact Statusを混同しない。
-
----
-
-# 63. Integration Record
-
-重要なExternal Operationについて、
-Integration Recordを保持できる。
-
-例えば、
-
-- Integration ID
-- Provider
-- Operation
-- External ID
-- Status
-- Created At
-- Updated At
-- Retry Count
-- Last Error
-
-など。
-
----
-
-# 64. External ID Mapping
-
-External SystemのIdentifierは、
-StageArt Identifierと分離する。
-
-例えば、
-
-StageArt Ticket ID
-+
-External Ticket ID
-
-というMappingを保持できる。
-
-Provider変更時にも、
-StageArt Identityを維持する。
-
----
-
-# 65. External Reference
-
-Domain Entityに必要な場合、
-External Referenceを保持できる。
-
-例えば、
-
-Production
-↓
-External Calendar Event ID
-
-など。
-
-ただし、
-External IDをDomain Identityそのものとしない。
-
----
-
-# 66. Integration Consistency
-
-Integration処理が遅延しても、
-Core Business Factが壊れないようにする。
-
-例えば、
-
-Production Created
-↓
-Calendar Sync Pending
-
-という状態を許容する。
-
-Production自体を、
-Calendar APIのSuccessに依存させない。
-
----
-
-# 67. Check In Integration Principle
-
-Check Inは、
-External Serviceの状態に
-直接依存しないことを基本とする。
-
-基本：
-
-Web / Mobile
-↓
-Check In API
-↓
-Check In
-↓
-CheckInCompleted
-
-その後、
-
-CheckInCompleted
-├── History
-├── Accounting
-├── Notification
-└── External Integration
-
-とする。
-
----
-
-# 68. Check In and Notification
-
-Check In成功後に、
-Notificationを送る場合、
-
-Check In
-↓
-CheckInCompleted
-↓
-Notification Process
-↓
-Messaging Adapter
-↓
-External Service
-
-とする。
-
-Notification Failureによって、
-Check InをRollbackしない。
-
----
-
-# 69. Check In and Calendar
-
-通常、
-Check Inそのものを
-Calendar Serviceへ同期する必要はない。
-
-将来的に必要になった場合でも、
-
-CheckInCompleted
-↓
-Calendar Integration
-
-という非同期Integrationを基本とする。
-
----
-
-# 70. Check In and External Accounting
-
-Check InによるTicket Revenueを
-External Accounting Systemへ
-連携する場合、
-
-Check In
-↓
-CheckInCompleted
-↓
-Accounting Process
-↓
-Journal Entry
-↓
-Accounting Adapter
-↓
-External Accounting System
-
-という構造とする。
-
----
-
-# 71. Check In and External Ticketing
-
-External Ticketing Systemを
-利用する場合でも、
-Check In Business Ruleは
-StageArt側で管理する。
-
-External Ticketing：
-
-Ticket Identifier / Ticket Status
-
-StageArt：
-
-Check In Fact
-
-という責務分離を基本とする。
-
----
-
-# 72. Integration and Audit
-
-重要なExternal Integrationについて、
-Audit / Integration Logを保持できる。
-
-例えば、
-
-- Provider
-- Operation
-- External ID
-- Actor
-- Timestamp
-- Result
-- Error
-
-など。
-
----
-
-# 73. Integration Logging
-
-Integration Logでは、
-Technical Detailを記録する。
-
-例えば、
-
-- Endpoint
-- Status Code
-- Duration
-- Retry
-- Error
-- Correlation ID
-
-など。
-
-ただし、
-
-- Token
-- Password
-- Secret
-- 不要なPersonal Data
-
-をLogへ出さない。
-
----
-
-# 74. Integration Monitoring
-
-Integrationでは、
-以下をMonitoringする。
-
-- Success Rate
-- Failure Rate
-- Latency
-- Retry Count
-- Queue Size
-- Dead Letter
-- Webhook Failure
-- External API Availability
-
----
-
-# 75. Integration Alert
-
-重要なIntegration Failureについて、
-Alertを発生させることができる。
-
-例えば、
-
-- Payment Failure
-- Accounting Failure
-- Email Failure
-- Storage Failure
-- External API Down
-
-など。
-
-Alertは、
-Business User向けとTechnical Operator向けを
-必要に応じて分ける。
-
----
-
-# 76. Integration Security
-
-External Integrationでは、
-
-- Credential Protection
-- TLS
-- Signature Validation
-- OAuth
-- API Key Protection
-- IP Restriction
-- Replay Protection
-
-などを考慮する。
-
----
-
-# 77. Credential Management
-
-External Service Credentialは、
-Environment Configuration / Secret Managementで
-管理する。
-
-Source Codeへ、
-CredentialをHard Codeしない。
-
-Clientへ、
-External Service Credentialを
-配布しない。
-
----
-
-# 78. External API Rate Limit
-
-External Service側に
-Rate Limitがある場合、
-StageArt側でも考慮する。
-
-例えば、
-
-- Queue
-- Throttling
-- Backoff
-- Batch
-
-などを利用する。
-
----
-
-# 79. External API Contract Change
-
-External ProviderのAPI変更を
-StageArt Coreへ直接波及させない。
-
-Provider API変更時は、
-
-External Adapter
-↓
-Mapping
-
-を修正することを基本とする。
-
-Domain / Application Contractは、
-必要以上に変更しない。
-
----
-
-# 80. Provider Replacement
-
-Integration Architectureでは、
-Provider変更可能性を考慮する。
-
-例えば、
-
-Email Provider A
-↓
-Email Interface
-↓
-Email Provider B
-
-のように、
-Adapterを差し替えられる構造を目指す。
-
----
-
-# 81. Multi Provider
-
-必要に応じて、
-複数Providerを利用できる。
-
-例えば、
-
-Primary Email Provider
-↓
-Fallback Email Provider
-
-など。
-
-ただし、
-Provider切り替えロジックを
-Domainへ持ち込まない。
-
----
-
-# 82. Integration Testing
-
-Integrationでは、
-以下をTestする。
-
-- Request Mapping
-- Response Mapping
-- Authentication
-- Error
-- Retry
-- Idempotency
-- Timeout
-- Webhook
-- Signature Validation
-- Provider Failure
-
----
-
-# 83. Adapter Testing
-
-Adapterは、
-Provider API Contractとの
-MappingをTestする。
-
-例えば、
-
-StageArt Request
-↓
-Provider Request
-
-Provider Response
-↓
-StageArt Result
-
-が正しく変換されることを確認する。
-
----
-
-# 84. Webhook Testing
-
-Webhookでは、
-
-- Valid Signature
-- Invalid Signature
-- Duplicate Event
-- Invalid Payload
-- Replay
-- Out-of-order Event
-- Provider Failure
-
-などをTestする。
-
----
-
-# 85. Integration Failure Testing
-
-External Service停止時に、
-
-- Retry
-- Queue
-- Pending
-- Failed
-- Alert
-
-などが期待通り動くことをTestする。
-
----
-
-# 86. Check In Integration Testing
-
-Check In後のIntegrationでは、
-
-Check In
-↓
-CheckInCompleted
-↓
-History
-↓
-Accounting
-↓
-Notification
-
-などのProcessを、
-必要に応じてIntegration Testする。
-
-ただし、
-External Service Failureによって
-Check In Factが壊れないことを確認する。
-
----
-
-# 87. End-to-End Integration
-
-代表的なFlow：
-
-Web Check In
-↓
-Check In API
-↓
-CheckInUseCase
-↓
-Check In
-↓
-CheckInCompleted
-├── History
-├── Accounting
-└── Notification
-
-Mobile QR Check In
-↓
-Check In API
-↓
-CheckInUseCase
-↓
-Check In
-↓
-CheckInCompleted
-├── History
-├── Accounting
-└── Notification
-
----
-
-# 88. Integration and Backend
-
-Integration Architectureは、
-Backend Architectureの
-Infrastructure Boundaryを拡張する。
-
-基本構造：
-
-API
-↓
-Application
-↓
-Domain
-↓
-Integration Interface
-↓
-Adapter
-↓
-External Service
-
----
-
-# 89. Integration and Frontend
-
-Frontendは、
-External Serviceへ
-直接アクセスしないことを基本とする。
-
-例えば、
-
-Web Client
-↓
-StageArt API
-↓
-Application
-↓
-Integration
-↓
-External Service
-
-とする。
-
-Mobile Clientについても同様。
-
----
-
-# 90. Integration and Data Architecture
-
-External Dataを、
-StageArt Databaseへ取り込む場合でも、
-
-External Data
-↓
-Adapter
-↓
-Application
-↓
-Domain
-↓
-Repository
-↓
-Database
-
-というMappingを行う。
-
-External Dataを、
-そのままDatabaseへInsertしない。
-
----
-
-# 91. Integration and Domain Model
-
-Domain Modelは、
-External ProviderのModelに
-従属しない。
-
-例えば、
-
-External Payment
-≠
-StageArt Payment
-
-External Calendar Event
-≠
-StageArt Performance
-
-External User
-≠
-StageArt Person
-
-という分離を基本とする。
-
----
-
-# 92. Integration and API Architecture
-
-APIは、
-StageArt Clientの入口。
-
-Integrationは、
-StageArtがExternal Systemを利用するための
-出口 / 入口である。
-
-基本構造：
-
-Client
-↓
-StageArt API
-↓
-Application
-↓
-Domain
-↓
-Integration
-↓
-External Service
-
----
-
-# 93. Integration and Business Fact
-
-External ServiceのResponseによって、
-StageArt Business Factを
-直接上書きしない。
-
-Applicationで、
-
-- Validation
-- Mapping
-- Authorization
-- Business Rule
-
-を通した後に、
-必要なBusiness Operationを実行する。
-
----
-
-# 94. Integration Ownership
-
-Integrationを通じて
-取得したDataについて、
-
-- Source of Truth
-- Owner
-- Synchronization Direction
-- Update Authority
-
-を明確にする。
-
-例えば、
-
-StageArt Person
-→ StageArtがOwner
-
-External Payment Transaction
-→ Payment ProviderがSource
-
-など。
-
----
-
-# 95. Integration Direction
-
-Integration Directionには、
-
-StageArt → External
-
-External → StageArt
-
-Bidirectional
-
-がある。
-
-Integrationごとに、
-Directionを明確にする。
-
----
-
-# 96. One-Way Integration
-
-StageArtからExternalへ
-情報を送る場合、
-
-StageArt
-↓
-Event / Command
-↓
-External Service
-
-とする。
-
-External ServiceのResponseは、
-必要に応じてIntegration Statusとして保持する。
-
----
-
-# 97. External-to-StageArt Integration
-
-ExternalからStageArtへ
-情報を受ける場合、
-
-External
-↓
-Webhook / Polling
+Authentication / Signature Validation
 ↓
 Integration Adapter
 ↓
@@ -2108,52 +1284,1935 @@ Application
 ↓
 Domain
 
-とする。
-
-External Dataを、
-直接Domain EntityへHydrateしない。
+Webhook Endpointから、
+Domainを直接呼び出さない。
 
 ---
 
-# 98. Bidirectional Integration
+# 56. Webhook Security
 
-Bidirectional Integrationでは、
-双方のSource of Truthを明確にする。
+Webhookでは、
+必要に応じて、
+
+- Signature Validation
+- Secret Validation
+- Timestamp Validation
+- Replay Protection
+- Source Verification
+
+などを利用する。
+
+Webhook Payloadを、
+無条件に信頼しない。
+
+---
+
+# 57. Webhook Idempotency
+
+Webhookは、
+同じEventが複数回送信される可能性を考慮する。
 
 例えば、
 
-StageArt
-↔
-External Calendar
+External Event ID
+↓
+Processed Event Record
+↓
+Duplicate Detection
 
 など。
 
-同期方向とConflict Ruleを
+同じEventを、
+複数回Business Factへ反映しない。
+
+---
+
+# 58. Webhook Processing
+
+Webhook処理は、
+必要に応じて非同期化できる。
+
+基本構造：
+
+Webhook
+↓
+Validate
+↓
+Persist Integration Event
+↓
+Queue
+↓
+Integration Worker
+↓
+Application
+↓
+Domain
+
+Webhook Requestそのものを
+長時間処理しない構造を検討する。
+
+---
+
+# 59. Integration Event
+
+Integration Eventは、
+External Systemとの
+同期状態を管理するために利用できる。
+
+Integration Eventは、
+Domain Eventとは異なる。
+
+Domain Event：
+
+StageArt Business Factの発生。
+
+Integration Event：
+
+External Systemとの通信・同期のためのEvent。
+
+両者を混同しない。
+
+---
+
+# 60. Domain Event and Integration Event
+
+例えば、
+
+Check In
+↓
+CheckInCompleted
+↓
+Integration Process
+↓
+External Notification
+
+という場合、
+
+CheckInCompleted
+→ Domain Event
+
+External Notification Request
+→ Integration Process
+
+として扱う。
+
+External Notificationの成功・失敗は、
+Check In Business Factそのものを変更しない。
+
+---
+
+# 61. Queue
+
+Integrationでは、
+必要に応じてQueueを利用する。
+
+対象例：
+
+- Email
+- Notification
+- Calendar Sync
+- Accounting Export
+- Social Media Publish
+- External Ticket Sync
+- Large Data Export
+- Import Processing
+
+Queueを利用する場合、
+Jobの状態を管理できる構造とする。
+
+---
+
+# 62. Background Worker
+
+Background Workerは、
+Queueに積まれたIntegration Jobを
+処理する。
+
+基本構造：
+
+Queue
+↓
+Worker
+↓
+Integration Adapter
+↓
+External Service
+
+Workerでは、
+
+- Retry
+- Timeout
+- Error Handling
+- Idempotency
+- Logging
+
+などを扱う。
+
+---
+
+# 63. Integration Job
+
+Integration Jobには、
+必要に応じて、
+
+- Job ID
+- Integration Type
+- Business Reference
+- External Reference
+- Status
+- Attempt Count
+- Created At
+- Updated At
+- Last Error
+- Next Retry Time
+
+などを保持する。
+
+Integration Jobは、
+Business Factそのものではない。
+
+---
+
+# 64. Integration Status
+
+Integrationには、
+必要に応じてStatusを持たせる。
+
+例えば、
+
+- Pending
+- Processing
+- Succeeded
+- Failed
+- RetryScheduled
+- Cancelled
+
+など。
+
+Integration Statusと
+Business Entity Stateを
+同一視しない。
+
+---
+
+# 65. Retry
+
+Retry可能なIntegrationについては、
+Retry Policyを定義する。
+
+例えば、
+
+Temporary Network Error
+→ Retry
+
+Timeout
+→ Retry
+
+Rate Limit
+→ Backoff Retry
+
+Authentication Failure
+→ Manual Intervention
+
+Validation Error
+→ Retryしない
+
+など。
+
+具体的なPolicyは、
+Implementation Specificationで定義する。
+
+---
+
+# 66. Exponential Backoff
+
+外部Serviceが一時的に
+利用できない場合は、
+必要に応じてExponential Backoffを利用する。
+
+基本的な考え方：
+
+Failure
+↓
+Wait
+↓
+Retry
+↓
+Longer Wait
+↓
+Retry
+
+無制限Retryは行わない。
+
+---
+
+# 67. Retry Limit
+
+Retryには、
+最大試行回数を設定できる。
+
+Retry Limit到達後は、
+
+Failed
+↓
+Dead Letter / Manual Retry
+
+などの状態へ移行できる。
+
+具体的な運用方法は、
+Operations Architectureで定義する。
+
+---
+
+# 68. Idempotency
+
+Integration Operationでは、
+Idempotencyを考慮する。
+
+対象例：
+
+- Payment
+- Accounting Export
+- Ticket Synchronization
+- Email Delivery
+- Notification
+- Calendar Synchronization
+- Webhook Processing
+- Data Import
+
+同じRequest / Eventを
+複数回処理しても、
+Business Factを不必要に重複生成しない。
+
+---
+
+# 69. External Reference Mapping
+
+External Systemとの連携では、
+
+StageArt Entity
+↓
+External Reference
+↓
+External Entity
+
+というMappingを保持できる。
+
+External Referenceには、
+必要に応じて、
+
+- Provider
+- External ID
+- External Type
+- Status
+- Last Synced At
+
+などを保持する。
+
+---
+
+# 70. Synchronization
+
+Synchronizationでは、
+
+StageArt
+↓
+External System
+
+または、
+
+External System
+↓
+StageArt
+
+のData Flowを明確にする。
+
+どちらがSource of Truthかを、
 Integrationごとに定義する。
 
 ---
 
-# 99. Conflict Resolution
+# 71. StageArt as Source of Truth
 
-External SystemとStageArtの
-Dataが競合した場合、
+Core Business Dataについては、
+原則としてStageArtをSource of Truthとする。
 
-- Source of Truth
-- Timestamp
-- Version
-- Priority
-- Manual Resolution
+例えば、
 
-などを利用して解決する。
+- Organization
+- Project
+- Production
+- Performance
+- Reservation
+- Check In
+- Rehearsal
+- Participant
+- Accounting Data
 
-Integrationごとに、
-Conflict Policyを定義する。
+など。
+
+External Systemは、
+これらのExternal Representationとして扱う。
 
 ---
 
-# 100. Integration Architecture Summary
+# 72. External System as Source of Truth
 
-StageArt Integrationは、
+一部のInfrastructure Dataについては、
+External SystemがSource of Truthとなる場合がある。
+
+例えば、
+
+Authentication Credential
+External Storage Binary
+Payment Provider Transaction
+External Calendar Event ID
+
+など。
+
+ただし、
+External Source of Truthを
+StageArt Domain全体へ拡張しない。
+
+---
+
+# 73. Check In Integration Principle
+
+Check Inについては、
+StageArt Server Sideを
+Business FactのSource of Truthとする。
+
+例えば、
+
+Mobile QR
+↓
+External / QR Artifact
+↓
+StageArt Reservation Resolution
+↓
+StageArt Check In
+
+という構造。
+
+External Ticketing Systemや
+QR ProviderのStateを、
+StageArt Check In Factの正本としない。
+
+---
+
+# 74. Check In and External Ticketing Failure
+
+External Ticketing Systemを
+受付時に参照する場合、
+外部Service障害が発生する可能性がある。
+
+この場合、
+
+External Ticket Validation
+→ Failed
+
+だからといって、
+既存のStageArt Check In Factを
+削除・Rollbackしない。
+
+具体的な受付可否Ruleは、
+Ticket / Check In Domainで定義する。
+
+---
+
+# 75. Web Check In Integration
+
+Web Check Inでは、
+External Integrationを
+必須にしない。
+
+基本構造：
+
+Web Client
+↓
+Reservation / Issued Ticket
+↓
+StageArt API
+↓
+Check In
+
+External Ticketing Systemが存在する場合でも、
+StageArt Check In Use Caseの
+外部依存を必要以上に増やさない。
+
+---
+
+# 76. Mobile QR Check In Integration
+
+Mobile QR Check Inでは、
+
+Mobile Camera
+↓
+QR Payload
+↓
+StageArt API
+↓
+Issued Ticket Resolution
+↓
+Reservation
+↓
+Check In
+
+という構造を基本とする。
+
+Camera / QR Scannerは、
+Mobile ClientのInfrastructure機能である。
+
+QR Scanner自体を
+StageArt Business Domainへ持ち込まない。
+
+---
+
+# 77. Mobile Reception Mode and Integration
+
+Reception Modeは、
+Integration Boundaryではなく
+Mobile ClientのOperational Modeである。
+
+したがって、
+
+Reception Mode
+≠
+External Integration
+
+である。
+
+Reception Modeでは、
+必要に応じてQR Scanner、
+Camera、
+NetworkなどのDevice機能を利用する。
+
+---
+
+# 78. Device Integration
+
+Mobile Deviceの、
+
+- Camera
+- QR Scanner
+- Push Notification
+- Local Storage
+- Network
+
+などは、
+Mobile Infrastructureとして扱う。
+
+Device APIを、
+StageArt Domainへ直接持ち込まない。
+
+---
+
+# 79. Camera Integration
+
+QR受付では、
+Mobile ClientがCameraを起動する。
+
+基本構造：
+
+Mobile Application
+↓
+Camera API
+↓
+QR Scanner
+↓
+QR Payload
+↓
+StageArt API
+
+Camera Imageそのものを、
+StageArt Serverへ送信する必要はない。
+
+必要なのは、
+Business Operationに必要なIdentifierである。
+
+---
+
+# 80. QR Image Data
+
+QR受付では、
+原則としてCamera Imageを
+Business Dataとして保存しない。
+
+QR Imageが必要な場合は、
+別途Document / Evidence Dataとして
+明示的に定義する。
+
+通常のCheck Inでは、
+
+QR Image
+≠
+Check In Fact
+
+とする。
+
+---
+
+# 81. Mobile Offline Consideration
+
+受付では、
+Network Failureが発生する可能性がある。
+
+原則として、
+Check In Business Factは
+Server Sideで確定する。
+
+そのため、
+完全Offline状態でのCheck Inを
+初期Architectureの必須要件とはしない。
+
+Offline Supportを導入する場合は、
+Conflict Resolution、
+Replay Protection、
+Idempotencyなどを
+別途定義する。
+
+---
+
+# 82. Network Failure During Check In
+
+Check In Request送信後に
+Network Timeoutが発生した場合、
+
+Client
+↓
+Request
+↓
+Server
+↓
+Check In Completed
+↓
+Response Lost
+
+という状態が発生する可能性がある。
+
+この場合、
+Clientが単純に再送しても
+二重Check Inにならないよう、
+Idempotencyを利用する。
+
+---
+
+# 83. External Integration and Business Fact
+
+External Integrationが
+Business Operationの後段にある場合、
+
+Business Fact
+↓
+Domain Event
+↓
+Integration
+
+という順序を基本とする。
+
+External Integrationの失敗によって、
+すでに確定したBusiness Factを
+不必要にRollbackしない。
+
+---
+
+# 84. Integration Transaction Boundary
+
+External Serviceとの通信を、
+StageArt Database Transactionと
+無条件に同一Transactionにしない。
+
+例えば、
+
+Database Transaction
+↓
+Commit
+↓
+Integration Job
+↓
+External Service
+
+という構造を利用できる。
+
+Distributed Transactionを
+必要以上に導入しない。
+
+---
+
+# 85. Outbox Pattern
+
+必要に応じて、
+Outbox Patternを利用できる。
+
+基本構造：
+
+Business Fact
+↓
+Database Transaction
+├── Business Data
+└── Outbox Event
+↓
+Commit
+↓
+Outbox Worker
+↓
+Integration
+↓
+External Service
+
+これにより、
+Business Factと
+Integration Eventの
+Consistencyを高める。
+
+具体的な採用は、
+Implementation Architectureで決定する。
+
+---
+
+# 86. Integration Monitoring
+
+Integrationについて、
+少なくとも以下をMonitoringできる構造とする。
+
+- Request Count
+- Success Count
+- Failure Count
+- Retry Count
+- Timeout Count
+- Latency
+- Queue Length
+- Job Status
+- Last Successful Sync
+- Last Failed Sync
+
+---
+
+# 87. Integration Error Logging
+
+Integration Errorでは、
+必要なTechnical Contextを記録する。
+
+例えば、
+
+- Provider
+- Operation
+- Request ID
+- Job ID
+- External Reference
+- Error Category
+- Timestamp
+
+など。
+
+ただし、
+
+- Secret
+- Password
+- Token
+- 不要なPersonal Data
+
+などをLogへ出力しない。
+
+---
+
+# 88. Integration Audit
+
+Integration Operationについて、
+必要に応じてAuditを記録する。
+
+例えば、
+
+- External Account Link
+- Payment Operation
+- Ticket Synchronization
+- Data Export
+- Organization Export
+- System Operation
+
+など。
+
+Integration LogとBusiness Auditを、
+必要に応じて分離する。
+
+---
+
+# 89. Integration Security
+
+Integration Credentialは、
+Infrastructure側で管理する。
+
+例えば、
+
+- API Key
+- Secret
+- OAuth Token
+- Webhook Secret
+- Service Account Credential
+
+など。
+
+これらを、
+
+- Domain
+- Client
+- API Response
+- Git Repository
+
+へ直接保存・公開しない。
+
+---
+
+# 90. Secret Rotation
+
+External Service Credentialは、
+必要に応じてRotationできる構造とする。
+
+Credential変更によって、
+Domain ModelやBusiness Dataを
+変更しない。
+
+---
+
+# 91. OAuth Integration
+
+OAuthを利用するExternal Serviceでは、
+
+StageArt
+↓
+OAuth Flow
+↓
+External Account
+↓
+Access Token
+↓
+Integration Adapter
+
+という構造を利用する。
+
+Access Token自体を、
+Person Business Dataとして扱わない。
+
+---
+
+# 92. External Account Linking
+
+External Accountを
+PersonやOrganizationにLinkする場合、
+
+Person / Organization
+↓
+External Account Link
+↓
+External Provider Identity
+
+というMappingを利用する。
+
+External Account Linkは、
+Authentication Identityや
+Business Identityと必要に応じて分離する。
+
+---
+
+# 93. Organization Scope in Integration
+
+Integration Operationでも、
+Organization Scopeを維持する。
+
+例えば、
+
+Organization A
+↓
+Calendar Integration A
+
+Organization B
+↓
+Calendar Integration B
+
+というように、
+OrganizationごとのExternal Account / Configurationを
+分離できる構造とする。
+
+---
+
+# 94. Production Scope in Integration
+
+Production単位でExternal Integrationを
+持つ場合でも、
+Production Scopeを維持する。
+
+例えば、
+
+Production A
+↓
+External Calendar A
+
+Production B
+↓
+External Calendar B
+
+という構造。
+
+Production AのIntegration Credentialや
+External Referenceを、
+Production Bで利用しない。
+
+---
+
+# 95. System Administrator Integration
+
+System Administratorが
+Organizationを選択して
+Business Managementを行う場合、
+
+Selected Organization Context
+↓
+通常Business API
+↓
+Integration Process
+
+という構造を利用する。
+
+System Administrator専用の
+別Integration Business Ruleを作らない。
+
+---
+
+# 96. System Operations Integration
+
+System Operationsでは、
+Backup StorageやMirror Environmentなどの
+Infrastructure Integrationを扱う。
+
+例えば、
+
+StageArt Primary
+↓
+Backup Adapter
+↓
+Backup Storage
+
+StageArt Primary
+↓
+Replication Adapter
+↓
+Mirror Environment
+
+など。
+
+これらは、
+Business Domain Integrationとは分離する。
+
+---
+
+# 97. Backup Integration
+
+Backupは、
+Business DataをRecovery可能な形で
+保存するためのIntegrationである。
+
+基本構造：
+
+Primary Database
+↓
+Backup Process
+↓
+Backup Storage
+
+Primary File Storage
+↓
+Backup Process
+↓
+Backup Storage
+
+Backup Dataは、
+通常運用時のBusiness Factの
+別Source of Truthではない。
+
+---
+
+# 98. Backup Metadata
+
+Backupについて、
+必要なMetadataを管理する。
+
+例えば、
+
+- Backup ID
+- Backup Type
+- Created At
+- Source
+- Size
+- Status
+- Verification Status
+- Retention
+- Storage Reference
+
+など。
+
+Backup Metadataは、
+System Operational Dataとして扱う。
+
+---
+
+# 99. Backup Verification
+
+Backupが作成されたことと、
+Recovery可能であることを
+区別する。
+
+必要に応じて、
+
+Backup
+↓
+Verification
+↓
+Restore Test
+↓
+Recovery Validation
+
+を行う。
+
+---
+
+# 100. Mirror Integration
+
+Mirror Environmentは、
+Primary Environmentの
+Availability / Failoverを目的とする。
+
+基本構造：
+
+Primary
+↓
+Replication
+↓
+Mirror
+
+Mirror Dataは、
+通常運用時のBusiness Factの
+独立した正本ではない。
+
+---
+
+# 101. Replication Failure
+
+Replicationが停止しても、
+Primary Business Dataを
+不正に変更しない。
+
+例えば、
+
+Primary
+→ Operational
+
+Replication
+→ Failed
+
+Mirror
+→ Stale
+
+という状態を許容できる。
+
+Replication Statusは、
+System Operations Dataとして管理する。
+
+---
+
+# 102. Failover Integration
+
+Primary障害時には、
+必要に応じてMirrorへFailoverする。
+
+基本構造：
+
+Primary Failure
+↓
+Failover Process
+↓
+Mirror
+↓
+New Primary
+↓
+Service Recovery
+
+Failover後には、
+Data Consistencyを確認する。
+
+具体的なFailover Procedureは、
+Deployment / Operations Architectureで定義する。
+
+---
+
+# 103. Recovery Integration
+
+Recoveryでは、
+
+Backup
+↓
+Restore
+↓
+Consistency Check
+↓
+Recovered Primary
+
+または、
+
+Primary Failure
+↓
+Mirror
+↓
+Failover
+↓
+Recovered Service
+
+という構造を利用する。
+
+Recovery Operationは、
+System Administrator専用とする。
+
+---
+
+# 104. Integration Availability
+
+External ServiceのAvailabilityと、
+StageArt Core Availabilityを
+分離する。
+
+例えば、
+
+Email Service
+→ Down
+
+であっても、
+
+Reservation
+→ Available
+
+Check In
+→ Available
+
+という状態を可能な限り維持する。
+
+---
+
+# 105. Critical Integration
+
+以下のIntegrationは、
+Reception / Business Operationへの
+影響が大きいため、
+特にAvailabilityを考慮する。
+
+- Authentication
+- Core Database
+- Ticket Resolution
+- Reservation Resolution
+- Check In
+
+ただし、
+External Serviceに依存する場合でも、
+Business RuleとIntegration Failureを
+分離する。
+
+---
+
+# 106. Non Critical Integration
+
+以下は、
+必要に応じて非同期化できる。
+
+- Email
+- Push Notification
+- Social Media
+- Calendar Export
+- Accounting Export
+- Reporting
+- Large File Processing
+
+Core Business OperationのCritical Pathを
+必要以上にExternal Serviceへ依存させない。
+
+---
+
+# 107. Integration Contract
+
+Integration Interfaceでは、
+少なくとも以下を定義する。
+
+- Operation
+- Request
+- Response
+- Authentication
+- External Reference
+- Error
+- Retry
+- Idempotency
+- Timeout
+- Scope
+- Sync / Async
+- Source of Truth
+
+---
+
+# 108. Integration Testing
+
+Integrationについて、
+以下をテスト対象とする。
+
+- Authentication
+- Request Mapping
+- Response Mapping
+- External Error
+- Timeout
+- Retry
+- Idempotency
+- Webhook
+- Signature Validation
+- Duplicate Event
+- Scope Isolation
+- Credential Failure
+- External Service Downtime
+- Recovery
+
+---
+
+# 109. External Service Contract Test
+
+Provider Adapterについて、
+External API Contractとの
+Compatibilityを確認する。
+
+例えば、
+
+- Request Format
+- Response Format
+- Error Format
+- Authentication
+- Webhook Signature
+- API Version
+
+など。
+
+---
+
+# 110. Integration Mock
+
+Development / Test環境では、
+External ServiceをMockできる構造とする。
+
+例えば、
+
+Email Adapter
+↓
+Mock Email Service
+
+Payment Adapter
+↓
+Mock Payment Provider
+
+Calendar Adapter
+↓
+Mock Calendar Service
+
+など。
+
+Domain Testが、
+External ServiceのAvailabilityに
+依存しない構造とする。
+
+---
+
+# 111. Integration Environment
+
+Integration Configurationは、
+Environmentごとに分離する。
+
+例えば、
+
+Development
+↓
+Sandbox Provider
+
+Test
+↓
+Test Provider
+
+Production
+↓
+Production Provider
+
+Production Credentialを
+Development環境で利用しない。
+
+---
+
+# 112. External API Version
+
+External APIのVersion変更に対して、
+Adapter側で吸収できる構造を目指す。
+
+例えば、
+
+External API v1
+↓
+Adapter
+↓
+StageArt Integration Interface
+
+External API v2
+↓
+Adapter
+↓
+StageArt Integration Interface
+
+という構造。
+
+Core Domainを変更せずに、
+Adapterを更新できることを目指す。
+
+---
+
+# 113. Integration Migration
+
+Provider変更時には、
+
+Old Provider
+↓
+Adapter A
+
+New Provider
+↓
+Adapter B
+
+という構造を利用できる。
+
+Application Interfaceは、
+可能な限り維持する。
+
+---
+
+# 114. Provider Independence
+
+StageArt Core Domainは、
+特定Providerへ
+過度に依存しない。
+
+例えば、
+
+Email
+≠
+特定Email Provider
+
+Storage
+≠
+特定Storage Provider
+
+Calendar
+≠
+特定Calendar Provider
+
+Messaging
+≠
+LINEそのもの
+
+とする。
+
+---
+
+# 115. Integration Data Retention
+
+Integration DataのRetentionは、
+Business Dataと分離して定義する。
+
+例えば、
+
+- Integration Job
+- Webhook Event
+- External Reference
+- Delivery Log
+- Error Log
+- Retry History
+
+など。
+
+具体的なRetention Policyは、
+Operations Architectureで定義する。
+
+---
+
+# 116. Integration Data Privacy
+
+Integration Dataにも、
+必要なPrivacy / Scopeを適用する。
+
+External Serviceへ送信するDataは、
+必要最小限とする。
+
+特に、
+
+- Person Information
+- Reservation Information
+- Audience Information
+- Contact Information
+
+などを、
+不要にExternal Serviceへ送信しない。
+
+---
+
+# 117. Data Minimization
+
+External Integrationでは、
+目的に必要なDataだけを送信する。
+
+例えば、
+
+Email送信に必要な情報だけを
+Email Providerへ送信する。
+
+Full Person Profileや
+Internal Permission Dataを、
+不要にExternal Serviceへ送信しない。
+
+---
+
+# 118. Integration and Audit
+
+External Integrationによって
+Business Factが生成・変更される場合、
+必要に応じてAuditを記録する。
+
+例えば、
+
+External Payment Confirmed
+↓
+Reservation Confirmed
+
+など。
+
+ただし、
+External Event自体と
+StageArt Business Factを
+同一視しない。
+
+---
+
+# 119. Integration and Eventual Consistency
+
+External Integrationでは、
+Eventual Consistencyを許容する場合がある。
+
+例えば、
+
+StageArt
+↓
+Calendar Sync
+↓
+External Calendar
+
+では、
+一時的にExternal Calendarが
+StageArtより遅れる可能性がある。
+
+Core Business Factを優先する。
+
+---
+
+# 120. Integration Status and Business Status
+
+Integration Statusと
+Business Statusを分離する。
+
+例えば、
+
+Reservation
+→ Confirmed
+
+Email Delivery
+→ Failed
+
+Calendar Sync
+→ Pending
+
+という状態を許容する。
+
+Integration Failureによって、
+Reservationを自動的にCancelledへ
+変更しない。
+
+---
+
+# 121. Integration Failure Classification
+
+Integration Failureを、
+少なくとも以下のように分類できる。
+
+- Network Error
+- Timeout
+- Authentication Error
+- Authorization Error
+- Rate Limit
+- Validation Error
+- External Business Error
+- Provider Error
+- Unknown Error
+
+Failure Categoryによって、
+Retry / Manual Interventionを判断する。
+
+---
+
+# 122. Integration Recovery
+
+Integration Failure後は、
+
+Failure
+↓
+Retry
+↓
+Success
+
+または、
+
+Failure
+↓
+Retry Limit
+↓
+Manual Recovery
+
+というFlowを利用する。
+
+Manual Recoveryは、
+必要な権限を持つOperatorのみが実行する。
+
+---
+
+# 123. Integration Manual Retry
+
+System Administratorは、
+必要に応じてIntegration Jobを
+Manual Retryできる。
+
+ただし、
+Manual Retryによって
+Business Factを重複生成しない。
+
+Idempotencyを維持する。
+
+---
+
+# 124. Integration Cancellation
+
+Pending Integration Jobを
+必要に応じてCancelできる。
+
+ただし、
+
+Integration Job Cancel
+≠
+Business Fact Cancel
+
+である。
+
+例えば、
+
+Email Delivery Cancel
+≠
+Reservation Cancel
+
+とする。
+
+---
+
+# 125. Integration Observability
+
+System Administratorが、
+Integrationの状態を
+確認できる構造とする。
+
+例えば、
+
+- Provider Status
+- Queue Status
+- Failed Jobs
+- Retry Count
+- Last Successful Sync
+- Last Error
+- Webhook Failure
+- External API Latency
+
+など。
+
+これはSystem Operations / Management機能として扱う。
+
+---
+
+# 126. System Administrator Integration Context
+
+System Administratorが
+Organizationを選択している場合でも、
+
+Selected Organization Context
+↓
+Organization Integration
+
+というScopeを維持する。
+
+System Administratorが
+Organization Aを選択した状態で、
+Organization BのExternal Integrationを
+誤って操作できないようにする。
+
+---
+
+# 127. Cross Organization Integration Isolation
+
+OrganizationごとのExternal Accountや
+Integration Configurationを
+必要に応じて分離する。
+
+例えば、
+
+Organization A
+↓
+LINE Account A
+
+Organization B
+↓
+LINE Account B
+
+など。
+
+Organization AのCredentialを
+Organization Bで利用しない。
+
+---
+
+# 128. System-wide Integration
+
+System-wide Integrationについては、
+Organization Scopeを持たない
+System Integrationとして扱える。
+
+例えば、
+
+- Backup Storage
+- Monitoring
+- System Email
+- Infrastructure Notification
+
+など。
+
+System-wide Integrationと
+Organization-specific Integrationを分離する。
+
+---
+
+# 129. Integration Configuration
+
+Integration Configurationは、
+Business Entityとは分離する。
+
+例えば、
+
+Organization
+↓
+Integration Configuration
+↓
+Provider
+
+という構造。
+
+Configurationには、
+必要に応じて、
+
+- Provider
+- Endpoint
+- External Account Reference
+- Enabled
+- Scope
+- Credential Reference
+
+などを持つ。
+
+Credentialそのものを、
+Business Dataとして保存しない。
+
+---
+
+# 130. Integration Enable / Disable
+
+Integrationは、
+必要に応じてEnable / Disableできる。
+
+例えば、
+
+Email Integration
+→ Enabled
+
+Calendar Integration
+→ Disabled
+
+など。
+
+IntegrationをDisableしても、
+既存Business Factを
+削除・変更しない。
+
+---
+
+# 131. Integration Configuration Security
+
+Integration Configurationの変更は、
+適切なAuthorizationを必要とする。
+
+例えば、
+
+Organization Administrator
+→ Organization Integration Configuration
+
+System Administrator
+→ System Integration Configuration
+
+など。
+
+Credentialそのものを、
+Clientへ返さない。
+
+---
+
+# 132. Integration Architecture and API
+
+APIは、
+Integrationそのものを
+Clientへ直接公開しない。
+
+基本構造：
+
+Client
+↓
+API
+↓
+Application
+↓
+Integration Interface
+↓
+Adapter
+↓
+External Service
+
+Clientは、
+External API Credentialや
+Provider-specific Requestを
+直接扱わない。
+
+---
+
+# 133. Integration Architecture and Data
+
+Data Architectureで定義した、
+
+- Business Fact
+- Source of Truth
+- External Reference
+- Read Model
+- Audit
+- Operational Data
+
+を維持する。
+
+External Dataは、
+必要に応じてIntegration Mappingを経由して
+StageArt Dataへ反映する。
+
+---
+
+# 134. Integration Architecture and Check In
+
+Check Inでは、
+
+Reservation
+↓
+Check In
+
+がCanonical Relationshipである。
+
+External TicketingやQR Providerを
+利用する場合でも、
+
+External Identifier
+↓
+Resolution
+↓
+Reservation
+↓
+Check In
+
+という構造を維持する。
+
+External Serviceを、
+Check In Business Factの正本にしない。
+
+---
+
+# 135. Integration Architecture and Mobile Reception
+
+Mobile Reception Modeでは、
+
+Mobile
+↓
+Camera / QR Scanner
+↓
+QR Payload
+↓
+StageArt API
+↓
+Reservation Resolution
+↓
+Check In
+
+という構造を基本とする。
+
+CameraやQR Scannerは、
+Mobile Device Integrationであり、
+External Business System Integrationとは
+分離する。
+
+---
+
+# 136. Integration Architecture and Web Reception
+
+Web Receptionでは、
+
+Web
+↓
+Reservation / Issued Ticket Query
+↓
+StageArt API
+↓
+Reservation Resolution
+↓
+Check In
+
+という構造を基本とする。
+
+External Integrationを、
+Web受付の必須条件にしない。
+
+---
+
+# 137. Integration Architecture and Accounting
+
+Check Inが確定した後、
+
+Check In
+↓
+CheckInCompleted
+↓
+Accounting Process
+↓
+External Accounting
+
+という非同期Integrationを
+利用できる。
+
+External AccountingのFailureは、
+Check In Business Factを
+不正に変更しない。
+
+---
+
+# 138. Integration Architecture and Backup
+
+Backupは、
+System Operations Integrationとして扱う。
+
+Primary Data
+↓
+Backup Adapter
+↓
+Backup Storage
+
+Backupは、
+Business Domain Integrationとは
+分離する。
+
+---
+
+# 139. Integration Architecture and Mirror
+
+Mirrorは、
+Availability / Failoverのための
+Infrastructure Integrationである。
+
+Primary
+↓
+Replication Adapter
+↓
+Mirror
+
+Mirror Dataは、
+通常運用時のBusiness Factの
+別Source of Truthではない。
+
+---
+
+# 140. Integration Architecture and Recovery
+
+Recoveryでは、
+
+Backup
+↓
+Restore
+↓
+Validation
+↓
+Recovered Primary
+
+または、
+
+Primary Failure
+↓
+Mirror
+↓
+Failover
+↓
+Recovered Service
+
+という構造を利用する。
+
+Recoveryは、
+System Operations Boundaryとして扱う。
+
+---
+
+# 141. Integration Architecture Rules
+
+Integration Architectureでは、
+以下を禁止または原則禁止とする。
+
+- DomainからExternal APIを直接呼び出すこと
+- External Data ModelをそのままDomain Entityとして扱うこと
+- External IdentifierをStageArt Business Identifierと同一視すること
+- External ServiceをBusiness Factの正本とすること
+- External FailureによってBusiness Factを不正にRollbackすること
+- Webhook Payloadを無条件に信頼すること
+- RetryによってBusiness Factを重複生成すること
+- CredentialをClientへ公開すること
+- CredentialをGit Repositoryへ保存すること
+- External Service固有のLogicをDomainへ持ち込むこと
+- Organization Scopeを越えてExternal Integrationを操作すること
+- System IntegrationとOrganization Integrationを無条件に混在させること
+- BackupをMirrorの代わりに扱うこと
+- MirrorをBackupの代わりに扱うこと
+- Integration JobをBusiness Factとして扱うこと
+- Integration StatusをBusiness Statusと同一視すること
+
+---
+
+# 142. Integration Architecture Summary
+
+StageArt Integration Architectureでは、
 
 StageArt
 ↓
@@ -2165,13 +3224,30 @@ Adapter
 ↓
 External Service
 
-という構造を基本とする。
+というBoundaryを基本とする。
 
-External Serviceから情報を受ける場合は、
+External Serviceは、
+StageArt Core Domainへ直接依存しない。
 
-External Service
+External ServiceとのData交換は、
+
+Request
 ↓
-Webhook / API
+Adapter
+↓
+Mapping
+↓
+Application
+↓
+Domain
+
+または、
+
+External Event
+↓
+Webhook
+↓
+Validation
 ↓
 Adapter
 ↓
@@ -2181,93 +3257,331 @@ Domain
 
 という構造を利用する。
 
-External Serviceは、
-StageArt Domainの直接の依存先ではない。
+Core Business Dataについては、
+原則としてStageArtをSource of Truthとする。
 
-また、
+特に、
+
+- Organization
+- Project
+- Production
+- Performance
+- Rehearsal
+- Reservation
+- Issued Ticket
+- Check In
+- Accounting
+
+などは、
+StageArt DomainがBusiness Factを所有する。
+
+External Serviceは、
+必要に応じてExternal Representation、
+External Reference、
+Integration Source、
+またはInfrastructure Serviceとして利用する。
+
+Check Inについては、
+
+Reservation
+↓
+Check In
+
+をCanonical Relationshipとする。
+
+External Ticketing System、
+QR Provider、
+Mobile Camera、
+QR Scannerなどを利用しても、
+
+External Identifier
+↓
+Reservation Resolution
+↓
+Check In Use Case
+↓
+Check In
+
+という構造を維持する。
+
+QR Codeそのものを
+Check In Business Factとしない。
+
+Issued Ticketを
+Check Inと同一視しない。
+
+Mobile Receptionでは、
+
+Mobile Client
+↓
+Reception Mode
+↓
+Camera / QR Scanner
+↓
+StageArt API
+↓
+Reservation Resolution
+↓
+Check In
+
+という構造を利用する。
+
+Web Receptionでは、
+
+Web Client
+↓
+Reservation / Issued Ticket List
+↓
+Reservation Resolution
+↓
+Check In
+
+という構造を利用する。
+
+どちらの場合も、
+同じCheck In Application Use Caseを利用する。
+
+Email、
+Push Notification、
+Calendar、
+Social Media、
+Accounting、
+External Ticketingなどの
+Non-Critical Integrationについては、
+必要に応じて、
+
+Business Fact
+↓
+Domain Event
+↓
+Queue
+↓
+Background Worker
+↓
+Integration Adapter
+↓
+External Service
+
+という非同期構造を利用する。
+
+External Service Failureが発生しても、
+すでに確定したBusiness Factを
+不必要にRollbackしない。
+
+例えば、
+
+Reservation
+→ Confirmed
+
+Email
+→ Failed
 
 Check In
+→ Completed
+
+Accounting
+→ Pending
+
+Calendar
+→ Retry
+
+というように、
+Business StateとIntegration Stateを
+分離する。
+
+Webhookでは、
+
+Webhook
 ↓
-CheckInCompleted
-├── History
-├── Accounting
-├── Notification
-└── External Integration
-
-という構造により、
-Check Inそのものと
-後続のExternal Integrationを分離する。
-
-これにより、
-
-- WordPress
-- Email
-- Calendar
-- File Storage
-- Payment
-- Accounting
-- LINE
-- SNS
-- External Ticketing
-- Authentication Provider
-
-などのExternal Serviceが変更されても、
-StageArt Core Business Ruleと
-Business Factへの影響を最小化できる。
-
----
-
-# 101. Integration Architecture Principle
-
-StageArt Integrationの最重要原則：
-
-「External ServiceはStageArt Business Ruleの一部ではなく、
-StageArtが利用する外部Capabilityである。」
-
-そのため、
-
-Client
+Signature Validation
 ↓
-API
+Replay Protection
+↓
+Integration Event
 ↓
 Application
 ↓
 Domain
-↓
-Integration Interface
-↓
-Adapter
-↓
-External Service
 
-という境界を維持する。
+という構造を基本とする。
+
+Webhook再送やNetwork Retryによって、
+同じBusiness Factを重複生成しない。
+
+Integrationでは、
+
+- Retry
+- Idempotency
+- Timeout
+- Queue
+- Background Worker
+- Error Handling
+- Monitoring
+- Recovery
+
+を考慮する。
+
+Integration Credentialは、
+Infrastructure側で安全に管理し、
+Client / Domain / Git Repositoryへ
+公開しない。
+
+Organization-specific Integrationでは、
+Organization Scopeを維持する。
+
+System Administratorが
+Organizationを選択している場合も、
+
+System Administrator
+↓
+Selected Organization Context
+↓
+Organization Integration
+
+として扱い、
+選択していないOrganizationの
+Integration Configurationへ
+誤ってアクセスできないようにする。
+
+System-wide Integrationについては、
+Organization Scopeを持たない
+System Integrationとして扱う。
+
+例えば、
+
+- Backup
+- Replication
+- Mirror
+- Monitoring
+- System Notification
+
+など。
+
+Backupについては、
+
+Primary
+↓
+Backup Process
+↓
+Backup Storage
+
+とし、
+Backupを通常Business Dataの
+Source of Truthとはしない。
+
+Mirrorについては、
+
+Primary
+↓
+Replication
+↓
+Mirror
+
+とし、
+Availability / Failoverを目的とする。
+
+BackupとMirrorを、
+同一目的の仕組みとして扱わない。
+
+Recoveryでは、
+
+Backup
+↓
+Restore
+↓
+Validation
+↓
+Recovered Primary
+
+または、
+
+Primary Failure
+↓
+Mirror
+↓
+Failover
+↓
+Recovered Service
+
+という構造を利用する。
+
+Integration Architectureの最重要原則は、
+
+「External SystemをStageArt Domainへ直接依存させず、
+Integration InterfaceとAdapterによって分離する」
+
+ことである。
+
+さらに、
+
+「External Serviceの成功・失敗と
+StageArt Business Factの確定・失敗を分離する」
+
+ことを重要な原則とする。
+
+そして、
+
+「External Ticket、
+QR Code、
+Webhook、
+Payment、
+Calendar、
+Email、
+MessagingなどのExternal Representationを
+StageArt Business Factそのものとしない」
+
+ことを明確にする。
 
 また、
 
-「External Serviceが失敗しても、
-StageArtのBusiness Factを不正に壊さない。」
+「Mobile ReceptionとWeb Receptionは
+異なる入口であって、
+異なるBusiness Ruleではない」
 
-ことを原則とする。
+ことを維持する。
 
-Check Inについては、
+さらに、
 
-Web / Mobile
-↓
-Check In API
-↓
-Check In
-↓
-CheckInCompleted
-↓
-History / Accounting / Notification / External Integration
+「System Administratorによる
+Organization Selection後のBusiness Operationは、
+通常のOrganization Scopeを通して実行し、
+System Administrator専用の重複Business Logicを作らない」
 
-という順序を基本とし、
-受付のCore Operationと
-外部連携のFailure Domainを分離する。
+ことを基本方針とする。
 
 これにより、
-外部サービスの追加・変更・停止があっても、
-StageArt Coreを安定して維持できる
-Integration Architectureを実現する。
+
+Web Client
+Mobile Client
+WordPress
+PHP Server
+Authentication Provider
+Email Service
+Calendar
+LINE
+Payment Provider
+Accounting System
+External Ticketing
+Social Media
+Backup Storage
+Mirror Environment
+
+などのExternal System / Infrastructureが変更されても、
+
+StageArtの
+
+- Business Identity
+- Business Fact
+- Organization Scope
+- Project Scope
+- Production Scope
+- Performance Scope
+- Reservation
+- Issued Ticket
+- Check In
+- Rehearsal
+- Accounting
+
+を安定して維持できるIntegration Architectureを実現する。
 
 ---
