@@ -17,6 +17,4 @@ interface MembershipRepositoryInterface
     public function findByPersonId(PersonId $personId): array;
 
     public function findByOrganizationAndPerson(OrganizationId $organizationId, PersonId $personId): ?Membership;
-
-    public function deleteByOrganizationId(OrganizationId $organizationId): void;
 }

@@ -71,11 +71,6 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
         return $row ? $this->hydrate($row) : null;
     }
 
-    public function deleteByOrganizationId(OrganizationId $organizationId): void
-    {
-        $this->wpdb->delete($this->table, ['organization_id' => $organizationId->toString()]);
-    }
-
     private function hydrate(array $row): Membership
     {
         return Membership::reconstitute(

@@ -15,6 +15,4 @@ interface OrganizationRepositoryInterface
      * @return Organization[]
      */
     public function findByIds(array $ids): array;
-
-    public function delete(OrganizationId $id): void;
 }

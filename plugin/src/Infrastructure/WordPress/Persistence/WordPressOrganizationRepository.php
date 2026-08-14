@@ -78,11 +78,6 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
-    public function delete(OrganizationId $id): void
-    {
-        $this->wpdb->delete($this->table, ['id' => $id->toString()]);
-    }
-
     private function hydrate(array $row): Organization
     {
         return Organization::reconstitute(
