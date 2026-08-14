@@ -2,6 +2,10 @@
 /plugin/vendor/
 /plugin/node_modules/
 
+# Test artifacts
+/plugin/.phpunit.cache/
+/plugin/.phpunit.result.cache
+
 # OS
 .DS_Store
 Thumbs.db

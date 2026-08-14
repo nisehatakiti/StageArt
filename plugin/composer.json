@@ -6,6 +6,9 @@
     "require": {
         "php": ">=8.0"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
     "autoload": {
         "psr-4": {
             "StageArt\\Domain\\": "src/Domain/",
@@ -13,5 +16,14 @@
             "StageArt\\Infrastructure\\": "src/Infrastructure/",
             "StageArt\\Presentation\\": "src/Presentation/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "StageArt\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "lint": "find src tests -name '*.php' -print0 | xargs -0 -n1 php -l"
     }
 }
