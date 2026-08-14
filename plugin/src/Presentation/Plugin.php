@@ -13,6 +13,7 @@ use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressMembershipRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
+use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
 use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Rest\OrganizationRestController;
 
@@ -23,6 +24,8 @@ final class Plugin
         add_action('init', static function (): void {
             load_plugin_textdomain('stageart', false, dirname(plugin_basename(STAGEART_PLUGIN_FILE)) . '/languages');
         });
+
+        SchemaUpgrader::maybeUpgrade();
 
         global $wpdb;
 

@@ -36,7 +36,7 @@ spl_autoload_register( static function ( string $class ): void {
 	}
 } );
 
-register_activation_hook( STAGEART_PLUGIN_FILE, [ StageArt\Infrastructure\WordPress\Schema\Installer::class, 'install' ] );
+register_activation_hook( STAGEART_PLUGIN_FILE, [ StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader::class, 'maybeUpgrade' ] );
 
 add_action( 'plugins_loaded', static function (): void {
 	( new StageArt\Presentation\Plugin() )->boot();
