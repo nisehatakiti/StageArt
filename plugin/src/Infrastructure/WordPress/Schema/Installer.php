@@ -17,6 +17,7 @@ final class Installer
         $organizations = $wpdb->prefix . 'stageart_organizations';
         $people = $wpdb->prefix . 'stageart_people';
         $memberships = $wpdb->prefix . 'stageart_memberships';
+        $projects = $wpdb->prefix . 'stageart_projects';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -47,6 +48,17 @@ final class Installer
             PRIMARY KEY  (id),
             KEY organization_id (organization_id),
             KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        dbDelta("CREATE TABLE {$projects} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            name VARCHAR(255) NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY organization_id (organization_id)
         ) {$charsetCollate};");
     }
 }
