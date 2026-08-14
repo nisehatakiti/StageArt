@@ -3,7 +3,7 @@
 # 10 - Architecture
 # API Architecture
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -14,8 +14,9 @@ StageArt Applicationと
 Web Client、
 Mobile Client、
 Public Client、
-Administrative Clientなどの
-Client間に存在するAPI Boundaryを定義する。
+System Administrationなどの
+Client / System Boundary間に存在する
+API Boundaryを定義する。
 
 API Architectureでは、
 
@@ -28,7 +29,7 @@ API Architectureでは、
 - Business Operation
 - Check In
 - Web Check In
-- QR Reception
+- Mobile Reception
 - Reservation Resolution
 - Error Handling
 - Idempotency
@@ -37,14 +38,18 @@ API Architectureでは、
 - Public API
 - Management API
 - Mobile API
-- Integration API
+- System Administration API
+- Integration Boundary
 - Scope Isolation
+- System Operations
 
 を定義する。
 
 API Architectureでは、
-具体的なPHP Frameworkや
-Database Queryの実装詳細までは定義しない。
+具体的なPHP Framework、
+Database Query、
+Infrastructure Implementationなどの
+詳細までは定義しない。
 
 ---
 
@@ -77,6 +82,11 @@ StageArt APIは、
 - Resource IDを知っているだけではAccessを許可しない。
 - Check InはReservationに対するBusiness Operationとして扱う。
 - Issued TicketやQR CodeはCheck Inそのものではなく、Reservationを特定するための入力経路として扱う。
+- Receptionは独立Clientではなく、Mobile ClientのOperational Modeとして扱う。
+- System Administrator専用の重複したBusiness Management APIを作らない。
+- System AdministratorはOrganizationを選択し、Selected Organization Contextから通常のManagement APIを利用する。
+- System OperationsとBusiness OperationsをAPI上でも分離する。
+- Backup、Replication、Mirror、RecoveryなどをBusiness Domain APIと混在させない。
 
 ---
 
@@ -111,13 +121,29 @@ Application
 ↓
 Domain
 
-Administrative Client
+System Administration
+↓
+System Administration API
+↓
+Application
+↓
+System Operations / Organization Selection
+
+Organization Managementについては、
+
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization Context
 ↓
 Management API
 ↓
 Application
 ↓
 Domain
+
+という構造を利用する。
 
 APIは、
 Client固有のUIやDevice機能を
@@ -140,6 +166,7 @@ API Layerの責務：
 - Result Mapping
 - Error Mapping
 - HTTP Response生成
+- Request Correlation
 
 API Layerは、
 Business Ruleを実装しない。
@@ -173,8 +200,24 @@ Response DTO
 ↓
 API Response
 
+Queryの場合：
+
+API Request
+↓
+Query DTO
+↓
+Application Query
+↓
+Read Model / Domain Query
+↓
+Query Result
+↓
+Response DTO
+↓
+API Response
+
 API Controllerは、
-Use Caseの内部処理を知らない。
+Use CaseやQueryの内部処理を知らない。
 
 ---
 
@@ -188,6 +231,10 @@ Business Operationを中心に設計する。
 Create Reservation
 
 Confirm Reservation
+
+Cancel Reservation
+
+Issue Ticket
 
 Check In
 
@@ -215,74 +262,71 @@ Business OperationとしてAPIを定義する。
 
 例えば、
 
-ReservationのStatusを直接変更するのではなく、
+ReservationのStateを直接変更するのではなく、
+
+Confirm Reservation
+
+Cancel Reservation
 
 Check In
 
-というUse Caseを利用する。
+などのUse Caseを利用する。
 
 ---
 
-# 7. API Example
+# 7. API Resource and Domain Entity
 
-概念的には、
+API ResourceとDomain Entityは、
+同一概念とは限らない。
 
-POST /reservations/{id}/check-in
+例えば、
 
-のようなBusiness Operationを利用できる。
+Reservation API Resource
+≠
+Reservation Domain Object
 
-また、
-Issued Ticketを入口として
-Reservationを特定する場合は、
+Check In API Response
+≠
+Check In Domain Entity
 
-POST /tickets/{id}/check-in
+とする。
 
-のようなOperationも検討できる。
-
-ただし、
-これらはAPI上の入口の表現であり、
-Domain上のCanonical Relationshipを変更するものではない。
-
-Canonical Relationship：
-
-Reservation
-↓
-Check In
-
-である。
-
-このAPIは、
-
-Reservation.status = checked_in
-
-という単純なData Updateではなく、
-
-Check In Use Case
-
-を実行する。
-
-具体的なURL構造は、
-Implementation Specificationで確定する。
+API Responseは、
+Clientに必要なDataだけを
+Response DTOとして返す。
 
 ---
 
 # 8. Client Types
 
 StageArt APIは、
-以下のClientから利用できる。
+以下のClient / Entry Pointから利用できる。
 
 - Web Client
 - Mobile Client
-- QR Reception Client
 - Public Client
-- Administrative Client
+- System Administration
 
-Clientの種類によって、
-UIやDevice Featureは異なる。
+Receptionは、
+独立したClientではない。
 
-ただし、
-同じBusiness Operationについては、
-同じApplication Use Caseを利用する。
+Receptionは、
+Mobile ClientのOperational Modeとして提供する。
+
+Administrative Clientという
+独立したBusiness Management Clientも作らない。
+
+System Administratorは、
+
+System Administration
+↓
+Organization Selector
+↓
+Selected Organization Context
+↓
+通常Management Client
+
+という構造を利用する。
 
 ---
 
@@ -297,9 +341,11 @@ Web Clientは、
 
 などからStageArt APIを利用する。
 
-例：
+Management APIの例：
 
 - Organization Management
+- Membership Management
+- Project Management
 - Production Management
 - Participant Management
 - Rehearsal Management
@@ -360,11 +406,11 @@ Check In対象を一覧取得できるAPIを利用する。
 
 概念的には、
 
-GET /performances/{id}/tickets
+GET /performances/{performanceId}/reservations
 
 または、
 
-GET /performances/{id}/reservations
+GET /performances/{performanceId}/tickets
 
 などのQuery APIを利用できる。
 
@@ -469,7 +515,8 @@ Check In Statusを直接変更しない。
 # 15. Web Check In Request
 
 Web ClientからのCheck In Requestでは、
-Reservationを特定するために必要なIdentifierをAPIへ送信する。
+Reservationを特定するために必要なIdentifierを
+APIへ送信する。
 
 概念的なRequest：
 
@@ -478,6 +525,7 @@ Check In Request
 - Reservation Identifier
 - Ticket Identifier
 - Performance Context
+- Source
 - Client Context
 - Idempotency Information
 
@@ -502,6 +550,9 @@ Serverは、
 
 - Authentication
 - Authorization
+- Organization Scope
+- Production Scope
+- Performance Scope
 - Reservation Existence
 - Ticket Existence
 - Ticket Validity
@@ -536,6 +587,7 @@ Check In APIのResponseを利用して
 - Unauthorized
 - Forbidden
 - Validation Error
+- Conflict
 - System Error
 
 一覧上の表示Stateは、
@@ -557,7 +609,7 @@ Check In List
 ↓
 Multiple Reservation / Ticket Selection
 ↓
-Check In API
+Bulk Check In API
 ↓
 Check In Use Case
 ↓
@@ -650,22 +702,210 @@ Mobile Clientは、
 Smartphoneなどから
 StageArt APIを利用する。
 
-主な用途：
+Mobile Clientは、
+受付専用Applicationではない。
 
-- Authentication
+通常時には、
+
 - Production Information
+- Performance Information
 - Rehearsal
-- Participant Operation
-- Reservation
-- Check In
-- QR Reception
+- Personal Schedule
+- Communication
+- Other Production Information
+
+などを利用する。
+
+必要な場合には、
+同じMobile Clientを
+Reception Modeへ切り替える。
 
 Mobile Clientは、
 StageArt Databaseへ直接アクセスしない。
 
 ---
 
-# 22. QR Reception API
+# 22. Mobile Normal Mode API
+
+Mobile Normal Modeでは、
+公演関係者が日常的に利用する
+Query APIを提供する。
+
+例：
+
+- Today's Rehearsal
+- Upcoming Rehearsal
+- My Schedule
+- Production Information
+- Performance Information
+- Communication
+
+これらは、
+Mobile専用のBusiness Ruleではない。
+
+既存のApplication Query / Read Modelを
+Mobile向けResponse DTOへMappingする。
+
+---
+
+# 23. Mobile Rehearsal API
+
+Mobile Clientでは、
+稽古情報を簡易的に確認できる。
+
+概念的には、
+
+GET /rehearsals
+
+または、
+
+GET /productions/{productionId}/rehearsals
+
+などのQuery APIを利用できる。
+
+必要に応じて、
+
+- Date
+- Start Time
+- End Time
+- Location
+- Production
+- Rehearsal Content
+- Participation
+- Notice
+
+などを取得する。
+
+詳細なRehearsal Managementは、
+Management APIで行う。
+
+---
+
+# 24. Mobile Production API
+
+Mobile Clientでは、
+Userが関係するProduction情報を
+簡易的に確認できる。
+
+例えば、
+
+- Production Name
+- Production Status
+- Performance
+- Rehearsal
+- Personal Participation
+- Communication
+
+など。
+
+Mobile Clientは、
+Production Managementの
+すべての機能を提供する必要はない。
+
+---
+
+# 25. Mobile Performance API
+
+Mobile Clientでは、
+関係するPerformance情報を
+確認できる。
+
+例えば、
+
+- Performance Date
+- Performance Time
+- Venue
+- Production
+- Participation
+- Related Rehearsal
+- Communication
+
+など。
+
+具体的なResponse DTOは、
+Frontend ArchitectureとAPI Contractで定義する。
+
+---
+
+# 26. Mobile Reception Mode
+
+Receptionは、
+独立したAPI Clientではなく、
+Mobile ClientのOperational Modeとして扱う。
+
+基本Flow：
+
+Mobile Client
+↓
+Performance
+↓
+Reception Mode
+↓
+QR / Search / Manual Selection
+↓
+Check In API
+
+Reception Modeに入ったからといって、
+Mobile Clientが別Authentication Boundaryを持つわけではない。
+
+通常のMobile Authentication / Authorization Contextを利用する。
+
+---
+
+# 27. Reception Mode Activation API
+
+Reception Modeを利用する場合、
+Server SideでUserが対象Performanceの
+受付Operationを実行可能か確認する。
+
+概念的には、
+
+GET /performances/{performanceId}/reception-context
+
+などのQueryを利用できる。
+
+Responseでは、
+必要に応じて、
+
+- Reception Permission
+- Performance
+- Available Reception Methods
+- Reception Status
+
+などを返す。
+
+具体的なEndpointは、
+API Contractで定義する。
+
+---
+
+# 28. Reception Authorization
+
+Reception Modeの利用には、
+適切なAuthorizationが必要である。
+
+基本構造：
+
+Authenticated User
+↓
+Organization Scope
+↓
+Production Scope
+↓
+Performance Scope
+↓
+Reception Permission
+↓
+Reception Mode
+
+Client側でボタンを隠すだけでは不十分とする。
+
+Check In APIでも、
+Server Side Authorizationを再検証する。
+
+---
+
+# 29. QR Reception API
 
 QR Receptionでは、
 Mobile ClientがQR Codeを読み取る。
@@ -702,7 +942,7 @@ Server Sideの責務。
 
 ---
 
-# 23. QR Code as Identifier
+# 30. QR Code as Identifier
 
 QR Codeは、
 Business Factそのものではない。
@@ -732,7 +972,7 @@ QR Codeの内容を、
 
 ---
 
-# 24. QR Check In Request
+# 31. QR Check In Request
 
 Mobile Clientは、
 QR Codeを読み取った後、
@@ -744,6 +984,7 @@ Check In Request
 
 - Ticket Identifier
 - Performance Context
+- Source
 - Client Context
 - Idempotency Information
 
@@ -754,13 +995,16 @@ Implementation Specificationで定義する。
 
 ---
 
-# 25. QR Check In Server Validation
+# 32. QR Check In Server Validation
 
 Serverは、
 Check In Requestを受け取った後、
 
 - Authentication
 - Authorization
+- Organization Scope
+- Production Scope
+- Performance Scope
 - Ticket Existence
 - Ticket Validity
 - Performance
@@ -776,7 +1020,7 @@ Clientが送信した情報だけを、
 
 ---
 
-# 26. Reservation Resolution
+# 33. Reservation Resolution
 
 Check In APIでは、
 最終的に対象Reservationを特定する。
@@ -813,7 +1057,7 @@ Authorization Scope内のReservationだけを
 
 ---
 
-# 27. Reservation Number Check In
+# 34. Reservation Number Check In
 
 Reservation Numberを利用して、
 Reservationを特定できる。
@@ -842,7 +1086,7 @@ Reservation Numberから対象Reservationを特定し、
 
 ---
 
-# 28. Booker Name Check In
+# 35. Booker Name Search
 
 Booker Nameを利用して、
 候補Reservationを検索できる。
@@ -875,7 +1119,7 @@ Check In Factを直接変更しない。
 
 ---
 
-# 29. Manual Selection Check In
+# 36. Manual Selection Check In
 
 Manual Selectionでは、
 Performanceに紐づくReservation一覧から
@@ -905,7 +1149,7 @@ Clientが任意のReservation IDを
 
 ---
 
-# 30. Common Check In API
+# 37. Common Check In API
 
 Web ClientとMobile Clientは、
 Check Inの入口が異なる。
@@ -923,6 +1167,8 @@ Check In API
 Mobile：
 
 Mobile Client
+↓
+Reception Mode
 ↓
 QR Scanner
 ↓
@@ -984,7 +1230,7 @@ Check In Business Ruleを分けない。
 
 ---
 
-# 31. Check In API Flow
+# 38. Check In API Flow
 
 Check Inの基本Flow：
 
@@ -1012,8 +1258,6 @@ Check In Domain Operation
 ↓
 Persist Check In
 ↓
-Update Required Reservation State
-↓
 Publish CheckInCompleted
 ↓
 Response
@@ -1023,7 +1267,7 @@ Server Sideで確定する。
 
 ---
 
-# 32. Check In Canonical Relationship
+# 39. Check In Canonical Relationship
 
 Check InのCanonical Relationshipは、
 
@@ -1067,7 +1311,7 @@ Reservationを特定するための
 
 ---
 
-# 33. Check In Command
+# 40. Check In Command
 
 Check Inは、
 Commandとして実行する。
@@ -1091,7 +1335,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 34. Check In Source
+# 41. Check In Source
 
 Check Inがどの経路から実行されたかを、
 必要に応じて記録できる。
@@ -1103,7 +1347,8 @@ Check Inがどの経路から実行されたかを、
 - WEB_RESERVATION_NUMBER
 - WEB_BOOKER_NAME
 - MOBILE_QR
-- ADMIN
+- MOBILE_MANUAL
+- SYSTEM_ADMIN_CONTEXT
 
 Sourceは、
 Business Ruleを変更するための値ではない。
@@ -1114,7 +1359,7 @@ Audit / Operation Contextなどの
 
 ---
 
-# 35. Check In Response
+# 42. Check In Response
 
 Check In APIは、
 Check In ResultをResponse DTOとして返す。
@@ -1139,7 +1384,7 @@ Responseとして返さない。
 
 ---
 
-# 36. Already Checked In
+# 43. Already Checked In
 
 対象Reservationが、
 すでにCheck In済みの場合、
@@ -1159,7 +1404,7 @@ Client側で判断するものではない。
 
 ---
 
-# 37. Check In Idempotency
+# 44. Check In Idempotency
 
 Check In APIは、
 Retryを考慮する。
@@ -1181,7 +1426,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 38. Check In Concurrency
+# 45. Check In Concurrency
 
 複数Clientが、
 同一Reservationに対して
@@ -1206,7 +1451,7 @@ Server Sideで保証する。
 
 ---
 
-# 39. Check In Transaction
+# 46. Check In Transaction
 
 Check In処理では、
 必要なBusiness Factを
@@ -1235,7 +1480,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 40. CheckInCompleted Event
+# 47. CheckInCompleted Event
 
 Check Inが確定すると、
 
@@ -1262,7 +1507,7 @@ CheckInCompleted
 
 ---
 
-# 41. Audience History API
+# 48. Audience History API
 
 Audience Historyは、
 Check In Business Factを起点として
@@ -1284,7 +1529,7 @@ Authorization Scopeを適用する。
 
 ---
 
-# 42. Accounting Integration
+# 49. Accounting Integration
 
 Check InとAccountingは、
 API上でもDomainとして分離する。
@@ -1309,7 +1554,7 @@ Accounting Application Processへ委譲する。
 
 ---
 
-# 43. Authentication
+# 50. Authentication
 
 Authenticationは、
 Requestを実行しているIdentityを
@@ -1331,7 +1576,7 @@ ResourceへのAccessを許可しない。
 
 ---
 
-# 44. Authorization
+# 51. Authorization
 
 Authorizationは、
 Authenticated Principalが
@@ -1358,7 +1603,7 @@ Server Sideで必ず実行する。
 
 ---
 
-# 45. Organization Scope
+# 52. Organization Scope
 
 Organizationに属するDataについては、
 Organization Scopeを確認する。
@@ -1384,7 +1629,26 @@ Production B
 
 ---
 
-# 46. Production Scope
+# 53. Project Scope
+
+Project Scopeを持つDataについては、
+Project Scopeを確認する。
+
+基本構造：
+
+Organization
+↓
+Project
+↓
+Resource
+
+Organization Scopeを満たしていても、
+Project Scope上のPermissionがなければ
+Accessを許可しない。
+
+---
+
+# 54. Production Scope
 
 Production Scopeを持つDataについては、
 Production Scopeを確認する。
@@ -1401,13 +1665,35 @@ Production A
 Production AのManagement APIを
 利用できる可能性がある。
 
-ただし、
 Production Bについては、
 別途Authorizationが必要である。
 
 ---
 
-# 47. Scope Isolation
+# 55. Performance Scope
+
+Performanceに関連する受付Operationでは、
+Performance Scopeを確認する。
+
+基本構造：
+
+User
+↓
+Production Scope
+↓
+Performance Scope
+↓
+Reception Permission
+↓
+Check In
+
+Reception Operatorは、
+許可されたPerformanceに対してのみ
+受付Operationを実行できる。
+
+---
+
+# 56. Scope Isolation
 
 Resource IDを知っているだけでは、
 Accessを許可しない。
@@ -1426,13 +1712,14 @@ Serverは、
 - Organization Scope
 - Project Scope
 - Production Scope
+- Performance Scope
 - Permission
 
 などを確認する。
 
 ---
 
-# 48. Scope-aware Query
+# 57. Scope-aware Query
 
 Scope外Dataを、
 Client側で非表示にするだけでは不十分とする。
@@ -1460,7 +1747,7 @@ IDだけでDataを取得して、
 
 ---
 
-# 49. Cross Organization Access
+# 58. Cross Organization Access
 
 別OrganizationのDataへのAccessは、
 明示的なAuthorizationがない限り許可しない。
@@ -1479,14 +1766,14 @@ Reservation BのIDを知っていても
 
 - Web Client
 - Mobile Client
-- Administrative Client
 - Public API
+- Management API
 
 すべてに適用する。
 
 ---
 
-# 50. Public API
+# 59. Public API
 
 Public APIは、
 公開可能なDataだけを返す。
@@ -1508,7 +1795,7 @@ Internal Entityを、
 
 ---
 
-# 51. Public API Scope
+# 60. Public API Scope
 
 Public APIでは、
 Internal Organization Dataや
@@ -1522,7 +1809,7 @@ Internal Management APIとは分離する。
 
 ---
 
-# 52. Management API
+# 61. Management API
 
 Management APIは、
 OrganizationやProductionの管理操作を提供する。
@@ -1541,13 +1828,130 @@ OrganizationやProductionの管理操作を提供する。
 - Reservation Management
 - Check In Management
 - Accounting Management
+- Communication Management
+- Document Management
 
 各Operationでは、
 ScopeとPermissionを検証する。
 
 ---
 
-# 53. Reservation API
+# 62. Organization API
+
+Organization APIは、
+OrganizationおよびMembershipを管理する。
+
+例：
+
+- Create Organization
+- Update Organization
+- Get Organization
+- List Organizations
+- Add Member
+- Remove Member
+- Update Member Role
+
+通常のOrganization APIでは、
+Request Userが許可されたOrganization Scopeだけを扱う。
+
+System Administratorについては、
+Organization Selector APIを利用する。
+
+---
+
+# 63. Project API
+
+Project APIは、
+Organization内のProjectを管理する。
+
+例：
+
+- Create Project
+- Update Project
+- Get Project
+- List Projects
+
+Projectは、
+Organization Scopeの下位Contextとして扱う。
+
+---
+
+# 64. Production API
+
+Production APIは、
+Productionに関するBusiness Operationを提供する。
+
+例：
+
+- Create Production
+- Update Production
+- Get Production
+- List Productions
+- Archive Production
+
+Production APIでは、
+Organization / Project / Production Scopeを確認する。
+
+---
+
+# 65. Performance API
+
+Performance APIは、
+Productionに紐づくPerformanceを管理する。
+
+例：
+
+- Create Performance
+- Update Performance
+- Get Performance
+- List Performances
+
+Check In List Queryでは、
+Performance Scopeを利用して
+対象Reservationを取得できる。
+
+---
+
+# 66. Rehearsal API
+
+Rehearsal APIは、
+Rehearsalに関するBusiness Operationを提供する。
+
+例：
+
+- Create Rehearsal
+- Confirm Rehearsal
+- Update Rehearsal
+- Record Attendance
+- Get Attendance
+
+Rehearsal APIも、
+Authorization Scopeを適用する。
+
+---
+
+# 67. Participant API
+
+Participant APIは、
+Productionへの参加関係を管理する。
+
+例：
+
+- Add Participant
+- Update Participant
+- Remove Participant
+- Get Participant
+- List Participants
+
+Participantであることと、
+Production Management Permissionを分離する。
+
+Production Management Permissionは、
+ProductionDelegateなどのAuthorization Modelで判定する。
+
+---
+
+# 68. Reservation API
 
 Reservation APIは、
 Reservation Business Operationを提供する。
@@ -1576,7 +1980,7 @@ Check In：
 
 ---
 
-# 54. Ticket API
+# 69. Ticket API
 
 Ticket APIは、
 TicketおよびIssued Ticketを管理する。
@@ -1599,100 +2003,7 @@ Check In Application Use Caseから実行する。
 
 ---
 
-# 55. Performance API
-
-Performance APIは、
-Productionに紐づくPerformanceを管理する。
-
-例：
-
-- Create Performance
-- Update Performance
-- Get Performance
-- List Performances
-
-Check In List Queryでは、
-Performance Scopeを利用して
-対象Reservationを取得できる。
-
----
-
-# 56. Rehearsal API
-
-Rehearsal APIは、
-Rehearsalに関するBusiness Operationを提供する。
-
-例：
-
-- Create Rehearsal
-- Confirm Rehearsal
-- Update Rehearsal
-- Record Attendance
-- Get Attendance
-
-Rehearsal APIも、
-Authorization Scopeを適用する。
-
----
-
-# 57. Participant API
-
-Participant APIは、
-Productionへの参加関係を管理する。
-
-例：
-
-- Add Participant
-- Update Participant
-- Remove Participant
-- Get Participant
-- List Participants
-
-Participantであることと、
-Production Management Permissionを分離する。
-
-Production Management Permissionは、
-ProductionDelegateなどのAuthorization Modelで判定する。
-
----
-
-# 58. Organization API
-
-Organization APIは、
-OrganizationおよびMembershipを管理する。
-
-例：
-
-- Create Organization
-- Update Organization
-- Get Organization
-- Add Member
-- Remove Member
-- Update Member Role
-
-Organization Scope外のDataへ
-アクセスできない構造を維持する。
-
----
-
-# 59. Project API
-
-Project APIは、
-Organization内のProjectを管理する。
-
-例：
-
-- Create Project
-- Update Project
-- Get Project
-- List Projects
-
-Projectは、
-Organization Scopeの下位Contextとして扱う。
-
----
-
-# 60. Accounting API
+# 70. Accounting API
 
 Accounting APIは、
 Accounting Business Operationを提供する。
@@ -1714,7 +2025,7 @@ Business Event / Application Processを介して連携する。
 
 ---
 
-# 61. Document API
+# 71. Document API
 
 Document APIは、
 Document Business Dataを管理する。
@@ -1732,7 +2043,7 @@ Infrastructure / Integration Layerの責務として扱う。
 
 ---
 
-# 62. Communication API
+# 72. Communication API
 
 Communication APIは、
 Announcementなどを管理する。
@@ -1749,7 +2060,278 @@ Integration Layerへ委譲する。
 
 ---
 
-# 63. Integration API
+# 73. System Administration API
+
+System Administration APIは、
+System Administratorだけが利用できる
+System-level API Boundaryである。
+
+主な用途：
+
+- Organization List
+- Organization Selection
+- System Health
+- Backup Status
+- Replication Status
+- Mirror Status
+- Recovery Status
+- Operational Job Status
+
+System Administration APIは、
+Organization Business Management APIと
+混在させない。
+
+---
+
+# 74. Organization Selector API
+
+System Administratorは、
+全Organizationを一覧から選択できる。
+
+概念的には、
+
+GET /system/organizations
+
+などのSystem-level Queryを利用できる。
+
+このAPIは、
+System Administratorだけが利用できる。
+
+通常のOrganization Userには、
+自身が所属するOrganizationだけを
+通常のOrganization Queryとして返す。
+
+---
+
+# 75. Organization Selection API
+
+System Administratorが、
+対象Organizationを選択する。
+
+概念的には、
+
+POST /system/organizations/{organizationId}/select
+
+などのOperationを利用できる。
+
+このOperationは、
+OrganizationのBusiness Dataを
+直接更新するものではない。
+
+Selected Organization Contextを生成するための
+Application Operationである。
+
+---
+
+# 76. Selected Organization Context
+
+Organization Selection後は、
+
+Selected Organization
+↓
+Organization Administrator Context
+↓
+Management API
+
+という構造を利用する。
+
+System Administrator専用の
+別Management APIを作らない。
+
+例えば、
+
+System Administrator
+↓
+Organization A Select
+↓
+Selected Organization Context
+↓
+GET /productions
+↓
+POST /rehearsals
+↓
+GET /reservations
+↓
+POST /check-in
+
+というように、
+通常Management APIを利用する。
+
+---
+
+# 77. Selected Organization Context Authorization
+
+Selected Organization Contextでは、
+選択されたOrganizationを
+Authorization Contextへ適用する。
+
+基本構造：
+
+System Administrator
+↓
+Selected Organization A
+↓
+Organization Scope = A
+↓
+Organization Administrator相当
+↓
+Management Operation
+
+System Administratorであることだけを理由に、
+Scopeを無視してDataを取得しない。
+
+---
+
+# 78. System Administrator and Business API
+
+System Administratorが
+Organization Aを選択した場合、
+
+通常のOrganization Administratorが
+Organization Aで利用するAPIと
+同じBusiness APIを利用する。
+
+例えば、
+
+Organization Administrator
+↓
+POST /productions
+
+System Administrator
+↓
+Organization A selected
+↓
+POST /productions
+
+は、
+同じApplication Use Caseを利用する。
+
+Business Ruleを二重実装しない。
+
+---
+
+# 79. System Administrator and Check In
+
+System Administratorが
+Organizationを選択した状態で
+Check Inを実行する場合も、
+通常のCheck In Use Caseを利用する。
+
+基本構造：
+
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization Context
+↓
+Performance
+↓
+Reservation
+↓
+Check In API
+↓
+Check In Use Case
+↓
+Check In
+
+System Administratorだからといって、
+Check In Business RuleをBypassしない。
+
+---
+
+# 80. System Operations API
+
+System Operations APIは、
+Business Operationsとは分離する。
+
+対象例：
+
+- Backup
+- Restore
+- Replication
+- Mirror
+- Failover
+- Recovery
+- System Health
+- Operational Jobs
+
+これらは、
+System Administration APIの
+Operational Boundaryとして扱う。
+
+---
+
+# 81. Backup API
+
+Backup APIでは、
+System Administratorが
+Backup Statusなどを確認できる。
+
+概念的には、
+
+GET /system/backups
+
+GET /system/backups/{id}
+
+POST /system/backups
+
+など。
+
+具体的なEndpointは、
+Operations Architectureで定義する。
+
+Backup処理自体を、
+Business Domain APIとして実装しない。
+
+---
+
+# 82. Replication API
+
+Replication Statusについて、
+System Administratorが確認できる。
+
+例えば、
+
+GET /system/replication
+
+など。
+
+必要に応じて、
+
+- Primary Status
+- Mirror Status
+- Last Sync
+- Sync Error
+- Lag
+
+などを取得する。
+
+---
+
+# 83. Recovery API
+
+Recoveryに関するOperationは、
+System Administrator専用とする。
+
+例えば、
+
+- Recovery Status
+- Recovery Job
+- Restore Status
+- Recovery History
+
+など。
+
+Recovery APIは、
+Business Dataを直接編集するAPIではない。
+
+具体的なRecovery Procedureは、
+Operations Architectureで定義する。
+
+---
+
+# 84. Integration API
 
 External ServiceとのIntegrationは、
 StageArt APIのCore Business APIと分離する。
@@ -1758,7 +2340,9 @@ StageArt APIのCore Business APIと分離する。
 
 StageArt Application
 ↓
-Integration Service
+Integration Interface
+↓
+Integration Layer
 ↓
 External Service API
 
@@ -1767,7 +2351,7 @@ StageArt Domainへ直接持ち込まない。
 
 ---
 
-# 64. External Reference
+# 85. External Reference
 
 External ServiceのIdentifierは、
 External Referenceとして扱う。
@@ -1785,7 +2369,7 @@ StageArt Business Identityの代わりにしない。
 
 ---
 
-# 65. Error Handling
+# 86. Error Handling
 
 API Errorは、
 Clientが処理可能なResponseへMappingする。
@@ -1807,7 +2391,7 @@ Internal Exceptionを、
 
 ---
 
-# 66. Authentication Error
+# 87. Authentication Error
 
 Authenticationに失敗した場合、
 適切なAuthentication Errorを返す。
@@ -1823,7 +2407,7 @@ API Contractで定義する。
 
 ---
 
-# 67. Authorization Error
+# 88. Authorization Error
 
 認証済みでも、
 対象ResourceやOperationへの権限がない場合は、
@@ -1832,7 +2416,9 @@ Authorization Errorを返す。
 例えば、
 
 - Organization Scope外
+- Project Scope外
 - Production Scope外
+- Performance Scope外
 - Permission不足
 
 など。
@@ -1842,7 +2428,7 @@ Clientへ、
 
 ---
 
-# 68. Resource Not Found
+# 89. Resource Not Found
 
 対象Resourceが存在しない場合、
 Resource Not Foundを返す。
@@ -1854,7 +2440,7 @@ Resourceの存在そのものを
 
 ---
 
-# 69. Conflict
+# 90. Conflict
 
 Business Stateの競合が発生した場合、
 Conflictとして扱う。
@@ -1874,7 +2460,7 @@ Business Resultとして返す。
 
 ---
 
-# 70. Validation Error
+# 91. Validation Error
 
 Request DTOが不正な場合、
 Validation Errorを返す。
@@ -1892,7 +2478,7 @@ API LayerとDomain Layerで
 
 ---
 
-# 71. Business Rule Error
+# 92. Business Rule Error
 
 Domain Business Ruleに違反した場合、
 Business Rule Errorとして
@@ -1912,7 +2498,7 @@ Domain内部のException Structureを
 
 ---
 
-# 72. Idempotency
+# 93. Idempotency
 
 重要なCommand APIでは、
 Idempotencyを考慮する。
@@ -1931,7 +2517,7 @@ Idempotency KeyをRequestに含める。
 
 ---
 
-# 73. Check In Idempotency
+# 94. Check In Idempotency
 
 Check Inは、
 RetryやDouble Submitが発生しやすいため、
@@ -1958,7 +2544,7 @@ Idempotency Informationを確認する。
 
 ---
 
-# 74. API Retry
+# 95. API Retry
 
 Clientは、
 すべてのErrorを無条件にRetryしてはならない。
@@ -1987,7 +2573,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 75. Rate Limiting
+# 96. Rate Limiting
 
 APIは、
 必要に応じてRate Limitingを適用する。
@@ -1998,17 +2584,18 @@ APIは、
 - Public API
 - Search API
 - Integration API
+- System API
 
 Rate Limitは、
-Clientごと、
-Userごと、
-IPごと、
-Tokenごとなど、
+Client、
+User、
+IP、
+Tokenなど、
 用途に応じて定義できる。
 
 ---
 
-# 76. Request Validation
+# 97. Request Validation
 
 Request Validationでは、
 
@@ -2026,7 +2613,7 @@ Business Ruleを実装しない。
 
 ---
 
-# 77. Response DTO
+# 98. Response DTO
 
 API Responseは、
 Response DTOとして定義する。
@@ -2039,7 +2626,7 @@ Domain Entityを、
 
 ---
 
-# 78. Request DTO
+# 99. Request DTO
 
 API Requestは、
 Request DTOとしてApplication Layerへ渡す。
@@ -2060,7 +2647,7 @@ Application Command
 
 ---
 
-# 79. Pagination
+# 100. Pagination
 
 一覧APIでは、
 必要に応じてPaginationを利用する。
@@ -2074,6 +2661,7 @@ Application Command
 - Performances
 - Announcements
 - Accounting Records
+- Organizations
 
 Paginationは、
 Clientが無制限Dataを取得することを防ぐ。
@@ -2083,7 +2671,7 @@ API Contractで定義する。
 
 ---
 
-# 80. Sorting
+# 101. Sorting
 
 List APIでは、
 必要に応じてSortingを提供する。
@@ -2097,7 +2685,7 @@ API Contractで定義する。
 
 ---
 
-# 81. Search and Query
+# 102. Search and Query
 
 Query APIは、
 Business Meaningを持つ検索条件を提供する。
@@ -2117,7 +2705,7 @@ Database Columnを
 
 ---
 
-# 82. API Versioning
+# 103. API Versioning
 
 APIは、
 Version管理可能な構造とする。
@@ -2136,7 +2724,7 @@ Breaking Changeを行う場合は、
 
 ---
 
-# 83. Backward Compatibility
+# 104. Backward Compatibility
 
 API Contractを変更する場合、
 既存Clientが利用できなくなる
@@ -2155,7 +2743,7 @@ Breaking Changeを慎重に扱う。
 
 ---
 
-# 84. API Security
+# 105. API Security
 
 APIは、
 HTTPSを基本とする。
@@ -2170,7 +2758,7 @@ Sensitive Dataを、
 
 ---
 
-# 85. API Logging
+# 106. API Logging
 
 API Request / Responseについて、
 必要なAudit / Operational Loggingを行う。
@@ -2197,7 +2785,7 @@ API Request / Responseについて、
 
 ---
 
-# 86. Request Correlation
+# 107. Request Correlation
 
 複数LayerにまたがるRequestを
 追跡できるようにする。
@@ -2223,7 +2811,7 @@ Infrastructure Architectureで定義する。
 
 ---
 
-# 87. API and Cache
+# 108. API and Cache
 
 Cacheは、
 API ResponseのPerformance改善に
@@ -2238,7 +2826,7 @@ Cache利用時のStalenessを考慮する。
 
 ---
 
-# 88. API and Read Model
+# 109. API and Read Model
 
 List / Search / Dashboard APIでは、
 Read Model / Projectionを利用できる。
@@ -2260,7 +2848,7 @@ Business Factの正本ではない。
 
 ---
 
-# 89. Check In List Read Model
+# 110. Check In List Read Model
 
 Web Check In一覧では、
 必要に応じてRead Modelを利用できる。
@@ -2289,7 +2877,28 @@ Check In確定の根拠として無条件に利用しない。
 
 ---
 
-# 90. API and Mobile
+# 111. Mobile Read Model
+
+Mobile Normal Modeでは、
+必要に応じてMobile向けRead Modelを利用できる。
+
+例えば、
+
+- Today's Rehearsal
+- Upcoming Rehearsal
+- My Schedule
+- Production Information
+- Performance Information
+- Communication
+
+など。
+
+Mobile Read Modelは、
+Business Factの正本ではない。
+
+---
+
+# 112. API and Mobile
 
 Mobile Clientは、
 StageArt APIを通してBusiness Operationを実行する。
@@ -2308,7 +2917,7 @@ Serverから返されたBusiness Resultを
 
 ---
 
-# 91. API and Web
+# 113. API and Web
 
 Web Clientも、
 StageArt APIを通してBusiness Operationを実行する。
@@ -2322,7 +2931,7 @@ Mobile ClientからのQR Check Inも、
 
 ---
 
-# 92. API and WordPress
+# 114. API and WordPress
 
 WordPressを利用する場合でも、
 WordPress Database Structureを
@@ -2348,7 +2957,7 @@ Client API Contractへ
 
 ---
 
-# 93. API and PHP
+# 115. API and PHP
 
 PHP Serverを利用する場合でも、
 API Architectureの責務分離を維持する。
@@ -2370,7 +2979,7 @@ Implementation Architectureで定義する。
 
 ---
 
-# 94. Modular Monolith API
+# 116. Modular Monolith API
 
 初期Architectureでは、
 Modular Monolithとして
@@ -2400,7 +3009,7 @@ Module間のBusiness Ownershipを維持する。
 
 ---
 
-# 95. Cross Module API
+# 117. Cross Module API
 
 Module間の連携では、
 他Moduleの内部Persistence Modelを
@@ -2426,7 +3035,7 @@ Module B
 
 ---
 
-# 96. API and Domain Events
+# 118. API and Domain Events
 
 API Commandによって
 Business Factが確定した場合、
@@ -2450,7 +3059,7 @@ Client API Responseとは
 
 ---
 
-# 97. CheckInCompleted
+# 119. CheckInCompleted
 
 CheckInCompletedは、
 Check In Business Factの確定後に発生する。
@@ -2471,7 +3080,7 @@ Application Architecture / Implementation Specificationで定義する。
 
 ---
 
-# 98. API Contract
+# 120. API Contract
 
 API Contractでは、
 少なくとも以下を定義する。
@@ -2495,7 +3104,7 @@ Implementation Specificationで定義する。
 
 ---
 
-# 99. API Contract and Domain Model
+# 121. API Contract and Domain Model
 
 API Contractは、
 Domain Modelから必要なBusiness Operationを
@@ -2515,7 +3124,7 @@ Clientが必要とするBusiness Operationを
 
 ---
 
-# 100. API Contract and Data Architecture
+# 122. API Contract and Data Architecture
 
 APIは、
 Data Architectureで定義された
@@ -2525,6 +3134,9 @@ Business Ownershipを尊重する。
 
 Reservation
 → Reservation Domain
+
+Issued Ticket
+→ Ticket Domain
 
 Check In
 → Check In Domain
@@ -2539,7 +3151,7 @@ APIが別DomainのDataを
 
 ---
 
-# 101. Check In API Responsibility
+# 123. Check In API Responsibility
 
 Check In APIの責務は、
 
@@ -2565,7 +3177,7 @@ Check In Business Fact
 
 ---
 
-# 102. Check In Entry Methods
+# 124. Check In Entry Methods
 
 Check Inの受付入口として、
 以下をサポートできる。
@@ -2584,7 +3196,7 @@ Reservation Resolutionの方法が異なる。
 
 ---
 
-# 103. Check In Entry Method Independence
+# 125. Check In Entry Method Independence
 
 受付入口によって、
 Check In Business Ruleを変更しない。
@@ -2608,7 +3220,7 @@ Check In Domain
 
 ---
 
-# 104. Check In and Issued Ticket
+# 126. Check In and Issued Ticket
 
 Issued Ticketは、
 Check Inの必須Entityではない。
@@ -2649,7 +3261,7 @@ Check In
 
 ---
 
-# 105. Check In and Performance
+# 127. Check In and Performance
 
 Check Inは、
 対象Performanceとの整合性を確認する。
@@ -2670,7 +3282,7 @@ Reservationが紐づくPerformanceが
 
 ---
 
-# 106. Check In and Reservation State
+# 128. Check In and Reservation State
 
 Check In実行時には、
 Reservationの状態をServer側で検証する。
@@ -2689,7 +3301,7 @@ Reservation / Check In Domainで定義する。
 
 ---
 
-# 107. Check In and Ticket State
+# 129. Check In and Ticket State
 
 Issued Ticketを利用する受付方法では、
 Ticket Stateも検証する。
@@ -2708,7 +3320,7 @@ Ticket Domainで定義する。
 
 ---
 
-# 108. Check In Result Consistency
+# 130. Check In Result Consistency
 
 Check In Resultは、
 Server側のBusiness Factを基準とする。
@@ -2724,7 +3336,7 @@ Server Business Factより優先しない。
 
 ---
 
-# 109. API Availability
+# 131. API Availability
 
 APIは、
 必要なAvailabilityを確保する。
@@ -2734,15 +3346,16 @@ APIは、
 - Check In API
 - Reservation Query API
 - Ticket Query API
+- Performance Query API
 
 などのAvailabilityが重要となる。
 
 具体的なAvailability / Infrastructure設計は、
-Infrastructure Architectureで定義する。
+Deployment / Infrastructure Architectureで定義する。
 
 ---
 
-# 110. API Timeout
+# 132. API Timeout
 
 External Serviceや
 長時間処理を伴うAPIでは、
@@ -2757,7 +3370,7 @@ Reception Operationとして
 
 ---
 
-# 111. Background Processing
+# 133. Background Processing
 
 以下のような処理は、
 必要に応じてBackground Processingへ
@@ -2769,13 +3382,14 @@ Reception Operationとして
 - Report Generation
 - Large Export
 - Accounting Projection
+- Notification Delivery
 
 Check Inそのものの確定を、
 Background Jobだけに依存しない。
 
 ---
 
-# 112. API and Integration Failure
+# 134. API and Integration Failure
 
 External Integrationが失敗しても、
 Core Business Factを不必要に失敗させない。
@@ -2798,7 +3412,36 @@ Integration Architectureで定義する。
 
 ---
 
-# 113. API Observability
+# 135. System Operations and API Boundary
+
+System Operationsは、
+Business APIとは分離する。
+
+Business API：
+
+- Reservation
+- Ticket
+- Check In
+- Rehearsal
+- Accounting
+
+System API：
+
+- Backup
+- Restore
+- Replication
+- Mirror
+- Failover
+- Recovery
+- System Health
+- Operational Jobs
+
+System APIから、
+Business Dataを直接CRUDする設計にはしない。
+
+---
+
+# 136. API Observability
 
 APIの運用状態を確認できるように、
 
@@ -2809,12 +3452,14 @@ APIの運用状態を確認できるように、
 - Integration Failure
 - Check In Failure
 - Authorization Failure
+- Rate Limit
+- Timeout
 
 などを観測できる構造とする。
 
 ---
 
-# 114. API Documentation
+# 137. API Documentation
 
 API Contractは、
 実装前に明確化する。
@@ -2830,6 +3475,8 @@ API Contractは、
 - Error
 - Scope
 - Idempotency
+- Pagination
+- Version
 
 を定義する。
 
@@ -2838,7 +3485,7 @@ Implementation Specificationで作成する。
 
 ---
 
-# 115. API Testing
+# 138. API Testing
 
 APIについては、
 少なくとも以下をテスト対象とする。
@@ -2853,24 +3500,42 @@ APIについては、
 - Concurrency
 - Response DTO
 - Integration Failure
+- Rate Limiting
+- Version Compatibility
 
 Check Inでは、
 特に、
 
 - Web Manual Check In
+- Web List Check In
+- Web Multiple Check In
 - QR Check In
 - Reservation Number Check In
-- Booker Name Check In
+- Booker Name Search
 - Manual Selection
 - Duplicate Check In
 - Concurrent Check In
 - Scope Violation
+- Performance Mismatch
+- Invalid Ticket
+- Cancelled Reservation
+
+をテストする。
+
+System Administratorでは、
+
+- Organization List
+- Organization Selection
+- Selected Organization Context
+- Organization Administrator相当のAccess
+- Scope Isolation
+- Selected Organization外のData拒否
 
 をテストする。
 
 ---
 
-# 116. API Security Boundary
+# 139. API Security Boundary
 
 APIは、
 Security Boundaryとして扱う。
@@ -2888,7 +3553,7 @@ Server側で、
 
 ---
 
-# 117. API Data Minimization
+# 140. API Data Minimization
 
 API Responseは、
 Clientに必要なDataだけを返す。
@@ -2906,7 +3571,7 @@ Clientに必要なDataだけを返す。
 
 ---
 
-# 118. API and Personal Data
+# 141. API and Personal Data
 
 Personに関連するAPIでは、
 必要なPersonal Dataだけを返す。
@@ -2926,7 +3591,7 @@ Public Dataとして許可された情報だけを返す。
 
 ---
 
-# 119. API Scope Enforcement Summary
+# 142. API Scope Enforcement Summary
 
 API ResourceへのAccessは、
 
@@ -2940,6 +3605,8 @@ Project Scope
 ↓
 Production Scope
 ↓
+Performance Scope
+↓
 Resource
 ↓
 Operation
@@ -2949,9 +3616,21 @@ Operation
 Resource IDだけを指定して、
 Scope外Dataを取得できる設計にしない。
 
+System Administratorの場合は、
+
+System Administrator
+↓
+Organization Selector
+↓
+Selected Organization Context
+↓
+通常Management API
+
+という追加Contextを利用する。
+
 ---
 
-# 120. API Architecture Summary
+# 143. API Architecture Summary
 
 StageArt API Architectureでは、
 
@@ -3001,6 +3680,8 @@ CheckInCompleted
 QR受付では、
 
 Mobile Client
+↓
+Reception Mode
 ↓
 QR Scanner
 ↓
@@ -3084,54 +3765,88 @@ QR Codeは、
 Issued Ticketを識別するArtifactであり、
 Check In Business Factではない。
 
-Check Inが確定すると、
+Mobile Clientは、
+受付専用Clientではない。
 
+通常時には、
+
+Mobile Client
+↓
+Normal Mode
+├── Rehearsal
+├── Production
+├── Performance
+├── Personal Schedule
+└── Communication
+
+として利用する。
+
+必要な場合には、
+
+Mobile Client
+↓
+Reception Mode
+↓
 Check In
-↓
-CheckInCompleted
-├── Audience History
-└── Accounting Process
 
-という後続処理を実行できる。
+として利用する。
 
-また、
+System Administratorについては、
 
-Person
+System Administration
 ↓
-Membership
+Organization List
 ↓
-Organization
+Organization Selection
 ↓
-Role
+Selected Organization Context
 ↓
-Permission
+通常Management API
 
-および、
+という構造を採用する。
 
-Person
-↓
-ProductionDelegate
-↓
-Production
-↓
-Role
-↓
-Permission
+System Administrator専用の
+Organization Management、
+Production Management、
+Rehearsal Management、
+Reservation Management、
+Check In Managementなどの
+重複APIを作らない。
 
-によって、
-API Access Scopeを決定する。
+Selected Organization Contextでは、
+選択されたOrganizationを
+通常のOrganization Scopeとして扱い、
+Organization Administrator相当の
+Management Operationを利用する。
 
-Scope外Dataは、
-Client側で隠すだけではなく、
-Server Sideで取得できない構造を基本とする。
+ただし、
+System Administratorであることによって
+Business RuleをBypassしない。
 
-Web Client、
-Mobile Client、
-Administrative Client、
-Public Clientなど、
-Clientの種類が異なっても、
-同じBusiness Operationについては
-同じApplication Use Caseを利用する。
+System Operationsについては、
+
+System Administration
+↓
+System Operations API
+├── Backup
+├── Restore
+├── Replication
+├── Mirror
+├── Failover
+├── Recovery
+└── System Health
+
+というBoundaryを設ける。
+
+これらを、
+
+Reservation
+Ticket
+Check In
+Rehearsal
+Accounting
+
+などのBusiness APIと混在させない。
 
 API Architectureの最重要原則は、
 
@@ -3147,10 +3862,36 @@ Check In Business Ruleを分離する」
 
 ことを明確にする。
 
+さらに、
+
+「Web ClientとMobile Clientは
+同一のCheck In Application Use Caseを利用し、
+受付方法だけを異なる入口として扱う」
+
+ことを基本とする。
+
+そして、
+
+「Mobile Clientは受付専用Applicationではなく、
+公演関係者が日常的に利用するApplicationとし、
+必要な場合だけReception Modeへ切り替える」
+
+ことをMobile APIの基本方針とする。
+
+また、
+
+「System Administratorは全Organizationを選択できるが、
+選択後はSelected Organization Contextを利用して
+通常のManagement APIを実行する」
+
+ことをSystem Administration APIの基本方針とする。
+
 これにより、
 
 Web Client
 Mobile Client
+Public Client
+System Administration
 QR Scanner
 PHP Server
 WordPress
@@ -3158,10 +3899,18 @@ Database
 External Service
 
 などのTechnologyやInterfaceが変更されても、
-StageArtのBusiness Rule、
-Business Identity、
-Authorization Scope、
-Check In Business Fact
+
+StageArtの
+
+- Business Rule
+- Business Identity
+- Authorization Scope
+- Organization Scope
+- Production Scope
+- Performance Scope
+- Reservation
+- Issued Ticket
+- Check In Business Fact
 
 を一貫して維持できるAPI Architectureを実現する。
 
