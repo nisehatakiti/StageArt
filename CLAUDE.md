@@ -16,4 +16,5 @@ StageArt is a WordPress plugin, located under `plugin/`.
 - `plugin/assets/` — CSS / JS / images
 - `plugin/templates/` — template files
 - `plugin/languages/` — translation files
+- `plugin/tests/` — PHPUnit tests (Domain/Application only; no WordPress dependency)
 - `docs/` — project documentation

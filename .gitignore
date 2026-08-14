@@ -2,6 +2,34 @@
 /plugin/vendor/
 /plugin/node_modules/
 
+# Test artifacts
+/plugin/.phpunit.cache/
+/plugin/.phpunit.result.cache
+
+# WordPress core (this repo root doubles as the WordPress install root on
+# ConoHa dev; core files are not part of the StageArt plugin and are
+# reinstalled/updated independently of this repo)
+/wp-admin/
+/wp-includes/
+/wp-*.php
+/index.php
+/license.txt
+/readme.html
+/xmlrpc.php
+/wp-config.php
+/wp-config-sample.php
+/wp-config.php.bak
+
+# WordPress content (themes, bundled plugins, uploads, other plugins) -
+# none of this belongs to the StageArt plugin repo. plugin/ itself lives
+# at the repo root and is unaffected by this rule; wp-content/plugins/stageart
+# on ConoHa is only a symlink back to plugin/.
+/wp-content/
+
+# Environment-specific web server config (e.g. hardcoded RewriteBase per
+# ConoHa vhost path)
+/.htaccess
+
 # OS
 .DS_Store
 Thumbs.db
