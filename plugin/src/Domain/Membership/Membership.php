@@ -54,6 +54,21 @@ final class Membership
         );
     }
 
+    /**
+     * The only sanctioned way to create an OWNER Membership. Kept
+     * distinct from create() so call sites make the Organization Owner
+     * Invariant (exactly one OWNER Membership per Organization) visible
+     * in code, rather than looking like an ordinary Membership creation
+     * that happens to pass RoleKey::owner(). Enforcing the invariant
+     * itself (checking no other OWNER already exists) is the caller's
+     * (Application layer's) responsibility, since it spans multiple
+     * Membership rows and this Aggregate only ever sees one.
+     */
+    public static function createOwnerMembership(OrganizationId $organizationId, PersonId $personId): self
+    {
+        return self::create($organizationId, $personId, RoleKey::owner());
+    }
+
     public static function reconstitute(
         MembershipId $id,
         OrganizationId $organizationId,
@@ -93,6 +108,19 @@ final class Membership
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
+    }
+
+    /**
+     * Deliberately unguarded at this level: Membership cannot by itself
+     * know whether changing its own Role would leave an Organization
+     * with zero or multiple OWNERs, since that invariant spans other
+     * Membership rows it has no visibility into. Only
+     * OwnerTransferUseCase is expected to call this toward/away from
+     * RoleKey::OWNER.
+     */
+    public function changeRole(RoleKey $roleKey): void
+    {
+        $this->roleKey = $roleKey;
     }
 
     public function createdAt(): DateTimeImmutable
