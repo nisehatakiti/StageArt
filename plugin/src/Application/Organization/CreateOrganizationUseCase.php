@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Membership\RoleKey;
@@ -12,7 +13,6 @@ use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonRepositoryInterface;
-use StageArt\Domain\Shared\TransactionManagerInterface;
 
 /**
  * Creating an Organization always creates its first Membership too: per

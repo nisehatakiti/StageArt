@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
-use StageArt\Domain\Shared\TransactionManagerInterface;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use Throwable;
 use wpdb;
 

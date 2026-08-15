@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
-use StageArt\Domain\Shared\TransactionManagerInterface;
+use StageArt\Application\Shared\TransactionManagerInterface;
 
 /**
  * A plain passthrough: it proves Use Cases route their work through
