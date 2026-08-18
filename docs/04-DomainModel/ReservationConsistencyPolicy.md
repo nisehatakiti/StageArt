@@ -2,15 +2,13 @@
 
 # Domain Consistency Policy : Reservation
 
-Version : 1.1
+Version : 1.2
 
 ---
 
 # Purpose
 
-本書はReservation Domainについて、現在のCanonical Domain Modelおよび確定済みのPerformance / Ticket / Reservation Capacity仕様との整合性を定義する。
-
-既存のReservation.mdに記載された基本設計を維持しつつ、予約定員、Performance、Ticket、Price Snapshot、Check In、Accounting、予約確認通知の責務境界を明確化する。
+Reservation Domainについて、Performance / Ticket / Capacity / Price Snapshot / Check In / Accounting / Reservation Notificationに加え、予約者自身による予約変更・キャンセルの業務フローを定義する。
 
 ---
 
@@ -18,8 +16,7 @@ Version : 1.1
 
 Reservationは、特定のPerformanceに対する観客の予約Factを表す。
 
-基本構造：
-
+```text
 Production
     ↓
 Performance
@@ -27,234 +24,21 @@ Performance
 Reservation
     ↓
 Ticket
-
-ReservationはProductionではなく、必ず特定のPerformanceに所属する。
-
----
-
-# Reservation Capacity
-
-予約定員の適用単位はPerformanceとする。
-
-Productionには標準予約定員を設定でき、Performance作成時にその値を継承する。
-
-基本構造：
-
-Production
-    ↓
-Standard Reservation Capacity
-    ↓
-Performance
-    ↓
-Performance Reservation Capacity
-    ↓
-Reservation
-
-Performanceは、Productionから継承した定員を個別に変更できる。
-
-Performanceごとの定員は、実際のReservation受付時に適用する。
-
----
-
-# Capacity Inheritance
-
-Productionの標準予約定員は、Performance作成時に初期値として継承する。
-
-既存Performanceの定員は、Productionの標準定員を後から変更しても自動的に上書きしない。
-
-例：
-
-Production
-    標準予約定員 = 100
-
-Performance A
-    100
-
-Performance B
-    80  ← 個別Override
-
-Performance C
-    100
-
-Productionの標準値を120へ変更した場合でも、既存Performance A / B / Cの定員を自動変更してはならない。
-
-新たに作成するPerformanceには、変更後の120を継承する。
-
----
-
-# Capacity Responsibility
-
-定員そのものの設定値はPerformanceに保持する。
-
-Reservation Domainは、Performanceに設定された予約定員を使用して予約可否を判定する。
-
-したがって、責務は以下のように分離する。
-
-Performance
-    = 予約定員の設定
-
-Reservation
-    = その定員を超えないよう予約を受け付けるBusiness Rule
-
-Reservationが独自の別定員を保持して、Performanceの定員と二重管理してはならない。
-
----
-
-# Capacity Counting
-
-定員判定はReservationのGuestCountを人数として行う。
-
-基本計算：
-
-現在の予約人数
-= 有効なReservationのGuestCount合計
-
-予約可能人数
-= Performance Capacity - 現在の予約人数
-
-新規ReservationのGuestCountを加算した結果がPerformance Capacityを超える場合、通常のReservation作成を許可しない。
-
----
-
-# Cancelled Reservation and Capacity
-
-CANCELLEDとなったReservationは、予約定員の使用数から除外する。
-
-例：
-
-Performance Capacity = 100
-
-Reservation A = 30
-Reservation B = 20
-Reservation C = 10 / CANCELLED
-
-現在の予約人数 = 50
-
-CANCELLEDのReservationは定員を消費しない。
-
-Reservation自体は履歴として削除しない。
-
----
-
-# Checked In Reservation and Capacity
-
-CHECKED_INとなったReservationは、有効な予約として定員使用数に含める。
-
-Check Inによって定員使用数から除外してはならない。
-
-定員は「現在そのPerformanceに対して確保されている予約人数」を表すため、来場済みReservationも公演終了までは定員計算上の予約として扱う。
-
----
-
-# No Show Reservation and Capacity
-
-NO_SHOWとなったReservationは、定員を消費した予約Factとして保持する。
-
-NO_SHOWへの変更によって過去の予約人数を再計算して定員を解放することはしない。
-
-公演終了後の状態であるため、通常のReservation受付可否には影響しない。
-
----
-
-# Capacity = 0
-
-Capacity = 0は「無制限」を意味しない。
-
-Capacity = 0の場合、通常のReservationは受付できない。
-
-無制限を表す特殊値を設けるかどうかは、将来必要になった時点で別途定義する。
-
----
-
-# Capacity Validation
-
-Reservation作成・GuestCount変更時には、対象Performanceの現在の予約使用数と新しいGuestCountを合算して定員を判定する。
-
-Reservation更新によってGuestCountを増加させる場合も、定員を超えてはならない。
-
-GuestCountを減少させる変更は、定員を増加させることなく許可できる。
-
-CHECKED_INおよびCANCELLEDのReservationは通常Update対象外であるため、GuestCount変更による定員再計算を行わない。
-
----
-
-# Concurrent Reservation
-
-同一Performanceに対する複数のReservationが同時に作成された場合でも、定員を超過するReservationを成立させてはならない。
-
-定員判定とReservation成立は、定員を超過しないことを保証できる単位で一貫して処理する。
-
-具体的なDatabase Lock、Transaction、Concurrency Controlの方式はInfrastructure / Application Architectureで定義する。
-
----
-
-# Performance Relationship
+```
 
 Reservationは必ず一つのPerformanceに所属する。
 
-Reservation作成後にPerformanceを変更してはならない。
-
-別Performanceへの変更が必要な場合は、既存ReservationをCANCELLEDとし、新しいPerformanceに対するReservationを作成する。
-
-これにより、過去の予約Factと定員計算の整合性を維持する。
-
 ---
 
-# Ticket Relationship
+# Reservation Number
 
-Reservationは、対象Performanceで利用するTicketを参照する。
+Reservationが正常に成立した時点で、StageArtは予約番号を自動生成する。
 
-Ticketの正本はProduction側にある。
+予約番号はReservationを識別するための公開可能な識別子とし、推測されにくい値を使用する。
 
-ReservationはTicketの現在の販売条件を変更しない。
+予約番号は予約確認メールに記載する。
 
-PerformanceごとのTicket Availabilityが設定されている場合、Reservation作成時には対象Performanceで利用可能なTicketであることを検証する。
-
-Ticket Availabilityの詳細仕様はTicket Domainで定義する。
-
----
-
-# Price Snapshot
-
-Reservation成立時には、その時点のTicket PriceをPrice Snapshotとして保持する。
-
-基本構造：
-
-Ticket
-    ↓
-Reservation
-    ↓
-Price Snapshot
-
-Ticketの現在Priceが後から変更されても、既存ReservationのPrice Snapshotを変更しない。
-
-Price Snapshotは予約時点の取引Factであり、Ticketの現在値から再計算してはならない。
-
----
-
-# Booker
-
-Bookerは予約者を表す。
-
-BookerとCreatedByは別概念とする。
-
-例えば、観客本人がBookerであり、劇団スタッフが代理入力のCreatedByである状態を許可する。
-
----
-
-# Guest Count
-
-GuestCountはReservationによって確保される人数を表す。
-
-Version 1.0では同行者を独立Person / Companionとして管理しない。
-
-GuestCountは、以下に利用する。
-
-- Reservation Capacity
-- 受付時の予約人数集計
-- 公演回ごとの集客集計
-
-同行者を個別にCheck Inする機能は初期仕様では提供しない。
+予約番号そのものを認証秘密として扱うのではなく、予約者メールアドレスとの組み合わせによって予約変更・キャンセル対象を照合する。
 
 ---
 
@@ -262,7 +46,7 @@ GuestCountは、以下に利用する。
 
 Reservationが正常に成立した場合、予約者のメールアドレスへ予約受付完了通知を送信する。
 
-通知には、少なくとも以下の予約情報を含める。
+通知には少なくとも以下を含める。
 
 - 公演名
 - 公演日時
@@ -270,11 +54,10 @@ Reservationが正常に成立した場合、予約者のメールアドレスへ
 - 券種
 - 枚数 / GuestCount
 - 予約者名
-- Reservationを識別できる予約番号
-- 受付時の案内
+- 自動生成された予約番号
+- 予約変更・キャンセルフォームへの案内
 - Check Inに使用するQR Code
-
-予約確認メールはReservation成立後の通知処理として扱い、予約Factそのものとは責務を分離する。
+- 受付時の案内
 
 メール送信の失敗によって、成立済みReservationを取り消してはならない。
 
@@ -284,35 +67,136 @@ Reservationが正常に成立した場合、予約者のメールアドレスへ
 
 # QR Code
 
-Reservation成立時に、Check Inで利用するQR Codeを発行する。
+Reservation成立時にCheck In用QR Codeを発行する。
 
 QR CodeはReservationを安全に識別・検証できる情報を表現する。
 
-QR Codeの実体画像をReservationの会計Factとして保存する必要はなく、必要に応じて表示・再生成できる設計を基本とする。
-
-QR Codeの内容には、推測だけで別Reservationへアクセスできる単純な連番等を使用しない。
+QR Codeの実体画像をReservationへ永続保存する必要はなく、必要に応じて表示・再生成できる設計を基本とする。
 
 具体的な署名方式・Token形式・有効性検証方式はSecurity / Application Architectureで定義する。
 
 ---
 
-# Reservation Notification Flow
+# Reservation Change / Cancellation Access
+
+予約者はStageArtアカウントを作成・ログインすることなく、専用の「予約変更・キャンセルフォーム」から自身のReservationを管理できるものとする。
+
+対象Reservationの照合には、以下の2項目を使用する。
+
+- 予約時に登録したメールアドレス
+- 自動生成された予約番号
+
+両方が一致した場合のみ対象Reservationを表示し、変更・キャンセル操作を許可する。
 
 基本フロー：
 
-Reservation Input
-    ↓
-Capacity Validation
-    ↓
-Reservation Created
-    ↓
-Reservation Confirmed
-    ├── QR Code issued / derivable
-    └── Confirmation Email queued / sent
-             ↓
-         Booker Email
+```text
+予約変更・キャンセルフォーム
+        ↓
+メールアドレス入力
+        ↓
+予約番号入力
+        ↓
+Reservation照合
+        ↓
+予約内容表示
+        ├── 予約変更
+        └── 予約キャンセル
+```
 
-Reservation作成処理とメール送信処理は疎結合とし、メール送信の一時的な障害がReservation Transactionを失敗させない構成を基本とする。
+Reservation検索時には、メールアドレスまたは予約番号だけで予約情報を開示してはならない。
+
+試行回数制限、レート制限等のSecurity対策を適用する。
+
+---
+
+# Changeable Reservation Information
+
+Check In前のRESERVED Reservationについて、専用フォームから以下を変更可能とする。
+
+- 予約者名
+- 予約者メールアドレス
+- Ticket / 券種
+- GuestCount / 枚数
+- その他、Reservation Domainで変更可能と定義した予約者情報
+
+変更時には、変更後の内容が現在のPerformance / Ticket / Capacityルールを満たすことを再検証する。
+
+Price Snapshotは、成立済みReservationの過去取引Factとして不用意に書き換えない。
+
+Ticket変更や枚数変更によって金額が変わる場合の新しいPrice Snapshotの扱いは、Reservation変更時のAccounting / Payment Policyとして別途定義する。
+
+---
+
+# Performance Change Prohibition
+
+予約者自身によるReservation変更で、予約対象のPerformanceを変更することはできない。
+
+別の公演回へ変更したい場合は、**現在の予約をキャンセルしたうえで、新しい公演回へ改めて予約を取り直す必要がある**ことを予約変更フォームおよび予約確認メール等で明示する。
+
+既存Reservationを別Performanceへ直接移動させてはならない。
+
+理由：
+
+- Performanceごとの定員管理
+- Reservation Factの履歴保持
+- Ticket / Price Snapshot
+- Check In
+- Accounting
+
+の整合性を維持するため。
+
+---
+
+# Reservation Change Flow
+
+```text
+Reservation Change Form
+        ↓
+Email + Reservation Number
+        ↓
+Reservation Verification
+        ↓
+Current Reservation
+        ↓
+Change Name / Email / Ticket / GuestCount等
+        ↓
+Capacity / Ticket Validation
+        ↓
+Reservation Update
+        ↓
+変更完了メール
+        ↓
+最新の予約内容・必要に応じてQR Codeを再通知
+```
+
+変更後は予約者へ最新の予約内容をメール送信する。
+
+QR Codeに変更前のReservation状態を識別する情報が含まれる場合は、変更後も正しくCheck Inできるよう更新・再発行する。
+
+---
+
+# Cancellation Flow
+
+```text
+Reservation Change / Cancellation Form
+        ↓
+Email + Reservation Number
+        ↓
+Reservation Verification
+        ↓
+Cancellation Confirmation
+        ↓
+Reservation = CANCELLED
+        ↓
+Capacity Countから除外
+        ↓
+キャンセル完了メール
+```
+
+Reservation自体は物理削除しない。
+
+CANCELLEDとなったReservationは履歴として保持する。
 
 ---
 
@@ -325,58 +209,77 @@ Reservation作成処理とメール送信処理は疎結合とし、メール送
 - CANCELLED
 - NO_SHOW
 
-RESERVEDは有効な予約状態である。
+RESERVEDは有効な予約状態。
 
-CHECKED_INは来場受付完了を表す。
+CHECKED_INは来場受付完了。
 
-CANCELLEDはキャンセルされた予約Factを保持する。
+CANCELLEDはキャンセルされた予約Factを保持する状態。
 
-NO_SHOWは予約が存在したが来場が確認されなかった状態を表す。
+NO_SHOWは予約が存在したが来場が確認されなかった状態。
 
----
-
-# Status and Capacity
-
-定員計算上の扱いは以下とする。
-
-| Status | Capacity Count |
-|---|---|
-| RESERVED | 含む |
-| CHECKED_IN | 含む |
-| CANCELLED | 含まない |
-| NO_SHOW | 含む（公演終了後の状態） |
-
-NO_SHOWについては通常、公演終了後に判定されるため、Reservation受付中の定員判定には実質的に影響しない。
+Check In後のReservationは、予約者向け変更・キャンセルフォームから変更・キャンセルできない。
 
 ---
 
-# Reservation Update
+# Capacity
 
-Check In前のRESERVED Reservationは、必要な範囲で変更できる。
+Productionには標準予約定員を設定でき、Performance作成時に継承する。
 
-変更可能な情報には、原則として以下を含む。
+Performanceは継承した定員を個別に変更できる。
 
-- Booker
-- Ticket
-- GuestCount
+Reservation受付時はPerformanceの定員を使用する。
 
-Performanceは変更できない。
+```text
+Production
+    ↓
+Standard Reservation Capacity
+    ↓
+Performance Reservation Capacity
+    ↓
+Reservation
+```
 
-Price Snapshotは変更できない。
+CANCELLED ReservationはCapacity Countから除外する。
 
-Ticket変更によってPrice Snapshotを自動的に再計算してはならない。
-
-GuestCountを変更する場合は、変更後の人数がPerformance Capacityを超えないことを検証する。
+CHECKED_IN Reservationは公演終了までCapacity Countに含める。
 
 ---
 
-# Cancellation
+# Capacity Validation
 
-Check In前のReservationはCANCELLEDへ変更できる。
+Reservation作成・GuestCount変更・Ticket変更時には、対象Performanceの定員と現在の予約使用数を検証する。
 
-Reservationそのものを削除してはならない。
+同時予約によって定員を超過しないよう、Reservation成立処理とCapacity Validationを一貫したTransaction / Concurrency Control単位で処理する。
 
-CANCELLEDとなったReservationはCapacity Countから除外する。
+具体的なDatabase Lock等はInfrastructure / Application Architectureで定義する。
+
+---
+
+# Price Snapshot
+
+Reservation成立時には、その時点のTicket PriceをPrice Snapshotとして保持する。
+
+Ticketの現在Priceが後から変更されても、既存ReservationのPrice Snapshotを単純に再計算してはならない。
+
+Reservation変更で金額が変動する場合は、差額・再決済・返金等の会計処理をAccounting / Payment Policyで定義する。
+
+---
+
+# Booker
+
+Bookerは予約者を表す。
+
+BookerとCreatedByは別概念とする。
+
+観客本人がBookerで、劇団スタッフが代理入力のCreatedByとなる状態を許可する。
+
+---
+
+# Guest Count
+
+GuestCountはReservationで確保する人数を表す。
+
+初期仕様では同行者を独立Person / Companionとして管理しない。
 
 ---
 
@@ -384,11 +287,7 @@ CANCELLEDとなったReservationはCapacity Countから除外する。
 
 Check InはReservation単位で行う。
 
-受付中のPerformanceとReservationのPerformanceが一致する場合のみCheck Inを許可する。
-
-GuestCountが複数であっても、初期仕様ではReservation全体を一つのCheck Inとして扱う。
-
-QR Codeを読み取った場合は、Reservationを安全に検証したうえで対象Reservationを特定し、通常のCheck In処理へ進む。
+QR Codeを読み取った場合、Reservationを安全に検証して対象Reservationを特定し、通常のCheck In処理へ進む。
 
 Check In完了後はCHECKED_INとなり、通常のReservation変更を行わない。
 
@@ -398,10 +297,9 @@ Check In完了後はCHECKED_INとなり、通常のReservation変更を行わな
 
 Reservation DomainはJournal Entryを管理しない。
 
-CheckInCompletedを契機として、Ticket Revenue等の会計連携をAccounting Domainへ渡す。
+CheckInCompletedを契機としてTicket Revenue等の会計連携をAccounting Domainへ渡す。
 
-基本Flow：
-
+```text
 Reservation
     ↓
 Check In
@@ -411,8 +309,11 @@ CheckInCompleted
 Ticket Revenue
     ↓
 Accounting Journal Entry
+```
 
-Accounting上の正本はJournal Entryであり、Reservationが会計Factを二重管理しない。
+Accounting上の正本はJournal Entry。
+
+Reservationが会計Factを二重管理しない。
 
 ---
 
@@ -420,25 +321,27 @@ Accounting上の正本はJournal Entryであり、Reservationが会計Factを二
 
 予約しただけでは観劇履歴を生成しない。
 
-CheckInCompletedを契機として、必要なHistory Domainが観劇履歴を生成する。
+CheckInCompletedを契機として必要なHistory Domainが観劇履歴を生成する。
 
-基本Flow：
+---
 
-Reservation
-    ↓
-CheckInCompleted
-    ↓
-History
+# Notification
+
+Reservation成立、Reservation変更、Reservationキャンセルについて、予約者へのメール通知を行う。
+
+メール送信はReservation FactのTransactionと疎結合にし、一時的な送信障害によって予約Factをロールバックしない。
+
+通知失敗は再送可能な状態として管理する。
 
 ---
 
 # Deletion
 
-Reservationは、予約Factおよび関連する会計・履歴の整合性を維持するため、物理削除を基本としない。
+Reservationは物理削除を基本としない。
 
 キャンセルはCANCELLEDへの状態変更で表現する。
 
-過去のReservationを削除してCapacity Countや会計Factを改変してはならない。
+過去Reservationを削除してCapacity、Accounting、Historyの整合性を壊してはならない。
 
 ---
 
@@ -455,27 +358,30 @@ Production
     └── Performance
           ↓
        Reservation
-          ├── Booker
+          ├── Reservation Number
+          ├── Booker / Email
           ├── Ticket Reference
           ├── Price Snapshot
           ├── Guest Count
-          └── Reservation Confirmation
-                ├── QR Code
-                └── Email Notification
+          ├── QR Code
+          └── Notification
+                ├── Confirmation
+                ├── Change
+                └── Cancellation
 ```
 
-Capacityについては、Productionの標準値をPerformanceが継承し、Performanceの定員をReservationが受付判定に利用する。
+予約者はStageArt Accountを必要とせず、メールアドレス＋予約番号によって自身の予約を変更・キャンセルできる。
+
+公演回の変更は直接変更ではなく、現在のReservationをキャンセルして新しいPerformanceへ再予約する。
 
 ---
 
 # Design Principle
 
-Reservationは「誰がどの公演回に何人でどのTicketを予約したか」という取引Factを管理する。
+Reservationは「誰が、どの公演回に、何人で、どのTicketを予約したか」という取引Factを管理する。
 
-予約成立時には、予約者へ予約内容とCheck In用QR Codeをメールで通知する。
+予約成立時には自動生成された予約番号とCheck In用QR Codeを予約確認メールで送信する。
 
-定員の設定値はPerformanceに置き、Reservationはその定員を超えないことを保証する。
+予約者は専用フォームでメールアドレスと予約番号を入力することで、ログインなしに予約内容の変更・キャンセルを行える。
 
-Ticketの販売条件とReservation成立時点の取引条件を分離し、Price Snapshotによって過去Factを保持する。
-
-Reservationの変更・キャンセル・Check Inによって過去のFactを削除・改変せず、状態遷移によって履歴を保持する。
+ただし、公演回そのものは変更できず、別公演回への変更はキャンセル後の再予約を必要とする。
