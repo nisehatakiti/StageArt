@@ -2,7 +2,7 @@
 
 # Production Public Page Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -13,6 +13,30 @@ Production Public Pageの情報構成、Navigation、観客向け情報の優先
 Production Public Pageは、Productionを観客に紹介し、観劇に必要な情報を確認してチケット予約へ進むためのPublic Pageとして扱う。
 
 Organization Public Pageが「劇団そのもの」を見せる公式ページであるのに対し、Production Public Pageは「この公演を観に行くためのページ」として情報を絞る。
+
+---
+
+# Public Visibility
+
+ProductionがStageArt内部に存在することと、Production Public Pageを一般公開することは別の概念として扱う。
+
+Productionには、管理者がそのProductionの過去公演Public Pageを公開するかどうかを制御できるPublic Visibility設定を持たせる。
+
+Public VisibilityがOFFの場合、Productionの内部データおよびLifecycle履歴は保持したまま、一般観客向けのPublic Pageからは表示しない。
+
+Public Visibilityの判断は、Productionの内容、集客状況、活動方針その他の運用上の理由を問わず、Production管理者が行えるものとする。
+
+Public VisibilityはProduction Lifecycleとは独立した設定として扱う。
+
+ProductionがCOMPLETEDまたはARCHIVEDになったことだけを理由として、Public Visibilityを自動的に変更してはならない。
+
+Public VisibilityがOFFのProductionは、Organization Public PageのLatest Past ProductionおよびPRODUCTIONS一覧等の公開Production一覧にも含めない。
+
+Public VisibilityがOFFのProductionについて、Public URLを直接指定された場合も一般公開ページとして表示してはならない。公開対象外のProductionの存在を、Public Page上から推測できる情報も表示しない。
+
+Public VisibilityをONに戻した場合は、Productionの既存Business FactからPublic Pageを再び生成・表示できる構造とする。
+
+Public VisibilityはPublic Pageの公開制御であり、Productionそのものの削除、Archive、Lifecycle変更を意味しない。
 
 ---
 
@@ -149,6 +173,8 @@ Production Public Pageの詳細情報は、少なくとも以下を別ページ�
 
 Production終了後もProduction Public Page自体は原則として保持し、過去公演の公開アーカイブとして閲覧可能な構造とする。
 
+ただし、Production Public Pageの公開可否は、管理者が設定するPublic Visibilityによって制御する。
+
 過去公演ページは、現在公演の予約促進だけではなく、その公演がどのような作品であったかを記録し、観客の反応を残すためのArchive Pageとして扱う。
 
 過去公演ページでは、現在公演時の基本情報に加えて、公開対象として承認された観客アンケートの抜粋を掲載することを必須要件とする。
@@ -161,7 +187,7 @@ Production終了後もProduction Public Page自体は原則として保持し、
 
 Production終了後は、予約CTA等の現在公演向け導線は表示しない。
 
-Organization Public Pageでは、終了したProductionを最新の過去公演として1件だけ表示する。
+Organization Public Pageでは、Public VisibilityがONである終了済みProductionのみをLatest Past Productionとして扱う。
 
 ---
 
@@ -183,7 +209,11 @@ Productionが次回公演として扱われている間は、Organization Public
 
 Production終了後もProduction Public Page自体は原則として保持し、過去公演の公開アーカイブとして閲覧可能な構造を基本とする。
 
+ただし、終了後のPublic Page表示はProductionのPublic VisibilityがONであることを条件とする。
+
 過去公演ページでは、予約促進を目的とした現在公演向けCTAを表示せず、作品記録としての情報と公開承認済みアンケート抜粋を中心に構成する。
+
+Public VisibilityがOFFの場合、Productionは内部データとして保持するが、Public Pageからは表示しない。
 
 ---
 
@@ -209,6 +239,8 @@ Public Page専用のBusiness Factを元Domainと二重管理しない。
 
 Production設定を変更すると、同じSource of Truthから生成されるPublic Pageへ反映される。
 
+Public Visibilityの変更はPublic Pageの公開・非公開状態に反映するが、ProductionのBusiness Data自体を変更・削除しない。
+
 過去公演ページのアンケート抜粋も、承認済みのSurvey情報をSource of Truthとして表示し、Public Page専用のアンケート本文を二重管理しない。
 
 ---
@@ -217,6 +249,14 @@ Production設定を変更すると、同じSource of Truthから生成されるP
 
 - Production Public PageはCore機能として自動生成する。
 - Production Public Pageは観客が公演を理解し、予約・来場に必要な情報を確認するためのページとする。
+- Productionの内部存在とProduction Public Pageの公開状態は別概念として扱う。
+- Productionには管理者がPublic Pageの公開・非公開を制御できるPublic Visibility設定を持たせる。
+- Public VisibilityはProduction Lifecycleとは独立して管理する。
+- Public VisibilityがOFFのProductionはPublic Pageから表示しない。
+- Public VisibilityがOFFでもProductionの内部データ、履歴、Lifecycle状態等は削除・変更しない。
+- Public VisibilityがOFFのProductionはOrganization Public PageのLatest Past ProductionおよびPRODUCTIONS一覧等の公開Production一覧に含めない。
+- Public VisibilityがOFFのProductionを直接URLで指定された場合も、一般公開ページとして表示しない。
+- Public VisibilityをONに戻した場合は、既存のProduction Business FactからPublic Pageを再表示できる構造とする。
 - Production Public Pageの主役はFlyer / Main Visualとする。
 - Production Titleと作・演出は公演トップに基本表示する。
 - 公演概要および出演・スタッフの詳細情報は専用ページから表示する。
