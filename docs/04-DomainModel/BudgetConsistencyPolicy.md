@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Budget
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -10,7 +10,7 @@ Version : 1.0
 
 Budget Domainについて、現在のCanonical Domain Modelおよび会計設計との整合性を定義する。
 
-特に、Project BudgetとProduction Budget、複数Budget、Budget再利用、Account、Actual、帳票出力の関係を明確化する。
+特に、Project BudgetとProduction Budget、複数Budget、Budget再利用、Account、Actual、帳票出力、標準費目テンプレートの関係を明確化する。
 
 ---
 
@@ -157,25 +157,39 @@ Budget
 
 # Initial Budget Template
 
-StageArtはBudget作成時の初期候補として、以下の費目を提示できる。
+StageArtはBudget作成時の初期候補として、現在のCanonical候補と既存Business Flowで使用していた費目を統合した標準テンプレートを提示できる。
 
 ### 支出
 
 - 会場費用
 - 機器レンタル費用
 - 外注費（スタッフ＋キャスト）
-- 広告宣伝費用
+- 人件費
+- チケットバック
+- 広告宣伝費用（フライヤー印刷等）
 - 通信費
-- 車両交通費
-- その他雑費
+- 車両交通費（レンタカー・駐車場代等）
+- 消耗品費
+- その他雑費（大道具・小道具・消耗品等）
+- その他支出
 
 ### 収入
 
 - 集客予測 × チケット代
+- チケット収入
 - 物販
+- 協賛金
+- 拠出金
+- その他収入
 - その他
 
-これらは初期テンプレートであり、OrganizationのAccount Masterに応じて追加・変更できる。
+ここで挙げる費目は標準候補であり、すべてを必ず入力するものではない。
+
+Budget作成画面では、標準候補をあらかじめ表示し、利用者が必要な項目へ金額を入力する方式を基本とする。
+
+過去Budgetをコピーした場合は、コピー元の費目・金額を初期値として表示し、今回の公演に合わせて必要な金額だけ修正できる。
+
+利用しない費目は空欄または0円として扱える。必要に応じてOrganizationのAccount Masterに合わせて追加・変更できる。
 
 ---
 
