@@ -2,7 +2,7 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -69,10 +69,6 @@ Ticket等の受取権利が予約・取引確定時点で発生した場合、�
 未収金 30,000 / Ticket Revenue 30,000
 
 実際に受付・入金した時点で、未収金を現金・預金等へ振り替えて消し込む。
-
-例：30,000円を現金で受領した場合
-
-現金 30,000 / 未収金 30,000
 
 キャンセル、免除、金額修正等によって未収金を消す場合は、入金とは区別された調整として記録し、理由を追跡可能にする。
 
@@ -201,6 +197,112 @@ Productionの決算後修正が発生した場合、修正Journal Entryを含め
 
 ---
 
+# Accounting Adoption / Activation
+
+AccountingはOrganization単位のオプション機能とする。
+
+StageArtの基本機能を利用するために、Accountingを有効化することを必須条件としない。
+
+Organizationは、Accountingを使用せずに以下の基本的なProduction管理機能を利用できる。
+
+- Production
+- Rehearsal
+- Timetable
+- Participant
+- Reservation等のProduction関連機能
+
+会計を利用しないOrganizationに対して、Account Master、Budget、Journal Entry等の会計初期設定を要求してはならない。
+
+## Initial Choice
+
+Organizationの利用開始時に、Accountingを使用するかどうかを選択できる。
+
+Accountingを使用する場合：
+
+1. Accountingを有効化する。
+2. 会計開始時点の現在資金を確認・入力する。
+3. その開始残高をAccountingの初期状態として登録する。
+4. その後、Account / Budget / Journal Entry等の会計機能を利用できる。
+
+Accountingを使用しない場合：
+
+1. Accountingは未開始状態とする。
+2. 会計用の初期設定を要求しない。
+3. そのままProduction管理へ進める。
+
+## Current Funds at Activation
+
+Accountingを有効化する時点で、Organizationは現在の資金を入力する。
+
+UI上では「現在の資金」を分かりやすく入力できることを優先し、会計内部のDebit / Credit構造を初期設定画面へ直接要求しない。
+
+現在資金は、会計開始時点のOpening BalanceとしてAccountingへ反映する。
+
+現時点で必要な最低限の対象は流動資産とし、具体的な内訳はAccount Masterの設定に従う。
+
+会計開始時点より前の過去取引を遡って入力することを、Accounting有効化の必須条件とはしない。
+
+## Activation After Organization Start
+
+Accountingを使用せずにOrganizationを開始した場合でも、後からAccountingを有効化できる。
+
+後から有効化する場合も、基本Flowは同じとする。
+
+Accounting未開始
+    ↓
+Accountingを有効化
+    ↓
+現在の資金を入力
+    ↓
+Opening Balanceを登録
+    ↓
+Accounting利用開始
+
+会計を有効化する前のProduction管理や予約管理等を、会計利用開始のためにやり直すことを要求しない。
+
+過去の取引について必要な場合のみ、Accounting開始後に追加のJournal Entryとして記録できる。
+
+## Irreversible Activation
+
+OrganizationでAccountingを一度有効化した後、Accountingを単純にOFFへ戻すことはできない。
+
+これは、会計開始後に生成されたJournal Entry、Budget、Actual、未収金・未払金、Opening Balance等の会計履歴を非表示・無効化して会計事実を失わせることを防ぐためである。
+
+Accountingを有効化した後は、AccountingをOrganizationの継続的な機能として扱う。
+
+「会計を使わない状態へ戻す」ために、既存の会計データを削除・無効化する設計は採用しない。
+
+## Organization Scope
+
+Accountingの使用状態はOrganizationごとに管理する。
+
+同一Personが複数Organizationに所属する場合でも、Accountingの使用状態はOrganizationごとに独立する。
+
+例：
+
+Organization A
+    Accounting = 未開始
+
+Organization B
+    Accounting = ACTIVE
+
+Organization C
+    Accounting = ACTIVE
+
+Organization AのAccounting未開始状態が、Organization BまたはCのAccounting利用を妨げてはならない。
+
+## Accounting Availability and UI
+
+Accountingが未開始のOrganizationでは、Accountingの初期設定を要求したり、会計データが「0円」であるかのように表示してはならない。
+
+Accountingが未開始であることと、Accountingの残高が0円であることは別の状態として扱う。
+
+Accounting未開始のOrganizationでは、Accounting機能を利用しない利用者に不要な会計設定を強制しない。
+
+Mobile / Web UIでAccountingを表示する場合も、OrganizationのAccounting状態を基準として扱い、PersonのRoleによってAccounting機能そのものを別機能として分岐させない。
+
+---
+
 # Business Rules
 
 - Production AccountingはOrganization Accountingから独立した別帳簿として管理しない。
@@ -221,3 +323,12 @@ Productionの決算後修正が発生した場合、修正Journal Entryを含め
 - Productionの決算後修正はAdjustment Journal Entryとして記録する。
 - 決算後修正はProduction ActualとOrganization Accountingの双方に反映する。
 - Budgetは計画値、ActualはJournal Entryから集計される実績値とする。
+- AccountingはOrganization単位のオプション機能であり、StageArtの基本的なProduction管理機能を利用するために必須ではない。
+- Accounting未開始のOrganizationにAccount / Budget / Journal Entry等の初期設定を要求しない。
+- Organization作成時にAccountingを使用するかどうかを選択できる。
+- Accountingを有効化する時点で現在資金を入力し、Opening Balanceとして登録する。
+- Accounting未開始のOrganizationは、後からAccountingを有効化できる。
+- Accounting有効化前のProduction管理や予約管理等をやり直すことを要求しない。
+- Accountingを一度有効化したOrganizationは、Accountingを単純にOFFへ戻せない。
+- Accountingの使用状態はOrganizationごとに独立する。
+- Accounting未開始と会計残高0円を同一状態として扱わない。
