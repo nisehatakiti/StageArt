@@ -2,7 +2,7 @@
 
 # Domain Model : Person Public Profile Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -20,7 +20,11 @@ Personは役者・スタッフ・演出・制作その他の舞台芸術関係�
 
 個人公開ページでは、Personの名前を最も主要な情報として表示する。
 
+Person Public Profileには、OrganizationやProductionのような公開用Slugを持たせない。公開URL上ではPerson IDを利用し、個人ごとのSlug管理・一意性管理を行わない。
+
 承認済みのOrganization Membershipが存在し、公開対象として扱える場合は所属Organization名を名前と併記できる。
+
+本Blueprintでは複数Organizationへの同時所属表示を考慮しない。表示上の所属は単一Organizationを基本とする。
 
 所属がないPersonは名前のみを表示できる。
 
@@ -91,6 +95,8 @@ Date of BirthとAgeは、それぞれ独立した公開・非公開設定を持�
 
 役者だけでなく、スタッフとしての舞台活動履歴も同じ個人ページで扱う。
 
+履歴についてはPerson本人が追加・編集できる。
+
 ---
 
 # StageArt Production History
@@ -119,11 +125,13 @@ StageArt外の活動について、StageArtが外部事実を自動的に検証�
 
 現在の所属Organizationは、承認済みのMembershipを基準とする。
 
-複数Organizationに所属している場合、公開対象となる所属を複数表示できる設計を妨げない。
+本Blueprintでは複数Organization所属を考慮しない。
 
 所属が存在しない場合は所属名を表示しない。
 
 Organization MembershipのStatusや内部Role・Permissionなどの内部情報を一般公開してはならない。
+
+退団等によって現在のMembershipが終了した場合でも、過去Productionにおける所属表示はその公演時点のスナップショットとして保持する。
 
 ---
 
@@ -131,9 +139,15 @@ Organization MembershipのStatusや内部Role・Permissionなどの内部情報�
 
 Organization Member Pageは現在のOrganization Membershipを基準とする。
 
+Organization管理者はMemberページ上のメンバー表示順を変更できる。並び順はOrganizationごとに管理し、自動的な入団順等を必須ルールとしない。
+
 Person Public ProfileはPerson本人を基準とする。
 
-したがって、同じPersonであっても、複数OrganizationのMember Pageから同一Person Public Profileへ到達できる可能性がある。
+MemberページからPerson Public Profileへは、StageArt上でPersonとの確実な紐付けが存在する場合にリンクできる。
+
+Personとの紐付けが存在しない表示対象者については、名前のみを表示し、個人ページへのリンクを必須としない。
+
+プロフィール画像が存在しない場合、Memberページ等では名前のみを表示する。
 
 Organization Member PageとPerson Public Profileの責務を混在させない。
 
@@ -143,11 +157,15 @@ Organization Member PageとPerson Public Profileの責務を混在させない�
 
 Production Participantは、その公演への参加Factを表す。
 
+ProductionのMember / Cast / Staff表示では、対象Personに利用可能なバストアップ画像がある場合、そのThumbnailを標準表示できる。画像がない場合は名前のみを表示する。
+
 Person Public ProfileのParticipation Historyは、StageArt上のProductionについてはParticipantを参照して表示する。
 
 Participant登録だけでPersonのOrganization Membershipを自動作成・変更してはならない。
 
 また、Membershipの変更だけで過去ProductionのParticipant表示を遡及変更してはならない。
+
+Production Participantに表示される所属は、公演時点の承認済みMembership等に基づくスナップショットとして扱い、現在の所属変更によって過去公演表示を書き換えない。
 
 ---
 
@@ -164,17 +182,22 @@ Public Profileで公開する情報と、StageArt内部でのみ利用するBusi
 # Business Rules
 
 1. 個人公開ページの主役はPersonの名前である。
-2. 承認済み所属がある場合は所属Organization名を表示できる。
-3. プロフィール項目は任意入力とする。
-4. プロフィール項目ごとに本人が公開・非公開を選択できる。
-5. OrganizationはPersonのプロフィール公開設定を変更しない。
-6. Date of Birthを正本とし、Ageを二重管理しない。
-7. StageArt上の出演・スタッフ参加履歴はProduction Participantを正本とする。
-8. 既存Productionの参加履歴を本人が追加する場合はProduction管理者の承認を必要とする。
-9. StageArt外の過去活動は本人申告のHistoricalActivityとして登録できる。
-10. 本人申告のHistoricalActivityとStageArt上の公式Participation Historyを混同しない。
-11. Membershipの変更によって過去Productionの所属表示を遡及変更しない。
-12. 内部権限・Membership管理情報を一般公開しない。
+2. Person Public Profileには公開用Slugを持たせず、Person IDを公開URL上の識別子として利用する。
+3. 承認済み所属がある場合は所属Organization名を表示できる。
+4. 本Blueprintでは複数Organization所属を考慮しない。
+5. Organization Member Pageの並び順はOrganization管理者が変更できる。
+6. プロフィール項目は任意入力とする。
+7. プロフィール項目ごとに本人が公開・非公開を選択できる。
+8. OrganizationはPersonのプロフィール公開設定を変更しない。
+9. Date of Birthを正本とし、Ageを二重管理しない。
+10. StageArt上の出演・スタッフ参加履歴はProduction Participantを正本とする。
+11. 既存Productionの参加履歴を本人が追加する場合はProduction管理者の承認を必要とする。
+12. StageArt外の過去活動は本人申告のHistoricalActivityとして登録できる。
+13. 本人申告のHistoricalActivityとStageArt上の公式Participation Historyを混同しない。
+14. Membershipの変更によって過去Productionの所属表示を遡及変更しない。
+15. 画像がないMember / Participantは名前のみを表示する。
+16. MemberページからPerson Public Profileへのリンクは、Personとの確実な紐付けがある場合に限り提供する。
+17. 内部権限・Membership管理情報を一般公開しない。
 
 ---
 
@@ -182,4 +205,6 @@ Public Profileで公開する情報と、StageArt内部でのみ利用するBusi
 
 Person Public Profileは、劇団のMember紹介ページではなく、個人自身の舞台活動プロフィールとして設計する。
 
-これにより、所属劇団が変わった場合、複数団体で活動する場合、プロデュース公演・客演・フリーランスとして活動する場合でも、一人のPersonとして継続的な活動履歴を保持できる。
+これにより、所属劇団が変わった場合、プロデュース公演・客演・フリーランスとして活動する場合でも、一人のPersonとして継続的な活動履歴を保持できる。
+
+個人ページのURL管理を簡素化するため、Person固有のPublic Slugは設けずPerson IDを利用する。
