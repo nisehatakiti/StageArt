@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Reservation
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -10,7 +10,7 @@ Version : 1.0
 
 本書はReservation Domainについて、現在のCanonical Domain Modelおよび確定済みのPerformance / Ticket / Reservation Capacity仕様との整合性を定義する。
 
-既存のReservation.mdに記載された基本設計を維持しつつ、予約定員、Performance、Ticket、Price Snapshot、Check In、Accountingの責務境界を明確化する。
+既存のReservation.mdに記載された基本設計を維持しつつ、予約定員、Performance、Ticket、Price Snapshot、Check In、Accounting、予約確認通知の責務境界を明確化する。
 
 ---
 
@@ -258,6 +258,64 @@ GuestCountは、以下に利用する。
 
 ---
 
+# Reservation Confirmation
+
+Reservationが正常に成立した場合、予約者のメールアドレスへ予約受付完了通知を送信する。
+
+通知には、少なくとも以下の予約情報を含める。
+
+- 公演名
+- 公演日時
+- 会場
+- 券種
+- 枚数 / GuestCount
+- 予約者名
+- Reservationを識別できる予約番号
+- 受付時の案内
+- Check Inに使用するQR Code
+
+予約確認メールはReservation成立後の通知処理として扱い、予約Factそのものとは責務を分離する。
+
+メール送信の失敗によって、成立済みReservationを取り消してはならない。
+
+送信失敗時は再送可能なNotification処理として扱う。
+
+---
+
+# QR Code
+
+Reservation成立時に、Check Inで利用するQR Codeを発行する。
+
+QR CodeはReservationを安全に識別・検証できる情報を表現する。
+
+QR Codeの実体画像をReservationの会計Factとして保存する必要はなく、必要に応じて表示・再生成できる設計を基本とする。
+
+QR Codeの内容には、推測だけで別Reservationへアクセスできる単純な連番等を使用しない。
+
+具体的な署名方式・Token形式・有効性検証方式はSecurity / Application Architectureで定義する。
+
+---
+
+# Reservation Notification Flow
+
+基本フロー：
+
+Reservation Input
+    ↓
+Capacity Validation
+    ↓
+Reservation Created
+    ↓
+Reservation Confirmed
+    ├── QR Code issued / derivable
+    └── Confirmation Email queued / sent
+             ↓
+         Booker Email
+
+Reservation作成処理とメール送信処理は疎結合とし、メール送信の一時的な障害がReservation Transactionを失敗させない構成を基本とする。
+
+---
+
 # Reservation Status
 
 基本状態：
@@ -330,6 +388,8 @@ Check InはReservation単位で行う。
 
 GuestCountが複数であっても、初期仕様ではReservation全体を一つのCheck Inとして扱う。
 
+QR Codeを読み取った場合は、Reservationを安全に検証したうえで対象Reservationを特定し、通常のCheck In処理へ進む。
+
 Check In完了後はCHECKED_INとなり、通常のReservation変更を行わない。
 
 ---
@@ -398,7 +458,10 @@ Production
           ├── Booker
           ├── Ticket Reference
           ├── Price Snapshot
-          └── Guest Count
+          ├── Guest Count
+          └── Reservation Confirmation
+                ├── QR Code
+                └── Email Notification
 ```
 
 Capacityについては、Productionの標準値をPerformanceが継承し、Performanceの定員をReservationが受付判定に利用する。
@@ -408,6 +471,8 @@ Capacityについては、Productionの標準値をPerformanceが継承し、Per
 # Design Principle
 
 Reservationは「誰がどの公演回に何人でどのTicketを予約したか」という取引Factを管理する。
+
+予約成立時には、予約者へ予約内容とCheck In用QR Codeをメールで通知する。
 
 定員の設定値はPerformanceに置き、Reservationはその定員を超えないことを保証する。
 
