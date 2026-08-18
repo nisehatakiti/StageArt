@@ -2,7 +2,7 @@
 
 # Organization Setup / Feature Usage Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -94,6 +94,8 @@ Organization作成
     ↓
 基本情報設定
     ↓
+公開Slug設定
+    ↓
 機能利用方針の確認
     ↓
 必要な機能のみ初期設定
@@ -106,6 +108,8 @@ StageArt利用開始
 
 NotificationはSetup Wizard内で初期設定を確認できるが、後からOrganization設定で変更できる。
 
+Organization Public PageのURLに使用するPublic Slugは、Organization登録時に設定する。
+
 ---
 
 # Production Setup Wizard
@@ -117,6 +121,7 @@ Production Setup Wizardは、Productionの開始に必要な情報を順序立�
 基本的な対象項目には、必要に応じて以下を含める。
 
 - Production基本情報
+- Public Slug
 - 公演日程
 - 会場
 - Production参加者
@@ -129,7 +134,48 @@ Production Setup Wizardは、Productionの開始に必要な情報を順序立�
 
 Ticket / Reservationを利用する場合は、Production Setup Wizardから必要な設定へ進められる構造とする。
 
+Production Public PageのURLに使用するPublic Slugは、Production登録時に設定する。
+
 Setup Wizardは、Productionを登録するための最低限の入力と、後から設定できる任意項目を区別する。
+
+---
+
+# Public Slug Setup
+
+OrganizationおよびProductionは、公開URLに使用するPublic Slugを持つ。
+
+Public Slugは内部のOrganizationId / ProductionIdとは別の公開識別子である。
+
+基本構造：
+
+Organization
+    id   = UUID等の内部識別子
+    slug = Public Slug
+
+Production
+    id   = UUID等の内部識別子
+    slug = Public Slug
+
+Public Slugを内部Entity IDの代替として扱ってはならない。
+
+Organization Public SlugはOrganization Setup時に設定する。
+
+Production Public SlugはProduction Setup時に設定する。
+
+Public SlugはPublic PageのURLを構成するため、入力時および登録時に利用可能性を確認する。
+
+一意性はClient側の事前確認だけに依存せず、Server SideでBusiness Ruleとして保証する。
+
+Organization Public SlugはOrganizationの公開URL第1階層、Production Public SlugはOrganization配下の公開URL第2階層として利用する。
+
+基本URL構造：
+
+https://hatakiti.com/StageArt/[Organization Slug]/
+https://hatakiti.com/StageArt/[Organization Slug]/[Production Slug]/
+
+Production Public SlugはOrganization内で一意であればよく、異なるOrganization間で同じSlugを使用することを妨げない。
+
+Public Slugの文字種、予約語、変更可否、変更時の旧URLの扱い等の詳細ルールはPublic Page / URL Policyで定義する。
 
 ---
 
@@ -186,6 +232,12 @@ Organization Timezoneの具体的な変更ルール、および既存Business Da
 - Organization Public PageおよびProduction Public PageはCoreとして自動生成する。
 - Organization利用開始時はSetup Wizard形式を基本とする。
 - Production作成時もSetup Wizard形式を基本とする。
+- Organization登録時にPublic Slugを設定する。
+- Production登録時にPublic Slugを設定する。
+- Public Slugは内部Entity IDとは別の公開識別子である。
+- Public Slugの利用可能性は登録時に確認し、最終的な一意性はServer Sideで保証する。
+- Organization Public Slugは公開URLの第1階層、Production Public Slugは第2階層を構成する。
+- Production Public SlugはOrganization内で一意とする。
 - Setup Wizardは設定漏れを防ぐが、不要な機能の初期設定を利用開始条件にしてはならない。
 - StageArtはProgressive Setupを基本とし、必要な機能を後から設定できる。
 - Organizationの日時はOrganization Timezoneを基準として管理する。
