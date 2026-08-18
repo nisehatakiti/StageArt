@@ -2,35 +2,39 @@
 
 # Domain Consistency Policy : Ticket Revenue / Accounting
 
-Version : 1.0
+Version : 1.1
 
 ---
 
 # Purpose
 
-Ticket RevenueとAccounting Domainの責務境界を整理し、CheckIn、Reservation、Journal Entry、およびOrganization / Project / Production Accountingとの関係を定義する。
+Ticket RevenueとAccounting Domainの責務境界を整理し、Reservation、Check In、Journal Entry、およびOrganization / Project / Production Accountingとの関係を定義する。
 
-本書は、既存のAccounting PolicyおよびCheck In Domainを横断して確認した結果を記録する。
+本書は、Accounting PolicyおよびCheck In Domainを横断したTicket RevenueのCanonical Ruleを定義する。
 
 ---
 
-# Canonical Accounting Source
+# Canonical Revenue Recognition Rule
 
-会計Factの正本はJournal Entryとする。
+**Ticket RevenueはCheck In時点で成立・認識する。**
 
-Ticket Revenue、Production Actual、Project Actual等をJournal Entryとは別の会計Factとして二重管理しない。
+Reservation成立時点では、Ticket Revenueはまだ成立していない。
 
-基本構造：
+Reservation成立後、実際の来場が確認されるCheck Inをもって、Ticket RevenueをRevenueとして認識する。
 
-Business Event
+基本Flow：
+
+Reservation成立
     ↓
-Accounting Processing
+未収金 / 予約Fact
+    ↓
+Check In
+    ↓
+Ticket Revenue認識
     ↓
 Journal Entry
-    ↓
-Organization Accounting
-    ↓
-Project / Production Scope集計
+
+したがって、予約済みで未来場のTicketは、Revenueとして認識せず、未収金として扱う。
 
 ---
 
@@ -42,6 +46,7 @@ Reservation Domain：
 - Guest Count
 - Price Snapshot
 - Reservation Status
+- 未収金の対象となる予約金額の確定情報
 
 Check In Domain：
 
@@ -49,6 +54,7 @@ Check In Domain：
 - Check In Status
 - Check In Operator
 - CheckInCompleted Event
+- Ticket Revenue認識の契機
 
 Ticket Domain：
 
@@ -72,9 +78,65 @@ Ticket Revenueそのものを独立した会計帳簿として保持しない。
 
 ---
 
+# Reservation and Accounts Receivable
+
+Reservation成立時点では、Price Snapshotに基づく予約金額を未収金の対象として扱う。
+
+例えば3,000円のTicket予約が成立した場合：
+
+未収金 3,000 / 予約に対応する未収金認識
+
+ただし、この時点ではTicket Revenueを認識しない。
+
+実際の会計上の仕訳構造はAccounting DomainのAccount MasterおよびJournal Entry Ruleに従う。
+
+予約がキャンセルされた場合、未収金の消滅・免除・取消等をAccounting上のAdjustmentとして処理する。
+
+---
+
+# Check In and Revenue Recognition
+
+Check Inが正常に完了した時点で、ReservationのPrice Snapshotを基準としてTicket Revenueを認識する。
+
+基本Flow：
+
+Reservation
+    ↓
+Price Snapshot
+    ↓
+Check In
+    ↓
+CheckInCompleted
+    ↓
+Ticket Revenue Recognition
+    ↓
+Journal Entry
+
+Check In時点で未収金が存在する場合は、Ticket Revenueの認識と同時に未収金を売上へ振り替える。
+
+例えば3,000円の予約について来場した場合：
+
+Ticket Revenue 3,000 / 未収金 3,000
+
+実際にその場で現金・預金等を受領した場合は、Accounting上必要な入金処理を別途行い、未収金を消し込む。
+
+実際の入金タイミングとRevenue Recognition Timingは同一である必要はない。
+
+---
+
+# No-Show
+
+Reservationが成立していてもCheck Inされなかった場合、原則としてTicket Revenueは認識しない。
+
+No-ShowとなったReservationについて、未収金をどう処理するかは、キャンセル規則・返金規則・免除規則等に従ってAccounting上で処理する。
+
+Revenue Recognitionは、原則としてCheck Inという来場Factに基づく。
+
+---
+
 # Ticket Amount Source
 
-会計処理に利用するTicket取引金額は、Reservation成立時に保存されたPrice Snapshotを基準とする。
+Revenue Recognitionに利用するTicket取引金額は、Reservation成立時に保存されたPrice Snapshotを基準とする。
 
 Ticketの現在価格を参照して過去Reservationの金額を再計算してはならない。
 
@@ -114,61 +176,44 @@ Budgetは計画値であり、ActualはJournal Entryから算出される実績�
 
 # Idempotency
 
-同一Business Eventを複数回処理しても、同一会計Factを二重計上してはならない。
+同一CheckInCompleted Eventを複数回処理しても、同一Ticket Revenueを二重計上してはならない。
 
 Accounting Processingは、Eventの一意識別情報等を利用してIdempotentに実行できる構造とする。
 
 ---
 
-# Reversal
+# Reversal and Adjustment
 
 Ticket取引やCheck Inに関する取消・修正が発生した場合、既存Journal Entryを物理削除・直接書換えするのではなく、Accounting DomainのReversalまたはAdjustmentとして記録する。
 
 元の会計Factとの関連を追跡できることを基本とする。
 
----
-
-# Important Consistency Issue
-
-既存Blueprint間には、Ticket Revenueを認識するタイミングについて二つの記述が存在する。
-
-1. Check In Domainでは、CheckInCompletedを契機としてTicket Revenueを会計へ認識すると定義している。
-2. AccountingPolicyでは、Ticket予約等によって受取権利が確定した時点で未収金およびTicket Revenueを計上すると定義している。
-
-この二つは同一取引のRevenue Recognition Timingとしては両立しない可能性がある。
-
-したがって、本件はImplementation上の推測で解消せず、**Revenue Recognition Timingを別途最終決定する必要がある**。
+Revenue認識後にCheck Inが無効化された場合も、元のRevenue Journal Entryを直接削除せず、必要なReversal / Adjustmentを生成する。
 
 ---
 
-# Decision Candidates
+# Canonical Decision
 
-候補A：Reservation成立時にRevenue Recognition
+Ticket Revenueの認識タイミングは以下を正式仕様とする。
 
-Reservation成立
-    ↓
-未収金 / Ticket Revenue
-    ↓
-入金・Check In等
-    ↓
-未収金消込
+> **Reservation成立時点では未収金。Check In時点でTicket Revenue成立・認識。**
 
-候補B：Check In成立時にRevenue Recognition
+これにより、予約と売上を明確に分離する。
 
-Reservation成立
-    ↓
-予約Factのみ
-    ↓
-Check In
-    ↓
-未収金または現金 / Ticket Revenue
-
-どちらをCanonical Ruleとするかを決定後、CheckIn.mdおよびAccountingPolicy.mdを統一する。
+Reservationは「予約された」という事実を管理し、Check Inは「実際に来場した」という事実を管理する。AccountingはCheckInCompletedを契機としてRevenueを認識する。
 
 ---
 
-# Current Rule
+# Related Policies
 
-Revenue Recognition Timingについては、本Consistency Policy作成時点では未確定として扱う。
+以下のDomain仕様は本Ruleを正として整合させる。
 
-それ以外の責務分離、Journal Entry正本、Price Snapshot、Scope集計、Idempotency、Reversalのルールは確定とする。
+- Reservation Domain
+- Check In Domain
+- Ticket Domain
+- Accounting Policy
+- Journal Entry Domain
+- Project Accounting Policy
+- Production Accounting Policy
+
+特にAccounting PolicyにReservation成立時のTicket Revenue認識が記載されている場合は、本PolicyのCanonical Ruleを優先する。
