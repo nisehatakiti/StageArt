@@ -2,7 +2,7 @@
 
 # Production Public Page Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -145,13 +145,45 @@ Production Public Pageの詳細情報は、少なくとも以下を別ページ�
 
 ---
 
+# Past Production Archive
+
+Production終了後もProduction Public Page自体は原則として保持し、過去公演の公開アーカイブとして閲覧可能な構造とする。
+
+過去公演ページは、現在公演の予約促進だけではなく、その公演がどのような作品であったかを記録し、観客の反応を残すためのArchive Pageとして扱う。
+
+過去公演ページでは、現在公演時の基本情報に加えて、公開対象として承認された観客アンケートの抜粋を掲載することを必須要件とする。
+
+アンケートの抜粋は、Productionに紐づくアンケート回答から管理者が公開対象として選定・承認したものだけを表示する。
+
+アンケート回答を回答者の意思確認なく自動的に公開してはならない。
+
+アンケートの入力方式、質問構成、回答収集方法等の詳細は、Survey / Questionnaire Domainの設計で定義する。本Policyでは、過去公演ページへの公開抜粋が必須であることのみを定める。
+
+Production終了後は、予約CTA等の現在公演向け導線は表示しない。
+
+Organization Public Pageでは、終了したProductionを最新の過去公演として1件だけ表示する。
+
+---
+
+# Survey Excerpt Display
+
+過去公演ページには、観客アンケートから選定・承認されたコメント抜粋を表示する領域を設ける。
+
+表示は「アンケート結果の統計値」だけを目的とせず、観客が実際に記した感想を公演アーカイブの一部として伝えることを基本とする。
+
+公開コメントについて、回答者の氏名その他の個人情報を公開するかどうかは、別途定義される公開・同意ルールに従う。
+
+StageArtは、公開ページ表示のために承認済みの公開情報を参照するが、Public Page専用に同じアンケート本文を二重管理してはならない。
+
+---
+
 # Production Public Page Lifecycle
 
 Productionが次回公演として扱われている間は、Organization Public PageからProduction Public Pageへの主要導線を提供する。
 
 Production終了後もProduction Public Page自体は原則として保持し、過去公演の公開アーカイブとして閲覧可能な構造を基本とする。
 
-Organization Public Pageでは、終了したProductionを最新の過去公演として1件だけ表示する。
+過去公演ページでは、予約促進を目的とした現在公演向けCTAを表示せず、作品記録としての情報と公開承認済みアンケート抜粋を中心に構成する。
 
 ---
 
@@ -177,6 +209,8 @@ Public Page専用のBusiness Factを元Domainと二重管理しない。
 
 Production設定を変更すると、同じSource of Truthから生成されるPublic Pageへ反映される。
 
+過去公演ページのアンケート抜粋も、承認済みのSurvey情報をSource of Truthとして表示し、Public Page専用のアンケート本文を二重管理しない。
+
 ---
 
 # Business Rules
@@ -195,4 +229,8 @@ Production設定を変更すると、同じSource of Truthから生成されるP
 - Ticket / Reservationを利用していないProductionでは存在しない予約機能への導線を表示しない。
 - Venue情報はProductionの正規Business Factから表示し、Public Page専用の会場情報を二重管理しない。
 - Production終了後もProduction Public Pageは原則として公開アーカイブとして保持する。
+- 過去公演ページには、管理者が公開対象として選定・承認した観客アンケートの抜粋を掲載することを必須とする。
+- アンケート回答を自動公開してはならない。
+- 過去公演ページでは現在公演向けの予約CTAを表示しない。
+- アンケートの入力・収集・質問構成等はSurvey / Questionnaire Domainで別途定義する。
 - Public Pageには内部管理情報を公開しない。
