@@ -2,7 +2,7 @@
 
 # Organization Setup / Feature Usage Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -66,6 +66,8 @@ NotificationはOptionとして扱い、Organization単位の設定としてON/OF
 
 Notification以外のCore / Option機能について、利用開始のための不要なON/OFF設定を乱立させない。
 
+Public ContactはCoreのPublic Pageに付随する公開窓口であるが、スパム等の運用上の理由からOrganization管理者が停止できる例外的な設定として扱う。これは一般的なFeature Toggleを増やすことを目的としたものではない。
+
 ---
 
 # Accounting
@@ -109,6 +111,8 @@ StageArt利用開始
 NotificationはSetup Wizard内で初期設定を確認できるが、後からOrganization設定で変更できる。
 
 Organization Public PageのURLに使用するPublic Slugは、Organization登録時に設定する。
+
+Public ContactはSetup Wizardで利用可否を確認できるが、スパム等の運用上の理由から後からOrganization設定で停止できる。
 
 ---
 
@@ -230,6 +234,8 @@ Organization Timezoneの具体的な変更ルール、および既存Business Da
 - NotificationはOptionであり、Organization単位でON/OFFを管理する。
 - Notification以外の機能について、不要なON/OFF設定を乱立させない。
 - Organization Public PageおよびProduction Public PageはCoreとして自動生成する。
+- Public ContactはPublic Pageに付随する公開窓口であり、一般的なFeature Toggleとして乱立させない。
+- Public Contactはスパム等の運用上の理由からOrganization管理者がOFFにできる。
 - Organization利用開始時はSetup Wizard形式を基本とする。
 - Production作成時もSetup Wizard形式を基本とする。
 - Organization登録時にPublic Slugを設定する。
