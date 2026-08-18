@@ -2,7 +2,7 @@
 
 # Domain Model : Project
 
-Version : 2.1
+Version : 2.2
 
 ---
 
@@ -25,8 +25,8 @@ Production
 
 利用者はProjectという内部構造を必ずしも意識する必要はない。
 
-StageArtは利用者の「公演を作る」などの操作を起点として、
-必要なProjectを生成・管理する。
+StageArtでは、Production作成時に既存Projectへ所属させるか、
+新しいProjectを作成して所属させることができる。
 
 ---
 
@@ -41,6 +41,20 @@ Project自体は一般観客へ公開する情報ではない。
 
 ProjectはProductionの上位に位置し、
 制作全体を識別・管理するためのInternal Domainとして機能する。
+
+一つのProjectに複数のProductionを関連付けることができる。
+
+例えば、
+
+Project「河童ホームラン2027」
+  ├── Production「東京公演」
+  ├── Production「大阪公演」
+  └── Production「配信公演」
+
+のように、同一企画に属する複数の実施単位をまとめて管理できる。
+
+通常の小劇場公演のようにProductionが一つだけの場合も、
+Projectを一つ設定して同じ構造で管理する。
 
 ---
 
@@ -86,10 +100,15 @@ Production
 
 とする。
 
-一つのProjectに複数のProductionを関連付けられる構造を維持する。
+一つのProjectに複数のProductionを関連付けられる。
 
 Productionは、
-Projectにおける具体的な公演・活動を表す。
+Projectにおける具体的な公演・活動の実施単位を表す。
+
+Productionは原則として一つのVenueを持つ。
+
+東京公演・大阪公演のように会場が異なる場合は、
+同一Projectに複数Productionを作成する。
 
 ---
 
@@ -118,7 +137,7 @@ Productionには、
 
 などのDomainが関連する。
 
-Projectはこれら個々のDomainを直接管理するのではなく、
+Projectはこれら個々のProduction固有Domainを重複管理するのではなく、
 Productionを通じて制作全体をまとめる。
 
 ---
@@ -142,47 +161,68 @@ Productionを中心とした適切な情報を表示する。
 
 # User Interaction
 
-利用者は原則としてProjectを直接操作しない。
+利用者は通常のProduction管理においてProjectを過度に意識する必要はない。
 
-例えば、
+Productionを作成するときは、
+所属Projectを指定する。
 
-「公演を作る」
+既存Projectがある場合はそのProjectを選択できる。
 
-という操作を行った場合、
-
-StageArtは必要に応じて、
-
-- Project
-- Production
-
-を生成する。
-
-利用者は、
-内部的にProjectが生成されたことを意識する必要はない。
-
----
-
-# Automatically Generated
-
-公演作成など、
-Projectを必要とするBusiness Actionが実行された場合、
-StageArtはProjectを自動生成できる。
+新しい企画の場合は、新規Projectを作成してProductionを所属させることができる。
 
 基本的なFlow：
 
 公演を作る
   ↓
-Project生成
+所属Projectを選択
+  │
+  ├── 既存Projectを選択
+  │
+  └── 新規Projectを作成
   ↓
 Production生成
   ↓
 Production関連Domain生成
 
-Production関連Domainの生成タイミングは、
-各DomainのBusiness Ruleに従う。
+Projectの内部構造を意識させないUIを維持しつつ、
+複数Productionを同一Projectへ所属させられるようにする。
 
-Project自体が、
-すべての関連Domainを直接生成するとは限らない。
+---
+
+# Project Creation
+
+Projectは以下のいずれかのタイミングで作成できる。
+
+- Production作成時に新規Projectを作成する
+- Project管理から事前に作成する
+
+Production作成時に新規Projectを作成する場合、
+最低限必要なProject情報を入力してProduction作成へ進める。
+
+Projectを作成しただけでProductionを必ず作成しなければならないとはしない。
+
+---
+
+# Project Selection on Production Creation
+
+Production作成時には、
+所属Projectを選択する項目を設ける。
+
+基本的な選択肢は、
+
+- 既存Projectから選択
+- 新しいProjectを作成
+
+とする。
+
+既存Projectを選択した場合、
+新しいProductionは選択したProjectに所属する。
+
+新しいProjectを作成した場合、
+作成されたProjectへ新しいProductionを所属させる。
+
+Production作成後にProjectを変更する機能を提供する場合は、
+既存のProject Budget、Document、権限等への影響を確認した上で明示的な管理操作として扱う。
 
 ---
 
@@ -208,7 +248,7 @@ Production
   ├── Announcement
   └── Survey
 
-これらのDomainを、
+これらのProduction固有Domainを、
 Projectの直接の子Domainとして重複管理しない。
 
 ---
@@ -240,27 +280,41 @@ Documentの実ファイルはGoogle Driveなどの外部ストレージで管理
 
 # Project and Budget
 
-BudgetはProduction単位で管理する。
+Budgetは、Production単位のBudgetとProject単位のBudgetを区別して扱う。
 
-ProjectがBudgetを直接管理することを正本としない。
+Production Budgetは個別Productionの計画を表す。
+
+Project Budgetは、Project全体の企画・活動計画を表し、
+複数Productionを含むProject全体の予実管理に利用する。
 
 基本構造：
 
+Organization
+  ↓
 Project
-  ↓
-Production
-  ↓
-Budget
+  ├── Project Budget
+  │
+  └── Production
+       └── Production Budget
 
 一つのProductionに複数のBudgetを持つことができる。
 
+Projectにも複数のBudgetを持つことができる。
+
+BudgetにはBudget Nameを設定できる。
+
 例：
 
-- A会場案
-- B会場案
-- 一日2公演案
+- 河童ホームラン2026予算 Version1
+- 河童ホームラン2026予算 Version2
+- 東京・大阪統合予算
 
-Budgetの詳細はBudget Domainで定義する。
+Project BudgetはProject全体の予実管理を目的とし、
+Production Budgetは個別公演の計画を目的とする。
+
+ActualはJournal Entryを正本としてScopeごとに集計する。
+
+Project Budgetの詳細はBudget Management Policyで定義する。
 
 ---
 
@@ -389,8 +443,11 @@ Timetableの詳細はTimetable Domainで定義する。
 
 # Project and Accounting
 
-Organizationの会計は、
-ProjectではなくOrganization単位で管理する。
+Organization Accountingは、
+Organization単位の会計帳簿を正本とする。
+
+ProjectおよびProductionは、
+同じJournal Entryを異なるScopeから集計して参照する。
 
 基本構造：
 
@@ -402,22 +459,86 @@ Journal Entry
   ↓
 Journal Entry Line
 
-Productionの予算・実績は、
-Production単位で管理する。
-
-基本構造：
+Journal EntryがProductionに関連する場合：
 
 Organization
   ↓
 Project
   ↓
 Production
-  ├── Budget
-  └── Production Actual
+  ↓
+Journal Entry
 
-ProjectがJournal EntryやAccountを直接管理することはしない。
+とScopeを判定できる構造とする。
+
+ProjectがJournal EntryやAccountを直接所有することはしない。
 
 AccountはAccounting Domainにおける会計科目として管理する。
+
+---
+
+# Project Accounting Scope
+
+Project Accountingは、
+Project全体の予実管理を行うための集計Scopeである。
+
+Project AccountingはProject固有の別Journal帳簿を意味しない。
+
+Projectに所属するProduction等に関連するJournal Entryを、
+Project Scopeで集計してActualを算出する。
+
+Project BudgetとProject Actualを比較することで、
+Project全体の予実を確認できる。
+
+基本構造：
+
+Project Budget
+      ↓
+Project Planned Amount
+
+Journal Entry
+      ↓
+Project Actual Amount
+
+Project Variance
+  = Project Actual - Project Planned
+
+Project Actualを別の正本データとして二重保存しない。
+
+---
+
+# Production Accounting Scope
+
+Production Accountingは、
+個別Productionの収支・決算を確認するための集計Scopeである。
+
+Production Budgetと、
+Productionに関連するJournal Entryから集計したProduction Actualを比較できる。
+
+Production Settlementは、
+Productionに関連する未収金・未払金等の精算を含む個別公演の決算確認を表す。
+
+Production Accountingも別Journal帳簿ではない。
+
+---
+
+# Organization / Project / Production Accounting
+
+会計情報の見せ方は、以下の役割分担を基本とする。
+
+Organization
+  = 団体全体の財務状況
+
+Project
+  = 企画全体の予実管理
+
+Production
+  = 個別公演の決算・収支確認
+
+同一のJournal Entryを各Scopeで集計するため、
+Organization / Project / ProductionのActualは会計上整合する必要がある。
+
+同一の会計FactをScopeごとに二重入力してはならない。
 
 ---
 
@@ -541,14 +662,13 @@ Projectそのものを一般公開しない。
 
 Projectには内部管理上の名称を設定できる。
 
-ただし、
-利用者が必ずProject名を入力する必要はない。
+利用者は通常の単独Production管理でProject名を強く意識する必要はない。
 
-StageArtが公演作成時に、
-必要に応じてProjectを生成する。
+Projectを新規作成する場合には、
+管理上分かりやすい名称を設定できる。
 
 Projectの表示名称については、
-利用者に内部構造を意識させないUIを優先する。
+利用者に内部構造を過度に意識させないUIを優先する。
 
 ---
 
@@ -778,10 +898,18 @@ Lifecycle変更についても、
 - ProjectはInternal Domainである。
 - Projectを一般公開しない。
 - 利用者はProjectを必ずしも意識しない。
-- 公演作成などのBusiness ActionからProjectを自動生成できる。
-- Projectは複数のProductionを関連付けられる構造とする。
+- Production作成時は既存Projectを選択するか、新規Projectを作成して所属させる。
+- Projectは複数のProductionを関連付けられる。
 - Production関連DomainはProductionを正本となる関連先として管理する。
-- BudgetはProduction単位で管理する。
+- Production固有のDomainをProjectとProductionの両方で重複管理しない。
+- Project BudgetとProduction Budgetを区別して管理する。
+- Projectは複数のBudgetを保持できる。
+- Productionは複数のBudgetを保持できる。
+- Project BudgetはProject全体の予実管理に利用する。
+- Production Budgetは個別Productionの計画に利用する。
+- Project ActualはJournal EntryからProject Scopeで集計する。
+- Production ActualはJournal EntryからProduction Scopeで集計する。
+- Actualを別の正本データとして二重管理しない。
 - RehearsalはProduction単位で管理する。
 - ParticipantはProduction単位で管理する。
 - PerformanceはProduction単位で管理する。
@@ -789,14 +917,13 @@ Lifecycle変更についても、
 - ReservationはPerformance単位で管理する。
 - TimetableはProduction単位で管理する。
 - Organization AccountingはOrganization単位で管理する。
-- Project単位でAccountingを管理しない。
-- ProjectにJournal EntryやAccountを直接持たせない。
+- ProjectはJournal EntryやAccountを直接所有しない。
+- Organization / Project / ProductionのAccounting Scopeは同一Journal Entryを基礎として整合させる。
 - Projectに関連するProductionやFactからHistoryを生成・参照できる。
 - Projectは原則として物理削除しない。
 - 過去のProjectは履歴として保持する。
 - ProjectはOrganization Scopeに属する。
 - ProjectとProductionは独立したLifecycleを持つ。
-- ProjectのLifecycleとProductionのLifecycleを同一視しない。
 - RehearsalはProductionに所属する。
 - Rehearsalは一つのEntityとしてLifecycleを管理する。
 - 稽古予定と確定稽古を別Entityとして管理しない。
@@ -844,11 +971,19 @@ Production
 である。
 
 Projectは制作活動をまとめる内部単位であり、
-Productionは具体的な公演・活動を表す。
+Productionは具体的な公演・活動を表す実施単位である。
 
-Projectは利用者に内部構造を意識させない。
+Projectは複数Productionを束ねることができる。
 
-Projectに関連する個別のBusiness Domainを
+例えば東京公演・大阪公演など、
+同一企画に属する複数のProductionを一つのProjectから管理できる。
+
+Projectは利用者に内部構造を過度に意識させない。
+
+Production作成時には、
+既存Projectを選択するか新規Projectを作成する。
+
+Projectに関連する個別のProduction固有Business Domainを
 ProjectとProductionの両方で重複管理しない。
 
 特に、
@@ -858,13 +993,16 @@ ProjectとProductionの両方で重複管理しない。
 - Performance
 - Ticket
 - Reservation
-- Budget
-- Actual
+- Production Budget
+- Production Actual
 - Timetable
 
 などはProductionを中心に管理する。
 
-Organization AccountingはProjectから分離する。
+一方、Project Budgetは複数Productionを含む企画全体の計画を管理する。
+
+Organization AccountingはProjectから分離した単一の会計正本とし、
+ProjectおよびProductionはJournal EntryをScope別に集計して予実・決算を表示する。
 
 Projectは履歴を保持するために永続化し、
 過去の制作情報を失わない。
@@ -907,10 +1045,11 @@ Production固有のDomainをProjectへ移動させることはしない。
 - ProjectはInternal Domainである。
 - Organization → Project → Productionの階層を維持する。
 - Projectは利用者に内部構造を意識させない。
-- Projectは公演作成などのBusiness Actionから自動生成できる。
+- Production作成時は既存Projectを選択するか、新規Projectを作成する。
 - Projectは複数Productionを関連付けられる構造とする。
 - Production固有のDomainはProductionを中心に管理する。
-- BudgetはProduction単位で管理する。
+- Project BudgetはProject全体の予実管理に利用する。
+- Production Budgetは個別Productionの計画に利用する。
 - RehearsalはProduction単位で管理する。
 - ParticipantはProduction単位で管理する。
 - PerformanceはProduction単位で管理する。
@@ -918,8 +1057,10 @@ Production固有のDomainをProjectへ移動させることはしない。
 - ReservationはPerformance単位で管理する。
 - TimetableはProduction単位で管理する。
 - Organization AccountingはOrganization単位で管理する。
-- ProjectにAccountingを直接持たせない。
+- Project Accountingは別帳簿ではなくProject Scopeの集計である。
+- Production Accountingは別帳簿ではなくProduction Scopeの集計である。
 - ProjectにJournal EntryやAccountを直接持たせない。
+- Organization / Project / Productionで同一Journal Entryを基礎として会計整合性を保つ。
 - Projectに関連するFactからHistoryを生成・参照する。
 - Projectは過去の制作履歴として保持する。
 - ProjectはOrganization Scopeに属する。
