@@ -2,7 +2,7 @@
 
 # Public Page / URL Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -198,13 +198,37 @@ SNS API連携そのものはPublic Page Coreではなく、External Integration 
 
 # Latest Past Production
 
-Organization Public Pageのトップページには、最新の過去Productionを1件だけ表示する。
+Organization Public Pageのトップページには、Public VisibilityがONである終了済みProductionのうち、最新のProductionを1件だけ表示する。
 
 過去Productionをすべてトップページに並べてはならない。
 
-過去Productionの全履歴は、PRODUCTIONSページから一覧として閲覧できる構造とする。
+Public VisibilityがOFFのProductionはLatest Past Productionの候補から除外する。
+
+過去Productionの全履歴は、Public VisibilityがONのProductionのみを対象として、PRODUCTIONSページから一覧として閲覧できる構造とする。
 
 これにより、トップページは現在の活動を中心とし、過去実績は最小限の表示に留める。
+
+---
+
+# Production Public Visibility
+
+ProductionがStageArt内部に存在することと、Production Public Pageを一般公開することは別の概念として扱う。
+
+Productionには、管理者がPublic Pageの公開・非公開を制御できるPublic Visibility設定を持たせる。
+
+Public VisibilityがOFFの場合、Productionの内部データ、履歴、Lifecycle状態等は保持し、Productionそのものを削除・Archiveすることはしない。
+
+Public VisibilityはProduction Lifecycleとは独立した設定として扱う。
+
+ProductionがCOMPLETEDまたはARCHIVEDになったことだけを理由として、Public Visibilityを自動変更してはならない。
+
+Public VisibilityがOFFのProductionは、Organization Public Page、PRODUCTIONS一覧、Latest Past Production等の一般公開対象から除外する。
+
+Public VisibilityがOFFのProductionについてPublic URLを直接指定された場合も、一般公開ページとして表示してはならない。公開対象外のProductionの存在をPublic Page上から推測できる情報も表示しない。
+
+Public VisibilityをONに戻した場合は、Productionの既存Business FactからPublic Pageを再び表示できる構造とする。
+
+Public Visibilityの判断は、Productionの内容、集客状況、活動方針その他の運用上の理由を問わず、Production管理者が行えるものとする。
 
 ---
 
@@ -266,6 +290,8 @@ Public PageはRead Model / Public Artifactとして構成できるが、公開�
 
 Organization設定やProduction設定を変更すると、同じSource of Truthから生成されるPublic Pageへ反映される。
 
+Public Visibilityの変更はPublic Pageの公開・非公開状態に反映するが、ProductionのBusiness Data自体を変更・削除しない。
+
 ---
 
 # Public Visibility
@@ -290,6 +316,8 @@ Public Pageが自動生成されることと、内部情報がすべて公開さ
 # Organization and Production Relationship
 
 Organization Public Pageから、そのOrganizationに属するProduction Public Pageへ遷移できる構造とする。
+
+ただし、Public VisibilityがOFFのProductionへの公開導線は生成しない。
 
 Production Public Pageから、所属OrganizationのOrganization Public Pageへ戻れる構造とする。
 
@@ -332,8 +360,12 @@ Public Slugの変更可否、変更権限、変更時の旧URLの扱い、およ
 - Public Page専用のBusiness Factを元Domainと二重管理しない。
 - Organization Public Pageのトップでは次回公演を最優先表示する。
 - ABOUT / MEMBERSの詳細情報はトップページに全面展開せずNavigationから表示する。
-- トップページに表示する過去Productionは最新1件を基本とする。
-- 過去Productionの全履歴はPRODUCTIONSページから閲覧できる構造とする。
+- トップページに表示する過去Productionは、Public VisibilityがONである終了済みProductionから最新1件を基本とする。
+- Public VisibilityがOFFのProductionは、PRODUCTIONS一覧、Latest Past Production、Production Public Page等の一般公開対象から除外する。
+- Public VisibilityはProduction Lifecycleとは独立して管理する。
+- Public VisibilityがOFFでもProductionの内部データ、履歴、Lifecycle状態等は削除・変更しない。
+- Public VisibilityがOFFのProductionを直接URLで指定された場合も、一般公開ページとして表示しない。
+- Public VisibilityをONに戻した場合は、既存のProduction Business FactからPublic Pageを再表示できる構造とする。
 - SNS / Socialはトップページ下部の主要セクションとして表示する。
 - SNS API連携はExternal Integration Optionとして扱い、連携なしでもリンク表示を可能とする。
 - Public ContactはOrganizationが希望する場合に利用できる。
