@@ -2,7 +2,7 @@
 
 # Use Case Consistency Policy : Production Creation Wizard
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -98,21 +98,47 @@ Production Managerを設定する。
 
 Production ManagerはStageArt Accountを所持するUserのみ指定可能とする。
 
-Production Managerは後から別のStageArt Account Userへ移譲可能とする。
+Production Managerの変更・移譲は、Production Managementメニューから「公演管理者の移譲」を選択し、対象のStageArt Account Userを指定して保存するだけの単純な操作とする。
 
-Production ManagerはProduction Scopeの管理権限を持つ。
+移譲後は新しいManagerがProduction Scopeの管理権限を持つ。
 
 ---
 
 # Step 4 : Public Visibility
 
-この時点でProductionを一般公開するかを選択できる。
+Production Basic Information上で現在の公開状態を確認できるようにする。
 
-ProductionのPublic VisibilityとLifecycleは別概念として扱う。
+初期状態は「未公開」とし、この表示部分をクリックして公開設定を行う。
+
+公開設定では、情報公開のタイミングを指定できる。
+
+公開は、利用者が公開時刻に合わせて手動でクリックして実行するActionではなく、指定された公開日時を予約した状態として保持し、Scheduler / CRON等のBackground Jobが指定時刻にPublic Visibilityを有効化する方式を基本とする。
+
+これにより、「午前0時公開」等の時刻指定について、利用者がその時刻に操作する必要をなくす。
+
+Public VisibilityとLifecycleは別概念として扱う。
 
 情報公開されていないProductionについてはPublic Pageを生成・公開しない。
 
 公開後、Venue、Ticket、Performance等が未確定の場合はPublic Page上でComing Soon表示を利用する。
+
+---
+
+# Public Release Scheduling
+
+公開予約には少なくとも以下を保持する。
+
+- Release At
+- Release Timezone
+- Release Status
+- Requested By
+- Executed At
+
+指定時刻にBackground JobがReleaseを処理する。
+
+JobはIdempotentに実行できるものとし、同一Productionを二重公開しない。
+
+公開日時の変更・取消は、公開前であれば管理権限に応じて可能とする。
 
 ---
 
@@ -129,7 +155,49 @@ Organization Accountingが有効な場合、Production Budgetを設定するか�
 
 Budgetは複数保持可能で、過去Budgetをコピーして再利用できる。
 
+新規Budgetは、必要な予算カテゴリがあらかじめ表示された入力フォームから作成する。
+
+利用者は各カテゴリの金額を入力・編集し、過去Budgetをコピーした場合はコピー元の金額を基礎として必要な数字だけ変更できる。
+
 Budget Nameを設定し、A4一枚の帳票タイトルに利用できるようにする。
+
+---
+
+# Budget Input Categories
+
+初期表示する支出カテゴリ：
+
+- 会場費用
+- 機器レンタル費用
+- 外注費（スタッフ＋キャスト）
+- 広告宣伝費用
+- 通信費
+- 車両交通費
+- その他雑費
+
+初期表示する収入カテゴリ：
+
+- 集客予測 × チケット代
+- 物販
+- その他
+
+カテゴリはテンプレートとして扱い、将来的に追加・編集可能な設計余地を残す。
+
+Budget入力画面では、カテゴリを探して一から行追加することを基本操作とせず、必要なカテゴリが最初から並んでいて数字を埋めていく操作を基本とする。
+
+---
+
+# Budget Reuse Flow
+
+過去Budgetを利用する場合は、既存Budgetを選択してコピーする。
+
+コピーされたBudgetは新しい独立したVersionとして扱う。
+
+コピー元のBudgetを変更しても、コピー先のBudgetには影響しない。
+
+コピー後、利用者は必要なカテゴリの金額を変更して今回のProduction用Budgetとして保存する。
+
+Budget Nameには、例えば「河童ホームラン2026予算Version1」のような利用者が識別しやすい名称を設定できる。
 
 ---
 
@@ -220,7 +288,7 @@ StageArt利用以前の公演も同じProductionとして登録できる。
 - 基本情報
 - Slug
 - Manager
-- Public Visibility
+- Public Visibility / Release Schedule
 - Budget
 - Members
 - Venue
@@ -240,14 +308,22 @@ Production Creation Wizardは「公演を公開可能な状態まで一通り登
 
 定員については、Production Basic Informationで標準予約定員を設定し、各Performanceへ継承する。
 
+公開については、利用者が指定時刻に手動操作するのではなく、公開日時を予約し、Background Jobが指定時刻に公開状態を切り替える。
+
+予算については、必要カテゴリをあらかじめ表示した入力フォームを基本とし、過去Budgetをコピーした場合は既存金額を編集して再利用できるようにする。
+
 ```text
 Production
   ├─ Basic Information
   │    └─ Standard Reservation Capacity
   │
   ├─ Manager
+  │    └─ Transfer from Management Menu
+  │
   ├─ Public Visibility
+  │    └─ Scheduled Release
   ├─ Budget
+  │    └─ Template / Copy / Edit Amounts
   ├─ Members
   ├─ Venue
   ├─ Ticket
