@@ -2,15 +2,55 @@
 
 # Media Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
 # Purpose
 
-StageArtで扱うプロフィール画像、Organization画像、Productionフライヤー、Production写真等の画像保存方式を統一する。
+StageArtで扱う団体・公演・個人の画像保存方式と、各Business Contextで利用する画像スロットを統一する。
 
 StageArtは画像原本の保管サービスを目的とせず、公開WebページおよびStageArt UIで利用するための最適化済み画像を保持する。
+
+---
+
+# Media Slots
+
+StageArtで通常利用する画像は、用途を明確にした固定スロットとして管理する。
+
+## Organization
+
+Organizationは以下の画像を1個だけ保持できる。
+
+- Organization Logo：1個
+
+団体公開ページ等ではこのLogoを団体の代表画像として利用する。
+
+## Production
+
+Productionは以下の画像を保持できる。
+
+- Flyer Front：1個
+- Flyer Back：1個
+
+したがって、1公演あたりのフライヤー画像は表・裏の最大2個とする。
+
+公演トップページでは原則としてFlyer Frontを主要ビジュアルとして使用し、Flyer Backは必要に応じて詳細表示等で利用する。
+
+## Person
+
+Personは以下のプロフィール画像を保持できる。
+
+- Bust-up：1個
+- Full-body：1個
+
+したがって、1人あたりのプロフィール画像はバストアップ・全身の最大2個とする。
+
+Person Public Profileでは用途に応じてBust-upまたはFull-bodyを表示できる。
+
+ProductionのMember / Cast / Staff等の人物一覧では、原則としてBust-upのThumbnailを使用する。
+
+Bust-upが未登録の場合の代替表示はUI設計時に定義するが、Full-bodyを勝手にBust-upとして扱うことを必須としない。
 
 ---
 
@@ -57,14 +97,15 @@ StageArtは画像原本の保管サービスを目的とせず、公開Webペー
 
 # Supported Media Targets
 
-少なくとも以下の画像用途に同一の正規化ルールを適用する。
+少なくとも以下の画像用途に本Policyを適用する。
 
-- Person Profile Image
-- Organization Logo / Image
-- Production Flyer
-- Production Photo
+- Organization Logo
+- Production Flyer Front
+- Production Flyer Back
+- Person Bust-up
+- Person Full-body
 
-将来追加されるWeb公開用画像についても、原則として本Policyを適用する。
+将来追加されるWeb公開用画像については、固定スロットを追加するか、本Policyを拡張した上で扱う。
 
 ---
 
@@ -80,7 +121,9 @@ Image Asset
 
 Main Imageは詳細表示・大きなカード・公開ページ等に使用する。
 
-Thumbnailは一覧・カード・小窓等、通信量を抑える必要がある表示に使用する。
+Thumbnailは一覧・カード・人物小窓等、通信量を抑える必要がある表示に使用する。
+
+ProductionのMember / Cast / Staff等の人物一覧では、Person Bust-upのThumbnailを標準表示とする。
 
 画面側が原本画像を参照することを前提としてはならない。
 
@@ -98,7 +141,7 @@ Thumbnailは一覧・カード・小窓等、通信量を抑える必要があ�
 
 # Replacement and Cleanup
 
-プロフィール画像やフライヤー等を差し替えた場合、旧Assetが他のBusiness Factから参照されていないことを確認した上で、不要になった旧Main Image / Thumbnailを削除できる設計とする。
+各Media Slotの画像を差し替えた場合、旧Assetが他のBusiness Factから参照されていないことを確認した上で、不要になった旧Main Image / Thumbnailを削除できる設計とする。
 
 同一画像Assetを複数箇所で参照している場合は、一箇所の差し替えによって他の参照を破壊してはならない。
 
@@ -108,7 +151,7 @@ Thumbnailは一覧・カード・小窓等、通信量を抑える必要があ�
 
 # Privacy and Access
 
-Person Profile Image等の個人関連画像は、Public設定と整合するアクセス制御を行う。
+Person Bust-up / Full-body等の個人関連画像は、各プロフィール項目のPublic設定と整合したアクセス制御を行う。
 
 非公開プロフィール画像を一般公開URLから取得できる状態にしてはならない。
 
@@ -118,17 +161,20 @@ OrganizationおよびProductionの公開画像についても、Public Visibilit
 
 # Business Rules
 
-1. アップロード元ファイルは原則10MB以下とする。
-2. 原本ファイルは永続保存しない。
-3. 保存する画像はMain ImageとThumbnailの2種類を基本とする。
-4. Main Imageの長辺は1600pxを基準とする。
-5. Thumbnailの長辺は600pxを基準とする。
-6. 縦横比を維持する。
-7. 元画像が1600px未満の場合は不要な拡大を行わない。
-8. プロフィール画像、Organization画像、Productionフライヤー、Production写真に同一ルールを適用する。
-9. 非公開画像を一般公開してはならない。
-10. 画像差し替え時に他の参照画像を破壊してはならない。
-11. 原本保存を前提とした外部ストレージ用途にはしない。
+1. Organization Logoは1個までとする。
+2. Production Flyerは表・裏それぞれ1個、合計2個までとする。
+3. Person Profile ImageはBust-up・Full-bodyそれぞれ1個、合計2個までとする。
+4. アップロード元ファイルは原則10MB以下とする。
+5. 原本ファイルは永続保存しない。
+6. 保存する画像はMain ImageとThumbnailの2種類を基本とする。
+7. Main Imageの長辺は1600pxを基準とする。
+8. Thumbnailの長辺は600pxを基準とする。
+9. 縦横比を維持する。
+10. 元画像が1600px未満の場合は不要な拡大を行わない。
+11. ProductionのMember / Cast / Staff等の人物一覧では、Person Bust-upのThumbnailを標準表示する。
+12. 非公開画像を一般公開してはならない。
+13. 画像差し替え時に他の参照画像を破壊してはならない。
+14. 原本保存を前提とした外部ストレージ用途にはしない。
 
 ---
 
@@ -136,4 +182,4 @@ OrganizationおよびProductionの公開画像についても、Public Visibilit
 
 StageArtの画像管理は「大きな原本を保管すること」ではなく、「必要十分な品質で、公開ページを軽量に表示すること」を目的とする。
 
-1600pxのMain Imageと600pxのThumbnailへ統一することで、UI実装を単純化し、公開ページの通信量とConoHaストレージ使用量を抑える。
+画像用途を固定スロットに限定し、1600pxのMain Imageと600pxのThumbnailへ統一することで、UI実装を単純化し、公開ページの通信量とConoHaストレージ使用量を抑える。
