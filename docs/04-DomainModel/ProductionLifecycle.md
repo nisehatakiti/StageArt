@@ -2,7 +2,7 @@
 
 # Production Lifecycle
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -40,6 +40,36 @@ ACTIVE
 COMPLETED
     ↓
 ARCHIVED
+
+---
+
+# Lifecycle Transition and Management GO
+
+Production Statusは、単純な設定値の直接書き換えによって任意に変更することを基本としない。
+
+Lifecycleの進行は、管理者がProductionの状況を確認し、次の段階へ進めることを明示的に承認した時点で実行する。
+
+この承認を、Production Lifecycle上の管理者による「GO」として扱う。
+
+基本Flow：
+
+Productionの準備・確認
+    ↓
+管理者がGOを判断
+    ↓
+Lifecycle Transition Action
+    ↓
+次のProduction Status
+
+例えば、企画・体制・計画を確認した管理者がGOを出した時点でDRAFTからPLANNINGへ遷移させる。
+
+同様に、制作開始のGOによってPLANNINGからACTIVEへ遷移させる。
+
+UIではStatusそのものを自由編集するのではなく、現在のLifecycleに応じた業務ActionとしてGOを提示することを基本とする。
+
+Server Sideは、現在Statusから許可された遷移であることを検証する。
+
+Lifecycle Transitionの最終判断はFrontendではなくServer Sideで行う。
 
 ---
 
@@ -108,5 +138,8 @@ CANCELLEDは、DRAFT、PLANNING、ACTIVE等の通常Lifecycleからの中止を�
 - ARCHIVEDは完了したProductionの保管状態を意味する。
 - Production Statusの基本遷移はDRAFT → PLANNING → ACTIVE → COMPLETED → ARCHIVEDとする。
 - CANCELLEDは通常Lifecycleとは別の中止状態として扱う。
+- Lifecycle Transitionは管理者による明示的なGOを起点として実行する。
+- Statusの任意の直接書き換えを、通常のLifecycle操作として扱わない。
+- Server Sideで現在Statusから許可されたLifecycle Transitionであることを検証する。
 - 決算完了条件の詳細はAccounting Domainで定義する。
 - Production DomainはAccountingの詳細な仕訳処理そのものを管理しない。
