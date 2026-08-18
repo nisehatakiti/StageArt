@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use RuntimeException;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
@@ -39,12 +40,22 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
         );
 
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $organization->id()->toString()]);
+            $result = $this->wpdb->update($this->table, $row, ['id' => $organization->id()->toString()]);
+
+            if ($result === false) {
+                throw new RuntimeException("Failed to update {$this->table}: " . $this->wpdb->last_error);
+            }
+
             return;
         }
 
         $row['id'] = $organization->id()->toString();
-        $this->wpdb->insert($this->table, $row);
+
+        $result = $this->wpdb->insert($this->table, $row);
+
+        if ($result === false) {
+            throw new RuntimeException("Failed to insert into {$this->table}: " . $this->wpdb->last_error);
+        }
     }
 
     public function findById(OrganizationId $id): ?Organization

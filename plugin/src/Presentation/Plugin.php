@@ -19,6 +19,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressMembershipRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
 use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
 use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
@@ -41,10 +42,11 @@ final class Plugin
         $people        = new WordPressPersonRepository($wpdb);
         $memberships   = new WordPressMembershipRepository($wpdb);
         $projects      = new WordPressProjectRepository($wpdb);
+        $transactions  = new WordPressTransactionManager($wpdb);
 
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships);
+        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, $transactions);
         $getOrganization    = new GetOrganizationUseCase($organizations, $authorization);
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);

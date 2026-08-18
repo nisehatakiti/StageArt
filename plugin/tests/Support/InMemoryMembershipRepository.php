@@ -37,4 +37,12 @@ final class InMemoryMembershipRepository implements MembershipRepositoryInterfac
 
         return null;
     }
+
+    public function findByOrganizationId(OrganizationId $organizationId): array
+    {
+        return array_values(array_filter(
+            $this->memberships,
+            static fn (Membership $membership): bool => $membership->organizationId()->equals($organizationId)
+        ));
+    }
 }

@@ -15,6 +15,7 @@ use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
 
 final class ListOrganizationsUseCaseTest extends TestCase
 {
@@ -25,7 +26,7 @@ final class ListOrganizationsUseCaseTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships);
+        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 
         $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
@@ -56,7 +57,7 @@ final class ListOrganizationsUseCaseTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships);
+        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 

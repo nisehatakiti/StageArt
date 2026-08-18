@@ -30,4 +30,25 @@ final class MembershipTest extends TestCase
         $this->assertTrue($membership->isActive());
         $this->assertSame(RoleKey::MEMBER, $membership->roleKey()->toString());
     }
+
+    public function test_create_owner_membership_produces_an_owner_role(): void
+    {
+        $membership = Membership::createOwnerMembership(OrganizationId::generate(), PersonId::generate());
+
+        $this->assertSame(RoleKey::OWNER, $membership->roleKey()->toString());
+        $this->assertTrue($membership->isActive());
+    }
+
+    public function test_change_role_updates_the_role_key(): void
+    {
+        $membership = Membership::createOwnerMembership(OrganizationId::generate(), PersonId::generate());
+
+        $membership->changeRole(RoleKey::member());
+
+        $this->assertSame(RoleKey::MEMBER, $membership->roleKey()->toString());
+
+        $membership->changeRole(RoleKey::owner());
+
+        $this->assertSame(RoleKey::OWNER, $membership->roleKey()->toString());
+    }
 }

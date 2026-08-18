@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use RuntimeException;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipId;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
@@ -38,13 +39,23 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
         ];
 
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $membership->id()->toString()]);
+            $result = $this->wpdb->update($this->table, $row, ['id' => $membership->id()->toString()]);
+
+            if ($result === false) {
+                throw new RuntimeException("Failed to update {$this->table}: " . $this->wpdb->last_error);
+            }
+
             return;
         }
 
         $row['id'] = $membership->id()->toString();
         $row['created_at'] = $membership->createdAt()->format('Y-m-d H:i:s');
-        $this->wpdb->insert($this->table, $row);
+
+        $result = $this->wpdb->insert($this->table, $row);
+
+        if ($result === false) {
+            throw new RuntimeException("Failed to insert into {$this->table}: " . $this->wpdb->last_error);
+        }
     }
 
     public function findByPersonId(PersonId $personId): array
@@ -69,6 +80,16 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
         );
 
         return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByOrganizationId(OrganizationId $organizationId): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE organization_id = %s", $organizationId->toString()),
+            ARRAY_A
+        );
+
+        return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
     private function hydrate(array $row): Membership

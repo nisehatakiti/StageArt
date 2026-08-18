@@ -17,4 +17,9 @@ interface MembershipRepositoryInterface
     public function findByPersonId(PersonId $personId): array;
 
     public function findByOrganizationAndPerson(OrganizationId $organizationId, PersonId $personId): ?Membership;
+
+    /**
+     * @return Membership[]
+     */
+    public function findByOrganizationId(OrganizationId $organizationId): array;
 }
