@@ -2,7 +2,7 @@
 
 # Domain Model : Expense Approval Workflow
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -109,6 +109,33 @@ Expenseの状態はSUBMITTEDとし、Primary ManagerまたはProduction Delegate
 
 ---
 
+# Approval Notification
+
+SUBMITTEDになったExpense申請について、承認可能なPrimary Manager / Production Delegateへ、出欠登録等の既存業務通知と同様の通知を行えるものとする。
+
+通知から対象Expense申請の確認・承認・却下へ直接進められることを基本とする。
+
+通知は承認処理への入口であり、通知を受け取らなかった場合でも別の承認入口から処理できる構造を妨げない。
+
+同一Expenseに対して承認可能な複数Roleへ通知する場合でも、最初に有効な承認処理が行われた時点で処理済みとする。
+
+---
+
+# Approval Entry / Manager Review
+
+承認処理には、少なくとも以下の2つの入口を許容する。
+
+1. 業務通知から対象Expenseを開いて承認・却下する。
+2. Primary Manager / Production Delegate向けの管理者メニューから、承認待ちExpenseを一覧・確認して処理する。
+
+管理者メニューへの「会計承認」または同等の承認待ち一覧画面は、通知だけに依存せず未処理申請を確認できるようにするためのUIとして実装してよい。
+
+ただし、この一覧画面を別個の会計Workflowとして扱わない。通知と管理者メニューは同じExpense承認処理への入口とする。
+
+Role別の表示制御だけに依存せず、承認可否はBackendのAuthorization / Domain Ruleで担保する。
+
+---
+
 # Approval
 
 Expense申請はPrimary ManagerまたはProduction Delegateが承認できる。
@@ -183,7 +210,11 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - Member向けExpense登録は消耗品・小道具等の小口支出を主対象とする。
 - 会場費・外注費等の大口支出をMember向け小口Expense登録の対象としない。
 - Expense登録直後はSUBMITTEDとし、正式なActualへ反映しない。
+- SUBMITTEDのExpenseについて承認可能者へ業務通知を行える。
+- 通知からExpenseの確認・承認・却下へ進められる。
 - Primary ManagerまたはProduction DelegateがExpense申請を承認できる。
+- 承認待ちExpenseを管理者メニューから一覧・確認・処理できる入口を設けてよい。
+- 通知と管理者メニューは同一のExpense承認処理への入口とする。
 - 承認時点でExpenseをPOSTEDとし、Journal Entryへ転記する。
 - 承認時点でProduction Actualへ反映する。
 - 承認後に別途Posting操作を要求しない。
@@ -203,6 +234,8 @@ StageArtのExpense Workflowは、会計上の厳密性を保ちながら、現�
 
 基本操作は、
 
-> 登録 → 承認 → 会計転記
+> 登録 → 通知 → 承認 / 却下 → 会計転記
 
-とし、承認後に追加のPosting操作を要求しない。
+とし、通知は承認処理を促す入口、管理者メニューは未処理申請を確認する補助入口として扱う。
+
+承認後に追加のPosting操作を要求しない。
