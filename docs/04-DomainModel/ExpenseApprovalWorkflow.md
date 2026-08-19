@@ -2,7 +2,7 @@
 
 # Domain Model : Expense Approval Workflow
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -70,6 +70,8 @@ Expense登録
     ↓
 SUBMITTED
     ↓
+承認者が内容・金額を確認・必要に応じて承認金額を変更
+    ↓
 承認
     ↓
 POSTED
@@ -136,15 +138,35 @@ Role別の表示制御だけに依存せず、承認可否はBackendのAuthoriza
 
 ---
 
+# Approval Amount Adjustment
+
+承認者は、承認時に申請金額とは異なる金額を承認額として指定できるものとする。
+
+申請金額は「申請者が実際に支出した金額」を表し、承認金額は「Production / Organizationとして会計・精算対象として認める金額」を表す。
+
+例えば、Memberが衣装代として5,000円の衣服を購入して申請したが、劇団として支給するのはその半額2,500円と判断した場合、承認者は承認金額を2,500円に変更して承認できる。
+
+この場合、会計へ転記するActualは承認金額2,500円を基準とする。
+
+申請金額5,000円と承認金額2,500円の差額については、申請履歴・承認履歴として追跡可能とする。申請者が実際に5,000円を支払ったという事実を、承認金額2,500円で上書きして失わせてはならない。
+
+承認金額は0円を許容するか、申請の却下として扱うかをUI実装時に別途判断できるものとし、本Blueprintでは固定しない。
+
+承認金額を変更した場合でも、承認後の追加Posting操作は要求しない。変更後の承認金額をそのまま承認・会計転記する。
+
+---
+
 # Approval
 
 Expense申請はPrimary ManagerまたはProduction Delegateが承認できる。
 
-承認権限はRole別UIの表示切替ではなく、BackendのAuthorization / Domain Ruleとして担保する。
+承認者は申請金額を確認し、必要に応じて承認金額を変更した上で承認できる。
 
-承認された時点でExpenseをPOSTEDとして扱い、必要なJournal Entryを生成・確定し、Production Actualへ反映する。
+承認権限および承認金額変更権限はRole別UIの表示切替だけではなく、BackendのAuthorization / Domain Ruleとして担保する。
 
-承認者は、Expenseの内容・金額・対象Production等、承認に必要な業務情報を確認できるものとする。
+承認された時点でExpenseをPOSTEDとして扱い、承認金額を基準として必要なJournal Entryを生成・確定し、Production Actualへ反映する。
+
+承認者は、Expenseの内容・申請金額・承認金額・対象Production等、承認に必要な業務情報を確認できるものとする。
 
 ---
 
@@ -166,7 +188,7 @@ Expenseの承認と会計転記を分離しない。
 
 以下を確定原則とする。
 
-> Expenseを承認した時点で、必要なJournal Entryを会計へ転記し、Production Actualへ反映する。
+> Expenseを承認した時点で、承認金額を基準として必要なJournal Entryを会計へ転記し、Production Actualへ反映する。
 
 承認済みExpenseについて、さらに別のPosting操作を要求しない。
 
@@ -180,7 +202,9 @@ Expenseは業務上の支出情報を表し、Journal Entryは会計上の正本
 
 SUBMITTED中のExpenseは、正式なActualの構成要素として扱わない。
 
-承認されたExpenseは、既存のExpense / Journal Entry方針に従ってJournal Entryを生成し、そのJournal EntryをActualの集計対象とする。
+承認されたExpenseは、既存のExpense / Journal Entry方針に従ってJournal Entryを生成し、そのJournal EntryをActualの集計対象とする。Journal Entryの金額は承認金額を基準とする。
+
+申請金額と承認金額が異なる場合でも、申請者の実支出額と承認額の双方を履歴として追跡可能とする。
 
 POSTED済みJournal Entryを直接変更・削除しないという既存のJournal Entry原則を維持する。
 
@@ -213,17 +237,18 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - SUBMITTEDのExpenseについて承認可能者へ業務通知を行える。
 - 通知からExpenseの確認・承認・却下へ進められる。
 - Primary ManagerまたはProduction DelegateがExpense申請を承認できる。
-- 承認待ちExpenseを管理者メニューから一覧・確認・処理できる入口を設けてよい。
-- 通知と管理者メニューは同一のExpense承認処理への入口とする。
-- 承認時点でExpenseをPOSTEDとし、Journal Entryへ転記する。
-- 承認時点でProduction Actualへ反映する。
+- 承認者は申請金額を変更し、承認金額を指定できる。
+- 承認金額はProduction / Organizationとして会計・精算対象として認める金額を表す。
+- 承認金額が申請金額と異なる場合、双方を履歴として追跡可能にする。
+- 承認時点で承認金額を基準としてExpenseをPOSTEDとし、Journal Entryへ転記する。
+- 承認時点で承認金額をProduction Actualへ反映する。
 - 承認後に別途Posting操作を要求しない。
 - Primary ManagerまたはProduction DelegateはExpense申請をREJECTEDにできる。
 - REJECTEDのExpenseは履歴を保持し、修正後に再申請できる。
 - SUBMITTEDのExpenseが承認されるまで、Actualへ二重計上しない。
 - POSTED済みJournal Entryを直接変更・削除しない。
 - 承認後の訂正はReversal / Adjustment原則に従う。
-- Expense申請の承認可否はBackendのAuthorization / Domain Ruleで担保する。
+- Expense申請の承認可否および承認金額変更可否はBackendのAuthorization / Domain Ruleで担保する。
 - 会計Workflowは必要最小限とし、承認と会計転記を分離しない。
 
 ---
@@ -234,8 +259,10 @@ StageArtのExpense Workflowは、会計上の厳密性を保ちながら、現�
 
 基本操作は、
 
-> 登録 → 通知 → 承認 / 却下 → 会計転記
+> 登録 → 通知 → 確認・必要に応じて承認金額変更 → 承認 / 却下 → 会計転記
 
 とし、通知は承認処理を促す入口、管理者メニューは未処理申請を確認する補助入口として扱う。
 
 承認後に追加のPosting操作を要求しない。
+
+申請金額と承認金額が異なる場合でも、申請者の実支出額を履歴として保持し、会計Actualには承認金額のみを反映する。
