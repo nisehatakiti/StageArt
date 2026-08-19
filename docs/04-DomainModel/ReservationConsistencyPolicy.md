@@ -2,13 +2,13 @@
 
 # Domain Consistency Policy : Reservation
 
-Version : 1.2
+Version : 1.3
 
 ---
 
 # Purpose
 
-Reservation Domainについて、Performance / Ticket / Capacity / Price Snapshot / Check In / Accounting / Reservation Notificationに加え、予約者自身による予約変更・キャンセルの業務フローを定義する。
+Reservation Domainについて、Performance / Ticket / Capacity / Price Snapshot / Check In / Accounting / Reservation Notificationに加え、予約者自身による予約変更・キャンセル、および担当者による代理予約・事前集金の業務フローを定義する。
 
 ---
 
@@ -132,7 +132,7 @@ Ticket変更や枚数変更によって金額が変わる場合の新しいPrice
 
 予約者自身によるReservation変更で、予約対象のPerformanceを変更することはできない。
 
-別の公演回へ変更したい場合は、**現在の予約をキャンセルしたうえで、新しい公演回へ改めて予約を取り直す必要がある**ことを予約変更フォームおよび予約確認メール等で明示する。
+別の公演回へ変更したい場合は、現在の予約をキャンセルしたうえで、新しい公演回へ改めて予約を取り直す必要があることを予約変更フォームおよび予約確認メール等で明示する。
 
 既存Reservationを別Performanceへ直接移動させてはならない。
 
@@ -145,34 +145,6 @@ Ticket変更や枚数変更によって金額が変わる場合の新しいPrice
 - Accounting
 
 の整合性を維持するため。
-
----
-
-# Reservation Change Flow
-
-```text
-Reservation Change Form
-        ↓
-Email + Reservation Number
-        ↓
-Reservation Verification
-        ↓
-Current Reservation
-        ↓
-Change Name / Email / Ticket / GuestCount等
-        ↓
-Capacity / Ticket Validation
-        ↓
-Reservation Update
-        ↓
-変更完了メール
-        ↓
-最新の予約内容・必要に応じてQR Codeを再通知
-```
-
-変更後は予約者へ最新の予約内容をメール送信する。
-
-QR Codeに変更前のReservation状態を識別する情報が含まれる場合は、変更後も正しくCheck Inできるよう更新・再発行する。
 
 ---
 
@@ -265,13 +237,95 @@ Reservation変更で金額が変動する場合は、差額・再決済・返金
 
 ---
 
-# Booker
+# Booker and CreatedBy
 
-Bookerは予約者を表す。
+BookerはReservation上の予約者・予約を取りまとめた担当者を表す。
 
 BookerとCreatedByは別概念とする。
 
-観客本人がBookerで、劇団スタッフが代理入力のCreatedByとなる状態を許可する。
+通常の予約ではBookerは観客本人となる。
+
+劇団スタッフが観客から予約を受けて代理入力する場合は、スタッフをBookerとして登録できる。CreatedByもそのスタッフとなる。
+
+この場合、スタッフは当該Reservationに係るTicket代金を観客から預かっている担当者として扱う。
+
+代理予約のためだけに別のReservation Entityを作成しない。
+
+---
+
+# Staff-Held Ticket Payment
+
+StageArt V1では、Ticketの決済方法は現金のみ、原則として劇場払いとする。
+
+ただし、劇団スタッフが代理予約を行う際に観客からTicket代金を事前に受領している場合、そのReservationを「支払済（担当者預り）」として登録できる。
+
+基本Flow：
+
+```text
+観客
+  ↓ 現金支払い
+劇団スタッフ
+  ↓ 代理予約登録
+Reservation
+  └─ 支払済（担当者預り）
+        ↓
+当日受付
+  └─ 代金済として扱う
+        ↓
+Check In
+```
+
+この場合、受付担当者は当日にTicket代金を再度徴収しない。
+
+担当者が預かったTicket代金は、劇団がまだ現金を受領していないため、担当者に対する未収金として管理する。
+
+例えば3,000円のTicket代金を担当者が事前に預かった場合、Check In後のAccounting上は、Ticket Revenueの認識と同時に担当者に対する未収金として保持する。
+
+```text
+担当者未収金 3,000 / Ticket Revenue 3,000
+```
+
+担当者が後日劇団へ現金を清算した時点で、担当者未収金を現金・預金等へ振り替えて消し込む。
+
+この処理は通常の未収金・精算のAccounting Policyに従い、Journal Entryを正本とする。
+
+---
+
+# Staff Settlement and Netting
+
+劇団スタッフが保有するTicket代金の未収金は、同じスタッフに対する劇団側の未払金と最終精算時に相殺できるものとする。
+
+対象となる未払金には、例えば以下を含む。
+
+- Ticket Back
+- 承認済み立替経費
+- その他、スタッフに対して確定した未払金
+
+例：
+
+```text
+スタッフA
+
+劇団側未払金
+  Ticket Back       20,000
+  立替経費           8,000
+  -----------------------
+  未払合計           28,000
+
+スタッフ側未収金
+  預かりTicket代     15,000
+
+最終精算
+  劇団 → スタッフ      13,000
+```
+
+逆にスタッフ側未収金が未払金を上回る場合は、差額をスタッフから劇団へ精算する。
+
+相殺後の残額のみを実際の現金・預金の精算対象とする。
+
+相殺処理は、未収金・未払金の残高を直接書き換えるのではなく、Accounting DomainのJournal EntryによるSettlement / Nettingとして記録する。
+
+スタッフ別に未収金・未払金の残高を確認でき、最終精算額を明確にできることを基本とする。
 
 ---
 
@@ -288,6 +342,8 @@ GuestCountはReservationで確保する人数を表す。
 Check InはReservation単位で行う。
 
 QR Codeを読み取った場合、Reservationを安全に検証して対象Reservationを特定し、通常のCheck In処理へ進む。
+
+「支払済（担当者預り）」のReservationは、受付時に支払済として扱い、追加徴収なしでCheck Inできる。
 
 Check In完了後はCHECKED_INとなり、通常のReservation変更を行わない。
 
@@ -314,6 +370,8 @@ Accounting Journal Entry
 Accounting上の正本はJournal Entry。
 
 Reservationが会計Factを二重管理しない。
+
+スタッフ預りTicketについても、Reservationは支払済状態と預り担当者を業務上参照できる情報を保持し、会計上の未収金残高はJournal Entryを正本として管理する。
 
 ---
 
@@ -360,9 +418,11 @@ Production
        Reservation
           ├── Reservation Number
           ├── Booker / Email
+          ├── CreatedBy
           ├── Ticket Reference
           ├── Price Snapshot
           ├── Guest Count
+          ├── Payment Status
           ├── QR Code
           └── Notification
                 ├── Confirmation
@@ -380,8 +440,8 @@ Production
 
 Reservationは「誰が、どの公演回に、何人で、どのTicketを予約したか」という取引Factを管理する。
 
-予約成立時には自動生成された予約番号とCheck In用QR Codeを予約確認メールで送信する。
+通常の予約では劇場で現金を支払い、Check In時に会計処理を行う。
 
-予約者は専用フォームでメールアドレスと予約番号を入力することで、ログインなしに予約内容の変更・キャンセルを行える。
+劇団スタッフによる代理予約では、スタッフをBookerとして登録でき、観客から事前に受領したTicket代金を「支払済（担当者預り）」として扱える。
 
-ただし、公演回そのものは変更できず、別公演回への変更はキャンセル後の再予約を必要とする。
+担当者預りのTicket代金は担当者に対する未収金として会計管理し、スタッフ側のTicket Back・承認済み立替経費等の未払金と最終精算時に相殺できる。
