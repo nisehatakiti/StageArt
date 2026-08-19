@@ -2,7 +2,7 @@
 
 # Public Site Generation Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -24,9 +24,15 @@ StageArtのManagement Coreと、一般観客が閲覧する公開サイトは同
 StageArt Core
     │
     │ Organization / Production / Public Page Business Data
+    ▼
+Generation Request / Queue
+    │
+    │ CRON Worker
+    ▼
+Generate / Validate
     │
     ▼
-Generate / Publish
+Atomic Publish
     │
     ▼
 Organization Public Site
@@ -83,12 +89,129 @@ StageArt CoreでBusiness Dataを更新
         ↓
 公開内容を確認
         ↓
-Generate / Publish
+Generation Requestを登録
+        ↓
+CRON Workerが生成
+        ↓
+Generate / Validate
+        ↓
+Atomic Publish
         ↓
 独立した公開サイトへ反映
 ```
 
 生成済み公開サイトを直接編集してBusiness Dataを変更する運用は基本としない。
+
+---
+
+# Generation Trigger
+
+公開サイト生成は、管理者の操作だけに依存せず、公開条件の変化を契機として自動的にGeneration Requestへ登録できる構造とする。
+
+少なくとも以下を生成トリガーの対象とする。
+
+1. Organization Public Siteを初めて公開するとき
+2. ProductionのPublicity StatusがPRIVATEからPUBLICへ変更されたとき
+3. 公開中Productionの公開対象Business Dataが変更されたとき
+4. Flyer、Main Visual等の公開対象Assetが変更されたとき
+5. Ticket / Performance / Venue等の公開対象情報が変更されたとき
+6. 管理者が明示的に再Generateを要求したとき
+
+公開対象情報が変更された場合、変更処理そのものの中で公開サイトを同期生成することを必須としない。変更に応じてGeneration Requestを登録し、後続のCRON Workerが処理できる構造を基本とする。
+
+同一Organizationについて未処理のGeneration Requestが既に存在する場合は、不要な重複Jobを作成せず、既存Requestを再利用または集約できる構造とする。
+
+---
+
+# Generation Queue
+
+Generation Requestは、公開サイトを生成するための非同期処理要求として扱う。
+
+Requestには少なくとも対象Organization、要求時点、処理状態、および必要に応じて対象公開版を識別できる情報を持たせる構造を基本とする。
+
+基本的な状態は以下を想定する。
+
+```text
+PENDING
+   ↓
+PROCESSING
+   ↓
+SUCCEEDED
+```
+
+失敗時：
+
+```text
+PROCESSING
+   ↓
+FAILED
+```
+
+FAILEDとなった場合でも、既存の正常な公開版を削除・上書きしてはならない。
+
+リトライ可能な失敗については、CRON Workerによる再試行または管理者による再Generateを許容する。
+
+---
+
+# CRON Worker
+
+Generation Requestの処理はCRONによる定期実行Workerを基本とする。
+
+CRON Workerは未処理のGeneration Requestを取得し、公開サイトの生成・検証・公開切替を行う。
+
+基本的な実行順序は以下とする。
+
+```text
+CRON起動
+   ↓
+PENDING Request取得
+   ↓
+PROCESSINGへ変更
+   ↓
+現在のCore Business Dataから生成
+   ↓
+生成物検証
+   ↓
+成功 → Atomic Publish
+失敗 → FAILED
+```
+
+CRONの具体的な実行間隔はInfrastructure設計で定義する。
+
+StageArtのApplication Logicは、CRONそのものの実行環境に過度に依存してはならない。将来、WordPress CronからConoHa等のSystem Cronへ変更してもGeneration QueueおよびApplication側の設計を維持できる構造とする。
+
+同一Requestを複数Workerが同時処理して二重公開することを防止するため、処理開始時の排他制御を行う。
+
+---
+
+# Atomic Publish
+
+生成処理と公開中サイトの切替を分離する。
+
+新しい公開版は、生成および最低限の検証が完了するまで現在の公開版を変更してはならない。
+
+```text
+Current Published Version
+        │
+        │ 維持
+        │
+        ├──────────────┐
+        │              │
+        ▼              ▼
+   Generate New    Validate New
+                       │
+                    Success
+                       │
+                       ▼
+                Atomic Publish
+                       │
+                       ▼
+              New Published Version
+```
+
+新しい公開版の生成・検証に失敗した場合、現在公開中の版をそのまま維持する。
+
+公開切替は、利用者から見て途中生成物が公開されない単位で行うことを基本とする。
 
 ---
 
@@ -100,7 +223,7 @@ Publicity StatusがPRIVATEのProductionを一般公開用成果物へ含めて�
 
 Public VisibilityがOFFのProductionを公開サイト上に表示してはならない。
 
-Publicity StatusがPUBLICとなり、公開条件を満たしたProductionは、Generate / Publishによって公開サイトへ反映できる。
+Publicity StatusがPUBLICとなり、公開条件を満たしたProductionは、Generation Requestを通じて公開サイトへ反映できる。
 
 ---
 
@@ -146,7 +269,9 @@ Generate / Publishされた公開サイトは、生成時点のBusiness Dataと�
 
 Generateに失敗した場合、既存の正常な公開版を破壊してはならない。
 
-新しい公開版の生成・検証が完了した後に公開切替を行う方式を推奨する。
+新しい公開版の生成・検証が完了した後に公開切替を行う。
+
+Generation Requestの再試行によって新しい公開版が正常に生成された場合、正常な版のみを公開対象とする。
 
 ---
 
@@ -154,7 +279,9 @@ Generateに失敗した場合、既存の正常な公開版を破壊してはな
 
 公開サイトの配置先、独自ドメイン、DNS、CDN等の具体的なInfrastructureは別途決定する。
 
-本Policyでは、公開サイトがStageArt Coreから独立した生成物として扱われることのみを確定する。
+CRONの実行基盤についても、WordPress CronまたはSystem Cron等の具体的な選択はInfrastructure設計で定義する。
+
+本Policyでは、公開サイトがStageArt Coreから独立した生成物として扱われ、非同期のGeneration RequestをCRON Workerが処理できることを確定する。
 
 ---
 
@@ -167,6 +294,9 @@ V1では、以下を優先する。
 3. 公演情報・劇団情報の公開
 4. Ticket / ReservationへのStageArt内導線
 5. Core変更から公開サイトを分離するGenerate / Publish構造
+6. 公開タイミングに応じたGeneration Requestの自動登録
+7. CRON Workerによる非同期生成
+8. 生成失敗時に既存公開版を維持するAtomic Publish
 
 高度なCMS機能、公開サイトの自由なテーマ編集、外部販売サービス連携等はV1の必須条件としない。
 
@@ -178,13 +308,18 @@ V1では、以下を優先する。
 - 劇団ホームページはStageArt Coreから生成・公開する。
 - 公開サイトはCoreのManagement UIをそのまま一般公開する方式としない。
 - 生成済み公開サイトはCoreの実装変更から独立して維持できるものとする。
-- 公開サイトを更新する場合は明示的なGenerate / Publishを行う。
-- 公開サイト専用にBusiness Factを二重管理しない。
+- 公開サイトを更新する場合は明示的なGenerate / Publish、または公開対象情報変更によるGeneration Requestを起点とする。
+- Publicity Statusの公開開始等の公開条件変化に応じてGeneration Requestを自動登録できる。
+- 同一Organizationの未処理Generation Requestは必要に応じて集約し、不要な重複生成を避ける。
+- Generation Requestは非同期処理としてCRON Workerが実行する。
+- 同一Requestを複数Workerが同時処理しないよう排他制御する。
+- 新しい公開版の生成・検証が完了するまで現在の公開版を変更しない。
+- 新しい公開版の生成に失敗した場合、既存の正常な公開版を破壊しない。
 - PRIVATEまたはPublic Visibility OFFのProductionを公開サイトへ表示しない。
 - StageArt自身がTicket / Reservation基盤を担い、外部チケットサービス連携をV1の前提としない。
 - 公開サイトのコンテンツ表示とTicket / Reservation処理を分離する。
-- 新しい公開版の生成に失敗した場合、既存の正常な公開版を破壊しない。
 - Core障害時にも、既に生成済みの公開コンテンツは可能な限り独立して閲覧できる構造とする。
+- CRONの具体的な実行基盤はInfrastructure設計で決定し、Application側は実行基盤に依存しない。
 
 ---
 
@@ -192,6 +327,10 @@ V1では、以下を優先する。
 
 > StageArt Coreで作り、公開サイトは独立して公開する。
 
+> 公開開始はキューに積み、生成はCRONで行い、成功した版だけを公開する。
+
 StageArtのCoreは劇団運営の正本であり、公開サイトはCoreの現在の実装そのものではなく、Coreから生成された公開成果物として扱う。
 
-これにより、StageArtの進化と劇団の公開サイトの安定性を両立する。
+公開サイトの生成処理はCoreの通常リクエストと分離し、Generation Queue / CRON Workerを介して非同期に実行する。
+
+新しい公開版が正常に生成・検証できるまでは現在の公開版を維持することで、StageArtの進化と劇団の公開サイトの安定性を両立する。
