@@ -2,13 +2,13 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
 # Purpose
 
-StageArt V1の会計管理における利用者向け明細画面、Journal Entry転記、訂正、総勘定元帳、BS / PL出力の基本方針を定義する。
+StageArt V1の会計管理における利用者向け明細画面、Journal Entry転記、訂正、総勘定元帳、BS / PL出力、およびProduction決算確定の基本方針を定義する。
 
 Journal Entryを会計上の正本とし、利用者向け画面はJournal Entryを直接編集するための画面ではなく、業務上理解しやすい会計明細ビューとして提供する。
 
@@ -120,6 +120,69 @@ Journal Entryの物理削除はV1では行わない。
 
 ---
 
+# Production Closing
+
+Productionの決算確定は、Productionに関する未収金・未払金がすべて解消された時点で可能とする。
+
+基本Flow：
+
+```text
+公演終了
+    ↓
+未収金・未払金を確認
+    ↓
+入金・支払・キャンセル・免除・差額調整等を完了
+    ↓
+未収金・未払金 = 0
+    ↓
+BS / PL確認
+    ↓
+「この内容で決算を確定します」
+    ↓
+YES
+    ↓
+Production決算確定
+```
+
+公演終了そのものを決算確定条件とはしない。未収金・未払金が残っている場合は決算確定できない。
+
+Productionの決算確定はOrganization全体の会計期間Closeとは別概念とする。
+
+---
+
+# Production Closing Authority
+
+Productionの決算確定を実行できる権限は以下とする。
+
+- Primary Manager
+- 会計管理者
+
+公演管理者単独ではProduction決算を確定できない。
+
+---
+
+# Production Closing Lock
+
+Productionの決算確定後、そのProductionに属する公演会計は完全ロックする。
+
+決算確定後は、通常の会計入力・明細修正・Journal Entryの変更・削除・公演決算内容の再編集を行わない。
+
+決算確定後に計上漏れ・金額誤り等が発覚した場合は、Productionの決算を開き直して修正するのではなく、Organization Accounting側で調整仕訳を行う。
+
+調整仕訳は通常のJournal Entryとして記録し、元のProduction決算の会計履歴を変更しない。
+
+---
+
+# Production Closing Result
+
+決算確定時点のBS / PLは、Journal Entryを正本として算出する。
+
+決算確定時点のBS / PLを別の会計正本データとして二重管理しない。
+
+決算確定後も、確定時点の会計状態をJournal EntryおよびProductionとの関連から再現できる構造とする。
+
+---
+
 # Balance Sheet
 
 BSはA4用紙1枚程度に収まることを基本とする。
@@ -202,6 +265,10 @@ POSTED済みJournal Entryを直接編集・削除せず、訂正時には赤黒�
 - 修正は対象明細選択→変更金額入力→確認→赤黒訂正仕訳＋新規Journal Entryの生成で行う。
 - 総勘定元帳をV1から提供する。
 - 総勘定元帳はJournal Entryから生成し、直接編集できない。
+- Production決算は未収金・未払金がすべて解消された時点で確定可能とする。
+- Production決算の確定権限はPrimary Managerと会計管理者とする。
+- Production決算確定後は公演会計を完全ロックする。
+- 決算後の修正はProduction決算を開き直さず、Organization Accounting側の調整仕訳で行う。
 - BSをA4一枚程度、資産と負債/純資産の左右2列で出力する。
 - PLをA4一枚程度、収益と費用の左右2列で出力する。
 - 初期純資産はOrganization登録時に入力する。
