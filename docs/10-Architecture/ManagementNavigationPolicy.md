@@ -2,7 +2,7 @@
 
 # Management Navigation Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -28,7 +28,8 @@ HOME / ダッシュボード
 │        ├─ メンバー
 │        ├─ 権限・代理人
 │        ├─ 外部リンク
-│        └─ 劇団ホームページ
+│        ├─ 劇団ホームページ
+│        └─ 団体規約
 │
 ├─ 公演
 │   ├─ 公演情報
@@ -45,6 +46,8 @@ HOME / ダッシュボード
 │
 ├─ 会計
 │   ├─ 概要
+│   ├─ BS / 貸借対照表
+│   ├─ PL / 損益計算書
 │   └─ 決算
 │
 ├─ 通知
@@ -89,8 +92,35 @@ Organization ManagementはOrganizationそのものを管理するContextとす�
 - Google Drive連携
 - Public Page Settings
 - Organization-level Setup / Settings
+- 団体規約
 
 Historical Productionの登録・編集はOrganization Managementの責務ではなく、Production Managementの責務とする。
+
+---
+
+# Organization Rules
+
+団体規約はOrganization Managementから作成・管理できるものとする。
+
+団体規約はStageArtが提供するひな形を起点として作成できる構造とする。
+
+基本Flow：
+
+```text
+団体規約
+  ↓
+ひな形を選択
+  ↓
+団体情報を差し込み
+  ↓
+必要箇所を編集
+  ↓
+文書として出力
+```
+
+ひな形は劇団運営に一般的な規約項目を含むことを想定するが、団体ごとに内容を編集できるものとする。
+
+StageArtは規約の法的有効性を保証するものではなく、団体運営用の文書作成支援・たたき台として提供する。
 
 ---
 
@@ -136,26 +166,6 @@ Migrate Historical Production：
 StageArt利用開始以前に実施済みの公演を、既存資料からProductionとして登録するためのMigration入口。
 
 Historical Migrationは、過去のLifecycleを最初から再演するための操作ではない。
-
----
-
-# Historical Production Registration
-
-「過去公演を登録」はProduction Managementから実行できるものとする。
-
-基本Flow：
-
-Production Management
-    ↓
-Migrate Historical Production
-    ↓
-Historical Production Migration
-    ↓
-Productionとして登録
-    ↓
-必要に応じてPublic Visibilityを設定
-
-団体管理メニューにHistorical Production専用の登録入口を設けることを基本としない。
 
 ---
 
@@ -205,11 +215,17 @@ Accountingは二つのContextから利用する。
 **Organization Context**では、団体全体を横断する会計を確認・管理する。
 
 - 概要
+- BS / 貸借対照表
+- PL / 損益計算書
 - 決算
 
 Production AccountingをOrganization Accountingの単なる別名として扱わない。
 
-AccountingはOrganization単位の利用状態に従ってManagement Navigationへ反映する。
+Organization-level BS / PLは、Organization全体の会計状況を財務諸表として確認するための機能とする。
+
+BS / PLはManagement Client上で表示できるだけでなく、出力できる構造を前提とする。
+
+出力形式の詳細は別途Output / Reporting設計で確定する。
 
 会計を使用していないOrganizationでは、Accountingを通常の主要メニューとして表示しない。
 
@@ -335,7 +351,14 @@ Management Navigationは、すべての機能を初期状態から同列に表�
 - Historical Productionの登録・編集をOrganization Managementの責務としない。
 - Production Informationにはホームページ公開情報、肩書、タイトル、Slug、Google Drive連携等を含む。
 - ProductionのGoogle Drive連携はOrganization設定を継承でき、Production単位で置き換え可能とする。
+- Organization Managementには団体規約の作成・編集・出力機能を置く。
+- 団体規約はStageArt提供のひな形から作成できる。
+- 団体規約は団体ごとに編集可能とする。
+- 団体規約は法的有効性をStageArtが保証するものではない。
 - Organization AccountingとProduction Accountingを別Contextとして扱う。
+- Organization Accountingでは概要、BS、PL、決算を扱う。
+- Organization-level BS / PLは表示および出力を可能とする。
+- BS / PLの具体的な出力形式は別途定義する。
 - Member登録・編集画面で稽古管理者・会計管理者をチェックボックスで付与できる。
 - 稽古管理者・会計管理者の両方を同一Memberへ付与できる。
 - 権限のない管理機能はManagement Clientのメニューから表示しない。
