@@ -2,13 +2,13 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
 # Purpose
 
-本書は、Production AccountingとOrganization Accountingの関係、および未収金・未払金・精算・決算後修正に関する確定方針を定義する。
+本書は、Production AccountingとOrganization Accountingの関係、および未収金・未払金・精算・決算後修正、Accounting開始時の初期純資産に関する確定方針を定義する。
 
 Journal Entry自体の基本構造・貸借・POSTED / REVERSED等はJournal Entry Domainで定義する。
 
@@ -197,6 +197,101 @@ Productionの決算後修正が発生した場合、修正Journal Entryを含め
 
 ---
 
+# Financial Statements
+
+Organization Accountingでは、Journal Entryを正本として財務諸表を集計する。
+
+BS / 貸借対照表とPL / 損益計算書は、企業会計向けの詳細な帳票をそのまま再現するのではなく、StageArtで使用する勘定科目数を前提とした簡潔な帳票とする。
+
+原則として、それぞれA4用紙1枚に収まる構成を目標とする。
+
+## BS Layout
+
+BSはA4縦1枚を基本とし、資産と負債・純資産を左右に分けて表示する。
+
+```text
+┌──────────────────────────────────────┐
+│        劇団○○　貸借対照表              │
+│        YYYY年MM月DD日現在               │
+├──────────────────┬───────────────────┤
+│ 資産              │ 負債・純資産        │
+│                  │                   │
+│ 現金・預金        │ 未払金             │
+│ 未収金            │ その他負債         │
+│ その他資産        │                   │
+│                  │ 初期純資産         │
+│                  │ 累積収支           │
+│                  │                   │
+│ 資産合計          │ 負債・純資産合計    │
+└──────────────────┴───────────────────┘
+```
+
+具体的な勘定科目はAccount Masterの定義に従う。BS表示のために別の残高正本を二重管理しない。
+
+## PL Layout
+
+PLはA4縦1枚を基本とし、収益と費用を左右に分けて表示する。
+
+```text
+┌──────────────────────────────────────┐
+│        劇団○○　損益計算書              │
+│        YYYY年度                        │
+├──────────────────┬───────────────────┤
+│ 収益              │ 費用               │
+│                  │                   │
+│ チケット収入      │ 会場費             │
+│ 会費              │ 外注費             │
+│ 助成金・補助金     │ 人件費             │
+│ その他収入        │ 宣伝・印刷費       │
+│                  │ 衣装・小道具費     │
+│                  │ 交通費             │
+│                  │ 消耗品費           │
+│                  │ その他費用         │
+│                  │                   │
+│ 収益合計          │ 費用合計           │
+├──────────────────┴───────────────────┤
+│ 当期収支                                │
+└──────────────────────────────────────┘
+```
+
+具体的な勘定科目はAccount Masterの定義に従う。PLの収益・費用はJournal Entryから集計し、PL専用の実績データを二重管理しない。
+
+## Output
+
+BS / PLはManagement Client上で表示できるだけでなく、A4帳票として出力できる構造を前提とする。
+
+具体的な出力形式はOutput / Reporting設計で定義する。
+
+---
+
+# Initial Net Assets
+
+Accounting開始時点のOrganizationには、既存の会計履歴が存在しない場合でも、開始時点の純資産を設定できるものとする。
+
+OrganizationがAccountingを開始する際、初期純資産を入力する。
+
+初期純資産は、OrganizationのAccounting開始時点における既存資産・負債を基準として設定する開始時点の純資産である。
+
+基本関係：
+
+```text
+初期純資産 = 開始時点の資産 - 開始時点の負債
+```
+
+初期純資産は、以後のJournal Entryによって発生する収益・費用等とは区別して、Accounting開始時点のOpening状態として扱う。
+
+その後の会計上の増減はJournal Entryを正本として記録・集計する。
+
+BSでは、初期純資産とその後の会計活動による累積的な純資産変動を反映した結果を、負債・純資産側に表示する。
+
+PLは対象会計期間のJournal Entryから収益・費用を集計し、当期収支を算出する。
+
+初期純資産をJournal EntryのActualやPLの収益・費用として二重計上しない。
+
+Accounting Activation時に初期純資産を設定するUIでは、利用者にDebit / Creditの詳細な初期仕訳を直接入力させることを基本としない。StageArt内部では、BSが成立するために必要なOpening Balanceとして会計データへ反映できる構造を持つ。
+
+---
+
 # Accounting Adoption / Activation
 
 AccountingはOrganization単位のオプション機能とする。
@@ -220,8 +315,8 @@ Organizationの利用開始時に、Accountingを使用するかどうかを選�
 Accountingを使用する場合：
 
 1. Accountingを有効化する。
-2. 会計開始時点の現在資金を確認・入力する。
-3. その開始残高をAccountingの初期状態として登録する。
+2. 会計開始時点の現在資金および初期純資産を確認・入力する。
+3. Opening Balanceを登録する。
 4. その後、Account / Budget / Journal Entry等の会計機能を利用できる。
 
 Accountingを使用しない場合：
@@ -253,6 +348,8 @@ Accounting未開始
 Accountingを有効化
     ↓
 現在の資金を入力
+    ↓
+初期純資産を入力
     ↓
 Opening Balanceを登録
     ↓
@@ -312,23 +409,18 @@ Mobile / Web UIでAccountingを表示する場合も、OrganizationのAccounting
 - 予約・依頼時点で金額が確定した会場費・外部スタッフ費・物品購入費等は未払金として計上できる。
 - Ticket予約等で受取権利が確定した場合は未収金として計上できる。
 - 実際の入出金時に未収金・未払金を消し込む。
-- 当初計上額と実額が異なる場合は精算時に差額調整を行う。
-- 当初のJournal Entryを直接書き換えず、調整Journal Entryとして履歴を残す。
-- 未収金・未払金は可能な限り取引相手を特定できる状態で管理する。
-- 決算時には未収金・未払金を誰／どの取引に対する残高なのか確認できる。
-- Productionの決算完了とOrganizationの会計期間Closeは別概念である。
-- 会計年度をまたぐProductionについてもJournal Dateに従って各年度へ計上する。
-- 年度末に未収金・未払金が残っている場合、その残高をOrganization Accounting上に保持する。
-- 翌年度の入金・支払・精算は翌年度のJournal Entryとして反映する。
-- Productionの決算後修正はAdjustment Journal Entryとして記録する。
-- 決算後修正はProduction ActualとOrganization Accountingの双方に反映する。
-- Budgetは計画値、ActualはJournal Entryから集計される実績値とする。
-- AccountingはOrganization単位のオプション機能であり、StageArtの基本的なProduction管理機能を利用するために必須ではない。
-- Accounting未開始のOrganizationにAccount / Budget / Journal Entry等の初期設定を要求しない。
-- Organization作成時にAccountingを使用するかどうかを選択できる。
-- Accountingを有効化する時点で現在資金を入力し、Opening Balanceとして登録する。
-- Accounting未開始のOrganizationは、後からAccountingを有効化できる。
-- Accounting有効化前のProduction管理や予約管理等をやり直すことを要求しない。
-- Accountingを一度有効化したOrganizationは、Accountingを単純にOFFへ戻せない。
-- Accountingの使用状態はOrganizationごとに独立する。
-- Accounting未開始と会計残高0円を同一状態として扱わない。
+- 未収金・未払金の差額は新しいJournal Entryとして調整する。
+- Productionの決算完了はOrganizationの会計期間Closeとは別概念とする。
+- Productionが会計期間をまたぐ場合、Journal Dateに従って各会計期間へ反映する。
+- COMPLETED後の修正は新たなAdjustment Journal Entryとして記録する。
+- ActualはJournal Entryから集計し、別の正本データとして二重管理しない。
+- Organization AccountingとProduction Accountingは同一Journal Entryを異なるScopeで集計する。
+- AccountingはOrganization単位のOption機能である。
+- Accounting開始時に現在資金と初期純資産を設定する。
+- 初期純資産はAccounting開始時点のOpening状態として扱う。
+- 初期純資産をPLの収益・費用やActualとして二重計上しない。
+- BSはA4縦1枚を基本とし、資産と負債・純資産を左右に分けて表示する。
+- PLはA4縦1枚を基本とし、収益と費用を左右に分けて表示する。
+- BS / PLはJournal Entryを正本として集計する。
+- BS / PLはManagement Clientで表示し、A4帳票として出力できる構造を前提とする。
+- BS / PLの具体的な勘定科目分類はAccount Masterの定義に従う。
