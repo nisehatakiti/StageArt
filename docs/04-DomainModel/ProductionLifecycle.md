@@ -2,7 +2,7 @@
 
 # Production Lifecycle
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -26,7 +26,7 @@ Production LifecycleとProduction Statusの対応は以下を確定仕様とす�
 | 稽古・広報・販売 | ACTIVE | 制作活動を継続している段階 |
 | 公演 | ACTIVE | 公演を実施している段階 |
 | 精算 | ACTIVE | 公演後の支払・未払金精算・会計処理を行う段階 |
-| 決算完了 | COMPLETED | Productionに必要な会計・精算を完了した状態 |
+| 決算完了 | COMPLETED | Productionの決算処理を完了した状態 |
 | Archive | ARCHIVED | 完了したProductionを保管する状態 |
 
 基本的なProduction StatusのLifecycleは、以下とする。
@@ -92,7 +92,9 @@ Production StatusはLifecycle上の大分類を表し、ACTIVE内部の活動段
 
 公演終了だけではProductionをCOMPLETEDへ遷移させない。
 
-Productionは、以下を完了した時点でCOMPLETEDとなる。
+Productionは、決算完了のGOを管理者が行った時点でCOMPLETEDとなる。
+
+通常の会計利用時は、以下の流れを基本とする。
 
 公演終了
     ↓
@@ -100,11 +102,21 @@ Productionは、以下を完了した時点でCOMPLETEDとなる。
     ↓
 未払金・支払・差額調整等の会計処理
     ↓
-決算完了
+決算完了の確認
+    ↓
+管理者が決算完了GO
     ↓
 COMPLETED
 
-具体的な決算完了条件およびAccounting側のClose処理はAccounting Domainで定義する。
+ただし、Accountingを利用していないProduction、または会計データをStageArt上で管理しないProductionについては、決算金額をゼロベースとして確定することでCOMPLETEDへ遷移できるものとする。
+
+ゼロベースでの決算確定は「実際の収支が必ず0円だった」という意味ではなく、「StageArt上で追加の会計処理を行わず、Productionを完了状態として確定する」ための完了方法である。
+
+したがって、Accounting未使用のProductionを、会計機能が未実装であることだけを理由にCOMPLETEDへ進められない状態にしてはならない。
+
+ゼロベース決算を選択した場合でも、ProductionがCOMPLETEDとなった事実およびゼロベースで決算を確定したことを履歴として保持できる構造を基本とする。
+
+具体的な決算完了条件、ゼロベース決算の記録方法、およびAccounting側のClose処理はAccounting Domainで定義する。
 
 ---
 
@@ -134,12 +146,14 @@ CANCELLEDは、DRAFT、PLANNING、ACTIVE等の通常Lifecycleからの中止を�
 - PLANNINGは予算策定段階を表す。
 - ACTIVEは制作、稽古・広報・販売、公演、精算を含む活動中の状態を表す。
 - 制作、稽古・広報・販売、公演、精算をProduction Statusとして個別追加しない。
-- COMPLETEDは決算完了を意味する。
-- ARCHIVEDは完了したProductionの保管状態を意味する。
+- COMPLETEDは決算処理を完了したことを意味する。
+- Accounting未使用またはStageArt上で会計処理を行わないProductionは、ゼロベースで決算を確定してCOMPLETEDへ遷移できる。
+- ゼロベース決算は実際の収支が0円だったことを自動的に意味しない。
+- ゼロベース決算を選択した事実は履歴として保持できる構造を基本とする。
 - Production Statusの基本遷移はDRAFT → PLANNING → ACTIVE → COMPLETED → ARCHIVEDとする。
 - CANCELLEDは通常Lifecycleとは別の中止状態として扱う。
 - Lifecycle Transitionは管理者による明示的なGOを起点として実行する。
 - Statusの任意の直接書き換えを、通常のLifecycle操作として扱わない。
 - Server Sideで現在Statusから許可されたLifecycle Transitionであることを検証する。
-- 決算完了条件の詳細はAccounting Domainで定義する。
+- 決算完了条件、ゼロベース決算の記録方法、およびClose処理の詳細はAccounting Domainで定義する。
 - Production DomainはAccountingの詳細な仕訳処理そのものを管理しない。
