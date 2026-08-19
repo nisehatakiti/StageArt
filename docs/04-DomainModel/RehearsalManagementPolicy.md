@@ -2,13 +2,13 @@
 
 # Domain Consistency Policy : Rehearsal Management
 
-Version : 1.0
+Version : 1.1
 
 ---
 
 # Purpose
 
-既存のRehearsal / RehearsalAttendance Domainを前提として、V1の稽古管理における参加対象、出欠回答、回答期限、当日管理の具体的な運用を定義する。
+既存のRehearsal / RehearsalAttendance Domainを前提として、V1の稽古管理における参加対象、出欠回答、回答期限、当日管理、Google Calendar自動連携の具体的な運用を定義する。
 
 Rehearsal自体のLifecycleはRehearsal Domainで定義し、権限はAuthorization Domainで管理する。
 
@@ -152,11 +152,11 @@ Production全メンバーを一覧表示して対象者を探す方式にはし�
 
 # Google Calendar Integration
 
-Google Calendar連携は、既存のGoogle Calendar Integration Policyに従う。
+Google Calendar連携はStageArt V1から自動連携を基本とする。
 
 StageArtのRehearsalを正本とし、Google Calendarは連携先とする。
 
-稽古日程が確定した段階で、Google Calendar連携を有効にしている利用者へ予定を連携できる。
+稽古日程が確定した段階で、Google Calendar連携を有効にしている利用者へ予定を自動登録する。
 
 個人連携：
 
@@ -167,7 +167,7 @@ Person
   ↓
 自身のGoogle Calendar
   ↓
-確定したRehearsalを登録
+確定したRehearsalを自動登録
 ```
 
 団体連携：
@@ -179,7 +179,7 @@ Organization
   ↓
 Google Calendar
   ↓
-確定したRehearsalを登録
+確定したRehearsalを自動登録
 ```
 
 団体のGoogle Accountは、既存のDrive公開用Google連携と同一の連携設定を利用できる構造を基本とする。
@@ -194,14 +194,19 @@ StageArtがRehearsalの正本である。
 
 Google Calendar側で予定を直接変更しても、その変更をStageArtへ逆同期しない。
 
-StageArt上で以下が変更された場合は、連携済みGoogle Calendar Eventへ反映する。
+StageArt上で以下が変更された場合は、連携済みGoogle Calendar Eventへ自動反映する。
 
 - 日時変更
 - 場所変更
 - 稽古内容変更
-- 中止
 
-RehearsalがCANCELLEDとなった場合は、連携済みCalendar Eventもキャンセルまたは削除対象とする。
+RehearsalがCANCELLEDとなった場合は、連携済みGoogle Calendar Eventを削除する。
+
+Google Calendar Eventの削除後も、StageArt側のRehearsalおよびRehearsalAttendance履歴は保持する。
+
+StageArt側で再度確定した場合は、新しいGoogle Calendar Eventとして連携する。
+
+Google Calendar EventとStageArt Rehearsalの対応関係を保持し、変更・削除対象を特定できるようにする。
 
 具体的なGoogle Calendar API操作はExternal Integration / Infrastructureで定義する。
 
@@ -209,7 +214,7 @@ RehearsalがCANCELLEDとなった場合は、連携済みCalendar Eventもキャ
 
 # V1 Principle
 
-V1では、StageArtの稽古管理を中心とし、Google Calendarは予定確認を容易にするための外部連携として利用する。
+V1では、StageArtの稽古管理を中心とし、Google Calendarは予定確認を容易にするための自動外部連携として利用する。
 
 Google Calendarを稽古管理の正本にしない。
 
@@ -232,6 +237,8 @@ Google Calendarを稽古管理の正本にしない。
 - 個人Google Calendarは各Person自身のGoogle Account連携によって利用する。
 - 団体Google Calendarは団体設定のGoogle Accountを利用できる。
 - 団体Google AccountはDrive公開用の既存Google連携設定と共有できる構造を基本とする。
-- 確定したRehearsalをGoogle Calendarへ連携する。
-- StageArt側のRehearsal変更をGoogle Calendarへ反映する。
+- 稽古が確定した時点で、連携対象のGoogle CalendarへEventを自動登録する。
+- StageArt側で稽古の日時・場所・内容を変更した場合、連携済みGoogle Calendar Eventを自動更新する。
+- StageArt側で稽古をCANCELLEDにした場合、連携済みGoogle Calendar Eventを自動削除する。
 - Google Calendar側の変更をStageArtへ逆同期しない。
+- Google Calendar Event削除後もStageArt側の稽古履歴を保持する。
