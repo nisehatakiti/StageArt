@@ -1,6 +1,6 @@
 # StageArt Business Flow UX Clarifications
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -149,3 +149,43 @@ ProductionへのParticipant登録は、Productionの管理権限を意味しな�
 StageArtへ登録しただけのPerson、Organizationの一般メンバー、Production Participantなどには、権限がなければ「活動を作る」機能を表示しない。
 
 Organization管理者等、必要な権限を持つユーザーが活動を作成する場合も、Projectは内部処理として扱い、利用者にはProduction（活動）を作成する操作として提供する。
+
+---
+
+# 10 デバイス別UX・レスポンシブ方針
+
+StageArtのiPhone版とiPad版は別アプリ・別機能として設計せず、同一のモバイルアプリを画面サイズに応じてレスポンシブに表示する。
+
+基本方針は以下とする。
+
+- 機能、認証、データモデル、Business LogicはiPhone / iPadで共通とする。
+- iPhoneでは限られた画面幅を前提とした縦方向中心のUIを基本とする。
+- iPadでは同一機能を利用できることを前提としつつ、広い画面を活用して一覧・詳細・管理情報などを同時に表示できるレイアウトを検討する。
+- iPad専用の業務ロジックや別系統のデータモデルは作らない。
+- Web版についても、同じDomain ModelおよびBusiness Flowを前提として画面幅に応じたレスポンシブ表示を行う。
+
+## 10.1 開発・検証の進め方
+
+現状、実機としてiPadを利用できるため、まずiPad上でiPhone相当の画面幅・レイアウトを再現し、iPhone向けの基本UIおよび主要機能を検証する。
+
+その後、iPhone相当UIが安定した段階で、iPadの広い画面を活用したレイアウトへ段階的に最適化する。
+
+最終的には実iPhoneでも動作・表示を確認する。
+
+基本的な検証順序は次のとおりとする。
+
+```text
+iPad実機
+    ↓
+iPhone相当の画面幅・UIを再現
+    ↓
+iPhone向け基本機能を検証
+    ↓
+UI・機能を安定化
+    ↓
+iPad向け広画面レイアウトを最適化
+    ↓
+実iPhoneで最終確認
+```
+
+この方針により、iPhoneとiPadで同じ機能を二重実装することを避け、まず共通UI・共通ロジックを固めたうえで画面サイズごとの最適化を行う。
