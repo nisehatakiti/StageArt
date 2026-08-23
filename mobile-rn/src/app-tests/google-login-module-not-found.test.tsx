@@ -9,37 +9,33 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
-const mockSignInWithGoogle = jest.fn(async () => 'mock-google-id-token');
 jest.mock('@/auth/googleSignIn', () => ({
   ...jest.requireActual('@/auth/googleSignIn'),
-  signInWithGoogle: mockSignInWithGoogle,
-}));
-
-jest.mock('@/auth/googleModuleDiagnostics', () => ({
-  ...jest.requireActual('@/auth/googleModuleDiagnostics'),
-  checkGoogleSigninModuleStatus: jest.fn(() => ({
-    turboModuleFound: false,
-    legacyBridgeModuleFound: false,
-    otherGoogleRelatedKeys: [],
+  signInWithGoogleDiagnostic: jest.fn(async () => ({
+    ok: false,
+    cancelled: false,
+    steps: [
+      { step: "TurboModuleRegistry.get('RNGoogleSignin')", status: 'error', detail: 'not found' },
+      { step: 'NativeModules.RNGoogleSignin', status: 'error', detail: 'not found' },
+    ],
   })),
 }));
 
 /**
- * StageArt Google認証 診断 (2026-08-23): when a real device's installed
- * binary predates the RNGoogleSignin native module (or the module is
- * otherwise unregistered), login.tsx's pre-flight
- * checkGoogleSigninModuleStatus() probe must surface a specific,
- * diagnostic message via Alert.alert (an imperative native call, not
- * dependent on this screen's own state/re-render cycle - deliberately
- * not asserted via testID="login-error" visibility here, since that
- * would only prove the *pre-existing*, unrelated setErrorMessage() UI
- * path re-renders under this test harness, which this suite cannot
- * establish either way for ANY of login.tsx's error paths, including
- * the untouched Email+Password one - see this session's report).
- * signInWithGoogle() must never even be called in this case.
+ * StageArt Google認証 段階的診断 (2026-08-23): when neither the New
+ * Architecture TurboModule proxy nor the legacy NativeModules bridge has
+ * RNGoogleSignin registered, signInWithGoogleDiagnostic() returns
+ * `ok: false` with a step-by-step trace instead of letting
+ * @react-native-google-signin/google-signin's own
+ * TurboModuleRegistry.getEnforcing() throw its raw invariant message -
+ * login.tsx must surface every step of that trace via Alert.alert
+ * (an imperative native call, independent of this screen's own
+ * re-render cycle - see this session's report on why testID="login-error"
+ * visibility cannot be reliably asserted in this test harness for ANY of
+ * login.tsx's error paths, including the untouched Email+Password one).
  */
 describe('login flow: Google, native module not found', () => {
-  it('shows a diagnostic Alert and never calls signInWithGoogle()', async () => {
+  it('shows the full diagnostic trace via Alert', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     mockFetchRoutes([]);
 
@@ -52,7 +48,8 @@ describe('login flow: Google, native module not found', () => {
     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
     const [title, message] = alertSpy.mock.calls[0];
     expect(title).toBe('Googleサインイン診断');
-    expect(message).toContain('RNGoogleSignin');
-    expect(mockSignInWithGoogle).not.toHaveBeenCalled();
+    expect(message).toContain("TurboModuleRegistry.get('RNGoogleSignin')");
+    expect(message).toContain('NativeModules.RNGoogleSignin');
+    expect(message).toContain('not found');
   });
 });

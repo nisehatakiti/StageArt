@@ -3,8 +3,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { GoogleSignInCancelledError, signInWithGoogle } from '@/auth/googleSignIn';
-import { checkGoogleSigninModuleStatus, describeGoogleSigninModuleStatus } from '@/auth/googleModuleDiagnostics';
+import { signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
@@ -60,6 +59,19 @@ function resolvePostLoginRoute(
     return { pathname: '/set-name', params: { family_name_hint: familyNameHint, given_name_hint: givenNameHint } };
   }
   return '/set-name';
+}
+
+/**
+ * StageArt Google認証 段階的診断 (2026-08-23): renders every stage of
+ * signInWithGoogleDiagnostic()'s trace (module registration checks,
+ * configure(), hasPlayServices(), signIn()) as one readable block, so
+ * "module not registered" / "OAuth Client ID misconfigured" / "the
+ * native SDK call itself failed" are visibly distinguishable instead of
+ * collapsing into one generic message.
+ */
+function formatGoogleSignInSteps(steps: GoogleSignInDiagnosticStep[]): string {
+  const icon = { ok: '✓', error: '✗', skipped: '–' } as const;
+  return steps.map((s) => `${icon[s.status]} ${s.step}: ${s.detail}`).join('\n');
 }
 
 type GoogleSigninButtonComponent = ComponentType<
@@ -152,26 +164,33 @@ export default function LoginScreen() {
     setSubmittingGoogle(true);
     setErrorMessage(null);
 
-    const moduleStatus = checkGoogleSigninModuleStatus();
-    const diagnosticSummary = describeGoogleSigninModuleStatus(moduleStatus);
-    console.log(diagnosticSummary);
+    const diagnostic = await signInWithGoogleDiagnostic();
+    console.log(formatGoogleSignInSteps(diagnostic.steps));
 
-    if (!moduleStatus.turboModuleFound && !moduleStatus.legacyBridgeModuleFound) {
-      const message = `RNGoogleSigninが現在のビルドに見つかりません。${diagnosticSummary}`;
+    if (!diagnostic.ok) {
+      setSubmittingGoogle(false);
+
+      if (diagnostic.cancelled) {
+        // The user backed out of the native Google picker - not an error
+        // worth surfacing as one.
+        return;
+      }
+
+      const message = formatGoogleSignInSteps(diagnostic.steps);
       // Alert.alert is an imperative native call, not dependent on this
       // screen's own re-render cycle - shown alongside (not instead of)
-      // setErrorMessage below so the diagnostic is visible even in the
-      // unlikely case something about this specific screen's state
-      // update path is unreliable on a given device.
+      // setErrorMessage below, as a diagnostic aid while the exact
+      // failure stage (module registration vs OAuth config vs the
+      // native SDK call itself) is still being narrowed down. Every
+      // stage's real outcome is included verbatim, never collapsed into
+      // a single generic message.
       Alert.alert('Googleサインイン診断', message);
       setErrorMessage(message);
-      setSubmittingGoogle(false);
       return;
     }
 
     try {
-      const idToken = await signInWithGoogle();
-      const result = await loginWithGoogle(idToken);
+      const result = await loginWithGoogle(diagnostic.idToken);
 
       if (!result.ok) {
         setErrorMessage(result.message);
@@ -180,13 +199,9 @@ export default function LoginScreen() {
 
       router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
     } catch (error) {
-      if (error instanceof GoogleSignInCancelledError) {
-        // The user backed out of the native Google picker - not an error
-        // worth surfacing as one.
-        return;
-      }
-
-      setErrorMessage('Googleでのログインを開始できませんでした。');
+      const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
+      Alert.alert('Googleサインイン診断', message);
+      setErrorMessage(message);
     } finally {
       setSubmittingGoogle(false);
     }

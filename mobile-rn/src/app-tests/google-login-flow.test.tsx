@@ -10,29 +10,24 @@ jest.mock('expo-secure-store', () => ({
 
 // Mocked at the boundary this app owns (src/auth/googleSignIn.ts), not
 // the native @react-native-google-signin/google-signin module itself -
-// see that file's own docblock for why it is imported dynamically
-// (native module not present in every installed dev build) and why
-// mocking the wrapper, rather than the native library, is the right
-// seam for this test.
+// the Jest/RN test renderer never has the real native RNGoogleSignin
+// module registered, so signInWithGoogleDiagnostic()'s own internal
+// TurboModuleRegistry/NativeModules probes would always report "not
+// found" here, independent of what's actually being tested. Mocked to
+// simulate the full successful staged flow; see
+// google-login-module-not-found.test.tsx for the "not found" case.
 jest.mock('@/auth/googleSignIn', () => ({
   ...jest.requireActual('@/auth/googleSignIn'),
-  signInWithGoogle: jest.fn(async () => 'mock-google-id-token'),
-}));
-
-// The Jest/RN test renderer never has the real native RNGoogleSignin
-// module registered (same underlying reason as the mock above), so
-// login.tsx's pre-flight checkGoogleSigninModuleStatus() probe against
-// the real react-native TurboModuleRegistry/NativeModules would always
-// report "not found" here, independent of what's actually being tested.
-// Mocked to simulate "module is present" so this test can exercise the
-// happy path; see google-login-module-not-found.test.tsx for the
-// diagnostic gate itself.
-jest.mock('@/auth/googleModuleDiagnostics', () => ({
-  ...jest.requireActual('@/auth/googleModuleDiagnostics'),
-  checkGoogleSigninModuleStatus: jest.fn(() => ({
-    turboModuleFound: true,
-    legacyBridgeModuleFound: false,
-    otherGoogleRelatedKeys: [],
+  signInWithGoogleDiagnostic: jest.fn(async () => ({
+    ok: true,
+    idToken: 'mock-google-id-token',
+    steps: [
+      { step: "TurboModuleRegistry.get('RNGoogleSignin')", status: 'ok', detail: 'found' },
+      { step: 'NativeModules.RNGoogleSignin', status: 'ok', detail: 'found' },
+      { step: 'GoogleSignin.configure()', status: 'ok', detail: 'webClientId="mock"' },
+      { step: 'GoogleSignin.hasPlayServices()', status: 'ok', detail: 'succeeded' },
+      { step: 'GoogleSignin.signIn()', status: 'ok', detail: 'succeeded, idToken received' },
+    ],
   })),
 }));
 
