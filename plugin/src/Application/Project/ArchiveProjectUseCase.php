@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace StageArt\Application\Project;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Project\ProjectId;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * DELETE is always an archive, never a physical delete: Project.md states

@@ -7,6 +7,7 @@ namespace StageArt\Domain\Membership;
 use DateTimeImmutable;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Deliberately minimal: only the ACTIVE status from the full lifecycle in

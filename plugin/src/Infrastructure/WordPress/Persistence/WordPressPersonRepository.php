@@ -28,6 +28,8 @@ final class WordPressPersonRepository implements PersonRepositoryInterface
 
         $row = [
             'wp_user_id' => $person->wordPressUserId(),
+            'family_name' => $person->familyName(),
+            'given_name' => $person->givenName(),
         ];
 
         if ($existing) {
@@ -62,6 +64,11 @@ final class WordPressPersonRepository implements PersonRepositoryInterface
 
     private function hydrate(array $row): Person
     {
-        return Person::reconstitute(PersonId::fromString($row['id']), (int) $row['wp_user_id']);
+        return Person::reconstitute(
+            PersonId::fromString($row['id']),
+            (int) $row['wp_user_id'],
+            $row['family_name'] !== null ? (string) $row['family_name'] : null,
+            $row['given_name'] !== null ? (string) $row['given_name'] : null
+        );
     }
 }

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Role\RoleKey;
 
 final class OrganizationResult
 {

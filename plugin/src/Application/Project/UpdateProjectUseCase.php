@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Application\Project;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Project\ProjectId;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
 use StageArt\Domain\Project\ProjectStatus;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Status transitions are not order-validated in this slice (Project.md

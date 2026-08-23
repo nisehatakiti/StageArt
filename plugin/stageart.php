@@ -21,6 +21,17 @@ define( 'STAGEART_PLUGIN_FILE', __FILE__ );
 define( 'STAGEART_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'STAGEART_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
+// Composer dependencies (e.g. dompdf/dompdf, Phase 4.5's Print View PDF
+// renderer) are not under the StageArt\ namespace, so the custom
+// autoloader below cannot find them - Composer's own autoloader is
+// required separately. Guarded by file_exists() so a checkout without
+// `composer install` run yet degrades to a clear missing-class error
+// only where a Composer package is actually used, rather than a fatal
+// error on every request.
+if ( is_file( STAGEART_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
+	require_once STAGEART_PLUGIN_DIR . 'vendor/autoload.php';
+}
+
 spl_autoload_register( static function ( string $class ): void {
 	$prefix = 'StageArt\\';
 

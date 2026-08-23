@@ -9,9 +9,9 @@ use RuntimeException;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipId;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Role\RoleKey;
 use wpdb;
 
 final class WordPressMembershipRepository implements MembershipRepositoryInterface

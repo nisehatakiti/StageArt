@@ -12,21 +12,43 @@ use StageArt\Application\Organization\DeleteOrganizationUseCase;
 use StageArt\Application\Organization\ListOrganizationsForPersonQuery;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Domain\Person\Person;
+use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
 final class ListOrganizationsUseCaseTest extends TestCase
 {
+    private function givenActiveUserAccount(
+        InMemoryPersonRepository $people,
+        InMemoryUserAccountRepository $userAccounts,
+        int $wordPressUserId
+    ): void {
+        $person = Person::create($wordPressUserId);
+        $people->save($person);
+        $userAccounts->save(UserAccount::create($person->id()));
+    }
+
     public function test_list_only_returns_organizations_the_caller_belongs_to(): void
     {
         $organizations = new InMemoryOrganizationRepository();
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
+        $userAccounts = new InMemoryUserAccountRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $this->givenActiveUserAccount($people, $userAccounts, 1);
+        $this->givenActiveUserAccount($people, $userAccounts, 2);
+
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryTransactionManager()
+        );
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 
         $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
@@ -55,9 +77,17 @@ final class ListOrganizationsUseCaseTest extends TestCase
         $organizations = new InMemoryOrganizationRepository();
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
+        $userAccounts = new InMemoryUserAccountRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $this->givenActiveUserAccount($people, $userAccounts, 1);
+
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryTransactionManager()
+        );
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 

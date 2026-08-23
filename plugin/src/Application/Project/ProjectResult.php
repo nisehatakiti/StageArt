@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Project;
 
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\Role\RoleKey;
 
 final class ProjectResult
 {

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * "Delete" transitions the Organization to ARCHIVED rather than removing

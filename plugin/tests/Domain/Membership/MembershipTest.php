@@ -6,7 +6,7 @@ namespace StageArt\Tests\Domain\Membership;
 
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Membership\Membership;
-use StageArt\Domain\Membership\RoleKey;
+use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
 

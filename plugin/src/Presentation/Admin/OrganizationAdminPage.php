@@ -18,7 +18,7 @@ use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Organization\OrganizationResult;
 use StageArt\Application\Organization\UpdateOrganizationCommand;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
-use StageArt\Domain\Membership\RoleKey;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Plain admin_menu + admin-post.php page: no JS build step, matching

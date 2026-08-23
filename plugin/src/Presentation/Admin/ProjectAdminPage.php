@@ -20,7 +20,7 @@ use StageArt\Application\Project\ProjectNotFoundException;
 use StageArt\Application\Project\ProjectResult;
 use StageArt\Application\Project\UpdateProjectCommand;
 use StageArt\Application\Project\UpdateProjectUseCase;
-use StageArt\Domain\Membership\RoleKey;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Test-purpose minimal admin UI, same rationale as OrganizationAdminPage:

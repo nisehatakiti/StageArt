@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace StageArt\Application\Organization;
 
 use InvalidArgumentException;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationStatus;
+use StageArt\Domain\Role\RoleKey;
 
 final class UpdateOrganizationUseCase
 {

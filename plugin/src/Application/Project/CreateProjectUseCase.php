@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Application\Project;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Reuses OrganizationAuthorizationService as-is (no ProjectAuthorizationService):

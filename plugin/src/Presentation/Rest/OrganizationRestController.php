@@ -15,6 +15,11 @@ use StageArt\Application\Organization\ListOrganizationsForPersonQuery;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Application\Organization\OrganizationOwnerInvariantViolatedException;
+use StageArt\Application\Organization\OwnerTransferCommand;
+use StageArt\Application\Organization\OwnerTransferTargetNotEligibleException;
+use StageArt\Application\Organization\OwnerTransferUseCase;
+use StageArt\Application\Organization\OwnerUserAccountRequiredException;
 use StageArt\Application\Organization\UpdateOrganizationCommand;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use WP_Error;
@@ -38,19 +43,22 @@ final class OrganizationRestController
     private ListOrganizationsUseCase $listOrganizations;
     private UpdateOrganizationUseCase $updateOrganization;
     private DeleteOrganizationUseCase $deleteOrganization;
+    private OwnerTransferUseCase $ownerTransfer;
 
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
         GetOrganizationUseCase $getOrganization,
         ListOrganizationsUseCase $listOrganizations,
         UpdateOrganizationUseCase $updateOrganization,
-        DeleteOrganizationUseCase $deleteOrganization
+        DeleteOrganizationUseCase $deleteOrganization,
+        OwnerTransferUseCase $ownerTransfer
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
         $this->listOrganizations = $listOrganizations;
         $this->updateOrganization = $updateOrganization;
         $this->deleteOrganization = $deleteOrganization;
+        $this->ownerTransfer = $ownerTransfer;
     }
 
     public function register_routes(): void
@@ -82,6 +90,14 @@ final class OrganizationRestController
             [
                 'methods' => 'DELETE',
                 'callback' => [$this, 'delete'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/owner-transfer', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'transferOwner'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -121,6 +137,8 @@ final class OrganizationRestController
             );
 
             return new WP_REST_Response($this->createOrganization->execute($command)->toArray(), 201);
+        } catch (OwnerUserAccountRequiredException $exception) {
+            return new WP_Error('stageart_owner_user_account_required', $exception->getMessage(), ['status' => 409]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -183,6 +201,40 @@ final class OrganizationRestController
             return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (OrganizationNotFoundException $exception) {
             return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function transferOwner(WP_REST_Request $request)
+    {
+        try {
+            $command = new OwnerTransferCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                (string) $request->get_param('new_owner_person_id')
+            );
+
+            $this->ownerTransfer->execute($command);
+
+            return new WP_REST_Response(null, 204);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationOwnerInvariantViolatedException $exception) {
+            return new WP_Error(
+                'stageart_organization_owner_invariant_violated',
+                $exception->getMessage(),
+                ['status' => 409]
+            );
+        } catch (OwnerTransferTargetNotEligibleException $exception) {
+            return new WP_Error(
+                'stageart_owner_transfer_target_not_eligible',
+                $exception->getMessage(),
+                ['status' => 422]
+            );
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }
     }
 

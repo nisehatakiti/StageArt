@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Application\Organization;
 
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
-use StageArt\Domain\Membership\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonRepositoryInterface;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * Single source of truth for Organization Scope decisions: resolves
