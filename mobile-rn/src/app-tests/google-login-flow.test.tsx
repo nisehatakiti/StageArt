@@ -19,6 +19,23 @@ jest.mock('@/auth/googleSignIn', () => ({
   signInWithGoogle: jest.fn(async () => 'mock-google-id-token'),
 }));
 
+// The Jest/RN test renderer never has the real native RNGoogleSignin
+// module registered (same underlying reason as the mock above), so
+// login.tsx's pre-flight checkGoogleSigninModuleStatus() probe against
+// the real react-native TurboModuleRegistry/NativeModules would always
+// report "not found" here, independent of what's actually being tested.
+// Mocked to simulate "module is present" so this test can exercise the
+// happy path; see google-login-module-not-found.test.tsx for the
+// diagnostic gate itself.
+jest.mock('@/auth/googleModuleDiagnostics', () => ({
+  ...jest.requireActual('@/auth/googleModuleDiagnostics'),
+  checkGoogleSigninModuleStatus: jest.fn(() => ({
+    turboModuleFound: true,
+    legacyBridgeModuleFound: false,
+    otherGoogleRelatedKeys: [],
+  })),
+}));
+
 /** Kept in its own file - see login-flow.test.tsx's docblock for why
  * every renderRouter() call needs a dedicated file in this codebase. */
 describe('login flow: Google', () => {

@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GoogleSignInCancelledError, signInWithGoogle } from '@/auth/googleSignIn';
+import { checkGoogleSigninModuleStatus, describeGoogleSigninModuleStatus } from '@/auth/googleModuleDiagnostics';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
@@ -150,6 +151,23 @@ export default function LoginScreen() {
   async function handleGoogleSubmit() {
     setSubmittingGoogle(true);
     setErrorMessage(null);
+
+    const moduleStatus = checkGoogleSigninModuleStatus();
+    const diagnosticSummary = describeGoogleSigninModuleStatus(moduleStatus);
+    console.log(diagnosticSummary);
+
+    if (!moduleStatus.turboModuleFound && !moduleStatus.legacyBridgeModuleFound) {
+      const message = `RNGoogleSigninが現在のビルドに見つかりません。${diagnosticSummary}`;
+      // Alert.alert is an imperative native call, not dependent on this
+      // screen's own re-render cycle - shown alongside (not instead of)
+      // setErrorMessage below so the diagnostic is visible even in the
+      // unlikely case something about this specific screen's state
+      // update path is unreliable on a given device.
+      Alert.alert('Googleサインイン診断', message);
+      setErrorMessage(message);
+      setSubmittingGoogle(false);
+      return;
+    }
 
     try {
       const idToken = await signInWithGoogle();
