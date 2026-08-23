@@ -1,0 +1,265 @@
+/**
+ * Mirrors Backend Result DTOs exactly (field names, snake_case) - see
+ * Phase 5.0's Backend API Mapping. These are the wire types; UI code
+ * should convert to camelCase view models inside src/features/* rather
+ * than importing these directly into components.
+ */
+
+/**
+ * `email_verified`: true means nothing about email verification is
+ * blocking this account (either the EmailCredential is verified, or the
+ * account has no EmailCredential at all - Google-only). Only false when
+ * an EmailCredential exists and is NOT yet verified. See
+ * GetCurrentPersonUseCase.php's own docblock for the full reasoning.
+ *
+ * StageArt Authentication Phase 6: `family_name`/`given_name` are
+ * Person's own basic identifying information (not a new Profile concept
+ * - see Person.php's docblock), null until the user completes
+ * set-name.tsx. Both are null or both are set together - never one
+ * without the other (UpdatePersonNameUseCase requires both).
+ */
+export type CurrentPerson = {
+  id: string;
+  word_press_user_id: number;
+  email_verified: boolean;
+  family_name: string | null;
+  given_name: string | null;
+};
+
+/**
+ * StageArt Authentication Phase 5 wire types (Backend Phase 2 report §2/
+ * §4). `word_press_user_id`/wp_user_id never appears anywhere in these -
+ * the Backend Access Token payload deliberately excludes it (see
+ * JwtAccessTokenIssuer.php's docblock), and this Client must never
+ * display it either (Phase 5 §"UI/UX": no Infrastructure/WordPress terms
+ * in the normal auth UI).
+ *
+ * StageArt Authentication Phase 6: `family_name_hint`/`given_name_hint`
+ * are UI hints only, populated only by a Google login/register when
+ * Google's own ID Token happened to carry them - see
+ * AuthenticationResult.php's docblock. They are never auto-saved as the
+ * Person's actual name; set-name.tsx uses them only as default form
+ * values the user must still confirm/edit.
+ */
+export type AuthenticationResult = {
+  access_token: string;
+  refresh_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  person_id: string;
+  user_account_id: string;
+  is_new_user: boolean;
+  family_name_hint: string | null;
+  given_name_hint: string | null;
+};
+
+export type RefreshAccessTokenResult = {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+};
+
+export type UserAccountResult = {
+  id: string;
+  person_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Organization Scope role from Membership (Authorization.md's OWNER |
+ * MEMBER Organization Role - see RoleKey.php). Deliberately distinct
+ * from Production Scope's PrimaryManager/ProductionDelegate concept;
+ * the two must not be conflated on screen (Phase 5.2 report).
+ */
+export type Organization = {
+  id: string;
+  name: string;
+  type: string | null;
+  description: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  current_person_role: string;
+};
+
+/**
+ * Project is an internal Organization-scoped bridge Domain
+ * (OrganizationAPI.md: "利用者はProjectの存在を意識しない") used here only
+ * to resolve which Organization a Production belongs to
+ * (Production.project_id -> Project.organization_id). Never rendered as
+ * a user-facing concept.
+ */
+export type Project = {
+  id: string;
+  organization_id: string;
+  name: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  current_person_role: string;
+};
+
+/**
+ * `title_heading` (Backend Phase 7.0, ProductionTitleHeadingPolicy.md):
+ * an independent, optional heading displayed above `name` when set -
+ * never concatenated into it. Normalized server-side (empty string ->
+ * null), so this Client only ever needs to check for null/non-null, not
+ * distinguish null from "".
+ */
+export type Production = {
+  id: string;
+  project_id: string;
+  name: string;
+  title_heading: string | null;
+  status: string;
+  primary_manager_person_id: string;
+  created_at: string;
+  updated_at: string;
+  is_primary_manager: boolean;
+  delegate_role: string | null;
+};
+
+export type Participant = {
+  id: string;
+  production_id: string;
+  subject_type: string;
+  subject_id: string;
+  participant_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TimetableItem = {
+  id: string;
+  timetable_id: string;
+  title: string;
+  description: string | null;
+  start_date_time: string;
+  end_date_time: string | null;
+  display_order: number | null;
+  category: string | null;
+  venue: string | null;
+  participant_type: string | null;
+  target_person_ids: string[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduleComment = {
+  id: string;
+  rehearsal_id: string | null;
+  timetable_item_id: string | null;
+  author_person_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * `is_read` (Backend Phase 7.0, NotificationPolicy.md's "未読 / 既読"):
+ * resolved server-side per requester from a NotificationReadState row -
+ * unread means no such row exists yet for this Person. Never derived or
+ * persisted client-side; this Client only ever reflects what the
+ * Backend last returned.
+ */
+export type NotificationFact = {
+  id: string;
+  type: string;
+  production_id: string;
+  rehearsal_id: string;
+  timetable_id: string;
+  version: number;
+  published_by: string;
+  published_at: string;
+  change_summary: string | null;
+  created_at: string;
+  is_read: boolean;
+};
+
+export type Rehearsal = {
+  id: string;
+  production_id: string;
+  title: string | null;
+  description: string | null;
+  start_date_time: string | null;
+  end_date_time: string | null;
+  timezone: string | null;
+  location: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * `phase` distinguishes SCHEDULE_ADJUSTMENT (稽古日程の空き確認, status
+ * one of AVAILABLE/UNAVAILABLE/UNANSWERED) from ATTENDANCE_CONFIRMATION
+ * (出欠確定, status one of ATTENDING/NOT_ATTENDING/UNANSWERED, plus the
+ * actual day-of result ATTENDED/LATE/ABSENT recorded afterward) - see
+ * RehearsalAttendanceStatus.php. Which values are legal for a write
+ * depends on both `phase` and the record's current `status`; this
+ * Client never re-derives that from status/phase strings, only sends
+ * what the user picked and shows the Backend's own rejection if it was
+ * not a legal move.
+ */
+export type RehearsalAttendance = {
+  id: string;
+  rehearsal_id: string;
+  person_id: string;
+  phase: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PushPreference = {
+  enabled: boolean;
+  updated_at: string | null;
+};
+
+/**
+ * GET /productions/{id}/accounting (Backend Phase 6.0's
+ * GetProductionAccountingSummaryUseCase). has_budget / has_actual let the
+ * client distinguish "not set" from "zero" - see AccountingPolicy.md's
+ * "Accounting未開始であることと、Accounting残高が0円であることは別の状態
+ * として扱う". total_budget is null when has_budget is false;
+ * total_variance is null when has_budget is false (Variance cannot be
+ * computed without a plan to compare against).
+ */
+export type ProductionAccountingSummary = {
+  production_id: string;
+  has_budget: boolean;
+  active_budget_id: string | null;
+  total_budget: number | null;
+  has_actual: boolean;
+  total_actual: number;
+  total_variance: number | null;
+  currency: string;
+};
+
+/**
+ * GET /me/dashboard (Backend Phase 7.3's GetMyDashboardUseCase). Person-
+ * centric, cross-Organization/Production - never scoped by a Production
+ * ID, since it is always "my own" data resolved server-side from the
+ * authenticated User. `attendance_status` mirrors RehearsalAttendance's
+ * own status vocabulary (see RehearsalAttendance's `status` field), not
+ * a Dashboard-specific enum.
+ */
+export type UpcomingRehearsal = {
+  rehearsal_id: string;
+  production_id: string;
+  production_name: string;
+  title: string | null;
+  start_date_time: string | null;
+  end_date_time: string | null;
+  location: string | null;
+  attendance_status: string;
+};
+
+export type MyDashboard = {
+  upcoming_rehearsals: UpcomingRehearsal[];
+  notifications: NotificationFact[];
+};
