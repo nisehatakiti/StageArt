@@ -12,18 +12,16 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * Logout is reachable two ways, both exercising the exact same
- * useLogout() sequence (Auth state + SecureStore clear + Query cache
- * clear + navigate to /login): via Home -> Profile (プロフィール, one of
- * Home's own 5 primary entry points, verified here), and via an explicit
- * button on Home itself (StageArt Google/ログアウト優先修正 instruction -
- * see home-logout-button.test.tsx / home-logout-button-cancel.test.tsx,
- * kept in separate files matching this directory's one-scenario-per-file
- * convention for full app mounts).
+ * StageArt Google/ログアウト優先修正: an explicit logout button lives on
+ * Home itself now, in addition to the existing Profile-based one (see
+ * home-logout.test.tsx) - reuses the exact same useLogout() sequence and
+ * Alert.alert confirmation pattern as MyPageContent.tsx's button.
  */
-describe('Home -> Profile: logout button', () => {
-  it('uses the full logout sequence and navigates to /login', async () => {
-    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+describe('Home: explicit logout button', () => {
+  it('shows a confirmation dialog, then logs out and navigates to /login', async () => {
+    jest.spyOn(Alert, 'alert').mockImplementation((title, message, buttons) => {
+      expect(title).toBe('ログアウト');
+      expect(message).toBe('ログアウトしますか？');
       const destructive = buttons?.find((button) => button.style === 'destructive');
       destructive?.onPress?.();
     });
@@ -38,11 +36,8 @@ describe('Home -> Profile: logout button', () => {
 
     renderRouter('src/app', { initialUrl: '/home' });
 
-    await waitFor(() => expect(screen.getByTestId('home-nav-profile')).toBeVisible());
-    fireEvent.press(screen.getByTestId('home-nav-profile'));
-
-    await waitFor(() => expect(screen.getByTestId('mypage-logout-button')).toBeVisible());
-    fireEvent.press(screen.getByTestId('mypage-logout-button'));
+    await waitFor(() => expect(screen.getByTestId('home-logout-button')).toBeVisible());
+    fireEvent.press(screen.getByTestId('home-logout-button'));
 
     await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
   });

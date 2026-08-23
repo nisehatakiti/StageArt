@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { AppShell } from '@/components/app-shell';
 import { OrganizationTile } from '@/components/organization-tile';
@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { buildDashboardViewModel, type DashboardNotificationViewModel, type UpcomingRehearsalViewModel } from '@/features/dashboard/viewModel';
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
+import { useLogout } from '@/features/mypage/useLogout';
 import { useOrganizationContext } from '@/features/organization/OrganizationContext';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useOrganizationProductions } from '@/features/production/useProductions';
@@ -170,8 +171,52 @@ export default function HomeScreen() {
             )}
           </ThemedView>
         )}
+
+        <HomeLogoutButton />
       </ScrollView>
     </AppShell>
+  );
+}
+
+/**
+ * StageArt Google/ログアウト優先修正: an explicit logout entry point on
+ * Home itself, in addition to the existing one on Profile (§04's earlier
+ * "no logout in Home's header" decision only ruled out the header - this
+ * is a plain in-content button, and today's instruction is explicit
+ * about wanting it reachable from Home directly). Reuses the exact same
+ * useLogout() sequence (Auth state + SecureStore + Query cache clear +
+ * navigate to /login) and the same Alert.alert confirmation pattern as
+ * MyPageContent.tsx's logout button, for consistency.
+ */
+function HomeLogoutButton() {
+  const logout = useLogout();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = () => {
+    Alert.alert('ログアウト', 'ログアウトしますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: 'ログアウト',
+        style: 'destructive',
+        onPress: async () => {
+          setLoggingOut(true);
+          await logout();
+        },
+      },
+    ]);
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handleLogout}
+      disabled={loggingOut}
+      testID="home-logout-button"
+      accessibilityRole="button"
+      accessibilityLabel="ログアウト"
+      style={styles.logoutButton}
+    >
+      {loggingOut ? <ActivityIndicator testID="home-logout-loading" /> : <ThemedText type="linkPrimary">ログアウト</ThemedText>}
+    </TouchableOpacity>
   );
 }
 
@@ -401,5 +446,9 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#3c87f7',
+  },
+  logoutButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
   },
 });
