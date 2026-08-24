@@ -72,6 +72,15 @@ export default function RootLayout() {
               <Stack.Screen name="viewing-history" options={{ title: '観劇履歴' }} />
               <Stack.Screen name="participating-productions" options={{ title: '参加している公演・活動' }} />
               <Stack.Screen name="production/[id]" options={{ headerShown: false }} />
+              {/* StageArt Web First Phase 2: AppShell already renders its
+                  own branded logo header on every one of these screens
+                  (create/publish flows and the public /o/* pages), so
+                  the Stack's own header stays off here too, matching
+                  home/discover/favorites/profile above. */}
+              <Stack.Screen name="organizations/create" options={{ headerShown: false }} />
+              <Stack.Screen name="organizations/[id]/productions/create" options={{ headerShown: false }} />
+              <Stack.Screen name="o/[organizationSlug]/index" options={{ headerShown: false }} />
+              <Stack.Screen name="o/[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
             </Stack>
           </OrganizationProvider>
         </AuthProvider>

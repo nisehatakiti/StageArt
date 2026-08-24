@@ -73,15 +73,39 @@ export type UserAccountResult = {
  * from Production Scope's PrimaryManager/ProductionDelegate concept;
  * the two must not be conflated on screen (Phase 5.2 report).
  */
+/**
+ * StageArt Web First Phase 2: `slug`/`published_at` are additive - a
+ * pre-existing Organization may still have `slug: null` (no public page
+ * yet). `published_at: null` means unpublished regardless of `slug`
+ * being set (Organization.publish() requires a slug, but a slug alone
+ * does not imply publication) - see Organization.php's docblock.
+ */
 export type Organization = {
   id: string;
   name: string;
   type: string | null;
   description: string | null;
   status: string;
+  slug: string | null;
+  published_at: string | null;
   created_at: string;
   updated_at: string;
   current_person_role: string;
+};
+
+/**
+ * GET /organizations/by-slug/{slug} (Backend Web First Phase 2's
+ * GetPublicOrganizationBySlugUseCase). Deliberately narrower than
+ * `Organization` above - never carries `type`/`status`/internal fields,
+ * since this is the public, unauthenticated view. Never appears mixed
+ * with `Organization` in the same list/screen.
+ */
+export type PublicOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  published_at: string;
 };
 
 /**
@@ -108,17 +132,45 @@ export type Project = {
  * null), so this Client only ever needs to check for null/non-null, not
  * distinguish null from "".
  */
+/**
+ * StageArt Web First Phase 2: `slug`/`published_at` are additive, same
+ * null-until-set treatment as Organization's own `slug`/`published_at`
+ * above.
+ */
 export type Production = {
   id: string;
   project_id: string;
   name: string;
   title_heading: string | null;
   status: string;
+  slug: string | null;
+  published_at: string | null;
   primary_manager_person_id: string;
   created_at: string;
   updated_at: string;
   is_primary_manager: boolean;
   delegate_role: string | null;
+};
+
+/**
+ * GET /productions/by-slug/{slug} (Backend Web First Phase 2's
+ * GetPublicProductionBySlugUseCase). Never carries `status`/
+ * `primary_manager_person_id`. `organization` is the resolved parent
+ * Organization's own public identity (via Production -> Project ->
+ * Organization), included so the public Production page can render its
+ * own breadcrumb/branding without a second fetch.
+ */
+export type PublicProduction = {
+  id: string;
+  name: string;
+  slug: string;
+  title_heading: string | null;
+  published_at: string;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  };
 };
 
 export type Participant = {

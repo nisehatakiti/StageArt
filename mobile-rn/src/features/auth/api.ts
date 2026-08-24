@@ -1,49 +1,13 @@
 import type { ApiClient } from '@/api/client';
-import { getApiBaseUrl } from '@/api/config';
-import { ApiError, NetworkError } from '@/api/errors';
+import { publicPost } from '@/api/publicClient';
 import type { AuthenticationResult, RefreshAccessTokenResult, UserAccountResult } from '@/types/api';
 
 /**
- * The public (no StageArt session required yet) endpoints from the
- * Backend Phase 2 report: establishing a session is exactly what these
- * do, so they cannot go through ApiClient (which requires an Access
- * Token to already exist - see ApiClient.authHeader()). This is a
- * deliberately small, separate fetch wrapper mirroring ApiClient's own
- * error-decoding so callers still get the same ApiError/NetworkError
- * shape as every other API call in this app.
+ * These endpoints establish a StageArt session, so they cannot go
+ * through ApiClient (which requires an Access Token to already exist -
+ * see ApiClient.authHeader()); they use the shared publicPost() instead
+ * (see src/api/publicClient.ts).
  */
-async function publicPost<T>(path: string, body?: unknown): Promise<T> {
-  let response: Response;
-
-  try {
-    response = await fetch(`${getApiBaseUrl()}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch (cause) {
-    throw new NetworkError(cause);
-  }
-
-  if (response.ok) {
-    const text = await response.text();
-    return (text.length > 0 ? JSON.parse(text) : null) as T;
-  }
-
-  let message = `Request failed (${response.status})`;
-  let code: string | undefined;
-
-  try {
-    const decoded = (await response.json()) as { message?: string; code?: string };
-    message = decoded.message ?? message;
-    code = decoded.code;
-  } catch {
-    // Non-JSON error body: keep the generic message above.
-  }
-
-  throw new ApiError(response.status, message, code);
-}
-
 export function registerWithEmail(email: string, password: string): Promise<AuthenticationResult> {
   return publicPost<AuthenticationResult>('/auth/email/register', { email, password });
 }

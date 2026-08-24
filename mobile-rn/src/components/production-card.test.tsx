@@ -10,6 +10,8 @@ const baseProduction: Production = {
   name: '○○公演2026',
   title_heading: null,
   status: 'ACTIVE',
+  slug: null,
+  published_at: null,
   primary_manager_person_id: 'person-1',
   created_at: '',
   updated_at: '',

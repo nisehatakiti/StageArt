@@ -116,6 +116,19 @@ export default function HomeScreen() {
           </ThemedView>
         )}
 
+        {!organizationsLoading && !organizationsError && (
+          <ThemedView style={styles.centered}>
+            <TouchableOpacity
+              testID="home-create-organization"
+              onPress={() => router.push('/organizations/create')}
+              accessibilityRole="button"
+              accessibilityLabel="団体を作る"
+            >
+              <ThemedText type="link">＋ 団体を作る</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        )}
+
         {hasOrganizations && (
           <ThemedView style={styles.managementSection}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>
