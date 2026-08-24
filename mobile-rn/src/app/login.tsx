@@ -5,10 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
+import { StageArtLogo } from '@/components/brand/StageArtLogo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BrandColors, Spacing } from '@/constants/theme';
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -211,9 +212,9 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.brand}>
-            StageArt
-          </ThemedText>
+          <ThemedView style={styles.brand}>
+            <StageArtLogo width={200} height={60} />
+          </ThemedView>
 
           <TouchableOpacity
             testID="login-google-button"
@@ -333,7 +334,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   flex: { flex: 1 },
   container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { textAlign: 'center', marginBottom: Spacing.two },
+  brand: { alignItems: 'center', marginBottom: Spacing.two },
   googleButton: {
     flexDirection: 'row',
     borderWidth: 1,
@@ -358,7 +359,9 @@ const styles = StyleSheet.create({
   },
   error: { color: '#a6483a' },
   button: {
-    backgroundColor: '#4a3f7a',
+    // StageArt Web First Phase 1 (docs/03-BrandIdentity.md): warm amber,
+    // not the earlier unrelated purple.
+    backgroundColor: BrandColors.warmAmber,
     borderRadius: 8,
     paddingVertical: Spacing.three,
     alignItems: 'center',

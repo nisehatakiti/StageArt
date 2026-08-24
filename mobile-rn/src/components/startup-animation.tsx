@@ -1,35 +1,38 @@
 import { useEffect, useMemo } from 'react';
-import { AccessibilityInfo, Animated, Easing, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { StageArtIcon } from '@/components/brand/StageArtIcon';
+import { StageArtLogo } from '@/components/brand/StageArtLogo';
+import { BrandColors } from '@/constants/theme';
 
-const ANIMATION_DURATION_MS = 1800;
+const ANIMATION_DURATION_MS = 1100;
 
 /**
- * BusinessFlowUXClarifications.md §12 "アプリ起動時アニメーション"
- * (1.5-3.0秒, 幕が開く/脚立/Sの筆致モチーフ) - a curtain-opening motif:
- * two panels (in the app's accent red) start covering the full screen
- * and slide apart to reveal the StageArt wordmark underneath, which
- * simultaneously fades/scales in. The official brand animation asset
- * (脚立/Sの筆致) does not exist in this repo any more than the static
- * logo does (see app-shell.tsx's docblock) - this is a simple,
- * disclosed placeholder built from the same tokens as the rest of this
- * Phase's Visual Design work, not an invented brand asset.
+ * StageArt Web First Phase 1 (docs/03-StartupExperience.md): the
+ * confirmed sequence - blackout -> warm overhead stage light enters ->
+ * beige circular S+A icon emerges -> StageArt wordmark fades in ->
+ * transition to destination. Total ~0.8-1.2s. Supersedes the earlier
+ * curtain-opening placeholder (see git history) - that was itself a
+ * disclosed placeholder, not an official asset, and this Blueprint
+ * update explicitly retires it.
+ *
+ * Deliberately restrained per docs/03-BrandIdentity.md §4 ("avoid
+ * excessive gradients, glass effects, neon, decorative floating
+ * shapes"): the "light" is a single soft warm glow fading in behind the
+ * icon, not a literal beam or sci-fi effect.
  *
  * Respects the OS-level "reduce motion" accessibility setting - skips
- * straight to onFinish() without animating rather than forcing motion
- * on a user who has asked their device to minimize it.
+ * straight to onFinish() without animating.
  */
 export function StartupAnimation({ onFinish }: { onFinish: () => void }) {
-  // Animated.Value instances just need a stable identity across renders
+  // Animated.Value instances need a stable identity across renders
   // (Animated mutates them internally via .setValue()/.timing(), never
   // via React re-render) - useMemo, not useRef, since react-hooks/refs
   // (React Compiler's stricter ESLint rule set) flags reading a ref's
-  // .current during render, including indirectly via .interpolate()
-  // below.
-  const curtainLeft = useMemo(() => new Animated.Value(0), []);
-  const curtainRight = useMemo(() => new Animated.Value(0), []);
+  // .current during render, including indirectly via .interpolate().
+  const glowOpacity = useMemo(() => new Animated.Value(0), []);
+  const iconOpacity = useMemo(() => new Animated.Value(0), []);
+  const iconScale = useMemo(() => new Animated.Value(0.85), []);
   const wordmarkOpacity = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
@@ -46,13 +49,14 @@ export function StartupAnimation({ onFinish }: { onFinish: () => void }) {
       }
 
       Animated.sequence([
-        Animated.delay(250),
+        Animated.delay(150),
         Animated.parallel([
-          Animated.timing(curtainLeft, { toValue: -1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(curtainRight, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(wordmarkOpacity, { toValue: 1, duration: 600, delay: 200, useNativeDriver: true }),
+          Animated.timing(glowOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(iconOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(iconScale, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         ]),
-        Animated.delay(400),
+        Animated.timing(wordmarkOpacity, { toValue: 1, duration: 330, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.delay(300),
       ]).start(() => {
         if (!cancelled) onFinish();
       });
@@ -65,44 +69,36 @@ export function StartupAnimation({ onFinish }: { onFinish: () => void }) {
   }, []);
 
   return (
-    <ThemedView style={styles.container} testID="startup-animation">
-      <Animated.View style={[styles.wordmarkWrap, { opacity: wordmarkOpacity }]}>
-        <ThemedText type="title" themeColor="accent" style={styles.wordmark}>
-          StageArt
-        </ThemedText>
+    <View style={styles.container} testID="startup-animation">
+      <Animated.View style={[styles.glow, { opacity: glowOpacity }]} />
+      <Animated.View style={[styles.iconWrap, { opacity: iconOpacity, transform: [{ scale: iconScale }] }]}>
+        <StageArtIcon size={112} />
       </Animated.View>
-
-      <Animated.View
-        style={[
-          styles.curtain,
-          styles.curtainLeft,
-          { transform: [{ translateX: curtainLeft.interpolate({ inputRange: [-1, 0], outputRange: ['-100%', '0%'] }) }] },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.curtain,
-          styles.curtainRight,
-          { transform: [{ translateX: curtainRight.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }] },
-        ]}
-      />
-    </ThemedView>
+      <Animated.View style={[styles.logoWrap, { opacity: wordmarkOpacity }]}>
+        <StageArtLogo width={240} height={72} />
+      </Animated.View>
+    </View>
   );
 }
 
 export { ANIMATION_DURATION_MS };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  wordmarkWrap: { alignItems: 'center' },
-  wordmark: { fontSize: 40, lineHeight: 46, fontWeight: '800' },
-  curtain: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: '50%',
-    backgroundColor: '#C4432F',
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BrandColors.blackoutBlack,
+    gap: 20,
   },
-  curtainLeft: { left: 0 },
-  curtainRight: { right: 0 },
+  glow: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: BrandColors.warmGold,
+    opacity: 0.25,
+  },
+  iconWrap: { alignItems: 'center' },
+  logoWrap: { alignItems: 'center' },
 });

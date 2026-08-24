@@ -17,7 +17,11 @@ import { useOrganizationProductions } from '@/features/production/useProductions
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { getErrorMessage } from '@/utils/errorMessage';
 
-type NavEntry = { key: string; label: string; route: '/discover-organizations' | '/discover-productions' | '/viewing-history' | '/participating-productions' | '/profile' };
+type NavEntry = {
+  key: string;
+  label: string;
+  route: '/discover-organizations' | '/discover-productions' | '/viewing-history' | '/participating-productions' | '/profile' | '/favorites';
+};
 
 /**
  * BusinessFlowUXClarifications.md §02: a newly-registered general user
@@ -272,6 +276,7 @@ function PrimaryNavGrid() {
     { key: 'discover-productions', label: '公演・活動を探す', route: '/discover-productions' },
     { key: 'participating-productions', label: '参加している\n公演・活動', route: '/participating-productions' },
     { key: 'viewing-history', label: '観劇履歴', route: '/viewing-history' },
+    { key: 'favorites', label: 'お気に入り', route: '/favorites' },
     { key: 'profile', label: 'プロフィール', route: '/profile' },
   ];
 
@@ -331,68 +336,71 @@ function PersonalOverviewSection({
     );
   }
 
+  const hasRehearsals = upcomingRehearsals.length > 0;
+  const hasNotifications = notifications.length > 0;
+
+  // StageArt Web First Phase 1 (docs/04-HomeRoleBasedMenu.md §02/§10,
+  // docs/04-DomainModel/Follow.md "Home Information Priority"): "次回
+  // 稽古なし" / "お知らせなし" are explicitly prohibited placeholder text
+  // - a section (including its own header) only ever renders when real
+  // data exists for it. No information at all means this whole section
+  // renders nothing, not an empty-state message.
+  if (!hasRehearsals && !hasNotifications) {
+    return null;
+  }
+
   return (
     <ThemedView style={styles.section}>
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        次の稽古
-      </ThemedText>
-
-      {upcomingRehearsals.length === 0 && (
-        <ThemedText testID="upcoming-rehearsals-empty" themeColor="textSecondary" style={styles.sectionBody}>
-          今後の稽古予定はありません。
-        </ThemedText>
+      {hasRehearsals && (
+        <>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            次の稽古
+          </ThemedText>
+          <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
+            {upcomingRehearsals.map((rehearsal) => (
+              <TouchableOpacity
+                key={rehearsal.rehearsalId}
+                testID={`upcoming-rehearsal-row-${rehearsal.rehearsalId}`}
+                style={styles.card}
+                onPress={() => router.push(`/production/${rehearsal.productionId}/schedule/attendance/${rehearsal.rehearsalId}`)}
+              >
+                <ThemedView style={styles.titleRow}>
+                  {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
+                  <ThemedText type="smallBold">{rehearsal.productionName}</ThemedText>
+                </ThemedView>
+                <ThemedText type="small">{rehearsal.title ?? '稽古'}</ThemedText>
+                {rehearsal.dateDisplay && (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {rehearsal.dateDisplay}
+                    {rehearsal.timeDisplay ? ` ${rehearsal.timeDisplay}` : ''}
+                    {rehearsal.location ? ` ・ ${rehearsal.location}` : ''}
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ThemedView>
+        </>
       )}
 
-      {upcomingRehearsals.length > 0 && (
-        <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
-          {upcomingRehearsals.map((rehearsal) => (
-            <TouchableOpacity
-              key={rehearsal.rehearsalId}
-              testID={`upcoming-rehearsal-row-${rehearsal.rehearsalId}`}
-              style={styles.card}
-              onPress={() => router.push(`/production/${rehearsal.productionId}/schedule/attendance/${rehearsal.rehearsalId}`)}
-            >
-              <ThemedView style={styles.titleRow}>
-                {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
-                <ThemedText type="smallBold">{rehearsal.productionName}</ThemedText>
-              </ThemedView>
-              <ThemedText type="small">{rehearsal.title ?? '稽古'}</ThemedText>
-              {rehearsal.dateDisplay && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {rehearsal.dateDisplay}
-                  {rehearsal.timeDisplay ? ` ${rehearsal.timeDisplay}` : ''}
-                  {rehearsal.location ? ` ・ ${rehearsal.location}` : ''}
-                </ThemedText>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ThemedView>
-      )}
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        お知らせ
-      </ThemedText>
-
-      {notifications.length === 0 && (
-        <ThemedText testID="home-notifications-empty" themeColor="textSecondary" style={styles.sectionBody}>
-          お知らせはまだありません。
-        </ThemedText>
-      )}
-
-      {notifications.length > 0 && (
-        <ThemedView testID="home-notifications-list" style={styles.list}>
-          {notifications.map((notification) => (
-            <TouchableOpacity
-              key={notification.id}
-              testID={`home-notification-row-${notification.id}`}
-              style={styles.card}
-              onPress={() => router.push(`/production/${notification.productionId}/notifications`)}
-            >
-              <ThemedText type={notification.isRead ? 'default' : 'smallBold'}>{notification.title}</ThemedText>
-              {notification.summary && <ThemedText type="small">{notification.summary}</ThemedText>}
-            </TouchableOpacity>
-          ))}
-        </ThemedView>
+      {hasNotifications && (
+        <>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            お知らせ
+          </ThemedText>
+          <ThemedView testID="home-notifications-list" style={styles.list}>
+            {notifications.map((notification) => (
+              <TouchableOpacity
+                key={notification.id}
+                testID={`home-notification-row-${notification.id}`}
+                style={styles.card}
+                onPress={() => router.push(`/production/${notification.productionId}/notifications`)}
+              >
+                <ThemedText type={notification.isRead ? 'default' : 'smallBold'}>{notification.title}</ThemedText>
+                {notification.summary && <ThemedText type="small">{notification.summary}</ThemedText>}
+              </TouchableOpacity>
+            ))}
+          </ThemedView>
+        </>
       )}
     </ThemedView>
   );

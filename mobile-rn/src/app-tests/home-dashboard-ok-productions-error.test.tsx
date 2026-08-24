@@ -28,8 +28,11 @@ describe('Home: Production Navigator fails, Dashboard does not', () => {
     renderRouter('src/app', { initialUrl: '/home' });
 
     await waitFor(() => expect(screen.getByTestId('productions-error')).toBeVisible());
-    // The unrelated Personal Overview section must render normally regardless.
-    await waitFor(() => expect(screen.getByTestId('upcoming-rehearsals-empty')).toBeVisible());
-    expect(screen.getByTestId('home-notifications-empty')).toBeVisible();
+    // The unrelated Personal Overview section must render normally
+    // regardless (i.e. not itself in an error/loading state) - both
+    // lists are empty here, so per docs/04-HomeRoleBasedMenu.md it
+    // renders nothing, which is the "normal" outcome being asserted.
+    expect(screen.queryByTestId('dashboard-loading')).toBeNull();
+    expect(screen.queryByTestId('dashboard-error')).toBeNull();
   });
 });

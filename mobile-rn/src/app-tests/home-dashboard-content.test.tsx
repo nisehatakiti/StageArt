@@ -128,13 +128,20 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
     expect(mockPush).toHaveBeenCalledWith('/production/prod-2/notifications');
   });
 
-  it('shows independent Empty States when both lists are empty, not an error', async () => {
+  /**
+   * StageArt Web First Phase 1 (docs/04-HomeRoleBasedMenu.md §02/§10,
+   * docs/04-DomainModel/Follow.md): "次回稽古なし"/"お知らせなし" are
+   * explicitly prohibited placeholder text - when both lists are empty,
+   * Personal Overview renders nothing at all (not an empty-state
+   * message, and not an error).
+   */
+  it('renders nothing for Personal Overview when both lists are empty, not an error', async () => {
     await renderHome({ upcoming_rehearsals: [], notifications: [] });
 
-    await waitFor(() => expect(screen.getByTestId('upcoming-rehearsals-empty')).toBeVisible());
-    expect(screen.getByText('今後の稽古予定はありません。')).toBeVisible();
-    expect(screen.getByTestId('home-notifications-empty')).toBeVisible();
-    expect(screen.getByText('お知らせはまだありません。')).toBeVisible();
+    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    expect(screen.queryByTestId('upcoming-rehearsals-list')).toBeNull();
+    expect(screen.queryByTestId('home-notifications-list')).toBeNull();
+    expect(screen.queryByTestId('dashboard-loading')).toBeNull();
     expect(screen.queryByTestId('dashboard-error')).toBeNull();
   });
 });

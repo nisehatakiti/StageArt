@@ -41,6 +41,27 @@ export const Colors = {
   },
 } as const;
 
+/**
+ * StageArt Web First Phase 1 (docs/03-BrandIdentity.md): the canonical
+ * visual identity - "blackout darkness + warm stage lighting", not the
+ * older ポップ・親しみやすい red-orange direction above. Kept as a
+ * separate, always-the-same-regardless-of-OS-theme constant (not merged
+ * into `Colors.light`/`Colors.dark`) because the brand doc's own default
+ * expression is Blackout Black regardless of the user's system light/
+ * dark preference - it's a fixed identity for brand-carrying surfaces
+ * (startup, the canonical icon/logo, the Web navigation shell), not a
+ * dark-mode variant of the existing screens' theme. Existing screens and
+ * their `Colors`/`ThemeColor` usage above are untouched by this addition.
+ */
+export const BrandColors = {
+  blackoutBlack: '#0A0A0A',
+  stageBeige: '#E8D7B8',
+  warmAmber: '#C6892B',
+  warmGold: '#E2B15A',
+  stageWarmWhite: '#F0D08A',
+  softLight: '#FFF6E6',
+} as const;
+
 /** Rounded-corner scale (Blueprint §11: "カードや主要ボタンには適度な丸みを持
  * たせる") - a small set of named radii rather than ad-hoc numbers per
  * screen. */
