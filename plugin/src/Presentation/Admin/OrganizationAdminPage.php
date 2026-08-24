@@ -170,6 +170,9 @@ final class OrganizationAdminPage
         echo '<table class="form-table"><tbody>';
         echo '<tr><th><label for="stageart-name">' . esc_html__('Name', 'stageart')
             . '</label></th><td><input type="text" id="stageart-name" name="name" class="regular-text" required></td></tr>';
+        echo '<tr><th><label for="stageart-slug">' . esc_html__('Slug', 'stageart')
+            . '</label></th><td><input type="text" id="stageart-slug" name="slug" class="regular-text" required pattern="[a-z0-9]+(-[a-z0-9]+)*" title="'
+            . esc_attr__('Lowercase letters, numbers, and hyphens only', 'stageart') . '"></td></tr>';
         echo '<tr><th><label for="stageart-type">' . esc_html__('Type', 'stageart')
             . '</label></th><td><input type="text" id="stageart-type" name="type" class="regular-text"></td></tr>';
         echo '<tr><th><label for="stageart-description">' . esc_html__('Description', 'stageart')
@@ -266,6 +269,7 @@ final class OrganizationAdminPage
             $this->createOrganization->execute(new CreateOrganizationCommand(
                 get_current_user_id(),
                 isset($_POST['name']) ? sanitize_text_field(wp_unslash($_POST['name'])) : '',
+                isset($_POST['slug']) ? sanitize_text_field(wp_unslash($_POST['slug'])) : '',
                 $this->postStringOrNull('type'),
                 $this->postStringOrNull('description')
             ));

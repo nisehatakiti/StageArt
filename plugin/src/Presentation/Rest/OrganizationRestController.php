@@ -11,11 +11,14 @@ use StageArt\Application\Organization\DeleteOrganizationCommand;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
 use StageArt\Application\Organization\GetOrganizationQuery;
 use StageArt\Application\Organization\GetOrganizationUseCase;
+use StageArt\Application\Organization\GetPublicOrganizationBySlugQuery;
+use StageArt\Application\Organization\GetPublicOrganizationBySlugUseCase;
 use StageArt\Application\Organization\ListOrganizationsForPersonQuery;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Organization\OrganizationOwnerInvariantViolatedException;
+use StageArt\Application\Organization\OrganizationSlugAlreadyTakenException;
 use StageArt\Application\Organization\OwnerTransferCommand;
 use StageArt\Application\Organization\OwnerTransferTargetNotEligibleException;
 use StageArt\Application\Organization\OwnerTransferUseCase;
@@ -33,6 +36,14 @@ use WP_REST_Response;
  * mapped to a 403 here. Both steps run server-side before any data is
  * touched, per SecurityArchitecture.md's "authentication alone does not
  * grant access to an operation."
+ *
+ * StageArt Web First Phase 2: `getBySlug()` is the one deliberate
+ * exception - a public, unauthenticated read path for
+ * `stageart.top/{organization-slug}` (permission_callback
+ * `__return_true`, matching the existing precedent from
+ * AuthenticationRestController). It never touches
+ * OrganizationAuthorizationService and only ever returns the narrow
+ * PublicOrganizationResult, never the authenticated OrganizationResult.
  */
 final class OrganizationRestController
 {
@@ -40,6 +51,7 @@ final class OrganizationRestController
 
     private CreateOrganizationUseCase $createOrganization;
     private GetOrganizationUseCase $getOrganization;
+    private GetPublicOrganizationBySlugUseCase $getPublicOrganizationBySlug;
     private ListOrganizationsUseCase $listOrganizations;
     private UpdateOrganizationUseCase $updateOrganization;
     private DeleteOrganizationUseCase $deleteOrganization;
@@ -48,6 +60,7 @@ final class OrganizationRestController
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
         GetOrganizationUseCase $getOrganization,
+        GetPublicOrganizationBySlugUseCase $getPublicOrganizationBySlug,
         ListOrganizationsUseCase $listOrganizations,
         UpdateOrganizationUseCase $updateOrganization,
         DeleteOrganizationUseCase $deleteOrganization,
@@ -55,6 +68,7 @@ final class OrganizationRestController
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
+        $this->getPublicOrganizationBySlug = $getPublicOrganizationBySlug;
         $this->listOrganizations = $listOrganizations;
         $this->updateOrganization = $updateOrganization;
         $this->deleteOrganization = $deleteOrganization;
@@ -73,6 +87,14 @@ final class OrganizationRestController
                 'methods' => 'POST',
                 'callback' => [$this, 'create'],
                 'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/organizations/by-slug/(?P<slug>[^/]+)', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'getBySlug'],
+                'permission_callback' => '__return_true',
             ],
         ]);
 
@@ -132,6 +154,7 @@ final class OrganizationRestController
             $command = new CreateOrganizationCommand(
                 get_current_user_id(),
                 (string) $request->get_param('name'),
+                (string) $request->get_param('slug'),
                 $this->stringOrNull($request->get_param('type')),
                 $this->stringOrNull($request->get_param('description'))
             );
@@ -139,6 +162,8 @@ final class OrganizationRestController
             return new WP_REST_Response($this->createOrganization->execute($command)->toArray(), 201);
         } catch (OwnerUserAccountRequiredException $exception) {
             return new WP_Error('stageart_owner_user_account_required', $exception->getMessage(), ['status' => 409]);
+        } catch (OrganizationSlugAlreadyTakenException $exception) {
+            return new WP_Error('stageart_organization_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -165,16 +190,35 @@ final class OrganizationRestController
     /**
      * @return WP_REST_Response|WP_Error
      */
+    public function getBySlug(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetPublicOrganizationBySlugQuery((string) $request->get_param('slug'));
+
+            return new WP_REST_Response($this->getPublicOrganizationBySlug->execute($query)->toArray(), 200);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
     public function update(WP_REST_Request $request)
     {
         try {
+            $slugParam = $request->get_param('slug');
+            $publishedParam = $request->get_param('published');
+
             $command = new UpdateOrganizationCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('name'),
                 $this->stringOrNull($request->get_param('type')),
                 $this->stringOrNull($request->get_param('description')),
-                (string) $request->get_param('status')
+                (string) $request->get_param('status'),
+                $this->stringOrNull($slugParam),
+                $publishedParam === null ? null : (bool) $publishedParam
             );
 
             return new WP_REST_Response($this->updateOrganization->execute($command)->toArray(), 200);
@@ -182,6 +226,8 @@ final class OrganizationRestController
             return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (OrganizationNotFoundException $exception) {
             return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (OrganizationSlugAlreadyTakenException $exception) {
+            return new WP_Error('stageart_organization_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }

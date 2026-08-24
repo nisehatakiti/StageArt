@@ -23,6 +23,7 @@ use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
 use StageArt\Application\Organization\GetOrganizationUseCase;
+use StageArt\Application\Organization\GetPublicOrganizationBySlugUseCase;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OwnerTransferUseCase;
@@ -39,6 +40,7 @@ use StageArt\Application\Production\ChangePrimaryManagerUseCase;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\CreateProductionUseCase;
 use StageArt\Application\Production\GetProductionUseCase;
+use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
@@ -312,6 +314,7 @@ final class Plugin
             $transactions
         );
         $getOrganization    = new GetOrganizationUseCase($organizations, $authorization);
+        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations);
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
@@ -332,6 +335,7 @@ final class Plugin
             $transactions
         );
         $getProduction = new GetProductionUseCase($productions, $productionAuthorization);
+        $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
         $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization);
         $startProductionPlanning = new StartProductionPlanningUseCase($productions, $productionAuthorization);
@@ -635,6 +639,7 @@ final class Plugin
         $organizationRestController = new OrganizationRestController(
             $createOrganization,
             $getOrganization,
+            $getPublicOrganizationBySlug,
             $listOrganizations,
             $updateOrganization,
             $deleteOrganization,
@@ -670,6 +675,7 @@ final class Plugin
         $productionRestController = new ProductionRestController(
             $createProduction,
             $getProduction,
+            $getPublicProductionBySlug,
             $listProductions,
             $updateProduction,
             $changePrimaryManager,

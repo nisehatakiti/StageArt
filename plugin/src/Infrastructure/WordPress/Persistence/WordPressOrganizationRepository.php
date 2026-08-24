@@ -10,6 +10,7 @@ use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationSlug;
 use StageArt\Domain\Organization\OrganizationStatus;
 use wpdb;
 
@@ -28,9 +29,11 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
     {
         $row = [
             'name' => $organization->name()->toString(),
+            'slug' => $organization->slug()?->toString(),
             'type' => $organization->type(),
             'description' => $organization->description(),
             'status' => $organization->status()->toString(),
+            'published_at' => $organization->publishedAt()?->format('Y-m-d H:i:s'),
             'created_at' => $organization->createdAt()->format('Y-m-d H:i:s'),
             'updated_at' => $organization->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -89,6 +92,25 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    /**
+     * StageArt Web First Phase 2: the public-page lookup path
+     * (GET /organizations/by-slug/{slug}) - a single indexed query via
+     * the UNIQUE KEY slug (slug) constraint added this Phase.
+     */
+    public function findBySlug(string $slug): ?Organization
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE slug = %s", $slug),
+            ARRAY_A
+        );
+
+        if (! $row) {
+            return null;
+        }
+
+        return $this->hydrate($row);
+    }
+
     private function hydrate(array $row): Organization
     {
         return Organization::reconstitute(
@@ -98,7 +120,9 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
             $row['description'],
             OrganizationStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            $row['slug'] !== null && $row['slug'] !== '' ? new OrganizationSlug($row['slug']) : null,
+            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null
         );
     }
 }

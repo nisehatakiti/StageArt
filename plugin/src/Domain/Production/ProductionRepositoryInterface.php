@@ -13,6 +13,8 @@ interface ProductionRepositoryInterface
 
     public function findById(ProductionId $id): ?Production;
 
+    public function findBySlug(string $slug): ?Production;
+
     /**
      * @param ProductionId[] $ids
      * @return Production[]

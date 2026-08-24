@@ -37,4 +37,15 @@ final class InMemoryOrganizationRepository implements OrganizationRepositoryInte
 
         return $result;
     }
+
+    public function findBySlug(string $slug): ?Organization
+    {
+        foreach ($this->organizations as $organization) {
+            if ($organization->slug()?->toString() === $slug) {
+                return $organization;
+            }
+        }
+
+        return null;
+    }
 }

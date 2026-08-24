@@ -61,4 +61,15 @@ final class InMemoryProductionRepository implements ProductionRepositoryInterfac
             static fn (Production $production): bool => $production->primaryManagerPersonId()->equals($personId)
         ));
     }
+
+    public function findBySlug(string $slug): ?Production
+    {
+        foreach ($this->productions as $production) {
+            if ($production->slug()?->toString() === $slug) {
+                return $production;
+            }
+        }
+
+        return null;
+    }
 }

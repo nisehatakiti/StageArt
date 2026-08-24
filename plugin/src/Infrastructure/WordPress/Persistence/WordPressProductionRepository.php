@@ -10,6 +10,7 @@ use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\Project\ProjectId;
 use wpdb;
@@ -30,8 +31,10 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
         $row = [
             'project_id' => $production->projectId()->toString(),
             'name' => $production->name()->toString(),
+            'slug' => $production->slug()?->toString(),
             'title_heading' => $production->titleHeading(),
             'status' => $production->status()->toString(),
+            'published_at' => $production->publishedAt()?->format('Y-m-d H:i:s'),
             'primary_manager_person_id' => $production->primaryManagerPersonId()->toString(),
             'updated_at' => $production->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -108,6 +111,23 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    /**
+     * StageArt Web First Phase 2: the public-page lookup path
+     * (GET /productions/by-slug/{slug}) - a single indexed query via
+     * the UNIQUE KEY slug (slug) constraint added this Phase. Slug is
+     * globally unique across StageArt (see this Phase's report), so no
+     * Organization/Project scoping is needed here.
+     */
+    public function findBySlug(string $slug): ?Production
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE slug = %s", $slug),
+            ARRAY_A
+        );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
     private function hydrate(array $row): Production
     {
         return Production::reconstitute(
@@ -118,7 +138,9 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             ProductionStatus::fromString($row['status']),
             PersonId::fromString($row['primary_manager_person_id']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            $row['slug'] !== null && $row['slug'] !== '' ? new ProductionSlug($row['slug']) : null,
+            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null
         );
     }
 }

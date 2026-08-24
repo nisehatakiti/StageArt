@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Organization\OrganizationSlug;
 use StageArt\Domain\Organization\OrganizationStatus;
 
 final class OrganizationTest extends TestCase
@@ -53,5 +54,68 @@ final class OrganizationTest extends TestCase
         $organization->archive();
 
         $this->assertSame(OrganizationStatus::ARCHIVED, $organization->status()->toString());
+    }
+
+    public function test_a_new_organization_without_a_slug_is_unpublished(): void
+    {
+        $organization = Organization::create(new OrganizationName('No Slug Yet'));
+
+        $this->assertNull($organization->slug());
+        $this->assertNull($organization->publishedAt());
+        $this->assertFalse($organization->isPublished());
+    }
+
+    public function test_publishing_requires_a_slug(): void
+    {
+        $organization = Organization::create(new OrganizationName('No Slug Yet'));
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $organization->publish();
+    }
+
+    public function test_publish_sets_published_at_when_a_slug_is_present(): void
+    {
+        $organization = Organization::create(
+            new OrganizationName('Ready To Publish'),
+            null,
+            null,
+            new OrganizationSlug('ready-to-publish')
+        );
+
+        $organization->publish();
+
+        $this->assertTrue($organization->isPublished());
+        $this->assertNotNull($organization->publishedAt());
+    }
+
+    public function test_unpublish_clears_published_at(): void
+    {
+        $organization = Organization::create(
+            new OrganizationName('Ready To Publish'),
+            null,
+            null,
+            new OrganizationSlug('ready-to-publish')
+        );
+        $organization->publish();
+
+        $organization->unpublish();
+
+        $this->assertFalse($organization->isPublished());
+        $this->assertNull($organization->publishedAt());
+    }
+
+    public function test_change_slug_updates_the_slug(): void
+    {
+        $organization = Organization::create(
+            new OrganizationName('Renaming Slug'),
+            null,
+            null,
+            new OrganizationSlug('old-slug')
+        );
+
+        $organization->changeSlug(new OrganizationSlug('new-slug'));
+
+        $this->assertSame('new-slug', $organization->slug()?->toString());
     }
 }

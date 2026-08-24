@@ -43,11 +43,11 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
 
         // WordPress user 1 creates and owns Organization A.
-        $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
+        $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
 
         // WordPress user 2 creates and owns Organization B, and is never
         // added as a Member of Organization A.
-        $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B'));
+        $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B', 'organization-b'));
 
         $this->expectException(OrganizationAccessDeniedException::class);
 
@@ -64,8 +64,8 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
 
-        $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
-        $organizationB = $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B'));
+        $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
+        $organizationB = $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B', 'organization-b'));
 
         $this->expectException(OrganizationAccessDeniedException::class);
 
@@ -89,7 +89,7 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
         $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
 
-        $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
+        $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
 
         // WordPress user 999 is a valid, authenticated WordPress user, but
         // has never touched StageArt: no Person, no Membership, anywhere.
@@ -109,7 +109,7 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
 
-        $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
+        $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
 
         $memberPerson = Person::create(2);
         $people->save($memberPerson);

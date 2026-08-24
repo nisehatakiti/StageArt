@@ -47,12 +47,15 @@ final class Installer
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
             name VARCHAR(255) NOT NULL,
+            slug VARCHAR(64) NULL,
             type VARCHAR(100) NULL,
             description TEXT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+            published_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
-            PRIMARY KEY  (id)
+            PRIMARY KEY  (id),
+            UNIQUE KEY slug (slug)
         ) {$charsetCollate};");
 
         dbDelta("CREATE TABLE {$people} (
@@ -183,14 +186,17 @@ final class Installer
             id CHAR(36) NOT NULL,
             project_id CHAR(36) NOT NULL,
             name VARCHAR(255) NOT NULL,
+            slug VARCHAR(64) NULL,
             title_heading VARCHAR(255) NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+            published_at DATETIME NULL,
             primary_manager_person_id CHAR(36) NOT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             KEY project_id (project_id),
-            KEY primary_manager_person_id (primary_manager_person_id)
+            KEY primary_manager_person_id (primary_manager_person_id),
+            UNIQUE KEY slug (slug)
         ) {$charsetCollate};");
 
         dbDelta("CREATE TABLE {$productionDelegates} (

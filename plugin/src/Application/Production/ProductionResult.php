@@ -12,8 +12,10 @@ final class ProductionResult
     public string $id;
     public string $projectId;
     public string $name;
+    public ?string $slug;
     public ?string $titleHeading;
     public string $status;
+    public ?string $publishedAt;
     public string $primaryManagerPersonId;
     public string $createdAt;
     public string $updatedAt;
@@ -24,8 +26,10 @@ final class ProductionResult
         string $id,
         string $projectId,
         string $name,
+        ?string $slug,
         ?string $titleHeading,
         string $status,
+        ?string $publishedAt,
         string $primaryManagerPersonId,
         string $createdAt,
         string $updatedAt,
@@ -35,8 +39,10 @@ final class ProductionResult
         $this->id = $id;
         $this->projectId = $projectId;
         $this->name = $name;
+        $this->slug = $slug;
         $this->titleHeading = $titleHeading;
         $this->status = $status;
+        $this->publishedAt = $publishedAt;
         $this->primaryManagerPersonId = $primaryManagerPersonId;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
@@ -53,8 +59,10 @@ final class ProductionResult
             $production->id()->toString(),
             $production->projectId()->toString(),
             $production->name()->toString(),
+            $production->slug()?->toString(),
             $production->titleHeading(),
             $production->status()->toString(),
+            $production->publishedAt()?->format(DATE_ATOM),
             $production->primaryManagerPersonId()->toString(),
             $production->createdAt()->format(DATE_ATOM),
             $production->updatedAt()->format(DATE_ATOM),
@@ -72,8 +80,10 @@ final class ProductionResult
             'id' => $this->id,
             'project_id' => $this->projectId,
             'name' => $this->name,
+            'slug' => $this->slug,
             'title_heading' => $this->titleHeading,
             'status' => $this->status,
+            'published_at' => $this->publishedAt,
             'primary_manager_person_id' => $this->primaryManagerPersonId,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,

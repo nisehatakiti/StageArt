@@ -10,6 +10,8 @@ interface OrganizationRepositoryInterface
 
     public function findById(OrganizationId $id): ?Organization;
 
+    public function findBySlug(string $slug): ?Organization;
+
     /**
      * @param OrganizationId[] $ids
      * @return Organization[]

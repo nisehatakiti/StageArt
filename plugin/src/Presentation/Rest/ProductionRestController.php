@@ -19,11 +19,14 @@ use StageArt\Application\Production\CreateProductionCommand;
 use StageArt\Application\Production\CreateProductionUseCase;
 use StageArt\Application\Production\GetProductionQuery;
 use StageArt\Application\Production\GetProductionUseCase;
+use StageArt\Application\Production\GetPublicProductionBySlugQuery;
+use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsForPersonQuery;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Production\ProductionSlugAlreadyTakenException;
 use StageArt\Application\Production\StartProductionPlanningCommand;
 use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionCommand;
@@ -45,6 +48,7 @@ final class ProductionRestController
 
     private CreateProductionUseCase $createProduction;
     private GetProductionUseCase $getProduction;
+    private GetPublicProductionBySlugUseCase $getPublicProductionBySlug;
     private ListProductionsUseCase $listProductions;
     private UpdateProductionUseCase $updateProduction;
     private ChangePrimaryManagerUseCase $changePrimaryManager;
@@ -57,6 +61,7 @@ final class ProductionRestController
     public function __construct(
         CreateProductionUseCase $createProduction,
         GetProductionUseCase $getProduction,
+        GetPublicProductionBySlugUseCase $getPublicProductionBySlug,
         ListProductionsUseCase $listProductions,
         UpdateProductionUseCase $updateProduction,
         ChangePrimaryManagerUseCase $changePrimaryManager,
@@ -68,6 +73,7 @@ final class ProductionRestController
     ) {
         $this->createProduction = $createProduction;
         $this->getProduction = $getProduction;
+        $this->getPublicProductionBySlug = $getPublicProductionBySlug;
         $this->listProductions = $listProductions;
         $this->updateProduction = $updateProduction;
         $this->changePrimaryManager = $changePrimaryManager;
@@ -90,6 +96,14 @@ final class ProductionRestController
                 'methods' => 'POST',
                 'callback' => [$this, 'create'],
                 'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/productions/by-slug/(?P<slug>[^/]+)', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'getBySlug'],
+                'permission_callback' => '__return_true',
             ],
         ]);
 
@@ -189,6 +203,7 @@ final class ProductionRestController
                 get_current_user_id(),
                 (string) $request->get_param('project_id'),
                 (string) $request->get_param('name'),
+                (string) $request->get_param('slug'),
                 (string) $request->get_param('primary_manager_person_id'),
                 $this->stringOrNull($request->get_param('title_heading'))
             );
@@ -200,6 +215,8 @@ final class ProductionRestController
             return new WP_Error('stageart_project_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (PrimaryManagerNotEligibleException $exception) {
             return new WP_Error('stageart_primary_manager_not_eligible', $exception->getMessage(), ['status' => 422]);
+        } catch (ProductionSlugAlreadyTakenException $exception) {
+            return new WP_Error('stageart_production_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -220,6 +237,20 @@ final class ProductionRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function getBySlug(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetPublicProductionBySlugQuery((string) $request->get_param('slug'));
+
+            return new WP_REST_Response($this->getPublicProductionBySlug->execute($query)->toArray(), 200);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }
     }
 
@@ -245,11 +276,16 @@ final class ProductionRestController
         }
 
         try {
+            $slugParam = $request->get_param('slug');
+            $publishedParam = $request->get_param('published');
+
             $command = new UpdateProductionCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('name'),
-                $this->stringOrNull($request->get_param('title_heading'))
+                $this->stringOrNull($request->get_param('title_heading')),
+                $this->stringOrNull($slugParam),
+                $publishedParam === null ? null : (bool) $publishedParam
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);
@@ -257,6 +293,8 @@ final class ProductionRestController
             return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionSlugAlreadyTakenException $exception) {
+            return new WP_Error('stageart_production_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
         }

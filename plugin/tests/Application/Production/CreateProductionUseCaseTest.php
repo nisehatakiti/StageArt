@@ -10,6 +10,7 @@ use StageArt\Application\Production\CreateProductionCommand;
 use StageArt\Application\Production\CreateProductionUseCase;
 use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
+use StageArt\Application\Production\ProductionSlugAlreadyTakenException;
 use StageArt\Application\Project\ProjectNotFoundException;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
@@ -82,7 +83,7 @@ final class CreateProductionUseCaseTest extends TestCase
     {
         [$organization, $project, $owner] = $this->givenOrganizationWithOwnerAndProject(1);
 
-        $result = $this->useCase->execute(new CreateProductionCommand(1, $project->id()->toString(), 'Autumn Play', $owner->id()->toString()));
+        $result = $this->useCase->execute(new CreateProductionCommand(1, $project->id()->toString(), 'Autumn Play', 'autumn-play', $owner->id()->toString()));
 
         $this->assertSame('Autumn Play', $result->name);
         $this->assertSame('DRAFT', $result->status);
@@ -102,6 +103,7 @@ final class CreateProductionUseCaseTest extends TestCase
             1,
             $project->id()->toString(),
             'Autumn Play',
+            'autumn-play-2',
             $owner->id()->toString(),
             '旗揚げ公演'
         ));
@@ -120,7 +122,7 @@ final class CreateProductionUseCaseTest extends TestCase
 
         $this->expectException(ProductionAccessDeniedException::class);
 
-        $this->useCase->execute(new CreateProductionCommand(2, $project->id()->toString(), 'Autumn Play', $member->id()->toString()));
+        $this->useCase->execute(new CreateProductionCommand(2, $project->id()->toString(), 'Autumn Play', 'autumn-play-3', $member->id()->toString()));
     }
 
     public function test_creation_fails_for_a_nonexistent_project(): void
@@ -133,6 +135,7 @@ final class CreateProductionUseCaseTest extends TestCase
             1,
             ProjectId::generate()->toString(),
             'Autumn Play',
+            'autumn-play-4',
             $owner->id()->toString()
         ));
     }
@@ -148,7 +151,7 @@ final class CreateProductionUseCaseTest extends TestCase
 
         $this->expectException(PrimaryManagerNotEligibleException::class);
 
-        $this->useCase->execute(new CreateProductionCommand(1, $project->id()->toString(), 'Autumn Play', $outsider->id()->toString()));
+        $this->useCase->execute(new CreateProductionCommand(1, $project->id()->toString(), 'Autumn Play', 'autumn-play-5', $outsider->id()->toString()));
     }
 
     public function test_creation_fails_when_primary_manager_has_no_user_account(): void
@@ -170,6 +173,7 @@ final class CreateProductionUseCaseTest extends TestCase
             1,
             $project->id()->toString(),
             'Autumn Play',
+            'autumn-play-6',
             $memberWithoutAccount->id()->toString()
         ));
     }
@@ -195,7 +199,47 @@ final class CreateProductionUseCaseTest extends TestCase
             1,
             $project->id()->toString(),
             'Autumn Play',
+            'autumn-play-7',
             $memberWithSuspendedAccount->id()->toString()
         ));
+    }
+
+    public function test_creating_with_an_already_taken_slug_is_rejected(): void
+    {
+        [, $project, $owner] = $this->givenOrganizationWithOwnerAndProject(1);
+
+        $this->useCase->execute(new CreateProductionCommand(
+            1,
+            $project->id()->toString(),
+            'First Show',
+            'shared-production-slug',
+            $owner->id()->toString()
+        ));
+
+        $this->expectException(ProductionSlugAlreadyTakenException::class);
+
+        $this->useCase->execute(new CreateProductionCommand(
+            1,
+            $project->id()->toString(),
+            'Second Show',
+            'shared-production-slug',
+            $owner->id()->toString()
+        ));
+    }
+
+    public function test_created_production_carries_its_slug_and_is_unpublished(): void
+    {
+        [, $project, $owner] = $this->givenOrganizationWithOwnerAndProject(1);
+
+        $result = $this->useCase->execute(new CreateProductionCommand(
+            1,
+            $project->id()->toString(),
+            'Autumn Play',
+            'autumn-play-8',
+            $owner->id()->toString()
+        ));
+
+        $this->assertSame('autumn-play-8', $result->slug);
+        $this->assertNull($result->publishedAt);
     }
 }

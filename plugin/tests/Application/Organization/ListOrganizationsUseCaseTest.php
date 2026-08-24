@@ -51,8 +51,8 @@ final class ListOrganizationsUseCaseTest extends TestCase
         );
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 
-        $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
-        $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B'));
+        $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
+        $createOrganization->execute(new CreateOrganizationCommand(2, 'Organization B', 'organization-b'));
 
         $resultsForUserOne = $listOrganizations->execute(new ListOrganizationsForPersonQuery(1));
 
@@ -91,7 +91,7 @@ final class ListOrganizationsUseCaseTest extends TestCase
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
 
-        $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A'));
+        $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
 
         $deleteOrganization->execute(new DeleteOrganizationCommand($organization->id, 1));
 

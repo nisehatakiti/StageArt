@@ -12,6 +12,7 @@ use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Project\ProjectId;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
@@ -60,6 +61,16 @@ final class CreateProductionUseCase
 
     public function execute(CreateProductionCommand $command): ProductionResult
     {
+        $slug = new ProductionSlug($command->slug);
+
+        // StageArt Web First Phase 2: pre-check for a clean 422 in the
+        // common case; the DB's own UNIQUE KEY slug (slug) constraint
+        // (Installer.php) is the ultimate backstop against the rare
+        // concurrent-write race this check alone cannot fully close.
+        if ($this->productions->findBySlug($slug->toString()) !== null) {
+            throw new ProductionSlugAlreadyTakenException($slug->toString());
+        }
+
         $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
 
         if (! $requester) {
@@ -95,12 +106,13 @@ final class CreateProductionUseCase
             throw new PrimaryManagerNotEligibleException('The PrimaryManager must have an ACTIVE UserAccount.');
         }
 
-        $production = $this->transactions->run(function () use ($project, $command, $primaryManagerPersonId): Production {
+        $production = $this->transactions->run(function () use ($project, $command, $primaryManagerPersonId, $slug): Production {
             $production = Production::create(
                 $project->id(),
                 new ProductionName($command->name),
                 $primaryManagerPersonId,
-                $command->titleHeading
+                $command->titleHeading,
+                $slug
             );
 
             $this->productions->save($production);

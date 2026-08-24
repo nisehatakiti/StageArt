@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\Project\ProjectId;
 
@@ -193,5 +194,71 @@ final class ProductionTest extends TestCase
         $production->changePrimaryManager($newManager);
 
         $this->assertTrue($production->primaryManagerPersonId()->equals($newManager));
+    }
+
+    public function test_a_new_production_without_a_slug_is_unpublished(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->slug());
+        $this->assertNull($production->publishedAt());
+        $this->assertFalse($production->isPublished());
+    }
+
+    public function test_publishing_requires_a_slug(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $production->publish();
+    }
+
+    public function test_publish_sets_published_at_when_a_slug_is_present(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('ready-to-publish')
+        );
+
+        $production->publish();
+
+        $this->assertTrue($production->isPublished());
+        $this->assertNotNull($production->publishedAt());
+    }
+
+    public function test_unpublish_clears_published_at(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('ready-to-publish')
+        );
+        $production->publish();
+
+        $production->unpublish();
+
+        $this->assertFalse($production->isPublished());
+        $this->assertNull($production->publishedAt());
+    }
+
+    public function test_change_slug_updates_the_slug(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('old-slug')
+        );
+
+        $production->changeSlug(new ProductionSlug('new-slug'));
+
+        $this->assertSame('new-slug', $production->slug()?->toString());
     }
 }

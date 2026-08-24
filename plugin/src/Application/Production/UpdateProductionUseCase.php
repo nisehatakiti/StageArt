@@ -7,6 +7,7 @@ namespace StageArt\Application\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Domain\Production\ProductionSlug;
 
 /**
  * Basic-info updates (Name only) are PrimaryManager-exclusive (see
@@ -48,6 +49,27 @@ final class UpdateProductionUseCase
 
         $production->rename(new ProductionName($command->name));
         $production->changeTitleHeading($command->titleHeading);
+
+        if ($command->slug !== null) {
+            $newSlug = new ProductionSlug($command->slug);
+            $currentSlug = $production->slug();
+
+            if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
+                $existing = $this->productions->findBySlug($newSlug->toString());
+
+                if ($existing !== null && ! $existing->id()->equals($production->id())) {
+                    throw new ProductionSlugAlreadyTakenException($newSlug->toString());
+                }
+
+                $production->changeSlug($newSlug);
+            }
+        }
+
+        if ($command->published === true) {
+            $production->publish();
+        } elseif ($command->published === false) {
+            $production->unpublish();
+        }
 
         $this->productions->save($production);
 

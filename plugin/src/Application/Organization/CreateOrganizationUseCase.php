@@ -10,6 +10,7 @@ use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationSlug;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Role\RoleKey;
@@ -50,6 +51,17 @@ final class CreateOrganizationUseCase
 
     public function execute(CreateOrganizationCommand $command): OrganizationResult
     {
+        $slug = new OrganizationSlug($command->slug);
+
+        // StageArt Web First Phase 2: an explicit pre-check for a clean
+        // 422 in the common case; the DB's own UNIQUE KEY slug (slug)
+        // constraint (Installer.php) remains the ultimate backstop
+        // against the rare concurrent-write race this check alone
+        // cannot fully close.
+        if ($this->organizations->findBySlug($slug->toString()) !== null) {
+            throw new OrganizationSlugAlreadyTakenException($slug->toString());
+        }
+
         $person = $this->people->findByWordPressUserId($command->requestedByWordPressUserId);
 
         if (! $person) {
@@ -57,11 +69,12 @@ final class CreateOrganizationUseCase
             $this->people->save($person);
         }
 
-        return $this->transactions->run(function () use ($command, $person): OrganizationResult {
+        return $this->transactions->run(function () use ($command, $person, $slug): OrganizationResult {
             $organization = Organization::create(
                 new OrganizationName($command->name),
                 $command->type,
-                $command->description
+                $command->description,
+                $slug
             );
 
             $this->organizations->save($organization);

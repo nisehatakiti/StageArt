@@ -23,8 +23,10 @@ final class Production
     private ProductionId $id;
     private ProjectId $projectId;
     private ProductionName $name;
+    private ?ProductionSlug $slug;
     private ?string $titleHeading;
     private ProductionStatus $status;
+    private ?DateTimeImmutable $publishedAt;
     private PersonId $primaryManagerPersonId;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
@@ -33,8 +35,10 @@ final class Production
         ProductionId $id,
         ProjectId $projectId,
         ProductionName $name,
+        ?ProductionSlug $slug,
         ?string $titleHeading,
         ProductionStatus $status,
+        ?DateTimeImmutable $publishedAt,
         PersonId $primaryManagerPersonId,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
@@ -42,18 +46,30 @@ final class Production
         $this->id = $id;
         $this->projectId = $projectId;
         $this->name = $name;
+        $this->slug = $slug;
         $this->titleHeading = $titleHeading;
         $this->status = $status;
+        $this->publishedAt = $publishedAt;
         $this->primaryManagerPersonId = $primaryManagerPersonId;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
 
+    /**
+     * StageArt Web First Phase 2: `slug` is an optional trailing
+     * parameter (matching `titleHeading`'s existing optionality), not a
+     * required one - see Organization::create()'s matching docblock for
+     * why this stays permissive at the Domain layer while
+     * CreateProductionUseCase (the real onboarding entry point) is
+     * where "a newly created Production must have a slug" is actually
+     * enforced.
+     */
     public static function create(
         ProjectId $projectId,
         ProductionName $name,
         PersonId $primaryManagerPersonId,
-        ?string $titleHeading = null
+        ?string $titleHeading = null,
+        ?ProductionSlug $slug = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -61,8 +77,10 @@ final class Production
             ProductionId::generate(),
             $projectId,
             $name,
+            $slug,
             self::normalizeTitleHeading($titleHeading),
             ProductionStatus::draft(),
+            null,
             $primaryManagerPersonId,
             $now,
             $now
@@ -77,15 +95,61 @@ final class Production
         ProductionStatus $status,
         PersonId $primaryManagerPersonId,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?ProductionSlug $slug = null,
+        ?DateTimeImmutable $publishedAt = null
     ): self {
-        return new self($id, $projectId, $name, $titleHeading, $status, $primaryManagerPersonId, $createdAt, $updatedAt);
+        return new self(
+            $id,
+            $projectId,
+            $name,
+            $slug,
+            $titleHeading,
+            $status,
+            $publishedAt,
+            $primaryManagerPersonId,
+            $createdAt,
+            $updatedAt
+        );
     }
 
     public function rename(ProductionName $name): void
     {
         $this->name = $name;
         $this->touch();
+    }
+
+    public function changeSlug(ProductionSlug $slug): void
+    {
+        $this->slug = $slug;
+        $this->touch();
+    }
+
+    /**
+     * StageArt Web First Phase 2: separate from `status` (the strict
+     * Lifecycle Action transition chain below) - this is specifically
+     * public-page visibility, an orthogonal concern. A slug is required
+     * to publish.
+     */
+    public function publish(): void
+    {
+        if ($this->slug === null) {
+            throw new InvalidArgumentException('A Production must have a slug before it can be published.');
+        }
+
+        $this->publishedAt = new DateTimeImmutable();
+        $this->touch();
+    }
+
+    public function unpublish(): void
+    {
+        $this->publishedAt = null;
+        $this->touch();
+    }
+
+    public function isPublished(): bool
+    {
+        return $this->publishedAt !== null;
     }
 
     /**
@@ -251,6 +315,16 @@ final class Production
     public function name(): ProductionName
     {
         return $this->name;
+    }
+
+    public function slug(): ?ProductionSlug
+    {
+        return $this->slug;
+    }
+
+    public function publishedAt(): ?DateTimeImmutable
+    {
+        return $this->publishedAt;
     }
 
     public function titleHeading(): ?string

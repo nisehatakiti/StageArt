@@ -7,6 +7,7 @@ namespace StageArt\Tests\Application\Organization;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\CreateOrganizationCommand;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
+use StageArt\Application\Organization\OrganizationSlugAlreadyTakenException;
 use StageArt\Domain\Organization\OrganizationId;
 use RuntimeException;
 use StageArt\Domain\Role\RoleKey;
@@ -26,7 +27,7 @@ final class CreateOrganizationUseCaseTest extends TestCase
 
         $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
 
-        $result = $useCase->execute(new CreateOrganizationCommand(42, 'New Theatre'));
+        $result = $useCase->execute(new CreateOrganizationCommand(42, 'New Theatre', 'new-theatre'));
 
         $this->assertSame('New Theatre', $result->name);
         $this->assertSame(RoleKey::OWNER, $result->currentPersonRole);
@@ -50,8 +51,8 @@ final class CreateOrganizationUseCaseTest extends TestCase
 
         $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
 
-        $useCase->execute(new CreateOrganizationCommand(7, 'First Org'));
-        $useCase->execute(new CreateOrganizationCommand(7, 'Second Org'));
+        $useCase->execute(new CreateOrganizationCommand(7, 'First Org', 'first-org'));
+        $useCase->execute(new CreateOrganizationCommand(7, 'Second Org', 'second-org'));
 
         $person = $people->findByWordPressUserId(7);
         $this->assertNotNull($person);
@@ -68,11 +69,40 @@ final class CreateOrganizationUseCaseTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        $useCase->execute(new CreateOrganizationCommand(99, 'Doomed Org'));
+        $useCase->execute(new CreateOrganizationCommand(99, 'Doomed Org', 'doomed-org'));
 
         // Full atomicity (that no Organization row is left behind on a real
         // database when the Owner Membership write fails) is verified against
         // WordPressTransactionManager on ConoHa, not here: InMemoryOrganizationRepository
         // has no rollback capability to prove that against.
+    }
+
+    public function test_creating_with_an_already_taken_slug_is_rejected(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+
+        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+
+        $useCase->execute(new CreateOrganizationCommand(1, 'First Theatre', 'shared-slug'));
+
+        $this->expectException(OrganizationSlugAlreadyTakenException::class);
+
+        $useCase->execute(new CreateOrganizationCommand(2, 'Second Theatre', 'shared-slug'));
+    }
+
+    public function test_created_organization_carries_its_slug_and_is_unpublished(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+
+        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+
+        $result = $useCase->execute(new CreateOrganizationCommand(1, 'New Theatre', 'new-theatre-2'));
+
+        $this->assertSame('new-theatre-2', $result->slug);
+        $this->assertNull($result->publishedAt);
     }
 }

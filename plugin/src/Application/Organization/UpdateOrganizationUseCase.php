@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationSlug;
 use StageArt\Domain\Organization\OrganizationStatus;
 use StageArt\Domain\Role\RoleKey;
 
@@ -47,6 +48,27 @@ final class UpdateOrganizationUseCase
         $organization->rename(new OrganizationName($command->name));
         $organization->changeType($command->type);
         $organization->changeDescription($command->description);
+
+        if ($command->slug !== null) {
+            $newSlug = new OrganizationSlug($command->slug);
+            $currentSlug = $organization->slug();
+
+            if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
+                $existing = $this->organizations->findBySlug($newSlug->toString());
+
+                if ($existing !== null && ! $existing->id()->equals($organizationId)) {
+                    throw new OrganizationSlugAlreadyTakenException($newSlug->toString());
+                }
+
+                $organization->changeSlug($newSlug);
+            }
+        }
+
+        if ($command->published === true) {
+            $organization->publish();
+        } elseif ($command->published === false) {
+            $organization->unpublish();
+        }
 
         if ($organization->status()->toString() !== $command->status) {
             switch ($command->status) {
