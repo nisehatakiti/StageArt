@@ -123,3 +123,17 @@ When applying the StageArt visual redesign:
 This document defines visual identity. Product navigation, onboarding, home content, public pages, organization pages, production pages, follow/favorite behavior, advertising placement, and role-based functionality remain governed by their respective Blueprint documents.
 
 When visual implementation and product Blueprint requirements interact, keep the product behavior intact and apply this brand identity to the presentation layer.
+
+## 7. Startup expression
+
+The confirmed startup expression is:
+
+> **Blackout → warm stage light → beige circular S+A icon → StageArt wordmark → app**
+
+The startup is intentionally short and should feel like a theatre lighting cue rather than a cinematic logo reveal.
+
+Detailed timing, native-splash behavior, reduced-motion behavior, and implementation rules are defined in:
+
+- `docs/03-StartupExperience.md`
+
+The earlier curtain-opening presentation and star-trail / S-drawing presentation are superseded for active implementation.
