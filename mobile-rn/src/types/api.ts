@@ -418,3 +418,22 @@ export type ParticipationRequest = {
   status: string;
   requested_at: string;
 };
+
+/** POST/DELETE /favorites - `target_type` is 'ORGANIZATION' | 'PRODUCTION'. */
+export type FavoriteStatus = {
+  target_type: string;
+  target_id: string;
+  is_favorited: boolean;
+};
+
+/** GET /me/favorites - `organization_slug` is only set for a PRODUCTION
+ * target (its resolved parent Organization's slug). */
+export type MyFavorite = {
+  id: string;
+  target_type: string;
+  target_id: string;
+  target_name: string;
+  target_slug: string | null;
+  organization_slug: string | null;
+  favorited_at: string;
+};

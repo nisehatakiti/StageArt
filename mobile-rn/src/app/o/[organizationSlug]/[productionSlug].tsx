@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchPublicProductionBySlug } from '@/features/production/api';
 import { useRequestProductionParticipation } from '@/features/participation/useParticipation';
+import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -48,6 +49,10 @@ export default function PublicProductionScreen() {
 
   const requestParticipation = useRequestProductionParticipation();
 
+  const myFavoritesQuery = useMyFavorites();
+  const { add: addFavorite, remove: removeFavorite } = useToggleFavorite();
+  const isFavorited = !!query.data && !!myFavoritesQuery.data?.some((f) => f.target_type === 'PRODUCTION' && f.target_id === query.data!.id);
+
   return (
     <AppShell scroll>
       <ScrollView contentContainerStyle={styles.container}>
@@ -80,6 +85,21 @@ export default function PublicProductionScreen() {
                 {query.data.organization.name}
               </ThemedText>
             </TouchableOpacity>
+
+            {status === 'authenticated' && (
+              <TouchableOpacity
+                testID={isFavorited ? 'public-production-unfavorite' : 'public-production-favorite'}
+                disabled={addFavorite.isPending || removeFavorite.isPending}
+                onPress={() =>
+                  isFavorited
+                    ? removeFavorite.mutate({ targetType: 'PRODUCTION', targetId: query.data!.id })
+                    : addFavorite.mutate({ targetType: 'PRODUCTION', targetId: query.data!.id })
+                }
+                style={styles.favoriteLink}
+              >
+                <ThemedText type="link">{isFavorited ? 'お気に入り解除' : 'お気に入りに追加'}</ThemedText>
+              </TouchableOpacity>
+            )}
 
             {status === 'authenticated' && (
               <ThemedView style={styles.participationSection}>
@@ -131,6 +151,7 @@ const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
   participationSection: { marginTop: Spacing.three, gap: Spacing.two },
+  favoriteLink: { marginTop: Spacing.two },
   typeRow: { flexDirection: 'row', gap: Spacing.two },
   typeOption: {
     flex: 1,

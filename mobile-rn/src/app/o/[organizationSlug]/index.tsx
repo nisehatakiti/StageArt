@@ -11,6 +11,7 @@ import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchPublicOrganizationBySlug } from '@/features/organization/api';
 import { useFollowOrganization, useMyFollows } from '@/features/organization/useFollow';
 import { useMyMemberships, useRequestOrganizationMembership } from '@/features/membership/useMembership';
+import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -50,6 +51,10 @@ export default function PublicOrganizationScreen() {
   const requestMembership = useRequestOrganizationMembership();
   const myMembership = query.data ? myMembershipsQuery.data?.find((m) => m.organization_id === query.data!.id) : undefined;
 
+  const myFavoritesQuery = useMyFavorites();
+  const { add: addFavorite, remove: removeFavorite } = useToggleFavorite();
+  const isFavorited = !!query.data && !!myFavoritesQuery.data?.some((f) => f.target_type === 'ORGANIZATION' && f.target_id === query.data!.id);
+
   return (
     <AppShell scroll>
       <ScrollView contentContainerStyle={styles.container}>
@@ -88,6 +93,21 @@ export default function PublicOrganizationScreen() {
             ) : (
               <TouchableOpacity testID="public-organization-login-to-follow" onPress={() => router.push('/login')}>
                 <ThemedText type="link">ログインしてフォロー</ThemedText>
+              </TouchableOpacity>
+            )}
+
+            {status === 'authenticated' && (
+              <TouchableOpacity
+                testID={isFavorited ? 'public-organization-unfavorite' : 'public-organization-favorite'}
+                disabled={addFavorite.isPending || removeFavorite.isPending}
+                onPress={() =>
+                  isFavorited
+                    ? removeFavorite.mutate({ targetType: 'ORGANIZATION', targetId: query.data!.id })
+                    : addFavorite.mutate({ targetType: 'ORGANIZATION', targetId: query.data!.id })
+                }
+                style={styles.favoriteLink}
+              >
+                <ThemedText type="link">{isFavorited ? 'お気に入り解除' : 'お気に入りに追加'}</ThemedText>
               </TouchableOpacity>
             )}
 
@@ -147,6 +167,7 @@ const styles = StyleSheet.create({
   followingButton: { borderWidth: 1, borderColor: BrandColors.warmAmber },
   followingButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
   membershipSection: { marginTop: Spacing.three, gap: Spacing.two },
+  favoriteLink: { marginTop: Spacing.two },
   secondaryButton: {
     borderWidth: 1,
     borderColor: BrandColors.warmAmber,
