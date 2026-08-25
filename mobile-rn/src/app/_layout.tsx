@@ -81,6 +81,13 @@ export default function RootLayout() {
               <Stack.Screen name="organizations/[id]/productions/create" options={{ headerShown: false }} />
               <Stack.Screen name="o/[organizationSlug]/index" options={{ headerShown: false }} />
               <Stack.Screen name="o/[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
+              {/* StageArt Web β版: Join Key発行 + 参加申請承認 (団体・公演
+                  管理者向け) と、参加コード入力・検索経由の所属申請 (一般
+                  利用者向け) - AppShell自身のヘッダーを使うため、ここでも
+                  headerShownはfalseのまま。 */}
+              <Stack.Screen name="organizations/[id]/invite" options={{ headerShown: false }} />
+              <Stack.Screen name="production-invite/[id]" options={{ headerShown: false }} />
+              <Stack.Screen name="join" options={{ headerShown: false }} />
             </Stack>
           </OrganizationProvider>
         </AuthProvider>

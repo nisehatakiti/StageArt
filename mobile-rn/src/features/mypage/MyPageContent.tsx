@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,6 +32,7 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * render this same content.
  */
 export function MyPageContent() {
+  const router = useRouter();
   const currentPersonQuery = useCurrentPerson();
   const pushPreferenceQuery = usePushPreference();
   const updatePushPreference = useUpdatePushPreference();
@@ -77,6 +79,19 @@ export function MyPageContent() {
               </ThemedText>
             </ThemedView>
           )}
+        </ThemedView>
+
+        {/* docs/04-HomeRoleBasedMenu.md §02の「設定 > 団体・公演に参加」:
+            参加コード入力・QR読み取り（今回未実装、後続フェーズ）・検索を
+            まとめた単一の入口。検索自体は団体を探す/公演・活動を探すから
+            直接行える。 */}
+        <ThemedView style={styles.card}>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
+            団体・公演に参加
+          </ThemedText>
+          <TouchableOpacity testID="mypage-join-link" onPress={() => router.push('/join')} style={styles.linkRow}>
+            <ThemedText type="linkPrimary">参加コードを入力する</ThemedText>
+          </TouchableOpacity>
         </ThemedView>
 
         <AccountSecurityCard />

@@ -1,5 +1,5 @@
-import { Tabs, useLocalSearchParams, useRouter } from 'expo-router';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Tabs, useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -58,6 +58,16 @@ export default function ProductionShellLayout() {
             {production?.name ?? 'Production'}
           </ThemedText>
         </View>
+        {/* StageArt Web β版: 招待管理 (Join Key発行 + 参加申請承認) has no
+            dedicated native Tab (adding one would change the existing,
+            already-tested 4-tab native layout - see this file's own
+            docblock on why native behavior stays untouched this phase),
+            so this entry point is Web-only. */}
+        {Platform.OS === 'web' && (
+          <TouchableOpacity onPress={() => router.push(`/production-invite/${id}` as Href)} testID="production-invite-link">
+            <ThemedText type="link">招待管理</ThemedText>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
 
       <Tabs screenOptions={{ headerShown: false }}>

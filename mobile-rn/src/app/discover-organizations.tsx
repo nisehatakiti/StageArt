@@ -1,38 +1,111 @@
-import { StyleSheet } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { useRouter, type Href } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { AppShell } from '@/components/app-shell';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { searchPublicOrganizations } from '@/features/organization/api';
+import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
- * BusinessFlowUXClarifications.md §05: an Organization-centric discovery
- * entry point, distinct from discover-productions.tsx - neither
- * audience-only nor performer-only. The Backend currently has no public/
- * general Organization search API (GET /organizations is Membership-
- * scoped only - confirmed via this Phase's gap-analysis report), so per
- * the user's own decision (discovery-API-gap Option A: "導線のみ先行実装"),
- * this route exists now as a real, navigable entry point with a
- * "準備中" state - real search/listing is deferred to a future
- * Backend-dependent phase, not invented here.
+ * StageArt Web β版: real search (団体検索), backed by the now-real
+ * GET /organizations/search (public, unauthenticated - published
+ * Organizations only). Previously a "準備中" placeholder, from before
+ * this endpoint existed.
  */
 export default function DiscoverOrganizationsScreen() {
+  const router = useRouter();
+  const [text, setText] = useState('');
+  const [submitted, setSubmitted] = useState('');
+
+  const query = useQuery({
+    queryKey: ['search-organizations', submitted],
+    queryFn: () => searchPublicOrganizations(submitted),
+    enabled: submitted.length > 0,
+  });
+
   return (
-    <AppShell>
-      <ThemedView style={styles.container}>
+    <AppShell scroll>
+      <ScrollView contentContainerStyle={styles.container}>
         <ThemedText type="title" style={styles.title}>
           団体を探す
         </ThemedText>
-        <ThemedText themeColor="textSecondary" testID="discover-organizations-placeholder" style={styles.body}>
-          団体の検索機能は準備中です。公開後は、団体の情報・現在の活動・今後の公演/活動・過去の公演/活動をここから確認できるようになります。
-        </ThemedText>
-      </ThemedView>
+
+        <ThemedTextInput
+          testID="discover-organizations-input"
+          placeholder="団体名で検索"
+          value={text}
+          onChangeText={setText}
+          onSubmitEditing={() => setSubmitted(text.trim())}
+          returnKeyType="search"
+          style={styles.input}
+        />
+        <TouchableOpacity testID="discover-organizations-search" onPress={() => setSubmitted(text.trim())} style={styles.searchButton}>
+          <ThemedText style={styles.searchButtonText}>検索する</ThemedText>
+        </TouchableOpacity>
+
+        {query.isFetching && <ActivityIndicator testID="discover-organizations-loading" />}
+        {query.isError && <ThemedText testID="discover-organizations-error">{getErrorMessage(query.error)}</ThemedText>}
+
+        {submitted.length > 0 && !query.isFetching && !query.isError && (query.data?.length ?? 0) === 0 && (
+          <ThemedText testID="discover-organizations-empty" themeColor="textSecondary">
+            団体が見つかりませんでした。
+          </ThemedText>
+        )}
+
+        {(query.data?.length ?? 0) > 0 && (
+          <ThemedView testID="discover-organizations-results" style={styles.list}>
+            {query.data?.map((organization) => (
+              <TouchableOpacity
+                key={organization.id}
+                testID={`discover-organization-${organization.id}`}
+                style={styles.resultCard}
+                onPress={() => router.push(`/o/${organization.slug}` as Href)}
+              >
+                <ThemedText type="smallBold">{organization.name}</ThemedText>
+                {organization.description && (
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+                    {organization.description}
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ThemedView>
+        )}
+      </ScrollView>
     </AppShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
+  container: { padding: Spacing.four, gap: Spacing.three },
   title: { fontSize: 22, lineHeight: 28 },
-  body: { textAlign: 'center' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 16,
+  },
+  searchButton: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+  },
+  searchButtonText: { fontWeight: '600' },
+  list: { gap: Spacing.two },
+  resultCard: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.half,
+  },
 });

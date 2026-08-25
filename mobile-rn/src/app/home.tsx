@@ -148,6 +148,20 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
 
+            {/* docs/04-HomeRoleBasedMenu.md §06's Organization管理者専用
+                「Organizationへ招待」/「Organization参加申請」 - only the
+                Owner Role sees this (Membership Domain's only
+                Organization管理 Role today). */}
+            {!showPicker && currentOrganization?.current_person_role === 'OWNER' && (
+              <TouchableOpacity
+                style={styles.inviteLink}
+                onPress={() => router.push(`/organizations/${currentOrganization.id}/invite` as Href)}
+                testID="organization-invite-link"
+              >
+                <ThemedText type="link">団体への参加・参加申請の管理</ThemedText>
+              </TouchableOpacity>
+            )}
+
             {showPicker && (
               <ThemedView testID="organization-picker" style={styles.list}>
                 {organizations?.map((organization) => (
@@ -498,6 +512,10 @@ const styles = StyleSheet.create({
   organizationBar: {
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
+  },
+  inviteLink: {
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.two,
   },
   centered: { alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   list: { paddingHorizontal: Spacing.three, gap: Spacing.two },

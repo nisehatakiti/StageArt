@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchPublicOrganizationBySlug } from '@/features/organization/api';
 import { useFollowOrganization, useMyFollows } from '@/features/organization/useFollow';
+import { useMyMemberships, useRequestOrganizationMembership } from '@/features/membership/useMembership';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -44,6 +45,10 @@ export default function PublicOrganizationScreen() {
 
   const isFollowing = !!query.data && !!myFollowsQuery.data?.some((f) => f.organization_id === query.data!.id);
   const followPending = follow.isPending || unfollow.isPending;
+
+  const myMembershipsQuery = useMyMemberships();
+  const requestMembership = useRequestOrganizationMembership();
+  const myMembership = query.data ? myMembershipsQuery.data?.find((m) => m.organization_id === query.data!.id) : undefined;
 
   return (
     <AppShell scroll>
@@ -85,6 +90,39 @@ export default function PublicOrganizationScreen() {
                 <ThemedText type="link">ログインしてフォロー</ThemedText>
               </TouchableOpacity>
             )}
+
+            {status === 'authenticated' && (
+              <ThemedView style={styles.membershipSection}>
+                {myMembership?.status === 'ACTIVE' && (
+                  <ThemedText testID="public-organization-member" type="smallBold" themeColor="textSecondary">
+                    この団体に所属しています
+                  </ThemedText>
+                )}
+                {myMembership?.status === 'REQUESTED' && (
+                  <ThemedText testID="public-organization-request-pending" type="smallBold" themeColor="textSecondary">
+                    所属を申請中です
+                  </ThemedText>
+                )}
+                {(!myMembership || myMembership.status === 'REJECTED') && !requestMembership.isSuccess && (
+                  <TouchableOpacity
+                    testID="public-organization-request-membership"
+                    onPress={() => requestMembership.mutate({ organizationId: query.data!.id })}
+                    disabled={requestMembership.isPending}
+                    style={styles.secondaryButton}
+                  >
+                    <ThemedText style={styles.secondaryButtonText}>この団体に所属を申請する</ThemedText>
+                  </TouchableOpacity>
+                )}
+                {requestMembership.isSuccess && (
+                  <ThemedText testID="public-organization-request-success" type="smallBold" themeColor="textSecondary">
+                    所属を申請しました。管理者の承認をお待ちください。
+                  </ThemedText>
+                )}
+                {requestMembership.isError && (
+                  <ThemedText style={styles.error}>{getErrorMessage(requestMembership.error)}</ThemedText>
+                )}
+              </ThemedView>
+            )}
           </ThemedView>
         )}
       </ScrollView>
@@ -108,4 +146,16 @@ const styles = StyleSheet.create({
   followButtonText: { color: '#fff', fontWeight: '600' },
   followingButton: { borderWidth: 1, borderColor: BrandColors.warmAmber },
   followingButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
+  membershipSection: { marginTop: Spacing.three, gap: Spacing.two },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: BrandColors.warmAmber,
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  secondaryButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
+  error: { color: '#a6483a' },
 });

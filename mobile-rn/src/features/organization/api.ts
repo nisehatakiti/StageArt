@@ -2,6 +2,12 @@ import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
 import type { MyFollow, Organization, OrganizationFollowStatus, Project, PublicOrganization } from '@/types/api';
 
+/** Public, unauthenticated search (団体検索) - published Organizations
+ * whose name contains `query`. */
+export function searchPublicOrganizations(query: string): Promise<PublicOrganization[]> {
+  return publicGet<PublicOrganization[]>(`/organizations/search?q=${encodeURIComponent(query)}`);
+}
+
 /** GET /organizations is Membership-scoped server-side (only ACTIVE
  * Memberships' Organizations are returned - ListOrganizationsUseCase). */
 export function fetchOrganizations(client: ApiClient): Promise<Organization[]> {

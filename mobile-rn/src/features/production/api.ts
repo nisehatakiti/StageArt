@@ -62,3 +62,9 @@ export function updateProduction(
 export function fetchPublicProductionBySlug(slug: string): Promise<PublicProduction> {
   return publicGet<PublicProduction>(`/productions/by-slug/${encodeURIComponent(slug)}`);
 }
+
+/** Public, unauthenticated search (公演・活動検索) - published Productions
+ * whose name contains `query`. */
+export function searchPublicProductions(query: string): Promise<PublicProduction[]> {
+  return publicGet<PublicProduction[]>(`/productions/search?q=${encodeURIComponent(query)}`);
+}

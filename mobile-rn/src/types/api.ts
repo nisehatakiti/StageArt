@@ -355,3 +355,66 @@ export type OrganizationFollowStatus = {
   is_following: boolean;
   follower_count: number;
 };
+
+/**
+ * StageArt Web β版 (docs/04-DomainModel/JoinKey.md): issued via
+ * POST /organizations/{id}/join-keys or /productions/{id}/join-keys.
+ * `target_type` is 'ORGANIZATION' | 'PRODUCTION'.
+ */
+export type JoinKey = {
+  id: string;
+  code: string;
+  target_type: string;
+  target_id: string;
+  status: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  use_count: number;
+};
+
+/** POST /join-keys/resolve - the confirmation-screen preview, before any
+ * Membership/Participant request is actually created. */
+export type ResolvedJoinKey = {
+  join_key_id: string;
+  target_type: string;
+  target_id: string;
+  target_name: string;
+  target_slug: string | null;
+};
+
+/** POST /membership-requests, GET /organizations/{id}/membership-requests,
+ * POST /membership-requests/{id}/approve|reject. */
+export type MembershipRequest = {
+  id: string;
+  organization_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  status: string;
+  requested_at: string;
+  joined_at: string | null;
+};
+
+/** GET /me/memberships - every Membership regardless of status, unlike
+ * the existing ACTIVE-only GET /organizations. */
+export type MyMembership = {
+  membership_id: string;
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string | null;
+  status: string;
+  role_key: string;
+};
+
+/** POST /participation-requests, GET /productions/{id}/participation-requests,
+ * POST /participation-requests/{id}/approve|reject. */
+export type ParticipationRequest = {
+  id: string;
+  production_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  participant_type: string;
+  status: string;
+  requested_at: string;
+};
