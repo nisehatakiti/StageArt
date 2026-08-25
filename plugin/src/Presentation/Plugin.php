@@ -23,13 +23,28 @@ use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
 use StageArt\Application\Follow\FollowOrganizationUseCase;
 use StageArt\Application\Follow\ListMyFollowsUseCase;
 use StageArt\Application\Follow\UnfollowOrganizationUseCase;
+use StageArt\Application\JoinKey\DisableJoinKeyUseCase;
+use StageArt\Application\JoinKey\IssueOrganizationJoinKeyUseCase;
+use StageArt\Application\JoinKey\IssueProductionJoinKeyUseCase;
+use StageArt\Application\JoinKey\ResolveJoinKeyUseCase;
+use StageArt\Application\Membership\ApproveMembershipRequestUseCase;
+use StageArt\Application\Membership\ListMyMembershipsUseCase;
+use StageArt\Application\Membership\ListPendingMembershipRequestsUseCase;
+use StageArt\Application\Membership\RejectMembershipRequestUseCase;
+use StageArt\Application\Membership\RequestOrganizationMembershipUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
+use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
+use StageArt\Application\Participant\ListPendingParticipantRequestsUseCase;
+use StageArt\Application\Participant\RejectParticipantRequestUseCase;
+use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
 use StageArt\Application\Organization\GetOrganizationUseCase;
 use StageArt\Application\Organization\GetPublicOrganizationBySlugUseCase;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OwnerTransferUseCase;
+use StageArt\Application\Organization\SearchOrganizationsUseCase;
+use StageArt\Application\Production\SearchProductionsUseCase;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use StageArt\Application\Participant\CancelParticipantUseCase;
 use StageArt\Application\Participant\CreateParticipantUseCase;
@@ -129,6 +144,7 @@ use StageArt\Infrastructure\WordPress\Authentication\WordPressUserProvisioner;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExternalIdentityRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRefreshTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressMembershipRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressJoinKeyRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationFollowRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository;
@@ -155,14 +171,17 @@ use StageArt\Presentation\Rest\AuthenticationRestController;
 use StageArt\Presentation\Rest\BudgetRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
 use StageArt\Presentation\Rest\ExpenseRestController;
+use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\JournalEntryRestController;
 use StageArt\Presentation\Rest\MeRestController;
+use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\ProductionAccountingRestController;
 use StageArt\Presentation\Print\PrintViewHtmlRenderer;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\PrintViewRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
 use StageArt\Presentation\Rest\ParticipantRestController;
+use StageArt\Presentation\Rest\ParticipationRequestRestController;
 use StageArt\Presentation\Rest\ProductionDelegateRestController;
 use StageArt\Presentation\Rest\ProductionRestController;
 use StageArt\Presentation\Rest\ProjectRestController;
@@ -189,6 +208,7 @@ final class Plugin
 
         $organizations       = new WordPressOrganizationRepository($wpdb);
         $organizationFollows = new WordPressOrganizationFollowRepository($wpdb);
+        $joinKeys            = new WordPressJoinKeyRepository($wpdb);
         $people              = new WordPressPersonRepository($wpdb);
         $memberships         = new WordPressMembershipRepository($wpdb);
         $projects            = new WordPressProjectRepository($wpdb);
@@ -219,6 +239,10 @@ final class Plugin
 
         $authorization = new OrganizationAuthorizationService($people, $memberships);
         $productionAuthorization = new ProductionAuthorizationService($authorization, $productionDelegates, $participants);
+        $issueProductionJoinKey = new IssueProductionJoinKeyUseCase($productions, $joinKeys, $productionAuthorization);
+        $resolveJoinKey = new ResolveJoinKeyUseCase($joinKeys, $organizations, $productions);
+        $disableJoinKey = new DisableJoinKeyUseCase($joinKeys, $productions, $authorization, $productionAuthorization);
+        $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
         $memberResolver = new ProductionMemberResolver($participants);
         $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
@@ -327,6 +351,19 @@ final class Plugin
         $followOrganization   = new FollowOrganizationUseCase($organizations, $organizationFollows, $authorization);
         $unfollowOrganization = new UnfollowOrganizationUseCase($organizationFollows, $authorization);
         $listMyFollows         = new ListMyFollowsUseCase($organizationFollows, $organizations, $authorization);
+
+        // StageArt Web β版: Join Key + Membership Request/Approval (団体・
+        // 公演への所属申請フロー). ProductionAuthorizationService/$productions
+        // are declared further below (Production Scope wiring); the Join
+        // Key Use Cases that need them are instantiated after that point -
+        // see issueProductionJoinKey/disableJoinKey below.
+        $issueOrganizationJoinKey = new IssueOrganizationJoinKeyUseCase($organizations, $joinKeys, $authorization);
+        $requestOrganizationMembership = new RequestOrganizationMembershipUseCase($organizations, $memberships, $joinKeys, $authorization);
+        $approveMembershipRequest = new ApproveMembershipRequestUseCase($memberships, $people, $authorization);
+        $rejectMembershipRequest = new RejectMembershipRequestUseCase($memberships, $people, $authorization);
+        $listPendingMembershipRequests = new ListPendingMembershipRequestsUseCase($memberships, $people, $authorization);
+        $listMyMemberships = new ListMyMembershipsUseCase($memberships, $organizations, $authorization);
+        $searchOrganizations = new SearchOrganizationsUseCase($organizations);
 
         $createProject = new CreateProjectUseCase($projects, $authorization);
         $getProject     = new GetProjectUseCase($projects, $authorization);
@@ -656,7 +693,8 @@ final class Plugin
             $deleteOrganization,
             $ownerTransfer,
             $followOrganization,
-            $unfollowOrganization
+            $unfollowOrganization,
+            $searchOrganizations
         );
 
         $projectRestController = new ProjectRestController(
@@ -696,7 +734,8 @@ final class Plugin
             $activateProduction,
             $completeProduction,
             $archiveProduction,
-            $cancelProduction
+            $cancelProduction,
+            $searchProductions
         );
 
         $productionDelegateRestController = new ProductionDelegateRestController(
@@ -712,6 +751,18 @@ final class Plugin
             $listParticipants,
             $updateParticipant,
             $cancelParticipant
+        );
+
+        $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $participants, $joinKeys, $productionAuthorization);
+        $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
+        $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
+        $listPendingParticipantRequests = new ListPendingParticipantRequestsUseCase($participants, $productions, $people, $productionAuthorization);
+
+        $participationRequestRestController = new ParticipationRequestRestController(
+            $requestProductionParticipation,
+            $approveParticipantRequest,
+            $rejectParticipantRequest,
+            $listPendingParticipantRequests
         );
 
         $rehearsalRestController = new RehearsalRestController(
@@ -769,6 +820,22 @@ final class Plugin
 
         $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
 
+        $joinKeyRestController = new JoinKeyRestController(
+            $issueOrganizationJoinKey,
+            $issueProductionJoinKey,
+            $resolveJoinKey,
+            $disableJoinKey,
+            $joinKeys
+        );
+
+        $membershipRestController = new MembershipRestController(
+            $requestOrganizationMembership,
+            $approveMembershipRequest,
+            $rejectMembershipRequest,
+            $listPendingMembershipRequests,
+            $listMyMemberships
+        );
+
         $printViewRestController = new PrintViewRestController(
             $getProductionPrintView,
             new PrintViewHtmlRenderer(),
@@ -800,6 +867,7 @@ final class Plugin
         add_action('rest_api_init', [$productionRestController, 'register_routes']);
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);
+        add_action('rest_api_init', [$participationRequestRestController, 'register_routes']);
         add_action('rest_api_init', [$rehearsalRestController, 'register_routes']);
         add_action('rest_api_init', [$rehearsalAttendanceRestController, 'register_routes']);
         add_action('rest_api_init', [$scheduleCommentRestController, 'register_routes']);
@@ -810,6 +878,8 @@ final class Plugin
         add_action('rest_api_init', [$dashboardRestController, 'register_routes']);
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
         add_action('rest_api_init', [$meRestController, 'register_routes']);
+        add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
+        add_action('rest_api_init', [$membershipRestController, 'register_routes']);
         add_action('rest_api_init', [$printViewRestController, 'register_routes']);
         add_action('rest_api_init', [$accountRestController, 'register_routes']);
         add_action('rest_api_init', [$budgetRestController, 'register_routes']);

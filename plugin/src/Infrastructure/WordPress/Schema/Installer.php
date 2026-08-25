@@ -44,6 +44,7 @@ final class Installer
         $expenses = $wpdb->prefix . 'stageart_expenses';
         $expenseLines = $wpdb->prefix . 'stageart_expense_lines';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
+        $joinKeys = $wpdb->prefix . 'stageart_join_keys';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -76,6 +77,7 @@ final class Installer
             role_key VARCHAR(20) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
             created_at DATETIME NOT NULL,
+            joined_at DATETIME NULL,
             PRIMARY KEY  (id),
             KEY organization_id (organization_id),
             KEY person_id (person_id)
@@ -589,6 +591,28 @@ final class Installer
             PRIMARY KEY  (id),
             UNIQUE KEY person_organization (person_id, organization_id),
             KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        // StageArt Web β版 (docs/04-DomainModel/JoinKey.md): `code` is
+        // globally unique across both Organization and Production Join
+        // Keys - the single "参加コードを入力" entry point resolves a code
+        // without the user pre-selecting a target type, so the code
+        // space itself must not collide across targetType.
+        dbDelta("CREATE TABLE {$joinKeys} (
+            id CHAR(36) NOT NULL,
+            code VARCHAR(16) NOT NULL,
+            target_type VARCHAR(20) NOT NULL,
+            target_id CHAR(36) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+            issued_by_person_id CHAR(36) NOT NULL,
+            issued_at DATETIME NOT NULL,
+            expires_at DATETIME NULL,
+            max_uses INT UNSIGNED NULL,
+            use_count INT UNSIGNED NOT NULL DEFAULT 0,
+            disabled_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY code (code),
+            KEY target (target_type, target_id)
         ) {$charsetCollate};");
     }
 }

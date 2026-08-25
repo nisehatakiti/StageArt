@@ -31,4 +31,11 @@ interface ProductionRepositoryInterface
      * @return Production[]
      */
     public function findByPrimaryManagerPersonId(PersonId $personId): array;
+
+    /** StageArt Web β版's public Production search (公演・活動検索) -
+     * matches on `name` only, restricted to published Productions only.
+     *
+     * @return Production[]
+     */
+    public function searchPublished(string $query, int $limit): array;
 }

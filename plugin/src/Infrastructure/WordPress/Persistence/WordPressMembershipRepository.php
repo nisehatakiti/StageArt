@@ -36,6 +36,7 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
             'person_id' => $membership->personId()->toString(),
             'role_key' => $membership->roleKey()->toString(),
             'status' => $membership->status(),
+            'joined_at' => $membership->joinedAt()?->format('Y-m-d H:i:s'),
         ];
 
         if ($existing) {
@@ -56,6 +57,16 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
         if ($result === false) {
             throw new RuntimeException("Failed to insert into {$this->table}: " . $this->wpdb->last_error);
         }
+    }
+
+    public function findById(MembershipId $id): ?Membership
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
+            ARRAY_A
+        );
+
+        return $row ? $this->hydrate($row) : null;
     }
 
     public function findByPersonId(PersonId $personId): array
@@ -100,7 +111,8 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
             PersonId::fromString($row['person_id']),
             RoleKey::fromString($row['role_key']),
             $row['status'],
-            new DateTimeImmutable($row['created_at'])
+            new DateTimeImmutable($row['created_at']),
+            isset($row['joined_at']) && $row['joined_at'] !== null ? new DateTimeImmutable($row['joined_at']) : null
         );
     }
 }

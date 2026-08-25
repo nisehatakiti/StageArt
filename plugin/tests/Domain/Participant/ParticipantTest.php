@@ -75,4 +75,60 @@ final class ParticipantTest extends TestCase
 
         $this->assertSame(ParticipantSubjectType::ORGANIZATION, $participant->subjectType()->toString());
     }
+
+    public function test_request_participation_starts_pending(): void
+    {
+        $participant = Participant::requestParticipation(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $this->assertTrue($participant->isPending());
+        $this->assertSame(ParticipantStatus::PENDING, $participant->status()->toString());
+    }
+
+    public function test_approving_a_pending_request_activates_it(): void
+    {
+        $participant = Participant::requestParticipation(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $participant->approve();
+
+        $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
+        $this->assertFalse($participant->isPending());
+    }
+
+    public function test_rejecting_a_pending_request_marks_it_rejected(): void
+    {
+        $participant = Participant::requestParticipation(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $participant->reject();
+
+        $this->assertSame(ParticipantStatus::REJECTED, $participant->status()->toString());
+    }
+
+    public function test_an_already_active_participant_cannot_be_approved_again(): void
+    {
+        $participant = Participant::create(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $participant->approve();
+    }
 }

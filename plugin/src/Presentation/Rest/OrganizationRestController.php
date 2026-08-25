@@ -27,6 +27,8 @@ use StageArt\Application\Organization\OwnerTransferCommand;
 use StageArt\Application\Organization\OwnerTransferTargetNotEligibleException;
 use StageArt\Application\Organization\OwnerTransferUseCase;
 use StageArt\Application\Organization\OwnerUserAccountRequiredException;
+use StageArt\Application\Organization\SearchOrganizationsQuery;
+use StageArt\Application\Organization\SearchOrganizationsUseCase;
 use StageArt\Application\Organization\UpdateOrganizationCommand;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use WP_Error;
@@ -62,6 +64,7 @@ final class OrganizationRestController
     private OwnerTransferUseCase $ownerTransfer;
     private FollowOrganizationUseCase $followOrganization;
     private UnfollowOrganizationUseCase $unfollowOrganization;
+    private SearchOrganizationsUseCase $searchOrganizations;
 
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
@@ -72,7 +75,8 @@ final class OrganizationRestController
         DeleteOrganizationUseCase $deleteOrganization,
         OwnerTransferUseCase $ownerTransfer,
         FollowOrganizationUseCase $followOrganization,
-        UnfollowOrganizationUseCase $unfollowOrganization
+        UnfollowOrganizationUseCase $unfollowOrganization,
+        SearchOrganizationsUseCase $searchOrganizations
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
@@ -83,6 +87,7 @@ final class OrganizationRestController
         $this->ownerTransfer = $ownerTransfer;
         $this->followOrganization = $followOrganization;
         $this->unfollowOrganization = $unfollowOrganization;
+        $this->searchOrganizations = $searchOrganizations;
     }
 
     public function register_routes(): void
@@ -104,6 +109,18 @@ final class OrganizationRestController
             [
                 'methods' => 'GET',
                 'callback' => [$this, 'getBySlug'],
+                'permission_callback' => '__return_true',
+            ],
+        ]);
+
+        // StageArt Web β版: public, unauthenticated Organization search
+        // (団体検索). Registered before the generic /{id} route below,
+        // same collision-avoidance reasoning as /by-slug/{slug} - "search"
+        // would otherwise satisfy that route's own [^/]+ id pattern.
+        register_rest_route(self::API_NAMESPACE, '/organizations/search', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'search'],
                 'permission_callback' => '__return_true',
             ],
         ]);
@@ -313,6 +330,16 @@ final class OrganizationRestController
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }
+    }
+
+    /**
+     * @return WP_REST_Response
+     */
+    public function search(WP_REST_Request $request)
+    {
+        $results = $this->searchOrganizations->execute(new SearchOrganizationsQuery((string) $request->get_param('q')));
+
+        return new WP_REST_Response(array_map(static fn ($result) => $result->toArray(), $results), 200);
     }
 
     /**

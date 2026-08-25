@@ -128,6 +128,22 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
         return $row ? $this->hydrate($row) : null;
     }
 
+    public function searchPublished(string $query, int $limit): array
+    {
+        $like = '%' . $this->wpdb->esc_like($query) . '%';
+
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE published_at IS NOT NULL AND name LIKE %s ORDER BY name ASC LIMIT %d",
+                $like,
+                $limit
+            ),
+            ARRAY_A
+        );
+
+        return array_map([$this, 'hydrate'], $rows ?: []);
+    }
+
     private function hydrate(array $row): Production
     {
         return Production::reconstitute(

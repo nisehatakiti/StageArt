@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Domain\Participant;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
 use StageArt\Domain\Production\ProductionId;
 
 /**
@@ -77,6 +78,56 @@ final class Participant
         DateTimeImmutable $updatedAt
     ): self {
         return new self($id, $productionId, $subjectType, $subjectId, $participantType, $status, $createdAt, $updatedAt);
+    }
+
+    /**
+     * StageArt Web β版: a Person requesting to join a Production (via
+     * Join Key or search - docs/04-DomainModel/JoinKey.md's "Production
+     * Join Key... Participant Flow") starts PENDING, not ACTIVE - see
+     * approve()/reject(). Mirrors Membership::requestMembership()'s same
+     * request-then-approve shape at the Production Scope.
+     */
+    public static function requestParticipation(
+        ProductionId $productionId,
+        ParticipantSubjectType $subjectType,
+        string $subjectId,
+        ParticipantType $participantType
+    ): self {
+        $now = new DateTimeImmutable();
+
+        return new self(
+            ParticipantId::generate(),
+            $productionId,
+            $subjectType,
+            $subjectId,
+            $participantType,
+            ParticipantStatus::fromString(ParticipantStatus::PENDING),
+            $now,
+            $now
+        );
+    }
+
+    public function isPending(): bool
+    {
+        return $this->status->toString() === ParticipantStatus::PENDING;
+    }
+
+    public function approve(): void
+    {
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING Participant can be approved.');
+        }
+
+        $this->activate();
+    }
+
+    public function reject(): void
+    {
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING Participant can be rejected.');
+        }
+
+        $this->changeStatus(ParticipantStatus::fromString(ParticipantStatus::REJECTED));
     }
 
     public function changeParticipantType(ParticipantType $participantType): void

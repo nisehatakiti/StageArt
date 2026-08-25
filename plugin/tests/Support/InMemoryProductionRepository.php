@@ -72,4 +72,17 @@ final class InMemoryProductionRepository implements ProductionRepositoryInterfac
 
         return null;
     }
+
+    public function searchPublished(string $query, int $limit): array
+    {
+        $matches = array_values(array_filter(
+            $this->productions,
+            static fn (Production $production): bool => $production->isPublished()
+                && mb_stripos($production->name()->toString(), $query) !== false
+        ));
+
+        usort($matches, static fn (Production $a, Production $b): int => $a->name()->toString() <=> $b->name()->toString());
+
+        return array_slice($matches, 0, $limit);
+    }
 }

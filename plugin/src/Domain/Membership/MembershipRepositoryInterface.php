@@ -11,6 +11,8 @@ interface MembershipRepositoryInterface
 {
     public function save(Membership $membership): void;
 
+    public function findById(MembershipId $id): ?Membership;
+
     /**
      * @return Membership[]
      */

@@ -27,6 +27,8 @@ use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionSlugAlreadyTakenException;
+use StageArt\Application\Production\SearchProductionsQuery;
+use StageArt\Application\Production\SearchProductionsUseCase;
 use StageArt\Application\Production\StartProductionPlanningCommand;
 use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionCommand;
@@ -57,6 +59,7 @@ final class ProductionRestController
     private CompleteProductionUseCase $completeProduction;
     private ArchiveProductionUseCase $archiveProduction;
     private CancelProductionUseCase $cancelProduction;
+    private SearchProductionsUseCase $searchProductions;
 
     public function __construct(
         CreateProductionUseCase $createProduction,
@@ -69,7 +72,8 @@ final class ProductionRestController
         ActivateProductionUseCase $activateProduction,
         CompleteProductionUseCase $completeProduction,
         ArchiveProductionUseCase $archiveProduction,
-        CancelProductionUseCase $cancelProduction
+        CancelProductionUseCase $cancelProduction,
+        SearchProductionsUseCase $searchProductions
     ) {
         $this->createProduction = $createProduction;
         $this->getProduction = $getProduction;
@@ -82,6 +86,7 @@ final class ProductionRestController
         $this->completeProduction = $completeProduction;
         $this->archiveProduction = $archiveProduction;
         $this->cancelProduction = $cancelProduction;
+        $this->searchProductions = $searchProductions;
     }
 
     public function register_routes(): void
@@ -103,6 +108,14 @@ final class ProductionRestController
             [
                 'methods' => 'GET',
                 'callback' => [$this, 'getBySlug'],
+                'permission_callback' => '__return_true',
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/productions/search', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'search'],
                 'permission_callback' => '__return_true',
             ],
         ]);
@@ -252,6 +265,16 @@ final class ProductionRestController
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }
+    }
+
+    /**
+     * @return WP_REST_Response
+     */
+    public function search(WP_REST_Request $request)
+    {
+        $results = $this->searchProductions->execute(new SearchProductionsQuery((string) $request->get_param('q')));
+
+        return new WP_REST_Response(array_map(static fn ($result) => $result->toArray(), $results), 200);
     }
 
     /**

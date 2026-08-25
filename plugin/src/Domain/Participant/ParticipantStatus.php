@@ -12,8 +12,16 @@ final class ParticipantStatus
     public const ACTIVE = 'ACTIVE';
     public const INACTIVE = 'INACTIVE';
     public const CANCELLED = 'CANCELLED';
+    /** StageArt Web β版: a Person's own request to join a Production (via
+     * Join Key or search), awaiting the PrimaryManager's approval - see
+     * Participant::requestParticipation()/approve()/reject(). Distinct
+     * from DRAFT, which is a manager-added-but-unconfirmed Participant
+     * (see Participant.php's own docblock), not a Person-initiated
+     * request. */
+    public const PENDING = 'PENDING';
+    public const REJECTED = 'REJECTED';
 
-    private const VALID = [self::DRAFT, self::ACTIVE, self::INACTIVE, self::CANCELLED];
+    private const VALID = [self::DRAFT, self::ACTIVE, self::INACTIVE, self::CANCELLED, self::PENDING, self::REJECTED];
 
     private string $value;
 

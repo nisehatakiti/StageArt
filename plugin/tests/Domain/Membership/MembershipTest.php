@@ -51,4 +51,44 @@ final class MembershipTest extends TestCase
 
         $this->assertSame(RoleKey::OWNER, $membership->roleKey()->toString());
     }
+
+    public function test_request_membership_starts_requested_with_no_joined_at(): void
+    {
+        $membership = Membership::requestMembership(OrganizationId::generate(), PersonId::generate());
+
+        $this->assertTrue($membership->isPending());
+        $this->assertSame(Membership::STATUS_REQUESTED, $membership->status());
+        $this->assertSame(RoleKey::MEMBER, $membership->roleKey()->toString());
+        $this->assertNull($membership->joinedAt());
+    }
+
+    public function test_approving_a_requested_membership_activates_it_and_records_joined_at(): void
+    {
+        $membership = Membership::requestMembership(OrganizationId::generate(), PersonId::generate());
+
+        $membership->approve();
+
+        $this->assertSame(Membership::STATUS_ACTIVE, $membership->status());
+        $this->assertFalse($membership->isPending());
+        $this->assertNotNull($membership->joinedAt());
+    }
+
+    public function test_rejecting_a_requested_membership_marks_it_rejected(): void
+    {
+        $membership = Membership::requestMembership(OrganizationId::generate(), PersonId::generate());
+
+        $membership->reject();
+
+        $this->assertSame(Membership::STATUS_REJECTED, $membership->status());
+        $this->assertNull($membership->joinedAt());
+    }
+
+    public function test_an_already_active_membership_cannot_be_approved_again(): void
+    {
+        $membership = Membership::createOwnerMembership(OrganizationId::generate(), PersonId::generate());
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $membership->approve();
+    }
 }

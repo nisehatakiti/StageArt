@@ -19,6 +19,11 @@ final class InMemoryMembershipRepository implements MembershipRepositoryInterfac
         $this->memberships[$membership->id()->toString()] = $membership;
     }
 
+    public function findById(\StageArt\Domain\Membership\MembershipId $id): ?Membership
+    {
+        return $this->memberships[$id->toString()] ?? null;
+    }
+
     public function findByPersonId(PersonId $personId): array
     {
         return array_values(array_filter(

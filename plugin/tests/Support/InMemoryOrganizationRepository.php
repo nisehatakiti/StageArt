@@ -48,4 +48,17 @@ final class InMemoryOrganizationRepository implements OrganizationRepositoryInte
 
         return null;
     }
+
+    public function searchPublished(string $query, int $limit): array
+    {
+        $matches = array_values(array_filter(
+            $this->organizations,
+            static fn (Organization $organization): bool => $organization->isPublished()
+                && mb_stripos($organization->name()->toString(), $query) !== false
+        ));
+
+        usort($matches, static fn (Organization $a, Organization $b): int => $a->name()->toString() <=> $b->name()->toString());
+
+        return array_slice($matches, 0, $limit);
+    }
 }
