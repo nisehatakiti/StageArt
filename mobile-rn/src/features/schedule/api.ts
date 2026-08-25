@@ -1,6 +1,44 @@
 import type { ApiClient } from '@/api/client';
 import type { Participant, ScheduleComment, TimetableItem } from '@/types/api';
 
+/** GET /rehearsals/{id}/timetable-items - every item on this Rehearsal's
+ * latest DRAFT Timetable Version (the authoring view - unlike
+ * fetchProductionTimetableItems, which only ever shows PUBLISHED
+ * content to participants). */
+export function fetchRehearsalTimetableItems(client: ApiClient, rehearsalId: string): Promise<TimetableItem[]> {
+  return client.get<TimetableItem[]>(`/rehearsals/${rehearsalId}/timetable-items/draft`);
+}
+
+/** POST /rehearsals/{id}/timetable-items - adds an item to this
+ * Rehearsal's DRAFT Timetable Version (TimetableItemRestController.php). */
+export function createTimetableItem(
+  client: ApiClient,
+  rehearsalId: string,
+  fields: { title: string; startDateTime: string; category?: string; venue?: string }
+): Promise<TimetableItem> {
+  return client.post<TimetableItem>(`/rehearsals/${rehearsalId}/timetable-items`, {
+    title: fields.title,
+    start_date_time: fields.startDateTime,
+    category: fields.category,
+    venue: fields.venue,
+  });
+}
+
+/** GET /rehearsals/{id}/timetable/draft - resolves the current DRAFT
+ * Timetable Version's own id, needed to then call
+ * POST /timetable-versions/{id}/publish. */
+export function fetchDraftTimetableVersionId(client: ApiClient, rehearsalId: string): Promise<string> {
+  return client.get<{ id: string }>(`/rehearsals/${rehearsalId}/timetable/draft`).then((result) => result.id);
+}
+
+/** POST /timetable-versions/{id}/publish - "稽古情報の確定" alongside
+ * Rehearsal confirm() (see features/attendance/api.ts's confirmRehearsal) -
+ * this specific action publishes the DRAFT Timetable Version's content
+ * (items) so participants can see it via GET /productions/{id}/timetable-items. */
+export function publishTimetableVersion(client: ApiClient, timetableVersionId: string, changeSummary?: string): Promise<unknown> {
+  return client.post(`/timetable-versions/${timetableVersionId}/publish`, { change_summary: changeSummary });
+}
+
 /**
  * GET /productions/{id}/timetable-items - the Production Schedule Read
  * Model (Timetable.md's "Production Schedule (Read Model)"). Aggregates

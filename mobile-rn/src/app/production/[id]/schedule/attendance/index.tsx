@@ -27,6 +27,17 @@ export default function RehearsalListScreen() {
         出欠
       </ThemedText>
 
+      {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」 - 権限
+          チェックはClient側で複製しない (§24/§25と同じ既存方針)。管理権限
+          のないPersonが押した場合は、作成APIが返す403をそのまま表示する。 */}
+      <TouchableOpacity
+        testID="rehearsal-create-link"
+        onPress={() => router.push(`/production/${productionId}/schedule/attendance/create`)}
+        style={styles.createLink}
+      >
+        <ThemedText type="link">＋ 稽古を作成する</ThemedText>
+      </TouchableOpacity>
+
       {rehearsalsQuery.isLoading && (
         <ThemedView style={styles.centered}>
           <ActivityIndicator testID="rehearsal-list-loading" />
@@ -72,6 +83,7 @@ export default function RehearsalListScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   title: { fontSize: 24, lineHeight: 30, paddingHorizontal: Spacing.four, paddingTop: Spacing.three },
+  createLink: { paddingHorizontal: Spacing.four, paddingTop: Spacing.two },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   list: { padding: Spacing.four, gap: Spacing.two },
   row: {

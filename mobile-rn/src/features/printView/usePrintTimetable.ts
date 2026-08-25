@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import * as Print from 'expo-print';
+import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -29,6 +30,18 @@ export function usePrintTimetable(productionId: string | undefined) {
     mutationFn: async (params: PrintTimetableParams) => {
       if (!productionId) {
         throw new Error('productionId is required');
+      }
+
+      // StageArt Web β版: expo-file-system's File/Paths (writePdfToCacheFile)
+      // and expo-sharing are native-only - discovered while auditing this
+      // Phase's own Web β scope for native-only API usage (this is the
+      // only such usage found in Schedule/Rehearsal/Attendance). Web
+      // support (e.g. a browser download/print dialog) is real,
+      // non-trivial follow-up work, not something to fake here - this
+      // guard only turns an otherwise-uncaught crash into a clear,
+      // catchable message.
+      if (Platform.OS === 'web') {
+        throw new Error('この機能はWeb版では現在ご利用いただけません。');
       }
 
       const bytes = await fetchTimetablePrintPdf(apiClient, productionId, params);

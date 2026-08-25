@@ -18,6 +18,33 @@ export function fetchRehearsal(client: ApiClient, rehearsalId: string): Promise<
   return client.get<Rehearsal>(`/rehearsals/${rehearsalId}`);
 }
 
+/** POST /productions/{id}/rehearsals - creates a Rehearsal (starts at
+ * DRAFT; RehearsalAttendance SCHEDULE_ADJUSTMENT-phase records are
+ * created automatically for eligible Participants server-side, see
+ * CreateRehearsalUseCase.php). */
+export function createRehearsal(
+  client: ApiClient,
+  productionId: string,
+  fields: { title: string; startDateTime?: string; endDateTime?: string; timezone?: string; location?: string }
+): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
+    title: fields.title,
+    start_date_time: fields.startDateTime,
+    end_date_time: fields.endDateTime,
+    timezone: fields.timezone,
+    location: fields.location,
+  });
+}
+
+/** POST /rehearsals/{id}/confirm - "稽古情報の確定" (docs/04-HomeRoleBasedMenu.md
+ * §07's 稽古管理). Moves the Attendance phase from SCHEDULE_ADJUSTMENT to
+ * ATTENDANCE_CONFIRMATION (see features/attendance/phase.ts's own
+ * disclosed mapping) - ATTENDANCE_CONFIRMATION-phase records are created
+ * automatically server-side by this action (ConfirmRehearsalUseCase.php). */
+export function confirmRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/confirm`);
+}
+
 /** GET /rehearsals/{id}/attendances?phase=X - the full roster for one
  * Rehearsal/phase, not just the caller's own record (see
  * RehearsalAttendanceRestController.php: read is Production-membership-
