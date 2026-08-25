@@ -20,6 +20,9 @@ use StageArt\Application\Expense\ListExpensesUseCase;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
+use StageArt\Application\Favorite\AddFavoriteUseCase;
+use StageArt\Application\Favorite\ListMyFavoritesUseCase;
+use StageArt\Application\Favorite\RemoveFavoriteUseCase;
 use StageArt\Application\Follow\FollowOrganizationUseCase;
 use StageArt\Application\Follow\ListMyFollowsUseCase;
 use StageArt\Application\Follow\UnfollowOrganizationUseCase;
@@ -144,6 +147,7 @@ use StageArt\Infrastructure\WordPress\Authentication\WordPressUserProvisioner;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExternalIdentityRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRefreshTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressMembershipRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressFavoriteRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJoinKeyRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationFollowRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
@@ -171,6 +175,7 @@ use StageArt\Presentation\Rest\AuthenticationRestController;
 use StageArt\Presentation\Rest\BudgetRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
 use StageArt\Presentation\Rest\ExpenseRestController;
+use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\JournalEntryRestController;
 use StageArt\Presentation\Rest\MeRestController;
@@ -209,6 +214,7 @@ final class Plugin
         $organizations       = new WordPressOrganizationRepository($wpdb);
         $organizationFollows = new WordPressOrganizationFollowRepository($wpdb);
         $joinKeys            = new WordPressJoinKeyRepository($wpdb);
+        $favorites           = new WordPressFavoriteRepository($wpdb);
         $people              = new WordPressPersonRepository($wpdb);
         $memberships         = new WordPressMembershipRepository($wpdb);
         $projects            = new WordPressProjectRepository($wpdb);
@@ -364,6 +370,9 @@ final class Plugin
         $listPendingMembershipRequests = new ListPendingMembershipRequestsUseCase($memberships, $people, $authorization);
         $listMyMemberships = new ListMyMembershipsUseCase($memberships, $organizations, $authorization);
         $searchOrganizations = new SearchOrganizationsUseCase($organizations);
+        $addFavorite = new AddFavoriteUseCase($favorites, $organizations, $productions, $authorization);
+        $removeFavorite = new RemoveFavoriteUseCase($favorites, $authorization);
+        $listMyFavorites = new ListMyFavoritesUseCase($favorites, $organizations, $productions, $projects, $authorization);
 
         $createProject = new CreateProjectUseCase($projects, $authorization);
         $getProject     = new GetProjectUseCase($projects, $authorization);
@@ -836,6 +845,8 @@ final class Plugin
             $listMyMemberships
         );
 
+        $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
+
         $printViewRestController = new PrintViewRestController(
             $getProductionPrintView,
             new PrintViewHtmlRenderer(),
@@ -880,6 +891,7 @@ final class Plugin
         add_action('rest_api_init', [$meRestController, 'register_routes']);
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
+        add_action('rest_api_init', [$favoriteRestController, 'register_routes']);
         add_action('rest_api_init', [$printViewRestController, 'register_routes']);
         add_action('rest_api_init', [$accountRestController, 'register_routes']);
         add_action('rest_api_init', [$budgetRestController, 'register_routes']);

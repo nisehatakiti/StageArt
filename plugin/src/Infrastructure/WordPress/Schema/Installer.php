@@ -45,6 +45,7 @@ final class Installer
         $expenseLines = $wpdb->prefix . 'stageart_expense_lines';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
+        $favorites = $wpdb->prefix . 'stageart_favorites';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -613,6 +614,20 @@ final class Installer
             PRIMARY KEY  (id),
             UNIQUE KEY code (code),
             KEY target (target_type, target_id)
+        ) {$charsetCollate};");
+
+        // StageArt Web β版 (docs/04-DomainModel/Follow.md's "Favorite"):
+        // a plain saved-list, no status column - unfavoriting deletes the
+        // row (see Favorite.php's own docblock for why this differs from
+        // OrganizationFollow's soft ACTIVE/UNFOLLOWED state).
+        dbDelta("CREATE TABLE {$favorites} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            target_type VARCHAR(20) NOT NULL,
+            target_id CHAR(36) NOT NULL,
+            favorited_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_target (person_id, target_type, target_id)
         ) {$charsetCollate};");
     }
 }
