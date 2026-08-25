@@ -80,6 +80,13 @@ export type UserAccountResult = {
  * being set (Organization.publish() requires a slug, but a slug alone
  * does not imply publication) - see Organization.php's docblock.
  */
+/**
+ * `follower_count` (StageArt Follow feature) is additive and null unless
+ * the Backend actually resolved it - only GetOrganizationUseCase (the
+ * single-Organization detail read) does, matching
+ * OrganizationResult.php's own docblock. Create/Update/List responses
+ * carry `follower_count: null`.
+ */
 export type Organization = {
   id: string;
   name: string;
@@ -91,6 +98,7 @@ export type Organization = {
   created_at: string;
   updated_at: string;
   current_person_role: string;
+  follower_count: number | null;
 };
 
 /**
@@ -311,7 +319,39 @@ export type UpcomingRehearsal = {
   attendance_status: string;
 };
 
+/**
+ * "フォロー中の新着" (docs/04-DomainModel/Follow.md): the most recently
+ * published Productions from Organizations the Person actively follows,
+ * resolved live - never a stored/read-tracked Notification, so there is
+ * deliberately no `is_read` field here (unlike NotificationFact).
+ */
+export type FollowedOrganizationFeedItem = {
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string | null;
+  production_id: string;
+  production_name: string;
+  production_slug: string | null;
+  published_at: string;
+};
+
 export type MyDashboard = {
   upcoming_rehearsals: UpcomingRehearsal[];
   notifications: NotificationFact[];
+  followed_organizations_feed: FollowedOrganizationFeedItem[];
+};
+
+/** GET /me/follows. */
+export type MyFollow = {
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string | null;
+  followed_at: string;
+};
+
+/** POST /organizations/{id}/follow, POST /organizations/{id}/unfollow. */
+export type OrganizationFollowStatus = {
+  organization_id: string;
+  is_following: boolean;
+  follower_count: number;
 };

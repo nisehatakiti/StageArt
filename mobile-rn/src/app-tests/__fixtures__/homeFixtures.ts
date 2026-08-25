@@ -11,6 +11,7 @@ export const orgOne: Organization = {
   created_at: '2026-01-01T00:00:00+09:00',
   updated_at: '2026-01-01T00:00:00+09:00',
   current_person_role: 'OWNER',
+  follower_count: null,
 };
 
 export const orgTwo: Organization = {
@@ -70,6 +71,7 @@ export const productionTwo: Production = {
 export const myDashboardEmpty: MyDashboard = {
   upcoming_rehearsals: [],
   notifications: [],
+  followed_organizations_feed: [],
 };
 
 /**

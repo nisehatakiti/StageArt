@@ -50,7 +50,7 @@ describe('login flow: Google', () => {
         },
       },
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [] },
-      { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: { upcoming_rehearsals: [], notifications: [] } },
+      { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: { upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] } },
     ]);
 
     renderRouter('src/app', { initialUrl: '/login' });

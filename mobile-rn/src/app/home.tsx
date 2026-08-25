@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
@@ -8,7 +8,12 @@ import { ProductionCard } from '@/components/production-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
-import { buildDashboardViewModel, type DashboardNotificationViewModel, type UpcomingRehearsalViewModel } from '@/features/dashboard/viewModel';
+import {
+  buildDashboardViewModel,
+  type DashboardNotificationViewModel,
+  type FollowedOrganizationFeedItemViewModel,
+  type UpcomingRehearsalViewModel,
+} from '@/features/dashboard/viewModel';
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useLogout } from '@/features/mypage/useLogout';
 import { useOrganizationContext } from '@/features/organization/OrganizationContext';
@@ -100,6 +105,8 @@ export default function HomeScreen() {
           upcomingRehearsals={dashboardViewModel?.upcomingRehearsals ?? []}
           notifications={dashboardViewModel?.notifications ?? []}
         />
+
+        <FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />
 
         {/* §02.6: Organization/Production管理機能は、実際にMembershipを
             持つ利用者にのみ表示する - 未所属の利用者には一切表示しない
@@ -415,6 +422,50 @@ function PersonalOverviewSection({
           </ThemedView>
         </>
       )}
+    </ThemedView>
+  );
+}
+
+/**
+ * docs/03-FollowAndHomeExperience.md's "3. Follow中の新着": a Person's
+ * own next activity comes first (PersonalOverviewSection above), this
+ * comes next, 観劇履歴 after. Renders nothing at all when the feed is
+ * empty (no "フォローなし" placeholder) - same "存在する情報だけを表示"
+ * principle as PersonalOverviewSection's own empty-state handling.
+ */
+function FollowedOrganizationsFeedSection({ items }: { items: FollowedOrganizationFeedItemViewModel[] }) {
+  const router = useRouter();
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <ThemedView style={styles.section} testID="followed-organizations-feed-section">
+      <ThemedText type="subtitle" style={styles.sectionTitle}>
+        フォロー中の新着
+      </ThemedText>
+      <ThemedView testID="followed-organizations-feed-list" style={styles.list}>
+        {items.map((item) => (
+          <TouchableOpacity
+            key={item.productionId}
+            testID={`followed-organization-feed-row-${item.productionId}`}
+            style={styles.card}
+            onPress={() => {
+              if (item.organizationSlug && item.productionSlug) {
+                router.push(`/o/${item.organizationSlug}/${item.productionSlug}` as Href);
+              }
+            }}
+          >
+            <ThemedText type="smallBold">{item.organizationName}</ThemedText>
+            <ThemedText type="small">新しい公演が公開されました</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {item.productionName}
+              {item.dateDisplay ? ` ・ ${item.dateDisplay}` : ''}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </ThemedView>
     </ThemedView>
   );
 }

@@ -49,6 +49,7 @@ const dashboardWithContent: MyDashboard = {
       is_read: false,
     },
   ],
+  followed_organizations_feed: [],
 };
 
 /**
@@ -136,12 +137,53 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
    * message, and not an error).
    */
   it('renders nothing for Personal Overview when both lists are empty, not an error', async () => {
-    await renderHome({ upcoming_rehearsals: [], notifications: [] });
+    await renderHome({ upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] });
 
     await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
     expect(screen.queryByTestId('upcoming-rehearsals-list')).toBeNull();
     expect(screen.queryByTestId('home-notifications-list')).toBeNull();
     expect(screen.queryByTestId('dashboard-loading')).toBeNull();
     expect(screen.queryByTestId('dashboard-error')).toBeNull();
+    expect(screen.queryByTestId('followed-organizations-feed-section')).toBeNull();
+  });
+});
+
+describe('Home: フォロー中の新着 (StageArt Follow)', () => {
+  beforeEach(() => {
+    mockPush.mockClear();
+  });
+
+  it('shows a followed Organization publishing a new Production, and tapping navigates to its public page', async () => {
+    await renderHome({
+      upcoming_rehearsals: [],
+      notifications: [],
+      followed_organizations_feed: [
+        {
+          organization_id: 'org-1',
+          organization_name: '○○演劇団',
+          organization_slug: 'organization-1',
+          production_id: 'prod-1',
+          production_name: '新作公演',
+          production_slug: 'new-production',
+          published_at: '2026-08-15T09:30:00+09:00',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByTestId('followed-organization-feed-row-prod-1')).toBeVisible());
+    expect(screen.getByText('○○演劇団')).toBeVisible();
+    expect(screen.getByText(/新作公演/)).toBeVisible();
+
+    fireEvent.press(screen.getByTestId('followed-organization-feed-row-prod-1'));
+
+    expect(mockPush).toHaveBeenCalledWith('/o/organization-1/new-production');
+  });
+
+  it('renders nothing when nothing is followed, not an empty-state message', async () => {
+    await renderHome({ upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] });
+
+    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    expect(screen.queryByTestId('followed-organizations-feed-section')).toBeNull();
+    expect(screen.queryByText(/フォローなし/)).toBeNull();
   });
 });

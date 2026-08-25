@@ -1,6 +1,6 @@
 import { buildNotificationViewModel, type NotificationViewModel } from '@/features/notifications/viewModel';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
-import type { MyDashboard, UpcomingRehearsal } from '@/types/api';
+import type { FollowedOrganizationFeedItem, MyDashboard, UpcomingRehearsal } from '@/types/api';
 
 /**
  * §7 of this Phase's instruction: the Backend's `limit=50` on
@@ -10,6 +10,7 @@ import type { MyDashboard, UpcomingRehearsal } from '@/types/api';
  */
 export const HOME_UPCOMING_REHEARSAL_LIMIT = 3;
 export const HOME_NOTIFICATION_LIMIT = 3;
+export const HOME_FOLLOWED_ORGANIZATIONS_FEED_LIMIT = 3;
 
 export type UpcomingRehearsalViewModel = {
   rehearsalId: string;
@@ -55,9 +56,38 @@ export function buildUpcomingRehearsalViewModel(rehearsal: UpcomingRehearsal): U
  */
 export type DashboardNotificationViewModel = NotificationViewModel & { productionId: string };
 
+export type FollowedOrganizationFeedItemViewModel = {
+  organizationId: string;
+  organizationName: string;
+  productionId: string;
+  productionName: string;
+  productionSlug: string | null;
+  organizationSlug: string | null;
+  dateDisplay: string;
+};
+
+/** `dateDisplay` reuses formatDayHeader() (the same "見た目の日付" rule
+ * already established for Rehearsals), applied to `published_at` since a
+ * Feed row is itself dated by when its Production was published, not by
+ * any Rehearsal date. */
+export function buildFollowedOrganizationFeedItemViewModel(
+  item: FollowedOrganizationFeedItem
+): FollowedOrganizationFeedItemViewModel {
+  return {
+    organizationId: item.organization_id,
+    organizationName: item.organization_name,
+    productionId: item.production_id,
+    productionName: item.production_name,
+    productionSlug: item.production_slug,
+    organizationSlug: item.organization_slug,
+    dateDisplay: formatDayHeader(new Date(item.published_at)),
+  };
+}
+
 export function buildDashboardViewModel(dashboard: MyDashboard): {
   upcomingRehearsals: UpcomingRehearsalViewModel[];
   notifications: DashboardNotificationViewModel[];
+  followedOrganizationsFeed: FollowedOrganizationFeedItemViewModel[];
 } {
   return {
     upcomingRehearsals: dashboard.upcoming_rehearsals
@@ -67,5 +97,8 @@ export function buildDashboardViewModel(dashboard: MyDashboard): {
       ...buildNotificationViewModel(fact),
       productionId: fact.production_id,
     })),
+    followedOrganizationsFeed: dashboard.followed_organizations_feed
+      .slice(0, HOME_FOLLOWED_ORGANIZATIONS_FEED_LIMIT)
+      .map(buildFollowedOrganizationFeedItemViewModel),
   };
 }

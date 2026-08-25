@@ -1,6 +1,6 @@
 import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
-import type { Organization, Project, PublicOrganization } from '@/types/api';
+import type { MyFollow, Organization, OrganizationFollowStatus, Project, PublicOrganization } from '@/types/api';
 
 /** GET /organizations is Membership-scoped server-side (only ACTIVE
  * Memberships' Organizations are returned - ListOrganizationsUseCase). */
@@ -38,6 +38,29 @@ export function updateOrganization(
  * a nonexistent slug and an existing-but-unpublished Organization. */
 export function fetchPublicOrganizationBySlug(slug: string): Promise<PublicOrganization> {
   return publicGet<PublicOrganization>(`/organizations/by-slug/${encodeURIComponent(slug)}`);
+}
+
+/**
+ * StageArt Follow: authenticated, but deliberately not Membership-gated
+ * (any logged-in Person can Follow any published Organization - see
+ * FollowOrganizationUseCase.php's own docblock). Following an
+ * unpublished/nonexistent Organization 404s.
+ */
+export function followOrganization(client: ApiClient, organizationId: string): Promise<OrganizationFollowStatus> {
+  return client.post<OrganizationFollowStatus>(`/organizations/${organizationId}/follow`);
+}
+
+/** Idempotent - unfollowing an Organization never followed (or already
+ * unfollowed) still returns 200 with `is_following: false`. */
+export function unfollowOrganization(client: ApiClient, organizationId: string): Promise<OrganizationFollowStatus> {
+  return client.post<OrganizationFollowStatus>(`/organizations/${organizationId}/unfollow`);
+}
+
+/** GET /me/follows - the caller's own actively-followed Organizations,
+ * used both to render a Follow button's initial state and (eventually) a
+ * dedicated Follow list screen. */
+export function fetchMyFollows(client: ApiClient): Promise<MyFollow[]> {
+  return client.get<MyFollow[]>('/me/follows');
 }
 
 /**
