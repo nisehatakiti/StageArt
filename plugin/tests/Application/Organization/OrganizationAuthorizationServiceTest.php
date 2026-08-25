@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Tests\Application\Organization;
 
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Follow\FollowOrganizationCommand;
+use StageArt\Application\Follow\FollowOrganizationUseCase;
 use StageArt\Application\Organization\CreateOrganizationCommand;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
 use StageArt\Application\Organization\GetOrganizationQuery;
@@ -18,6 +20,7 @@ use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -40,7 +43,7 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
         $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
-        $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
+        $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
 
         // WordPress user 1 creates and owns Organization A.
         $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
@@ -87,7 +90,7 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
         $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
-        $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
+        $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
 
         $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
 
@@ -106,7 +109,7 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
         $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
-        $getOrganization = new GetOrganizationUseCase($organizations, $authorization);
+        $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
 
         $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
@@ -132,5 +135,45 @@ final class OrganizationAuthorizationServiceTest extends TestCase
             null,
             'ACTIVE'
         ));
+    }
+
+    public function test_get_organization_surfaces_the_active_follower_count(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $follows = new InMemoryOrganizationFollowRepository();
+        $authorization = new OrganizationAuthorizationService($people, $memberships);
+
+        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $getOrganization = new GetOrganizationUseCase($organizations, $follows, $authorization);
+
+        $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Followed Org', 'followed-org'));
+
+        // A follower count needs the Organization to actually be
+        // followable - GetOrganizationUseCase itself doesn't require
+        // publication, but FollowOrganizationUseCase does (see its own
+        // test suite), so this test publishes it first.
+        $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
+        $updateOrganization->execute(new UpdateOrganizationCommand(
+            $organization->id,
+            1,
+            'Followed Org',
+            null,
+            null,
+            'ACTIVE',
+            null,
+            true
+        ));
+
+        $follower = Person::create(2);
+        $people->save($follower);
+        (new FollowOrganizationUseCase($organizations, $follows, $authorization))->execute(
+            new FollowOrganizationCommand(2, $organization->id)
+        );
+
+        $result = $getOrganization->execute(new GetOrganizationQuery($organization->id, 1));
+
+        $this->assertSame(1, $result->followerCount);
     }
 }

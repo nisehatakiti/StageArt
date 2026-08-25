@@ -20,6 +20,9 @@ use StageArt\Application\Expense\ListExpensesUseCase;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
+use StageArt\Application\Follow\FollowOrganizationUseCase;
+use StageArt\Application\Follow\ListMyFollowsUseCase;
+use StageArt\Application\Follow\UnfollowOrganizationUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
 use StageArt\Application\Organization\GetOrganizationUseCase;
@@ -126,6 +129,7 @@ use StageArt\Infrastructure\WordPress\Authentication\WordPressUserProvisioner;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExternalIdentityRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRefreshTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressMembershipRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationFollowRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
@@ -184,6 +188,7 @@ final class Plugin
         global $wpdb;
 
         $organizations       = new WordPressOrganizationRepository($wpdb);
+        $organizationFollows = new WordPressOrganizationFollowRepository($wpdb);
         $people              = new WordPressPersonRepository($wpdb);
         $memberships         = new WordPressMembershipRepository($wpdb);
         $projects            = new WordPressProjectRepository($wpdb);
@@ -313,12 +318,15 @@ final class Plugin
             $memberships,
             $transactions
         );
-        $getOrganization    = new GetOrganizationUseCase($organizations, $authorization);
+        $getOrganization    = new GetOrganizationUseCase($organizations, $organizationFollows, $authorization);
         $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations);
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $ownerTransfer      = new OwnerTransferUseCase($memberships, $userAccounts, $authorization, $transactions);
+        $followOrganization   = new FollowOrganizationUseCase($organizations, $organizationFollows, $authorization);
+        $unfollowOrganization = new UnfollowOrganizationUseCase($organizationFollows, $authorization);
+        $listMyFollows         = new ListMyFollowsUseCase($organizationFollows, $organizations, $authorization);
 
         $createProject = new CreateProjectUseCase($projects, $authorization);
         $getProject     = new GetProjectUseCase($projects, $authorization);
@@ -520,6 +528,9 @@ final class Plugin
             $rehearsalAttendances,
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
+            $organizationFollows,
+            $projects,
+            $organizations,
             $productionAuthorization
         );
         $getPushPreference = new GetPushPreferenceUseCase($pushPreferences, $productionAuthorization);
@@ -643,7 +654,9 @@ final class Plugin
             $listOrganizations,
             $updateOrganization,
             $deleteOrganization,
-            $ownerTransfer
+            $ownerTransfer,
+            $followOrganization,
+            $unfollowOrganization
         );
 
         $projectRestController = new ProjectRestController(
@@ -754,7 +767,7 @@ final class Plugin
 
         $pushPreferenceRestController = new PushPreferenceRestController($getPushPreference, $updatePushPreference);
 
-        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName);
+        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
 
         $printViewRestController = new PrintViewRestController(
             $getProductionPrintView,

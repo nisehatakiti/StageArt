@@ -7,8 +7,11 @@ namespace StageArt\Application\Dashboard;
 use DateTimeImmutable;
 use StageArt\Application\Notification\NotificationResult;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Domain\Follow\OrganizationFollowRepositoryInterface;
 use StageArt\Domain\Notification\NotificationReadStateRepositoryInterface;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotificationRepositoryInterface;
+use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
@@ -17,6 +20,7 @@ use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\ProductionDelegate\ProductionDelegateRepositoryInterface;
+use StageArt\Domain\Project\ProjectRepositoryInterface;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
@@ -48,6 +52,7 @@ final class GetMyDashboardUseCase
 {
     private const UPCOMING_REHEARSAL_LIMIT = 50;
     private const NOTIFICATION_LIMIT = 50;
+    private const FOLLOWED_ORGANIZATIONS_FEED_LIMIT = 20;
 
     /** Rehearsal.md's terminal statuses - a completed/cancelled Rehearsal is never "今後の予定". */
     private const EXCLUDED_REHEARSAL_STATUSES = [RehearsalStatus::COMPLETED, RehearsalStatus::CANCELLED];
@@ -59,6 +64,9 @@ final class GetMyDashboardUseCase
     private RehearsalAttendanceRepositoryInterface $attendances;
     private TimetableVersionPublishedNotificationRepositoryInterface $notifications;
     private NotificationReadStateRepositoryInterface $readStates;
+    private OrganizationFollowRepositoryInterface $follows;
+    private ProjectRepositoryInterface $projects;
+    private OrganizationRepositoryInterface $organizations;
     private ProductionAuthorizationService $authorization;
 
     public function __construct(
@@ -69,6 +77,9 @@ final class GetMyDashboardUseCase
         RehearsalAttendanceRepositoryInterface $attendances,
         TimetableVersionPublishedNotificationRepositoryInterface $notifications,
         NotificationReadStateRepositoryInterface $readStates,
+        OrganizationFollowRepositoryInterface $follows,
+        ProjectRepositoryInterface $projects,
+        OrganizationRepositoryInterface $organizations,
         ProductionAuthorizationService $authorization
     ) {
         $this->productions = $productions;
@@ -78,6 +89,9 @@ final class GetMyDashboardUseCase
         $this->attendances = $attendances;
         $this->notifications = $notifications;
         $this->readStates = $readStates;
+        $this->follows = $follows;
+        $this->projects = $projects;
+        $this->organizations = $organizations;
         $this->authorization = $authorization;
     }
 
@@ -91,8 +105,82 @@ final class GetMyDashboardUseCase
 
         return new MyDashboardResult(
             $this->resolveUpcomingRehearsals($requester->id()),
-            $this->resolveNotifications($requester->id())
+            $this->resolveNotifications($requester->id()),
+            $this->resolveFollowedOrganizationsFeed($requester->id())
         );
+    }
+
+    /**
+     * docs/04-DomainModel/Follow.md's "フォロー中の新着": the most recently
+     * published Productions belonging to Organizations the Person
+     * actively follows, resolved live from current Facts (see
+     * FollowedOrganizationFeedItemResult's own docblock for why this is
+     * not a stored Feed Item).
+     *
+     * @return FollowedOrganizationFeedItemResult[]
+     */
+    private function resolveFollowedOrganizationsFeed(PersonId $personId): array
+    {
+        $follows = $this->follows->findActiveByPersonId($personId);
+
+        if ($follows === []) {
+            return [];
+        }
+
+        $organizationIds = array_map(static fn ($follow) => $follow->organizationId(), $follows);
+
+        $projects = $this->projects->findByOrganizationIds($organizationIds);
+
+        if ($projects === []) {
+            return [];
+        }
+
+        /** @var array<string, \StageArt\Domain\Organization\OrganizationId> $organizationIdByProjectId */
+        $organizationIdByProjectId = [];
+        foreach ($projects as $project) {
+            $organizationIdByProjectId[$project->id()->toString()] = $project->organizationId();
+        }
+
+        $productions = array_filter(
+            $this->productions->findByProjectIds(array_map(
+                static fn ($project) => $project->id(),
+                $projects
+            )),
+            static fn (Production $production): bool => $production->publishedAt() !== null
+        );
+
+        if ($productions === []) {
+            return [];
+        }
+
+        usort(
+            $productions,
+            static fn (Production $a, Production $b): int => $b->publishedAt() <=> $a->publishedAt()
+        );
+
+        $productions = array_slice($productions, 0, self::FOLLOWED_ORGANIZATIONS_FEED_LIMIT);
+
+        $organizations = $this->organizations->findByIds(array_values($organizationIdByProjectId));
+
+        /** @var array<string, Organization> $organizationsById */
+        $organizationsById = [];
+        foreach ($organizations as $organization) {
+            $organizationsById[$organization->id()->toString()] = $organization;
+        }
+
+        $results = [];
+        foreach ($productions as $production) {
+            $organizationId = $organizationIdByProjectId[$production->projectId()->toString()] ?? null;
+            $organization = $organizationId ? ($organizationsById[$organizationId->toString()] ?? null) : null;
+
+            if (! $organization) {
+                continue;
+            }
+
+            $results[] = FollowedOrganizationFeedItemResult::fromDomain($production, $organization);
+        }
+
+        return $results;
     }
 
     /**

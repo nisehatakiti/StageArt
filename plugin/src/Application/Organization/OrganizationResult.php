@@ -19,6 +19,7 @@ final class OrganizationResult
     public string $createdAt;
     public string $updatedAt;
     public string $currentPersonRole;
+    public ?int $followerCount;
 
     private function __construct(
         string $id,
@@ -30,7 +31,8 @@ final class OrganizationResult
         ?string $publishedAt,
         string $createdAt,
         string $updatedAt,
-        string $currentPersonRole
+        string $currentPersonRole,
+        ?int $followerCount
     ) {
         $this->id = $id;
         $this->name = $name;
@@ -42,9 +44,17 @@ final class OrganizationResult
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
         $this->currentPersonRole = $currentPersonRole;
+        $this->followerCount = $followerCount;
     }
 
-    public static function fromDomain(Organization $organization, RoleKey $currentPersonRole): self
+    /**
+     * `followerCount` is optional/trailing and null unless the caller
+     * actually resolved it (only GetOrganizationUseCase does today - see
+     * its own docblock) - Create/Update/List Use Cases don't pay for an
+     * extra count query just to populate a field their own screens don't
+     * show.
+     */
+    public static function fromDomain(Organization $organization, RoleKey $currentPersonRole, ?int $followerCount = null): self
     {
         return new self(
             $organization->id()->toString(),
@@ -56,7 +66,8 @@ final class OrganizationResult
             $organization->publishedAt()?->format(DATE_ATOM),
             $organization->createdAt()->format(DATE_ATOM),
             $organization->updatedAt()->format(DATE_ATOM),
-            $currentPersonRole->toString()
+            $currentPersonRole->toString(),
+            $followerCount
         );
     }
 
@@ -76,6 +87,7 @@ final class OrganizationResult
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
             'current_person_role' => $this->currentPersonRole,
+            'follower_count' => $this->followerCount,
         ];
     }
 }

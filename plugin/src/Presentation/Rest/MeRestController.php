@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
+use StageArt\Application\Follow\ListMyFollowsQuery;
+use StageArt\Application\Follow\ListMyFollowsUseCase;
 use StageArt\Application\Person\CurrentPersonNotFoundException;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
 use StageArt\Application\Person\UpdatePersonNameCommand;
@@ -19,11 +21,16 @@ final class MeRestController
 
     private GetCurrentPersonUseCase $getCurrentPerson;
     private UpdatePersonNameUseCase $updatePersonName;
+    private ListMyFollowsUseCase $listMyFollows;
 
-    public function __construct(GetCurrentPersonUseCase $getCurrentPerson, UpdatePersonNameUseCase $updatePersonName)
-    {
+    public function __construct(
+        GetCurrentPersonUseCase $getCurrentPerson,
+        UpdatePersonNameUseCase $updatePersonName,
+        ListMyFollowsUseCase $listMyFollows
+    ) {
         $this->getCurrentPerson = $getCurrentPerson;
         $this->updatePersonName = $updatePersonName;
+        $this->listMyFollows = $listMyFollows;
     }
 
     public function register_routes(): void
@@ -44,6 +51,14 @@ final class MeRestController
             [
                 'methods' => 'PUT',
                 'callback' => [$this, 'updateName'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/me/follows', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listMyFollows'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -84,5 +99,15 @@ final class MeRestController
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_invalid_person_name', $exception->getMessage(), ['status' => 422]);
         }
+    }
+
+    public function listMyFollows(WP_REST_Request $request): WP_REST_Response
+    {
+        $results = $this->listMyFollows->execute(new ListMyFollowsQuery(get_current_user_id()));
+
+        return new WP_REST_Response(
+            array_map(static fn ($result) => $result->toArray(), $results),
+            200
+        );
     }
 }

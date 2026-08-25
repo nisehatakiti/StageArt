@@ -20,14 +20,19 @@ final class MyDashboardResult
     /** @var NotificationResult[] */
     public array $notifications;
 
+    /** @var FollowedOrganizationFeedItemResult[] */
+    public array $followedOrganizationsFeed;
+
     /**
      * @param UpcomingRehearsalResult[] $upcomingRehearsals
      * @param NotificationResult[] $notifications
+     * @param FollowedOrganizationFeedItemResult[] $followedOrganizationsFeed
      */
-    public function __construct(array $upcomingRehearsals, array $notifications)
+    public function __construct(array $upcomingRehearsals, array $notifications, array $followedOrganizationsFeed = [])
     {
         $this->upcomingRehearsals = $upcomingRehearsals;
         $this->notifications = $notifications;
+        $this->followedOrganizationsFeed = $followedOrganizationsFeed;
     }
 
     /**
@@ -43,6 +48,10 @@ final class MyDashboardResult
             'notifications' => array_map(
                 static fn (NotificationResult $result): array => $result->toArray(),
                 $this->notifications
+            ),
+            'followed_organizations_feed' => array_map(
+                static fn (FollowedOrganizationFeedItemResult $result): array => $result->toArray(),
+                $this->followedOrganizationsFeed
             ),
         ];
     }

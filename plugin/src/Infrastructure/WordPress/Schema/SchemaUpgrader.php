@@ -19,7 +19,7 @@ final class SchemaUpgrader
 {
     private const OPTION_NAME = 'stageart_db_schema_version';
 
-    public const CURRENT_VERSION = '1.15.0';
+    public const CURRENT_VERSION = '1.16.0';
 
     public static function maybeUpgrade(): void
     {

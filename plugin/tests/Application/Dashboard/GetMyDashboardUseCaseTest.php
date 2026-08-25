@@ -34,11 +34,13 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Timetable\TimetableId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationReadStateRepository;
+use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTimetableVersionPublishedNotificationRepository;
@@ -56,6 +58,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
     private InMemoryRehearsalAttendanceRepository $attendances;
     private InMemoryTimetableVersionPublishedNotificationRepository $notifications;
     private InMemoryNotificationReadStateRepository $readStates;
+    private InMemoryOrganizationFollowRepository $follows;
+    private InMemoryProjectRepository $projects;
 
     private CreateRehearsalUseCase $createRehearsal;
     private ConfirmRehearsalUseCase $confirmRehearsal;
@@ -73,6 +77,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $this->attendances = new InMemoryRehearsalAttendanceRepository();
         $this->notifications = new InMemoryTimetableVersionPublishedNotificationRepository();
         $this->readStates = new InMemoryNotificationReadStateRepository();
+        $this->follows = new InMemoryOrganizationFollowRepository();
+        $this->projects = new InMemoryProjectRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
@@ -108,6 +114,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $this->attendances,
             $this->notifications,
             $this->readStates,
+            $this->follows,
+            $this->projects,
+            $this->organizations,
             $productionAuthorization
         );
     }
@@ -426,5 +435,103 @@ final class GetMyDashboardUseCaseTest extends TestCase
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
         $this->assertTrue($result->notifications[0]->isRead);
+    }
+
+    /**
+     * @return array{0: Organization, 1: Project} the published parent
+     *                                              Organization/Project,
+     *                                              both saved.
+     */
+    private function givenPublishedFollowableOrganization(string $name, string $slug): array
+    {
+        $organization = Organization::create(new OrganizationName($name), null, null, new \StageArt\Domain\Organization\OrganizationSlug($slug));
+        $organization->publish();
+        $this->organizations->save($organization);
+
+        $project = Project::create($organization->id(), null);
+        $this->projects->save($project);
+
+        return [$organization, $project];
+    }
+
+    public function test_followed_organizations_feed_includes_published_productions_from_followed_organizations(): void
+    {
+        $follower = Person::create(2);
+        $this->people->save($follower);
+
+        [$organization, $project] = $this->givenPublishedFollowableOrganization('Followed Co', 'followed-co');
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('New Show'),
+            Person::create(1)->id(),
+            null,
+            new \StageArt\Domain\Production\ProductionSlug('new-show')
+        );
+        $production->publish();
+        $this->productions->save($production);
+
+        $this->follows->save(\StageArt\Domain\Follow\OrganizationFollow::create($follower->id(), $organization->id()));
+
+        $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
+
+        $this->assertCount(1, $result->followedOrganizationsFeed);
+        $this->assertSame('New Show', $result->followedOrganizationsFeed[0]->productionName);
+        $this->assertSame('Followed Co', $result->followedOrganizationsFeed[0]->organizationName);
+        $this->assertSame('followed-co', $result->followedOrganizationsFeed[0]->organizationSlug);
+    }
+
+    public function test_followed_organizations_feed_excludes_unpublished_productions(): void
+    {
+        $follower = Person::create(2);
+        $this->people->save($follower);
+
+        [$organization, $project] = $this->givenPublishedFollowableOrganization('Followed Co', 'followed-co');
+
+        $draft = Production::create($project->id(), new ProductionName('Draft Show'), Person::create(1)->id());
+        // Deliberately never published.
+        $this->productions->save($draft);
+
+        $this->follows->save(\StageArt\Domain\Follow\OrganizationFollow::create($follower->id(), $organization->id()));
+
+        $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
+
+        $this->assertSame([], $result->followedOrganizationsFeed);
+    }
+
+    public function test_followed_organizations_feed_is_empty_when_nothing_is_followed(): void
+    {
+        $person = Person::create(2);
+        $this->people->save($person);
+
+        $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
+
+        $this->assertSame([], $result->followedOrganizationsFeed);
+    }
+
+    public function test_followed_organizations_feed_excludes_unfollowed_organizations(): void
+    {
+        $follower = Person::create(2);
+        $this->people->save($follower);
+
+        [$organization, $project] = $this->givenPublishedFollowableOrganization('Followed Co', 'followed-co');
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('New Show'),
+            Person::create(1)->id(),
+            null,
+            new \StageArt\Domain\Production\ProductionSlug('new-show-2')
+        );
+        $production->publish();
+        $this->productions->save($production);
+
+        $follow = \StageArt\Domain\Follow\OrganizationFollow::create($follower->id(), $organization->id());
+        $follow->unfollow();
+        $this->follows->save($follow);
+
+        $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
+
+        $this->assertSame([], $result->followedOrganizationsFeed);
     }
 }

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
+use StageArt\Application\Follow\FollowOrganizationCommand;
+use StageArt\Application\Follow\FollowOrganizationUseCase;
+use StageArt\Application\Follow\UnfollowOrganizationCommand;
+use StageArt\Application\Follow\UnfollowOrganizationUseCase;
 use StageArt\Application\Organization\CreateOrganizationCommand;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationCommand;
@@ -56,6 +60,8 @@ final class OrganizationRestController
     private UpdateOrganizationUseCase $updateOrganization;
     private DeleteOrganizationUseCase $deleteOrganization;
     private OwnerTransferUseCase $ownerTransfer;
+    private FollowOrganizationUseCase $followOrganization;
+    private UnfollowOrganizationUseCase $unfollowOrganization;
 
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
@@ -64,7 +70,9 @@ final class OrganizationRestController
         ListOrganizationsUseCase $listOrganizations,
         UpdateOrganizationUseCase $updateOrganization,
         DeleteOrganizationUseCase $deleteOrganization,
-        OwnerTransferUseCase $ownerTransfer
+        OwnerTransferUseCase $ownerTransfer,
+        FollowOrganizationUseCase $followOrganization,
+        UnfollowOrganizationUseCase $unfollowOrganization
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
@@ -73,6 +81,8 @@ final class OrganizationRestController
         $this->updateOrganization = $updateOrganization;
         $this->deleteOrganization = $deleteOrganization;
         $this->ownerTransfer = $ownerTransfer;
+        $this->followOrganization = $followOrganization;
+        $this->unfollowOrganization = $unfollowOrganization;
     }
 
     public function register_routes(): void
@@ -120,6 +130,27 @@ final class OrganizationRestController
             [
                 'methods' => 'POST',
                 'callback' => [$this, 'transferOwner'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        // StageArt Follow: authenticated (any logged-in Person, not
+        // Membership-gated - see FollowOrganizationUseCase's own
+        // docblock), so these deliberately use require_login rather than
+        // being folded into the Organization Scope permission checks the
+        // rest of this controller uses.
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/follow', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'follow'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/unfollow', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'unfollow'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -282,6 +313,30 @@ final class OrganizationRestController
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
         }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function follow(WP_REST_Request $request)
+    {
+        try {
+            $command = new FollowOrganizationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+            return new WP_REST_Response($this->followOrganization->execute($command)->toArray(), 200);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function unfollow(WP_REST_Request $request)
+    {
+        $command = new UnfollowOrganizationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+        return new WP_REST_Response($this->unfollowOrganization->execute($command)->toArray(), 200);
     }
 
     /**

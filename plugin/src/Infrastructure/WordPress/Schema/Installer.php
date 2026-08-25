@@ -43,6 +43,7 @@ final class Installer
         $journalEntryLines = $wpdb->prefix . 'stageart_journal_entry_lines';
         $expenses = $wpdb->prefix . 'stageart_expenses';
         $expenseLines = $wpdb->prefix . 'stageart_expense_lines';
+        $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -570,6 +571,24 @@ final class Installer
             description VARCHAR(500) NULL,
             PRIMARY KEY  (id),
             KEY expense_id (expense_id)
+        ) {$charsetCollate};");
+
+        // StageArt Follow (docs/04-DomainModel/Follow.md): one row per
+        // (person, organization) pair, re-followed by toggling `status`
+        // back to ACTIVE rather than inserting a second row - Follow.md's
+        // own "同一Personが同一Organizationを重複してFollowすることはでき
+        // ない" is enforced by this UNIQUE KEY, not just Application-layer
+        // logic.
+        dbDelta("CREATE TABLE {$organizationFollows} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+            followed_at DATETIME NOT NULL,
+            unfollowed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_organization (person_id, organization_id),
+            KEY organization_id (organization_id)
         ) {$charsetCollate};");
     }
 }
