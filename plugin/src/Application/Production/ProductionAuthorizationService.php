@@ -51,17 +51,18 @@ use StageArt\Domain\Role\RolePermissions;
  * "通常はPrimaryManagerが作成する". Both of these are disclosed
  * implementation judgments, not Blueprint-mandated splits.
  *
- * Phase 2 adds isProductionMember() and canManageRehearsals(). Rehearsal
- * Read and ScheduleComment access are not PrimaryManager/Delegate-only -
- * Rehearsal.md's "Rehearsal Management Authorization" and
- * ScheduleComment.md's "Authorization" both key off Production
- * membership broadly, which per Participant.md includes any ACTIVE
- * Participant whose Subject is a Person (not just PrimaryManager/
- * ProductionDelegate). isProductionMember() therefore widens
- * canReadProduction()'s two paths with a third: an ACTIVE, Person-subject
- * Participant of the Production. canManageRehearsals() follows
- * canManageParticipants()'s existing pattern for the REHEARSAL_MANAGER
- * Role.
+ * Phase 2 adds isProductionMember(). Rehearsal Read and ScheduleComment
+ * access are not PrimaryManager/Delegate-only - Rehearsal.md's
+ * "Rehearsal Management Authorization" and ScheduleComment.md's
+ * "Authorization" both key off Production membership broadly, which per
+ * Participant.md includes any ACTIVE Participant whose Subject is a
+ * Person (not just PrimaryManager/ProductionDelegate).
+ * isProductionMember() therefore widens canReadProduction()'s two paths
+ * with a third: an ACTIVE, Person-subject Participant of the Production.
+ * (The Rehearsal Module's own management check, formerly a dedicated
+ * `canManageRehearsals()` method here, now goes through
+ * `hasProductionCapability()`'s generic Capability check below -
+ * see the Core/Module Architecture phase's report.)
  *
  * Phase 6.1: Production Lifecycle Action authorization
  * (canManageProduction()) is unchanged by the Role/Permission
@@ -136,6 +137,29 @@ final class ProductionAuthorizationService
         return $delegate !== null && RolePermissions::hasPermission($delegate->role(), $permission);
     }
 
+    /**
+     * StageArt Core/Module Architecture
+     * (docs/architecture/CoreModuleArchitecture.md): the single generic
+     * replacement for what used to be one hardcoded method per Domain
+     * Module (`canManageRehearsals()`, `canManageAccounting()`) - this
+     * class (Core) no longer has any method named after a Module.
+     * PrimaryManager always succeeds, matching every prior per-Module
+     * method's own behavior; beyond that, `$capability` is looked up
+     * exactly as `hasProductionPermission()` above already did - the
+     * Capability string IS a `Permission` string (e.g.
+     * `RehearsalCapability::MANAGE === 'Rehearsal.Update'`), owned and
+     * named by whichever Module requests it, not by this class. An
+     * unrecognized capability (no Role's Permission Set contains it, as
+     * is still true for any Accounting capability today - see
+     * AccountingCapability's own docblock) simply evaluates to false for
+     * a non-PrimaryManager caller, with no change required here.
+     */
+    public function hasProductionCapability(Person $person, Production $production, string $capability): bool
+    {
+        return $this->isPrimaryManager($person, $production)
+            || $this->hasProductionPermission($person, $production, Permission::fromString($capability));
+    }
+
     public function canReadProduction(Person $person, Production $production): bool
     {
         return $this->isPrimaryManager($person, $production)
@@ -190,34 +214,4 @@ final class ProductionAuthorizationService
             || $this->isActivePersonParticipant($person, $production);
     }
 
-    public function canManageRehearsals(Person $person, Production $production): bool
-    {
-        return $this->isPrimaryManager($person, $production)
-            || $this->hasProductionPermission($person, $production, Permission::fromString('Rehearsal.Update'));
-    }
-
-    /**
-     * Phase 6.0 established this as PrimaryManager-only, since no
-     * enumerated Role's Permission Set included any Accounting
-     * Permission (no ACCOUNTING_MANAGER Role existed). Phase 6.1's audit
-     * of ProductionDelegatePolicy.md found that ProductionDelegates
-     * genuinely should be able to enter Accounting data ("会計データ入力
-     * ...はProductionDelegateに許可する" - only Budget confirmation and
-     * Settlement confirmation are PrimaryManager-exclusive). Extending
-     * this method's actual gating behavior to honor a new
-     * ACCOUNTING_MANAGER Role would mean also touching every Accounting
-     * UseCase's authorization wiring and deciding exactly which of
-     * Budget/Expense/JournalEntry's operations map to "data entry" vs
-     * "confirmation" - real Accounting Domain design work this Phase's
-     * own instructions explicitly exclude ("Accounting Domainの拡張では
-     * ない"). Left unchanged (PrimaryManager-only) and disclosed as an
-     * Open Item for a future Accounting-focused phase, rather than
-     * silently broadening real authorization behavior under a
-     * Role/Permission-foundation Phase that isn't meant to touch
-     * Accounting. See this Phase's report's Open Items section.
-     */
-    public function canManageAccounting(Person $person, Production $production): bool
-    {
-        return $this->isPrimaryManager($person, $production);
-    }
 }

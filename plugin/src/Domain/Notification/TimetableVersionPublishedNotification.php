@@ -26,9 +26,16 @@ use StageArt\Domain\Timetable\TimetableId;
  * Audience resolution (which Persons actually see this) is
  * deliberately NOT stored per-recipient here: Production membership is
  * already queryable via ProductionAuthorizationService /
- * ProductionMemberResolver, so a future delivery mechanism can expand
- * productionId -> members at send time rather than this Entity
- * duplicating that membership list.
+ * `StageArt\Core\Contract\MembershipContract`, so a future delivery
+ * mechanism can expand productionId -> members at send time rather than
+ * this Entity duplicating that membership list.
+ *
+ * StageArt Core/Module Architecture: this Entity itself is a known,
+ * disclosed remaining coupling - it lives in Core's own
+ * `Domain\Notification` namespace even though its meaning is Rehearsal/
+ * Timetable-specific (see docs/architecture/CoreModuleArchitecture.md's
+ * "Known remaining coupling"). Not moved this phase to avoid a risky
+ * rename of a persisted Domain Entity/table.
  */
 final class TimetableVersionPublishedNotification
 {

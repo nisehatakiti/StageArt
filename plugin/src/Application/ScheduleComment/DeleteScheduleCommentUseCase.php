@@ -6,6 +6,7 @@ namespace StageArt\Application\ScheduleComment;
 
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemNotFoundException;
@@ -86,7 +87,7 @@ final class DeleteScheduleCommentUseCase
             throw new ProductionNotFoundException($rehearsal->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageRehearsals($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
             throw new ScheduleCommentAccessDeniedException(
                 'Only the author, or the PrimaryManager/a REHEARSAL_MANAGER Delegate, can delete this ScheduleComment.'
             );

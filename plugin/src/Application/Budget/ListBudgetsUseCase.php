@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Budget;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
@@ -43,7 +44,7 @@ final class ListBudgetsUseCase
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can view this Production\'s Budgets.');
         }
 

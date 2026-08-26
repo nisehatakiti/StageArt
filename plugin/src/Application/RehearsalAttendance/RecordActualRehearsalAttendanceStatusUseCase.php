@@ -6,6 +6,7 @@ namespace StageArt\Application\RehearsalAttendance;
 
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
@@ -19,7 +20,8 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  * line between a Person's own prior intent (ATTENDING/NOT_ATTENDING, via
  * RespondRehearsalAttendanceUseCase) and the actual outcome, which only
  * the PrimaryManager or a REHEARSAL_MANAGER Delegate may record - see
- * ProductionAuthorizationService::canManageRehearsals().
+ * ProductionAuthorizationService::hasProductionCapability() with
+ * RehearsalCapability::MANAGE.
  */
 final class RecordActualRehearsalAttendanceStatusUseCase
 {
@@ -66,7 +68,7 @@ final class RecordActualRehearsalAttendanceStatusUseCase
             throw new ProductionNotFoundException($rehearsal->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageRehearsals($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
             throw new RehearsalAttendanceAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can record the actual attendance result.'
             );

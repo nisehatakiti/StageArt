@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Budget;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Budget\BudgetId;
@@ -13,7 +14,7 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 /**
  * Budget detail (Scenario name, per-Account planned amounts) is
  * management data, not shared with every Production Member - see
- * ProductionAuthorizationService::canManageAccounting()'s docblock.
+ * AccountingCapability::MANAGE's docblock.
  * The aggregate-only Production Accounting Summary
  * (GetProductionAccountingSummaryUseCase) is what every Production
  * Member can see instead.
@@ -54,7 +55,7 @@ final class GetBudgetUseCase
             throw new ProductionNotFoundException($budget->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can view this Budget.');
         }
 

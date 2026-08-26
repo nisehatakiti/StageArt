@@ -2,32 +2,33 @@
 
 declare(strict_types=1);
 
-namespace StageArt\Application\Rehearsal;
+namespace StageArt\Core\Adapter;
 
+use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionId;
 
 /**
- * Shared by CreateRehearsalUseCase (Phase 1 generation) and
- * ConfirmRehearsalUseCase (Phase 2 generation): both need the same
- * "target members" set, per RehearsalAttendance.md's Creation trigger
- * ("対象Productionのメンバー全員に対して生成する").
+ * StageArt Core/Module Architecture: the concrete implementation of
+ * MembershipContract, absorbing what was previously
+ * `Application\Rehearsal\ProductionMemberResolver` - moved here because
+ * "who is an active member of this Production" is a Core (Participant)
+ * concern the Rehearsal Module was resolving inline itself, not a
+ * Rehearsal-owned business rule. Logic is unchanged.
  *
  * Deliberately narrower than ProductionAuthorizationService::
  * isProductionMember(): that method also grants PrimaryManager and
  * ProductionDelegate broad read/participation access, but a
  * PrimaryManager or Delegate is a Production-management role, not
- * necessarily someone who personally attends Rehearsals. Attendance
- * generation targets ACTIVE, Person-subject Participants specifically -
- * Participant.md's individual-level member roster - so a PrimaryManager
- * who is not separately registered as a Participant does not receive
- * RehearsalAttendance records. This is a disclosed judgment call, not an
- * explicit Blueprint statement.
+ * necessarily someone who personally attends Rehearsals (or, in
+ * general, is a Module-facing "member"). This targets ACTIVE,
+ * Person-subject Participants specifically - Participant.md's
+ * individual-level member roster.
  */
-final class ProductionMemberResolver
+final class CoreMembershipAdapter implements MembershipContract
 {
     private ParticipantRepositoryInterface $participants;
 
@@ -36,14 +37,11 @@ final class ProductionMemberResolver
         $this->participants = $participants;
     }
 
-    /**
-     * @return PersonId[]
-     */
-    public function activePersonMemberIds(Production $production): array
+    public function activeProductionMemberPersonIds(ProductionId $productionId): array
     {
         $personIds = [];
 
-        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
+        foreach ($this->participants->findByProductionId($productionId) as $participant) {
             if (! $participant->subjectType()->equals(ParticipantSubjectType::person())) {
                 continue;
             }

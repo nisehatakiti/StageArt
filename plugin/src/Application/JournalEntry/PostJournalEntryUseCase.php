@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\JournalEntry;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
@@ -69,7 +70,7 @@ final class PostJournalEntryUseCase
                 throw new ProductionNotFoundException($entry->productionId()->toString());
             }
 
-            if (! $this->productionAuthorization->canManageAccounting($requester, $production)) {
+            if (! $this->productionAuthorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
                 throw new JournalEntryAccessDeniedException('Only the PrimaryManager can post this JournalEntry.');
             }
         } elseif (! $this->organizationAuthorization->hasRole($requester, $entry->organizationId(), [RoleKey::OWNER])) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\JournalEntry;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
@@ -48,7 +49,7 @@ final class ListJournalEntriesUseCase
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new JournalEntryAccessDeniedException(
                 'Only the PrimaryManager can view this Production\'s Journal Entries.'
             );

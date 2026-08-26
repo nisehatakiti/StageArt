@@ -1,7 +1,9 @@
 # Rehearsal Management Module
 
-Status: **Implemented** (Backend + Web). Reviewed this round against
-`docs/03-ModularArchitecture.md`'s Core/Module boundary - findings below.
+Status: **Implemented** (Backend + Web), and the **first Module** to
+formally adopt the Core/Module Architecture's Contract boundary
+(`docs/architecture/CoreModuleArchitecture.md`) - the template the
+Ticket and Accounting Modules should follow as they mature.
 
 ## Responsibility
 
@@ -18,26 +20,33 @@ actual business rules (unchanged this round).
 - `Timetable` / `TimetableItem` (`plugin/src/Domain/Timetable/`, `Domain/TimetableItem/`)
 - `ScheduleComment` (shared by Rehearsal and TimetableItem targets)
 
-## Connection point to Core
+## Core Contract usage (adopted this round)
 
-Every Rehearsal-side Entity references Core exclusively through opaque
-identifiers - `ProductionId` on `Rehearsal`, `PersonId` on
-`RehearsalAttendance` - never a Core Entity object, never a Core-owned
-field embedded into a Rehearsal table. Confirmed by reading
-`Rehearsal.php`, `RehearsalAttendance.php`, and the `stageart_rehearsals`
-/ `stageart_rehearsal_attendances` table definitions in
-`Infrastructure/WordPress/Schema/Installer.php`: both tables carry only
-`production_id` / `person_id` / `rehearsal_id` as cross-references, no
-duplicated Core data.
+`CreateRehearsalUseCase` and `ConfirmRehearsalUseCase` now depend on
+`StageArt\Core\Contract\MembershipContract`
+(`activeProductionMemberPersonIds(ProductionId): PersonId[]`) instead of
+the former `Application\Rehearsal\ProductionMemberResolver` (deleted -
+its logic moved unchanged into `StageArt\Core\Adapter\CoreMembershipAdapter`,
+the concrete Core-side implementation). This is verified two ways:
 
-The Application layer's `ProductionMemberResolver`
-(`plugin/src/Application/Rehearsal/ProductionMemberResolver.php`) plays
-the role of `03-ModularArchitecture.md` §6's `ProductionContextProvider`
-concept in practice - it is the single place Rehearsal use cases ask
-Core "who are this Production's active members," rather than each use
-case querying `ParticipantRepositoryInterface` inline. It is a concrete
-resolver class, not a formally named/injected Interface+Adapter pair,
-but it already isolates the dependency to one file.
+- `tests/Core/RehearsalModuleDependencyDirectionTest.php` scans every
+  Rehearsal Module source file and fails if any imports a concrete
+  `StageArt\Infrastructure\*` class directly.
+- `tests/Application/Rehearsal/RehearsalModuleContractIsolationTest.php`
+  runs `CreateRehearsalUseCase` against a hand-written
+  `FakeMembershipContract` that never touches a real Participant
+  repository at all, proving the dependency is genuinely satisfied
+  through the interface.
+
+All other Rehearsal-side UseCases (13 in total, across
+`Application/Rehearsal/`, `RehearsalAttendance/`, `ScheduleComment/`,
+`Timetable/`, `TimetableItem/`) still depend on
+`ProductionAuthorizationService`/`ProductionRepositoryInterface`
+directly for authorization/production-lookup - not yet routed through
+`AuthorizationContract`/`ProductionContextContract`. This is a
+disclosed, deliberate scope limit (`03-ModularArchitecture.md`'s own
+"don't over-abstract Web β" guidance), not a claim that every
+dependency has been moved.
 
 ## Owned data
 
@@ -51,36 +60,38 @@ Rehearsal Application/Domain namespaces.
 
 Routes are flat under `stageart/v1/rehearsals`,
 `stageart/v1/productions/{id}/rehearsals`, etc. - not prefixed
-`/rehearsal/...` per `03-ModularArchitecture.md` §10's illustrative
-convention. That section explicitly says not to break existing routes
-retroactively ("実際の既存API構造を不用意に全面変更する必要はない"), so
-this was left as-is; a `/rehearsal/` prefix is a candidate for *new*
-routes only, not a required rename of what exists.
+`/rehearsal/...`. Existing routes were not renamed this round (see
+`docs/architecture/CoreModuleArchitecture.md` §13).
 
-## Coupling finding (watch item, not fixed this round)
+## Authorization (changed this round)
 
-`ProductionAuthorizationService` - a **Core** Application service
-(`plugin/src/Application/Production/ProductionAuthorizationService.php`)
-- exposes module-named methods `canManageRehearsals()` and
-`canManageAccounting()` directly. This means Core's own public surface
-has hard-coded knowledge of two Module names. The underlying mechanism
-each method calls, `hasProductionPermission($person, $production,
-Permission::fromString('Rehearsal.Update'))`, is already generic (a
-Role -> Permission-string lookup) - only the wrapper method names are
-Module-specific.
+`ProductionAuthorizationService::canManageRehearsals()` - a Core method
+named after this Module - has been **removed**. All 13 call sites now
+call the generic `hasProductionCapability($person, $production,
+RehearsalCapability::MANAGE)`, where `RehearsalCapability::MANAGE =
+'Rehearsal.Update'` is owned by
+`plugin/src/Application/Rehearsal/RehearsalCapability.php`, not by
+Core. Behavior is unchanged (same underlying Role/Permission Set
+lookup) - `tests/Core/Adapter/CoreAuthorizationAdapterTest.php` and the
+pre-existing `RehearsalUseCaseTest.php` both confirm this.
 
-This was not judged severe enough to fix this round (`03-ModularArchitecture.md`
-§8: "Web β版では実装を過度に抽象化して開発速度を落とす必要はない...後から
-切り出せない密結合を新たに作らないことを優先する" - this is pre-existing
-from a prior phase, not new coupling introduced this round, and the
-underlying data/logic is not duplicated into Core). Recommended future
-cleanup: have Rehearsal/Accounting Application code call the already-
-generic `hasProductionPermission()` directly instead of Core exposing
-one bespoke `canManage*()` method per Module, so Core's surface doesn't
-grow one method per future Module.
+## Known remaining coupling
+
+`TimetableVersionPublishedNotification` (a Rehearsal/Timetable-specific
+notification type) lives in Core's own `Domain\Notification` namespace,
+not under a Rehearsal namespace. Not moved this round - it is a
+persisted Domain Entity/table, and renaming it is a riskier migration-
+like change than this phase's scope justified. `NotificationContract`
+is defined (`plugin/src/Core/Contract/NotificationContract.php`) for
+future Modules to build against, but has no adapter yet since no
+generic Notification-creation mechanism currently exists to wrap.
 
 ## Conclusion
 
-No structural blocker to future extraction was found. The one coupling
-finding above is a naming/API-surface smell on a Core service, not a
-data or business-rule leak, and does not block the current Web β work.
+No structural blocker to future extraction was found. Membership
+resolution and Authorization are both now genuinely Contract-based (the
+latter via the shared, Module-name-free `AuthorizationContract`); the
+remaining direct dependencies (`ProductionRepositoryInterface`,
+`ProductionAuthorizationService` itself as opposed to
+`AuthorizationContract`) are disclosed as not-yet-migrated rather than
+claimed complete.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Expense;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionOrganizationResolver;
@@ -68,7 +69,7 @@ final class UpdateExpenseUseCase
 
         $isOwnDraft = $expense->createdBy()->equals($requester->id());
 
-        if (! $isOwnDraft && ! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $isOwnDraft && ! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new ExpenseAccessDeniedException(
                 'Only the Expense\'s own creator or the PrimaryManager can update this Expense.'
             );

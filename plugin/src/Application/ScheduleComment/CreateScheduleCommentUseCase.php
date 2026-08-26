@@ -20,7 +20,7 @@ use StageArt\Domain\ScheduleComment\ScheduleCommentRepositoryInterface;
  * manager (PrimaryManager or a REHEARSAL_MANAGER Delegate) is already a
  * Production member per isProductionMember()'s definition, so a single
  * isProductionMember() check covers both clauses of the Blueprint text
- * without needing a separate canManageRehearsals() branch.
+ * without needing a separate Rehearsal-management-capability check.
  */
 final class CreateScheduleCommentUseCase
 {

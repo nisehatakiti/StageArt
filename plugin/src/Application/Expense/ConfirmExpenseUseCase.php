@@ -7,6 +7,7 @@ namespace StageArt\Application\Expense;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Account\AccountNotFoundException;
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionOrganizationResolver;
@@ -89,7 +90,7 @@ final class ConfirmExpenseUseCase
             throw new ProductionNotFoundException($expense->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new ExpenseAccessDeniedException('Only the PrimaryManager can confirm an Expense.');
         }
 

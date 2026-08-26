@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Budget;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionOrganizationResolver;
@@ -52,7 +53,7 @@ final class CreateBudgetUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageAccounting($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can create a Budget for this Production.');
         }
 

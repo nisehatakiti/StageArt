@@ -6,6 +6,7 @@ namespace StageArt\Presentation;
 
 use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsUseCase;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
@@ -85,7 +86,6 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
-use StageArt\Application\Rehearsal\ProductionMemberResolver;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesUseCase;
@@ -249,7 +249,7 @@ final class Plugin
         $resolveJoinKey = new ResolveJoinKeyUseCase($joinKeys, $organizations, $productions);
         $disableJoinKey = new DisableJoinKeyUseCase($joinKeys, $productions, $authorization, $productionAuthorization);
         $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
-        $memberResolver = new ProductionMemberResolver($participants);
+        $membershipContract = new CoreMembershipAdapter($participants);
         $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
         $budgetLineFactory = new BudgetLineFactory($accounts);
@@ -434,7 +434,7 @@ final class Plugin
             $productions,
             $rehearsals,
             $rehearsalAttendances,
-            $memberResolver,
+            $membershipContract,
             $productionAuthorization,
             $transactions
         );
@@ -445,7 +445,7 @@ final class Plugin
             $rehearsals,
             $productions,
             $rehearsalAttendances,
-            $memberResolver,
+            $membershipContract,
             $productionAuthorization,
             $transactions
         );

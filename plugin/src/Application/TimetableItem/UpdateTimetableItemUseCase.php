@@ -9,6 +9,7 @@ use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\Timetable\TimetableNotFoundException;
@@ -81,7 +82,7 @@ final class UpdateTimetableItemUseCase
             throw new ProductionNotFoundException($rehearsal->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageRehearsals($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
             throw new TimetableItemAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can manage this Timetable.'
             );

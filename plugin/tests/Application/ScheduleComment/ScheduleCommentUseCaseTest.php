@@ -9,7 +9,7 @@ use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
-use StageArt\Application\Rehearsal\ProductionMemberResolver;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentCommand;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentUseCase;
 use StageArt\Application\ScheduleComment\CreateTimetableItemScheduleCommentCommand;
@@ -93,7 +93,7 @@ final class ScheduleCommentUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new ProductionMemberResolver($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(

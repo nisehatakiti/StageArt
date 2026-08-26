@@ -15,7 +15,7 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
-use StageArt\Application\Rehearsal\ProductionMemberResolver;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationReadState;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotification;
@@ -86,7 +86,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new ProductionMemberResolver($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(

@@ -21,7 +21,7 @@ use StageArt\Application\Rehearsal\GetRehearsalQuery;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsForProductionQuery;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
-use StageArt\Application\Rehearsal\ProductionMemberResolver;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
 use StageArt\Domain\Membership\Membership;
@@ -85,7 +85,7 @@ final class RehearsalUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new ProductionMemberResolver($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(

@@ -7,6 +7,7 @@ namespace StageArt\Application\Rehearsal;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
@@ -32,13 +33,18 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * for the race-condition case (two concurrent confirm requests), backed
  * by the DB-level UNIQUE(rehearsal_id, person_id, phase) constraint as
  * the final guarantee.
+ *
+ * StageArt Core/Module Architecture: depends on `MembershipContract`,
+ * not `ParticipantRepositoryInterface`/the former
+ * `ProductionMemberResolver` directly (see CreateRehearsalUseCase's
+ * matching docblock).
  */
 final class ConfirmRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
     private ProductionRepositoryInterface $productions;
     private RehearsalAttendanceRepositoryInterface $attendances;
-    private ProductionMemberResolver $memberResolver;
+    private MembershipContract $membership;
     private ProductionAuthorizationService $authorization;
     private TransactionManagerInterface $transactions;
 
@@ -46,14 +52,14 @@ final class ConfirmRehearsalUseCase
         RehearsalRepositoryInterface $rehearsals,
         ProductionRepositoryInterface $productions,
         RehearsalAttendanceRepositoryInterface $attendances,
-        ProductionMemberResolver $memberResolver,
+        MembershipContract $membership,
         ProductionAuthorizationService $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->rehearsals = $rehearsals;
         $this->productions = $productions;
         $this->attendances = $attendances;
-        $this->memberResolver = $memberResolver;
+        $this->membership = $membership;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
@@ -78,7 +84,7 @@ final class ConfirmRehearsalUseCase
             throw new ProductionNotFoundException($rehearsal->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageRehearsals($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
             throw new RehearsalAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can confirm this Rehearsal.'
             );
@@ -91,7 +97,7 @@ final class ConfirmRehearsalUseCase
                 $rehearsal->confirm();
                 $this->rehearsals->save($rehearsal);
 
-                foreach ($this->memberResolver->activePersonMemberIds($production) as $personId) {
+                foreach ($this->membership->activeProductionMemberPersonIds($production->id()) as $personId) {
                     $existing = $this->attendances->findByRehearsalIdAndPersonIdAndPhase($rehearsal->id(), $personId, $phase);
 
                     if ($existing !== null) {

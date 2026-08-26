@@ -16,7 +16,8 @@
             "StageArt\\Domain\\": "src/Domain/",
             "StageArt\\Application\\": "src/Application/",
             "StageArt\\Infrastructure\\": "src/Infrastructure/",
-            "StageArt\\Presentation\\": "src/Presentation/"
+            "StageArt\\Presentation\\": "src/Presentation/",
+            "StageArt\\Core\\": "src/Core/"
         }
     },
     "autoload-dev": {

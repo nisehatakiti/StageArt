@@ -46,7 +46,7 @@ final class CancelRehearsalUseCase
             throw new ProductionNotFoundException($rehearsal->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageRehearsals($requester, $production)) {
+        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
             throw new RehearsalAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can cancel this Rehearsal.'
             );
