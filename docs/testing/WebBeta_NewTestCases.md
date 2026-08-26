@@ -1,10 +1,16 @@
 # Web β版 New Test Cases — Join/Approval, Rehearsal Management, Favorite
 
-The official ledger (`docs/testing/StageArt_WebBeta_TestCases_v0.1.xlsx`)
-is currently corrupted on `origin/main` and cannot be opened/edited (see
-`docs/testing/WebBeta_Phase_Deviations.md` §5) - these cases are written
-here instead, for merging into the official ledger once a valid copy is
-available. **PASS/FAIL is left blank for the user's own browser
+**Superseded as the canonical ledger** by `docs/testing/TestCases.md`
+(all WB-* cases below are now folded into that file's MEMBERSHIP/JOIN
+KEY/REHEARSAL/ATTENDANCE/FAVORITE/SEARCH categories under new IDs) and
+`docs/testing/StageArt_WebBeta_TestCases.xlsx` (regenerated, valid -
+the old `StageArt_WebBeta_TestCases_v0.1.xlsx` was corrupted at the git
+object level - confirmed via `git cat-file`, not a local extraction
+artifact - and has been removed; see `WebBeta_Phase_Deviations.md` §5).
+
+This file is kept for its still-useful **end-to-end scenario
+walkthroughs** below, which `TestCases.md` references by ID rather than
+repeating. **PASS/FAIL is left blank for the user's own browser
 verification** - nothing here has been checked visually in a browser;
 "Verified via" notes what automated/API-level check, if any, backs the
 implementation.
