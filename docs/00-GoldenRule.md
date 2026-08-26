@@ -26,14 +26,19 @@ Project、Production、Reservation、Historyなどの内部ドメインは、シ
 
 ## Examples
 
-利用者が「公演を作る」を実行すると、StageArtは以下を自動生成する。
+利用者が「公演を作る」を実行すると、StageArtは以下を自動生成・準備する。
 
 - Project
 - Production
 - Production Schedule
 - Production Checklist
 - Document Workspace
-- Public Web Page
 - Future Finance Workspace
+
+**Public Web Pageは公演作成時点では一般公開しない。**
+
+公演の情報公開が未設定または未公開の場合、Public Pageを生成・公開してはならない。
+
+利用者が情報公開日時を予約した場合は、StageArtが指定日時にBackground Job等で公開処理を実行し、その時点でPublic Pageを生成・公開する。
 
 利用者は、これらの内部構造を意識する必要はない。
