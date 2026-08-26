@@ -266,7 +266,8 @@ final class OrganizationRestController
                 $this->stringOrNull($request->get_param('description')),
                 (string) $request->get_param('status'),
                 $this->stringOrNull($slugParam),
-                $publishedParam === null ? null : (bool) $publishedParam
+                $publishedParam === null ? null : (bool) $publishedParam,
+                $this->stringOrNull($request->get_param('published_at'))
             );
 
             return new WP_REST_Response($this->updateOrganization->execute($command)->toArray(), 200);

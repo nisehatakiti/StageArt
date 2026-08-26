@@ -108,12 +108,29 @@ export type Organization = {
  * since this is the public, unauthenticated view. Never appears mixed
  * with `Organization` in the same list/screen.
  */
+/**
+ * Public Page Architecture phase: the Organization's own published
+ * Productions, for the "開催予定・公開中の公演" / "過去の公演" sections
+ * on its Public Page (docs/04-DomainModel/PublicPageUrlPolicy.md). Split
+ * client-side by `status` (see [organizationSlug]/index.tsx) - Production
+ * has no start/end date fields yet, so `status` is an honest proxy for
+ * "past" (ARCHIVED/COMPLETED) vs "upcoming or current" (everything else).
+ */
+export type PublicOrganizationProductionSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  published_at: string;
+};
+
 export type PublicOrganization = {
   id: string;
   name: string;
   slug: string;
   description: string | null;
   published_at: string;
+  productions: PublicOrganizationProductionSummary[];
 };
 
 /**

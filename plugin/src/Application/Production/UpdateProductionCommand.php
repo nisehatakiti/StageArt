@@ -21,13 +21,17 @@ final class UpdateProductionCommand
     public ?string $titleHeading;
     public ?string $slug;
     public ?bool $published;
+    public ?string $publishedAt;
 
     /**
-     * StageArt Web First Phase 2: `slug`/`published` are optional
-     * trailing parameters, same rationale as
-     * UpdateOrganizationCommand's matching addition - `null` means
-     * "leave unchanged", every pre-existing caller keeps working
-     * unmodified.
+     * StageArt Web First Phase 2 / Publication State Model: `slug`/
+     * `published`/`publishedAt` are optional trailing parameters, same
+     * rationale as UpdateOrganizationCommand's matching addition -
+     * `null` means "leave unchanged", every pre-existing caller keeps
+     * working unmodified. `publishedAt` (ISO 8601) only applies when
+     * `published === true`; if given it schedules publication for that
+     * moment (may be in the future - see Production::publish()), else
+     * publication takes effect immediately.
      */
     public function __construct(
         string $productionId,
@@ -35,7 +39,8 @@ final class UpdateProductionCommand
         string $name,
         ?string $titleHeading = null,
         ?string $slug = null,
-        ?bool $published = null
+        ?bool $published = null,
+        ?string $publishedAt = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -43,5 +48,6 @@ final class UpdateProductionCommand
         $this->titleHeading = $titleHeading;
         $this->slug = $slug;
         $this->published = $published;
+        $this->publishedAt = $publishedAt;
     }
 }

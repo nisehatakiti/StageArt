@@ -64,7 +64,7 @@ export default function DiscoverOrganizationsScreen() {
                 key={organization.id}
                 testID={`discover-organization-${organization.id}`}
                 style={styles.resultCard}
-                onPress={() => router.push(`/o/${organization.slug}` as Href)}
+                onPress={() => router.push(`/${organization.slug}` as Href)}
               >
                 <ThemedText type="smallBold">{organization.name}</ThemedText>
                 {organization.description && (

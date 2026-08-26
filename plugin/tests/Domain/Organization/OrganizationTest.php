@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Domain\Organization;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Organization\Organization;
@@ -103,6 +104,41 @@ final class OrganizationTest extends TestCase
 
         $this->assertFalse($organization->isPublished());
         $this->assertNull($organization->publishedAt());
+    }
+
+    /**
+     * Publication State Model (docs/04-DomainModel/PublicationStateModel.md):
+     * a future `publish($at)` is the SCHEDULED state - `publishedAt` is
+     * set (distinguishing it from DRAFT), but `isPublished()` stays false
+     * until that moment passes.
+     */
+    public function test_publish_with_a_future_date_is_scheduled_not_yet_published(): void
+    {
+        $organization = Organization::create(
+            new OrganizationName('Scheduled Theatre'),
+            null,
+            null,
+            new OrganizationSlug('scheduled-theatre')
+        );
+
+        $organization->publish(new DateTimeImmutable('+1 day'));
+
+        $this->assertFalse($organization->isPublished());
+        $this->assertNotNull($organization->publishedAt());
+    }
+
+    public function test_publish_with_a_past_date_is_immediately_published(): void
+    {
+        $organization = Organization::create(
+            new OrganizationName('Past Scheduled Theatre'),
+            null,
+            null,
+            new OrganizationSlug('past-scheduled-theatre')
+        );
+
+        $organization->publish(new DateTimeImmutable('-1 day'));
+
+        $this->assertTrue($organization->isPublished());
     }
 
     public function test_change_slug_updates_the_slug(): void

@@ -467,7 +467,7 @@ function FollowedOrganizationsFeedSection({ items }: { items: FollowedOrganizati
             style={styles.card}
             onPress={() => {
               if (item.organizationSlug && item.productionSlug) {
-                router.push(`/o/${item.organizationSlug}/${item.productionSlug}` as Href);
+                router.push(`/${item.organizationSlug}/${item.productionSlug}` as Href);
               }
             }}
           >

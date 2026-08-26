@@ -89,6 +89,14 @@ default Flutter template `README.md`, never touched again). `mobile-rn/`
 (directory deletion is a bigger call than "docs organization" - flagged
 for the repository owner's decision) but classified as such below.
 
+**Official status, as of 2026-08-26 (explicit per repository owner
+direction - keep, do not delete, until Web β is stable):**
+
+| Directory | Status |
+|---|---|
+| `mobile/` (Flutter) | **Legacy / Archive Candidate** - kept in the repository, not actively developed, not deleted. Deletion is a separate future decision once Web β is stable. |
+| `mobile-rn/` (Expo / React Native) | **Current Active Implementation** - the live client for this entire Web β effort. |
+
 ## A–F classification
 
 **A. 正式にmainへ入っているもの** (official, on `origin/main`, now
@@ -141,22 +149,54 @@ card, Footer/Contact via `[slug]@hatakiti.com` forwarding), and a
 `Publicity Status` (PRIVATE/PUBLIC) + per-field scheduled-visibility
 model.
 
-What was actually built this Web β phase is materially simpler: a
-single index page per Organization/Production, resolved **live** on
-every request from `GET /organizations/by-slug/{slug}` /
-`/productions/by-slug/{slug}` (no static generation, no CRON, no
-Generation Request queue), reachable at an in-app Expo Router path
-(`/o/{slug}`, `/o/{slug}/{slug}`) rather than the Blueprint's
-`hatakiti.com/StageArt/...` URL, with no ABOUT/MEMBERS page split, no
-SNS section, and no Contact forwarding.
+**Update (2026-08-26, next session):** a third relevant doc,
+`docs/03-PublicPageURLAndPublicationSchedule.md` (Version 1.2,
+**explicitly marked `Status : Confirmed`**), was found and had been
+missed in the previous audit pass. It specifies
+`https://stageart.top/{organization-slug}` /
+`.../{organization-slug}/{production-slug}` - a **different domain**
+than `PublicPageUrlPolicy.md`'s `hatakiti.com/StageArt/...`. Resolved
+by commit chronology, not guessed: `PublicPageUrlPolicy.md`'s URL
+section was last touched by `647a289` (2026-08-18), while
+`03-PublicPageURLAndPublicationSchedule.md` was last touched by
+`6e588ef` (2026-08-24) - six days later. **`stageart.top` is the
+current, later, explicitly-Confirmed URL Blueprint** and is what the
+user directly instructed this session; `hatakiti.com/StageArt/...` is
+treated as an superseded earlier draft on this specific point. The two
+docs do not otherwise conflict - `PublicPageUrlPolicy.md`'s page-
+structure guidance (ABOUT/MEMBERS/PRODUCTIONS nav, hero, SNS, Contact)
+is not contradicted by the newer doc and remains the reference for page
+content.
 
-This is not a bug - it was a disclosed, deliberate MVP simplification
-made in an earlier phase, before this branch had ever seen the
-`PublicPageUrlPolicy.md` doc that now supersedes it as the on-record
-spec. It is now a **known, documented gap** between spec and
-implementation, not silently carried forward. Closing it (a real static
-PHP site generator, the full page structure, Contact forwarding) is a
-substantial build - explicitly out of scope this round
+**Important caveat**: `stageart.top` is not an actually registered/
+DNS-configured/deployed domain anywhere in this codebase or its
+history (confirmed by searching all deploy scripts, `app.config.ts`,
+and CI config - the only real web deployment that has ever happened is
+a narrow `expo export --platform web` of just the email-verification
+screen, to `https://dev-stageart.hatakiti.com/verify-app/`, a subpath
+of the existing WordPress dev server). What this phase can and does
+deliver is the **routing code** being ready to serve
+`/{organization-slug}` and `/{organization-slug}/{production-slug}` at
+whatever root a future deployment uses - not a live, internet-
+reachable `stageart.top` today. Registering the domain and standing up
+real hosting/DNS/reverse-proxy for it is outside what this session can
+configure (no registrar/hosting account access) and is flagged as an
+infrastructure open item, not something silently claimed as done.
+
+What was actually built in the previous Web β phase was materially
+simpler than either Blueprint doc: a single index page per Organization/
+Production, resolved **live** on every request from
+`GET /organizations/by-slug/{slug}` / `/productions/by-slug/{slug}` (no
+static generation, no CRON, no Generation Request queue), reachable at
+an in-app Expo Router path (`/o/{slug}`, `/o/{slug}/{slug}`), with no
+ABOUT/MEMBERS page split, no SNS section, and no Contact forwarding.
+This session moves the routes to root level (`/{slug}`,
+`/{slug}/{slug}`, matching `stageart.top`'s intended path shape once
+deployed there) and adds an upcoming/past-productions section to the
+Organization page - see this file's later sections for what changed.
+The full static-PHP-generation pipeline, ABOUT/MEMBERS page split, SNS
+section, and Contact forwarding remain **not built** - a substantial
+project on their own, out of scope this round
 (`03-ModularArchitecture.md` and this task's own §12 exclude "大規模UI
 リニューアル"). Flagged for a dedicated future phase.
 

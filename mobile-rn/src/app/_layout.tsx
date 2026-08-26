@@ -79,6 +79,18 @@ export default function RootLayout() {
                   home/discover/favorites/profile above. */}
               <Stack.Screen name="organizations/create" options={{ headerShown: false }} />
               <Stack.Screen name="organizations/[id]/productions/create" options={{ headerShown: false }} />
+              {/* Public Page Architecture phase
+                  (docs/03-PublicPageURLAndPublicationSchedule.md): moved
+                  to the URL root, matching stageart.top's intended path
+                  shape (`/{organization-slug}`,
+                  `/{organization-slug}/{production-slug}`) - see
+                  OrganizationSlug.php's RESERVED list for why this is
+                  safe (every real top-level route name below is
+                  reserved and can never collide with a real slug). */}
+              <Stack.Screen name="[organizationSlug]/index" options={{ headerShown: false }} />
+              <Stack.Screen name="[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
+              {/* /o/{slug} kept as a redirect-only route for backward
+                  compatibility with any pre-existing link. */}
               <Stack.Screen name="o/[organizationSlug]/index" options={{ headerShown: false }} />
               <Stack.Screen name="o/[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
               {/* StageArt Web β版: Join Key発行 + 参加申請承認 (団体・公演

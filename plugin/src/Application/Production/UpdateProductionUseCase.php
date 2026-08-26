@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Production;
 
+use DateTimeImmutable;
+use Exception;
+use InvalidArgumentException;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
@@ -66,7 +69,7 @@ final class UpdateProductionUseCase
         }
 
         if ($command->published === true) {
-            $production->publish();
+            $production->publish($this->parseOptionalDateTime($command->publishedAt));
         } elseif ($command->published === false) {
             $production->unpublish();
         }
@@ -78,5 +81,18 @@ final class UpdateProductionUseCase
             true,
             $this->authorization->activeDelegateFor($person, $production)
         );
+    }
+
+    private function parseOptionalDateTime(?string $value): ?DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Exception $exception) {
+            throw new InvalidArgumentException("Invalid published_at value: {$value}");
+        }
     }
 }

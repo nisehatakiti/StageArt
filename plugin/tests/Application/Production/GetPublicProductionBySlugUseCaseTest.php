@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\Production;
 
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Production\GetPublicProductionBySlugQuery;
 use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
@@ -146,5 +147,59 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
         $this->useCase($productions, $projects, $organizations)->execute(
             new GetPublicProductionBySlugQuery('never-existed')
         );
+    }
+
+    /**
+     * Publication State Model: SCHEDULED (publishedAt in the future) is
+     * not yet publicly visible - identical 404 to a never-published one.
+     */
+    public function test_scheduled_production_before_its_publish_date_is_not_found(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Scheduled Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('scheduled-show')
+        );
+        $production->publish(new DateTimeImmutable('+1 day'));
+        $productions->save($production);
+
+        $this->expectException(ProductionNotFoundException::class);
+
+        $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('scheduled-show')
+        );
+    }
+
+    public function test_scheduled_production_after_its_publish_date_is_visible(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Now Visible Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('now-visible-show')
+        );
+        $production->publish(new DateTimeImmutable('-1 minute'));
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('now-visible-show')
+        );
+
+        $this->assertSame('Now Visible Show', $result->name);
     }
 }

@@ -21,23 +21,40 @@ final class PublicOrganizationResult
     public string $slug;
     public ?string $description;
     public string $publishedAt;
+    /** @var PublicOrganizationProductionSummary[] */
+    public array $productions;
 
-    private function __construct(string $id, string $name, string $slug, ?string $description, string $publishedAt)
-    {
+    /**
+     * @param PublicOrganizationProductionSummary[] $productions
+     */
+    private function __construct(
+        string $id,
+        string $name,
+        string $slug,
+        ?string $description,
+        string $publishedAt,
+        array $productions
+    ) {
         $this->id = $id;
         $this->name = $name;
         $this->slug = $slug;
         $this->description = $description;
         $this->publishedAt = $publishedAt;
+        $this->productions = $productions;
     }
 
     /**
+     * @param PublicOrganizationProductionSummary[] $productions Published
+     *        Productions belonging to this Organization - resolved by the
+     *        caller (GetPublicOrganizationBySlugUseCase), not here, since
+     *        that requires Project/Production repositories this narrow DTO
+     *        has no business depending on.
      * @throws LogicException if the Organization has no slug or is not
      *                          published - callers must check
      *                          `isPublished()`/`slug() !== null` first
      *                          (see GetPublicOrganizationBySlugUseCase).
      */
-    public static function fromDomain(Organization $organization): self
+    public static function fromDomain(Organization $organization, array $productions = []): self
     {
         $slug = $organization->slug();
         $publishedAt = $organization->publishedAt();
@@ -51,7 +68,8 @@ final class PublicOrganizationResult
             $organization->name()->toString(),
             $slug->toString(),
             $organization->description(),
-            $publishedAt->format(DATE_ATOM)
+            $publishedAt->format(DATE_ATOM),
+            $productions
         );
     }
 
@@ -66,6 +84,10 @@ final class PublicOrganizationResult
             'slug' => $this->slug,
             'description' => $this->description,
             'published_at' => $this->publishedAt,
+            'productions' => array_map(
+                static fn (PublicOrganizationProductionSummary $p): array => $p->toArray(),
+                $this->productions
+            ),
         ];
     }
 }

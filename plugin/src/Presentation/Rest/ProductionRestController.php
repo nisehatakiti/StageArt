@@ -308,7 +308,8 @@ final class ProductionRestController
                 (string) $request->get_param('name'),
                 $this->stringOrNull($request->get_param('title_heading')),
                 $this->stringOrNull($slugParam),
-                $publishedParam === null ? null : (bool) $publishedParam
+                $publishedParam === null ? null : (bool) $publishedParam,
+                $this->stringOrNull($request->get_param('published_at'))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);

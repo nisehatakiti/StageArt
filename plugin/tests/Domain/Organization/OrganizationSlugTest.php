@@ -66,6 +66,23 @@ final class OrganizationSlugTest extends TestCase
         new OrganizationSlug('admin');
     }
 
+    /**
+     * Organization slugs now resolve at the Web app's URL root
+     * (`/{organization-slug}`), so any slug matching a real top-level
+     * route name would otherwise shadow that route forever.
+     */
+    public function test_rejects_slugs_matching_web_app_route_names(): void
+    {
+        foreach (['login', 'home', 'join', 'discover-organizations', 'production'] as $routeName) {
+            try {
+                new OrganizationSlug($routeName);
+                $this->fail("Expected \"{$routeName}\" to be rejected as a reserved slug.");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString('reserved', $exception->getMessage());
+            }
+        }
+    }
+
     public function test_equals_compares_by_value(): void
     {
         $first = new OrganizationSlug('gekidan-example');

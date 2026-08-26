@@ -1,5 +1,10 @@
 # stageart_mobile
 
+> **Status: Legacy / Archive Candidate.** This Flutter scaffold is not
+> the active StageArt mobile client - `mobile-rn/` (Expo / React
+> Native) is. This directory is kept in the repository intentionally
+> (not deleted) until Web β is stable; see `docs/CurrentStateAudit.md`.
+
 A new Flutter project.
 
 ## Getting Started

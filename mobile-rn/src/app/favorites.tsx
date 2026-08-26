@@ -21,10 +21,10 @@ export default function FavoritesScreen() {
 
   function targetHref(favorite: MyFavorite): Href | null {
     if (favorite.target_type === 'ORGANIZATION' && favorite.target_slug) {
-      return `/o/${favorite.target_slug}` as Href;
+      return `/${favorite.target_slug}` as Href;
     }
     if (favorite.target_type === 'PRODUCTION' && favorite.organization_slug && favorite.target_slug) {
-      return `/o/${favorite.organization_slug}/${favorite.target_slug}` as Href;
+      return `/${favorite.organization_slug}/${favorite.target_slug}` as Href;
     }
     return null;
   }

@@ -121,7 +121,7 @@ export default function CreateOrganizationScreen() {
           ) : (
             <TouchableOpacity
               testID="create-organization-view-public-page"
-              onPress={() => router.push(`/o/${created.slug}` as Href)}
+              onPress={() => router.push(`/${created.slug}` as Href)}
               style={styles.buttonSecondary}
             >
               <ThemedText style={styles.buttonSecondaryText}>公開ページを見る（/o/{created.slug}）</ThemedText>

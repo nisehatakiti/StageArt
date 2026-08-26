@@ -63,7 +63,7 @@ export default function DiscoverProductionsScreen() {
                 key={production.id}
                 testID={`discover-production-${production.id}`}
                 style={styles.resultCard}
-                onPress={() => router.push(`/o/${production.organization.slug}/${production.slug}` as Href)}
+                onPress={() => router.push(`/${production.organization.slug}/${production.slug}` as Href)}
               >
                 {production.title_heading && (
                   <ThemedText type="small" themeColor="textSecondary">

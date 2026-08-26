@@ -176,7 +176,7 @@ describe('Home: フォロー中の新着 (StageArt Follow)', () => {
 
     fireEvent.press(screen.getByTestId('followed-organization-feed-row-prod-1'));
 
-    expect(mockPush).toHaveBeenCalledWith('/o/organization-1/new-production');
+    expect(mockPush).toHaveBeenCalledWith('/organization-1/new-production');
   });
 
   it('renders nothing when nothing is followed, not an empty-state message', async () => {

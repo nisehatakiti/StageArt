@@ -74,6 +74,16 @@ before running these.
 | PUBLIC-02 | Public Organization page, unpublished or nonexistent | Automated (see TestCases.md) | NOT RUN |
 | PUBLIC-03 | Public Production page, published | Automated (see TestCases.md) | NOT RUN |
 | PUBLIC-04 | Public Production page, unpublished | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-001 | Organization official URL | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-002 | Production official URL | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-003 | Unauthenticated viewing | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-004 | PUBLISHED is viewable | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-005 | DRAFT is not viewable | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-006 | SCHEDULED before its publish date | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-007 | SCHEDULED after its publish date | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-008 | ARCHIVED Production handling | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-009 | Search result → Public Page navigation | Automated (see TestCases.md) | NOT RUN |
+| PUBLIC-URL-010 | Favorite from the Public Page | Automated (see TestCases.md) | NOT RUN |
 
 ## SEARCH
 

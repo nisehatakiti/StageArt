@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use DateTimeImmutable;
+use Exception;
 use InvalidArgumentException;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
@@ -65,7 +67,7 @@ final class UpdateOrganizationUseCase
         }
 
         if ($command->published === true) {
-            $organization->publish();
+            $organization->publish($this->parseOptionalDateTime($command->publishedAt));
         } elseif ($command->published === false) {
             $organization->unpublish();
         }
@@ -89,5 +91,18 @@ final class UpdateOrganizationUseCase
         $this->organizations->save($organization);
 
         return OrganizationResult::fromDomain($organization, RoleKey::owner());
+    }
+
+    private function parseOptionalDateTime(?string $value): ?DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Exception $exception) {
+            throw new InvalidArgumentException("Invalid published_at value: {$value}");
+        }
     }
 }

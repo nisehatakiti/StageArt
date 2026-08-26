@@ -349,7 +349,7 @@ final class Plugin
             $transactions
         );
         $getOrganization    = new GetOrganizationUseCase($organizations, $organizationFollows, $authorization);
-        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations);
+        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations, $projects, $productions);
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);

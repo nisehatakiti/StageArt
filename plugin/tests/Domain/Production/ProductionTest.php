@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Domain\Production;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Person\PersonId;
@@ -245,6 +246,42 @@ final class ProductionTest extends TestCase
 
         $this->assertFalse($production->isPublished());
         $this->assertNull($production->publishedAt());
+    }
+
+    /**
+     * Publication State Model (docs/04-DomainModel/PublicationStateModel.md):
+     * a future `publish($at)` is SCHEDULED - `publishedAt` is set, but
+     * `isPublished()` stays false until that moment passes.
+     */
+    public function test_publish_with_a_future_date_is_scheduled_not_yet_published(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Scheduled Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('scheduled-show')
+        );
+
+        $production->publish(new DateTimeImmutable('+1 day'));
+
+        $this->assertFalse($production->isPublished());
+        $this->assertNotNull($production->publishedAt());
+    }
+
+    public function test_publish_with_a_past_date_is_immediately_published(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Past Scheduled Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('past-scheduled-show')
+        );
+
+        $production->publish(new DateTimeImmutable('-1 day'));
+
+        $this->assertTrue($production->isPublished());
     }
 
     public function test_change_slug_updates_the_slug(): void

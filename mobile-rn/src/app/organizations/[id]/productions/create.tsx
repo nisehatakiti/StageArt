@@ -110,7 +110,7 @@ export default function CreateProductionScreen() {
   }
 
   if (created) {
-    const publicPath = organization?.slug ? `/o/${organization.slug}/${created.slug}` : null;
+    const publicPath = organization?.slug ? `/${organization.slug}/${created.slug}` : null;
 
     return (
       <AppShell scroll>

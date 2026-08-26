@@ -109,13 +109,22 @@ final class Organization
      * publish (an unpublished/no-slug Organization has no public URL to
      * serve).
      */
-    public function publish(): void
+    /**
+     * StageArt Publication State Model
+     * (docs/04-DomainModel/PublicationStateModel.md): `$at` defaults to
+     * now (all pre-existing call sites are unaffected), but a caller can
+     * pass a future `DateTimeImmutable` to schedule publication -
+     * `isPublished()` compares against the current time on every read,
+     * so a future `$at` naturally reads as SCHEDULED (not yet visible)
+     * until that moment passes, with no CRON/background job needed.
+     */
+    public function publish(?DateTimeImmutable $at = null): void
     {
         if ($this->slug === null) {
             throw new InvalidArgumentException('An Organization must have a slug before it can be published.');
         }
 
-        $this->publishedAt = new DateTimeImmutable();
+        $this->publishedAt = $at ?? new DateTimeImmutable();
         $this->touch();
     }
 
@@ -125,9 +134,14 @@ final class Organization
         $this->touch();
     }
 
+    /**
+     * Time-comparison, not a mere null-check (Publication State Model,
+     * see publish()'s docblock) - a future `publishedAt` (SCHEDULED)
+     * reads as not-yet-published until that moment passes.
+     */
     public function isPublished(): bool
     {
-        return $this->publishedAt !== null;
+        return $this->publishedAt !== null && $this->publishedAt <= new DateTimeImmutable();
     }
 
     public function changeType(?string $type): void
