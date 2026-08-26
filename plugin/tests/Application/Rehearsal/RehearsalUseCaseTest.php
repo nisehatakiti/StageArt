@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Rehearsal\ActivateRehearsalCommand;
 use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
 use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
@@ -21,7 +22,10 @@ use StageArt\Application\Rehearsal\GetRehearsalQuery;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsForProductionQuery;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
 use StageArt\Domain\Membership\Membership;
@@ -44,6 +48,7 @@ use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -85,31 +90,36 @@ final class RehearsalUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new CoreMembershipAdapter($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
-        $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $this->productions, $productionAuthorization);
-        $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $this->productions, $productionAuthorization);
-        $this->updateRehearsal = new UpdateRehearsalUseCase($this->rehearsals, $this->productions, $productionAuthorization);
+        $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
+        $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
+        $this->updateRehearsal = new UpdateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
-        $this->activateRehearsal = new ActivateRehearsalUseCase($this->rehearsals, $this->productions, $productionAuthorization);
-        $this->completeRehearsal = new CompleteRehearsalUseCase($this->rehearsals, $this->productions, $productionAuthorization);
-        $this->cancelRehearsal = new CancelRehearsalUseCase($this->rehearsals, $this->productions, $productionAuthorization);
+        $this->activateRehearsal = new ActivateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
+        $this->completeRehearsal = new CompleteRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
+        $this->cancelRehearsal = new CancelRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production

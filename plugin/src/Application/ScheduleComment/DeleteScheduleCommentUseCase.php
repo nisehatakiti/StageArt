@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ScheduleComment;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\ScheduleComment\ScheduleComment;
@@ -32,37 +33,44 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * Phase 2; TimetableItem path walks TimetableItem -> Timetable ->
  * Rehearsal -> Production, the same chain already used by
  * TimetableItem's own UseCases.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class DeleteScheduleCommentUseCase
 {
     private ScheduleCommentRepositoryInterface $comments;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private TimetableRepositoryInterface $timetables;
     private TimetableItemRepositoryInterface $timetableItems;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         ScheduleCommentRepositoryInterface $comments,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         TimetableRepositoryInterface $timetables,
         TimetableItemRepositoryInterface $timetableItems,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->comments = $comments;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->timetables = $timetables;
         $this->timetableItems = $timetableItems;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(DeleteScheduleCommentCommand $command): void
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ScheduleCommentAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -72,7 +80,7 @@ final class DeleteScheduleCommentUseCase
             throw new ScheduleCommentNotFoundException($command->scheduleCommentId);
         }
 
-        if ($comment->isAuthoredBy($requester->id())) {
+        if ($comment->isAuthoredBy($requesterId)) {
             $this->comments->delete($comment->id());
             return;
         }
@@ -81,13 +89,14 @@ final class DeleteScheduleCommentUseCase
             ? $this->resolveRehearsalForRehearsalComment($comment)
             : $this->resolveRehearsalForTimetableItemComment($comment);
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new ScheduleCommentAccessDeniedException(
                 'Only the author, or the PrimaryManager/a REHEARSAL_MANAGER Delegate, can delete this ScheduleComment.'
             );

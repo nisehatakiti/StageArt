@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -20,33 +21,39 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  * line between a Person's own prior intent (ATTENDING/NOT_ATTENDING, via
  * RespondRehearsalAttendanceUseCase) and the actual outcome, which only
  * the PrimaryManager or a REHEARSAL_MANAGER Delegate may record - see
- * ProductionAuthorizationService::hasProductionCapability() with
- * RehearsalCapability::MANAGE.
+ * AuthorizationContract::canForProduction() with RehearsalCapability::MANAGE.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class RecordActualRehearsalAttendanceStatusUseCase
 {
     private RehearsalAttendanceRepositoryInterface $attendances;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(RecordActualRehearsalAttendanceStatusCommand $command): RehearsalAttendanceResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new RehearsalAttendanceAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -62,13 +69,14 @@ final class RecordActualRehearsalAttendanceStatusUseCase
             throw new RehearsalNotFoundException($attendance->rehearsalId()->toString());
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new RehearsalAttendanceAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can record the actual attendance result.'
             );

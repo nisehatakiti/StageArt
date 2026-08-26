@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace StageArt\Core\Adapter;
 
+use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
+use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * StageArt Core/Module Architecture: the concrete implementation of
@@ -19,22 +22,30 @@ use StageArt\Domain\Production\ProductionId;
  * concern the Rehearsal Module was resolving inline itself, not a
  * Rehearsal-owned business rule. Logic is unchanged.
  *
- * Deliberately narrower than ProductionAuthorizationService::
- * isProductionMember(): that method also grants PrimaryManager and
- * ProductionDelegate broad read/participation access, but a
- * PrimaryManager or Delegate is a Production-management role, not
- * necessarily someone who personally attends Rehearsals (or, in
- * general, is a Module-facing "member"). This targets ACTIVE,
- * Person-subject Participants specifically - Participant.md's
- * individual-level member roster.
+ * `activeProductionMemberPersonIds()` is deliberately narrower than
+ * `isProductionMember()`: that targets ACTIVE, Person-subject
+ * Participants specifically (Participant.md's individual-level member
+ * roster), while `isProductionMember()` also grants PrimaryManager and
+ * ProductionDelegate broad read/participation access - see each
+ * method's own Contract docblock.
  */
 final class CoreMembershipAdapter implements MembershipContract
 {
     private ParticipantRepositoryInterface $participants;
+    private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
+    private ProductionAuthorizationService $productionAuthorization;
 
-    public function __construct(ParticipantRepositoryInterface $participants)
-    {
+    public function __construct(
+        ParticipantRepositoryInterface $participants,
+        ProductionRepositoryInterface $productions,
+        PersonRepositoryInterface $people,
+        ProductionAuthorizationService $productionAuthorization
+    ) {
         $this->participants = $participants;
+        $this->productions = $productions;
+        $this->people = $people;
+        $this->productionAuthorization = $productionAuthorization;
     }
 
     public function activeProductionMemberPersonIds(ProductionId $productionId): array
@@ -54,5 +65,17 @@ final class CoreMembershipAdapter implements MembershipContract
         }
 
         return $personIds;
+    }
+
+    public function isProductionMember(PersonId $personId, ProductionId $productionId): bool
+    {
+        $person = $this->people->findById($personId);
+        $production = $this->productions->findById($productionId);
+
+        if ($person === null || $production === null) {
+            return false;
+        }
+
+        return $this->productionAuthorization->isProductionMember($person, $production);
     }
 }

@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ScheduleComment;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\ScheduleComment\ScheduleComment;
@@ -21,31 +22,38 @@ use StageArt\Domain\ScheduleComment\ScheduleCommentRepositoryInterface;
  * Production member per isProductionMember()'s definition, so a single
  * isProductionMember() check covers both clauses of the Blueprint text
  * without needing a separate Rehearsal-management-capability check.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class CreateScheduleCommentUseCase
 {
     private ScheduleCommentRepositoryInterface $comments;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         ScheduleCommentRepositoryInterface $comments,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->comments = $comments;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     public function execute(CreateScheduleCommentCommand $command): ScheduleCommentResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ScheduleCommentAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -55,19 +63,20 @@ final class CreateScheduleCommentUseCase
             throw new RehearsalNotFoundException($command->rehearsalId);
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new ScheduleCommentAccessDeniedException(
                 'You must be a member of this Production, or hold Rehearsal management authority, to post a ScheduleComment.'
             );
         }
 
-        $comment = ScheduleComment::createForRehearsal($rehearsal->id(), $requester->id(), new ScheduleCommentBody($command->body));
+        $comment = ScheduleComment::createForRehearsal($rehearsal->id(), $requesterId, new ScheduleCommentBody($command->body));
         $this->comments->save($comment);
 
         return ScheduleCommentResult::fromDomain($comment);

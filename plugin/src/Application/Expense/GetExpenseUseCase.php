@@ -4,39 +4,43 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Expense;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
-use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * Read is Production-Member-wide, not management-only: Expense.md frames
  * Expense as a shared, current record of "現場で発生した支出", not a
  * private management ledger (unlike raw Journal Entry detail - see
  * ListJournalEntriesUseCase's docblock for that distinction).
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (Identity/Membership) - the Expense's own productionId is
+ * enough to check membership against, no `ProductionRepositoryInterface`
+ * lookup is needed here.
  */
 final class GetExpenseUseCase
 {
     private ExpenseRepositoryInterface $expenses;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         ExpenseRepositoryInterface $expenses,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->expenses = $expenses;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     public function execute(GetExpenseQuery $query): ExpenseResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ExpenseAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -46,13 +50,7 @@ final class GetExpenseUseCase
             throw new ExpenseNotFoundException($query->expenseId);
         }
 
-        $production = $this->productions->findById($expense->productionId());
-
-        if (! $production) {
-            throw new ProductionNotFoundException($expense->productionId()->toString());
-        }
-
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $expense->productionId())) {
             throw new ExpenseAccessDeniedException('Only members of this Production can view this Expense.');
         }
 

@@ -6,7 +6,14 @@ namespace StageArt\Presentation;
 
 use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsUseCase;
+use StageArt\Application\Notification\NotificationDispatcherInterface;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
 use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
@@ -249,9 +256,15 @@ final class Plugin
         $resolveJoinKey = new ResolveJoinKeyUseCase($joinKeys, $organizations, $productions);
         $disableJoinKey = new DisableJoinKeyUseCase($joinKeys, $productions, $authorization, $productionAuthorization);
         $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
-        $membershipContract = new CoreMembershipAdapter($participants);
-        $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
+        $membershipContract = new CoreMembershipAdapter($participants, $productions, $people, $productionAuthorization);
+        $productionContextContract = new CoreProductionContextAdapter($productions, $productionOrganizationResolver);
+        $identityContract = new CoreIdentityAdapter($people);
+        $authorizationContract = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
+        $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
+        $notificationDispatcher = new WordPressNotificationDispatcher();
+        $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
+        $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $budgetLineFactory = new BudgetLineFactory($accounts);
         $expenseLineFactory = new ExpenseLineFactory($accounts);
 
@@ -431,121 +444,137 @@ final class Plugin
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
 
         $createRehearsal = new CreateRehearsalUseCase(
-            $productions,
+            $productionContextContract,
             $rehearsals,
             $rehearsalAttendances,
             $membershipContract,
-            $productionAuthorization,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
-        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productions, $productionAuthorization);
-        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productions, $productionAuthorization);
-        $updateRehearsal = new UpdateRehearsalUseCase($rehearsals, $productions, $productionAuthorization);
+        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $membershipContract);
+        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContextContract, $identityContract, $membershipContract);
+        $updateRehearsal = new UpdateRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
         $confirmRehearsal = new ConfirmRehearsalUseCase(
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $rehearsalAttendances,
             $membershipContract,
-            $productionAuthorization,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
-        $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productions, $productionAuthorization);
-        $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productions, $productionAuthorization);
-        $cancelRehearsal = new CancelRehearsalUseCase($rehearsals, $productions, $productionAuthorization);
+        $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
+        $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
+        $cancelRehearsal = new CancelRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
 
         $listRehearsalAttendances = new ListRehearsalAttendancesUseCase(
             $rehearsalAttendances,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
         $getRehearsalAttendance = new GetRehearsalAttendanceUseCase(
             $rehearsalAttendances,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
-        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $productionAuthorization);
+        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $identityContract);
         $recordActualRehearsalAttendanceStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $rehearsalAttendances,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract
         );
 
         $createScheduleComment = new CreateScheduleCommentUseCase(
             $scheduleComments,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
         $listScheduleComments = new ListScheduleCommentsUseCase(
             $scheduleComments,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
-        $updateScheduleComment = new UpdateScheduleCommentUseCase($scheduleComments, $productionAuthorization);
+        $updateScheduleComment = new UpdateScheduleCommentUseCase($scheduleComments, $identityContract);
         $deleteScheduleComment = new DeleteScheduleCommentUseCase(
             $scheduleComments,
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetables,
             $timetableItems,
-            $productionAuthorization
+            $identityContract,
+            $authorizationContract
         );
         $createTimetableItemScheduleComment = new CreateTimetableItemScheduleCommentUseCase(
             $scheduleComments,
             $timetableItems,
             $timetables,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
         $listTimetableItemScheduleComments = new ListTimetableItemScheduleCommentsUseCase(
             $scheduleComments,
             $timetableItems,
             $timetables,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
 
-        $timetableItemTargetValidator = new TimetableItemTargetValidator($participants);
+        $timetableItemTargetValidator = new TimetableItemTargetValidator($membershipContract);
 
-        $getTimetable = new GetTimetableUseCase($timetables, $rehearsals, $productions, $productionAuthorization);
-        $getDraftTimetable = new GetDraftTimetableUseCase($timetables, $rehearsals, $productions, $productionAuthorization);
-        $listTimetableVersions = new ListTimetableVersionsUseCase($timetables, $rehearsals, $productions, $productionAuthorization);
+        $getTimetable = new GetTimetableUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
+        $getDraftTimetable = new GetDraftTimetableUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
+        $listTimetableVersions = new ListTimetableVersionsUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
         $createNewTimetableVersion = new CreateNewTimetableVersionUseCase(
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetables,
             $timetableItems,
             $nextTimetableVersionResolver,
-            $productionAuthorization,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
         $publishTimetableVersion = new PublishTimetableVersionUseCase(
             $timetables,
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetableVersionPublishedNotifications,
-            $productionAuthorization,
+            $membershipContract,
+            $notificationContract,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
         $listTimetableItems = new ListTimetableItemsUseCase(
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetables,
             $timetableItems,
-            $productionAuthorization
+            $identityContract,
+            $membershipContract
         );
         $listDraftTimetableItems = new ListDraftTimetableItemsUseCase(
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetables,
             $timetableItems,
-            $productionAuthorization
+            $identityContract,
+            $membershipContract
         );
         $listProductionTimetableItems = new ListProductionTimetableItemsUseCase(
             $productions,
@@ -592,36 +621,40 @@ final class Plugin
         );
         $createTimetableItem = new CreateTimetableItemUseCase(
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetables,
             $timetableItems,
             $timetableItemTargetValidator,
             $nextTimetableVersionResolver,
-            $productionAuthorization,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
         $getTimetableItem = new GetTimetableItemUseCase(
             $timetableItems,
             $timetables,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
         $updateTimetableItem = new UpdateTimetableItemUseCase(
             $timetableItems,
             $timetables,
             $rehearsals,
-            $productions,
+            $productionContextContract,
             $timetableItemTargetValidator,
-            $productionAuthorization,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
         $deleteTimetableItem = new DeleteTimetableItemUseCase(
             $timetableItems,
             $timetables,
             $rehearsals,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract
         );
 
         // Phase 6.0 Accounting Foundation.
@@ -630,58 +663,58 @@ final class Plugin
 
         $createBudget = new CreateBudgetUseCase(
             $budgets,
-            $productions,
-            $productionAuthorization,
-            $productionOrganizationResolver,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
             $budgetLineFactory,
             $transactions
         );
         $updateBudget = new UpdateBudgetUseCase(
             $budgets,
-            $productions,
-            $productionAuthorization,
-            $productionOrganizationResolver,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
             $budgetLineFactory,
             $transactions
         );
-        $getBudget = new GetBudgetUseCase($budgets, $productions, $productionAuthorization);
-        $listBudgets = new ListBudgetsUseCase($budgets, $productions, $productionAuthorization);
-        $activateBudget = new ActivateBudgetUseCase($budgets, $productions, $productionAuthorization, $transactions);
+        $getBudget = new GetBudgetUseCase($budgets, $identityContract, $authorizationContract);
+        $listBudgets = new ListBudgetsUseCase($budgets, $productionContextContract, $identityContract, $authorizationContract);
+        $activateBudget = new ActivateBudgetUseCase($budgets, $identityContract, $authorizationContract, $transactions);
 
         $createExpense = new CreateExpenseUseCase(
             $expenses,
-            $productions,
-            $productionAuthorization,
-            $productionOrganizationResolver,
+            $productionContextContract,
+            $membershipContract,
+            $identityContract,
             $expenseLineFactory,
             $transactions
         );
         $updateExpense = new UpdateExpenseUseCase(
             $expenses,
-            $productions,
-            $productionAuthorization,
-            $productionOrganizationResolver,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
             $expenseLineFactory,
             $transactions
         );
         $confirmExpense = new ConfirmExpenseUseCase(
             $expenses,
-            $productions,
+            $productionContextContract,
             $accounts,
             $journalEntries,
-            $productionAuthorization,
-            $productionOrganizationResolver,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
-        $getExpense = new GetExpenseUseCase($expenses, $productions, $productionAuthorization);
-        $listExpenses = new ListExpensesUseCase($expenses, $productions, $productionAuthorization);
+        $getExpense = new GetExpenseUseCase($expenses, $identityContract, $membershipContract);
+        $listExpenses = new ListExpensesUseCase($expenses, $productionContextContract, $membershipContract, $identityContract);
 
-        $listJournalEntries = new ListJournalEntriesUseCase($journalEntries, $productions, $productionAuthorization);
+        $listJournalEntries = new ListJournalEntriesUseCase($journalEntries, $productionContextContract, $identityContract, $authorizationContract);
         $postJournalEntry = new PostJournalEntryUseCase(
             $journalEntries,
-            $productions,
+            $productionContextContract,
             $authorization,
-            $productionAuthorization,
+            $authorizationContract,
             $transactions
         );
 
@@ -689,8 +722,9 @@ final class Plugin
             $budgets,
             $journalEntries,
             $accounts,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $membershipContract,
+            $identityContract
         );
 
         $organizationRestController = new OrganizationRestController(

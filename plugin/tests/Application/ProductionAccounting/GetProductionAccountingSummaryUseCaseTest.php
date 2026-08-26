@@ -24,6 +24,10 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\JournalEntry\JournalEntry;
 use StageArt\Domain\Membership\Membership;
@@ -96,46 +100,57 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
 
+        $productionContext = new CoreProductionContextAdapter($this->productions, $resolver);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorizationContract = new CoreAuthorizationAdapter($this->prodAuth, $this->productions, $this->people);
+        $membershipContract = new CoreMembershipAdapter(
+            new InMemoryParticipantRepository(),
+            $this->productions,
+            $this->people,
+            $this->prodAuth
+        );
+
         $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $this->orgAuth);
         $this->createBudget = new CreateBudgetUseCase(
             $this->budgets,
-            $this->productions,
-            $this->prodAuth,
-            $resolver,
+            $productionContext,
+            $identity,
+            $authorizationContract,
             new BudgetLineFactory($this->accounts),
             $transactions
         );
-        $this->activateBudget = new ActivateBudgetUseCase($this->budgets, $this->productions, $this->prodAuth, $transactions);
+        $this->activateBudget = new ActivateBudgetUseCase($this->budgets, $identity, $authorizationContract, $transactions);
         $this->createExpense = new CreateExpenseUseCase(
             $this->expenses,
-            $this->productions,
-            $this->prodAuth,
-            $resolver,
+            $productionContext,
+            $membershipContract,
+            $identity,
             new ExpenseLineFactory($this->accounts),
             $transactions
         );
         $this->confirmExpense = new ConfirmExpenseUseCase(
             $this->expenses,
-            $this->productions,
+            $productionContext,
             $this->accounts,
             $this->journalEntries,
-            $this->prodAuth,
-            $resolver,
+            $identity,
+            $authorizationContract,
             $transactions
         );
         $this->postJournalEntry = new PostJournalEntryUseCase(
             $this->journalEntries,
-            $this->productions,
+            $productionContext,
             $this->orgAuth,
-            $this->prodAuth,
+            $authorizationContract,
             $transactions
         );
         $this->useCase = new GetProductionAccountingSummaryUseCase(
             $this->budgets,
             $this->journalEntries,
             $this->accounts,
-            $this->productions,
-            $this->prodAuth
+            $productionContext,
+            $membershipContract,
+            $identity
         );
     }
 

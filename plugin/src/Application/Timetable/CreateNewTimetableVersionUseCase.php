@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Timetable;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\Timetable;
@@ -30,40 +31,47 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * "Draft" section) - this UseCase rejects if one already exists rather
  * than silently reusing or replacing it, keeping "which Draft becomes
  * the next Version" unambiguous.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class CreateNewTimetableVersionUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private TimetableRepositoryInterface $timetables;
     private TimetableItemRepositoryInterface $items;
     private NextTimetableVersionResolver $versionResolver;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         TimetableRepositoryInterface $timetables,
         TimetableItemRepositoryInterface $items,
         NextTimetableVersionResolver $versionResolver,
-        ProductionAuthorizationService $authorization,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->timetables = $timetables;
         $this->items = $items;
         $this->versionResolver = $versionResolver;
+        $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
 
     public function execute(CreateNewTimetableVersionCommand $command): TimetableResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new TimetableAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -74,13 +82,14 @@ final class CreateNewTimetableVersionUseCase
             throw new RehearsalNotFoundException($command->rehearsalId);
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new TimetableAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can create a new Timetable Version.'
             );
@@ -94,9 +103,9 @@ final class CreateNewTimetableVersionUseCase
 
         $published = $this->timetables->findPublishedByRehearsalId($rehearsalId);
 
-        $draft = $this->transactions->run(function () use ($rehearsalId, $requester, $published): Timetable {
+        $draft = $this->transactions->run(function () use ($rehearsalId, $requesterId, $published): Timetable {
             $nextVersion = $this->versionResolver->resolve($rehearsalId);
-            $draft = Timetable::create($rehearsalId, $nextVersion, $requester->id());
+            $draft = Timetable::create($rehearsalId, $nextVersion, $requesterId);
             $this->timetables->save($draft);
 
             if ($published !== null) {

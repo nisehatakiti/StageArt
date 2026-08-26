@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Rehearsal;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
@@ -34,41 +35,44 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * by the DB-level UNIQUE(rehearsal_id, person_id, phase) constraint as
  * the final guarantee.
  *
- * StageArt Core/Module Architecture: depends on `MembershipContract`,
- * not `ParticipantRepositoryInterface`/the former
- * `ProductionMemberResolver` directly (see CreateRehearsalUseCase's
- * matching docblock).
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (Identity/ProductionContext/Authorization/Membership), not
+ * on `ProductionRepositoryInterface`/`ProductionAuthorizationService`
+ * directly.
  */
 final class ConfirmRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private RehearsalAttendanceRepositoryInterface $attendances;
     private MembershipContract $membership;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         RehearsalAttendanceRepositoryInterface $attendances,
         MembershipContract $membership,
-        ProductionAuthorizationService $authorization,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->attendances = $attendances;
         $this->membership = $membership;
+        $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
 
     public function execute(ConfirmRehearsalCommand $command): RehearsalResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new RehearsalAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -78,13 +82,14 @@ final class ConfirmRehearsalUseCase
             throw new RehearsalNotFoundException($command->rehearsalId);
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new RehearsalAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can confirm this Rehearsal.'
             );
@@ -93,11 +98,11 @@ final class ConfirmRehearsalUseCase
         $phase = RehearsalAttendancePhase::attendanceConfirmation();
 
         $rehearsal = $this->transactions->run(
-            function () use ($rehearsal, $production, $phase): Rehearsal {
+            function () use ($rehearsal, $productionId, $phase): Rehearsal {
                 $rehearsal->confirm();
                 $this->rehearsals->save($rehearsal);
 
-                foreach ($this->membership->activeProductionMemberPersonIds($production->id()) as $personId) {
+                foreach ($this->membership->activeProductionMemberPersonIds($productionId) as $personId) {
                     $existing = $this->attendances->findByRehearsalIdAndPersonIdAndPhase($rehearsal->id(), $personId, $phase);
 
                     if ($existing !== null) {

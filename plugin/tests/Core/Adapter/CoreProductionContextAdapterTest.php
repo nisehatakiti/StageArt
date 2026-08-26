@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace StageArt\Tests\Core\Adapter;
 
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Project\Project;
 use StageArt\Domain\Project\ProjectId;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 
 final class CoreProductionContextAdapterTest extends TestCase
 {
@@ -21,7 +26,7 @@ final class CoreProductionContextAdapterTest extends TestCase
         $production = Production::create(ProjectId::generate(), new ProductionName('Autumn Show'), PersonId::generate());
         $productions->save($production);
 
-        $adapter = new CoreProductionContextAdapter($productions);
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
 
         $summary = $adapter->getProduction($production->id());
 
@@ -33,8 +38,54 @@ final class CoreProductionContextAdapterTest extends TestCase
 
     public function test_returns_null_for_a_nonexistent_production(): void
     {
-        $adapter = new CoreProductionContextAdapter(new InMemoryProductionRepository());
+        $adapter = new CoreProductionContextAdapter(
+            new InMemoryProductionRepository(),
+            new ProductionOrganizationResolver(new InMemoryProjectRepository())
+        );
 
         $this->assertNull($adapter->getProduction(ProductionId::generate()));
+    }
+
+    public function test_resolves_the_owning_organization_id(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $project = Project::create($organization->id(), 'Season');
+        $projects->save($project);
+
+        $production = Production::create($project->id(), new ProductionName('Autumn Show'), PersonId::generate());
+        $productions->save($production);
+
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver($projects));
+
+        $organizationId = $adapter->getProductionOrganizationId($production->id());
+
+        $this->assertNotNull($organizationId);
+        $this->assertTrue($organizationId->equals($organization->id()));
+    }
+
+    public function test_organization_id_is_null_when_the_production_does_not_exist(): void
+    {
+        $adapter = new CoreProductionContextAdapter(
+            new InMemoryProductionRepository(),
+            new ProductionOrganizationResolver(new InMemoryProjectRepository())
+        );
+
+        $this->assertNull($adapter->getProductionOrganizationId(ProductionId::generate()));
+    }
+
+    public function test_organization_id_is_null_when_the_underlying_project_is_missing(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $production = Production::create(ProjectId::generate(), new ProductionName('Orphaned Show'), PersonId::generate());
+        $productions->save($production);
+
+        // Deliberately an empty Project repository - the Production's
+        // own Project was never saved.
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+
+        $this->assertNull($adapter->getProductionOrganizationId($production->id()));
     }
 }

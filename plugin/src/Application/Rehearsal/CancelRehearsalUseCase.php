@@ -4,33 +4,42 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Rehearsal;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 
+/**
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
+ */
 final class CancelRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(CancelRehearsalCommand $command): RehearsalResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new RehearsalAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -40,13 +49,14 @@ final class CancelRehearsalUseCase
             throw new RehearsalNotFoundException($command->rehearsalId);
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new RehearsalAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can cancel this Rehearsal.'
             );

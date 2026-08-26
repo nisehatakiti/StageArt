@@ -20,6 +20,9 @@ use StageArt\Application\Budget\UpdateBudgetUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
@@ -77,11 +80,15 @@ final class BudgetUseCaseTest extends TestCase
         $transactions = new InMemoryTransactionManager();
         $lineFactory = new BudgetLineFactory($this->accounts);
 
+        $productionContext = new CoreProductionContextAdapter($this->productions, $resolver);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorizationContract = new CoreAuthorizationAdapter($this->prodAuth, $this->productions, $this->people);
+
         $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
-        $this->createBudget = new CreateBudgetUseCase($this->budgets, $this->productions, $this->prodAuth, $resolver, $lineFactory, $transactions);
-        $this->getBudget = new GetBudgetUseCase($this->budgets, $this->productions, $this->prodAuth);
-        $this->updateBudget = new UpdateBudgetUseCase($this->budgets, $this->productions, $this->prodAuth, $resolver, $lineFactory, $transactions);
-        $this->activateBudget = new ActivateBudgetUseCase($this->budgets, $this->productions, $this->prodAuth, $transactions);
+        $this->createBudget = new CreateBudgetUseCase($this->budgets, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
+        $this->getBudget = new GetBudgetUseCase($this->budgets, $identity, $authorizationContract);
+        $this->updateBudget = new UpdateBudgetUseCase($this->budgets, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
+        $this->activateBudget = new ActivateBudgetUseCase($this->budgets, $identity, $authorizationContract, $transactions);
     }
 
     /**

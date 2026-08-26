@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ProductionAccounting;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\Account;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountRepositoryInterface;
@@ -17,7 +19,6 @@ use StageArt\Domain\JournalEntry\JournalEntryLine;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * The single aggregate figure Mobile's "会計概要" shows is Planned/Actual
@@ -60,45 +61,49 @@ final class GetProductionAccountingSummaryUseCase
     private BudgetRepositoryInterface $budgets;
     private JournalEntryRepositoryInterface $journalEntries;
     private AccountRepositoryInterface $accounts;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private MembershipContract $membership;
+    private IdentityContract $identity;
 
     public function __construct(
         BudgetRepositoryInterface $budgets,
         JournalEntryRepositoryInterface $journalEntries,
         AccountRepositoryInterface $accounts,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        MembershipContract $membership,
+        IdentityContract $identity
     ) {
         $this->budgets = $budgets;
         $this->journalEntries = $journalEntries;
         $this->accounts = $accounts;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->productionContext = $productionContext;
+        $this->membership = $membership;
+        $this->identity = $identity;
     }
 
     public function execute(GetProductionAccountingSummaryQuery $query): ProductionAccountingSummaryResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ProductionAccountingAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($query->productionId));
+        $productionId = ProductionId::fromString($query->productionId);
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new ProductionAccountingAccessDeniedException(
                 'Only members of this Production can view its Accounting Summary.'
             );
         }
 
-        $activeBudget = $this->budgets->findActiveByProductionId($production->id());
-        $postedEntries = $this->journalEntries->findPostedByProductionId($production->id());
+        $activeBudget = $this->budgets->findActiveByProductionId($productionId);
+        $postedEntries = $this->journalEntries->findPostedByProductionId($productionId);
 
         $accountIds = [];
         if ($activeBudget !== null) {
@@ -125,7 +130,7 @@ final class GetProductionAccountingSummaryUseCase
         $totalVariance = $activeBudget !== null ? $totalActual - $totalBudget : null;
 
         return new ProductionAccountingSummaryResult(
-            $production->id()->toString(),
+            $productionId->toString(),
             $activeBudget !== null,
             $activeBudget !== null ? $activeBudget->id()->toString() : null,
             $totalBudget,

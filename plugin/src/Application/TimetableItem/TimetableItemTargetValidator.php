@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace StageArt\Application\TimetableItem;
 
-use StageArt\Domain\Participant\ParticipantRepositoryInterface;
-use StageArt\Domain\Participant\ParticipantStatus;
-use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionId;
 
 /**
  * Shared by CreateTimetableItemUseCase and UpdateTimetableItemUseCase:
@@ -16,20 +14,25 @@ use StageArt\Domain\Production\Production;
  * not duplicate Participant data - it only references PersonId values,
  * which must resolve to an ACTIVE, Person-subject Participant of the
  * same Production.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends on
+ * `MembershipContract`, not `ParticipantRepositoryInterface` directly -
+ * and takes a `ProductionId`, not the `Production` Domain Entity (this
+ * class never needed anything from Production beyond its identity).
  */
 final class TimetableItemTargetValidator
 {
-    private ParticipantRepositoryInterface $participants;
+    private MembershipContract $membership;
 
-    public function __construct(ParticipantRepositoryInterface $participants)
+    public function __construct(MembershipContract $membership)
     {
-        $this->participants = $participants;
+        $this->membership = $membership;
     }
 
     /**
      * @param PersonId[] $targetPersonIds
      */
-    public function assertValidTargets(Production $production, array $targetPersonIds): void
+    public function assertValidTargets(ProductionId $productionId, array $targetPersonIds): void
     {
         if ($targetPersonIds === []) {
             return;
@@ -37,16 +40,8 @@ final class TimetableItemTargetValidator
 
         $activePersonIds = [];
 
-        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
-            if (! $participant->subjectType()->equals(ParticipantSubjectType::person())) {
-                continue;
-            }
-
-            if (! $participant->status()->equals(ParticipantStatus::fromString(ParticipantStatus::ACTIVE))) {
-                continue;
-            }
-
-            $activePersonIds[$participant->subjectId()] = true;
+        foreach ($this->membership->activeProductionMemberPersonIds($productionId) as $activePersonId) {
+            $activePersonIds[$activePersonId->toString()] = true;
         }
 
         foreach ($targetPersonIds as $personId) {

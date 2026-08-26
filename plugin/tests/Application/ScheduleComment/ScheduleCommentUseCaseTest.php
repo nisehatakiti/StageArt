@@ -7,9 +7,13 @@ namespace StageArt\Tests\Application\ScheduleComment;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentCommand;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentUseCase;
 use StageArt\Application\ScheduleComment\CreateTimetableItemScheduleCommentCommand;
@@ -45,6 +49,7 @@ use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryScheduleCommentRepository;
@@ -93,65 +98,75 @@ final class ScheduleCommentUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new CoreMembershipAdapter($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             new InMemoryRehearsalAttendanceRepository(),
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
 
         $this->createTimetableItem = new CreateTimetableItemUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->timetableItems,
-            new TimetableItemTargetValidator($this->participants),
+            new TimetableItemTargetValidator($memberResolver),
             new NextTimetableVersionResolver($this->timetables),
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
 
         $this->createComment = new CreateScheduleCommentUseCase(
             $this->comments,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
         $this->listComments = new ListScheduleCommentsUseCase(
             $this->comments,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
-        $this->updateComment = new UpdateScheduleCommentUseCase($this->comments, $productionAuthorization);
+        $this->updateComment = new UpdateScheduleCommentUseCase($this->comments, $identity);
         $this->deleteComment = new DeleteScheduleCommentUseCase(
             $this->comments,
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->timetableItems,
-            $productionAuthorization
+            $identity,
+            $authorization
         );
         $this->createTimetableItemComment = new CreateTimetableItemScheduleCommentUseCase(
             $this->comments,
             $this->timetableItems,
             $this->timetables,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
         $this->listTimetableItemComments = new ListTimetableItemScheduleCommentsUseCase(
             $this->comments,
             $this->timetableItems,
             $this->timetables,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
     }
 

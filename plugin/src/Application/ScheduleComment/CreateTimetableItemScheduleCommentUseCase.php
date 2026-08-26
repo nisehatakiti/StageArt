@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ScheduleComment;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\ScheduleComment\ScheduleComment;
 use StageArt\Domain\ScheduleComment\ScheduleCommentBody;
@@ -23,6 +24,10 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * targets a TimetableItem instead. Same isProductionMember() posting
  * rule (ScheduleComment.md's "Posting" applies identically regardless
  * of which of the two target types the comment is attached to).
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class CreateTimetableItemScheduleCommentUseCase
 {
@@ -30,30 +35,33 @@ final class CreateTimetableItemScheduleCommentUseCase
     private TimetableItemRepositoryInterface $timetableItems;
     private TimetableRepositoryInterface $timetables;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         ScheduleCommentRepositoryInterface $comments,
         TimetableItemRepositoryInterface $timetableItems,
         TimetableRepositoryInterface $timetables,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->comments = $comments;
         $this->timetableItems = $timetableItems;
         $this->timetables = $timetables;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     public function execute(CreateTimetableItemScheduleCommentCommand $command): ScheduleCommentResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ScheduleCommentAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -76,19 +84,20 @@ final class CreateTimetableItemScheduleCommentUseCase
             throw new RehearsalNotFoundException($timetable->rehearsalId()->toString());
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new ScheduleCommentAccessDeniedException(
                 'You must be a member of this Production, or hold Rehearsal management authority, to post a ScheduleComment.'
             );
         }
 
-        $comment = ScheduleComment::createForTimetableItem($itemId, $requester->id(), new ScheduleCommentBody($command->body));
+        $comment = ScheduleComment::createForTimetableItem($itemId, $requesterId, new ScheduleCommentBody($command->body));
         $this->comments->save($comment);
 
         return ScheduleCommentResult::fromDomain($comment);

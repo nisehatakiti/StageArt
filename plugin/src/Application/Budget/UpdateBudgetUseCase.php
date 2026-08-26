@@ -5,46 +5,51 @@ declare(strict_types=1);
 namespace StageArt\Application\Budget;
 
 use StageArt\Application\Accounting\AccountingCapability;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Shared\TransactionManagerInterface;
-use StageArt\Domain\Budget\Budget;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Budget\BudgetId;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
-use StageArt\Domain\Production\ProductionId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
+/**
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (ProductionContext/Identity/Authorization), not on
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService`/
+ * `ProductionOrganizationResolver` directly - the owning Organization is
+ * resolved via `ProductionContextContract::getProductionOrganizationId()`.
+ */
 final class UpdateBudgetUseCase
 {
     private BudgetRepositoryInterface $budgets;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
-    private ProductionOrganizationResolver $organizationResolver;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private BudgetLineFactory $lineFactory;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         BudgetRepositoryInterface $budgets,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization,
-        ProductionOrganizationResolver $organizationResolver,
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         BudgetLineFactory $lineFactory,
         TransactionManagerInterface $transactions
     ) {
         $this->budgets = $budgets;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
-        $this->organizationResolver = $organizationResolver;
         $this->lineFactory = $lineFactory;
         $this->transactions = $transactions;
     }
 
     public function execute(UpdateBudgetCommand $command): BudgetResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new BudgetAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -54,22 +59,23 @@ final class UpdateBudgetUseCase
             throw new BudgetNotFoundException($command->budgetId);
         }
 
-        $production = $this->productions->findById($budget->productionId());
+        $productionId = $budget->productionId();
 
-        if (! $production) {
-            throw new ProductionNotFoundException($budget->productionId()->toString());
-        }
-
-        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can update this Budget.');
         }
 
-        $organizationId = $this->organizationResolver->resolve($production);
+        $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
+
+        if (! $organizationId) {
+            throw new ProductionNotFoundException($productionId->toString());
+        }
+
         $lines = $this->lineFactory->build($command->lines, $organizationId);
 
-        $this->transactions->run(function () use ($budget, $command, $lines, $requester): void {
-            $budget->rename($command->name, $requester->id());
-            $budget->replaceLines($lines, $requester->id());
+        $this->transactions->run(function () use ($budget, $command, $lines, $requesterId): void {
+            $budget->rename($command->name, $requesterId);
+            $budget->replaceLines($lines, $requesterId);
             $this->budgets->save($budget);
         });
 

@@ -4,26 +4,35 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Rehearsal;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Production\ProductionId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 
+/**
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
+ */
 final class ListRehearsalsUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     /**
@@ -31,25 +40,26 @@ final class ListRehearsalsUseCase
      */
     public function execute(ListRehearsalsForProductionQuery $query): array
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new RehearsalAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($query->productionId));
+        $productionId = ProductionId::fromString($query->productionId);
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new RehearsalAccessDeniedException('You must be a member of this Production to view its Rehearsals.');
         }
 
         return array_map(
             static fn ($rehearsal) => RehearsalResult::fromDomain($rehearsal),
-            $this->rehearsals->findByProductionId($production->id())
+            $this->rehearsals->findByProductionId($productionId)
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Core\Contract;
 
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 
 /**
@@ -18,4 +19,16 @@ use StageArt\Domain\Production\ProductionId;
 interface ProductionContextContract
 {
     public function getProduction(ProductionId $productionId): ?ProductionSummary;
+
+    /**
+     * Resolves the Organization a Production belongs to (Production ->
+     * Project -> Organization internally - Project is a Core-internal
+     * bridge no Module needs to know exists, per
+     * `Application\Production\ProductionOrganizationResolver`'s own
+     * docblock). Only the Accounting Module currently calls this (to
+     * validate an Account reference belongs to the same Organization as
+     * the Production it's budgeted against) - most Modules never need
+     * to call it at all.
+     */
+    public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId;
 }

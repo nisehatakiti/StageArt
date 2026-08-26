@@ -30,12 +30,23 @@ use StageArt\Domain\Timetable\TimetableId;
  * mechanism can expand productionId -> members at send time rather than
  * this Entity duplicating that membership list.
  *
- * StageArt Core/Module Architecture: this Entity itself is a known,
- * disclosed remaining coupling - it lives in Core's own
- * `Domain\Notification` namespace even though its meaning is Rehearsal/
- * Timetable-specific (see docs/architecture/CoreModuleArchitecture.md's
- * "Known remaining coupling"). Not moved this phase to avoid a risky
- * rename of a persisted Domain Entity/table.
+ * StageArt Core/Module Architecture Phase 2: deliberately kept in
+ * Core's `Domain\Notification` namespace (reconsidered and reconfirmed
+ * this phase, not merely left alone) - its fields are Rehearsal/
+ * Timetable-specific, but it is the concrete data source behind Core's
+ * own cross-cutting Notification Feed
+ * (`Application\Notification\ListNotificationsForProductionUseCase`/
+ * `MarkNotificationReadUseCase`/the Home Dashboard's notification
+ * section all query it directly, alongside the generic
+ * `NotificationReadState` tracker). Moving this Entity into the
+ * Rehearsal Module would make *Core's own* UseCases depend on a
+ * Module's concrete Domain class - the reverse of the intended
+ * dependency direction. See
+ * docs/architecture/CoreModuleArchitecture.md's "Known remaining
+ * coupling" for the disclosed, deeper gap this still leaves open
+ * (Core's feed hard-codes this one Fact type rather than depending on a
+ * multi-producer abstraction every Module could implement - a larger
+ * refactor than this phase's scope).
  */
 final class TimetableVersionPublishedNotification
 {

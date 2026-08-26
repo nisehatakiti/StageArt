@@ -7,6 +7,7 @@ namespace StageArt\Tests\Application\Timetable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Timetable\CreateNewTimetableVersionCommand;
 use StageArt\Application\Timetable\CreateNewTimetableVersionUseCase;
 use StageArt\Application\Timetable\GetDraftTimetableQuery;
@@ -29,6 +30,12 @@ use StageArt\Application\TimetableItem\ListDraftTimetableItemsUseCase;
 use StageArt\Application\TimetableItem\ListTimetableItemsQuery;
 use StageArt\Application\TimetableItem\ListTimetableItemsUseCase;
 use StageArt\Application\TimetableItem\TimetableItemTargetValidator;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
@@ -46,6 +53,7 @@ use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTimetableItemRepository;
 use StageArt\Tests\Support\InMemoryTimetableRepository;
@@ -95,60 +103,74 @@ final class TimetableUseCaseTest extends TestCase
         );
         $transactions = new InMemoryTransactionManager();
         $versionResolver = new NextTimetableVersionResolver($this->timetables);
+        $membership = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
 
-        $this->getTimetable = new GetTimetableUseCase($this->timetables, $this->rehearsals, $this->productions, $productionAuthorization);
+        $this->getTimetable = new GetTimetableUseCase($this->timetables, $this->rehearsals, $productionContext, $identity, $membership);
         $this->getDraftTimetable = new GetDraftTimetableUseCase(
             $this->timetables,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $membership
         );
         $this->listVersions = new ListTimetableVersionsUseCase(
             $this->timetables,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $membership
         );
         $this->createNewVersion = new CreateNewTimetableVersionUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->items,
             $versionResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->publishVersion = new PublishTimetableVersionUseCase(
             $this->timetables,
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->notifications,
-            $productionAuthorization,
+            $membership,
+            $notificationContract,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->createItem = new CreateTimetableItemUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->items,
-            new TimetableItemTargetValidator($this->participants),
+            new TimetableItemTargetValidator($membership),
             $versionResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->listItems = new ListTimetableItemsUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->items,
-            $productionAuthorization
+            $identity,
+            $membership
         );
         $this->listDraftItems = new ListDraftTimetableItemsUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->timetables,
             $this->items,
-            $productionAuthorization
+            $identity,
+            $membership
         );
     }
 

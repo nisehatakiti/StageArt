@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Application\Budget;
 
 use StageArt\Application\Accounting\AccountingCapability;
-use StageArt\Application\Production\ProductionAuthorizationService;
-use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\Budget\BudgetId;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * Budget detail (Scenario name, per-Account planned amounts) is
@@ -18,28 +17,33 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  * The aggregate-only Production Accounting Summary
  * (GetProductionAccountingSummaryUseCase) is what every Production
  * Member can see instead.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (Identity/Authorization) - the Budget's own productionId is
+ * enough to authorize against, no `ProductionRepositoryInterface`
+ * lookup is needed here.
  */
 final class GetBudgetUseCase
 {
     private BudgetRepositoryInterface $budgets;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         BudgetRepositoryInterface $budgets,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->budgets = $budgets;
-        $this->productions = $productions;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(GetBudgetQuery $query): BudgetResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new BudgetAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -49,13 +53,7 @@ final class GetBudgetUseCase
             throw new BudgetNotFoundException($query->budgetId);
         }
 
-        $production = $this->productions->findById($budget->productionId());
-
-        if (! $production) {
-            throw new ProductionNotFoundException($budget->productionId()->toString());
-        }
-
-        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $budget->productionId(), AccountingCapability::MANAGE)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can view this Budget.');
         }
 

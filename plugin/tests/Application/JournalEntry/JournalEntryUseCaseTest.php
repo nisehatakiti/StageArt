@@ -21,6 +21,10 @@ use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
@@ -79,26 +83,36 @@ final class JournalEntryUseCaseTest extends TestCase
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
 
+        $productionContext = new CoreProductionContextAdapter($this->productions, $resolver);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorizationContract = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
+        $membershipContract = new CoreMembershipAdapter(
+            new InMemoryParticipantRepository(),
+            $this->productions,
+            $this->people,
+            $prodAuth
+        );
+
         $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
         $this->createExpense = new CreateExpenseUseCase(
             $this->expenses,
-            $this->productions,
-            $prodAuth,
-            $resolver,
+            $productionContext,
+            $membershipContract,
+            $identity,
             new ExpenseLineFactory($this->accounts),
             $transactions
         );
         $this->confirmExpense = new ConfirmExpenseUseCase(
             $this->expenses,
-            $this->productions,
+            $productionContext,
             $this->accounts,
             $this->journalEntries,
-            $prodAuth,
-            $resolver,
+            $identity,
+            $authorizationContract,
             $transactions
         );
-        $this->postJournalEntry = new PostJournalEntryUseCase($this->journalEntries, $this->productions, $orgAuth, $prodAuth, $transactions);
-        $this->listJournalEntries = new ListJournalEntriesUseCase($this->journalEntries, $this->productions, $prodAuth);
+        $this->postJournalEntry = new PostJournalEntryUseCase($this->journalEntries, $productionContext, $orgAuth, $authorizationContract, $transactions);
+        $this->listJournalEntries = new ListJournalEntriesUseCase($this->journalEntries, $productionContext, $identity, $authorizationContract);
     }
 
     /**

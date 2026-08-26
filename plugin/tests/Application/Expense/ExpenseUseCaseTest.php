@@ -20,6 +20,10 @@ use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
@@ -84,17 +88,22 @@ final class ExpenseUseCaseTest extends TestCase
         $transactions = new InMemoryTransactionManager();
         $lineFactory = new ExpenseLineFactory($this->accounts);
 
+        $productionContext = new CoreProductionContextAdapter($this->productions, $resolver);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorizationContract = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
+        $membershipContract = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $prodAuth);
+
         $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
-        $this->createExpense = new CreateExpenseUseCase($this->expenses, $this->productions, $prodAuth, $resolver, $lineFactory, $transactions);
-        $this->getExpense = new GetExpenseUseCase($this->expenses, $this->productions, $prodAuth);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $this->productions, $prodAuth, $resolver, $lineFactory, $transactions);
+        $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membershipContract, $identity, $lineFactory, $transactions);
+        $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
         $this->confirmExpense = new ConfirmExpenseUseCase(
             $this->expenses,
-            $this->productions,
+            $productionContext,
             $this->accounts,
             $this->journalEntries,
-            $prodAuth,
-            $resolver,
+            $identity,
+            $authorizationContract,
             $transactions
         );
     }

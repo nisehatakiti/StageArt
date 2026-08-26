@@ -16,9 +16,9 @@ here overrides those.
 
 | Module | Implementation status | Core Contract adoption | Doc |
 |---|---|---|---|
-| Rehearsal Management | Implemented (Web β) | Membership Contract adopted + Capability-based Authorization; other dependencies not yet migrated | [Rehearsal.md](Rehearsal.md) |
-| Accounting Management | Partially implemented (pre-Web-β phase; Budget/Expense/Account/JournalEntry exist) | Capability-based Authorization only this round | [Accounting.md](Accounting.md) |
-| Ticket Management | Not implemented (Domain, Application, Infrastructure, and REST layers are all absent) | Module Template only - Contract usage is design intent | [Ticket.md](Ticket.md) |
+| Rehearsal Management | Implemented (Web β) | Fully adopted - all 24 UseCases depend on Core Contracts only, proven by an Architecture Test and a Fake-Contract isolation test | [Rehearsal.md](Rehearsal.md) |
+| Accounting Management | Partially implemented (pre-Web-β phase; Budget/Expense/Account/JournalEntry exist) | Adopted for all 13 migrated UseCases, one disclosed exception (`PostJournalEntryUseCase`'s Organization-Scope branch) | [Accounting.md](Accounting.md) |
+| Ticket Management | Not implemented (Domain, Application, Infrastructure, and REST layers are all absent) | Module Template only - Contract usage is design intent, updated to Phase 2's real Contract shapes | [Ticket.md](Ticket.md) |
 
 No WordPress Plugin extraction, no concrete `WordPressAdapter`
 implementation, and no `/apps` + `/core` + `/modules` top-level

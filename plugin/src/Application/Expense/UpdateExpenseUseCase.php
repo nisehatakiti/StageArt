@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace StageArt\Application\Expense;
 
 use StageArt\Application\Accounting\AccountingCapability;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * DRAFT-only (Expense::replaceLines() enforces this). Editable by the
@@ -21,37 +21,42 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  * "own draft, or a manager override" split is a disclosed judgment
  * call, mirroring ScheduleComment.md's own-content-plus-manager-override
  * pattern rather than inventing an unrelated rule.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (ProductionContext/Identity/Authorization), not on
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService`/
+ * `ProductionOrganizationResolver` directly.
  */
 final class UpdateExpenseUseCase
 {
     private ExpenseRepositoryInterface $expenses;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
-    private ProductionOrganizationResolver $organizationResolver;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private ExpenseLineFactory $lineFactory;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         ExpenseRepositoryInterface $expenses,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization,
-        ProductionOrganizationResolver $organizationResolver,
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         ExpenseLineFactory $lineFactory,
         TransactionManagerInterface $transactions
     ) {
         $this->expenses = $expenses;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
-        $this->organizationResolver = $organizationResolver;
         $this->lineFactory = $lineFactory;
         $this->transactions = $transactions;
     }
 
     public function execute(UpdateExpenseCommand $command): ExpenseResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ExpenseAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -61,25 +66,25 @@ final class UpdateExpenseUseCase
             throw new ExpenseNotFoundException($command->expenseId);
         }
 
-        $production = $this->productions->findById($expense->productionId());
+        $productionId = $expense->productionId();
+        $isOwnDraft = $expense->createdBy()->equals($requesterId);
 
-        if (! $production) {
-            throw new ProductionNotFoundException($expense->productionId()->toString());
-        }
-
-        $isOwnDraft = $expense->createdBy()->equals($requester->id());
-
-        if (! $isOwnDraft && ! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
+        if (! $isOwnDraft && ! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
             throw new ExpenseAccessDeniedException(
                 'Only the Expense\'s own creator or the PrimaryManager can update this Expense.'
             );
         }
 
-        $organizationId = $this->organizationResolver->resolve($production);
+        $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
+
+        if (! $organizationId) {
+            throw new ProductionNotFoundException($productionId->toString());
+        }
+
         $lines = $this->lineFactory->build($command->lines, $organizationId);
 
-        $this->transactions->run(function () use ($expense, $lines, $requester): void {
-            $expense->replaceLines($lines, $requester->id());
+        $this->transactions->run(function () use ($expense, $lines, $requesterId): void {
+            $expense->replaceLines($lines, $requesterId);
             $this->expenses->save($expense);
         });
 

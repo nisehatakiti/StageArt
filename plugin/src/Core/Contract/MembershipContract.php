@@ -31,4 +31,18 @@ interface MembershipContract
      *                     mirrors the pre-existing behavior it replaces).
      */
     public function activeProductionMemberPersonIds(ProductionId $productionId): array;
+
+    /**
+     * StageArt Core/Module Architecture Phase 2: the broader
+     * "is this Person considered part of this Production's circle"
+     * check a read-access gate needs - true for the PrimaryManager, any
+     * ACTIVE ProductionDelegate (any Role), or an ACTIVE, Person-subject
+     * Participant. Broader than `activeProductionMemberPersonIds()` by
+     * design (see that method's own docblock on why PrimaryManager/
+     * Delegate aren't included there) - this is the Contract-level
+     * replacement for what Rehearsal Module read-access UseCases
+     * previously called `ProductionAuthorizationService::isProductionMember()`
+     * for directly.
+     */
+    public function isProductionMember(PersonId $personId, ProductionId $productionId): bool;
 }

@@ -8,10 +8,11 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Account\AccountNotFoundException;
 use StageArt\Application\Accounting\AccountingCapability;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\Account\AccountType;
@@ -25,7 +26,6 @@ use StageArt\Domain\JournalEntry\JournalEntryLine;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * Expense.md "Confirmation and Journal Entry": ExpenseConfirmed generates
@@ -41,40 +41,45 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  * 許容する"), the generated entry is saved as DRAFT, not auto-POSTED -
  * PostJournalEntryUseCase is the separate, explicit step that moves it
  * into Actual.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts (ProductionContext/Identity/Authorization), not on
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService`/
+ * `ProductionOrganizationResolver` directly.
  */
 final class ConfirmExpenseUseCase
 {
     private ExpenseRepositoryInterface $expenses;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private AccountRepositoryInterface $accounts;
     private JournalEntryRepositoryInterface $journalEntries;
-    private ProductionAuthorizationService $authorization;
-    private ProductionOrganizationResolver $organizationResolver;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         ExpenseRepositoryInterface $expenses,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         AccountRepositoryInterface $accounts,
         JournalEntryRepositoryInterface $journalEntries,
-        ProductionAuthorizationService $authorization,
-        ProductionOrganizationResolver $organizationResolver,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->expenses = $expenses;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->accounts = $accounts;
         $this->journalEntries = $journalEntries;
+        $this->identity = $identity;
         $this->authorization = $authorization;
-        $this->organizationResolver = $organizationResolver;
         $this->transactions = $transactions;
     }
 
     public function execute(ConfirmExpenseCommand $command): ExpenseResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ExpenseAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -84,17 +89,17 @@ final class ConfirmExpenseUseCase
             throw new ExpenseNotFoundException($command->expenseId);
         }
 
-        $production = $this->productions->findById($expense->productionId());
+        $productionId = $expense->productionId();
 
-        if (! $production) {
-            throw new ProductionNotFoundException($expense->productionId()->toString());
-        }
-
-        if (! $this->authorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
             throw new ExpenseAccessDeniedException('Only the PrimaryManager can confirm an Expense.');
         }
 
-        $organizationId = $this->organizationResolver->resolve($production);
+        $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
+
+        if (! $organizationId) {
+            throw new ProductionNotFoundException($productionId->toString());
+        }
 
         $payableAccountId = AccountId::fromString($command->payableAccountId);
         $payableAccount = $this->accounts->findById($payableAccountId);
@@ -112,11 +117,11 @@ final class ConfirmExpenseUseCase
         }
 
         $this->transactions->run(
-            function () use ($expense, $requester, $payableAccountId, $organizationId): void {
-                $expense->confirm($requester->id());
+            function () use ($expense, $requesterId, $payableAccountId, $organizationId): void {
+                $expense->confirm($requesterId);
                 $this->expenses->save($expense);
 
-                $journalEntry = $this->buildJournalEntry($expense, $organizationId, $payableAccountId, $requester->id());
+                $journalEntry = $this->buildJournalEntry($expense, $organizationId, $payableAccountId, $requesterId);
                 $this->journalEntries->save($journalEntry);
             }
         );

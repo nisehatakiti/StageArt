@@ -7,11 +7,15 @@ namespace StageArt\Tests\Application\RehearsalAttendance;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceQuery;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesQuery;
@@ -38,6 +42,7 @@ use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -77,43 +82,51 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new CoreMembershipAdapter($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->listAttendances = new ListRehearsalAttendancesUseCase(
             $this->attendances,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
         $this->getAttendance = new GetRehearsalAttendanceUseCase(
             $this->attendances,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $memberResolver
         );
-        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $productionAuthorization);
+        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $identity);
         $this->recordActualStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $this->attendances,
             $this->rehearsals,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $authorization
         );
     }
 

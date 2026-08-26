@@ -33,4 +33,15 @@ final class FakeMembershipContract implements MembershipContract
     {
         return $this->membersByProductionId[$productionId->toString()] ?? [];
     }
+
+    public function isProductionMember(PersonId $personId, ProductionId $productionId): bool
+    {
+        foreach ($this->activeProductionMemberPersonIds($productionId) as $memberId) {
+            if ($memberId->equals($personId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

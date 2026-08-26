@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -20,23 +20,28 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  * respondAttendanceConfirmation() each independently guard against being
  * called on the wrong Phase, so this is defense in depth, not the only
  * check.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on
+ * `IdentityContract`, not `ProductionAuthorizationService` directly -
+ * this UseCase never needed Production/Authorization at all, only
+ * WordPress-user -> PersonId resolution.
  */
 final class RespondRehearsalAttendanceUseCase
 {
     private RehearsalAttendanceRepositoryInterface $attendances;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
 
-    public function __construct(RehearsalAttendanceRepositoryInterface $attendances, ProductionAuthorizationService $authorization)
+    public function __construct(RehearsalAttendanceRepositoryInterface $attendances, IdentityContract $identity)
     {
         $this->attendances = $attendances;
-        $this->authorization = $authorization;
+        $this->identity = $identity;
     }
 
     public function execute(RespondRehearsalAttendanceCommand $command): RehearsalAttendanceResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new RehearsalAttendanceAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -46,7 +51,7 @@ final class RespondRehearsalAttendanceUseCase
             throw new RehearsalAttendanceNotFoundException($command->rehearsalAttendanceId);
         }
 
-        if (! $attendance->personId()->equals($requester->id())) {
+        if (! $attendance->personId()->equals($requesterId)) {
             throw new RehearsalAttendanceAccessDeniedException('You can only respond to your own RehearsalAttendance record.');
         }
 

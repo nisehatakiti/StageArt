@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ScheduleComment;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\ScheduleComment\ScheduleCommentRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
@@ -22,6 +23,10 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * rule regardless of target type - this list is never filtered by
  * whether the requester is a target of the underlying Rehearsal's
  * Attendance or the TimetableItem's Participants.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class ListTimetableItemScheduleCommentsUseCase
 {
@@ -29,23 +34,26 @@ final class ListTimetableItemScheduleCommentsUseCase
     private TimetableItemRepositoryInterface $timetableItems;
     private TimetableRepositoryInterface $timetables;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         ScheduleCommentRepositoryInterface $comments,
         TimetableItemRepositoryInterface $timetableItems,
         TimetableRepositoryInterface $timetables,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->comments = $comments;
         $this->timetableItems = $timetableItems;
         $this->timetables = $timetables;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
-        $this->authorization = $authorization;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     /**
@@ -53,9 +61,9 @@ final class ListTimetableItemScheduleCommentsUseCase
      */
     public function execute(ListTimetableItemScheduleCommentsQuery $query): array
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ScheduleCommentAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -78,13 +86,14 @@ final class ListTimetableItemScheduleCommentsUseCase
             throw new RehearsalNotFoundException($timetable->rehearsalId()->toString());
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new ScheduleCommentAccessDeniedException('You must be a member of this Production to view its ScheduleComments.');
         }
 

@@ -11,11 +11,15 @@ use StageArt\Application\Dashboard\GetMyDashboardQuery;
 use StageArt\Application\Dashboard\GetMyDashboardUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationReadState;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotification;
@@ -86,23 +90,28 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $memberResolver = new CoreMembershipAdapter($this->participants);
+        $memberResolver = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver($this->projects));
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
-            $this->productions,
+            $productionContext,
             $this->attendances,
             $memberResolver,
-            $productionAuthorization,
+            $identity,
+            $authorization,
             $transactions
         );
 

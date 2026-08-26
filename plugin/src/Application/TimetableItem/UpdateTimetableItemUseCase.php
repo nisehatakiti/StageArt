@@ -7,54 +7,63 @@ namespace StageArt\Application\TimetableItem;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\Timetable\TimetableVersionNotEditableException;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
 use StageArt\Domain\TimetableItem\TimetableItemId;
 use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
 
+/**
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
+ */
 final class UpdateTimetableItemUseCase
 {
     private TimetableItemRepositoryInterface $items;
     private TimetableRepositoryInterface $timetables;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private TimetableItemTargetValidator $targetValidator;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         TimetableItemRepositoryInterface $items,
         TimetableRepositoryInterface $timetables,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         TimetableItemTargetValidator $targetValidator,
-        ProductionAuthorizationService $authorization,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->items = $items;
         $this->timetables = $timetables;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->targetValidator = $targetValidator;
+        $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
 
     public function execute(UpdateTimetableItemCommand $command): TimetableItemResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new TimetableItemAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -76,13 +85,14 @@ final class UpdateTimetableItemUseCase
             throw new RehearsalNotFoundException($timetable->rehearsalId()->toString());
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new TimetableItemAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can manage this Timetable.'
             );
@@ -99,7 +109,7 @@ final class UpdateTimetableItemUseCase
             static fn (string $id): PersonId => PersonId::fromString($id),
             $command->targetPersonIds
         );
-        $this->targetValidator->assertValidTargets($production, $targetPersonIds);
+        $this->targetValidator->assertValidTargets($productionId, $targetPersonIds);
 
         $item->update(
             $command->title,

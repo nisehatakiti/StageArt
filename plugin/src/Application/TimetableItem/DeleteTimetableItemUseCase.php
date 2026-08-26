@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace StageArt\Application\TimetableItem;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Timetable\TimetableNotFoundException;
 use StageArt\Application\Timetable\TimetableVersionNotEditableException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
 use StageArt\Domain\TimetableItem\TimetableItemId;
@@ -24,34 +25,41 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * Authorization's precedent (Rehearsal.Read/Create/Update/Delete are
  * all governed by the same Role) rather than inventing a separate,
  * looser delete rule the Blueprint never states.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class DeleteTimetableItemUseCase
 {
     private TimetableItemRepositoryInterface $items;
     private TimetableRepositoryInterface $timetables;
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
-    private ProductionAuthorizationService $authorization;
+    private ProductionContextContract $productionContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         TimetableItemRepositoryInterface $items,
         TimetableRepositoryInterface $timetables,
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        ProductionContextContract $productionContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->items = $items;
         $this->timetables = $timetables;
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(DeleteTimetableItemCommand $command): void
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new TimetableItemAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -73,13 +81,14 @@ final class DeleteTimetableItemUseCase
             throw new RehearsalNotFoundException($timetable->rehearsalId()->toString());
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->hasProductionCapability($requester, $production, RehearsalCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new TimetableItemAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can manage this Timetable.'
             );

@@ -11,7 +11,12 @@ use StageArt\Domain\Production\ProductionId;
  * deliberately not the full `StageArt\Domain\Production\Production`
  * Entity (a Module depending on that would be depending on Core's
  * internal Domain shape, not a stable Contract - see
- * docs/architecture/CoreModuleArchitecture.md §11).
+ * docs/architecture/CoreModuleArchitecture.md §11). Deliberately does
+ * NOT include `organizationId` - most Modules (Rehearsal) never need
+ * it; a Module that does (Accounting) calls
+ * `ProductionContextContract::getProductionOrganizationId()` instead,
+ * so resolving it (Production -> Project -> Organization internally)
+ * is only ever attempted by the Modules that actually ask for it.
  */
 final class ProductionSummary
 {

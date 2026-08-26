@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace StageArt\Application\TimetableItem;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
@@ -27,27 +28,34 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * Phase 3.5: this lists the current PUBLISHED Version's Items only (the
  * official schedule). Use ListDraftTimetableItemsUseCase to view the
  * in-progress DRAFT.
+ *
+ * StageArt Core/Module Architecture Phase 2: depends only on Core
+ * Contracts, not `ProductionRepositoryInterface`/
+ * `ProductionAuthorizationService` directly.
  */
 final class ListTimetableItemsUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private TimetableRepositoryInterface $timetables;
     private TimetableItemRepositoryInterface $items;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         TimetableRepositoryInterface $timetables,
         TimetableItemRepositoryInterface $items,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
         $this->rehearsals = $rehearsals;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->timetables = $timetables;
         $this->items = $items;
-        $this->authorization = $authorization;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     /**
@@ -55,9 +63,9 @@ final class ListTimetableItemsUseCase
      */
     public function execute(ListTimetableItemsQuery $query): array
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new TimetableItemAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -68,13 +76,14 @@ final class ListTimetableItemsUseCase
             throw new RehearsalNotFoundException($query->rehearsalId);
         }
 
-        $production = $this->productions->findById($rehearsal->productionId());
+        $productionId = $rehearsal->productionId();
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
-            throw new ProductionNotFoundException($rehearsal->productionId()->toString());
+            throw new ProductionNotFoundException($productionId->toString());
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new TimetableItemAccessDeniedException('You must be a member of this Production to view its Timetable.');
         }
 

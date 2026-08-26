@@ -6,13 +6,13 @@ namespace StageArt\Application\JournalEntry;
 
 use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\JournalEntry\JournalEntryId;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
  * JournalEntry.md "Journal Entry Posting Timing": "Journal EntryのPOSTED
@@ -26,26 +26,39 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  * Phase's stated goal - a working Budget/Actual/Variance pipeline -
  * unreachable. Disclosed as a judgment call, not a Blueprint-mandated
  * API.
+ *
+ * StageArt Core/Module Architecture Phase 2: the Production-Scope branch
+ * depends on Core Contracts (ProductionContext/Authorization), not
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService`
+ * directly. The Organization-Scope branch (a JournalEntry not tied to
+ * any Production - e.g. an Organization-level ledger entry) still
+ * depends on `OrganizationAuthorizationService` directly: it needs
+ * `hasRole()`, a Role-based check against a `Person` Entity, which has
+ * no equivalent on `AuthorizationContract` (deliberately Capability-
+ * string-based and Production-scoped only, per its own docblock).
+ * Adding an Organization-scope Capability Contract method is real
+ * design work with no other current caller - left as a disclosed,
+ * intentionally out-of-scope gap for this phase rather than guessed at.
  */
 final class PostJournalEntryUseCase
 {
     private JournalEntryRepositoryInterface $journalEntries;
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private OrganizationAuthorizationService $organizationAuthorization;
-    private ProductionAuthorizationService $productionAuthorization;
+    private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         JournalEntryRepositoryInterface $journalEntries,
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         OrganizationAuthorizationService $organizationAuthorization,
-        ProductionAuthorizationService $productionAuthorization,
+        AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->journalEntries = $journalEntries;
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->organizationAuthorization = $organizationAuthorization;
-        $this->productionAuthorization = $productionAuthorization;
+        $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
 
@@ -64,13 +77,14 @@ final class PostJournalEntryUseCase
         }
 
         if ($entry->productionId() !== null) {
-            $production = $this->productions->findById($entry->productionId());
+            $productionId = $entry->productionId();
+            $production = $this->productionContext->getProduction($productionId);
 
             if (! $production) {
-                throw new ProductionNotFoundException($entry->productionId()->toString());
+                throw new ProductionNotFoundException($productionId->toString());
             }
 
-            if (! $this->productionAuthorization->hasProductionCapability($requester, $production, AccountingCapability::MANAGE)) {
+            if (! $this->authorization->canForProduction($requester->id(), $productionId, AccountingCapability::MANAGE)) {
                 throw new JournalEntryAccessDeniedException('Only the PrimaryManager can post this JournalEntry.');
             }
         } elseif (! $this->organizationAuthorization->hasRole($requester, $entry->organizationId(), [RoleKey::OWNER])) {
