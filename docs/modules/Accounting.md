@@ -1,11 +1,16 @@
 # Accounting Management Module
 
 Status: **Partially implemented** (Budget/Expense/Account/JournalEntry
-predate the Core/Module Architecture work) - **Contract-adopted as of
-Phase 2**, with one disclosed exception. Domain/Application code
-itself was not extended this phase (real Accounting Domain work, e.g.
-`ACCOUNTING_MANAGER` Role, stays explicitly out of scope) - only the
-dependency-boundary migration.
+predate the Core/Module Architecture work) - **fully Contract-adopted**
+as of Phase 3 (the one disclosed exception Phase 2 left open is now
+closed - see Authorization below). Domain/Application code itself was
+not extended (real Accounting Domain work, e.g. `ACCOUNTING_MANAGER`
+Role, stays explicitly out of scope) - only the dependency-boundary
+migration. Package-boundary consolidation (its own `ModuleBootstrap`/
+`Installer`/`ModuleDescriptor`, mirroring Rehearsal's Phase 3 work) is
+evaluated but **not built** this phase - see "Package boundary
+evaluation" below and `docs/architecture/WordPressPluginModuleBoundary.md`
+§10.
 
 ## Responsibility
 
@@ -26,12 +31,12 @@ spans `Application/Budget/`, `Application/Expense/`,
 `Application/Accounting/AccountingCapability.php` is the first shared
 piece of an eventual unified namespace.
 
-## Core Contract usage (adopted this phase)
+## Core Contract usage (fully adopted)
 
 All 13 UseCases that previously depended on
 `ProductionRepositoryInterface`/`ProductionAuthorizationService`
-directly were migrated to Core Contracts, mirroring the Rehearsal
-Module's pattern:
+directly were migrated to Core Contracts in Phase 2, mirroring the
+Rehearsal Module's pattern:
 
 | UseCase | Contracts depended on |
 |---|---|
@@ -52,15 +57,17 @@ phase specifically because Accounting is the one Module that genuinely
 needs it (`ProductionSummary` itself deliberately stays minimal - see
 `CoreModuleArchitecture.md` §4).
 
-**One disclosed, intentional exception**:
+**Phase 2's one disclosed exception is closed as of Phase 3**:
 `JournalEntry\PostJournalEntryUseCase`'s Organization-Scope branch (a
-JournalEntry not tied to any Production) still depends on
-`Application\Organization\OrganizationAuthorizationService` directly -
-it needs `hasRole($person, $organizationId, [RoleKey::OWNER])`, a
-Role-based check against a full `Person` Entity that
-`AuthorizationContract` (Capability-string-based, Production-scoped
-only) has no equivalent for. Its Production-Scope branch (the common
-case) is fully Contract-based. See that file's own docblock.
+JournalEntry not tied to any Production) previously depended on
+`Application\Organization\OrganizationAuthorizationService` directly
+(it needed `hasRole($person, $organizationId, [RoleKey::OWNER])`, which
+`AuthorizationContract` had no equivalent for). Phase 3 added
+`AuthorizationContract::canForOrganization()` - a generic,
+Capability-string-based Organization-Scope check, deliberately owned by
+Core (`Core\Contract\OrganizationCapability::OWNER`), not Accounting -
+and this branch now calls it instead. Accounting has **zero** remaining
+direct Core Application-service dependencies.
 
 Verified two ways:
 
@@ -70,9 +77,11 @@ Verified two ways:
   import of `ProductionRepositoryInterface`,
   `ParticipantRepositoryInterface`, `PersonRepositoryInterface`, or the
   `Production`/`Participant`/`Person` Domain Entities - passes with zero
-  violations (the one disclosed `OrganizationAuthorizationService`
-  dependency above is not on this denylist; it is a different kind of
-  Core Application service, not a Repository/Entity).
+  violations.
+- `tests/Core/ModuleBoundaryDependencyTest.php` (Phase 3) additionally
+  confirms Accounting never imports Rehearsal's namespaces (and vice
+  versa), and includes a positive check that Accounting genuinely uses
+  a Core Contract, not just avoids Core internals.
 - `tests/Application/Budget/BudgetModuleContractIsolationTest.php`
   runs `CreateBudgetUseCase` end to end (authorization, Organization
   resolution, Budget Line validation, Budget creation) against
@@ -94,6 +103,22 @@ moved which class each UseCase calls, not which table it reads/writes.
 `JournalEntryRestController`, `ProductionAccountingRestController`.
 No route was renamed, moved, or had its request/response shape changed
 by this phase.
+
+## Package boundary evaluation (Phase 3)
+
+Evaluated whether Accounting can follow Rehearsal's
+`ModuleBootstrap`/`Installer`/`ModuleDescriptor` pattern (§9-10 of
+`docs/architecture/WordPressPluginModuleBoundary.md`): **yes,
+structurally nothing blocks it** - all 13 UseCases are already
+Contract-based, its 7 tables are self-contained (no other Module reads
+them), and its 5 REST Controllers already form a clean unit. **Not
+built this phase**, per the governing instruction's explicit scope
+limit ("今回はAccountingを完全にRehearsalと同じレベルまで実証する必要は
+ありません"). Concrete next steps if a future phase takes this on:
+extract `AccountingInstaller` (mirroring `RehearsalInstaller`),
+consolidate wiring into `AccountingModuleBootstrap`, add
+`AccountingModuleDescriptor`, add an isolation test mirroring
+`RehearsalModuleBootstrapIsolationTest`.
 
 ## Authorization
 
@@ -117,9 +142,10 @@ PrimaryManager-only. Extending it to a real `ACCOUNTING_MANAGER` Role
 
 ## Open items
 
-- `PostJournalEntryUseCase`'s Organization-Scope branch still depends
-  on `OrganizationAuthorizationService` directly - see above and
-  `CoreModuleArchitecture.md` §14.
+- `AccountingModuleBootstrap`/`AccountingInstaller`/
+  `AccountingModuleDescriptor` are designed (see "Package boundary
+  evaluation" above) but not built - a future phase's responsibility if
+  Accounting Plugin extraction becomes a real goal.
 - `ACCOUNTING_MANAGER` Role/Permission Set definition remains
   unaddressed - a future Accounting-focused phase's responsibility.
 - No single unifying `Application/Accounting/` namespace exists yet

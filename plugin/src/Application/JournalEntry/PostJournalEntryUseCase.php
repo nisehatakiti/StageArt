@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace StageArt\Application\JournalEntry;
 
 use StageArt\Application\Accounting\AccountingCapability;
-use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\OrganizationCapability;
 use StageArt\Core\Contract\ProductionContextContract;
-use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\JournalEntry\JournalEntryId;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
 
@@ -27,46 +27,40 @@ use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
  * unreachable. Disclosed as a judgment call, not a Blueprint-mandated
  * API.
  *
- * StageArt Core/Module Architecture Phase 2: the Production-Scope branch
- * depends on Core Contracts (ProductionContext/Authorization), not
- * `ProductionRepositoryInterface`/`ProductionAuthorizationService`
- * directly. The Organization-Scope branch (a JournalEntry not tied to
- * any Production - e.g. an Organization-level ledger entry) still
- * depends on `OrganizationAuthorizationService` directly: it needs
- * `hasRole()`, a Role-based check against a `Person` Entity, which has
- * no equivalent on `AuthorizationContract` (deliberately Capability-
- * string-based and Production-scoped only, per its own docblock).
- * Adding an Organization-scope Capability Contract method is real
- * design work with no other current caller - left as a disclosed,
- * intentionally out-of-scope gap for this phase rather than guessed at.
+ * StageArt Core/Module Architecture Phase 3: fully depends on Core
+ * Contracts now, including the Organization-Scope branch (a JournalEntry
+ * not tied to any Production) - `AuthorizationContract::canForOrganization()`
+ * (new this phase, see `Core\Contract\OrganizationCapability`) closes
+ * the one disclosed exception Phase 2 left open, where this branch still
+ * called `OrganizationAuthorizationService::hasRole()` directly.
  */
 final class PostJournalEntryUseCase
 {
     private JournalEntryRepositoryInterface $journalEntries;
     private ProductionContextContract $productionContext;
-    private OrganizationAuthorizationService $organizationAuthorization;
+    private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
         JournalEntryRepositoryInterface $journalEntries,
         ProductionContextContract $productionContext,
-        OrganizationAuthorizationService $organizationAuthorization,
+        IdentityContract $identity,
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
     ) {
         $this->journalEntries = $journalEntries;
         $this->productionContext = $productionContext;
-        $this->organizationAuthorization = $organizationAuthorization;
+        $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
     }
 
     public function execute(PostJournalEntryCommand $command): JournalEntryResult
     {
-        $requester = $this->organizationAuthorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new JournalEntryAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
@@ -84,15 +78,15 @@ final class PostJournalEntryUseCase
                 throw new ProductionNotFoundException($productionId->toString());
             }
 
-            if (! $this->authorization->canForProduction($requester->id(), $productionId, AccountingCapability::MANAGE)) {
+            if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
                 throw new JournalEntryAccessDeniedException('Only the PrimaryManager can post this JournalEntry.');
             }
-        } elseif (! $this->organizationAuthorization->hasRole($requester, $entry->organizationId(), [RoleKey::OWNER])) {
+        } elseif (! $this->authorization->canForOrganization($requesterId, $entry->organizationId(), OrganizationCapability::OWNER)) {
             throw new JournalEntryAccessDeniedException('Only the Organization Owner can post this JournalEntry.');
         }
 
-        $this->transactions->run(function () use ($entry, $requester): void {
-            $entry->post($requester->id());
+        $this->transactions->run(function () use ($entry, $requesterId): void {
+            $entry->post($requesterId);
             $this->journalEntries->save($entry);
         });
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Tests\Support;
 
 use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 
@@ -22,6 +23,9 @@ final class FakeAuthorizationContract implements AuthorizationContract
     /** @var array<string, true> */
     private array $grants = [];
 
+    /** @var array<string, true> */
+    private array $organizationGrants = [];
+
     public function registerIdentity(int $wordPressUserId, PersonId $personId): void
     {
         $this->personIdsByWordPressUserId[$wordPressUserId] = $personId;
@@ -30,6 +34,11 @@ final class FakeAuthorizationContract implements AuthorizationContract
     public function grant(PersonId $personId, ProductionId $productionId, string $capability): void
     {
         $this->grants[$this->key($personId, $productionId, $capability)] = true;
+    }
+
+    public function grantOrganization(PersonId $personId, OrganizationId $organizationId, string $capability): void
+    {
+        $this->organizationGrants[$this->key($personId, $organizationId, $capability)] = true;
     }
 
     public function resolveCurrentPersonId(int $wordPressUserId): ?PersonId
@@ -42,8 +51,13 @@ final class FakeAuthorizationContract implements AuthorizationContract
         return isset($this->grants[$this->key($personId, $productionId, $capability)]);
     }
 
-    private function key(PersonId $personId, ProductionId $productionId, string $capability): string
+    public function canForOrganization(PersonId $personId, OrganizationId $organizationId, string $capability): bool
     {
-        return $personId->toString() . '|' . $productionId->toString() . '|' . $capability;
+        return isset($this->organizationGrants[$this->key($personId, $organizationId, $capability)]);
+    }
+
+    private function key(PersonId $personId, $scopeId, string $capability): string
+    {
+        return $personId->toString() . '|' . $scopeId->toString() . '|' . $capability;
     }
 }

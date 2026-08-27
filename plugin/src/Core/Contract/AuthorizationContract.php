@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Core\Contract;
 
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 
@@ -40,4 +41,16 @@ interface AuthorizationContract
      * ahead of time.
      */
     public function canForProduction(PersonId $personId, ProductionId $productionId, string $capability): bool;
+
+    /**
+     * Phase 3: the Organization-Scope counterpart to `canForProduction()`
+     * - for the rarer case where a Module needs an Organization-level
+     * Capability check not tied to any one Production (e.g.
+     * `OrganizationCapability::OWNER`, requested by Accounting's
+     * `PostJournalEntryUseCase` for an Organization-level JournalEntry).
+     * Same "Core does not need to know the Capability exists ahead of
+     * time" contract as `canForProduction()` - an unrecognized string
+     * simply evaluates to false.
+     */
+    public function canForOrganization(PersonId $personId, OrganizationId $organizationId, string $capability): bool;
 }

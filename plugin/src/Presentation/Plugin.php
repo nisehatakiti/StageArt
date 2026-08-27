@@ -14,6 +14,7 @@ use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
+use StageArt\Rehearsal\RehearsalModuleBootstrap;
 use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
@@ -80,43 +81,11 @@ use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateUseCase;
-use StageArt\Application\ProductionSchedule\ListProductionTimetableItemsUseCase;
 use StageArt\Application\Project\ArchiveProjectUseCase;
 use StageArt\Application\Project\CreateProjectUseCase;
 use StageArt\Application\Project\GetProjectUseCase;
 use StageArt\Application\Project\ListProjectsUseCase;
 use StageArt\Application\Project\UpdateProjectUseCase;
-use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
-use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
-use StageArt\Application\Rehearsal\CompleteRehearsalUseCase;
-use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
-use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
-use StageArt\Application\Rehearsal\GetRehearsalUseCase;
-use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
-use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
-use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
-use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesUseCase;
-use StageArt\Application\RehearsalAttendance\RecordActualRehearsalAttendanceStatusUseCase;
-use StageArt\Application\RehearsalAttendance\RespondRehearsalAttendanceUseCase;
-use StageArt\Application\ScheduleComment\CreateScheduleCommentUseCase;
-use StageArt\Application\ScheduleComment\CreateTimetableItemScheduleCommentUseCase;
-use StageArt\Application\ScheduleComment\DeleteScheduleCommentUseCase;
-use StageArt\Application\ScheduleComment\ListScheduleCommentsUseCase;
-use StageArt\Application\ScheduleComment\ListTimetableItemScheduleCommentsUseCase;
-use StageArt\Application\ScheduleComment\UpdateScheduleCommentUseCase;
-use StageArt\Application\Timetable\CreateNewTimetableVersionUseCase;
-use StageArt\Application\Timetable\GetDraftTimetableUseCase;
-use StageArt\Application\Timetable\GetTimetableUseCase;
-use StageArt\Application\Timetable\ListTimetableVersionsUseCase;
-use StageArt\Application\Timetable\NextTimetableVersionResolver;
-use StageArt\Application\Timetable\PublishTimetableVersionUseCase;
-use StageArt\Application\TimetableItem\CreateTimetableItemUseCase;
-use StageArt\Application\TimetableItem\DeleteTimetableItemUseCase;
-use StageArt\Application\TimetableItem\GetTimetableItemUseCase;
-use StageArt\Application\TimetableItem\ListDraftTimetableItemsUseCase;
-use StageArt\Application\TimetableItem\ListTimetableItemsUseCase;
-use StageArt\Application\TimetableItem\TimetableItemTargetValidator;
-use StageArt\Application\TimetableItem\UpdateTimetableItemUseCase;
 use StageArt\Application\Notification\GetPushPreferenceUseCase;
 use StageArt\Application\Dashboard\GetMyDashboardUseCase;
 use StageArt\Application\Notification\ListNotificationsForProductionUseCase;
@@ -124,7 +93,6 @@ use StageArt\Application\Notification\MarkNotificationReadUseCase;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
-use StageArt\Application\PrintView\GetProductionPrintViewUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\LinkGoogleIdentityUseCase;
@@ -163,7 +131,6 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
-use StageArt\Infrastructure\Pdf\DompdfRenderer;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalRepository;
@@ -188,9 +155,7 @@ use StageArt\Presentation\Rest\JournalEntryRestController;
 use StageArt\Presentation\Rest\MeRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\ProductionAccountingRestController;
-use StageArt\Presentation\Print\PrintViewHtmlRenderer;
 use StageArt\Presentation\Rest\NotificationRestController;
-use StageArt\Presentation\Rest\PrintViewRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
 use StageArt\Presentation\Rest\ParticipantRestController;
 use StageArt\Presentation\Rest\ParticipationRequestRestController;
@@ -198,12 +163,6 @@ use StageArt\Presentation\Rest\ProductionDelegateRestController;
 use StageArt\Presentation\Rest\ProductionRestController;
 use StageArt\Presentation\Rest\ProjectRestController;
 use StageArt\Presentation\Rest\PushPreferenceRestController;
-use StageArt\Presentation\Rest\RehearsalAttendanceRestController;
-use StageArt\Presentation\Rest\RehearsalRestController;
-use StageArt\Presentation\Rest\ScheduleCommentRestController;
-use StageArt\Presentation\Rest\TimetableItemRestController;
-use StageArt\Presentation\Rest\TimetableRestController;
-use StageArt\Presentation\Rest\TimetableVersionRestController;
 use StageArt\Presentation\Rest\UserAccountRestController;
 
 final class Plugin
@@ -264,7 +223,6 @@ final class Plugin
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
         $notificationDispatcher = new WordPressNotificationDispatcher();
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
-        $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $budgetLineFactory = new BudgetLineFactory($accounts);
         $expenseLineFactory = new ExpenseLineFactory($accounts);
 
@@ -443,146 +401,26 @@ final class Plugin
         $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $productionAuthorization);
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
 
-        $createRehearsal = new CreateRehearsalUseCase(
-            $productionContextContract,
+        // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
+        // entire own wiring (UseCase construction + REST Controller
+        // construction) is consolidated into RehearsalModuleBootstrap -
+        // see that class's own docblock. Only Core Contracts and
+        // Rehearsal's own Repository interfaces cross this boundary.
+        $rehearsalModule = new RehearsalModuleBootstrap(
             $rehearsals,
             $rehearsalAttendances,
-            $membershipContract,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $membershipContract);
-        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContextContract, $identityContract, $membershipContract);
-        $updateRehearsal = new UpdateRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
-        $confirmRehearsal = new ConfirmRehearsalUseCase(
-            $rehearsals,
-            $productionContextContract,
-            $rehearsalAttendances,
-            $membershipContract,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
-        $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
-        $cancelRehearsal = new CancelRehearsalUseCase($rehearsals, $productionContextContract, $identityContract, $authorizationContract);
-
-        $listRehearsalAttendances = new ListRehearsalAttendancesUseCase(
-            $rehearsalAttendances,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $getRehearsalAttendance = new GetRehearsalAttendanceUseCase(
-            $rehearsalAttendances,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $identityContract);
-        $recordActualRehearsalAttendanceStatus = new RecordActualRehearsalAttendanceStatusUseCase(
-            $rehearsalAttendances,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract
-        );
-
-        $createScheduleComment = new CreateScheduleCommentUseCase(
             $scheduleComments,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $listScheduleComments = new ListScheduleCommentsUseCase(
-            $scheduleComments,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $updateScheduleComment = new UpdateScheduleCommentUseCase($scheduleComments, $identityContract);
-        $deleteScheduleComment = new DeleteScheduleCommentUseCase(
-            $scheduleComments,
-            $rehearsals,
-            $productionContextContract,
             $timetables,
             $timetableItems,
-            $identityContract,
-            $authorizationContract
-        );
-        $createTimetableItemScheduleComment = new CreateTimetableItemScheduleCommentUseCase(
-            $scheduleComments,
-            $timetableItems,
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $listTimetableItemScheduleComments = new ListTimetableItemScheduleCommentsUseCase(
-            $scheduleComments,
-            $timetableItems,
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-
-        $timetableItemTargetValidator = new TimetableItemTargetValidator($membershipContract);
-
-        $getTimetable = new GetTimetableUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
-        $getDraftTimetable = new GetDraftTimetableUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
-        $listTimetableVersions = new ListTimetableVersionsUseCase($timetables, $rehearsals, $productionContextContract, $identityContract, $membershipContract);
-        $createNewTimetableVersion = new CreateNewTimetableVersionUseCase(
-            $rehearsals,
-            $productionContextContract,
-            $timetables,
-            $timetableItems,
-            $nextTimetableVersionResolver,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $publishTimetableVersion = new PublishTimetableVersionUseCase(
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
             $timetableVersionPublishedNotifications,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
             $membershipContract,
             $notificationContract,
-            $identityContract,
-            $authorizationContract,
             $transactions
         );
-        $listTimetableItems = new ListTimetableItemsUseCase(
-            $rehearsals,
-            $productionContextContract,
-            $timetables,
-            $timetableItems,
-            $identityContract,
-            $membershipContract
-        );
-        $listDraftTimetableItems = new ListDraftTimetableItemsUseCase(
-            $rehearsals,
-            $productionContextContract,
-            $timetables,
-            $timetableItems,
-            $identityContract,
-            $membershipContract
-        );
-        $listProductionTimetableItems = new ListProductionTimetableItemsUseCase(
-            $productions,
-            $rehearsals,
-            $timetables,
-            $timetableItems,
-            $productionAuthorization
-        );
+
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
             $productions,
             $timetableVersionPublishedNotifications,
@@ -612,50 +450,6 @@ final class Plugin
         $updatePushPreference = new UpdatePushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
         $updatePersonName = new UpdatePersonNameUseCase($people);
-        $getProductionPrintView = new GetProductionPrintViewUseCase(
-            $productions,
-            $rehearsals,
-            $timetables,
-            $timetableItems,
-            $productionAuthorization
-        );
-        $createTimetableItem = new CreateTimetableItemUseCase(
-            $rehearsals,
-            $productionContextContract,
-            $timetables,
-            $timetableItems,
-            $timetableItemTargetValidator,
-            $nextTimetableVersionResolver,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $getTimetableItem = new GetTimetableItemUseCase(
-            $timetableItems,
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $membershipContract
-        );
-        $updateTimetableItem = new UpdateTimetableItemUseCase(
-            $timetableItems,
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
-            $timetableItemTargetValidator,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $deleteTimetableItem = new DeleteTimetableItemUseCase(
-            $timetableItems,
-            $timetables,
-            $rehearsals,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract
-        );
 
         // Phase 6.0 Accounting Foundation.
         $createAccount = new CreateAccountUseCase($accounts, $organizations, $authorization);
@@ -713,7 +507,7 @@ final class Plugin
         $postJournalEntry = new PostJournalEntryUseCase(
             $journalEntries,
             $productionContextContract,
-            $authorization,
+            $identityContract,
             $authorizationContract,
             $transactions
         );
@@ -808,54 +602,6 @@ final class Plugin
             $listPendingParticipantRequests
         );
 
-        $rehearsalRestController = new RehearsalRestController(
-            $createRehearsal,
-            $getRehearsal,
-            $listRehearsals,
-            $updateRehearsal,
-            $confirmRehearsal,
-            $activateRehearsal,
-            $completeRehearsal,
-            $cancelRehearsal
-        );
-
-        $rehearsalAttendanceRestController = new RehearsalAttendanceRestController(
-            $listRehearsalAttendances,
-            $getRehearsalAttendance,
-            $respondRehearsalAttendance,
-            $recordActualRehearsalAttendanceStatus
-        );
-
-        $scheduleCommentRestController = new ScheduleCommentRestController(
-            $createScheduleComment,
-            $listScheduleComments,
-            $updateScheduleComment,
-            $deleteScheduleComment,
-            $createTimetableItemScheduleComment,
-            $listTimetableItemScheduleComments
-        );
-
-        $timetableRestController = new TimetableRestController(
-            $getTimetable,
-            $getDraftTimetable,
-            $listTimetableItems,
-            $listDraftTimetableItems,
-            $listProductionTimetableItems
-        );
-
-        $timetableVersionRestController = new TimetableVersionRestController(
-            $listTimetableVersions,
-            $createNewTimetableVersion,
-            $publishTimetableVersion
-        );
-
-        $timetableItemRestController = new TimetableItemRestController(
-            $createTimetableItem,
-            $getTimetableItem,
-            $updateTimetableItem,
-            $deleteTimetableItem
-        );
-
         $notificationRestController = new NotificationRestController($listNotificationsForProduction, $markNotificationRead);
         $dashboardRestController = new DashboardRestController($getMyDashboard);
 
@@ -880,12 +626,6 @@ final class Plugin
         );
 
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
-
-        $printViewRestController = new PrintViewRestController(
-            $getProductionPrintView,
-            new PrintViewHtmlRenderer(),
-            new DompdfRenderer()
-        );
 
         $accountRestController = new AccountRestController($createAccount, $listAccounts);
         $budgetRestController = new BudgetRestController(
@@ -913,12 +653,17 @@ final class Plugin
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);
         add_action('rest_api_init', [$participationRequestRestController, 'register_routes']);
-        add_action('rest_api_init', [$rehearsalRestController, 'register_routes']);
-        add_action('rest_api_init', [$rehearsalAttendanceRestController, 'register_routes']);
-        add_action('rest_api_init', [$scheduleCommentRestController, 'register_routes']);
-        add_action('rest_api_init', [$timetableRestController, 'register_routes']);
-        add_action('rest_api_init', [$timetableVersionRestController, 'register_routes']);
-        add_action('rest_api_init', [$timetableItemRestController, 'register_routes']);
+
+        // StageArt Core/Module Architecture Phase 3: every Rehearsal
+        // Module REST Controller (Rehearsal/RehearsalAttendance/
+        // ScheduleComment/Timetable/TimetableVersion/TimetableItem/
+        // PrintView) is constructed inside RehearsalModuleBootstrap -
+        // registered identically to every other Controller here, just
+        // sourced from the Bootstrap instead of a local variable.
+        foreach ($rehearsalModule->restControllers() as $rehearsalRestController) {
+            add_action('rest_api_init', [$rehearsalRestController, 'register_routes']);
+        }
+
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);
         add_action('rest_api_init', [$dashboardRestController, 'register_routes']);
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
@@ -926,7 +671,6 @@ final class Plugin
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
         add_action('rest_api_init', [$favoriteRestController, 'register_routes']);
-        add_action('rest_api_init', [$printViewRestController, 'register_routes']);
         add_action('rest_api_init', [$accountRestController, 'register_routes']);
         add_action('rest_api_init', [$budgetRestController, 'register_routes']);
         add_action('rest_api_init', [$expenseRestController, 'register_routes']);

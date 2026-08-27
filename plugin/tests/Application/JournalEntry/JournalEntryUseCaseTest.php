@@ -111,7 +111,7 @@ final class JournalEntryUseCaseTest extends TestCase
             $authorizationContract,
             $transactions
         );
-        $this->postJournalEntry = new PostJournalEntryUseCase($this->journalEntries, $productionContext, $orgAuth, $authorizationContract, $transactions);
+        $this->postJournalEntry = new PostJournalEntryUseCase($this->journalEntries, $productionContext, $identity, $authorizationContract, $transactions);
         $this->listJournalEntries = new ListJournalEntriesUseCase($this->journalEntries, $productionContext, $identity, $authorizationContract);
     }
 

@@ -1,12 +1,23 @@
 # StageArt Core / Module Architecture
 
-Status: Confirmed - Phase 2. Implements `03-ModularArchitecture.md`'s
+Status: Confirmed - Phase 3. Implements `03-ModularArchitecture.md`'s
 policy concretely, in code: the Rehearsal Module and (as far as
-possible) the Accounting Module now depend on Core exclusively through
+possible) the Accounting Module depend on Core exclusively through
 `StageArt\Core\Contract\*`, not on Core's Repository interfaces,
 Repository implementations, or Domain Entities directly. This document
 records what actually exists (files, classes, tables, routes, tests),
 not just the intended policy.
+
+Phase 3 pushed the same boundary one level further: from "a Module
+depends on Core through Contracts" to "a Module's own wiring is
+consolidated enough that it could be registered from a genuinely
+separate WordPress Plugin" - see `docs/architecture/
+WordPressPluginModuleBoundary.md` for the full Phase 3 detail
+(`RehearsalModuleBootstrap`, `RehearsalInstaller`,
+`RehearsalModuleDescriptor`, the Module-boundary Architecture Tests,
+and the Bootstrap Isolation Tests that prove Rehearsal never touches a
+real Core Repository even when fully wired). This document stays the
+overall summary; that one is the Phase 3 deep-dive.
 
 Phase 1 built the Contract layer and a Capability-based Authorization
 boundary but left most call sites still calling Core's concrete
@@ -101,7 +112,7 @@ around Core's existing Application/Domain services).
 | `OrganizationContextContract` | `organizationExists(OrganizationId): bool` | `CoreOrganizationContextAdapter` |
 | `ProductionContextContract` | `getProduction(ProductionId): ?ProductionSummary`, `getProductionOrganizationId(ProductionId): ?OrganizationId` | `CoreProductionContextAdapter` |
 | `MembershipContract` | `activeProductionMemberPersonIds(ProductionId): PersonId[]`, `isProductionMember(PersonId, ProductionId): bool` | `CoreMembershipAdapter` |
-| `AuthorizationContract` | `resolveCurrentPersonId(int): ?PersonId`, `canForProduction(PersonId, ProductionId, string $capability): bool` | `CoreAuthorizationAdapter` |
+| `AuthorizationContract` | `resolveCurrentPersonId(int): ?PersonId`, `canForProduction(PersonId, ProductionId, string $capability): bool`, `canForOrganization(PersonId, OrganizationId, string $capability): bool` (Phase 3) | `CoreAuthorizationAdapter` |
 | `NotificationContract` | `notify(PersonId, string $type, array $payload): void` | `CoreNotificationAdapter` (new this phase - §14) |
 
 `ProductionSummary` (`plugin/src/Core/Contract/ProductionSummary.php`)
@@ -209,6 +220,21 @@ See `docs/modules/Rehearsal.md` for full detail. Summary:
   real Core Repository - every Core-facing Contract is a hand-written
   Fake (`tests/Support/Fake*Contract.php`).
 
+**Phase 3 additions**: `GetProductionPrintViewUseCase`/
+`ListProductionTimetableItemsUseCase` (Rehearsal-owned per their REST
+Controllers, but missed by Phase 2's own 24-UseCase count) migrated to
+the same Contract pattern. All 26 UseCases + 7 REST Controllers'
+construction consolidated into `RehearsalModuleBootstrap`
+(`plugin/src/Rehearsal/`), whose entire constructor is Core Contracts +
+Rehearsal's own Repository interfaces - no concrete
+`Infrastructure\WordPress\*` class, no Core-internal type.
+`RehearsalInstaller` (same directory) owns Rehearsal's 7 tables'
+migration, extracted verbatim from Core's own installer.
+`RehearsalModuleBootstrapIsolationTest` proves the full Bootstrap-wired
+object graph (REST Controller -> UseCase -> Repository) works using
+only Fakes. See `docs/architecture/WordPressPluginModuleBoundary.md`
+for the complete detail.
+
 ---
 
 # 7. Ticket Module
@@ -238,17 +264,13 @@ See `docs/modules/Accounting.md` for full detail. Summary:
   migrated to `ProductionContextContract`/`IdentityContract`/
   `AuthorizationContract`/`MembershipContract`, mirroring the Rehearsal
   Module's own pattern exactly.
-- **One disclosed, intentional exception**:
-  `PostJournalEntryUseCase`'s Organization-Scope branch (a JournalEntry
-  not tied to any Production - an Organization-level ledger entry)
-  still depends on `Application\Organization\OrganizationAuthorizationService`
-  directly, because it needs `hasRole($person, $organizationId,
-  [RoleKey::OWNER])` - a Role-based check against a full `Person`
-  Entity, which has no equivalent on `AuthorizationContract`
-  (deliberately Capability-string-based and Production-scoped only).
-  Adding an Organization-scope Capability Contract method is real
-  design work with no other current caller; left as a disclosed gap
-  rather than guessed at - see that file's own docblock and §14.
+- ~~One disclosed, intentional exception~~ **closed in Phase 3**:
+  `PostJournalEntryUseCase`'s Organization-Scope branch now calls
+  `AuthorizationContract::canForOrganization()` (new this phase, a
+  generic Core-owned Organization-Scope Capability method - see §11 of
+  `docs/architecture/WordPressPluginModuleBoundary.md`) instead of
+  `OrganizationAuthorizationService::hasRole()` directly. Accounting has
+  zero remaining direct Core Application-service dependencies.
 - `BudgetModuleContractIsolationTest` proves `CreateBudgetUseCase`'s
   business logic runs correctly with **zero** real Core Repository,
   mirroring `RehearsalModuleContractIsolationTest`.
@@ -256,6 +278,13 @@ See `docs/modules/Accounting.md` for full detail. Summary:
   covers the same denylist as Rehearsal's (§6), scoped to
   `Application/Account`, `Budget`, `Expense`, `JournalEntry`,
   `ProductionAccounting` and their `Domain` counterparts.
+  `ModuleBoundaryDependencyTest` (Phase 3) additionally confirms
+  Accounting never imports Rehearsal's namespaces and vice versa.
+- **Not built this phase** (explicitly out of scope): an
+  `AccountingModuleBootstrap`/`AccountingInstaller`/
+  `AccountingModuleDescriptor` mirroring Rehearsal's Phase 3 work - see
+  `docs/architecture/WordPressPluginModuleBoundary.md` §10 for the
+  evaluated, concrete next steps.
 
 ---
 
@@ -407,15 +436,36 @@ constructor and body. No Frontend (`mobile-rn/`) file was touched.
    `timetable_version_published` is a follow-up, not attempted this
    phase per the explicit "don't build a lot of new notification
    functionality this round" instruction.
-3. **`PostJournalEntryUseCase`'s Organization-Scope branch** still
-   depends on `OrganizationAuthorizationService` directly (§8) -
-   `AuthorizationContract` has no Organization-scope Capability
-   equivalent to `canForProduction()`, and adding one had no other
-   caller to justify it this phase.
+3. ~~`PostJournalEntryUseCase`'s Organization-Scope branch depends on
+   `OrganizationAuthorizationService` directly~~ - **closed in Phase
+   3**: `AuthorizationContract::canForOrganization()` (a new, generic,
+   Core-owned Organization-Scope Capability method, not Accounting-
+   specific) replaced it. See `docs/architecture/
+   WordPressPluginModuleBoundary.md` §11.
 4. **`OrganizationContextContract` has no current caller.** Defined in
    Phase 1 for a future Organization-scoped Module need; still unused -
    `organizationExists()` was never actually called by Rehearsal or
-   Accounting this phase either.
+   Accounting through Phase 3 either.
+5. **(Phase 3 finding) Core's own cross-Module aggregation UseCases
+   read Rehearsal's Repository interfaces directly** -
+   `GetMyDashboardUseCase`, `ListNotificationsForProductionUseCase`,
+   `MarkNotificationReadUseCase` import
+   `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`/
+   `TimetableVersionPublishedNotificationRepositoryInterface` directly
+   - a Core -> Module Domain dependency, the reverse direction from
+   everything else this phase closed. Disclosed by Phase 3's own
+   re-investigation, not fixed - see `docs/architecture/
+   WordPressPluginModuleBoundary.md` §14 for why (needs a read-model
+   Contract abstraction, real design work with no other caller yet).
+6. **No per-Module schema version exists** - `RehearsalInstaller` is
+   still gated by Core's one shared `SchemaUpgrader::CURRENT_VERSION`,
+   not its own. Phase 3 split *where* the SQL lives, not the
+   versioning mechanism around it.
+7. **Accounting's own `RehearsalModuleBootstrap`-equivalent is
+   designed but not built** - `docs/architecture/
+   WordPressPluginModuleBoundary.md` §10 lays out the concrete next
+   steps; explicitly out of Phase 3's scope per its own governing
+   instruction.
 
 ---
 
@@ -466,20 +516,32 @@ what `Rehearsal.md`/`Ticket.md`/`Accounting.md` now each do):
 - Future WordPress Adapter note
 - Known coupling / open items, disclosed explicitly rather than implied
   complete
+- (Phase 3, once a Module has one) its own `ModuleDescriptor` and
+  `*ModuleBootstrap` - see `docs/architecture/
+  WordPressPluginModuleBoundary.md` §3/§4
 
 ---
 
 # 17. Final Policy
 
 > StageArt Core provides Identity, Organization, Production Context,
-> Membership, a generic Capability-based Authorization mechanism, and
+> Membership, a generic Capability-based Authorization mechanism
+> (Production-Scope and, as of Phase 3, Organization-Scope), and
 > Notification dispatch - never a Module-named authorization method.
 > Rehearsal, Ticket, and Accounting are independent Domain Modules that
 > consume Core through `StageArt\Core\Contract\*` interfaces, each
 > owning its own Domain, Database tables, and Capability vocabulary.
 > The Rehearsal Module fully demonstrates this pattern - every UseCase
 > Contract-adopted, an Architecture Test enforcing the dependency
-> direction, and a Fake-Contract isolation test proving Core Repository
-> independence. The Accounting Module adopts the same pattern for all
-> but one disclosed, narrow exception (§8/§14). Ticket has a defined
-> boundary to grow into, not yet built.
+> direction in both directions (Module -> Core and sibling Module ->
+> sibling Module), a Fake-Contract isolation test proving Core
+> Repository independence, and, as of Phase 3, its own
+> `RehearsalModuleBootstrap`/`RehearsalInstaller`/
+> `RehearsalModuleDescriptor` consolidating its entire wiring into a
+> form a genuinely separate WordPress Plugin could register - proven by
+> a Bootstrap Isolation Test, not just claimed. The Accounting Module
+> adopts the same Contract pattern with zero remaining disclosed
+> exceptions, but has not yet had its own Bootstrap/Installer/Descriptor
+> built (§8, a scoped-out next step, not a gap). Ticket has a defined
+> boundary, including the Bootstrap/Installer/Descriptor shape to build
+> against, but is not yet implemented.

@@ -122,11 +122,12 @@ final class ListProductionTimetableItemsUseCaseTest extends TestCase
         );
 
         $this->listProductionItems = new ListProductionTimetableItemsUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             $this->timetables,
             $this->items,
-            $productionAuthorization
+            $identity,
+            $membership
         );
     }
 

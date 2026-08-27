@@ -140,7 +140,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $this->postJournalEntry = new PostJournalEntryUseCase(
             $this->journalEntries,
             $productionContext,
-            $this->orgAuth,
+            $identity,
             $authorizationContract,
             $transactions
         );

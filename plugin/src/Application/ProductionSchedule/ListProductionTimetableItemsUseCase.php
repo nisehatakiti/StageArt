@@ -7,11 +7,12 @@ namespace StageArt\Application\ProductionSchedule;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemResult;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Production\ProductionId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
 use StageArt\Domain\TimetableItem\TimetableItem;
@@ -33,33 +34,42 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * membership gates access, and every Production Member receives the
  * identical aggregate result.
  *
- * Phase 3.5: only each Rehearsal's current PUBLISHED Version is
- * aggregated (findPublishedByRehearsalId) - DRAFT Versions never appear
- * here, per Timetable.md's "Production Scheduleとの関係" ("DRAFT版・
- * ARCHIVED版は、通常のProduction Schedule表示には含めない"). An
- * optional [from, to] window narrows the result (e.g. Mobile's "当日+
- * 翌日" default view); omitting both returns the full Production period.
+ * Only each Rehearsal's current PUBLISHED Version is aggregated
+ * (findPublishedByRehearsalId) - DRAFT Versions never appear here, per
+ * Timetable.md's "Production Scheduleとの関係" ("DRAFT版・ARCHIVED版は、
+ * 通常のProduction Schedule表示には含めない"). An optional [from, to]
+ * window narrows the result (e.g. Mobile's "当日+翌日" default view);
+ * omitting both returns the full Production period.
+ *
+ * StageArt Core/Module Architecture Phase 3: migrated from
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService` to
+ * Core Contracts - invoked from `TimetableRestController`, itself
+ * Rehearsal-owned, so this UseCase should not depend on Core internals
+ * directly either.
  */
 final class ListProductionTimetableItemsUseCase
 {
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private RehearsalRepositoryInterface $rehearsals;
     private TimetableRepositoryInterface $timetables;
     private TimetableItemRepositoryInterface $items;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         RehearsalRepositoryInterface $rehearsals,
         TimetableRepositoryInterface $timetables,
         TimetableItemRepositoryInterface $items,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->rehearsals = $rehearsals;
         $this->timetables = $timetables;
         $this->items = $items;
-        $this->authorization = $authorization;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     /**
@@ -67,19 +77,20 @@ final class ListProductionTimetableItemsUseCase
      */
     public function execute(ListProductionTimetableItemsQuery $query): array
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new ProductionScheduleAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($query->productionId));
+        $productionId = ProductionId::fromString($query->productionId);
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new ProductionScheduleAccessDeniedException(
                 'You must be a member of this Production to view its Production Schedule.'
             );
@@ -90,7 +101,7 @@ final class ListProductionTimetableItemsUseCase
 
         $allItems = [];
 
-        foreach ($this->rehearsals->findByProductionId($production->id()) as $rehearsal) {
+        foreach ($this->rehearsals->findByProductionId($productionId) as $rehearsal) {
             $timetable = $this->timetables->findPublishedByRehearsalId($rehearsal->id());
 
             if ($timetable === null) {

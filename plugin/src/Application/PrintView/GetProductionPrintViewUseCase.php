@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace StageArt\Application\PrintView;
 
-use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\TimetableItem\TimetableItemResult;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Production\ProductionId;
-use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
 use StageArt\Domain\TimetableItem\TimetableItem;
@@ -17,8 +18,8 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
 /**
  * Print View's data-aggregation step (Timetable.md's "Print View
  * Implementation Decisions"): a pure Read Operation, structurally
- * identical in spirit to ListProductionTimetableItemsUseCase (Phase 3)
- * but grouped per-Rehearsal rather than flattened, because Print View
+ * identical in spirit to ListProductionTimetableItemsUseCase but
+ * grouped per-Rehearsal rather than flattened, because Print View
  * must show each Rehearsal's own Version/Published-at (§18) - something
  * a flat cross-Rehearsal item list cannot carry.
  *
@@ -30,53 +31,64 @@ use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
  * the identical structure.
  *
  * Uses the bulk findPublishedByRehearsalIds()/findByTimetableIds()
- * repository methods (added this phase) instead of looping
+ * repository methods instead of looping
  * findPublishedByRehearsalId()/findByTimetableId() per Rehearsal, per
  * §26's explicit N+1 avoidance requirement.
+ *
+ * StageArt Core/Module Architecture Phase 3: migrated from
+ * `ProductionRepositoryInterface`/`ProductionAuthorizationService` to
+ * Core Contracts - PrintView is owned by the Rehearsal Module
+ * (`PrintViewRestController` is listed as Rehearsal's own in
+ * `docs/architecture/CoreModuleArchitecture.md` §10), so it should not
+ * depend on Core internals directly either.
  */
 final class GetProductionPrintViewUseCase
 {
-    private ProductionRepositoryInterface $productions;
+    private ProductionContextContract $productionContext;
     private RehearsalRepositoryInterface $rehearsals;
     private TimetableRepositoryInterface $timetables;
     private TimetableItemRepositoryInterface $items;
-    private ProductionAuthorizationService $authorization;
+    private IdentityContract $identity;
+    private MembershipContract $membership;
 
     public function __construct(
-        ProductionRepositoryInterface $productions,
+        ProductionContextContract $productionContext,
         RehearsalRepositoryInterface $rehearsals,
         TimetableRepositoryInterface $timetables,
         TimetableItemRepositoryInterface $items,
-        ProductionAuthorizationService $authorization
+        IdentityContract $identity,
+        MembershipContract $membership
     ) {
-        $this->productions = $productions;
+        $this->productionContext = $productionContext;
         $this->rehearsals = $rehearsals;
         $this->timetables = $timetables;
         $this->items = $items;
-        $this->authorization = $authorization;
+        $this->identity = $identity;
+        $this->membership = $membership;
     }
 
     public function execute(ProductionPrintViewQuery $query): ProductionPrintViewResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new PrintViewAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($query->productionId));
+        $productionId = ProductionId::fromString($query->productionId);
+        $production = $this->productionContext->getProduction($productionId);
 
         if (! $production) {
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->isProductionMember($requester, $production)) {
+        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new PrintViewAccessDeniedException(
                 'You must be a member of this Production to view its Print View.'
             );
         }
 
-        $rehearsals = $this->rehearsals->findByProductionId($production->id());
+        $rehearsals = $this->rehearsals->findByProductionId($productionId);
         $rehearsalIds = array_map(static fn ($rehearsal) => $rehearsal->id(), $rehearsals);
 
         $publishedByRehearsalId = $this->timetables->findPublishedByRehearsalIds($rehearsalIds);
@@ -121,6 +133,6 @@ final class GetProductionPrintViewUseCase
             }
         );
 
-        return new ProductionPrintViewResult($production->id()->toString(), $production->name()->toString(), $sections);
+        return new ProductionPrintViewResult($productionId->toString(), $production->name, $sections);
     }
 }

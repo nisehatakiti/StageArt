@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Application\Production;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
@@ -92,6 +93,22 @@ final class ProductionAuthorizationService
     public function resolveCurrentPerson(int $wordPressUserId): ?Person
     {
         return $this->organizationAuthorization->resolveCurrentPerson($wordPressUserId);
+    }
+
+    /**
+     * StageArt Core/Module Architecture Phase 3: a thin pass-through to
+     * `OrganizationAuthorizationService::hasRole()`, mirroring
+     * `resolveCurrentPerson()` above - lets `CoreAuthorizationAdapter`
+     * implement `AuthorizationContract::canForOrganization()` (the
+     * generic Organization-Scope Capability counterpart to
+     * `canForProduction()`) without adding a second Core Application
+     * service dependency of its own.
+     *
+     * @param string[] $allowedRoleKeys
+     */
+    public function hasOrganizationRole(Person $person, OrganizationId $organizationId, array $allowedRoleKeys): bool
+    {
+        return $this->organizationAuthorization->hasRole($person, $organizationId, $allowedRoleKeys);
     }
 
     public function isPrimaryManager(Person $person, Production $production): bool

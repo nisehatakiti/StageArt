@@ -5,12 +5,13 @@ Status: **Not implemented.** Confirmed by search - no `Domain/Ticket`,
 Infrastructure/Presentation code exists in `plugin/src/`. This entry is
 the **Module Template** the Core/Module Architecture requires before
 real implementation begins - see
-`docs/architecture/CoreModuleArchitecture.md` §16 for the general
-template shape, and `docs/modules/Rehearsal.md` /
-`docs/modules/Accounting.md` for the two Modules that have actually
-adopted this structure in real code (Phase 2) - a real Ticket
-implementation should follow their pattern directly, not just this
-document's description of it.
+`docs/architecture/CoreModuleArchitecture.md` §16 and
+`docs/architecture/WordPressPluginModuleBoundary.md` for the general
+template shape, and `docs/modules/Rehearsal.md` (which, as of Phase 3,
+has real `ModuleBootstrap`/`Installer`/`ModuleDescriptor` code to copy
+the shape of directly, not just prose to follow) /
+`docs/modules/Accounting.md` for the Modules that have actually
+adopted this structure in real code.
 
 ## Responsibility (per existing Blueprint, not yet built)
 
@@ -52,7 +53,15 @@ Infrastructure classes:
   `RehearsalCapability`/`AccountingCapability`) requested against the
   generic Capability check. Core does not need a `canManageTicket()`
   method added for this - `AuthorizationContract` already has no
-  Module-named methods to add one to.
+  Module-named methods to add one to. If Ticket ever needs an
+  Organization-level (not Production-level) check - e.g. only the
+  Organization Owner can configure Ticket pricing globally -
+  `AuthorizationContract::canForOrganization(personId, organizationId,
+  $capability)` (Phase 3) is the reusable, generic mechanism; reuse
+  `Core\Contract\OrganizationCapability::OWNER` if the check really is
+  "is this the Owner", or a new Core-owned capability constant if it
+  is a different generic Organization-scope concept - never invent a
+  Ticket-specific Organization-scope method.
 - `NotificationContract::notify()` - **has a real Adapter now**
   (`CoreNotificationAdapter` → `WordPressNotificationDispatcher`,
   firing a `do_action('stageart_notification', ...)` WordPress Action
@@ -67,6 +76,28 @@ Infrastructure classes:
   unused by any Module as of Phase 2 - Ticket could be its first real
   caller.
 
+## Module Registration / Package boundary (design intent, follow Rehearsal's real code)
+
+When Ticket work begins, `plugin/src/Rehearsal/` is the concrete
+template to copy the shape of - not just this document's description:
+
+- `TicketModuleDescriptor implements StageArt\Core\Module\ModuleDescriptor`
+  (`plugin/src/Core/Module/ModuleDescriptor.php`) - declares
+  `moduleId() = 'ticket'`, its own `version()`, `requiredContracts()`
+  (whichever Contracts from the list above Ticket actually ends up
+  calling), and `ownedTables()` (the 3 tables below).
+- `TicketInstaller::install($wpdb, $charsetCollate)` - owns Ticket's own
+  `CREATE TABLE` statements, called from Core's
+  `Infrastructure\WordPress\Schema\Installer::install()`, exactly as
+  `RehearsalInstaller` is today.
+- `TicketModuleBootstrap` - constructs every Ticket UseCase and REST
+  Controller from Core Contracts + Ticket's own Repository interfaces +
+  `TransactionManagerInterface` only - no concrete
+  `Infrastructure\WordPress\*` class, no Core-internal type in its
+  constructor signature. `Presentation\Plugin::boot()` constructs it and
+  loops `restControllers()` onto `add_action('rest_api_init', ...)`,
+  exactly as it does for `RehearsalModuleBootstrap` today.
+
 ## Testing pattern to follow (design intent, not built)
 
 Once built, a real Ticket UseCase should have:
@@ -78,11 +109,20 @@ Once built, a real Ticket UseCase should have:
   Accounting) proving it never imports
   `ProductionRepositoryInterface`/`ParticipantRepositoryInterface`/the
   `Production`/`Participant`/`Person` Domain Entities directly.
+- Entries in `tests/Core/ModuleBoundaryDependencyTest.php` proving
+  Ticket never imports Rehearsal's or Accounting's namespaces (and
+  they never import Ticket's), and that `src/Core/` never imports
+  Ticket's Domain.
 - A Fake-Contract isolation test (mirroring
   `RehearsalModuleContractIsolationTest`/`BudgetModuleContractIsolationTest`
   in `tests/Support/Fake*Contract.php`) proving at least one core
   UseCase (e.g. reservation creation) runs correctly with **zero** real
   Core Repository involved.
+- A Bootstrap Isolation Test mirroring
+  `tests/Rehearsal/RehearsalModuleBootstrapIsolationTest.php` - proving
+  `TicketModuleBootstrap`'s entire wired object graph (REST Controller
+  -> UseCase -> Repository) works using only Fakes, not just that the
+  constructor doesn't throw.
 
 ## Entities expected to be owned by this Module (design-time, not built)
 
@@ -94,11 +134,13 @@ Accounting's own directory shape.
 ## Owned data (design intent, not built)
 
 None yet - no `stageart_tickets` / `stageart_reservations` /
-`stageart_check_ins` tables exist in `Installer.php`. See
-`docs/architecture/CoreModuleArchitecture.md` §9 for the Database
-Ownership convention these future tables should follow (Module-owned,
-Core never queries them directly, no other Module queries them
-directly either).
+`stageart_check_ins` tables exist anywhere. When built, they belong in
+a new `TicketInstaller` (mirroring `RehearsalInstaller`), called from
+Core's `Installer::install()` - not added directly to Core's own
+installer. See `docs/architecture/CoreModuleArchitecture.md` §9 for the
+Database Ownership convention these future tables should follow
+(Module-owned, Core never queries them directly, no other Module
+queries them directly either).
 
 ## API boundary (design intent, not built)
 

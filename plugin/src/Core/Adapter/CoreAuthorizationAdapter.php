@@ -6,10 +6,13 @@ namespace StageArt\Core\Adapter;
 
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\OrganizationCapability;
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Domain\Role\RoleKey;
 
 /**
  * StageArt Core/Module Architecture: the concrete "StageArt Adapter"
@@ -61,5 +64,33 @@ final class CoreAuthorizationAdapter implements AuthorizationContract
         }
 
         return $this->productionAuthorization->hasProductionCapability($person, $production, $capability);
+    }
+
+    public function canForOrganization(PersonId $personId, OrganizationId $organizationId, string $capability): bool
+    {
+        $person = $this->people->findById($personId);
+
+        if ($person === null) {
+            return false;
+        }
+
+        $allowedRoleKeys = $this->roleKeysGranting($capability);
+
+        if ($allowedRoleKeys === []) {
+            return false;
+        }
+
+        return $this->productionAuthorization->hasOrganizationRole($person, $organizationId, $allowedRoleKeys);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function roleKeysGranting(string $capability): array
+    {
+        return match ($capability) {
+            OrganizationCapability::OWNER => [RoleKey::OWNER],
+            default => [],
+        };
     }
 }

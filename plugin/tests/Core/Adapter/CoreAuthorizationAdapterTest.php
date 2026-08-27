@@ -9,6 +9,7 @@ use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Contract\OrganizationCapability;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
@@ -149,5 +150,97 @@ final class CoreAuthorizationAdapterTest extends TestCase
         $adapter = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
 
         $this->assertFalse($adapter->canForProduction(PersonId::generate(), ProductionId::generate(), RehearsalCapability::MANAGE));
+    }
+
+    public function test_organization_owner_has_the_owner_capability(): void
+    {
+        $people = new InMemoryPersonRepository();
+        $organizations = new InMemoryOrganizationRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $productions = new InMemoryProductionRepository();
+        $delegates = new InMemoryProductionDelegateRepository();
+        $participants = new InMemoryParticipantRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organizations->save($organization);
+
+        $owner = Person::create(1);
+        $people->save($owner);
+        $memberships->save(Membership::createOwnerMembership($organization->id(), $owner->id()));
+
+        $orgAuthorization = new OrganizationAuthorizationService($people, $memberships);
+        $productionAuthorization = new ProductionAuthorizationService($orgAuthorization, $delegates, $participants);
+        $adapter = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
+
+        $this->assertTrue($adapter->canForOrganization($owner->id(), $organization->id(), OrganizationCapability::OWNER));
+    }
+
+    public function test_organization_member_lacks_the_owner_capability(): void
+    {
+        $people = new InMemoryPersonRepository();
+        $organizations = new InMemoryOrganizationRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $productions = new InMemoryProductionRepository();
+        $delegates = new InMemoryProductionDelegateRepository();
+        $participants = new InMemoryParticipantRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organizations->save($organization);
+
+        $owner = Person::create(1);
+        $people->save($owner);
+        $memberships->save(Membership::createOwnerMembership($organization->id(), $owner->id()));
+
+        $member = Person::create(2);
+        $people->save($member);
+        $memberships->save(Membership::create($organization->id(), $member->id(), RoleKey::member()));
+
+        $orgAuthorization = new OrganizationAuthorizationService($people, $memberships);
+        $productionAuthorization = new ProductionAuthorizationService($orgAuthorization, $delegates, $participants);
+        $adapter = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
+
+        $this->assertFalse($adapter->canForOrganization($member->id(), $organization->id(), OrganizationCapability::OWNER));
+    }
+
+    public function test_unresolvable_person_lacks_any_organization_capability(): void
+    {
+        $people = new InMemoryPersonRepository();
+        $organizations = new InMemoryOrganizationRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $productions = new InMemoryProductionRepository();
+        $delegates = new InMemoryProductionDelegateRepository();
+        $participants = new InMemoryParticipantRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organizations->save($organization);
+
+        $orgAuthorization = new OrganizationAuthorizationService($people, $memberships);
+        $productionAuthorization = new ProductionAuthorizationService($orgAuthorization, $delegates, $participants);
+        $adapter = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
+
+        $this->assertFalse($adapter->canForOrganization(PersonId::generate(), $organization->id(), OrganizationCapability::OWNER));
+    }
+
+    public function test_unrecognized_organization_capability_is_false_even_for_the_owner(): void
+    {
+        $people = new InMemoryPersonRepository();
+        $organizations = new InMemoryOrganizationRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $productions = new InMemoryProductionRepository();
+        $delegates = new InMemoryProductionDelegateRepository();
+        $participants = new InMemoryParticipantRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organizations->save($organization);
+
+        $owner = Person::create(1);
+        $people->save($owner);
+        $memberships->save(Membership::createOwnerMembership($organization->id(), $owner->id()));
+
+        $orgAuthorization = new OrganizationAuthorizationService($people, $memberships);
+        $productionAuthorization = new ProductionAuthorizationService($orgAuthorization, $delegates, $participants);
+        $adapter = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
+
+        $this->assertFalse($adapter->canForOrganization($owner->id(), $organization->id(), 'Some.Unrecognized.Capability'));
     }
 }

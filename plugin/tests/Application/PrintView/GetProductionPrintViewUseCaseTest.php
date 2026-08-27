@@ -126,11 +126,12 @@ final class GetProductionPrintViewUseCaseTest extends TestCase
             $transactions
         );
         $this->getPrintView = new GetProductionPrintViewUseCase(
-            $this->productions,
+            $productionContext,
             $this->rehearsals,
             $this->timetables,
             $this->items,
-            $productionAuthorization
+            $identity,
+            $membership
         );
     }
 
