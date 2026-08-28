@@ -18,7 +18,8 @@
             "StageArt\\Infrastructure\\": "src/Infrastructure/",
             "StageArt\\Presentation\\": "src/Presentation/",
             "StageArt\\Core\\": "src/Core/",
-            "StageArt\\Rehearsal\\": "src/Rehearsal/"
+            "StageArt\\Rehearsal\\": "src/Rehearsal/",
+            "StageArt\\Accounting\\": "src/Accounting/"
         }
     },
     "autoload-dev": {

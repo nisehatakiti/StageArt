@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace StageArt\Application\Account;
 
 use InvalidArgumentException;
-use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\OrganizationCapability;
+use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Domain\Account\Account;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\Account\AccountType;
-use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
-use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 
 /**
  * Account.md "Authorization": "Accountの作成・変更・無効化は、会計管理権限を持つ
@@ -21,38 +22,47 @@ use StageArt\Domain\Organization\OrganizationRepositoryInterface;
  * 持つ。" Per Authorization.md's established RoleKey mapping (OWNER is the
  * concrete Role behind "Organization Administrator" throughout this
  * codebase), Create is OWNER-only.
+ *
+ * StageArt Core/Module Architecture Phase 3 (continued): migrated from
+ * `OrganizationAuthorizationService`/`OrganizationRepositoryInterface`
+ * to Core Contracts - the first real caller of both
+ * `OrganizationContextContract` (previously unused by any Module) and
+ * `AuthorizationContract::canForOrganization()`.
  */
 final class CreateAccountUseCase
 {
     private AccountRepositoryInterface $accounts;
-    private OrganizationRepositoryInterface $organizations;
-    private OrganizationAuthorizationService $authorization;
+    private OrganizationContextContract $organizationContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         AccountRepositoryInterface $accounts,
-        OrganizationRepositoryInterface $organizations,
-        OrganizationAuthorizationService $authorization
+        OrganizationContextContract $organizationContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->accounts = $accounts;
-        $this->organizations = $organizations;
+        $this->organizationContext = $organizationContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
     public function execute(CreateAccountCommand $command): AccountResult
     {
-        $requester = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new AccountAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
         $organizationId = OrganizationId::fromString($command->organizationId);
 
-        if (! $this->organizations->findById($organizationId)) {
+        if (! $this->organizationContext->organizationExists($organizationId)) {
             throw new OrganizationNotFoundException($command->organizationId);
         }
 
-        if (! $this->authorization->hasRole($requester, $organizationId, [RoleKey::OWNER])) {
+        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::OWNER)) {
             throw new AccountAccessDeniedException('Only the Organization Owner can create Accounts.');
         }
 

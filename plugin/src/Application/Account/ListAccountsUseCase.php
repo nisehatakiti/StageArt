@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Account;
 
-use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\OrganizationCapability;
+use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Organization\OrganizationId;
-use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 
 /**
  * Read is intentionally broader than Create/Update (Account.md's
@@ -19,20 +20,29 @@ use StageArt\Domain\Organization\OrganizationRepositoryInterface;
  * ことを想定する" means regular Production Members need to see Account
  * choices to build an Expense Line - Account itself carries no sensitive
  * amount, only a classification name.
+ *
+ * StageArt Core/Module Architecture Phase 3 (continued): migrated from
+ * `OrganizationAuthorizationService`/`OrganizationRepositoryInterface`
+ * to Core Contracts, using `OrganizationCapability::MEMBER` (any ACTIVE
+ * Membership) rather than `OWNER` - the broader Read check
+ * `CreateAccountUseCase` doesn't need.
  */
 final class ListAccountsUseCase
 {
     private AccountRepositoryInterface $accounts;
-    private OrganizationRepositoryInterface $organizations;
-    private OrganizationAuthorizationService $authorization;
+    private OrganizationContextContract $organizationContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         AccountRepositoryInterface $accounts,
-        OrganizationRepositoryInterface $organizations,
-        OrganizationAuthorizationService $authorization
+        OrganizationContextContract $organizationContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization
     ) {
         $this->accounts = $accounts;
-        $this->organizations = $organizations;
+        $this->organizationContext = $organizationContext;
+        $this->identity = $identity;
         $this->authorization = $authorization;
     }
 
@@ -41,19 +51,19 @@ final class ListAccountsUseCase
      */
     public function execute(ListAccountsForOrganizationQuery $query): array
     {
-        $requester = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
+        $requesterId = $this->identity->resolveCurrentPersonId($query->requestedByWordPressUserId);
 
-        if (! $requester) {
+        if (! $requesterId) {
             throw new AccountAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
         $organizationId = OrganizationId::fromString($query->organizationId);
 
-        if (! $this->organizations->findById($organizationId)) {
+        if (! $this->organizationContext->organizationExists($organizationId)) {
             throw new OrganizationNotFoundException($query->organizationId);
         }
 
-        if (! $this->authorization->hasRole($requester, $organizationId, [RoleKey::OWNER, RoleKey::MEMBER])) {
+        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::MEMBER)) {
             throw new AccountAccessDeniedException('Only members of this Organization can view its Accounts.');
         }
 

@@ -251,40 +251,43 @@ phase.
 
 ---
 
-# 8. Accounting Module (Contract-adopted, one disclosed exception)
+# 8. Accounting Module (fully Contract-adopted, package-boundary-consolidated)
 
 See `docs/modules/Accounting.md` for full detail. Summary:
 
-- All 13 UseCases that previously depended on
-  `ProductionRepositoryInterface`/`ProductionAuthorizationService`
+- All 15 UseCases that previously depended on
+  `ProductionRepositoryInterface`/`ProductionAuthorizationService`/
+  `OrganizationRepositoryInterface`/`OrganizationAuthorizationService`
   directly (`Budget\{Activate,Create,Get,List,Update}BudgetUseCase`,
   `Expense\{Confirm,Create,Get,List,Update}ExpenseUseCase`,
   `JournalEntry\{List,Post}JournalEntryUseCase`,
-  `ProductionAccounting\GetProductionAccountingSummaryUseCase`) were
-  migrated to `ProductionContextContract`/`IdentityContract`/
-  `AuthorizationContract`/`MembershipContract`, mirroring the Rehearsal
-  Module's own pattern exactly.
-- ~~One disclosed, intentional exception~~ **closed in Phase 3**:
-  `PostJournalEntryUseCase`'s Organization-Scope branch now calls
-  `AuthorizationContract::canForOrganization()` (new this phase, a
-  generic Core-owned Organization-Scope Capability method - see §11 of
+  `ProductionAccounting\GetProductionAccountingSummaryUseCase`,
+  `Account\{Create,List}AccountUseCase`) are migrated to
+  `ProductionContextContract`/`OrganizationContextContract`/
+  `IdentityContract`/`AuthorizationContract`/`MembershipContract`,
+  mirroring the Rehearsal Module's own pattern exactly. The 2 Account
+  UseCases were found still Core-coupled during the Bootstrap work
+  below (Phase 2's 13-file count missed them, mirroring Rehearsal's own
+  PrintView/ProductionSchedule gap) and migrated the same session.
+- `PostJournalEntryUseCase`'s Organization-Scope branch calls
+  `AuthorizationContract::canForOrganization()` (a generic Core-owned
+  Organization-Scope Capability method - see §11 of
   `docs/architecture/WordPressPluginModuleBoundary.md`) instead of
   `OrganizationAuthorizationService::hasRole()` directly. Accounting has
   zero remaining direct Core Application-service dependencies.
-- `BudgetModuleContractIsolationTest` proves `CreateBudgetUseCase`'s
-  business logic runs correctly with **zero** real Core Repository,
-  mirroring `RehearsalModuleContractIsolationTest`.
-- `ModuleDependencyDirectionTest::test_accounting_module_never_imports_core_internal_classes`
-  covers the same denylist as Rehearsal's (§6), scoped to
-  `Application/Account`, `Budget`, `Expense`, `JournalEntry`,
-  `ProductionAccounting` and their `Domain` counterparts.
-  `ModuleBoundaryDependencyTest` (Phase 3) additionally confirms
-  Accounting never imports Rehearsal's namespaces and vice versa.
-- **Not built this phase** (explicitly out of scope): an
-  `AccountingModuleBootstrap`/`AccountingInstaller`/
-  `AccountingModuleDescriptor` mirroring Rehearsal's Phase 3 work - see
-  `docs/architecture/WordPressPluginModuleBoundary.md` §10 for the
-  evaluated, concrete next steps.
+- `BudgetModuleContractIsolationTest`/`AccountingModuleBootstrapIsolationTest`
+  prove `CreateBudgetUseCase`'s business logic runs correctly with
+  **zero** real Core Repository, mirroring
+  `RehearsalModuleContractIsolationTest`/`RehearsalModuleBootstrapIsolationTest`.
+- `ModuleDependencyDirectionTest`/`ModuleBoundaryDependencyTest` cover
+  Accounting with the same denylist/sibling-Module checks as
+  Rehearsal's (§6), scoped to `Application/Account`, `Budget`,
+  `Expense`, `JournalEntry`, `ProductionAccounting`, their `Domain`
+  counterparts, and `src/Accounting/`.
+- `AccountingModuleBootstrap`/`AccountingInstaller`/
+  `AccountingModuleDescriptor` (`plugin/src/Accounting/`) mirror
+  Rehearsal's Phase 3 work exactly - see `docs/architecture/
+  WordPressPluginModuleBoundary.md` §10 for the full detail.
 
 ---
 

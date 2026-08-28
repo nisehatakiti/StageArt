@@ -23,6 +23,7 @@ use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
@@ -93,7 +94,8 @@ final class ExpenseUseCaseTest extends TestCase
         $authorizationContract = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $prodAuth);
 
-        $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membershipContract, $identity, $lineFactory, $transactions);
         $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract);
         $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);

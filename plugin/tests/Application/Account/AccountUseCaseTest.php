@@ -11,6 +11,10 @@ use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsForOrganizationQuery;
 use StageArt\Application\Account\ListAccountsUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
@@ -20,7 +24,10 @@ use StageArt\Domain\Person\Person;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
+use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
+use StageArt\Tests\Support\InMemoryProductionRepository;
 
 final class AccountUseCaseTest extends TestCase
 {
@@ -38,10 +45,16 @@ final class AccountUseCaseTest extends TestCase
         $this->memberships = new InMemoryMembershipRepository();
         $this->accounts = new InMemoryAccountRepository();
 
-        $authorization = new OrganizationAuthorizationService($this->people, $this->memberships);
+        $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
+        $productions = new InMemoryProductionRepository();
+        $prodAuth = new ProductionAuthorizationService($orgAuth, new InMemoryProductionDelegateRepository(), new InMemoryParticipantRepository());
 
-        $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $authorization);
-        $this->listAccounts = new ListAccountsUseCase($this->accounts, $this->organizations, $authorization);
+        $identity = new CoreIdentityAdapter($this->people);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $authorizationContract = new CoreAuthorizationAdapter($prodAuth, $productions, $this->people);
+
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
+        $this->listAccounts = new ListAccountsUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
     }
 
     /**

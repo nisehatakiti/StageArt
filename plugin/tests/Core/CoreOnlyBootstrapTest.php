@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Tests\Core;
 
 use PHPUnit\Framework\TestCase;
+use StageArt\Accounting\AccountingModuleDescriptor;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
@@ -71,17 +72,24 @@ final class CoreOnlyBootstrapTest extends TestCase
     {
         $registry = new ModuleRegistry();
         $registry->register(new RehearsalModuleDescriptor());
+        $registry->register(new AccountingModuleDescriptor());
 
         $this->assertTrue($registry->isRegistered('rehearsal'));
-        $descriptor = $registry->get('rehearsal');
+        $this->assertTrue($registry->isRegistered('accounting'));
+        $this->assertCount(2, $registry->all());
 
-        $this->assertNotNull($descriptor);
-        $this->assertSame('rehearsal', $descriptor->moduleId());
-        $this->assertNotEmpty($descriptor->requiredContracts());
-        $this->assertNotEmpty($descriptor->ownedTables());
+        foreach (['rehearsal', 'accounting'] as $moduleId) {
+            $descriptor = $registry->get($moduleId);
 
-        // Registering the descriptor is pure metadata - it does not
-        // construct RehearsalModuleBootstrap or touch any repository.
-        // Nothing here has instantiated a WordPress Infrastructure class.
+            $this->assertNotNull($descriptor);
+            $this->assertSame($moduleId, $descriptor->moduleId());
+            $this->assertNotEmpty($descriptor->requiredContracts());
+            $this->assertNotEmpty($descriptor->ownedTables());
+        }
+
+        // Registering both descriptors is pure metadata - it does not
+        // construct RehearsalModuleBootstrap/AccountingModuleBootstrap
+        // or touch any repository. Nothing here has instantiated a
+        // WordPress Infrastructure class.
     }
 }

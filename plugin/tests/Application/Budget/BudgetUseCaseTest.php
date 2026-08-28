@@ -22,6 +22,7 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
@@ -84,7 +85,8 @@ final class BudgetUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorizationContract = new CoreAuthorizationAdapter($this->prodAuth, $this->productions, $this->people);
 
-        $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
         $this->createBudget = new CreateBudgetUseCase($this->budgets, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
         $this->getBudget = new GetBudgetUseCase($this->budgets, $identity, $authorizationContract);
         $this->updateBudget = new UpdateBudgetUseCase($this->budgets, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);

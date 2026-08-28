@@ -27,6 +27,7 @@ use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseC
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\JournalEntry\JournalEntry;
@@ -110,7 +111,8 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
             $this->prodAuth
         );
 
-        $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $this->orgAuth);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
         $this->createBudget = new CreateBudgetUseCase(
             $this->budgets,
             $productionContext,

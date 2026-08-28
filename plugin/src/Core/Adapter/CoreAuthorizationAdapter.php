@@ -90,6 +90,7 @@ final class CoreAuthorizationAdapter implements AuthorizationContract
     {
         return match ($capability) {
             OrganizationCapability::OWNER => [RoleKey::OWNER],
+            OrganizationCapability::MEMBER => [RoleKey::OWNER, RoleKey::MEMBER],
             default => [],
         };
     }

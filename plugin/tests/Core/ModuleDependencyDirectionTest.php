@@ -59,6 +59,7 @@ final class ModuleDependencyDirectionTest extends TestCase
         'Domain/Budget',
         'Domain/Expense',
         'Domain/JournalEntry',
+        'Accounting',
     ];
 
     private const FORBIDDEN_CORE_INTERNAL_IMPORTS = [

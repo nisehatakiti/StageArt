@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation;
 
-use StageArt\Application\Account\CreateAccountUseCase;
-use StageArt\Application\Account\ListAccountsUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
@@ -14,21 +12,8 @@ use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
+use StageArt\Accounting\AccountingModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
-use StageArt\Application\Budget\ActivateBudgetUseCase;
-use StageArt\Application\Budget\BudgetLineFactory;
-use StageArt\Application\Budget\CreateBudgetUseCase;
-use StageArt\Application\Budget\GetBudgetUseCase;
-use StageArt\Application\Budget\ListBudgetsUseCase;
-use StageArt\Application\Budget\UpdateBudgetUseCase;
-use StageArt\Application\Expense\ConfirmExpenseUseCase;
-use StageArt\Application\Expense\CreateExpenseUseCase;
-use StageArt\Application\Expense\ExpenseLineFactory;
-use StageArt\Application\Expense\GetExpenseUseCase;
-use StageArt\Application\Expense\ListExpensesUseCase;
-use StageArt\Application\Expense\UpdateExpenseUseCase;
-use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
-use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
 use StageArt\Application\Favorite\AddFavoriteUseCase;
 use StageArt\Application\Favorite\ListMyFavoritesUseCase;
 use StageArt\Application\Favorite\RemoveFavoriteUseCase;
@@ -76,7 +61,6 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionUseCase;
-use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
@@ -144,17 +128,12 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressUserAccountRepository
 use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
 use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
-use StageArt\Presentation\Rest\AccountRestController;
 use StageArt\Presentation\Rest\AuthenticationRestController;
-use StageArt\Presentation\Rest\BudgetRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
-use StageArt\Presentation\Rest\ExpenseRestController;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
-use StageArt\Presentation\Rest\JournalEntryRestController;
 use StageArt\Presentation\Rest\MeRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
-use StageArt\Presentation\Rest\ProductionAccountingRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
 use StageArt\Presentation\Rest\ParticipantRestController;
@@ -223,8 +202,6 @@ final class Plugin
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
         $notificationDispatcher = new WordPressNotificationDispatcher();
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
-        $budgetLineFactory = new BudgetLineFactory($accounts);
-        $expenseLineFactory = new ExpenseLineFactory($accounts);
 
         $createUserAccount        = new CreateUserAccountUseCase($people, $userAccounts, $transactions);
         $registerEmailCredential  = new RegisterEmailCredentialUseCase(
@@ -451,74 +428,23 @@ final class Plugin
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
         $updatePersonName = new UpdatePersonNameUseCase($people);
 
-        // Phase 6.0 Accounting Foundation.
-        $createAccount = new CreateAccountUseCase($accounts, $organizations, $authorization);
-        $listAccounts = new ListAccountsUseCase($accounts, $organizations, $authorization);
-
-        $createBudget = new CreateBudgetUseCase(
-            $budgets,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract,
-            $budgetLineFactory,
-            $transactions
-        );
-        $updateBudget = new UpdateBudgetUseCase(
-            $budgets,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract,
-            $budgetLineFactory,
-            $transactions
-        );
-        $getBudget = new GetBudgetUseCase($budgets, $identityContract, $authorizationContract);
-        $listBudgets = new ListBudgetsUseCase($budgets, $productionContextContract, $identityContract, $authorizationContract);
-        $activateBudget = new ActivateBudgetUseCase($budgets, $identityContract, $authorizationContract, $transactions);
-
-        $createExpense = new CreateExpenseUseCase(
-            $expenses,
-            $productionContextContract,
-            $membershipContract,
-            $identityContract,
-            $expenseLineFactory,
-            $transactions
-        );
-        $updateExpense = new UpdateExpenseUseCase(
-            $expenses,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract,
-            $expenseLineFactory,
-            $transactions
-        );
-        $confirmExpense = new ConfirmExpenseUseCase(
-            $expenses,
-            $productionContextContract,
+        // StageArt Core/Module Architecture Phase 3 (continued):
+        // Accounting Module's entire own wiring (UseCase construction +
+        // REST Controller construction) is consolidated into
+        // AccountingModuleBootstrap - see that class's own docblock.
+        // Only Core Contracts and Accounting's own Repository
+        // interfaces cross this boundary.
+        $accountingModule = new AccountingModuleBootstrap(
             $accounts,
-            $journalEntries,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-        $getExpense = new GetExpenseUseCase($expenses, $identityContract, $membershipContract);
-        $listExpenses = new ListExpensesUseCase($expenses, $productionContextContract, $membershipContract, $identityContract);
-
-        $listJournalEntries = new ListJournalEntriesUseCase($journalEntries, $productionContextContract, $identityContract, $authorizationContract);
-        $postJournalEntry = new PostJournalEntryUseCase(
-            $journalEntries,
-            $productionContextContract,
-            $identityContract,
-            $authorizationContract,
-            $transactions
-        );
-
-        $getProductionAccountingSummary = new GetProductionAccountingSummaryUseCase(
             $budgets,
+            $expenses,
             $journalEntries,
-            $accounts,
             $productionContextContract,
+            $organizationContextContract,
+            $identityContract,
+            $authorizationContract,
             $membershipContract,
-            $identityContract
+            $transactions
         );
 
         $organizationRestController = new OrganizationRestController(
@@ -627,24 +553,6 @@ final class Plugin
 
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
 
-        $accountRestController = new AccountRestController($createAccount, $listAccounts);
-        $budgetRestController = new BudgetRestController(
-            $createBudget,
-            $updateBudget,
-            $getBudget,
-            $listBudgets,
-            $activateBudget
-        );
-        $expenseRestController = new ExpenseRestController(
-            $createExpense,
-            $updateExpense,
-            $confirmExpense,
-            $getExpense,
-            $listExpenses
-        );
-        $journalEntryRestController = new JournalEntryRestController($listJournalEntries, $postJournalEntry);
-        $productionAccountingRestController = new ProductionAccountingRestController($getProductionAccountingSummary);
-
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
         add_action('rest_api_init', [$projectRestController, 'register_routes']);
         add_action('rest_api_init', [$userAccountRestController, 'register_routes']);
@@ -671,11 +579,15 @@ final class Plugin
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
         add_action('rest_api_init', [$favoriteRestController, 'register_routes']);
-        add_action('rest_api_init', [$accountRestController, 'register_routes']);
-        add_action('rest_api_init', [$budgetRestController, 'register_routes']);
-        add_action('rest_api_init', [$expenseRestController, 'register_routes']);
-        add_action('rest_api_init', [$journalEntryRestController, 'register_routes']);
-        add_action('rest_api_init', [$productionAccountingRestController, 'register_routes']);
+
+        // StageArt Core/Module Architecture Phase 3 (continued): every
+        // Accounting Module REST Controller (Account/Budget/Expense/
+        // JournalEntry/ProductionAccounting) is constructed inside
+        // AccountingModuleBootstrap - registered identically to every
+        // other Controller here.
+        foreach ($accountingModule->restControllers() as $accountingRestController) {
+            add_action('rest_api_init', [$accountingRestController, 'register_routes']);
+        }
 
         // Phase 2 (StageArt Authentication): registers the StageArt
         // Bearer Access Token as an additional way WordPress resolves

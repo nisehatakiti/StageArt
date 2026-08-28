@@ -24,6 +24,7 @@ use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\Membership\Membership;
@@ -93,7 +94,8 @@ final class JournalEntryUseCaseTest extends TestCase
             $prodAuth
         );
 
-        $this->createAccount = new CreateAccountUseCase($this->accounts, $this->organizations, $orgAuth);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
         $this->createExpense = new CreateExpenseUseCase(
             $this->expenses,
             $productionContext,

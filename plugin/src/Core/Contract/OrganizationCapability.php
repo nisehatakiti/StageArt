@@ -19,6 +19,15 @@ final class OrganizationCapability
 {
     public const OWNER = 'Organization.Owner';
 
+    /**
+     * Any ACTIVE Organization Membership (OWNER or MEMBER) - the
+     * broader "is this Person part of this Organization at all" check,
+     * distinct from `OWNER`'s narrower "is this Person specifically the
+     * Owner". `CreateAccountUseCase`/`ListAccountsUseCase` need both:
+     * Create is OWNER-only, List is any Member.
+     */
+    public const MEMBER = 'Organization.Member';
+
     private function __construct()
     {
     }

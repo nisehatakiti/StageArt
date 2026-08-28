@@ -2,15 +2,14 @@
 
 Status: **Partially implemented** (Budget/Expense/Account/JournalEntry
 predate the Core/Module Architecture work) - **fully Contract-adopted**
-as of Phase 3 (the one disclosed exception Phase 2 left open is now
-closed - see Authorization below). Domain/Application code itself was
-not extended (real Accounting Domain work, e.g. `ACCOUNTING_MANAGER`
-Role, stays explicitly out of scope) - only the dependency-boundary
-migration. Package-boundary consolidation (its own `ModuleBootstrap`/
-`Installer`/`ModuleDescriptor`, mirroring Rehearsal's Phase 3 work) is
-evaluated but **not built** this phase - see "Package boundary
-evaluation" below and `docs/architecture/WordPressPluginModuleBoundary.md`
-§10.
+and **package-boundary-consolidated** as of Phase 3, matching Rehearsal:
+its own `AccountingModuleBootstrap`/`AccountingInstaller`/
+`AccountingModuleDescriptor` (`plugin/src/Accounting/`) exist, proven by
+`AccountingModuleBootstrapIsolationTest`. Domain/Application code itself
+was not extended (real Accounting Domain work, e.g. `ACCOUNTING_MANAGER`
+Role, stays explicitly out of scope) - only the dependency-boundary and
+package-boundary migration. See `docs/architecture/
+WordPressPluginModuleBoundary.md` §10.
 
 ## Responsibility
 
@@ -33,10 +32,11 @@ piece of an eventual unified namespace.
 
 ## Core Contract usage (fully adopted)
 
-All 13 UseCases that previously depended on
-`ProductionRepositoryInterface`/`ProductionAuthorizationService`
-directly were migrated to Core Contracts in Phase 2, mirroring the
-Rehearsal Module's pattern:
+All 15 UseCases that previously depended on Core internals directly
+(`ProductionRepositoryInterface`/`ProductionAuthorizationService`/
+`OrganizationRepositoryInterface`/`OrganizationAuthorizationService`)
+are migrated to Core Contracts, mirroring the Rehearsal Module's
+pattern:
 
 | UseCase | Contracts depended on |
 |---|---|
@@ -48,6 +48,17 @@ Rehearsal Module's pattern:
 | `Expense\UpdateExpenseUseCase`, `ConfirmExpenseUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
 | `JournalEntry\ListJournalEntriesUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
 | `ProductionAccounting\GetProductionAccountingSummaryUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
+| `Account\CreateAccountUseCase` | `OrganizationContextContract`, `IdentityContract`, `AuthorizationContract` (`OrganizationCapability::OWNER`) |
+| `Account\ListAccountsUseCase` | `OrganizationContextContract`, `IdentityContract`, `AuthorizationContract` (`OrganizationCapability::MEMBER` - any ACTIVE Membership, broader than Create's Owner-only) |
+
+`CreateAccountUseCase`/`ListAccountsUseCase` were found still depending
+on `OrganizationAuthorizationService`/`OrganizationRepositoryInterface`
+directly while building `AccountingModuleBootstrap` (Phase 2's own
+13-UseCase count missed them, mirroring the PrintView/ProductionSchedule
+gap Phase 3 found for Rehearsal) - migrated the same session. This gave
+`OrganizationContextContract` its first real caller (defined in Phase 1,
+unused until now) and required adding `OrganizationCapability::MEMBER`
+alongside the existing `OWNER`.
 
 The Organization a Budget/Expense/Account belongs to (needed to
 validate an Account reference stays within the Production's own
@@ -89,36 +100,46 @@ Verified two ways:
   `IdentityContract`, `AuthorizationContract` - **zero** real Core
   Repository is touched (only `BudgetRepositoryInterface`/
   `AccountRepositoryInterface`, which are this Module's own).
+- `tests/Accounting/AccountingModuleBootstrapIsolationTest.php` (Phase
+  3) proves the entire `AccountingModuleBootstrap`-wired object graph
+  (REST Controller -> UseCase -> Repository) works using only Fakes,
+  including a new, minimal inline `FakeOrganizationContextContract` -
+  the first Fake this Contract needed.
 
 ## Owned data
 
-`stageart_budgets`, `stageart_budget_lines`, `stageart_expenses`,
-`stageart_expense_lines`, `stageart_accounts`, `stageart_journal_entries`,
-`stageart_journal_entry_lines`. Unchanged by this phase - the migration
-moved which class each UseCase calls, not which table it reads/writes.
+`stageart_accounts`, `stageart_budgets`, `stageart_budget_lines`,
+`stageart_journal_entries`, `stageart_journal_entry_lines`,
+`stageart_expenses`, `stageart_expense_lines` - owned and migrated by
+`AccountingInstaller` (`plugin/src/Accounting/`), extracted verbatim
+(byte-identical SQL) from Core's previously-monolithic installer, called
+from Core's `Installer::install()` exactly as `RehearsalInstaller` is.
+Verified live against the ConoHa dev DB: `Installer::install()` invoked
+directly, all 7 tables confirmed present afterward.
 
 ## API boundary
 
 `AccountRestController`, `BudgetRestController`, `ExpenseRestController`,
-`JournalEntryRestController`, `ProductionAccountingRestController`.
-No route was renamed, moved, or had its request/response shape changed
-by this phase.
+`JournalEntryRestController`, `ProductionAccountingRestController` -
+all 5 constructed inside `AccountingModuleBootstrap`. No route was
+renamed, moved, or had its request/response shape changed - verified
+live: `rest_api_init` triggered against the real environment, all 10
+Accounting routes present and byte-identical to before this refactor.
 
-## Package boundary evaluation (Phase 3)
+## Package boundary (Phase 3, built)
 
-Evaluated whether Accounting can follow Rehearsal's
-`ModuleBootstrap`/`Installer`/`ModuleDescriptor` pattern (§9-10 of
-`docs/architecture/WordPressPluginModuleBoundary.md`): **yes,
-structurally nothing blocks it** - all 13 UseCases are already
-Contract-based, its 7 tables are self-contained (no other Module reads
-them), and its 5 REST Controllers already form a clean unit. **Not
-built this phase**, per the governing instruction's explicit scope
-limit ("今回はAccountingを完全にRehearsalと同じレベルまで実証する必要は
-ありません"). Concrete next steps if a future phase takes this on:
-extract `AccountingInstaller` (mirroring `RehearsalInstaller`),
-consolidate wiring into `AccountingModuleBootstrap`, add
-`AccountingModuleDescriptor`, add an isolation test mirroring
-`RehearsalModuleBootstrapIsolationTest`.
+`plugin/src/Accounting/` mirrors `plugin/src/Rehearsal/` exactly:
+
+- `AccountingModuleBootstrap` - constructs all 15 UseCases and all 5
+  REST Controllers from Core Contracts (`ProductionContextContract`,
+  `OrganizationContextContract`, `IdentityContract`,
+  `AuthorizationContract`, `MembershipContract`) + this Module's own 4
+  Repository interfaces + `TransactionManagerInterface`.
+  `Presentation\Plugin::boot()` is its only caller today.
+- `AccountingModuleDescriptor` - `moduleId() = 'accounting'`, its own
+  `version()`, `requiredContracts()`, `ownedTables()`. Registers into
+  `Core\Module\ModuleRegistry` alongside `RehearsalModuleDescriptor`.
+- `AccountingInstaller` - owns this Module's 7 tables' migration.
 
 ## Authorization
 
@@ -142,12 +163,11 @@ PrimaryManager-only. Extending it to a real `ACCOUNTING_MANAGER` Role
 
 ## Open items
 
-- `AccountingModuleBootstrap`/`AccountingInstaller`/
-  `AccountingModuleDescriptor` are designed (see "Package boundary
-  evaluation" above) but not built - a future phase's responsibility if
-  Accounting Plugin extraction becomes a real goal.
 - `ACCOUNTING_MANAGER` Role/Permission Set definition remains
   unaddressed - a future Accounting-focused phase's responsibility.
+- No per-Module schema version exists yet - `AccountingInstaller` is
+  still gated by Core's one shared `SchemaUpgrader::CURRENT_VERSION`,
+  same as `RehearsalInstaller`.
 - No single unifying `Application/Accounting/` namespace exists yet
   (the Module still spans five separate Application namespaces) - not
   restructured this phase, since it is a pure folder-organization

@@ -51,6 +51,7 @@ final class ModuleBoundaryDependencyTest extends TestCase
         'Domain/Budget',
         'Domain/Expense',
         'Domain/JournalEntry',
+        'Accounting',
     ];
 
     private const REHEARSAL_NAMESPACE_PREFIXES = [
@@ -80,6 +81,7 @@ final class ModuleBoundaryDependencyTest extends TestCase
         'StageArt\Domain\Budget\\',
         'StageArt\Domain\Expense\\',
         'StageArt\Domain\JournalEntry\\',
+        'StageArt\Accounting\\',
     ];
 
     public function test_rehearsal_module_never_imports_accounting(): void

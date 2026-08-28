@@ -1,13 +1,17 @@
 # WordPress Plugin Module Boundary (Phase 3)
 
 Status: Confirmed - this document is the concrete answer to "can the
-Rehearsal Module be extracted into its own WordPress Plugin". It is not
-a plan to actually perform that split; StageArt ships as one Plugin
-today and continues to. What changed this phase is that the boundary
-between "StageArt Core Plugin" and "StageArt Rehearsal Plugin" now
-exists in real code (`RehearsalModuleBootstrap`, `RehearsalInstaller`,
-`RehearsalModuleDescriptor`), not only in `docs/architecture/
-CoreModuleArchitecture.md`'s prose.
+Rehearsal and Accounting Modules be extracted into their own WordPress
+Plugins". It is not a plan to actually perform that split; StageArt
+ships as one Plugin today and continues to. What changed this phase is
+that the boundary between "StageArt Core Plugin" and each Module's own
+Plugin now exists in real code
+(`RehearsalModuleBootstrap`/`RehearsalInstaller`/`RehearsalModuleDescriptor`,
+`AccountingModuleBootstrap`/`AccountingInstaller`/`AccountingModuleDescriptor`),
+not only in `docs/architecture/CoreModuleArchitecture.md`'s prose. §10
+originally evaluated Accounting's boundary as "structurally feasible,
+not built" - it has since been built, in the same session, following
+exactly the concrete steps §10 laid out.
 
 ---
 
@@ -374,49 +378,62 @@ empty `ModuleRegistry`, and separately confirms registering a
 
 ---
 
-# 10. Accounting Module Package Boundary
+# 10. Accounting Module Package Boundary (now built, same session)
 
-Investigated this phase (not assumed from Phase 2's report):
+Investigated, then built - the four steps originally listed here as
+future work were completed immediately after, once the pattern was
+proven for Rehearsal:
 
 - **Owned Domain**: `Budget`/`BudgetLine`, `Expense`/`ExpenseLine`,
   `Account`, `JournalEntry`/`JournalEntryLine`
-  (`Domain/{Budget,Expense,Account,JournalEntry}`).
-- **Owned Tables**: `stageart_budgets`, `stageart_budget_lines`,
-  `stageart_expenses`, `stageart_expense_lines`, `stageart_accounts`,
-  `stageart_journal_entries`, `stageart_journal_entry_lines` - still
-  created inside Core's monolithic `Installer::install()` (not split
-  into an `AccountingInstaller` this phase - see below).
+  (`Domain/{Budget,Expense,Account,JournalEntry}`) - unchanged, DDD
+  layering kept, mirroring Rehearsal's own approach (§1).
+- **Owned Tables**: `stageart_accounts`, `stageart_budgets`,
+  `stageart_budget_lines`, `stageart_journal_entries`,
+  `stageart_journal_entry_lines`, `stageart_expenses`,
+  `stageart_expense_lines` - extracted verbatim into
+  `AccountingInstaller` (`plugin/src/Accounting/`), called from Core's
+  `Installer::install()` exactly as `RehearsalInstaller` is. Verified
+  live: `Installer::install()` invoked directly against the ConoHa dev
+  DB, all 7 tables confirmed present afterward.
 - **Owned REST API**: `AccountRestController`, `BudgetRestController`,
   `ExpenseRestController`, `JournalEntryRestController`,
-  `ProductionAccountingRestController`.
-- **Core Contracts**: all 13 previously-migrated UseCases (Phase 2)
-  confirmed still Contract-based; unchanged this phase.
-- **WordPress dependency**: identical shape to Rehearsal's (C above) -
-  nothing Accounting-specific.
-- **`OrganizationAuthorizationService` exception**: **closed this
-  phase** (§11) - `PostJournalEntryUseCase`'s Organization-Scope branch
-  now calls `AuthorizationContract::canForOrganization()` instead.
-  Accounting has **zero** remaining direct Core Application-service
-  dependencies.
+  `ProductionAccountingRestController` - all 5 now constructed inside
+  `AccountingModuleBootstrap`. Verified live: `rest_api_init` triggered
+  against the real environment, all 10 Accounting routes present and
+  byte-identical to before.
+- **Core Contracts**: all 15 UseCases now Contract-based - the 13
+  migrated in Phase 2, plus `CreateAccountUseCase`/`ListAccountsUseCase`
+  (Account CRUD, found still depending on
+  `OrganizationAuthorizationService`/`OrganizationRepositoryInterface`
+  directly during this Bootstrap work - a gap Phase 2's own 13-file
+  count missed, exactly as PrintView/ProductionSchedule was missed for
+  Rehearsal). Migrating these two gave `OrganizationContextContract`
+  its first real caller (previously unused by any Module since Phase
+  1) and required a second Organization-Scope Capability,
+  `OrganizationCapability::MEMBER` (any ACTIVE Membership, not just
+  Owner) alongside the existing `OWNER`.
+- **`AccountingModuleBootstrap`** (`plugin/src/Accounting/`) - all 15
+  UseCases + 5 REST Controllers, constructor limited to Core Contracts
+  (`ProductionContextContract`, `OrganizationContextContract`,
+  `IdentityContract`, `AuthorizationContract`, `MembershipContract`) +
+  Accounting's own 4 Repository interfaces + `TransactionManagerInterface`.
+- **`AccountingModuleDescriptor`** - `moduleId() = 'accounting'`,
+  `requiredContracts()` (the 5 Contracts above),
+  `ownedTables()` (the 7 tables above).
+- **`AccountingModuleBootstrapIsolationTest`** - mirrors
+  `RehearsalModuleBootstrapIsolationTest` exactly: builds
+  `AccountingModuleBootstrap` from Fakes only (including a new, minimal
+  inline `FakeOrganizationContextContract` - the first Fake this
+  Contract needed, since Rehearsal never called it), pulls
+  `CreateBudgetUseCase` back out of the Bootstrap-constructed
+  `BudgetRestController` via Reflection, executes it, and confirms both
+  the success and deny-by-default paths.
 
-**Can Accounting follow the same Bootstrap pattern?** Yes, structurally
-- nothing found this phase blocks it. Not done this phase because the
-governing instruction explicitly scoped full Bootstrap-level proof to
-Rehearsal only ("今回はAccountingを完全にRehearsalと同じレベルまで実証する
-必要はありません"). The concrete remaining steps for a future
-`AccountingModuleBootstrap`/`AccountingInstaller`/
-`AccountingModuleDescriptor`, in the same shape as Rehearsal's:
-
-1. Extract Accounting's 7 tables' `CREATE TABLE` statements from
-   `Installer::install()` into `AccountingInstaller`, called the same
-   way `RehearsalInstaller` is.
-2. Consolidate the 13 UseCases + 5 REST Controllers' construction from
-   `Plugin.php` into `AccountingModuleBootstrap`, taking Core Contracts
-   + Accounting's own Repository interfaces as its entire constructor.
-3. Add `AccountingModuleDescriptor` (moduleId `'accounting'`, its own
-   version, `requiredContracts()`, `ownedTables()`).
-4. Add an `AccountingModuleBootstrapIsolationTest` mirroring
-   `RehearsalModuleBootstrapIsolationTest`.
+Accounting now has **zero** remaining direct Core Application-service
+dependencies (`OrganizationAuthorizationService`, `ProductionAuthorizationService`,
+`ProductionRepositoryInterface`, `OrganizationRepositoryInterface`) -
+the same standard Rehearsal meets.
 
 ---
 
@@ -500,14 +517,15 @@ Plugin split, which remains explicitly out of this phase's scope.
    un-validated Contract the governing instruction warns against. The
    `src/Core/` -> Module Domain Architecture Test (§8) is deliberately
    scoped to not (yet) cover this - scoping disclosed, not hidden.
-2. **`OrganizationContextContract` still has zero callers.** Defined in
-   Phase 1, still unused by Rehearsal, Accounting, or Core's own code.
-3. **No per-Module schema version exists** - `RehearsalInstaller`/
-   (a future) `AccountingInstaller` are both still gated by Core's one
-   shared `SchemaUpgrader::CURRENT_VERSION`. A genuinely separate
-   Plugin would need its own version-gated activation/upgrade path;
-   this phase only split *where* the SQL lives, not the versioning
-   mechanism around it.
-4. **Accounting Bootstrap/Descriptor/Installer are designed but not
-   built** (§10) - explicitly out of this phase's scope per the
-   governing instruction.
+2. ~~`OrganizationContextContract` still has zero callers~~ - **closed**:
+   `CreateAccountUseCase`/`ListAccountsUseCase` are now its first real
+   callers (§10).
+3. **No per-Module schema version exists** - `RehearsalInstaller` and
+   `AccountingInstaller` are both still gated by Core's one shared
+   `SchemaUpgrader::CURRENT_VERSION`. A genuinely separate Plugin would
+   need its own version-gated activation/upgrade path; this phase only
+   split *where* the SQL lives, not the versioning mechanism around it.
+4. ~~Accounting Bootstrap/Descriptor/Installer are designed but not
+   built~~ - **closed**: built in the same session immediately after
+   this document's §10 first evaluated them as feasible (see §10's
+   current text).
