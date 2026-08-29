@@ -399,23 +399,24 @@ final class Plugin
         );
 
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
-            $productions,
+            $productionContextContract,
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
-            $productionAuthorization
+            $identityContract,
+            $membershipContract
         );
         $markNotificationRead = new MarkNotificationReadUseCase(
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
         $getMyDashboard = new GetMyDashboardUseCase(
             $productions,
             $productionDelegates,
             $participants,
-            $rehearsals,
-            $rehearsalAttendances,
+            $rehearsalModule->upcomingRehearsalProvider(),
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
             $organizationFollows,

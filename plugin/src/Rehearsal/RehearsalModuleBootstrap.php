@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Rehearsal;
 
+use StageArt\Application\Dashboard\UpcomingRehearsalProviderInterface;
 use StageArt\Application\PrintView\GetProductionPrintViewUseCase;
 use StageArt\Application\ProductionSchedule\ListProductionTimetableItemsUseCase;
 use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
@@ -93,18 +94,23 @@ use StageArt\Presentation\Rest\TimetableVersionRestController;
  * follows the REST Controller's declared owner, not which Application
  * sub-namespace a UseCase happens to live under.
  *
- * Deliberately NOT included: `GetMyDashboardUseCase`,
- * `ListNotificationsForProductionUseCase`, `MarkNotificationReadUseCase`
- * (Core's own cross-Module aggregation UseCases, which read Rehearsal's
- * Repository interfaces directly - a disclosed, opposite-direction
- * coupling this phase does not fix; see
- * `docs/architecture/WordPressPluginModuleBoundary.md`'s Known Remaining
- * Coupling section).
+ * `GetMyDashboardUseCase` (Core's own cross-Module aggregation UseCase)
+ * is NOT constructed here - it is Core's own code, wired by
+ * `Plugin.php` directly - but its former direct dependency on
+ * `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+ * (a disclosed Core -> Module Domain coupling, the reverse of every
+ * other direction this Bootstrap enforces) is closed as of Phase 4 §1
+ * via `upcomingRehearsalProvider()` below - Core depends on
+ * `Application\Dashboard\UpcomingRehearsalProviderInterface` (a Port
+ * Core itself defines), and this Bootstrap is what supplies the one
+ * real implementation.
  */
 final class RehearsalModuleBootstrap
 {
     /** @var array<int, object> */
     private array $restControllers;
+
+    private UpcomingRehearsalProviderInterface $upcomingRehearsalProvider;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -358,6 +364,12 @@ final class RehearsalModuleBootstrap
                 new DompdfRenderer()
             ),
         ];
+
+        $this->upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(
+            $rehearsals,
+            $rehearsalAttendances,
+            $productionContext
+        );
     }
 
     /**
@@ -373,5 +385,19 @@ final class RehearsalModuleBootstrap
     public function restControllers(): array
     {
         return $this->restControllers;
+    }
+
+    /**
+     * StageArt Core/Module Architecture Phase 4 §1: the Rehearsal
+     * Module's own implementation of Core's
+     * `Application\Dashboard\UpcomingRehearsalProviderInterface` Port -
+     * the concrete answer to "how does Core get Dashboard data out of
+     * Rehearsal without depending on Rehearsal's Repository interfaces
+     * directly". `Presentation\Plugin::boot()` passes this straight into
+     * `GetMyDashboardUseCase`'s own constructor.
+     */
+    public function upcomingRehearsalProvider(): UpcomingRehearsalProviderInterface
+    {
+        return $this->upcomingRehearsalProvider;
     }
 }

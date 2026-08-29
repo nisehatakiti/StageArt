@@ -499,24 +499,20 @@ Plugin split, which remains explicitly out of this phase's scope.
 
 # 14. Known Remaining Coupling (disclosed, not fixed this phase)
 
-1. **Core's cross-Module aggregation UseCases still read Rehearsal's
-   Repository interfaces directly.** `Application\Dashboard\
-   GetMyDashboardUseCase`, `Application\Notification\
-   ListNotificationsForProductionUseCase`/`MarkNotificationReadUseCase`
-   import `RehearsalRepositoryInterface`/
-   `RehearsalAttendanceRepositoryInterface`/
-   `TimetableVersionPublishedNotificationRepositoryInterface` directly
-   - a Core -> Module Domain dependency, the opposite direction from
-   everything else this phase closed. Discovered by this phase's own
-   re-investigation (§1), not previously disclosed. Not fixed this
-   phase: a genuine fix needs a read-model/query abstraction each
-   Module could implement and Core could aggregate over generically
-   (e.g. a `DashboardContributorContract` every Module registers into),
-   which is real design work with no other current caller - guessing at
-   its shape now would risk exactly the kind of premature,
-   un-validated Contract the governing instruction warns against. The
-   `src/Core/` -> Module Domain Architecture Test (§8) is deliberately
-   scoped to not (yet) cover this - scoping disclosed, not hidden.
+1. ~~Core's cross-Module aggregation UseCases still read Rehearsal's
+   Repository interfaces directly~~ - **closed in Phase 4 §1** (see §15
+   below). The one genuine violation (`GetMyDashboardUseCase`'s direct
+   `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+   dependency) is inverted via a Core-owned Port,
+   `UpcomingRehearsalProviderInterface`. `ListNotificationsForProductionUseCase`/
+   `MarkNotificationReadUseCase`'s `TimetableVersionPublishedNotificationRepositoryInterface`
+   dependency was investigated and confirmed **not** a Module-Domain
+   violation (that interface/Entity lives in Core's own
+   `Domain\Notification` namespace by deliberate Phase 2 design) - those
+   two UseCases were still migrated from
+   `ProductionRepositoryInterface`/`ProductionAuthorizationService` to
+   Core Contracts regardless, since they simply hadn't been brought up
+   to the same standard as every other UseCase yet.
 2. ~~`OrganizationContextContract` still has zero callers~~ - **closed**:
    `CreateAccountUseCase`/`ListAccountsUseCase` are now its first real
    callers (§10).
@@ -529,3 +525,77 @@ Plugin split, which remains explicitly out of this phase's scope.
    built~~ - **closed**: built in the same session immediately after
    this document's §10 first evaluated them as feasible (see §10's
    current text).
+
+---
+
+# 15. Core -> Rehearsal reverse dependency, closed (Phase 4 §1)
+
+**The problem**: `GetMyDashboardUseCase` (Core's own
+`Application\Dashboard`) directly imported and constructed against
+`RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+- Rehearsal's own Repository interfaces - to build its "upcoming
+rehearsals" Dashboard section, plus `RehearsalStatus`/
+`RehearsalAttendancePhase` Domain enums for filtering logic. This is
+the exact reverse of every dependency direction Phases 1-3 spent their
+effort enforcing: `Core -> Module Domain`, not `Module -> Core
+Contract`.
+
+**Design considered**: two shapes were on the table - (A) Core defines
+a named-after-the-screen Contract (`RehearsalDashboardContract`), or
+(B) a multi-producer "Contribution" registry
+(`DashboardContributionContract`) multiple Modules could plug into.
+Both were explicitly flagged as risking either premature naming
+coupled to one screen, or over-engineering a Plugin Framework with only
+one real producer today.
+
+**What was built - simple dependency inversion**:
+
+```php
+// Core owns this interface (Application\Dashboard\UpcomingRehearsalProviderInterface) -
+// Core is the consumer, so Core defines the Port. Named after what the
+// Dashboard needs ("upcoming rehearsals"), never "Rehearsal Module".
+interface UpcomingRehearsalProviderInterface
+{
+    /** @return UpcomingRehearsalResult[] */
+    public function findUpcomingRehearsalsForPerson(PersonId $personId, DateTimeImmutable $now, int $limit): array;
+}
+```
+
+`RehearsalUpcomingRehearsalProvider` (`plugin/src/Rehearsal/`)
+implements it - holding the exact filtering/joining logic
+`GetMyDashboardUseCase` used to contain directly (moved verbatim, not
+reimplemented), since only Rehearsal has legitimate access to
+`Rehearsal`/`RehearsalAttendance` Domain Entities.
+`RehearsalModuleBootstrap::upcomingRehearsalProvider()` exposes the one
+real instance; `Presentation\Plugin::boot()` passes it straight into
+`GetMyDashboardUseCase`'s own constructor in place of the two
+Repository interfaces. `UpcomingRehearsalResult` (the Dashboard-owned
+DTO) was changed from a `fromDomain(RehearsalAttendance, Rehearsal,
+Production)` factory to a primitive-only `create(...)` factory, so
+Core's own namespace has zero references to Rehearsal's Domain classes
+left, not even in a DTO builder.
+
+`ProductionContextContract` gained a bulk `getProductions(ProductionId[]):
+array<string, ProductionSummary>` method (mirroring the existing §29
+N+1-avoidance convention already used on Repository `findByIds()`
+methods) - without it, resolving each upcoming Rehearsal's Production
+name one Contract call at a time would have reintroduced the N+1 query
+pattern the original code's bulk `findByIds()` call already avoided.
+
+**Deliberately not built**: a multi-producer registry, or a second
+Contract for Ticket/other future Modules to plug into the Dashboard
+before any of them exist yet. `docs/architecture/CoreModuleArchitecture.md`'s
+own Implementation Rule (§15, item 2: "add a narrow one rather than
+reaching into Core's concrete Domain/Infrastructure" - and, by the same
+logic, rather than a speculative multi-Module framework) is followed
+literally: exactly the interface today's one real caller needs, nothing
+broader.
+
+**Verified**: the entire existing `GetMyDashboardUseCaseTest.php` suite
+(highly detailed - covers attendance-phase filtering, cross-Production
+sorting, the 50-item cap, terminal-status exclusion) passed unchanged
+after the logic transplant, proving behavior was preserved exactly, not
+just that the code compiles. `ModuleBoundaryDependencyTest::test_core_never_imports_rehearsal_or_accounting_domain`
+was widened to scan `Application/Dashboard`/`Application/Notification`
+in addition to `src/Core/`, and passes - the concrete regression guard
+for this fix.

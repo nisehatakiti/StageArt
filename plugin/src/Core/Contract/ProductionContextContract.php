@@ -21,6 +21,19 @@ interface ProductionContextContract
     public function getProduction(ProductionId $productionId): ?ProductionSummary;
 
     /**
+     * Bulk form of `getProduction()` - the §29 N+1-avoidance convention
+     * this codebase already follows on Repository `findByIds()` methods
+     * (see e.g. `ProductionRepositoryInterface::findByIds()`), extended
+     * to the Contract layer for a Module/Provider resolving many
+     * Productions at once (e.g. a Dashboard-style aggregate spanning
+     * several Productions a Person is involved in).
+     *
+     * @param ProductionId[] $productionIds
+     * @return array<string, ProductionSummary> keyed by ProductionId::toString()
+     */
+    public function getProductions(array $productionIds): array;
+
+    /**
      * Resolves the Organization a Production belongs to (Production ->
      * Project -> Organization internally - Project is a Core-internal
      * bridge no Module needs to know exists, per

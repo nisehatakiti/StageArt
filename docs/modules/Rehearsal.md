@@ -41,6 +41,14 @@ code above, which stays in its existing DDD-layered location:
 - `RehearsalInstaller` - owns this Module's 7 tables' `CREATE TABLE`/
   `ALTER TABLE` statements, called from Core's own
   `Infrastructure\WordPress\Schema\Installer::install()`.
+- `RehearsalUpcomingRehearsalProvider` (Phase 4 §1) - the reverse
+  direction from the three above: implements Core's own
+  `Application\Dashboard\UpcomingRehearsalProviderInterface` Port, so
+  Core's `GetMyDashboardUseCase` can get "this Person's upcoming
+  Rehearsals" without importing
+  `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+  itself. Exposed via `RehearsalModuleBootstrap::upcomingRehearsalProvider()`.
+  See `docs/architecture/WordPressPluginModuleBoundary.md` §15.
 
 ## Core Contract usage (fully adopted)
 

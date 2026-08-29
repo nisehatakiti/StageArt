@@ -20,6 +20,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Rehearsal\RehearsalUpcomingRehearsalProvider;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationReadState;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotification;
@@ -115,12 +116,17 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $transactions
         );
 
+        $upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(
+            $this->rehearsals,
+            $this->attendances,
+            $productionContext
+        );
+
         $this->getMyDashboard = new GetMyDashboardUseCase(
             $this->productions,
             $this->delegates,
             $this->participants,
-            $this->rehearsals,
-            $this->attendances,
+            $upcomingRehearsalProvider,
             $this->notifications,
             $this->readStates,
             $this->follows,

@@ -46,6 +46,33 @@ final class CoreProductionContextAdapterTest extends TestCase
         $this->assertNull($adapter->getProduction(ProductionId::generate()));
     }
 
+    public function test_bulk_resolves_multiple_productions_by_id(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $a = Production::create(ProjectId::generate(), new ProductionName('Show A'), PersonId::generate());
+        $b = Production::create(ProjectId::generate(), new ProductionName('Show B'), PersonId::generate());
+        $productions->save($a);
+        $productions->save($b);
+
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+
+        $summaries = $adapter->getProductions([$a->id(), $b->id(), ProductionId::generate()]);
+
+        $this->assertCount(2, $summaries);
+        $this->assertSame('Show A', $summaries[$a->id()->toString()]->name);
+        $this->assertSame('Show B', $summaries[$b->id()->toString()]->name);
+    }
+
+    public function test_bulk_resolve_returns_empty_array_for_empty_input(): void
+    {
+        $adapter = new CoreProductionContextAdapter(
+            new InMemoryProductionRepository(),
+            new ProductionOrganizationResolver(new InMemoryProjectRepository())
+        );
+
+        $this->assertSame([], $adapter->getProductions([]));
+    }
+
     public function test_resolves_the_owning_organization_id(): void
     {
         $productions = new InMemoryProductionRepository();

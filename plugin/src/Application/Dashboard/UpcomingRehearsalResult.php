@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Dashboard;
 
-use StageArt\Domain\Production\Production;
-use StageArt\Domain\Rehearsal\Rehearsal;
-use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
-
 /**
- * A Dashboard-specific projection of Rehearsal + RehearsalAttendance +
- * Production - not a Domain Entity, not a re-export of RehearsalResult
+ * A Dashboard-specific projection of a Person's upcoming Rehearsal
+ * attendance - not a Domain Entity, not a re-export of RehearsalResult
  * (which has no per-Person Attendance status). Carries no UI concept
  * (no "card"/"section"/"color") per this Phase's §18: only the
  * identifying and scheduling data DashboardPolicy.md's Display list
  * ("稽古日, 開始/終了時刻, 稽古場所, Production名") requires, plus the
  * caller's own attendanceStatus (useful context, already public per
  * RehearsalAttendanceResult's existing precedent).
+ *
+ * StageArt Core/Module Architecture Phase 4 §1: deliberately built from
+ * primitives only (`create()`), not from `Rehearsal`/`RehearsalAttendance`
+ * Domain Entities - Core's own `Application\Dashboard` namespace must
+ * not import Rehearsal's Domain classes even to build this DTO.
+ * `RehearsalUpcomingRehearsalProvider` (which does have legitimate
+ * access to those Entities) is the only caller of `create()`.
  */
 final class UpcomingRehearsalResult
 {
@@ -49,17 +52,25 @@ final class UpcomingRehearsalResult
         $this->attendanceStatus = $attendanceStatus;
     }
 
-    public static function fromDomain(RehearsalAttendance $attendance, Rehearsal $rehearsal, Production $production): self
-    {
+    public static function create(
+        string $rehearsalId,
+        string $productionId,
+        string $productionName,
+        ?string $title,
+        ?string $startDateTime,
+        ?string $endDateTime,
+        ?string $location,
+        string $attendanceStatus
+    ): self {
         return new self(
-            $rehearsal->id()->toString(),
-            $production->id()->toString(),
-            $production->name()->toString(),
-            $rehearsal->title(),
-            $rehearsal->startDateTime() !== null ? $rehearsal->startDateTime()->format(DATE_ATOM) : null,
-            $rehearsal->endDateTime() !== null ? $rehearsal->endDateTime()->format(DATE_ATOM) : null,
-            $rehearsal->location(),
-            $attendance->status()->toString()
+            $rehearsalId,
+            $productionId,
+            $productionName,
+            $title,
+            $startDateTime,
+            $endDateTime,
+            $location,
+            $attendanceStatus
         );
     }
 

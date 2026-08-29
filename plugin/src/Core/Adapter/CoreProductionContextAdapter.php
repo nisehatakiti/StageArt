@@ -38,6 +38,25 @@ final class CoreProductionContextAdapter implements ProductionContextContract
         );
     }
 
+    public function getProductions(array $productionIds): array
+    {
+        if ($productionIds === []) {
+            return [];
+        }
+
+        $byId = [];
+
+        foreach ($this->productions->findByIds($productionIds) as $production) {
+            $byId[$production->id()->toString()] = new ProductionSummary(
+                $production->id(),
+                $production->name()->toString(),
+                $production->status()->toString()
+            );
+        }
+
+        return $byId;
+    }
+
     public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId
     {
         $production = $this->productions->findById($productionId);
