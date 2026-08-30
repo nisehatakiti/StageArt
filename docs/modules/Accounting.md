@@ -137,9 +137,36 @@ Accounting routes present and byte-identical to before this refactor.
   Repository interfaces + `TransactionManagerInterface`.
   `Presentation\Plugin::boot()` is its only caller today.
 - `AccountingModuleDescriptor` - `moduleId() = 'accounting'`, its own
-  `version()`, `requiredContracts()`, `ownedTables()`. Registers into
-  `Core\Module\ModuleRegistry` alongside `RehearsalModuleDescriptor`.
+  `version()`, `requiredContracts()` (`ProductionContextContract`,
+  `OrganizationContextContract`, `IdentityContract`,
+  `AuthorizationContract`, `MembershipContract` - `NotificationContract`
+  deliberately omitted, since no Accounting UseCase currently calls it),
+  `ownedTables()`. Registers into `Core\Module\ModuleRegistry` alongside
+  `RehearsalModuleDescriptor`. Phase 4 §2's audit found
+  `requiredContracts()` had drifted out of sync with
+  `AccountingModuleBootstrap`'s actual constructor (missing
+  `OrganizationContextContract`, added when `CreateAccountUseCase`/
+  `ListAccountsUseCase` were migrated) - corrected by re-deriving the
+  list from the Bootstrap's real dependencies rather than assumption.
 - `AccountingInstaller` - owns this Module's 7 tables' migration.
+
+## Core -> Accounting reverse dependency (Phase 4 §2 investigation)
+
+Explicitly re-investigated per Phase 4 §2: does any Core-owned code
+(`src/Core/`, `Application/Dashboard`, `Application/Notification`, or
+any other Core Application namespace) import Accounting's
+Domain/Application classes directly, the way `GetMyDashboardUseCase`
+used to import Rehearsal's Repository interfaces before Phase 4 §1?
+**No such dependency was found** - a full `use`-statement scan across
+every Core-owned directory for `StageArt\Domain\{Budget,Expense,
+Account,JournalEntry}\*`/`StageArt\Application\{Budget,Expense,Account,
+JournalEntry,ProductionAccounting}\*`/`StageArt\Accounting\*` imports
+returned zero matches outside Accounting's own files and
+`Infrastructure\WordPress\Schema\Installer::install()`'s single,
+expected, disclosed call to `AccountingInstaller::install()`. No
+Provider-Contract inversion (the pattern Phase 4 §1 built for
+Rehearsal's Dashboard case) is needed for Accounting - there is no real
+caller to invert against, and none was guessed at speculatively.
 
 ## Authorization
 

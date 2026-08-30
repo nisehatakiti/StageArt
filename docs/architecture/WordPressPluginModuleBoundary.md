@@ -435,6 +435,25 @@ dependencies (`OrganizationAuthorizationService`, `ProductionAuthorizationServic
 `ProductionRepositoryInterface`, `OrganizationRepositoryInterface`) -
 the same standard Rehearsal meets.
 
+**Phase 4 §2 audit** (re-verifying this section against the actual
+code, not re-describing it from memory): found
+`AccountingModuleDescriptor::requiredContracts()` had drifted out of
+sync with `AccountingModuleBootstrap`'s real constructor - it was
+missing `OrganizationContextContract`, even though the Bootstrap
+already required it. Corrected by re-deriving the declared list from
+the Bootstrap's actual constructor signature. Also re-investigated
+"does any Core-owned code depend on Accounting's Domain/Application
+classes directly" (the same question Phase 4 §1 answered "yes, one
+case" for Rehearsal) - a full `use`-statement scan across `src/Core/`,
+`Application/Dashboard`, `Application/Notification`, and every other
+Core Application namespace found **zero** matches. No Provider-Contract
+inversion is needed for Accounting; none was spectulatively built.
+`plugin/src/Accounting/` and `plugin/src/Rehearsal/` are structurally
+symmetric (`ModuleBootstrap`/`ModuleDescriptor`/`Installer`, no
+Provider interface on either side) - not because symmetry was assumed,
+but because both were independently investigated and neither currently
+has a real Core-side consumer needing one.
+
 ---
 
 # 11. Organization-Scope Capability (new Core Contract this phase)

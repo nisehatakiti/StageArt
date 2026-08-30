@@ -7,6 +7,7 @@ namespace StageArt\Accounting;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Core\Module\ModuleDescriptor;
 
@@ -16,7 +17,12 @@ use StageArt\Core\Module\ModuleDescriptor;
  * `RehearsalModuleDescriptor` exactly. `requiredContracts()` omits
  * `NotificationContract` - unlike Rehearsal, no Accounting UseCase
  * currently calls it (disclosed, not a gap this class needs to paper
- * over).
+ * over). Includes `OrganizationContextContract` - `CreateAccountUseCase`/
+ * `ListAccountsUseCase` need `organizationExists()` (Phase 3's own
+ * migration added this dependency to `AccountingModuleBootstrap`'s
+ * constructor; this Descriptor had drifted out of sync with it until
+ * Phase 4 §2's audit caught it - see `AccountingModuleBootstrap`'s own
+ * constructor for the authoritative dependency list).
  */
 final class AccountingModuleDescriptor implements ModuleDescriptor
 {
@@ -39,6 +45,7 @@ final class AccountingModuleDescriptor implements ModuleDescriptor
     {
         return [
             ProductionContextContract::class,
+            OrganizationContextContract::class,
             IdentityContract::class,
             AuthorizationContract::class,
             MembershipContract::class,
