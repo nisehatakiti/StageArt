@@ -178,6 +178,29 @@ AuthorizationContract::canForProduction(
 )
 ```
 
+### Reverse direction: if Core ever needs Ticket-owned data
+
+Phase 4 §1 established a second, reverse-direction pattern alongside
+`StageArt\Core\Contract\*`, proven for Rehearsal:
+`GetMyDashboardUseCase` needed "upcoming Rehearsals" data it must not
+resolve via `RehearsalRepositoryInterface` directly, so Core defined
+`Application\Dashboard\UpcomingRehearsalProviderInterface` (a Port
+Core owns, since Core is the consumer) and Rehearsal supplied the one
+implementation (`RehearsalUpcomingRehearsalProvider`), exposed through
+`RehearsalModuleBootstrap`.
+
+If a future Dashboard/Admin Console feature needs Performance & Ticket
+data (e.g. "upcoming Performance Sessions", "recent ticket sales") that
+Core itself must aggregate, the same pattern applies: Core defines a
+narrowly-named Port in its own Application namespace (never named
+after "Ticket Module" - named after what Core's consumer actually
+needs, e.g. `UpcomingPerformanceSessionProviderInterface`), and a
+future `PerformanceTicketModuleBootstrap` supplies the implementation.
+Do **not** build this Port speculatively before a real Core-side
+consumer exists - see `docs/architecture/WordPressPluginModuleBoundary.md`
+§15 for why the Dashboard case deliberately stayed a single-producer
+inversion rather than a multi-Module registry.
+
 ## PerformanceSession Domain Rules
 
 A PerformanceSession represents one concrete occurrence of a Production.
