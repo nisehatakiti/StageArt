@@ -33,7 +33,7 @@ describe('My Page: Credential never appears in UI or logs', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/mypage' });
 
-    await waitFor(() => expect(screen.getByTestId('mypage-person-id')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('mypage-display-name')).toBeVisible());
 
     expect(screen.queryByText(SECRET_REFRESH_TOKEN)).toBeNull();
 

@@ -54,7 +54,7 @@ describe('AuthContext', () => {
 
   it('moves to authenticated after a successful, already-verified Email+Password login with a name already set', async () => {
     mockFetchOnce(200, tokenResponse()); // POST /auth/email/login
-    mockFetchOnce(200, { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '秦', given_name: '良輔' }); // GET /me probe
+    mockFetchOnce(200, { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' }); // GET /me probe
 
     const { result } = await renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe('unauthenticated'));
@@ -179,7 +179,7 @@ describe('AuthContext', () => {
    * though hasName is false (set-name.tsx pre-fills from them).
    */
   it('moves to authenticated after a successful Google login and still probes GET /me for hasName', async () => {
-    mockFetchOnce(200, tokenResponse({ is_new_user: true, family_name_hint: '秦', given_name_hint: '良輔' }));
+    mockFetchOnce(200, tokenResponse({ is_new_user: true, family_name_hint: '舞台', given_name_hint: '芸術' }));
     mockFetchOnce(200, { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: null, given_name: null }); // GET /me probe
 
     const { result } = await renderHook(() => useAuth(), { wrapper });
@@ -194,8 +194,8 @@ describe('AuthContext', () => {
       ok: true,
       emailVerified: true,
       hasName: false,
-      familyNameHint: '秦',
-      givenNameHint: '良輔',
+      familyNameHint: '舞台',
+      givenNameHint: '芸術',
     });
     expect(result.current.status).toBe('authenticated');
     expect(global.fetch).toHaveBeenCalledTimes(2);

@@ -18,6 +18,13 @@ jest.mock('expo-secure-store', () => ({
 // google-login-module-not-found.test.tsx for the "not found" case.
 jest.mock('@/auth/googleSignIn', () => ({
   ...jest.requireActual('@/auth/googleSignIn'),
+  // isGoogleSignInAvailable() would otherwise be false under Jest (the
+  // real, unmocked module-status probe reports RNGoogleSignin as "not
+  // found" here, same as it does on every real Web deploy) - forced true
+  // so this success-path test can still exercise the button itself. See
+  // google-login-module-not-found.test.tsx for the real, unmocked "hidden"
+  // case this test deliberately overrides.
+  isGoogleSignInAvailable: jest.fn(() => true),
   signInWithGoogleDiagnostic: jest.fn(async () => ({
     ok: true,
     idToken: 'mock-google-id-token',

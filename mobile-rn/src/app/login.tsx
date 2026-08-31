@@ -3,7 +3,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
+import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
 import { StageArtLogo } from '@/components/brand/StageArtLogo';
 import { ThemedText } from '@/components/themed-text';
@@ -216,64 +216,80 @@ export default function LoginScreen() {
             <StageArtLogo width={200} height={60} />
           </ThemedView>
 
-          <TouchableOpacity
-            testID="login-google-button"
-            onPress={handleGoogleSubmit}
-            disabled={submitting}
-            style={[styles.googleButton, submitting && styles.buttonDisabled]}
-          >
-            {submittingGoogle ? (
-              <ActivityIndicator />
-            ) : (
-              <>
-                {/* The official Google "G" mark, rendered by
-                    @react-native-google-signin/google-signin's own
-                    GoogleSigninButton widget (already a dependency of
-                    this app for the sign-in flow itself - no new
-                    dependency added here) - Google provides this exact
-                    component so apps render their brand mark correctly,
-                    rather than an approximation drawn by hand. Absent
-                    entirely (see useGoogleSigninButtonComponent's
-                    docblock) rather than crashing when the native
-                    module isn't available yet.
-                    `pointerEvents="none"` makes it purely decorative so
-                    taps still go to this TouchableOpacity, which keeps
-                    StageArt's own Japanese label/testID/loading-state
-                    handling unchanged. */}
-                {GoogleIcon && (
-                  // react-hooks/static-components flags any component
-                  // reference read from a hook/state and used as a JSX
-                  // tag, since its identity could in general change
-                  // every render (causing unwanted remounts). Here it
-                  // genuinely cannot: useGoogleSigninButtonComponent's
-                  // state only ever transitions null -> the one loaded
-                  // module export, exactly once, and then stays
-                  // referentially stable for the rest of this screen's
-                  // lifetime - this is the dynamic-import-for-an-old-
-                  // binary/test-environment pattern (see that hook's
-                  // own docblock), not a same-render component factory.
-                  // eslint-disable-next-line react-hooks/static-components
-                  <GoogleIcon
-                    size={GoogleIcon.Size.Icon}
-                    color={GoogleIcon.Color.Light}
-                    style={styles.googleIcon}
-                    pointerEvents="none"
-                  />
+          {/*
+           * StageArt mobile-rn 修正指示書 §6: a Web deploy (this app's
+           * current public environment) can never satisfy
+           * isGoogleSignInAvailable() - @react-native-google-signin/
+           * google-signin is native-only, so the button was previously
+           * always shown and always failed the moment it was tapped, with
+           * only a diagnostic Alert to show for it. Hiding it entirely
+           * until a real Web-capable implementation exists (see
+           * googleSignIn.ts's own docblock) avoids the "何も起きない"
+           * dead-end the instruction explicitly called out, at the cost
+           * of the Web login screen offering Email+Password only, for now.
+           */}
+          {isGoogleSignInAvailable() && (
+            <>
+              <TouchableOpacity
+                testID="login-google-button"
+                onPress={handleGoogleSubmit}
+                disabled={submitting}
+                style={[styles.googleButton, submitting && styles.buttonDisabled]}
+              >
+                {submittingGoogle ? (
+                  <ActivityIndicator />
+                ) : (
+                  <>
+                    {/* The official Google "G" mark, rendered by
+                        @react-native-google-signin/google-signin's own
+                        GoogleSigninButton widget (already a dependency of
+                        this app for the sign-in flow itself - no new
+                        dependency added here) - Google provides this exact
+                        component so apps render their brand mark correctly,
+                        rather than an approximation drawn by hand. Absent
+                        entirely (see useGoogleSigninButtonComponent's
+                        docblock) rather than crashing when the native
+                        module isn't available yet.
+                        `pointerEvents="none"` makes it purely decorative so
+                        taps still go to this TouchableOpacity, which keeps
+                        StageArt's own Japanese label/testID/loading-state
+                        handling unchanged. */}
+                    {GoogleIcon && (
+                      // react-hooks/static-components flags any component
+                      // reference read from a hook/state and used as a JSX
+                      // tag, since its identity could in general change
+                      // every render (causing unwanted remounts). Here it
+                      // genuinely cannot: useGoogleSigninButtonComponent's
+                      // state only ever transitions null -> the one loaded
+                      // module export, exactly once, and then stays
+                      // referentially stable for the rest of this screen's
+                      // lifetime - this is the dynamic-import-for-an-old-
+                      // binary/test-environment pattern (see that hook's
+                      // own docblock), not a same-render component factory.
+                      // eslint-disable-next-line react-hooks/static-components
+                      <GoogleIcon
+                        size={GoogleIcon.Size.Icon}
+                        color={GoogleIcon.Color.Light}
+                        style={styles.googleIcon}
+                        pointerEvents="none"
+                      />
+                    )}
+                    <ThemedText type="default" style={styles.googleButtonText}>
+                      Googleで続ける
+                    </ThemedText>
+                  </>
                 )}
-                <ThemedText type="default" style={styles.googleButtonText}>
-                  Googleで続ける
-                </ThemedText>
-              </>
-            )}
-          </TouchableOpacity>
+              </TouchableOpacity>
 
-          <ThemedView style={styles.dividerRow}>
-            <ThemedView style={styles.dividerLine} />
-            <ThemedText type="small" themeColor="textSecondary">
-              または
-            </ThemedText>
-            <ThemedView style={styles.dividerLine} />
-          </ThemedView>
+              <ThemedView style={styles.dividerRow}>
+                <ThemedView style={styles.dividerLine} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  または
+                </ThemedText>
+                <ThemedView style={styles.dividerLine} />
+              </ThemedView>
+            </>
+          )}
 
           <ThemedTextInput
             testID="login-email"

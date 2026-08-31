@@ -44,16 +44,30 @@ export function createProduction(
   });
 }
 
-/** A full PUT per the existing Backend Update endpoint (`name` is
- * always required by UpdateProductionUseCase, even when only publishing
- * - see its own docblock, which unlike Organization's never touches
- * `status`). */
+/**
+ * A full PUT per the existing Backend Update endpoint. `name`/`title_heading`
+ * are always applied unconditionally by UpdateProductionUseCase
+ * (rename()/changeTitleHeading() both run every call, defaulting to null
+ * when the key is missing from the request body) - every caller must
+ * pass the Production's current name/titleHeading back, not just the
+ * fields it means to change, mirroring updateOrganization()'s identical
+ * type/description requirement. `slug`/`published` remain "only touch
+ * when explicitly provided". `status` can no longer be changed via this
+ * endpoint at all (Phase 6.1 moved it to the dedicated Lifecycle Action
+ * endpoints - a `status` key here is rejected with 422) - this function
+ * has never sent one and must not start now.
+ */
 export function updateProduction(
   client: ApiClient,
   id: string,
-  fields: { name: string; slug?: string; published?: boolean }
+  fields: { name: string; titleHeading: string | null; slug?: string; published?: boolean }
 ): Promise<Production> {
-  return client.put<Production>(`/productions/${id}`, fields);
+  return client.put<Production>(`/productions/${id}`, {
+    name: fields.name,
+    title_heading: fields.titleHeading,
+    slug: fields.slug,
+    published: fields.published,
+  });
 }
 
 /** GET /productions/by-slug/{slug} - public, unauthenticated (see

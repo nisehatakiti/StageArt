@@ -1,7 +1,8 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
@@ -24,11 +25,18 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * AuthenticationResult.php's docblock) pre-fill the form but are always
  * editable - saving is the only thing that actually confirms a name,
  * never the hint's mere presence.
+ *
+ * `return_to` (optional route param): defaults to '/home' (the
+ * onboarding path - a brand-new user has nowhere else to go). Profile's
+ * own "プロフィールを編集" link passes `return_to=/profile` so editing an
+ * already-set name from Profile returns there instead of detouring
+ * through Home.
  */
 export default function SetNameScreen() {
   const { apiClient } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ family_name_hint?: string; given_name_hint?: string }>();
+  const queryClient = useQueryClient();
+  const params = useLocalSearchParams<{ family_name_hint?: string; given_name_hint?: string; return_to?: string }>();
 
   const [familyName, setFamilyName] = useState(params.family_name_hint ?? '');
   const [givenName, setGivenName] = useState(params.given_name_hint ?? '');
@@ -41,7 +49,8 @@ export default function SetNameScreen() {
 
     try {
       await updatePersonName(apiClient, familyName.trim(), givenName.trim());
-      router.replace('/home');
+      await queryClient.invalidateQueries({ queryKey: ['me'] });
+      router.replace((params.return_to ?? '/home') as Href);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -69,7 +78,7 @@ export default function SetNameScreen() {
               </ThemedText>
               <ThemedTextInput
                 testID="set-name-family-name"
-                placeholder="秦"
+                placeholder="舞台"
                 value={familyName}
                 onChangeText={setFamilyName}
                 autoCorrect={false}
@@ -82,7 +91,7 @@ export default function SetNameScreen() {
               </ThemedText>
               <ThemedTextInput
                 testID="set-name-given-name"
-                placeholder="良輔"
+                placeholder="芸術"
                 value={givenName}
                 onChangeText={setGivenName}
                 autoCorrect={false}

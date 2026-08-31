@@ -10,11 +10,15 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
-/** §27/§28: only what GET /me actually returns - no display-name field
- * exists Backend-side, so the Person ID is shown rather than an invented
- * name. */
+/**
+ * §27/§28, superseded by StageArt mobile-rn 修正指示書 §4: Person ID is
+ * still shown (it remains useful for support/debugging), but demoted
+ * behind an explicit "詳細情報を表示" toggle rather than being the
+ * headline content of the アカウント card - the display name (from the
+ * same GET /me response's family_name/given_name) takes that place now.
+ */
 describe('My Page: identity from GET /me', () => {
-  it('shows the Person ID returned by GET /me', async () => {
+  it('shows the display name up front, and the Person ID hidden by default', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/me'), status: 200, body: currentPerson },
@@ -23,7 +27,10 @@ describe('My Page: identity from GET /me', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/mypage' });
 
-    await waitFor(() => expect(screen.getByTestId('mypage-person-id')).toBeVisible());
-    expect(screen.getByTestId('mypage-person-id')).toHaveTextContent('person-1');
+    await waitFor(() => expect(screen.getByTestId('mypage-display-name')).toBeVisible());
+    expect(screen.getByTestId('mypage-display-name')).toHaveTextContent(`${currentPerson.family_name} ${currentPerson.given_name}`);
+
+    expect(screen.queryByTestId('mypage-person-id')).toBeNull();
+    expect(screen.getByTestId('mypage-details-toggle')).toBeVisible();
   });
 });

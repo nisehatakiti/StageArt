@@ -12,7 +12,8 @@ import { fetchProjects } from '@/features/organization/api';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { createProduction, updateProduction } from '@/features/production/api';
-import { useQuery } from '@tanstack/react-query';
+import { useProduction } from '@/features/production/useProductions';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { isValidSlug, suggestSlug } from '@/utils/slug';
 
@@ -26,11 +27,27 @@ type CreatedProduction = { id: string; name: string; slug: string; publishedAt: 
  * direct organization_id - see src/types/api.ts's Project docblock) -
  * this screen only ever created that Project transparently one step
  * earlier (organizations/create.tsx), so exactly one should exist here.
+ *
+ * StageArt mobile-rn 受け入れテスト3で発見: `created` was purely local
+ * `useState`, tied to nothing in the URL - a real browser reload of this
+ * exact screen (via Playwright, not just code review) re-mounted the
+ * component from scratch and silently dropped back to the blank "作る"
+ * form, discarding all confirmation that the Production had just been
+ * created and published (the server-side data was always correct - only
+ * this screen's own memory of it was not). Fixed by writing the created
+ * Production's id into this screen's own `createdId` route param
+ * (`router.setParams`, no navigation/history entry added) the moment
+ * creation succeeds, and deriving the "created" view from a real
+ * `useProduction(createdId)` fetch whenever local `created` state itself
+ * is absent (i.e. exactly the reload case) - a reload now reconstructs
+ * the identical confirmation screen from the same source of truth the
+ * public page itself reads, instead of resetting to a blank form.
  */
 export default function CreateProductionScreen() {
-  const { id: organizationId } = useLocalSearchParams<{ id: string }>();
+  const { id: organizationId, createdId } = useLocalSearchParams<{ id: string; createdId?: string }>();
   const { apiClient } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const organizationsQuery = useOrganizations();
   const currentPersonQuery = useCurrentPerson();
@@ -38,6 +55,7 @@ export default function CreateProductionScreen() {
     queryKey: ['projects'],
     queryFn: () => fetchProjects(apiClient),
   });
+  const createdProductionQuery = useProduction(createdId);
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === organizationId) ?? null;
   const project = useMemo(
@@ -52,6 +70,18 @@ export default function CreateProductionScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedProduction | null>(null);
   const [publishing, setPublishing] = useState(false);
+
+  const effectiveCreated: CreatedProduction | null =
+    created ??
+    (createdProductionQuery.data
+      ? {
+          id: createdProductionQuery.data.id,
+          name: createdProductionQuery.data.name,
+          slug: createdProductionQuery.data.slug ?? '',
+          publishedAt: createdProductionQuery.data.published_at,
+        }
+      : null);
+  const restoringFromReload = !created && !!createdId && createdProductionQuery.isLoading;
 
   function handleNameChange(value: string) {
     setName(value);
@@ -79,7 +109,15 @@ export default function CreateProductionScreen() {
 
     try {
       const production = await createProduction(apiClient, project.id, name.trim(), slug, primaryManagerPersonId);
+      // Same class of bug as organizations/create.tsx's own fix: without
+      // this, Home's GET /productions list (queryKey ['productions'])
+      // stays stale, so a just-created (and possibly just-published)
+      // Production never appears there until an unrelated full reload -
+      // easily mistaken for "公開したのに反映されない" even though the
+      // publish call itself (handlePublish below) succeeds every time.
+      await queryClient.invalidateQueries({ queryKey: ['productions'] });
       setCreated({ id: production.id, name: production.name, slug: production.slug ?? slug, publishedAt: production.published_at });
+      router.setParams({ createdId: production.id });
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stageart_production_slug_taken') {
         setErrorMessage('このSlugは既に使用されています。別のSlugを入力してください。');
@@ -92,7 +130,7 @@ export default function CreateProductionScreen() {
   }
 
   async function handlePublish() {
-    if (!created) {
+    if (!effectiveCreated) {
       return;
     }
 
@@ -100,8 +138,17 @@ export default function CreateProductionScreen() {
     setErrorMessage(null);
 
     try {
-      const production = await updateProduction(apiClient, created.id, { name: created.name, published: true });
-      setCreated({ ...created, publishedAt: production.published_at });
+      // title_heading is always null at this point - this onboarding form
+      // never sets it (see updateProduction()'s own docblock for why it
+      // must still be sent explicitly, not omitted).
+      const production = await updateProduction(apiClient, effectiveCreated.id, {
+        name: effectiveCreated.name,
+        titleHeading: null,
+        published: true,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['productions'] });
+      await queryClient.invalidateQueries({ queryKey: ['production', effectiveCreated.id] });
+      setCreated({ ...effectiveCreated, publishedAt: production.published_at });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -109,8 +156,19 @@ export default function CreateProductionScreen() {
     }
   }
 
-  if (created) {
-    const publicPath = organization?.slug ? `/${organization.slug}/${created.slug}` : null;
+  if (restoringFromReload) {
+    return (
+      <AppShell scroll>
+        <ScrollView contentContainerStyle={styles.container}>
+          <ActivityIndicator />
+        </ScrollView>
+      </AppShell>
+    );
+  }
+
+  if (effectiveCreated) {
+    const publicPath = organization?.slug ? `/${organization.slug}/${effectiveCreated.slug}` : null;
+    const created = effectiveCreated;
 
     return (
       <AppShell scroll>

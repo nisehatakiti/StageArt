@@ -4,40 +4,50 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, TouchableOpac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/errors';
-import { GoogleSignInCancelledError } from '@/auth/googleSignIn';
+import { GoogleSignInCancelledError, isGoogleSignInAvailable } from '@/auth/googleSignIn';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useLogout } from '@/features/mypage/useLogout';
 import { useAddEmailCredential, useChangePassword, useLinkGoogleAccount, useRequestEmailVerification } from '@/features/mypage/useAccountLinking';
+import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { usePushPreference, useUpdatePushPreference } from '@/features/pushPreference/usePushPreference';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
- * §27/§28: only information the Backend actually exposes today -
- * GET /me returns { id, word_press_user_id, email_verified }, no
- * display-name API exists, so this screen shows the Person ID rather
- * than inventing a name. Profile (Biography/Image/etc.) is a separate,
- * unimplemented Backend Domain (PersonPublicProfilePolicy.md) - no
- * editor is built for it here.
+ * StageArt mobile-rn 修正指示書 §4: Profile re-read as "自分自身の情報と
+ * 設定を管理する画面", grouped as アカウント/参加/通知/セキュリティ per the
+ * instruction's own recommended structure - replacing the previous flat
+ * stack of large, low-density cards (Person ID first and largest among
+ * them). Person ID is kept (existing tests assert on it, and it remains
+ * useful for support/debugging) but demoted to a small "詳細情報" row
+ * inside アカウント, not the section's headline content.
+ *
+ * "Google連携済み／未連携" and "メール＋パスワード設定済み" status pills were
+ * requested but are NOT rendered as a real yes/no fact: GET /me exposes
+ * no such boolean today (only `email_verified`, which IS shown) - see
+ * useAccountLinking.ts's own docblock, unchanged this pass. Fabricating
+ * a status the Backend cannot confirm would be exactly the "安易なダミー
+ * 実装" the instruction explicitly warned against; each linking action
+ * still always reports its own real success/failure instead.
  *
  * Extracted from what was originally production/[id]/mypage.tsx: this
  * content never actually depended on a Production ID (it is entirely
  * Person-scoped), so the Blueprint v1.5 alignment phase pulled it out
  * into a shared component - both the pre-existing Production-Tabs
- * route and the new top-level /profile route (reachable from Person
- * Home's "プロフィール" entry point, which has no Production context)
- * render this same content.
+ * route and the top-level /profile route render this same content.
  */
 export function MyPageContent() {
   const router = useRouter();
   const currentPersonQuery = useCurrentPerson();
+  const organizationsQuery = useOrganizations();
   const pushPreferenceQuery = usePushPreference();
   const updatePushPreference = useUpdatePushPreference();
   const logout = useLogout();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const handleLogout = () => {
     Alert.alert('ログアウト', 'ログアウトしますか？', [
@@ -53,27 +63,65 @@ export function MyPageContent() {
     ]);
   };
 
+  const displayName = formatDisplayName(currentPersonQuery.data?.family_name, currentPersonQuery.data?.given_name);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ThemedText type="title" style={styles.title}>
+        <ThemedText type="title" style={styles.pageTitle}>
           マイページ
         </ThemedText>
 
+        <ThemedView style={styles.heroRow}>
+          {currentPersonQuery.isLoading && <ActivityIndicator testID="mypage-identity-loading" />}
+          {currentPersonQuery.isError && (
+            <ThemedText testID="mypage-identity-error">{getErrorMessage(currentPersonQuery.error)}</ThemedText>
+          )}
+          {currentPersonQuery.data && (
+            <ThemedText type="subtitle" testID="mypage-display-name">
+              {displayName}
+            </ThemedText>
+          )}
+          <TouchableOpacity
+            testID="mypage-edit-name-link"
+            onPress={() =>
+              router.push({
+                pathname: '/set-name',
+                params: {
+                  family_name_hint: currentPersonQuery.data?.family_name ?? '',
+                  given_name_hint: currentPersonQuery.data?.given_name ?? '',
+                  return_to: '/profile',
+                },
+              })
+            }
+          >
+            <ThemedText type="link">プロフィールを編集</ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+
+        {/* アカウント */}
         <ThemedView style={styles.card}>
           <ThemedText type="subtitle" style={styles.cardTitle}>
             アカウント
           </ThemedText>
 
-          {currentPersonQuery.isLoading && <ActivityIndicator testID="mypage-identity-loading" />}
-
-          {currentPersonQuery.isError && (
-            <ThemedText testID="mypage-identity-error">{getErrorMessage(currentPersonQuery.error)}</ThemedText>
-          )}
-
           {currentPersonQuery.data && (
             <ThemedView style={styles.row}>
-              <ThemedText type="default">Person ID</ThemedText>
+              <ThemedText type="default">メールアドレスの確認</ThemedText>
+              <StatusPill ok={currentPersonQuery.data.email_verified} okLabel="確認済み" ngLabel="未確認" />
+            </ThemedView>
+          )}
+
+          <TouchableOpacity testID="mypage-details-toggle" onPress={() => setDetailsOpen((open) => !open)} style={styles.linkRow}>
+            <ThemedText type="small" themeColor="textSecondary">
+              {detailsOpen ? '詳細情報を隠す' : '詳細情報を表示'}
+            </ThemedText>
+          </TouchableOpacity>
+          {detailsOpen && currentPersonQuery.data && (
+            <ThemedView style={styles.row}>
+              <ThemedText type="small" themeColor="textSecondary">
+                Person ID
+              </ThemedText>
               <ThemedText type="small" themeColor="textSecondary" testID="mypage-person-id">
                 {currentPersonQuery.data.id}
               </ThemedText>
@@ -81,32 +129,48 @@ export function MyPageContent() {
           )}
         </ThemedView>
 
-        {/* docs/04-HomeRoleBasedMenu.md §02の「設定 > 団体・公演に参加」:
-            参加コード入力・QR読み取り（今回未実装、後続フェーズ）・検索を
-            まとめた単一の入口。検索自体は団体を探す/公演・活動を探すから
-            直接行える。 */}
+        {/* 参加 */}
         <ThemedView style={styles.card}>
           <ThemedText type="subtitle" style={styles.cardTitle}>
-            団体・公演に参加
+            参加
           </ThemedText>
+
           <TouchableOpacity testID="mypage-join-link" onPress={() => router.push('/join')} style={styles.linkRow}>
             <ThemedText type="linkPrimary">参加コードを入力する</ThemedText>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            testID="mypage-participating-productions-link"
+            onPress={() => router.push('/participating-productions')}
+            style={styles.linkRow}
+          >
+            <ThemedText type="linkPrimary">参加している公演・活動</ThemedText>
+          </TouchableOpacity>
+
+          {!organizationsQuery.isLoading && !organizationsQuery.isError && (organizationsQuery.data?.length ?? 0) > 0 && (
+            <ThemedView testID="mypage-organizations-list" style={styles.subList}>
+              <ThemedText type="small" themeColor="textSecondary">
+                参加中の団体
+              </ThemedText>
+              {organizationsQuery.data?.map((organization) => (
+                <ThemedText key={organization.id} type="small" testID={`mypage-organization-${organization.id}`}>
+                  ・{organization.name}
+                </ThemedText>
+              ))}
+            </ThemedView>
+          )}
         </ThemedView>
 
-        <AccountSecurityCard />
-
+        {/* 通知 */}
         <ThemedView style={styles.card}>
           <ThemedText type="subtitle" style={styles.cardTitle}>
-            通知設定
+            通知
           </ThemedText>
 
           {pushPreferenceQuery.isLoading && <ActivityIndicator testID="push-preference-loading" />}
-
           {pushPreferenceQuery.isError && (
             <ThemedText testID="push-preference-error">{getErrorMessage(pushPreferenceQuery.error)}</ThemedText>
           )}
-
           {pushPreferenceQuery.data && (
             <ThemedView style={styles.row}>
               <ThemedText type="default">Push通知</ThemedText>
@@ -118,13 +182,15 @@ export function MyPageContent() {
               />
             </ThemedView>
           )}
-
           {updatePushPreference.isError && (
             <ThemedText type="small" themeColor="textSecondary" testID="push-preference-update-error">
               {getErrorMessage(updatePushPreference.error)}
             </ThemedText>
           )}
         </ThemedView>
+
+        {/* セキュリティ */}
+        <AccountSecurityCard />
 
         <TouchableOpacity
           onPress={handleLogout}
@@ -141,6 +207,23 @@ export function MyPageContent() {
   );
 }
 
+function formatDisplayName(familyName: string | null | undefined, givenName: string | null | undefined): string {
+  if (!familyName && !givenName) {
+    return 'マイページ';
+  }
+  return [familyName, givenName].filter(Boolean).join(' ');
+}
+
+function StatusPill({ ok, okLabel, ngLabel }: { ok: boolean; okLabel: string; ngLabel: string }) {
+  return (
+    <ThemedView style={[styles.pill, ok ? styles.pillOk : styles.pillNg]}>
+      <ThemedText type="small" style={ok ? styles.pillTextOk : styles.pillTextNg}>
+        {ok ? okLabel : ngLabel}
+      </ThemedText>
+    </ThemedView>
+  );
+}
+
 /**
  * Password change / Google linking / Email+Password linking / email
  * verification re-send, all in one card. Each action is always offered
@@ -149,6 +232,11 @@ export function MyPageContent() {
  * attempt, mapped to a StageArt-native message here - never a raw
  * Infrastructure term like "WordPress User" or "EmailCredential" (this
  * Phase's explicit UI/UX requirement).
+ *
+ * Google linking is hidden entirely when isGoogleSignInAvailable() is
+ * false (always true on Web today - see googleSignIn.ts's own docblock),
+ * matching login.tsx's identical treatment of "Googleで続ける": offering
+ * an action that can only ever fail is worse than not offering it.
  */
 function AccountSecurityCard() {
   const changePassword = useChangePassword();
@@ -221,11 +309,11 @@ function AccountSecurityCard() {
   return (
     <ThemedView style={styles.card}>
       <ThemedText type="subtitle" style={styles.cardTitle}>
-        アカウント連携・セキュリティ
+        セキュリティ
       </ThemedText>
 
       {/* パスワード変更 */}
-      <TouchableOpacity testID="mypage-change-password-toggle" onPress={() => setPasswordFormOpen((open) => !open)}>
+      <TouchableOpacity testID="mypage-change-password-toggle" onPress={() => setPasswordFormOpen((open) => !open)} style={styles.linkRow}>
         <ThemedText type="linkPrimary">パスワードを変更</ThemedText>
       </TouchableOpacity>
       {passwordFormOpen && (
@@ -242,9 +330,6 @@ function AccountSecurityCard() {
             autoComplete="current-password"
             style={styles.input}
           />
-          {/* textContentType="oneTimeCode": suppresses iOS's "Use Strong
-              Password?" suggestion overlay - see register.tsx's comment
-              for the real-device evidence this is based on. */}
           <ThemedTextInput
             testID="mypage-new-password"
             placeholder="新しいパスワード（8文字以上）"
@@ -272,23 +357,47 @@ function AccountSecurityCard() {
         </ThemedText>
       )}
 
-      {/* Google連携 */}
+      {/* メール確認再送 */}
       <TouchableOpacity
-        testID="mypage-link-google-button"
-        onPress={handleLinkGoogle}
-        disabled={linkGoogleAccount.isPending}
+        testID="mypage-resend-verification-button"
+        onPress={handleRequestVerification}
+        disabled={requestEmailVerification.isPending}
         style={styles.linkRow}
       >
-        {linkGoogleAccount.isPending ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Googleアカウントを連携</ThemedText>}
+        {requestEmailVerification.isPending ? (
+          <ActivityIndicator />
+        ) : (
+          <ThemedText type="linkPrimary">確認メールを再送する</ThemedText>
+        )}
       </TouchableOpacity>
-      {googleFeedback && (
-        <ThemedText testID="mypage-link-google-feedback" type="small" themeColor="textSecondary">
-          {googleFeedback}
+      {verificationFeedback && (
+        <ThemedText testID="mypage-resend-verification-feedback" type="small" themeColor="textSecondary">
+          {verificationFeedback}
         </ThemedText>
       )}
 
+      {/* Google連携 - isGoogleSignInAvailable() が false の環境（現状はWeb全般）
+          では、押しても必ず失敗するボタンを見せない。 */}
+      {isGoogleSignInAvailable() && (
+        <>
+          <TouchableOpacity
+            testID="mypage-link-google-button"
+            onPress={handleLinkGoogle}
+            disabled={linkGoogleAccount.isPending}
+            style={styles.linkRow}
+          >
+            {linkGoogleAccount.isPending ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Googleアカウントを連携</ThemedText>}
+          </TouchableOpacity>
+          {googleFeedback && (
+            <ThemedText testID="mypage-link-google-feedback" type="small" themeColor="textSecondary">
+              {googleFeedback}
+            </ThemedText>
+          )}
+        </>
+      )}
+
       {/* Email+Password連携 */}
-      <TouchableOpacity testID="mypage-link-email-toggle" onPress={() => setEmailFormOpen((open) => !open)}>
+      <TouchableOpacity testID="mypage-link-email-toggle" onPress={() => setEmailFormOpen((open) => !open)} style={styles.linkRow}>
         <ThemedText type="linkPrimary">メールアドレス＋パスワードを追加</ThemedText>
       </TouchableOpacity>
       {emailFormOpen && (
@@ -303,9 +412,6 @@ function AccountSecurityCard() {
             keyboardType="email-address"
             style={styles.input}
           />
-          {/* textContentType="oneTimeCode": suppresses iOS's "Use Strong
-              Password?" suggestion overlay - see register.tsx's comment
-              for the real-device evidence this is based on. */}
           <ThemedTextInput
             testID="mypage-link-email-password"
             placeholder="パスワード（8文字以上）"
@@ -330,25 +436,6 @@ function AccountSecurityCard() {
       {emailFeedback && (
         <ThemedText testID="mypage-link-email-feedback" type="small" themeColor="textSecondary">
           {emailFeedback}
-        </ThemedText>
-      )}
-
-      {/* メール確認再送 */}
-      <TouchableOpacity
-        testID="mypage-resend-verification-button"
-        onPress={handleRequestVerification}
-        disabled={requestEmailVerification.isPending}
-        style={styles.linkRow}
-      >
-        {requestEmailVerification.isPending ? (
-          <ActivityIndicator />
-        ) : (
-          <ThemedText type="linkPrimary">確認メールを再送する</ThemedText>
-        )}
-      </TouchableOpacity>
-      {verificationFeedback && (
-        <ThemedText testID="mypage-resend-verification-feedback" type="small" themeColor="textSecondary">
-          {verificationFeedback}
         </ThemedText>
       )}
     </ThemedView>
@@ -391,22 +478,24 @@ function mapRequestVerificationError(error: unknown): string {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   content: { flexGrow: 1, padding: Spacing.four, gap: Spacing.three },
-  title: { fontSize: 24, lineHeight: 30 },
+  pageTitle: { fontSize: 24, lineHeight: 30 },
+  heroRow: { gap: Spacing.half, paddingBottom: Spacing.one },
   card: {
     borderWidth: 1,
     borderColor: '#e1dee6',
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     padding: Spacing.three,
     gap: Spacing.two,
   },
-  cardTitle: { marginBottom: Spacing.one },
+  cardTitle: { marginBottom: Spacing.half },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.half,
   },
-  linkRow: { paddingVertical: Spacing.one },
+  subList: { gap: Spacing.half, paddingTop: Spacing.one },
+  linkRow: { paddingVertical: Spacing.half },
   inlineForm: { gap: Spacing.two, paddingVertical: Spacing.one },
   input: {
     borderWidth: 1,
@@ -417,12 +506,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   smallButton: {
-    backgroundColor: '#4a3f7a',
+    backgroundColor: BrandColors.warmAmber,
     borderRadius: 8,
     paddingVertical: Spacing.two,
     alignItems: 'center',
   },
   smallButtonText: { color: '#fff', fontWeight: '600' },
+  pill: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+    borderRadius: Radius.medium,
+  },
+  pillOk: { backgroundColor: '#e3f3e8' },
+  pillNg: { backgroundColor: '#f7e4de' },
+  pillTextOk: { color: '#2f7a4a', fontWeight: '600' },
+  pillTextNg: { color: '#a6483a', fontWeight: '600' },
   logoutButton: {
     alignItems: 'center',
     paddingVertical: Spacing.three,

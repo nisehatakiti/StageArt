@@ -69,7 +69,7 @@ export default function ParticipatingProductionsScreen() {
   );
 }
 
-function dedupeProductions(
+export function dedupeProductions(
   upcomingRehearsals: { production_id: string; production_name: string }[]
 ): { productionId: string; productionName: string }[] {
   const seen = new Map<string, string>();

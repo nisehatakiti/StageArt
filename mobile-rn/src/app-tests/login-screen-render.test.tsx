@@ -6,6 +6,15 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+// isGoogleSignInAvailable() would otherwise be false under Jest (the real
+// module-status probe reports RNGoogleSignin "not found" here, same as a
+// real Web deploy) - forced true so this render test can still assert on
+// the Google button's presence alongside every other login-screen element.
+jest.mock('@/auth/googleSignIn', () => ({
+  ...jest.requireActual('@/auth/googleSignIn'),
+  isGoogleSignInAvailable: jest.fn(() => true),
+}));
+
 /** Kept in its own file - see login-flow.test.tsx's docblock for why
  * every renderRouter() call needs a dedicated file in this codebase.
  *

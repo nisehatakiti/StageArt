@@ -25,16 +25,28 @@ export function createOrganization(client: ApiClient, name: string, slug: string
 }
 
 /**
- * A full PUT per the existing Backend Update endpoint (`name`/`status`
+ * A full PUT per the existing Backend Update endpoint. `name`/`status`
  * are always required by UpdateOrganizationUseCase, even when only
- * publishing - see its own docblock); callers must pass the
- * Organization's current name/status back, not just the fields they
- * mean to change.
+ * publishing - see its own docblock. `type`/`description` are likewise
+ * applied unconditionally (UpdateOrganizationUseCase always calls
+ * changeType()/changeDescription() with whatever came in, defaulting to
+ * null when the key is missing from the request body entirely) - every
+ * caller must therefore pass the Organization's current type/description
+ * back too, not just the fields it means to change, exactly like
+ * name/status already had to. `slug`/`published` remain the only fields
+ * the Backend treats as "only touch this when explicitly provided".
  */
 export function updateOrganization(
   client: ApiClient,
   id: string,
-  fields: { name: string; status: string; slug?: string; published?: boolean }
+  fields: {
+    name: string;
+    type: string | null;
+    description: string | null;
+    status: string;
+    slug?: string;
+    published?: boolean;
+  }
 ): Promise<Organization> {
   return client.put<Organization>(`/organizations/${id}`, fields);
 }

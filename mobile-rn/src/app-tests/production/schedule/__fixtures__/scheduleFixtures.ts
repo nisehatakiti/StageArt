@@ -53,8 +53,8 @@ export const currentPerson = {
   id: 'person-1',
   word_press_user_id: 1,
   email_verified: true,
-  family_name: '秦',
-  given_name: '良輔',
+  family_name: '舞台',
+  given_name: '芸術',
 };
 
 export const participants: Participant[] = [
@@ -102,7 +102,7 @@ const DEFAULT_ROUTES: { test: (url: string) => boolean; status: number; body: un
   {
     test: (url) => url.endsWith('/me'),
     status: 200,
-    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '秦', given_name: '良輔' },
+    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' },
   },
 ];
 

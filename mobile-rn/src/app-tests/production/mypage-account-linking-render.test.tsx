@@ -10,6 +10,17 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+// isGoogleSignInAvailable() would otherwise be false under Jest (the real
+// module-status probe reports RNGoogleSignin "not found" here, same as a
+// real Web deploy) - forced true so this render test can still assert on
+// the Google-linking action's presence. See
+// mypage-google-link-unavailable.test.tsx for the real, unmocked "hidden"
+// case.
+jest.mock('@/auth/googleSignIn', () => ({
+  ...jest.requireActual('@/auth/googleSignIn'),
+  isGoogleSignInAvailable: jest.fn(() => true),
+}));
+
 /**
  * §"アカウント連携" / §12 of this Phase's instruction: the Google-link,
  * Email+Password-link, password-change, and email-verification-resend

@@ -154,16 +154,19 @@ export default function VerifyEmailScreen() {
             {Platform.OS === 'web' ? (
               <>
                 <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
-                  StageArtアプリをお持ちの場合は、下のボタンからアプリを開いてログインしてください。アプリをお持ちでない場合も、確認は完了しています。
+                  StageArt Webからログインしてください。StageArtアプリをお持ちの場合は、下のボタンからアプリを開くこともできます。
                 </ThemedText>
+                <TouchableOpacity testID="verify-email-continue" onPress={() => router.replace('/login')} style={styles.button}>
+                  <ThemedText style={styles.buttonText}>ログイン画面へ</ThemedText>
+                </TouchableOpacity>
                 <TouchableOpacity
                   testID="verify-email-open-app"
                   onPress={() => {
                     Linking.openURL('stageart://');
                   }}
-                  style={styles.button}
+                  style={styles.buttonSecondary}
                 >
-                  <ThemedText style={styles.buttonText}>StageArtアプリを開く</ThemedText>
+                  <ThemedText style={styles.buttonSecondaryText}>StageArtアプリを開く</ThemedText>
                 </TouchableOpacity>
               </>
             ) : (
@@ -223,4 +226,13 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
+  buttonSecondary: {
+    borderWidth: 1,
+    borderColor: '#4a3f7a',
+    borderRadius: 8,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    marginTop: Spacing.two,
+  },
+  buttonSecondaryText: { color: '#4a3f7a', fontWeight: '600' },
 });
