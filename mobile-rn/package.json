@@ -54,7 +54,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "export:web": "expo export --platform web",
+    "postexport:web": "node scripts/generate-htaccess.js"
   },
   "private": true,
   "jest": {
