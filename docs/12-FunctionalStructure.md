@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
@@ -121,6 +121,42 @@ Ticket Management
 Ticket configuration and sales/entry operations must be associated with the relevant Performance.
 
 A Production is the overall work; a Performance is the individual occurrence for which a ticket/seat/entry operation can take place.
+
+#### 3.4.1 Ticket Reception / Check-in UX
+
+Reception is an operation performed against the ticket/reservation list of an individual Performance.
+
+The default reception view displays the **unreceived / unchecked-in reservations or tickets** for the selected Performance as a list.
+
+The interaction model is intentionally the same between Web and Mobile:
+
+- The user selects a reservation/ticket by selecting its row.
+- A confirmation popup displays the reservation name.
+- Pressing **OK** confirms the reception and performs check-in.
+- After successful check-in, the item is no longer treated as an unreceived item in the active reception list.
+
+##### Web
+
+1. Display the unreceived reservation/ticket list.
+2. When the mouse cursor hovers over a row, visually change the row color to indicate that it is selectable.
+3. Clicking the row selects that reservation/ticket.
+4. Display a confirmation popup showing the reservation name.
+5. Press **OK** to execute check-in.
+6. After successful check-in, update/remove the item from the unreceived list.
+
+##### Mobile
+
+1. Display the unreceived reservation/ticket list.
+2. Tapping a row selects that reservation/ticket.
+3. Display a confirmation popup showing the reservation name.
+4. Press **OK** to execute check-in.
+5. After successful check-in, update/remove the item from the unreceived list.
+
+The Web hover behavior is a desktop-specific visual affordance; it does not change the underlying business operation. Mobile does not require hover and uses the same row-selection operation through tapping.
+
+The confirmation step is intentional: reception must not be completed merely by accidentally clicking/tapping a row. The reservation name is shown before the check-in is committed.
+
+The exact popup wording, additional displayed ticket information, success/error messaging, and API persistence details are implementation/UX details to be specified separately unless explicitly confirmed.
 
 ---
 
@@ -460,6 +496,8 @@ Create / manage rehearsals
 ↓
 Configure / manage tickets for each Performance
 ↓
+Operate ticket reception / check-in for each Performance
+↓
 Manage Organization accounting
 ↓
 Publish / operate Organization and Production public pages
@@ -492,6 +530,7 @@ Production
 Performance
 ├── Overview
 ├── Tickets
+├── Reception / Check-in
 └── Performance-specific operations
 
 The exact Web/Mobile navigation layout may differ, but the underlying business hierarchy should remain consistent.
