@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.2
+Version : 1.3
 Status : Confirmed business specification
 
 ---
@@ -693,6 +693,90 @@ The date search is therefore a range-containment search, not a search that requi
 Selecting a Production opens its public Production page.
 
 The discovery screen is for finding public information and does not itself grant Production participation or management permission.
+
+---
+
+### 15.4 団体情報
+
+Purpose: manage the information and operations of an Organization for which the user has Organization management authority.
+
+The same screen is used by Organization administrators and authorized Organization management delegates, subject to their granted scope.
+
+#### Approval Notifications
+
+Display approval-related notifications only when there is an approval requiring action.
+
+The notification area covers at least:
+
+- **It’s ME approval**
+- **Expense reimbursement approval**
+
+If there are no applicable approval items, this notification area is not displayed.
+
+#### Organization Information
+
+The following information is displayed:
+
+- **団体名** — display only; not editable on this screen.
+- **Slug** — display only; not editable on this screen.
+- **団体説明** — editable.
+- **所在地** — editable.
+- **連絡先** — editable.
+- **代表者** — editable.
+
+#### 更新
+
+Provide an **更新** button.
+
+The button saves the editable Organization information and updates the Organization public page with the saved information.
+
+Conceptually:
+
+```text
+Edit Organization information
+↓
+更新
+↓
+Save Organization information
+↓
+Reflect the updated information on the public Organization page
+```
+
+The exact publication infrastructure and persistence/API details are implementation details and are not fixed here.
+
+#### 公演情報
+
+Display a list of currently active Productions belonging to the Organization.
+
+- Display current/active Productions as a list.
+- Each Production is selectable as a link.
+- Selecting a Production opens the corresponding Production information/management context.
+
+#### 過去公演情報
+
+Display a list of past Productions belonging to the Organization.
+
+- Display past Productions as a list.
+- Each Production is selectable as a link.
+- Selecting a Production opens the corresponding Production information/public context as appropriate.
+
+The distinction between current/active and past Productions is part of the confirmed screen structure.
+
+#### ホームに戻る
+
+Provide a link to return to the Home screen.
+
+#### Organization Management Menu
+
+The Organization information screen provides the following management operations:
+
+- **公演を作る** — create a Production under the Organization.
+- **メンバー追加** — add/invite a member to the Organization.
+- **メンバーへの通知** — send notifications to Organization members.
+- **団体規約** — manage/view the Organization's rules/regulations.
+- **会計管理** — available only when Organization accounting management is enabled.
+
+The visibility of these operations remains subject to the user's actual management authority and scope.
 
 ---
 
