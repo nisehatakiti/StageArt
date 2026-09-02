@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.1
+Version : 1.2
 Status : Confirmed business specification
 
 ---
@@ -537,7 +537,166 @@ The exact Web/Mobile navigation layout may differ, but the underlying business h
 
 ---
 
-## 15. Implementation Rule
+## 15. Screen Specifications
+
+### 15.1 Initial Screen / Home
+
+The Initial Screen is the first screen shown after login and is the common entry point to StageArt.
+
+The screen is not separated into an administrator Home and a general-user Home. The same Home is used for all users, while displayed information and menu items change according to the user's relationships and management permissions.
+
+#### Information Areas
+
+##### Overall Notifications
+
+Display notifications intended for the entire StageArt user base.
+
+- Display only when a notification has been issued by a StageArt administrator.
+- These notifications do not depend on Organization or Production membership.
+
+##### Notifications
+
+Display notifications associated with Organizations or Productions to which the user is attached.
+
+- Display only for a user who is attached to an Organization and/or Production.
+- Examples include messages from an Organization or a Production to which the user is related.
+- Users with no relevant Organization/Production relationship do not see this notification area.
+
+##### Rehearsal Schedule
+
+Display upcoming rehearsal schedules for Productions to which the user is attached.
+
+- Display only for a user who is attached to a Production.
+- The displayed rehearsal information is based on the user's Production participation.
+- Users who are not attached to a Production do not see this rehearsal area.
+
+#### Menu
+
+The basic menu is:
+
+- 団体を探す
+- 公演を探す
+- プロフィール
+- 経費精算
+- アカウント管理
+- ログアウト
+
+Menu visibility is determined by the user's relationships and permissions.
+
+##### 団体を探す
+
+Available to all users. Opens the Organization discovery/search screen.
+
+##### 公演を探す
+
+Available to all users. Opens the Production discovery/search screen.
+
+##### プロフィール
+
+Available to all users. Opens the user's StageArt Person/profile information.
+
+##### 経費精算
+
+Display only when the user is attached to an Organization or Production and the relevant Organization or Production performs accounting management.
+
+The mere fact that the user belongs to an Organization or Production is not sufficient; the accounting-management condition must also be satisfied.
+
+##### アカウント管理
+
+Available to all users. Manages the StageArt account itself and is separate from Person/profile information.
+
+##### ログアウト
+
+Available to all users. Logs the user out of the current StageArt session.
+
+#### Management Menus
+
+Management menus are added to the same Home menu when the user has the corresponding management authority.
+
+##### 団体情報
+
+Display for a user who has Organization management authority, including an Organization administrator or an authorized Organization management delegate.
+
+##### 公演情報
+
+Display for a user who has Production management authority, including:
+
+- Organization administrator with authority over the Production
+- Production administrator/manager
+- Authorized Production management delegate
+
+The UI should determine visibility by management authority rather than by the person's title alone. A delegate with the appropriate scope is therefore treated as having access to the corresponding management menu.
+
+A user does not receive management access merely by being an Organization member or Production participant.
+
+---
+
+### 15.2 団体を探す
+
+Purpose: discover and view publicly available Organizations.
+
+The screen provides two discovery methods.
+
+#### 団体名で探す
+
+- Provide a search box for Organization name.
+- Search by **partial match / fuzzy-style name matching** rather than requiring exact equality.
+- Display Organizations whose names contain the entered search text.
+- Exact matching is not required.
+
+The exact search algorithm for normalization, spelling variations, kana/kanji equivalence, etc. is not fixed by this specification. Partial name matching is the confirmed business requirement.
+
+#### 一覧から探す
+
+- Display a list of publicly available Organizations.
+- The user can select an Organization from the list.
+- Selecting an Organization opens its public Organization page.
+
+The discovery screen is for finding public information and does not itself grant Organization membership or management permission.
+
+---
+
+### 15.3 公演を探す
+
+Purpose: discover and view publicly available Productions.
+
+The screen provides three discovery methods.
+
+#### 団体から探す
+
+- Provide a search box for Organization name.
+- Search by partial match / fuzzy-style name matching rather than requiring exact equality.
+- Display Productions associated with the matching Organization(s).
+
+#### 公演名から探す
+
+- Provide a search box for Production name.
+- Search by partial match / fuzzy-style name matching rather than requiring exact equality.
+- Display Productions whose names contain the entered search text.
+
+#### 公演日時から探す
+
+- Provide a date-selection search field.
+- The user selects a date.
+- Display Productions whose **Production schedule range contains the selected date**.
+
+Conceptually:
+
+```text
+Production start date/time ≤ selected date ≤ Production end date/time
+```
+
+For example, if a Production runs from September 10 through September 15, searching for September 12 includes that Production, while searching for September 16 does not.
+
+The date search is therefore a range-containment search, not a search that requires the selected date to equal the Production start date.
+
+Selecting a Production opens its public Production page.
+
+The discovery screen is for finding public information and does not itself grant Production participation or management permission.
+
+---
+
+## 16. Implementation Rule
 
 When an implementation screen or API appears to contradict this functional structure, do not resolve the discrepancy by inventing another business concept.
 
