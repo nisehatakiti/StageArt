@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.3
+Version : 1.4
 Status : Confirmed business specification
 
 ---
@@ -777,6 +777,77 @@ The Organization information screen provides the following management operations
 - **会計管理** — available only when Organization accounting management is enabled.
 
 The visibility of these operations remains subject to the user's actual management authority and scope.
+
+---
+
+### 15.5 公演情報
+
+Purpose: manage the information and operations of a Production for which the user has Production management authority.
+
+The same screen is used by Organization administrators with the relevant authority, Production administrators/managers, and authorized Production management delegates, subject to their granted scope.
+
+#### Approval Notifications
+
+Display approval-related notifications only when there is an approval requiring action.
+
+The notification area covers at least:
+
+- **It’s ME approval**
+- **Expense reimbursement approval**
+
+If there are no applicable approval items, this notification area is not displayed.
+
+#### Production Information
+
+The following information is displayed and managed:
+
+- **公演名** — display only; not editable on this screen.
+- **Slug** — display only; not editable on this screen.
+- **公演ビジュアル（フライヤー）** — image upload is supported; up to 2 images.
+- **公演説明** — editable only while the Production is active.
+- **公演日程** — editable only while the Production is active; includes **情報公開日**.
+- **会場** — editable only while the Production is active; includes **情報公開日**.
+- **脚本** — editable only while the Production is active; includes **情報公開日**.
+- **演出** — editable only while the Production is active; includes **情報公開日**.
+
+#### 更新
+
+Provide an **更新** button.
+
+The button saves the editable Production information and reflects the updated information on the public Production page.
+
+The publication-date fields above are part of the Production public-information settings. The exact publication infrastructure and persistence/API details are implementation details and are not fixed here.
+
+#### 公開ページを見る
+
+Provide a **公開ページを見る** link/button.
+
+This opens the public Production page corresponding to the Production being managed, allowing the manager to verify the currently published/public-facing information.
+
+This is a navigation/view operation and does not itself change publication settings.
+
+#### Production Management Menu
+
+The Production information screen provides the following management operations while the Production is active:
+
+- **メンバー管理** — manage Production participants/members.
+- **メンバーへの通知** — send notifications to Production participants/members.
+- **公演回管理** — create/manage individual Performances.
+- **チケット管理** — manage tickets associated with Performances.
+- **稽古管理** — manage rehearsals for the Production.
+
+#### 会計管理
+
+- **会計管理** is displayed only when accounting management is being used for the relevant context.
+- Its visibility remains subject to the user's actual management authority and scope.
+
+#### 公演活動情報
+
+Provide **公演活動情報** as the menu/operation used to end the Production activity.
+
+Ending the Production activity moves the Production out of the active-production context and into the past-production context used by the Organization information screen.
+
+Once the Production activity has ended, active-only editing and management operations above are no longer treated as active Production operations. The exact lifecycle/status enum and persistence rules are implementation/domain details to be specified separately.
 
 ---
 
