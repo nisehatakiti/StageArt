@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.4
+Version : 1.5
 Status : Confirmed business specification
 
 ---
@@ -719,6 +719,7 @@ The following information is displayed:
 
 - **団体名** — display only; not editable on this screen.
 - **Slug** — display only; not editable on this screen.
+- **団体ロゴ** — one image can be uploaded and updated.
 - **団体説明** — editable.
 - **所在地** — editable.
 - **連絡先** — editable.
@@ -730,10 +731,12 @@ Provide an **更新** button.
 
 The button saves the editable Organization information and updates the Organization public page with the saved information.
 
+This includes the uploaded Organization logo.
+
 Conceptually:
 
 ```text
-Edit Organization information
+Edit Organization information / upload logo
 ↓
 更新
 ↓
@@ -848,6 +851,50 @@ Provide **公演活動情報** as the menu/operation used to end the Production 
 Ending the Production activity moves the Production out of the active-production context and into the past-production context used by the Organization information screen.
 
 Once the Production activity has ended, active-only editing and management operations above are no longer treated as active Production operations. The exact lifecycle/status enum and persistence rules are implementation/domain details to be specified separately.
+
+---
+
+### 15.6 公演を作る
+
+Purpose: create the Production record itself before entering the detailed Production information/management screen.
+
+The creation screen is intentionally minimal. It collects only the information that is display-only on the subsequent **公演情報** screen and is required to establish the Production.
+
+#### Initial Production Information
+
+The user enters:
+
+- **公演名**
+- **Slug**
+
+These fields are entered during Production creation and become display-only on the subsequent 公演情報 screen.
+
+The creation screen does not duplicate the detailed Production information settings such as flyer images, description, schedule, venue, script, direction, or publication dates.
+
+#### 公演作成・確定
+
+Provide a confirmation/create operation.
+
+Conceptually:
+
+```text
+公演名 / Slug を入力
+↓
+公演を作成して確定
+↓
+Productionを作成
+↓
+公演情報画面へ移動
+```
+
+After successful creation, the user is immediately moved to the corresponding **公演情報** screen, where the remaining Production information and management operations can be configured.
+
+This separation is intentional:
+
+- **公演を作る** = create the Production container/basic record.
+- **公演情報** = configure and operate the Production after it exists.
+
+The exact validation rules for Production name and Slug, uniqueness checks, persistence/API details, and error messaging are implementation details unless separately confirmed.
 
 ---
 
