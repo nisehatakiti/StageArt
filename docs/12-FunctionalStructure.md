@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.6
+Version : 1.7
 Status : Confirmed business specification
 
 ---
@@ -35,67 +35,16 @@ The major functional areas are:
 1. Organization → Production → Performance
 2. Production → Member Management
 3. Production → Rehearsal Management
-4. Production → Ticket Management
-5. Performance → Ticket sales/reservation and Reception / Check-in
-6. Organization → Accounting Management
+4. Production → Performance Management
+5. Production → Ticket Management
+6. Performance → Ticket sales/reservation and Reception / Check-in
+7. Organization → Accounting Management
 
 Public organization and production websites are produced as a consequence of the organization/production information being managed; they are not the primary business hierarchy.
 
 ---
 
-## 3. Major Functional Areas
-
-### 3.1 Organization → Production → Performance
-
-This is the main creation flow.
-
-Organization administrator:
-
-Create Organization
-↓
-Create Production
-↓
-Create Performance(s)
-
-The user does not need to understand the internal Project/Production structure. The UI should present the operation as "団体を作る", "公演を作る", and "公演回を作る".
-
-A Production can have one or more Performances.
-
-A Performance represents an individual public performance occurrence, such as a specific date/time and venue slot.
-
----
-
-### 3.2 Production → Member Management
-
-Members are managed in the context of a Production.
-
-Organization membership and Production participation are separate concepts.
-
-Organization membership means:
-
-Person
-↓
-Organization Membership
-↓
-Organization
-
-Production participation means:
-
-Person / Organization
-↓
-Production Participant
-↓
-Production
-
-A person may belong to an Organization without participating in a particular Production.
-
-A person may also participate in a Production without being a permanent member of the Production's Organization, such as a guest performer.
-
-Production member management therefore must not be implemented as a simple copy of the Organization member list.
-
----
-
-### 3.3 Production → Rehearsal Management
+### 3.4 Production → Rehearsal Management
 
 Rehearsals belong to a Production.
 
@@ -109,61 +58,35 @@ The user experience should be expressed as "この公演の稽古を管理する
 
 ---
 
-### 3.4 Production → Ticket Management
+### 3.5 Production → Ticket Management
 
-Ticket types and prices are managed at the Production level and are common to the Production's Performances.
+Ticket types, prices, and ticket-back settings are managed at the Production level and are common across the Production's Performances.
 
 Production
 ↓
 Ticket Management
+├─ Ticket types / prices
+└─ Ticket Back Settings
+     ├─ Calculation method
+     │    ├─ 累進方式
+     │    └─ 分離方式
+     └─ Multiple conditions
+          ├─ 販売枚数条件
+          └─ チケットバック率
 ↓
 Performance-specific sales / reservation operations
 ↓
 Reception / Check-in
 
-Ticket Management defines the ticket types and prices for the Production. Ticket sales or reservation acceptance is operated for an individual Performance.
+Ticket Management defines the ticket types and prices for the Production. It also defines the Production-wide チケットバック calculation method and multiple sales-quantity conditions/rates. Ticket sales or reservation acceptance is operated for an individual Performance.
 
-The Production-level Ticket Management specification is defined separately in Chapter 19. Performance-specific reception/check-in is operated against the selected Performance.
+The ticket-back settings are not configured separately for each Production member or Performance. The sales quantity used for a member's ticket-back calculation is determined from reservations whose **扱い** is that Production member, and the Production's common ticket-back settings are applied to that sales count.
 
-#### 3.4.1 Ticket Reception / Check-in UX
-
-Reception is an operation performed against the ticket/reservation list of an individual Performance.
-
-The default reception view displays the **unreceived / unchecked-in reservations or tickets** for the selected Performance as a list.
-
-The interaction model is intentionally the same between Web and Mobile:
-
-- The user selects a reservation/ticket by selecting its row.
-- A confirmation popup displays the reservation name.
-- Pressing **OK** confirms the reception and performs check-in.
-- After successful check-in, the item is no longer treated as an unreceived item in the active reception list.
-
-##### Web
-
-1. Display the unreceived reservation/ticket list.
-2. When the mouse cursor hovers over a row, visually change the row color to indicate that it is selectable.
-3. Clicking the row selects that reservation/ticket.
-4. Display a confirmation popup showing the reservation name.
-5. Press **OK** to execute check-in.
-6. After successful check-in, update/remove the item from the unreceived list.
-
-##### Mobile
-
-1. Display the unreceived reservation/ticket list.
-2. Tapping a row selects that reservation/ticket.
-3. Display a confirmation popup showing the reservation name.
-4. Press **OK** to execute check-in.
-5. After successful check-in, update/remove the item from the unreceived list.
-
-The Web hover behavior is a desktop-specific visual affordance; it does not change the underlying business operation. Mobile does not require hover and uses the same row-selection operation through tapping.
-
-The confirmation step is intentional: reception must not be completed merely by accidentally clicking/tapping a row. The reservation name is shown before the check-in is committed.
-
-The exact popup wording, additional displayed ticket information, success/error messaging, and API persistence details are implementation/UX details to be specified separately unless explicitly confirmed.
+The Production-level Ticket Management screen specification is defined separately in Chapter 19. Production ticket-sales and ticket-back rules are defined separately in Chapter 25. Performance-specific reception/check-in is operated against the selected Performance.
 
 ---
 
-### 3.5 Organization → Accounting Management
+### 3.6 Organization → Accounting Management
 
 Accounting is primarily an Organization-level management function.
 
@@ -511,7 +434,7 @@ Invite / manage Production members
 ↓
 Create / manage rehearsals
 ↓
-Configure / manage Production tickets
+Configure / manage Production tickets and ticket-back rules
 ↓
 Open ticket sales / reservation acceptance for each Performance
 ↓
@@ -651,301 +574,106 @@ A user does not receive management access merely by being an Organization member
 
 ---
 
-### 15.2 団体を探す
+### 15.2 Organization Information Screen
 
-Purpose: discover and view publicly available Organizations.
+The Organization Information screen manages Organization-level information.
 
-The screen provides two discovery methods.
-
-#### 団体名で探す
-
-- Provide a search box for Organization name.
-- Search by **partial match / fuzzy-style name matching** rather than requiring exact equality.
-- Display Organizations whose names contain the entered search text.
-- Exact matching is not required.
-
-The exact search algorithm for normalization, spelling variations, kana/kanji equivalence, etc. is not fixed by this specification. Partial name matching is the confirmed business requirement.
-
-#### 一覧から探す
-
-- Display a list of publicly available Organizations.
-- The user can select an Organization from the list.
-- Selecting an Organization opens its public Organization page.
-
-The discovery screen is for finding public information and does not itself grant Organization membership or management permission.
+Detailed screen specification is defined separately in the corresponding chapter.
 
 ---
 
-### 15.3 公演を探す
+### 15.3 Production Information Screen
 
-Purpose: discover and view publicly available Productions.
+The Production Information screen is the entry point for Production-level information and management.
 
-The screen provides three discovery methods.
+The screen provides access to the Production's management functions, including:
 
-#### 団体から探す
+- Member Management
+- Rehearsal Management
+- Performance Management
+- Ticket Management
+- Production Public Page / information management
 
-- Provide a search box for Organization name.
-- Search by partial match / fuzzy-style name matching rather than requiring exact equality.
-- Display Productions associated with the matching Organization(s).
-
-#### 公演名から探す
-
-- Provide a search box for Production name.
-- Search by partial match / fuzzy-style name matching rather than requiring exact equality.
-- Display Productions whose names contain the entered search text.
-
-#### 公演日時から探す
-
-- Provide a date-selection search field.
-- The user selects a date.
-- Display Productions whose **Production schedule range contains the selected date**.
-
-Conceptually:
-
-Production start date/time ≤ selected date ≤ Production end date/time
-
-For example, if a Production runs from September 10 through September 15, searching for September 12 includes that Production, while searching for September 16 does not.
-
-The date search is therefore a range-containment search, not a search that requires the selected date to equal the Production start date.
-
-Selecting a Production opens its public Production page.
-
-The discovery screen is for finding public information and does not itself grant Production participation or management permission.
+Detailed screen specification is defined separately in the corresponding chapters.
 
 ---
 
-### 15.4 団体情報
+### 15.4 Performance Information Screen
 
-Purpose: manage the information and operations of an Organization for which the user has Organization management authority.
+The Performance Information screen manages an individual Performance occurrence.
 
-The same screen is used by Organization administrators and authorized Organization management delegates, subject to their granted scope.
+It provides access to Performance-specific operations such as ticket sales/reservation operations and reception/check-in.
 
-#### Approval Notifications
-
-Display approval-related notifications only when there is an approval requiring action.
-
-The notification area covers at least:
-
-- **It’s ME approval**
-- **Expense reimbursement approval**
-
-If there are no applicable approval items, this notification area is not displayed.
-
-#### Organization Information
-
-The following information is displayed:
-
-- **団体名** — display only; not editable on this screen.
-- **Slug** — display only; not editable on this screen.
-- **団体ロゴ** — one image can be uploaded and updated.
-- **団体説明** — editable.
-- **所在地** — editable.
-- **連絡先** — editable.
-- **代表者** — editable.
-
-#### 更新
-
-Provide an **更新** button.
-
-The button saves the editable Organization information and updates the Organization public page with the saved information.
-
-This includes the uploaded Organization logo.
-
-Conceptually:
-
-Edit Organization information / upload logo
-↓
-更新
-↓
-Save Organization information
-↓
-Reflect the updated information on the public Organization page
-
-The exact publication infrastructure and persistence/API details are implementation details and are not fixed here.
-
-#### 公演情報
-
-Display a list of currently active Productions belonging to the Organization.
-
-- Display current/active Productions as a list.
-- Each Production is selectable as a link.
-- Selecting a Production opens the corresponding Production information/management context.
-
-#### 過去公演情報
-
-Display a list of past Productions belonging to the Organization.
-
-- Display past Productions as a list.
-- Each Production is selectable as a link.
-- Selecting a Production opens the corresponding Production information/public context as appropriate.
-
-The distinction between current/active and past Productions is part of the confirmed screen structure.
-
-#### ホームに戻る
-
-Provide a link to return to the Home screen.
-
-#### Organization Management Menu
-
-The Organization information screen provides the following management operations:
-
-- **公演を作る** — create a Production under the Organization.
-- **メンバー追加** — add/invite a member to the Organization.
-- **メンバーへの通知** — send notifications to Organization members.
-- **団体規約** — manage/view the Organization's rules/regulations.
-- **会計管理** — available only when Organization accounting management is enabled.
-
-The visibility of these operations remains subject to the user's actual management authority and scope.
+Detailed screen specification is defined separately in the corresponding chapter.
 
 ---
 
-### 15.5 公演情報
+## 16. Web and Mobile UX Principle
 
-Purpose: manage the information and operations of a Production for which the user has Production management authority.
+Web and Mobile are separate UX implementations but share the same business structure and navigation concepts.
 
-The same screen is used by Organization administrators with the relevant authority, Production administrators/managers, and authorized Production management delegates, subject to their granted scope.
+The Web uses a desktop-oriented navigation structure. Mobile uses the same business navigation structure through an explicit menu/hamburger interaction rather than replacing the business hierarchy with a different primary navigation model.
 
-#### Approval Notifications
-
-Display approval-related notifications only when there is an approval requiring action.
-
-The notification area covers at least:
-
-- **It’s ME approval**
-- **Expense reimbursement approval**
-
-If there are no applicable approval items, this notification area is not displayed.
-
-#### Production Information
-
-The following information is displayed and managed:
-
-- **公演名** — display only; not editable on this screen.
-- **Slug** — display only; not editable on this screen.
-- **公演ビジュアル（フライヤー）** — image upload is supported; up to 2 images.
-- **公演説明** — editable only while the Production is active.
-- **公演日程** — editable only while the Production is active; includes **情報公開日時**.
-- **会場** — editable only while the Production is active; includes **情報公開日時**.
-- **脚本** — editable only while the Production is active; includes **情報公開日時**.
-- **演出** — editable only while the Production is active; includes **情報公開日時**.
-
-The information-publication datetime configured for each item is used directly as that item's public display condition. There is no requirement for all Production information to be released at the same time. Different information can therefore be released incrementally according to its own configured publication datetime.
-
-#### メンバー情報
-
-Display the Production's member/participant information on the Production information screen.
-
-The displayed member information is the Production participant information managed by Production Member Management. The detailed member-management operations remain in **メンバー管理**.
-
-The public display timing of member information is controlled by the publication setting applicable to that information. Member information may therefore be withheld until its configured publication datetime and then displayed on the public Production page.
-
-#### チケット情報
-
-Display the Production's configured ticket information on the Production information screen.
-
-Ticket information consists of the ticket types and prices configured for the Production. The detailed ticket-management operations remain in **チケット管理**.
-
-The Production-level ticket configuration is common to the Production's Performances. Performance-specific ticket sales/reservation operations are handled separately for each Performance.
-
-#### チケット販売開始日時
-
-Provide **チケット販売開始日時** as the datetime at which ticket reservation/sales acceptance for the Production's Performances can begin.
-
-This datetime is distinct from the publication datetime of ticket information.
-
-The distinction is:
-
-- **情報公開日時** — controls when the relevant information is displayed publicly.
-- **チケット販売開始日時** — controls when ticket reservation/sales acceptance can begin.
-
-Therefore, ticket information may be publicly visible before reservations/sales are accepted.
-
-The detailed ticket reservation/sales flow, including the exact operations available before and after this datetime, is specified separately as part of the Ticket Flow specification.
-
-#### 更新
-
-Provide an **更新** button.
-
-The button saves the editable Production information and reflects the updated information on the public Production page.
-
-The publication-date fields above are part of the Production public-information settings. The exact publication infrastructure and persistence/API details are implementation details and are not fixed here.
-
-#### 公開ページを見る
-
-Provide a **公開ページを見る** link/button.
-
-This opens the public Production page corresponding to the Production being managed, allowing the manager to verify the currently published/public-facing information.
-
-This is a navigation/view operation and does not itself change publication settings.
-
-#### Production Management Menu
-
-The Production information screen provides the following management operations while the Production is active:
-
-- **メンバー管理** — manage Production participants/members.
-- **メンバーへの通知** — send notifications to Production participants/members.
-- **公演回管理** — create/manage individual Performances.
-- **チケット管理** — manage Production-level ticket types and prices.
-- **稽古管理** — manage rehearsals for the Production.
-
-#### 会計管理
-
-- **会計管理** is displayed only when accounting management is being used for the relevant context.
-- Its visibility remains subject to the user's actual management authority and scope.
-
-#### 公演活動情報
-
-Provide **公演活動情報** as the menu/operation used to end the Production activity.
-
-Ending the Production activity moves the Production out of the active-production context and into the past-production context used by the Organization information screen.
-
-Once the Production activity has ended, active-only editing and management operations above are no longer treated as active Production operations. The exact lifecycle/status enum and persistence rules are implementation/domain details to be specified separately.
+Device-specific operations may have dedicated UX, such as QR-based ticket reception/scanning on Mobile, without changing the underlying business hierarchy.
 
 ---
 
-### 15.6 公演を作る
+## 17. Public URL Structure
 
-Purpose: create the Production record itself before entering the detailed Production information/management screen.
+Organization public page:
 
-The creation screen requires only:
+```text
+/{organizationSlug}
+```
 
-- 公演名
-- Slug
+Production public page:
 
-After confirmation, StageArt creates the Production and navigates the user to the Production information screen.
+```text
+/{organizationSlug}/{productionSlug}
+```
 
----
+Legacy `/o/...` URLs remain available as 302 compatibility redirects where applicable.
 
-## 16. Confirmation Rule
-
-The following are confirmed business rules and must not be changed by implementation convenience:
-
-1. Organization membership and Production participation are separate relationships.
-2. Production member management belongs to the Production context.
-3. Rehearsal management belongs to the Production context.
-4. Ticket types and prices are configured at the Production level and are common to its Performances.
-5. Ticket sales/reservation acceptance is operated for individual Performances.
-6. Ticket reception/check-in is operated for individual Performances.
-7. Production public information is prepared in advance and displayed according to the publication datetime configured for each information item.
-8. Different Production information items may therefore be released incrementally at different publication datetimes.
-9. Ticket sales/reservation acceptance has a separate **チケット販売開始日時** and must not be treated as the same concept as information publication.
-10. The Production information screen displays Production member information and ticket information as part of the Production overview, while detailed management remains in the corresponding management screens.
-11. Public-page implementation details are not to be used to change these business rules.
+The public Production page is rendered by the Mobile/React web output consuming the StageArt REST API. WordPress provides the StageArt REST API and administration infrastructure rather than serving the public Production page HTML itself.
 
 ---
 
-## 17. Change History
+## 18. Server URL / API Configuration Rule
 
-### Version 1.6
+API paths must not hardcode environment-specific absolute server URLs in application source code.
 
-- Clarified that Production-level Ticket Management defines ticket types/prices common to the Production's Performances.
-- Clarified that ticket sales/reservation acceptance and reception/check-in are Performance-level operations.
-- Added Production information screen display of **メンバー情報**.
-- Added Production information screen display of **チケット情報**.
-- Added **チケット販売開始日時** as a separate business setting from information publication.
-- Clarified that each Production information item's configured **情報公開日時** directly controls its public display timing.
-- Clarified that Production public information may be released incrementally at different times.
-- Clarified the public-page concept as pre-configured information/display areas whose visibility is controlled by the configured publication datetime.
-- Corrected terminology from 台本 to **脚本**.
+The server base URL must be supplied through environment/configuration, and API calls must use the existing API client/configuration mechanism and relative paths.
+
+This rule exists so that changing the StageArt API server does not require rewriting application source code.
+
+New code must follow the existing `getApiBaseUrl()` / API client mechanism rather than introducing hardcoded absolute API URLs.
 
 ---
+
+## 19. Confirmed Business Hierarchy Summary
+
+The confirmed user-facing hierarchy is:
+
+```text
+Organization
+  ↓
+Production
+  ├─ Member Management
+  ├─ Rehearsal Management
+  ├─ Performance Management
+  └─ Ticket Management
+       ├─ Ticket Types / Prices
+       └─ Ticket Back Settings
+            ├─ Calculation Method
+            │    ├─ 累進方式
+            │    └─ 分離方式
+            └─ Multiple Conditions
+                 ├─ 販売枚数条件
+                 └─ チケットバック率
+       ↓
+     Performance
+       ├─ Ticket sales / reservation
+       └─ Reception / Check-in
+```
+
+This hierarchy is the business structure to be reflected consistently across Web, Mobile, API, Domain Models, and screen specifications.
