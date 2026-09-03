@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 24 : Ticket Reservation Flow
 
-Version : 1.1
+Version : 1.2
 Status : Confirmed business specification
 
 ---
@@ -109,11 +109,17 @@ The conceptual fields are:
 
 "扱い" identifies the Production participant responsible for the handling of the reservation.
 
+The primary business purpose of "扱い" is to associate the reserved ticket quantity with the responsible Production participant's ticket sales record.
+
+The ticket quantities associated with each participant's "扱い" are used as the basis for counting that participant's ticket sales, including the calculation/counting of ticket-back and ticket sales quota (ノルマ), according to the Production's applicable rules.
+
 In a normal reservation entry point, the user can select the handling person from the available Production participants for the Production.
 
 For a participant-specific reservation page, the handling person is fixed by the entry point and is not selectable/replaceable by the reservation user.
 
 The reservationer and the handling person are separate concepts. A general user can therefore make a reservation while a Production participant is recorded as the handling person.
+
+A reservation may also have no specific "扱い" when it is made without a responsible Production participant. Such a reservation is not attributed to an individual participant's handling sales count.
 
 ---
 
@@ -130,6 +136,8 @@ The selectable Performances are the Performances of the target Production.
 The user specifies the quantity for each ticket type defined for the Production.
 
 Ticket types and prices are managed at Production level and are common to the Production's Performances.
+
+The reserved quantities are also the basis for aggregating ticket sales by "扱い".
 
 ---
 
@@ -299,21 +307,23 @@ The entry point is therefore not a separate reservation business function. It on
 
 1. All reservation entry points use one common reservation screen.
 2. "扱い" and "予約者" are separate concepts.
-3. A normal reservation entry point allows the user to select "扱い" from the available Production participants.
-4. A participant-specific reservation page fixes "扱い" to the associated participant.
-5. The user selects the target Performance (公演回).
-6. Ticket quantities are entered by ticket type.
-7. A logged-in StageArt user can use the account's registered email without re-entering it.
-8. Reservationer name is entered as surname/given name, with separate furigana fields.
-9. When the user presses the reservation button, the current date/time is checked against the Production's チケット販売開始日時.
-10. If ticket sales/reservation acceptance has not started, the reservation is not made and an error popup is displayed.
-11. If ticket sales/reservation acceptance has started, the capacity of the selected Performance is checked.
-12. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
-13. If capacity is available, the user confirms the displayed reservation details.
-14. Reservation is confirmed before the confirmation email is sent.
-15. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
-16. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
-17. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
+3. The primary purpose of "扱い" is to associate ticket quantities with the responsible Production participant for ticket sales counting, including ticket-back and ticket sales quota (ノルマ) counting according to the Production's applicable rules.
+4. A normal reservation entry point allows the user to select "扱い" from the available Production participants.
+5. A participant-specific reservation page fixes "扱い" to the associated participant.
+6. A reservation may have no specific "扱い"; such a reservation is not attributed to an individual participant's handling sales count.
+7. The user selects the target Performance (公演回).
+8. Ticket quantities are entered by ticket type and can be aggregated by "扱い".
+9. A logged-in StageArt user can use the account's registered email without re-entering it.
+10. Reservationer name is entered as surname/given name, with separate furigana fields.
+11. When the user presses the reservation button, the current date/time is checked against the Production's チケット販売開始日時.
+12. If ticket sales/reservation acceptance has not started, the reservation is not made and an error popup is displayed.
+13. If ticket sales/reservation acceptance has started, the capacity of the selected Performance is checked.
+14. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
+15. If capacity is available, the user confirms the displayed reservation details.
+16. Reservation is confirmed before the confirmation email is sent.
+17. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
+18. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
+19. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
 
 ---
 
@@ -329,5 +339,7 @@ This specification does not define the following items unless separately confirm
 - Detailed email retry policy
 - Detailed mail-server error classification and technical implementation
 - Attendance/completion processing after reception
+- Detailed ticket-back calculation rules
+- Detailed ticket sales quota (ノルマ) rules
 
 These must not be inferred from this reservation flow specification.
