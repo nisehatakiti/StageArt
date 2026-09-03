@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 24 : Ticket Reservation Flow
 
-Version : 1.2
+Version : 1.3
 Status : Confirmed business specification
 
 ---
@@ -137,6 +137,8 @@ The user specifies the quantity for each ticket type defined for the Production.
 
 Ticket types and prices are managed at Production level and are common to the Production's Performances.
 
+Reserved quantities are **aggregated separately for each ticket type**. Different ticket types are not combined into one quantity for ticket-back calculation.
+
 The reserved quantities are also the basis for aggregating ticket sales by "扱い".
 
 ---
@@ -184,12 +186,19 @@ Reservation information entered
 ↓
 Press 「予約」
 ↓
-Check ticket reservation acceptance period (チケット販売開始日時)
+Check ticket sales/reservation acceptance start date/time
 ↓
 If reservation acceptance has not started
     → Display a popup that the reservation cannot be made
 
 If reservation acceptance has started
+    ↓
+Check ticket sales/reservation acceptance end date/time
+↓
+If ticket sales have ended
+    → Display a popup that the reservation cannot be made
+
+If ticket sales have not ended
     ↓
 Check Performance capacity and requested ticket quantity
 ↓
@@ -209,11 +218,29 @@ Reservation confirmed
 Send reservation confirmation email
 ```
 
-The ticket reservation acceptance check is performed when the user presses the reservation button. The system checks the current date/time against the Production's configured **チケット販売開始日時** (ticket sales/reservation acceptance start date/time).
+The ticket reservation acceptance start date/time is checked when the user presses the reservation button. The system checks the current date/time against the Production's configured **チケット販売開始日時**.
+
+The ticket reservation acceptance end date/time is also checked when the user presses the reservation button. The system calculates the end date/time for the selected Performance from the Production's **販売終了** setting:
+
+```text
+公演回の [日数]日前の [時]時まで
+```
+
+For example, if the Production is configured as:
+
+```text
+公演回の [1]日前の [23]時まで
+```
+
+ticket reservations for a Performance end at 23:00 on the day before that Performance.
+
+If the current date/time is past the calculated sales end date/time, the reservation is not accepted.
+
+The sales start/end checks are performed at reservation submission time, not merely when the reservation screen is displayed.
 
 The capacity check must use the capacity of the selected Performance.
 
-The ticket sales/reservation acceptance start date/time is a business condition for accepting the reservation; it is separate from the publication date/time of ticket information or other Production information.
+The ticket sales/reservation acceptance start and end date/times are business conditions for accepting the reservation; they are separate from the publication date/time of ticket information or other Production information.
 
 ---
 
@@ -281,7 +308,7 @@ Entry points ────┼─ Participant handling page
                  Common reservation screen
                          ↓
               Check reservation acceptance
-                (チケット販売開始日時)
+                (開始日時・販売終了日時)
                          ↓
                    Capacity check
                          ↓
@@ -312,18 +339,23 @@ The entry point is therefore not a separate reservation business function. It on
 5. A participant-specific reservation page fixes "扱い" to the associated participant.
 6. A reservation may have no specific "扱い"; such a reservation is not attributed to an individual participant's handling sales count.
 7. The user selects the target Performance (公演回).
-8. Ticket quantities are entered by ticket type and can be aggregated by "扱い".
-9. A logged-in StageArt user can use the account's registered email without re-entering it.
-10. Reservationer name is entered as surname/given name, with separate furigana fields.
-11. When the user presses the reservation button, the current date/time is checked against the Production's チケット販売開始日時.
-12. If ticket sales/reservation acceptance has not started, the reservation is not made and an error popup is displayed.
-13. If ticket sales/reservation acceptance has started, the capacity of the selected Performance is checked.
-14. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
-15. If capacity is available, the user confirms the displayed reservation details.
-16. Reservation is confirmed before the confirmation email is sent.
-17. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
-18. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
-19. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
+8. Ticket quantities are entered by ticket type and are **aggregated separately per ticket type**.
+9. Different ticket types are not combined into one quantity for ticket-back calculation.
+10. A logged-in StageArt user can use the account's registered email without re-entering it.
+11. Reservationer name is entered as surname/given name, with separate furigana fields.
+12. When the user presses the reservation button, the current date/time is checked against the Production's チケット販売開始日時.
+13. If ticket sales/reservation acceptance has not started, the reservation is not made and an error popup is displayed.
+14. The current date/time is also checked against the Performance's calculated ticket sales end date/time.
+15. The sales end date/time is calculated from the Production-level setting **公演回の［日数］日前の［時］時まで**.
+16. If ticket sales/reservation acceptance has ended, the reservation is not made and an error popup is displayed.
+17. The start/end acceptance checks are performed when the user presses the reservation button.
+18. If ticket sales/reservation acceptance has started and has not ended, the capacity of the selected Performance is checked.
+19. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
+20. If capacity is available, the user confirms the displayed reservation details.
+21. Reservation is confirmed before the confirmation email is sent.
+22. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
+23. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
+24. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
 
 ---
 
@@ -333,7 +365,6 @@ This specification does not define the following items unless separately confirm
 
 - Online payment
 - Seat assignment
-- Reservation cancellation by the customer
 - Reservation expiration
 - Additional reservation modification rules
 - Detailed email retry policy
@@ -342,4 +373,6 @@ This specification does not define the following items unless separately confirm
 - Detailed ticket-back calculation rules
 - Detailed ticket sales quota (ノルマ) rules
 
-These must not be inferred from this reservation flow specification.
+Reservation change/cancellation is specified separately in **Chapter 30 : Ticket Reservation Change / Cancellation Screen**.
+
+These items must not be inferred from this reservation flow specification.
