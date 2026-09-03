@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 28 : Ticket Back Management Screen Specification
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
@@ -54,13 +54,19 @@ The screen provides the following settings and operations.
 
 条件
 優先順位　枚数　条件　料率
-    1　　 10　 [以上▼] [20] %
-    2　　 20　 [以上▼] [40] %
+    1　　 20　 [以上▼] [40] %
+    2　　 10　 [以上▼] [20] %
 
 [＋条件を追加する]
 
 [ 保存 ]
 ```
+
+条件は**優先順位の高いものから順に適用・計算する**。
+
+そのため、上記の例では「20枚以上 → 40%」が優先順位1、「10枚以上 → 20%」が優先順位2となる。
+
+例えば累進方式の場合、25枚では優先順位1の「20枚以上 → 40%」が適用され、25枚全体を40%で計算する。
 
 ---
 
@@ -77,20 +83,28 @@ The screen must display an explanation of both methods so that the administrator
 
 ### 4.1 累進方式
 
-**累進方式** applies the rate of the highest-priority/reached applicable condition to the entire relevant ticket quantity.
+**累進方式** applies the rate of the **highest-priority condition that is satisfied by the relevant ticket quantity** to the entire relevant ticket quantity.
 
 For example:
 
 ```text
-10枚以上 → 20%
-20枚以上 → 40%
+優先順位1：20枚以上 → 40%
+優先順位2：10枚以上 → 20%
 ```
 
-For 25枚, the 20枚以上 condition is reached, so 40% is applied to all 25枚.
+For 25枚, both conditions are satisfied, but priority 1 is higher. Therefore, 40% is applied to all 25枚.
 
 ```text
 チケット代 × 25枚 × 40%
 ```
+
+For 15枚, priority 1 is not satisfied, so priority 2 is applied.
+
+```text
+チケット代 × 15枚 × 20%
+```
+
+For 9枚, neither condition is satisfied, so no ticket back is generated.
 
 ### 4.2 分離方式
 
@@ -99,8 +113,8 @@ For 25枚, the 20枚以上 condition is reached, so 40% is applied to all 25枚.
 For example:
 
 ```text
-10枚以上 → 20%
-20枚以上 → 40%
+優先順位1：20枚以上 → 40%
+優先順位2：10枚以上 → 20%
 ```
 
 For 25枚:
@@ -110,6 +124,8 @@ For 25枚:
 ```
 
 Thus, the same ticket quantity and conditions can produce different ticket-back amounts depending on the selected calculation method.
+
+The priority order determines the order in which the configured conditions are evaluated when calculating the applicable stages.
 
 ---
 
@@ -130,7 +146,11 @@ Each condition has a priority order.
 
 Conditions are calculated/applied **in order from the highest priority to the lower priority**.
 
-The priority is part of the registered condition set and determines the order in which conditions are evaluated.
+**優先順位1が最も高い優先順位**であり、優先順位2、3……の順に低くなる。
+
+For cumulative calculation, when multiple conditions are satisfied, the condition with the **highest priority among the satisfied conditions** determines the applicable rate for the entire relevant ticket quantity.
+
+The priority is part of the registered condition set and determines the order in which conditions are evaluated. It is not merely a display order.
 
 ### 5.2 枚数
 
@@ -166,8 +186,8 @@ Example:
 
 | 優先順位 | 枚数 | 条件 | 料率 |
 |---:|---:|---|---:|
-| 1 | 10 | 以上 | 20% |
-| 2 | 20 | 以上 | 40% |
+| 1 | 20 | 以上 | 40% |
+| 2 | 10 | 以上 | 20% |
 
 The user can add further conditions using:
 
@@ -183,9 +203,25 @@ The exact maximum number of conditions is not fixed by this specification.
 
 Conditions are processed from the **highest priority to the lower priority**.
 
-The registered priority therefore has business meaning and must not be treated as merely a display order.
+The confirmed priority convention is:
 
-The exact internal algorithm for resolving overlapping or mutually compatible conditions beyond this priority rule is not separately specified here. Implementation must preserve the confirmed priority ordering and the selected comparison operator for each condition.
+```text
+優先順位1
+  ↓
+優先順位2
+  ↓
+優先順位3
+  ↓
+...
+```
+
+When multiple conditions are satisfied, the higher-priority condition is considered first.
+
+For **累進方式**, the highest-priority satisfied condition determines the rate applied to the entire relevant ticket quantity.
+
+For **分離方式**, the configured conditions are processed according to priority so that the relevant ticket quantity can be divided into the applicable stages and each stage can receive its configured rate.
+
+The registered priority therefore has business meaning and must not be treated as merely a display order.
 
 ---
 
@@ -245,7 +281,8 @@ The settings apply to the Production as a whole.
 - Multiple conditions can be registered using **「＋条件を追加する」**.
 - Each condition contains **優先順位 / 枚数 / 条件 / 料率（%）**.
 - 条件 is selected from **未満 / 以下 / 以上**.
-- Conditions are processed from the highest priority to the lower priority.
+- **優先順位1が最も高く、条件は優先順位の高いものから順に処理される。**
+- For cumulative calculation, when multiple conditions are satisfied, the highest-priority satisfied condition determines the rate applied to the entire relevant ticket quantity.
 - The ticket-back rate is entered as a percentage.
 - **保存** saves the Production-wide ticket-back settings.
 - Home ticket-back estimates continue to use reservation quantity, not actual sales amount.
