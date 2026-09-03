@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 21 : Member Management Screen Specification
 
-Version : 1.1
+Version : 1.2
 Status : Confirmed business specification
 
 ---
@@ -11,6 +11,8 @@ Status : Confirmed business specification
 This document defines the screen behavior for managing members/participants of a Production.
 
 Production member management is performed in the context of a Production and represents Production participation. It does not modify or delete the underlying Person account/profile.
+
+Production member management also includes the member-level information required for ticket sales management, specifically **ノルマ** and **チケットバック**.
 
 ---
 
@@ -30,6 +32,8 @@ Display the existing Production members as a list.
 
 Each list record represents a **Person + Role** assignment.
 
+The member record also has the Production-specific **ノルマ** and **チケットバック** information used for ticket sales management.
+
 Each record has a checkbox so that multiple records can be selected.
 
 Example:
@@ -46,6 +50,8 @@ Example:
 
 [ 削除 ]
 ```
+
+The exact presentation and editing controls for ノルマ and チケットバック are UX details unless separately confirmed.
 
 ### 2.3 Member Delete
 
@@ -74,6 +80,8 @@ ID　：[　　　　　　]
 
 [ 保存 ] [ キャンセル ]
 ```
+
+The Production member record may additionally contain the Production-specific **ノルマ** and **チケットバック** information. The exact input UI and calculation details are not fixed by this chapter unless separately confirmed.
 
 ### 3.1 Name
 
@@ -151,7 +159,9 @@ Person
   ↓
 Production Participant / Member Record
   ├─ Person ID
-  └─ Role
+  ├─ Role
+  ├─ ノルマ
+  └─ チケットバック
 ```
 
 The Person remains an independent StageArt entity.
@@ -162,7 +172,19 @@ A Production member may be an existing Organization member or an external/guest 
 
 ---
 
-## 6. Confirmed UX Rules
+## 6. Ticket Sales Management Purpose
+
+The **ノルマ** and **チケットバック** information associated with a Production member is used in conjunction with the reservation's **扱い** information.
+
+When a reservation is recorded with a particular member as its **扱い**, the reserved ticket quantity can be counted against that member's ticket sales performance.
+
+The member's ticket sales count is used for the Production's ticket sales management, including the counting required for **ノルマ** and **チケットバック**.
+
+The detailed calculation method, thresholds, rates, and settlement rules for ノルマ and チケットバック are not defined by this screen specification unless separately confirmed.
+
+---
+
+## 7. Confirmed UX Rules
 
 - Member Management is a Production-level operation.
 - Existing members are displayed as selectable records using checkboxes.
@@ -178,11 +200,13 @@ A Production member may be an existing Organization member or an external/guest 
 - The same Person may have multiple roles in the same Production.
 - Each Person + Role assignment is stored as a separate record, even when the Person ID is identical.
 - Deleting a member record removes that Production participation/role assignment only; it does not delete the Person.
+- Production member records include the Production-specific concepts of **ノルマ** and **チケットバック**.
+- Ticket quantities reserved with a member as **扱い** are used as that member's ticket sales count for the Production's ticket sales management, including ノルマ and チケットバック counting.
 
 ---
 
-## 7. Scope
+## 8. Scope
 
 This chapter specifies the confirmed screen behavior and business rules for Production Member Management.
 
-Detailed API paths, persistence field names, authorization implementation, search algorithm, popup wording, and visual styling are implementation/UX details unless separately confirmed.
+Detailed API paths, persistence field names, authorization implementation, search algorithm, popup wording, visual styling, and the detailed calculation/settlement rules for ノルマ and チケットバック are implementation/UX or separate business-rule details unless separately confirmed.
