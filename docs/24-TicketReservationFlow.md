@@ -1,0 +1,316 @@
+# StageArt Blueprint
+# Chapter 24 : Ticket Reservation Flow
+
+Version : 1.0
+Status : Confirmed business specification
+
+---
+
+## 1. Purpose
+
+This document defines the common ticket reservation flow for StageArt.
+
+The ticket reservation screen is shared by all reservation entry points. The entry point only determines the initial state of certain fields, especially the "扱い" (handling person).
+
+The reservation business operation itself must not be duplicated for each entry point.
+
+---
+
+## 2. Reservation Entry Points
+
+StageArt supports the following reservation entry points:
+
+### 2.1 StageArt user searches for a Production
+
+A user who is logged in to StageArt:
+
+StageArt Home
+↓
+公演を探す
+↓
+Production public page
+↓
+Ticket reservation
+
+The user proceeds to the common reservation screen.
+
+---
+
+### 2.2 General user reserves from the public Production page
+
+A general user who is not required to be a StageArt account user may access the public Production page and proceed to ticket reservation.
+
+Production public page
+↓
+Ticket reservation
+
+The user proceeds to the common reservation screen.
+
+---
+
+### 2.3 General user reserves from a Production participant's handling page
+
+A Production participant may introduce a reservation page to a general user.
+
+The reservation page is associated with the introducing/handling Production participant.
+
+Conceptually:
+
+Production participant
+↓
+Personal handling reservation page
+↓
+General user
+↓
+Common reservation screen
+
+In this case, the "扱い" is fixed to the associated Production participant and cannot be changed by the reservation user.
+
+---
+
+### 2.4 Production participant reserves using their own handling
+
+A Production participant may make a reservation using their own handling.
+
+The common reservation screen is opened with the participant's own "扱い" fixed.
+
+The exact navigation used by the participant to reach this screen is an implementation/UX detail; the reservation operation itself is the same as the other entry points.
+
+---
+
+## 3. Common Reservation Screen
+
+All four entry points use the same reservation screen.
+
+The conceptual fields are:
+
+```text
+予約画面
+
+扱い              [選択 ▼]
+公演回            [選択 ▼]
+チケット枚数
+  チケット種別    [枚数 ▼]
+  チケット種別    [枚数 ▼]
+
+連絡先メールアドレス  [                    ]
+予約者名
+  姓                [                    ]
+  名                [                    ]
+
+フリガナ
+  セイ              [                    ]
+  メイ              [                    ]
+
+[予約]
+```
+
+### 3.1 扱い
+
+"扱い" identifies the Production participant responsible for the handling of the reservation.
+
+In a normal reservation entry point, the user can select the handling person from the available Production participants for the Production.
+
+For a participant-specific reservation page, the handling person is fixed by the entry point and is not selectable/replaceable by the reservation user.
+
+The reservationer and the handling person are separate concepts. A general user can therefore make a reservation while a Production participant is recorded as the handling person.
+
+---
+
+### 3.2 公演回
+
+The user selects the Performance for which the reservation is being made.
+
+The selectable Performances are the Performances of the target Production.
+
+---
+
+### 3.3 チケット枚数
+
+The user specifies the quantity for each ticket type defined for the Production.
+
+Ticket types and prices are managed at Production level and are common to the Production's Performances.
+
+---
+
+### 3.4 連絡先メールアドレス
+
+The reservation user provides the email address to which the reservation confirmation email is sent.
+
+For a reservation made by a logged-in StageArt user, the user's registered account email address may be used without requiring the user to enter it again.
+
+---
+
+### 3.5 予約者名
+
+The reservation user provides surname and given name.
+
+A separate furigana field is provided so that the reservation user does not have to enter the person's name itself in katakana.
+
+---
+
+## 4. Reservation Notice
+
+The reservation screen displays a notice explaining the email-delivery rule.
+
+The following wording is the intended level of detail:
+
+> **【重要】予約について**  
+> 予約完了後、入力されたメールアドレス宛に予約確認メールをお送りします。  
+> 予約確認メールが届かない場合は、まず迷惑メールフォルダをご確認ください。  
+> なお、入力されたメールアドレスが存在しない等の理由でメールが送信できなかった場合は、予約はキャンセルされます。  
+> あらかじめ「○○@○○」からのメールを受信できるよう設定してください。
+
+The wording may be adjusted for the final UI, but the above business meaning must be preserved.
+
+---
+
+## 5. Reservation Confirmation Flow
+
+Pressing the reservation button does not immediately finalize the reservation from the user's perspective.
+
+The flow is:
+
+```text
+Reservation information entered
+↓
+Press 「予約」
+↓
+Check Performance capacity and requested ticket quantity
+↓
+If insufficient capacity
+    → Display a popup that the reservation cannot be made
+
+If sufficient capacity
+    ↓
+Display entered reservation details
+↓
+「予約してよろしいですか？」
+↓
+Confirmation button
+↓
+Reservation confirmed
+↓
+Send reservation confirmation email
+```
+
+The capacity check must use the capacity of the selected Performance.
+
+---
+
+## 6. Email Delivery and Reservation Status
+
+The reservation is confirmed before the reservation confirmation email is sent.
+
+After confirmation, StageArt sends the reservation confirmation email to the specified address.
+
+The important distinction is between **successful email sending** and **the recipient actually seeing/receiving the email**.
+
+### 6.1 Successful sending
+
+If the email can be sent normally to the specified address, the reservation remains established.
+
+This includes cases where:
+
+- The email is delivered to the recipient's normal inbox.
+- The email is classified as spam by the recipient's mail service/client.
+- The recipient does not notice or read the email.
+- The recipient-side mail client otherwise prevents the user from noticing the message, while the sender side has successfully sent the message.
+
+The recipient actually reading or seeing the email is not a condition for reservation establishment.
+
+### 6.2 Unknown/non-existent destination
+
+If the specified email address does not exist or the destination is rejected as an unknown/non-existent recipient, the reservation is cancelled.
+
+Conceptually:
+
+```text
+Reservation confirmed
+↓
+Send reservation confirmation email
+↓
+Email delivery result
+├─ Normal sending / accepted by mail system
+│    ↓
+│  Reservation remains established
+│
+└─ Destination unknown / recipient does not exist
+     ↓
+   Reservation cancelled
+```
+
+The purpose of this rule is to prevent a user from reserving tickets with an arbitrary or non-existent email address and thereby occupying capacity without a reachable reservation contact.
+
+A spam-folder classification is not treated as a failed reservation.
+
+---
+
+## 7. Common Processing Principle
+
+The four reservation entry points must converge on the same reservation processing flow.
+
+```text
+                 ┌─ StageArt user → 公演を探す
+                 │
+                 ├─ Public Production page
+Entry points ────┼─ Participant handling page
+                 │
+                 └─ Participant's own handling
+                         ↓
+                 Common reservation screen
+                         ↓
+                 Capacity check
+                         ↓
+                 Reservation confirmation
+                         ↓
+                 Reservation confirmed
+                         ↓
+                 Reservation confirmation email
+                         ↓
+          ┌──────────────┴──────────────┐
+          ↓                             ↓
+   Normal sending                Unknown destination
+          ↓                             ↓
+    Reservation remains             Reservation
+       established                  cancelled
+```
+
+The entry point is therefore not a separate reservation business function. It only determines the context and initial/fixed values presented by the common reservation screen.
+
+---
+
+## 8. Business Rules Summary
+
+1. All reservation entry points use one common reservation screen.
+2. "扱い" and "予約者" are separate concepts.
+3. A normal reservation entry point allows the user to select "扱い" from the available Production participants.
+4. A participant-specific reservation page fixes "扱い" to the associated participant.
+5. The user selects the target Performance (公演回).
+6. Ticket quantities are entered by ticket type.
+7. A logged-in StageArt user can use the account's registered email without re-entering it.
+8. Reservationer name is entered as surname/given name, with separate furigana fields.
+9. Capacity is checked before reservation confirmation.
+10. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
+11. If capacity is available, the user confirms the displayed reservation details.
+12. Reservation is confirmed before the confirmation email is sent.
+13. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
+14. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
+15. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
+
+---
+
+## 9. Scope Not Yet Defined
+
+This specification does not define the following items unless separately confirmed:
+
+- Online payment
+- Seat assignment
+- Reservation cancellation by the customer
+- Reservation expiration
+- Additional reservation modification rules
+- Detailed email retry policy
+- Detailed mail-server error classification and technical implementation
+- Attendance/completion processing after reception
+
+These must not be inferred from this reservation flow specification.
