@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 31 : Same-Day Reception Screen Specification
 
-Version : 1.1
+Version : 1.2
 Status : Confirmed business specification
 
 ---
@@ -33,6 +33,7 @@ Pressing **当日受付** opens the same-day reception input screen.
 The input screen contains the following fields:
 
 ```text
+扱い             [ 選択 ▼ ]（任意）
 チケット種別     [ 選択 ▼ ]
 枚数             [ 選択 ▼ ]
 
@@ -43,8 +44,12 @@ The input screen contains the following fields:
 
 ### 3.1 扱い
 
-- Same-day reception does **not** require or record **扱い**.
-- The added same-day reservation is therefore not attributed to a Production participant for quota or ticket-back purposes.
+- **扱いは任意**である。
+- 扱いを設定する場合、オペレーターは対象Productionの参加者から選択する。
+- 扱いを設定しない場合も当日受付を登録できる。
+- 扱いを設定した場合は、通常の予約と同様に、その予約の扱いとして記録する。
+- 扱いを設定した当日受付は、既存の扱い・ノルマ・チケットバックのルールに従う。
+- 扱いを設定しない当日受付は、個人の扱い・ノルマ・チケットバックの集計対象外となる。
 
 ### 3.2 チケット種別
 
@@ -71,6 +76,8 @@ The flow is:
 
 ```text
 当日受付
+↓
+扱いを選択（必要な場合）
 ↓
 チケット種別を選択
 ↓
@@ -142,15 +149,15 @@ Same-day reception does **not** require the following information:
 - Email address
 - Telephone number
 - Other contact information
-- 扱い
 
 The confirmed same-day reception input is based on:
 
+- 扱い（任意）
 - チケット種別 / 当日券価格設定
 - 枚数
 - Automatically calculated 料金
 
-No reservationer/contact information or 扱い information is required for the same-day reception flow.
+No reservationer/contact information is required for the same-day reception flow.
 
 ---
 
@@ -188,14 +195,13 @@ The same-day reception must therefore produce the same business result of a chec
 
 ## 10. Relationship to 扱い / Quota / Ticket Back
 
-Same-day reception has **no 扱い**.
+Same-day reception **may have 扱い, but 扱い is not mandatory**.
 
-Therefore, the added same-day reception reservation:
+Therefore:
 
-- Is not attributed to a Production participant's 扱い.
-- Does not increase a member's quota progress.
-- Does not contribute to member-level ticket-back calculations based on 扱い.
-- Is nevertheless a confirmed **Check In** and is included in the actual attendance/check-in record for the Performance.
+- When 扱い is selected, the added reservation is attributed to that Production participant and participates in the existing rules for reservation quantity aggregation by 扱い, quota progress, and ticket-back calculation.
+- When 扱い is not selected, the added reservation is not attributed to a Production participant and does not increase an individual's quota progress or contribute to member-level ticket-back calculations based on 扱い.
+- In either case, the added same-day reception is a confirmed **Check In** and is included in the actual attendance/check-in record for the Performance.
 
 ---
 
@@ -215,11 +221,11 @@ The following are confirmed requirements:
 
 - A dedicated **当日受付** button is provided on the reception table.
 - Pressing the button opens a same-day reception input screen.
+- The input screen contains **扱い**, but **扱い is optional**.
 - The input screen contains **チケット種別**.
 - The applicable **当日券の価格設定** can be selected and used for the transaction amount.
 - The input screen contains **枚数** as a pull-down selection.
 - The amount is automatically calculated from the selected day-ticket price and quantity.
-- **扱い** is not required and is not recorded.
 - **確認** opens a confirmation screen.
 - Pressing **OK** on the confirmation screen finalizes the operation.
 - A Performance-level remaining-capacity check is performed.
@@ -231,7 +237,8 @@ The following are confirmed requirements:
 - An internal reservation number is generated for the created reservation.
 - The added reservation is immediately treated as **CheckIn済み**.
 - Same-day reception does not require reservationer name or contact information.
-- Same-day reception does not participate in **扱い**, quota progress, or member-level ticket-back calculations.
+- When 扱い is selected, the same-day reservation participates in the existing **扱い**, quota, and ticket-back rules.
+- When 扱い is not selected, it does not participate in individual **扱い**, quota progress, or member-level ticket-back calculations.
 - Same-day reception does not require subsequent change/cancellation processing.
 
 The following remain implementation/UI details unless separately confirmed:
