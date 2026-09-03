@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.5
+Version : 1.6
 Status : Confirmed business specification
 
 ---
@@ -30,13 +30,14 @@ Performance
 
 A user creates and manages a theatre/event organization, creates productions under that organization, and creates individual performances for each production.
 
-The five major functional areas are:
+The major functional areas are:
 
 1. Organization → Production → Performance
 2. Production → Member Management
 3. Production → Rehearsal Management
-4. Performance → Ticket Management
-5. Organization → Accounting Management
+4. Production → Ticket Management
+5. Performance → Ticket sales/reservation and Reception / Check-in
+6. Organization → Accounting Management
 
 Public organization and production websites are produced as a consequence of the organization/production information being managed; they are not the primary business hierarchy.
 
@@ -108,19 +109,21 @@ The user experience should be expressed as "この公演の稽古を管理する
 
 ---
 
-### 3.4 Performance → Ticket Management
+### 3.4 Production → Ticket Management
 
-Tickets are managed in the context of individual Performances.
+Ticket types and prices are managed at the Production level and are common to the Production's Performances.
 
 Production
 ↓
-Performance
-↓
 Ticket Management
+↓
+Performance-specific sales / reservation operations
+↓
+Reception / Check-in
 
-Ticket configuration and sales/entry operations must be associated with the relevant Performance.
+Ticket Management defines the ticket types and prices for the Production. Ticket sales or reservation acceptance is operated for an individual Performance.
 
-A Production is the overall work; a Performance is the individual occurrence for which a ticket/seat/entry operation can take place.
+The Production-level Ticket Management specification is defined separately in Chapter 19. Performance-specific reception/check-in is operated against the selected Performance.
 
 #### 3.4.1 Ticket Reception / Check-in UX
 
@@ -198,9 +201,23 @@ Production Public Page
 ↓
 公演HP
 
-Public publication is controlled by the publication settings and lifecycle defined elsewhere in the Blueprint. Creating the underlying Organization or Production does not by itself mean that the public page is immediately published.
+The public Production page is prepared with the relevant information/display areas in advance. Publication is controlled by the publication date assigned to each individual information item.
 
-The important business concept is that the public page is derived from the Organization/Production information rather than being an independent content-management product.
+The public page does not require all Production information to become visible at the same time. If different information items have different publication dates, each item is displayed when its own publication date/time is reached.
+
+Conceptually:
+
+Production public page
+↓
+Pre-configured information/display areas
+↓
+Current date/time is evaluated by the public-page implementation
+↓
+Display each information item only when its configured publication date/time has been reached
+
+Therefore, information can be released in stages without requiring separate public-page publication operations.
+
+The important business rule is that **the publication date/time configured for each information item is the publication condition for that item itself**.
 
 ---
 
@@ -494,7 +511,9 @@ Invite / manage Production members
 ↓
 Create / manage rehearsals
 ↓
-Configure / manage tickets for each Performance
+Configure / manage Production tickets
+↓
+Open ticket sales / reservation acceptance for each Performance
 ↓
 Operate ticket reception / check-in for each Performance
 ↓
@@ -524,12 +543,13 @@ Production
 ├── Members
 ├── Rehearsals
 ├── Performances
+├── Tickets
 ├── Production Public Page
 └── Production-specific management
 
 Performance
 ├── Overview
-├── Tickets
+├── Ticket sales / reservation operations
 ├── Reception / Check-in
 └── Performance-specific operations
 
@@ -682,9 +702,7 @@ The screen provides three discovery methods.
 
 Conceptually:
 
-```text
 Production start date/time ≤ selected date ≤ Production end date/time
-```
 
 For example, if a Production runs from September 10 through September 15, searching for September 12 includes that Production, while searching for September 16 does not.
 
@@ -735,7 +753,6 @@ This includes the uploaded Organization logo.
 
 Conceptually:
 
-```text
 Edit Organization information / upload logo
 ↓
 更新
@@ -743,7 +760,6 @@ Edit Organization information / upload logo
 Save Organization information
 ↓
 Reflect the updated information on the public Organization page
-```
 
 The exact publication infrastructure and persistence/API details are implementation details and are not fixed here.
 
@@ -808,10 +824,43 @@ The following information is displayed and managed:
 - **Slug** — display only; not editable on this screen.
 - **公演ビジュアル（フライヤー）** — image upload is supported; up to 2 images.
 - **公演説明** — editable only while the Production is active.
-- **公演日程** — editable only while the Production is active; includes **情報公開日**.
-- **会場** — editable only while the Production is active; includes **情報公開日**.
-- **脚本** — editable only while the Production is active; includes **情報公開日**.
-- **演出** — editable only while the Production is active; includes **情報公開日**.
+- **公演日程** — editable only while the Production is active; includes **情報公開日時**.
+- **会場** — editable only while the Production is active; includes **情報公開日時**.
+- **脚本** — editable only while the Production is active; includes **情報公開日時**.
+- **演出** — editable only while the Production is active; includes **情報公開日時**.
+
+The information-publication datetime configured for each item is used directly as that item's public display condition. There is no requirement for all Production information to be released at the same time. Different information can therefore be released incrementally according to its own configured publication datetime.
+
+#### メンバー情報
+
+Display the Production's member/participant information on the Production information screen.
+
+The displayed member information is the Production participant information managed by Production Member Management. The detailed member-management operations remain in **メンバー管理**.
+
+The public display timing of member information is controlled by the publication setting applicable to that information. Member information may therefore be withheld until its configured publication datetime and then displayed on the public Production page.
+
+#### チケット情報
+
+Display the Production's configured ticket information on the Production information screen.
+
+Ticket information consists of the ticket types and prices configured for the Production. The detailed ticket-management operations remain in **チケット管理**.
+
+The Production-level ticket configuration is common to the Production's Performances. Performance-specific ticket sales/reservation operations are handled separately for each Performance.
+
+#### チケット販売開始日時
+
+Provide **チケット販売開始日時** as the datetime at which ticket reservation/sales acceptance for the Production's Performances can begin.
+
+This datetime is distinct from the publication datetime of ticket information.
+
+The distinction is:
+
+- **情報公開日時** — controls when the relevant information is displayed publicly.
+- **チケット販売開始日時** — controls when ticket reservation/sales acceptance can begin.
+
+Therefore, ticket information may be publicly visible before reservations/sales are accepted.
+
+The detailed ticket reservation/sales flow, including the exact operations available before and after this datetime, is specified separately as part of the Ticket Flow specification.
 
 #### 更新
 
@@ -836,7 +885,7 @@ The Production information screen provides the following management operations w
 - **メンバー管理** — manage Production participants/members.
 - **メンバーへの通知** — send notifications to Production participants/members.
 - **公演回管理** — create/manage individual Performances.
-- **チケット管理** — manage tickets associated with Performances.
+- **チケット管理** — manage Production-level ticket types and prices.
 - **稽古管理** — manage rehearsals for the Production.
 
 #### 会計管理
@@ -858,57 +907,45 @@ Once the Production activity has ended, active-only editing and management opera
 
 Purpose: create the Production record itself before entering the detailed Production information/management screen.
 
-The creation screen is intentionally minimal. It collects only the information that is display-only on the subsequent **公演情報** screen and is required to establish the Production.
+The creation screen requires only:
 
-#### Initial Production Information
+- 公演名
+- Slug
 
-The user enters:
-
-- **公演名**
-- **Slug**
-
-These fields are entered during Production creation and become display-only on the subsequent 公演情報 screen.
-
-The creation screen does not duplicate the detailed Production information settings such as flyer images, description, schedule, venue, script, direction, or publication dates.
-
-#### 公演作成・確定
-
-Provide a confirmation/create operation.
-
-Conceptually:
-
-```text
-公演名 / Slug を入力
-↓
-公演を作成して確定
-↓
-Productionを作成
-↓
-公演情報画面へ移動
-```
-
-After successful creation, the user is immediately moved to the corresponding **公演情報** screen, where the remaining Production information and management operations can be configured.
-
-This separation is intentional:
-
-- **公演を作る** = create the Production container/basic record.
-- **公演情報** = configure and operate the Production after it exists.
-
-The exact validation rules for Production name and Slug, uniqueness checks, persistence/API details, and error messaging are implementation details unless separately confirmed.
+After confirmation, StageArt creates the Production and navigates the user to the Production information screen.
 
 ---
 
-## 16. Implementation Rule
+## 16. Confirmation Rule
 
-When an implementation screen or API appears to contradict this functional structure, do not resolve the discrepancy by inventing another business concept.
+The following are confirmed business rules and must not be changed by implementation convenience:
 
-First determine whether:
+1. Organization membership and Production participation are separate relationships.
+2. Production member management belongs to the Production context.
+3. Rehearsal management belongs to the Production context.
+4. Ticket types and prices are configured at the Production level and are common to its Performances.
+5. Ticket sales/reservation acceptance is operated for individual Performances.
+6. Ticket reception/check-in is operated for individual Performances.
+7. Production public information is prepared in advance and displayed according to the publication datetime configured for each information item.
+8. Different Production information items may therefore be released incrementally at different publication datetimes.
+9. Ticket sales/reservation acceptance has a separate **チケット販売開始日時** and must not be treated as the same concept as information publication.
+10. The Production information screen displays Production member information and ticket information as part of the Production overview, while detailed management remains in the corresponding management screens.
+11. Public-page implementation details are not to be used to change these business rules.
 
-1. the implementation is incomplete,
-2. the UI is exposing an internal Domain concept that should be hidden,
-3. the feature belongs under a different business context, or
-4. the Blueprint itself needs an explicit business-rule change.
+---
 
-The functional structure in this document is the baseline for future screen-flow and UX specification work.
+## 17. Change History
 
-Detailed Domain Model documents remain authoritative for their respective Domain-level rules.
+### Version 1.6
+
+- Clarified that Production-level Ticket Management defines ticket types/prices common to the Production's Performances.
+- Clarified that ticket sales/reservation acceptance and reception/check-in are Performance-level operations.
+- Added Production information screen display of **メンバー情報**.
+- Added Production information screen display of **チケット情報**.
+- Added **チケット販売開始日時** as a separate business setting from information publication.
+- Clarified that each Production information item's configured **情報公開日時** directly controls its public display timing.
+- Clarified that Production public information may be released incrementally at different times.
+- Clarified the public-page concept as pre-configured information/display areas whose visibility is controlled by the configured publication datetime.
+- Corrected terminology from 台本 to **脚本**.
+
+---
