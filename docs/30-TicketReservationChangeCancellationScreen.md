@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 30 : Ticket Reservation Change / Cancellation Screen Specification
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
@@ -16,7 +16,41 @@ The purpose is to allow the reservation holder to change the reserved ticket qua
 
 ---
 
-## 2. Entry Point
+## 2. Reservation Data Required for Change / Cancellation
+
+Each reservation must retain the information required to identify the reservation and deliver change-result notifications.
+
+At minimum, the reservation data must maintain:
+
+- **予約番号**
+- **予約時メールアドレス**
+- **チケット予約内容**
+
+The reservation number and reservation email address are therefore linked to the same reservation record.
+
+The reservation email address is the destination for the reservation confirmation email and subsequent change/cancellation result email.
+
+In addition, each reservation must have a **change/cancellation access token** associated with it for the self-service change/cancellation link.
+
+Conceptually:
+
+```text
+Reservation
+├─ 予約番号
+├─ 予約時メールアドレス
+├─ チケット予約内容
+└─ 変更・キャンセル用トークン
+        ↓
+予約確認メールの変更・キャンセルリンク
+```
+
+The token is used to identify the reservation when the recipient opens the link. The reservation number itself does not need to be exposed as the security credential for the operation.
+
+The exact token generation, storage, expiration, and URL format are implementation details unless separately confirmed.
+
+---
+
+## 3. Entry Point
 
 The reservation confirmation email contains a link for **チケット変更・キャンセル**.
 
@@ -30,13 +64,15 @@ Conceptually:
 チケット変更・キャンセル画面
 ```
 
-The reservation number is supplied by the link and is used to identify the reservation.
+The change/cancellation link contains or references the change/cancellation access token required to identify the reservation.
+
+When the screen is opened, the system resolves the token to the corresponding reservation and obtains its reservation number.
 
 The user does not manually enter the reservation number in the normal flow.
 
 ---
 
-## 3. Screen
+## 4. Screen
 
 The dedicated screen provides the following fields and operations.
 
@@ -51,13 +87,13 @@ The dedicated screen provides the following fields and operations.
 [ 保存 ]
 ```
 
-### 3.1 予約番号
+### 4.1 予約番号
 
-- The reservation number is received from the email link.
+- The reservation number is obtained from the reservation identified by the email link/token.
 - The reservation number is displayed on the screen.
 - The reservation number is read-only and cannot be edited by the user.
 
-### 3.2 チケット枚数
+### 4.2 チケット枚数
 
 - The current reserved ticket quantity is displayed as the initial selected value.
 - The quantity can be changed using a pull-down list.
@@ -67,13 +103,13 @@ The screen does not require a separate cancellation button.
 
 Cancellation is represented by changing the ticket quantity to 0 and saving.
 
-### 3.3 保存
+### 4.3 保存
 
 The user selects **保存** to submit the requested change.
 
 ---
 
-## 4. Change Processing
+## 5. Change Processing
 
 When the user selects **保存**, the system compares the requested quantity with the quantity currently recorded in the reservation.
 
@@ -85,7 +121,7 @@ When the user selects **保存**, the system compares the requested quantity wit
 差分を算出
 ```
 
-### 4.1 Quantity Increased
+### 5.1 Quantity Increased
 
 When the requested ticket quantity is greater than the current reservation quantity:
 
@@ -119,7 +155,7 @@ Conceptually:
     変更結果をメール
 ```
 
-### 4.2 Quantity Decreased
+### 5.2 Quantity Decreased
 
 When the requested ticket quantity is less than the current reservation quantity:
 
@@ -130,7 +166,7 @@ When the requested ticket quantity is less than the current reservation quantity
 
 No additional capacity check is required when reducing the quantity.
 
-### 4.3 Cancellation
+### 5.3 Cancellation
 
 When the requested ticket quantity is **0枚**:
 
@@ -144,7 +180,7 @@ The user performs cancellation by selecting **0枚** and pressing **保存**.
 
 ---
 
-## 5. Reservation Count Adjustment
+## 6. Reservation Count Adjustment
 
 The reservation count must be adjusted according to the change from the previous quantity to the new quantity.
 
@@ -174,7 +210,7 @@ This also means that Home's reservation-based quota and ticket-back estimate use
 
 ---
 
-## 6. Capacity Check
+## 7. Capacity Check
 
 A capacity check is required **only when the requested ticket quantity increases**.
 
@@ -188,7 +224,7 @@ The exact wording of the error popup is a UX detail unless separately confirmed.
 
 ---
 
-## 7. Confirmation Popup
+## 8. Confirmation Popup
 
 A confirmation popup is displayed before a quantity change or cancellation is finalized.
 
@@ -209,9 +245,9 @@ Exact wording is a UX detail.
 
 ---
 
-## 8. Email After Change
+## 9. Email After Change
 
-After the change is successfully confirmed, StageArt sends an email to the reservation email address.
+After the change is successfully confirmed, StageArt sends an email to the **予約時メールアドレス** stored on the reservation.
 
 The email communicates the resulting reservation state.
 
@@ -223,10 +259,13 @@ The email sending occurs after the reservation change has been successfully save
 
 ---
 
-## 9. Business Rules
+## 10. Business Rules
 
+- The reservation record stores the **予約番号** and **予約時メールアドレス** as linked reservation data.
+- The reservation record has a dedicated change/cancellation access token used by the self-service link.
 - The change/cancellation operation is accessed through a link in the reservation confirmation email.
-- The reservation number is supplied by the link and displayed read-only.
+- The link/token identifies the corresponding reservation; the user does not manually enter the reservation number.
+- The reservation number is displayed read-only.
 - The current ticket quantity is the initial value on the screen.
 - Ticket quantity is changed using a pull-down list.
 - **0枚 means cancellation.**
@@ -237,12 +276,12 @@ The email sending occurs after the reservation change has been successfully save
 - A confirmation popup is displayed before a successful change/cancellation is finalized.
 - After confirmation, the reservation quantity is updated.
 - The relevant reservation count is adjusted by the difference between the previous and new quantities.
-- After a successful change or cancellation, a result email is sent.
+- After a successful change or cancellation, a result email is sent to the reservation email address stored on the reservation.
 - Home's reservation-based quota and ticket-back estimate use the updated reservation quantity.
 
 ---
 
-## 10. Relationship to Existing Reservation Flow
+## 11. Relationship to Existing Reservation Flow
 
 This chapter supplements Chapter 24 : Ticket Reservation Flow.
 
@@ -254,8 +293,8 @@ The same reservation record is updated rather than creating a separate replaceme
 
 ---
 
-## 11. Scope
+## 12. Scope
 
 This chapter defines the confirmed business behavior and primary UX for ticket reservation changes and cancellations.
 
-The exact URL format, link token structure, authentication/security mechanism for the link, pull-down maximum quantity, email template, popup wording, reservation status persistence details, and API/database implementation are implementation details unless separately confirmed.
+The exact URL format, token generation/storage/expiration mechanism, authentication/security implementation beyond the confirmed token-based identification, pull-down maximum quantity, email template, popup wording, reservation status persistence details, and API/database implementation are implementation details unless separately confirmed.
