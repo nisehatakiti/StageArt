@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 25 : Production Ticket Sales Rules — Quota and Ticket Back
 
-Version : 1.3
+Version : 1.4
 Status : Confirmed business specification
 
 ---
@@ -22,6 +22,7 @@ The Production information/management area must include the concepts of:
 
 - **ノルマ**
 - **チケットバック**
+- **精算**
 
 チケットバックはProduction単位で設定する。
 
@@ -33,15 +34,18 @@ The Production information/management area must include the concepts of:
 - **チケット販売枚数に応じた複数の条件**
   - 条件となる販売枚数
   - その条件に対応するチケットバック率
+  - **優先順位**
 
-例えば、以下のような複数条件を設定できる。
+条件は優先順位の高いものから処理する。優先順位1が最も高い。
 
-| 販売枚数条件 | チケットバック率 |
-|---:|---:|
-| 10枚以上 | 20% |
-| 20枚以上 | 40% |
+例えば、以下の条件を設定する場合：
 
-条件は複数設定でき、販売枚数に応じて適用する。
+| 優先順位 | 販売枚数条件 | チケットバック率 |
+|---:|---:|---:|
+| 1 | 20枚以上 | 40% |
+| 2 | 10枚以上 | 20% |
+
+累進方式では25枚の場合、優先順位1の20枚以上条件が適用され、25枚全体に40%を適用する。
 
 ---
 
@@ -51,18 +55,22 @@ The Production information/management area must include the concepts of:
 
 **チケット売り上げ枚数全体に対して、到達した条件のチケットバック率を適用する方式。**
 
+複数の条件を満たす場合は、**優先順位が最も高い達成条件**の率を適用する。
+
 例えば、以下の条件の場合：
 
-- 10枚以上 → 20%
-- 20枚以上 → 40%
+- 優先順位1：20枚以上 → 40%
+- 優先順位2：10枚以上 → 20%
 
-25枚売った場合は、20枚以上の条件を達成しているため、25枚全体に40%を適用する。
+25枚売った場合は、優先順位1の20枚以上の条件を達成しているため、25枚全体に40%を適用する。
 
 ```text
 チケット代 × 25枚 × 40%
 ```
 
-つまり、条件を達成した時点で、それまでに販売した枚数を含む売上枚数全体が、到達した条件のバック率の対象となる。
+15枚の場合は優先順位1を満たさないため、優先順位2の10枚以上 → 20%を適用する。
+
+9枚の場合は条件未達のため、チケットバックは発生しない。
 
 ### 3.2 分離方式
 
@@ -70,14 +78,16 @@ The Production information/management area must include the concepts of:
 
 例えば、以下の条件の場合：
 
-- 10枚以上 → 20%
-- 20枚以上 → 40%
+- 優先順位1：20枚以上 → 40%
+- 優先順位2：10枚以上 → 20%
 
-25枚売った場合は、10枚分を20%、20枚以上となる部分を40%として計算する。
+25枚売った場合は、10枚分を20%、残り15枚分を40%として計算する。
 
 ```text
 チケット代 ×（10枚 × 20% ＋ 15枚 × 40%）
 ```
+
+条件は優先順位の高いものから処理し、各段階の対象枚数を確定する。
 
 したがって、累進方式と分離方式では、同じ販売枚数・同じ条件設定であってもチケットバック額が異なる。
 
@@ -89,41 +99,90 @@ The Production information/management area must include the concepts of:
 
 ---
 
-## 4. Sales Count and Attendance Count
+## 4. Ticket Type Aggregation
+
+チケットバックの枚数集計および金額計算は、**チケット種別ごとに行う**。
+
+Productionで設定された各チケット種別の設定金額を使用して、種別ごとの枚数に対してチケットバックを計算する。
+
+例えば、以下のチケット設定の場合：
+
+```text
+一般：3,000円
+学生：2,000円
+```
+
+一般チケットと学生チケットを別々に集計し、それぞれのチケット種別の金額を基準としてチケットバックを算出する。
+
+チケットバック計算に使用する金額は、**Productionで設定されたチケット種別の金額**とする。
+
+現時点では、StageArtにチケット販売価格を予約時に割引するための独立した割引機能は設けない。
+
+---
+
+## 5. Sales Count and Attendance Count
 
 チケットバックには、**見込み計算**と**最終確定計算**の2つの段階がある。
 
-### 4.1 見込み計算
+### 5.1 見込み計算
 
-個人ページに表示するチケットバック金額見込みは、**実販売額ではなくチケットの予約枚数をベース**に計算する。
+Homeに表示するチケットバック金額見込みは、**実販売額ではなくチケットの予約枚数をベース**に計算する。
 
 予約の **扱い** によりProduction member単位で予約枚数を集計し、Productionに設定されたチケットバック条件・計算方式を適用して、チケットバック金額見込みを算出する。
 
+チケット種別ごとに予約枚数を集計し、それぞれのチケット種別の設定金額を使用して計算する。
+
 この見込み額は、実際の来場者数が確定する前の参考情報である。
 
-### 4.2 最終確定計算
+### 5.2 予約変更・キャンセル
 
-チケットバックの最終的な金額は、**実際に来場した客数（実来場枚数）をベース**に計算する。
+チケット変更によって予約枚数が減少した場合、変更後の予約枚数を使用する。
 
-公演終了後、対象となる実来場枚数を集計し、Productionに設定されたチケットバック条件・計算方式を適用して、各個人のチケットバック金額を確定する。
+変更前の予約枚数は見込み計算の対象から除外され、現在の予約内容が基準となる。
+
+### 5.3 最終確定計算
+
+チケットバックの最終的な金額は、**受付でチェックインした実来場枚数のみをベース**に計算する。
+
+公演終了後、対象となる実来場枚数をチケット種別ごとに集計し、Productionに設定されたチケットバック条件・計算方式を適用して、各個人のチケットバック金額を確定する。
+
+招待・関係者等、**予約の「扱い」として個人に紐付けないチケットは、個人のチケットバック集計対象外**とする。
 
 予約枚数と実来場枚数は同じものとして扱わない。
 
 ---
 
-## 5. Relationship with Reservation Handling
+## 6. Relationship with Reservation Handling
 
 A ticket reservation may have a Production member recorded as its **扱い**.
 
 The ticket quantity of reservations associated with a member as **扱い** is used as that member's reservation-based ticket count for preview purposes.
 
-This reservation-based count is used to display the member's current ticket-back estimate on the individual page.
+This reservation-based count is used to display the member's current ticket-back estimate on Home.
 
 A reservation without a specified **扱い** is not attributed to an individual member for this purpose.
 
+For final ticket-back calculation, only the tickets actually checked in at Reception / Check-in are counted for the individual to whom the reservation's **扱い** is assigned.
+
 ---
 
-## 6. Unpaid Amount and Settlement
+## 7. Quota
+
+ノルマの未達に対する具体的な措置はStageArtでは定めない。
+
+各団体が、ノルマ未達分について以下を含む任意の運用を行える。
+
+- 未達のままとする
+- 未達分を本人の負担・買取等として扱う
+- その他、団体独自のルールを設定する
+
+StageArtはノルマの達成状況を把握・表示できるようにするが、未達に対する罰則や買取を強制しない。
+
+ノルマ進捗はHomeで、予約枚数とノルマ枚数を用いて確認できる。
+
+---
+
+## 8. Unpaid Amount and Settlement
 
 The final チケットバック amount for each individual is held as an **未払い金**.
 
@@ -139,13 +198,21 @@ When accounting is not enabled, the confirmed チケットバック amount is st
 
 ### Settlement
 
-When settlement is performed from Production management, the applicable individual's チケットバック未払い金 is settled and becomes **0円**.
+Production management provides a **精算** menu.
 
-The exact settlement operation UI, settlement history, payment method, and other accounting details are not defined by this chapter unless separately confirmed.
+The settlement screen displays a list of Production members and their applicable チケットバック未払い金.
+
+The manager can settle each individual member separately using a **精算済み** operation.
+
+When settlement is performed for an individual, that individual's チケットバック未払い金 becomes **0円** and the individual is treated as settled for the Production.
+
+Settlement is performed per individual; settling one member does not settle other members.
+
+Detailed payment method, accounting journal behavior, and settlement history are implementation/business details outside the scope of this chapter unless separately confirmed.
 
 ---
 
-## 7. Business Relationship
+## 9. Business Relationship
 
 The confirmed relationship is:
 
@@ -155,19 +222,25 @@ Production
 ├─ チケットバック
 │    ├─ 計算方式（累進方式／分離方式）
 │    └─ 条件（複数）
+│         ├─ 優先順位
 │         ├─ 販売枚数条件
 │         └─ チケットバック率
+│
+├─ 精算
 │
 └─ Production Member
      └─ 扱いとして紐づく予約
             ↓
        予約枚数
+       （チケット種別ごと）
             ↓
-     個人ページ：チケットバック金額見込み
+     Home：チケットバック金額見込み
 
 公演終了
      ↓
-    実来場枚数
+受付でチェックインした実来場枚数のみ
+     ↓
+チケット種別ごとに集計
      ↓
 Productionのチケットバック条件を適用
      ↓
@@ -175,7 +248,9 @@ Productionのチケットバック条件を適用
      ↓
 個人別未払い金
      ↓
-公演管理で精算
+公演管理「精算」
+     ↓
+個人ごとに精算済み
      ↓
 未払い金 = 0円
 ```
@@ -186,17 +261,25 @@ The purpose of **扱い** is therefore to provide the link required to count tic
 
 ---
 
-## 8. Scope Not Yet Defined
+## 10. Scope Not Yet Defined
 
-This specification does not define:
+The following items remain outside this chapter:
 
-- The exact value/type of ノルマ.
-- Whether ノルマ is expressed only as a ticket quantity or through another representation.
-- The exact settlement/payment procedure beyond the confirmed unpaid-amount state and zeroing on settlement.
-- Whether ticket-back calculation differs by ticket type.
-- Treatment of cancelled reservations in the final sales count.
-- Exact rules for defining/counting an actual attendance when a reservation contains multiple tickets.
+- Exact settlement/payment method.
+- Accounting journal details associated with settlement.
+- Settlement history display/details.
+- Exact validation/input constraints for ticket-back conditions.
+- Maximum number of ticket-back conditions.
 - Other accounting rules related to ticket sales.
-- Exact calculation/display formula for the individual-page **ノルマ progress** beyond the confirmed display concept of **予約枚数 / ノルマ枚数**.
 
-These items must be confirmed separately before implementation.
+The following items are confirmed by this version and must not be treated as undefined:
+
+- Ticket-back calculation is performed separately by ticket type.
+- Production ticket-type configured price is used as the calculation amount.
+- Reservation quantity is used for Home estimates.
+- When a ticket change reduces/cancels a reservation, the current reservation quantity is used.
+- Final calculation uses only tickets checked in at Reception / Check-in.
+- Invitation/related-person tickets are outside individual ticket-back attribution because they are not assigned as **扱い**.
+- No StageArt discount mechanism is assumed for this calculation.
+- Quota shortfall penalties or buyout rules are left to each Organization.
+- Production provides a per-member **精算** operation.
