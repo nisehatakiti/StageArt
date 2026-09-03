@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 24 : Ticket Reservation Flow
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
@@ -176,6 +176,13 @@ Reservation information entered
 ↓
 Press 「予約」
 ↓
+Check ticket reservation acceptance period (チケット販売開始日時)
+↓
+If reservation acceptance has not started
+    → Display a popup that the reservation cannot be made
+
+If reservation acceptance has started
+    ↓
 Check Performance capacity and requested ticket quantity
 ↓
 If insufficient capacity
@@ -194,7 +201,11 @@ Reservation confirmed
 Send reservation confirmation email
 ```
 
+The ticket reservation acceptance check is performed when the user presses the reservation button. The system checks the current date/time against the Production's configured **チケット販売開始日時** (ticket sales/reservation acceptance start date/time).
+
 The capacity check must use the capacity of the selected Performance.
+
+The ticket sales/reservation acceptance start date/time is a business condition for accepting the reservation; it is separate from the publication date/time of ticket information or other Production information.
 
 ---
 
@@ -254,19 +265,23 @@ The four reservation entry points must converge on the same reservation processi
                  ┌─ StageArt user → 公演を探す
                  │
                  ├─ Public Production page
+                 │
 Entry points ────┼─ Participant handling page
                  │
                  └─ Participant's own handling
                          ↓
                  Common reservation screen
                          ↓
-                 Capacity check
+              Check reservation acceptance
+                (チケット販売開始日時)
                          ↓
-                 Reservation confirmation
+                   Capacity check
+                         ↓
+                Reservation confirmation
                          ↓
                  Reservation confirmed
                          ↓
-                 Reservation confirmation email
+            Reservation confirmation email
                          ↓
           ┌──────────────┴──────────────┐
           ↓                             ↓
@@ -290,13 +305,15 @@ The entry point is therefore not a separate reservation business function. It on
 6. Ticket quantities are entered by ticket type.
 7. A logged-in StageArt user can use the account's registered email without re-entering it.
 8. Reservationer name is entered as surname/given name, with separate furigana fields.
-9. Capacity is checked before reservation confirmation.
-10. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
-11. If capacity is available, the user confirms the displayed reservation details.
-12. Reservation is confirmed before the confirmation email is sent.
-13. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
-14. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
-15. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
+9. When the user presses the reservation button, the current date/time is checked against the Production's チケット販売開始日時.
+10. If ticket sales/reservation acceptance has not started, the reservation is not made and an error popup is displayed.
+11. If ticket sales/reservation acceptance has started, the capacity of the selected Performance is checked.
+12. If the requested quantity cannot be accommodated, the reservation is not made and an error popup is displayed.
+13. If capacity is available, the user confirms the displayed reservation details.
+14. Reservation is confirmed before the confirmation email is sent.
+15. Normal email sending establishes/retains the reservation even if the recipient does not see the message or it is classified as spam.
+16. If the email destination is unknown/non-existent and the email is rejected for that reason, the reservation is cancelled.
+17. The recipient actually receiving or reading the email is not itself a business condition for reservation establishment.
 
 ---
 
