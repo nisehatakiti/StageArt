@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">StageArt app icon</title>
-  <desc id="desc">Warm beige circular field with a black combined S and ladder-like A symbol.</desc>
-  <circle cx="256" cy="256" r="236" fill="#E8D7B8"/>
-  <!-- S: a single theatrical stroke flowing around the A -->
-  <path d="M344 116C312 87 253 78 204 99C150 122 139 174 181 205C218 232 291 234 321 269C351 304 322 359 267 379C220 396 167 380 136 349" fill="none" stroke="#0A0A0A" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- A: intentionally reads as a practical ladder / stage support -->
-  <path d="M171 394L256 150L341 394" fill="none" stroke="#0A0A0A" stroke-width="20" stroke-linecap="square" stroke-linejoin="round"/>
-  <path d="M203 302H309M220 250H292" fill="none" stroke="#0A0A0A" stroke-width="16" stroke-linecap="square"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#050505"/><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M352 108C316 80 258 78 211 99C160 122 151 171 191 202C228 230 298 234 325 268C353 303 325 355 273 376C223 397 171 382 137 349" stroke="#E8D7B8" stroke-width="23"/><path d="M171 401L256 151L341 401M201 306H311M220 251H292" stroke="#C89B5E" stroke-width="20" stroke-linecap="square"/></g><ellipse cx="256" cy="411" rx="150" ry="13" fill="#C89B5E" opacity=".35"/></svg>
