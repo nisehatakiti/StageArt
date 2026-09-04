@@ -15,9 +15,9 @@ const config: ExpoConfig = {
   name: 'StageArt', slug: 'stageart', version: '1.0.0', orientation: 'portrait',
   icon: './assets/images/icon.png', scheme: 'stageart', userInterfaceStyle: 'automatic',
   ios: { bundleIdentifier: 'com.hatakiti.stageart' },
-  android: { package: 'com.hatakiti.stageart', adaptiveIcon: { backgroundColor: '#050505', foregroundImage: './assets/images/android-icon-foreground.png', backgroundImage: './assets/images/android-icon-background.png', monochromeImage: './assets/images/android-icon-monochrome.png' }, predictiveBackGestureEnabled: false },
+  android: { package: 'com.hatakiti.stageart', adaptiveIcon: { backgroundColor: '#050505', foregroundImage: './assets/images/icon.png' }, predictiveBackGestureEnabled: false },
   web: { output: 'static', favicon: './assets/images/stageart-icon.svg' },
-  plugins: ['expo-router', ['expo-splash-screen', { backgroundColor: '#050505', image: './assets/images/splash-icon.png', imageWidth: 76 }], 'expo-secure-store', 'expo-sharing', ...(GOOGLE_IOS_URL_SCHEME ? [googleSignInPlugin] : [])],
+  plugins: ['expo-router', ['expo-splash-screen', { backgroundColor: '#050505', image: './assets/images/icon.png', imageWidth: 76 }], 'expo-secure-store', 'expo-sharing', ...(GOOGLE_IOS_URL_SCHEME ? [googleSignInPlugin] : [])],
   experiments: { typedRoutes: true, reactCompiler: true, ...(WEB_EXPORT_BASE_URL ? { baseUrl: WEB_EXPORT_BASE_URL } : {}) },
   extra: { apiEnv, apiBaseUrl: resolveApiBaseUrl(apiEnv), googleWebClientId: GOOGLE_WEB_CLIENT_ID, eas: { projectId: 'a3c6b296-a4d9-4f6e-84ee-3852f1025f9b' } },
 };
