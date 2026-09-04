@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
-  <title id="title">StageArt logo</title>
-  <desc id="desc">StageArt wordmark paired with the S and ladder-like A symbol.</desc>
-  <g transform="translate(24 24)">
-    <circle cx="186" cy="186" r="162" fill="#E8D7B8"/>
-    <path d="M247 72C221 51 179 45 145 59C107 75 99 111 128 133C154 153 205 154 226 178C247 202 227 240 189 254C156 266 119 255 97 233" fill="none" stroke="#0A0A0A" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M122 266L186 83L250 266" fill="none" stroke="#0A0A0A" stroke-width="15" stroke-linecap="square" stroke-linejoin="round"/>
-    <path d="M146 197H226M158 158H214" fill="none" stroke="#0A0A0A" stroke-width="12" stroke-linecap="square"/>
-  </g>
-  <text x="430" y="235" fill="#0A0A0A" font-family="Georgia, 'Times New Roman', serif" font-size="170" letter-spacing="-5">StageArt</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420"><rect width="1400" height="420" fill="#050505"/><g transform="translate(28 24)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M247 72C221 51 179 45 145 59C107 75 99 111 128 133C154 153 205 154 226 178C247 202 227 240 189 254C156 266 119 255 97 233" stroke="#E8D7B8" stroke-width="16"/><path d="M122 266L186 83L250 266M146 197H226M158 158H214" stroke="#C89B5E" stroke-width="15" stroke-linecap="square"/></g><ellipse cx="214" cy="306" rx="105" ry="9" fill="#C89B5E" opacity=".35"/><text x="430" y="235" fill="#C89B5E" font-family="Georgia,Times New Roman,serif" font-size="170" letter-spacing="-5">StageArt</text><text x="434" y="292" fill="#E8D7B8" font-family="sans-serif" font-size="25">舞台と人をつなぐ、すべての人のために。</text></svg>
