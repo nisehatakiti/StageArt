@@ -10,6 +10,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
@@ -26,6 +27,12 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * (e.g. one Attendance save failing) rolls back the Rehearsal's status
  * change too - a CONFIRMED Rehearsal with incomplete Phase 2 records can
  * never be observed.
+ *
+ * Phase 2 target selection: see the inline comment above the
+ * intersection logic in execute() - targets are Phase 1's own person
+ * list intersected with currently-active Production members, not a
+ * fresh "every active member" query, so confirm() cannot reintroduce a
+ * member who was deliberately left unselected at creation time.
  *
  * Idempotency against double-generation is layered: Rehearsal::confirm()
  * itself throws unless the Rehearsal is currently SCHEDULED, so a second
@@ -97,12 +104,35 @@ final class ConfirmRehearsalUseCase
 
         $phase = RehearsalAttendancePhase::attendanceConfirmation();
 
+        /*
+         * Phase 2 targets = whoever was actually targeted at creation
+         * time (Phase 1's own person list - the confirmed member
+         * selection, see CreateRehearsalUseCase's docblock), intersected
+         * with who is still an active Production member right now. This
+         * intersection - rather than re-querying "every active member"
+         * outright - is what stops confirm() from silently re-adding a
+         * Production member who was deliberately left unselected at
+         * creation, while still excluding someone who was selected but
+         * has since been deactivated (preserving the pre-existing
+         * "deactivated participants are excluded from Phase 2" behavior).
+         */
+        $phase1PersonIdStrings = array_map(
+            static fn (RehearsalAttendance $attendance): string => $attendance->personId()->toString(),
+            $this->attendances->findByRehearsalIdAndPhase($rehearsal->id(), RehearsalAttendancePhase::scheduleAdjustment())
+        );
+        $activeMemberIdStrings = array_map(
+            static fn (PersonId $personId): string => $personId->toString(),
+            $this->membership->activeProductionMemberPersonIds($productionId)
+        );
+        $targetPersonIdStrings = array_intersect($phase1PersonIdStrings, $activeMemberIdStrings);
+
         $rehearsal = $this->transactions->run(
-            function () use ($rehearsal, $productionId, $phase): Rehearsal {
+            function () use ($rehearsal, $phase, $targetPersonIdStrings): Rehearsal {
                 $rehearsal->confirm();
                 $this->rehearsals->save($rehearsal);
 
-                foreach ($this->membership->activeProductionMemberPersonIds($productionId) as $personId) {
+                foreach ($targetPersonIdStrings as $targetPersonIdString) {
+                    $personId = PersonId::fromString($targetPersonIdString);
                     $existing = $this->attendances->findByRehearsalIdAndPersonIdAndPhase($rehearsal->id(), $personId, $phase);
 
                     if ($existing !== null) {

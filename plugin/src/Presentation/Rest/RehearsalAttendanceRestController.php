@@ -7,6 +7,8 @@ namespace StageArt\Presentation\Rest;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsCommand;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceQuery;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesQuery;
@@ -29,17 +31,20 @@ final class RehearsalAttendanceRestController
     private GetRehearsalAttendanceUseCase $getAttendance;
     private RespondRehearsalAttendanceUseCase $respondAttendance;
     private RecordActualRehearsalAttendanceStatusUseCase $recordActualStatus;
+    private AddRehearsalAttendanceTargetsUseCase $addTargets;
 
     public function __construct(
         ListRehearsalAttendancesUseCase $listAttendances,
         GetRehearsalAttendanceUseCase $getAttendance,
         RespondRehearsalAttendanceUseCase $respondAttendance,
-        RecordActualRehearsalAttendanceStatusUseCase $recordActualStatus
+        RecordActualRehearsalAttendanceStatusUseCase $recordActualStatus,
+        AddRehearsalAttendanceTargetsUseCase $addTargets
     ) {
         $this->listAttendances = $listAttendances;
         $this->getAttendance = $getAttendance;
         $this->respondAttendance = $respondAttendance;
         $this->recordActualStatus = $recordActualStatus;
+        $this->addTargets = $addTargets;
     }
 
     public function register_routes(): void
@@ -48,6 +53,11 @@ final class RehearsalAttendanceRestController
             [
                 'methods' => 'GET',
                 'callback' => [$this, 'list'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'addTargets'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -97,6 +107,34 @@ final class RehearsalAttendanceRestController
             return new WP_REST_Response(
                 array_map(static fn ($result) => $result->toArray(), $this->listAttendances->execute($query)),
                 200
+            );
+        } catch (RehearsalAttendanceAccessDeniedException $exception) {
+            return new WP_Error('stageart_rehearsal_attendance_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (RehearsalNotFoundException $exception) {
+            return new WP_Error('stageart_rehearsal_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_rehearsal_attendance_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function addTargets(WP_REST_Request $request)
+    {
+        try {
+            $personIds = $request->get_param('person_ids');
+            $command = new AddRehearsalAttendanceTargetsCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                is_array($personIds) ? array_map('strval', $personIds) : []
+            );
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->addTargets->execute($command)),
+                201
             );
         } catch (RehearsalAttendanceAccessDeniedException $exception) {
             return new WP_Error('stageart_rehearsal_attendance_access_denied', $exception->getMessage(), ['status' => 403]);

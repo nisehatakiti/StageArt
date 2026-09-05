@@ -106,6 +106,29 @@ final class RehearsalAttendanceTest extends TestCase
         $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->status()->toString());
     }
 
+    public function test_record_actual_status_from_attending_accepts_early_left(): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
+        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDING));
+
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::EARLY_LEFT));
+
+        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->status()->toString());
+    }
+
+    public function test_record_actual_status_allows_manager_correction_to_and_from_early_left(): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
+        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDING));
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDED));
+
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::EARLY_LEFT));
+        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->status()->toString());
+
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::LATE));
+        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->status()->toString());
+    }
+
     public function test_record_actual_status_rejects_unanswered_source(): void
     {
         $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());

@@ -133,12 +133,16 @@ final class RehearsalAttendance
      * as the source transition, but also states "必要に応じて、Managerに
      * よるStatus修正を許可する" immediately after. This method honors both:
      * the first recording must come from ATTENDING (the diagrammed path),
-     * while a Manager may subsequently re-record among the three actual
+     * while a Manager may subsequently re-record among the actual
      * outcomes (correcting ATTENDED -> LATE, for example). It is never
      * reachable from UNANSWERED or NOT_ATTENDING directly - that source
      * state is not in the Blueprint's diagram, and allowing it would blur
      * "no-show because they said they wouldn't attend" with "no-show
      * despite saying they would," which the Blueprint does not equate.
+     *
+     * EARLY_LEFT (早退) is a confirmed addition alongside ATTENDED/LATE/
+     * ABSENT: someone who left early still actually attended, so it
+     * follows the exact same source/target rules as LATE.
      */
     public function recordActualStatus(RehearsalAttendanceStatus $status): void
     {
@@ -146,10 +150,15 @@ final class RehearsalAttendance
             throw new InvalidArgumentException('Only a Phase = ATTENDANCE_CONFIRMATION record can have an actual result.');
         }
 
-        $allowedTargets = [RehearsalAttendanceStatus::ATTENDED, RehearsalAttendanceStatus::LATE, RehearsalAttendanceStatus::ABSENT];
+        $allowedTargets = [
+            RehearsalAttendanceStatus::ATTENDED,
+            RehearsalAttendanceStatus::LATE,
+            RehearsalAttendanceStatus::EARLY_LEFT,
+            RehearsalAttendanceStatus::ABSENT,
+        ];
 
         if (! in_array($status->toString(), $allowedTargets, true)) {
-            throw new InvalidArgumentException('Actual status must be ATTENDED, LATE, or ABSENT.');
+            throw new InvalidArgumentException('Actual status must be ATTENDED, LATE, EARLY_LEFT, or ABSENT.');
         }
 
         $allowedSources = [RehearsalAttendanceStatus::ATTENDING, ...$allowedTargets];

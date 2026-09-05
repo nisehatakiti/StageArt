@@ -1001,7 +1001,7 @@ RehearsalAttendanceについても、
 - RehearsalAttendanceは予定確認から実際の出欠までを管理する。
 - 予定確認と実際の出欠を別Entityに分離しない。
 - RehearsalAttendanceはRehearsalの予定段階から存在できる。
-- Attendance StatusはUNANSWERED / ATTENDING / NOT_ATTENDING / ATTENDED / LATE / ABSENTを基本とする。
+- Attendance StatusはUNANSWERED / ATTENDING / NOT_ATTENDING / ATTENDED / LATE / EARLY_LEFT / ABSENTを基本とする。
 - 参加予定の変更は同じRehearsalAttendanceのStatus変更で管理する。
 - 実際の出欠への変更も同じRehearsalAttendanceのStatus変更で管理する。
 - ParticipantはRehearsalAttendanceそのものではない。

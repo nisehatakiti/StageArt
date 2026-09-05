@@ -93,7 +93,8 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$this->phantomMember->toString()]
         ));
 
         $generated = $this->rehearsalAttendances->findByRehearsalIdAndPhase(

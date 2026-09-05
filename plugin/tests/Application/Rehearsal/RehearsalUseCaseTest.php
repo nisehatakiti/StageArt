@@ -35,6 +35,7 @@ use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
@@ -174,7 +175,7 @@ final class RehearsalUseCaseTest extends TestCase
     public function test_primary_manager_can_create_rehearsal_and_phase1_attendance_is_generated(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $member = $this->addActivePersonParticipant($production, 2);
 
         $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -184,7 +185,8 @@ final class RehearsalUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$member->id()->toString()]
         ));
 
         $this->assertSame('SCHEDULED', $result->status);
@@ -241,19 +243,98 @@ final class RehearsalUseCaseTest extends TestCase
         ));
     }
 
+    public function test_create_rehearsal_targets_only_selected_members(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberA = $this->addActivePersonParticipant($production, 2);
+        $memberB = $this->addActivePersonParticipant($production, 3);
+        $memberC = $this->addActivePersonParticipant($production, 4);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$memberA->id()->toString(), $memberC->id()->toString()]
+        ));
+
+        $phase1 = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($result->id),
+            RehearsalAttendancePhase::scheduleAdjustment()
+        );
+        $targetedPersonIds = array_map(static fn ($a) => $a->personId()->toString(), $phase1);
+
+        $this->assertCount(2, $phase1);
+        $this->assertContains($memberA->id()->toString(), $targetedPersonIds);
+        $this->assertContains($memberC->id()->toString(), $targetedPersonIds);
+        $this->assertNotContains($memberB->id()->toString(), $targetedPersonIds);
+    }
+
+    public function test_create_rehearsal_with_no_selected_members_generates_no_attendance(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->addActivePersonParticipant($production, 2);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            []
+        ));
+
+        $phase1 = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($result->id),
+            RehearsalAttendancePhase::scheduleAdjustment()
+        );
+
+        $this->assertCount(0, $phase1);
+    }
+
+    public function test_create_rehearsal_rejects_a_person_who_is_not_an_active_participant(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $notAMember = PersonId::generate();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$notAMember->toString()]
+        ));
+    }
+
+    /**
+     * Two separate time axes, not one: CreateRehearsalUseCase validates
+     * targetPersonIds against currently-active membership only at
+     * creation time (see that Use Case's own new all-or-nothing
+     * validation) - so both targets here must still be active when
+     * createRehearsal->execute() runs. The deactivation happens only
+     * afterward, between creation and confirmation, exercising
+     * ConfirmRehearsalUseCase's own separate re-check of current
+     * membership at confirm time (see that Use Case's docblock on its
+     * Phase 1 ∩ currently-active intersection logic).
+     */
     public function test_confirm_generates_phase2_only_for_active_person_participants(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $activeMember = $this->addActivePersonParticipant($production, 2);
-        $inactiveMember = $this->addActivePersonParticipant($production, 3);
-
-        // deactivate one of the two participants before confirmation
-        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
-            if ($participant->subjectId() === $inactiveMember->id()->toString()) {
-                $participant->deactivate();
-                $this->participants->save($participant);
-            }
-        }
+        $memberToDeactivate = $this->addActivePersonParticipant($production, 3);
 
         $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -263,8 +344,17 @@ final class RehearsalUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$activeMember->id()->toString(), $memberToDeactivate->id()->toString()]
         ));
+
+        // deactivate one of the two participants after creation, before confirmation
+        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
+            if ($participant->subjectId() === $memberToDeactivate->id()->toString()) {
+                $participant->deactivate();
+                $this->participants->save($participant);
+            }
+        }
 
         $confirmed = $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
         $this->assertSame('CONFIRMED', $confirmed->status);
@@ -275,6 +365,35 @@ final class RehearsalUseCaseTest extends TestCase
         $this->assertCount(1, $phase2);
         $this->assertSame($activeMember->id()->toString(), $phase2[0]->personId()->toString());
         $this->assertSame('UNANSWERED', $phase2[0]->status()->toString());
+    }
+
+    public function test_confirm_does_not_reintroduce_a_member_left_unselected_at_creation(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $unselectedMember = $this->addActivePersonParticipant($production, 3);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        $rehearsalId = RehearsalId::fromString($created->id);
+        $phase2 = $this->attendances->findByRehearsalIdAndPhase($rehearsalId, RehearsalAttendancePhase::attendanceConfirmation());
+        $targetedPersonIds = array_map(static fn ($a) => $a->personId()->toString(), $phase2);
+
+        $this->assertCount(1, $phase2);
+        $this->assertContains($selectedMember->id()->toString(), $targetedPersonIds);
+        $this->assertNotContains($unselectedMember->id()->toString(), $targetedPersonIds);
     }
 
     public function test_confirm_twice_is_rejected_and_does_not_duplicate_phase2(): void

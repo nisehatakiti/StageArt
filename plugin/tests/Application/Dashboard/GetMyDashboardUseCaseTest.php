@@ -180,8 +180,15 @@ final class GetMyDashboardUseCaseTest extends TestCase
         return $person;
     }
 
-    private function createRehearsalAt(Production $production, int $creatorWordPressUserId, string $startDateTime): RehearsalId
-    {
+    /**
+     * @param string[] $targetPersonIds
+     */
+    private function createRehearsalAt(
+        Production $production,
+        int $creatorWordPressUserId,
+        string $startDateTime,
+        array $targetPersonIds = []
+    ): RehearsalId {
         $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             $creatorWordPressUserId,
@@ -190,7 +197,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $startDateTime,
             null,
             null,
-            'Studio A'
+            'Studio A',
+            $targetPersonIds
         ));
 
         $rehearsalId = RehearsalId::fromString($result->id);
@@ -249,7 +257,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $cast = $this->addActivePersonParticipant($production, 2);
 
-        $this->createRehearsalAt($production, 1, '+10 days');
+        $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
 
@@ -304,8 +312,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             ParticipantType::cast()
         ));
 
-        $this->createRehearsalAt($productionA, 1, '+20 days');
-        $this->createRehearsalAt($productionB, 11, '+5 days');
+        $this->createRehearsalAt($productionA, 1, '+20 days', [$cast->id()->toString()]);
+        $this->createRehearsalAt($productionB, 11, '+5 days', [$cast->id()->toString()]);
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
 
@@ -318,9 +326,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_completed_rehearsal_excluded_even_with_attendance(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsalId->toString(), 1));
         $rehearsal = $this->rehearsals->findById($rehearsalId);
         $rehearsal->activate();
@@ -336,9 +344,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_cancelled_rehearsal_excluded_even_with_future_date(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         $rehearsal = $this->rehearsals->findById($rehearsalId);
         $rehearsal->cancel();
         $this->rehearsals->save($rehearsal);
@@ -351,9 +359,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_confirmed_rehearsal_returns_exactly_one_entry_not_both_phases(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         // At this point a SCHEDULE_ADJUSTMENT record exists for Person 2.
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsalId->toString(), 1));
         // confirm() generates a fresh ATTENDANCE_CONFIRMATION record too;
@@ -368,10 +376,10 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_upcoming_rehearsal_limit_is_capped(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
         for ($day = 1; $day <= 52; $day++) {
-            $this->createRehearsalAt($production, 1, "+{$day} days");
+            $this->createRehearsalAt($production, 1, "+{$day} days", [$cast->id()->toString()]);
         }
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));

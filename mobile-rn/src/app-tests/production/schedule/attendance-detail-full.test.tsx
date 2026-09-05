@@ -37,5 +37,9 @@ describe('Attendance detail: full roster, already-responded state', () => {
     await waitFor(() => expect(screen.getByTestId('attendance-my-record')).toBeVisible());
     expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('出席');
     expect(screen.getAllByTestId('attendance-roster-row')).toHaveLength(1);
+
+    expect(screen.getByTestId('attendance-summary-attending')).toHaveTextContent('出席 1名');
+    expect(screen.getByTestId('attendance-summary-not-attending')).toHaveTextContent('欠席 0名');
+    expect(screen.getByTestId('attendance-summary-unanswered')).toHaveTextContent('未回答 0名');
   });
 });

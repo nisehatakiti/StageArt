@@ -83,7 +83,8 @@ final class RehearsalModuleContractIsolationTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$phantomMember->toString()]
         ));
 
         $generated = $attendances->findByRehearsalIdAndPhase(

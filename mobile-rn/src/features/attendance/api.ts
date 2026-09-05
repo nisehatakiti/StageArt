@@ -19,13 +19,23 @@ export function fetchRehearsal(client: ApiClient, rehearsalId: string): Promise<
 }
 
 /** POST /productions/{id}/rehearsals - creates a Rehearsal (starts at
- * DRAFT; RehearsalAttendance SCHEDULE_ADJUSTMENT-phase records are
- * created automatically for eligible Participants server-side, see
- * CreateRehearsalUseCase.php). */
+ * SCHEDULED). `targetPersonIds` becomes the exact set of Production
+ * members who get a SCHEDULE_ADJUSTMENT RehearsalAttendance record - an
+ * unselected Production member is not an Attendance target for this
+ * Rehearsal (CreateRehearsalUseCase.php no longer auto-targets every
+ * active member). Omitting it (or passing []) creates zero Attendance
+ * records. */
 export function createRehearsal(
   client: ApiClient,
   productionId: string,
-  fields: { title: string; startDateTime?: string; endDateTime?: string; timezone?: string; location?: string }
+  fields: {
+    title: string;
+    startDateTime?: string;
+    endDateTime?: string;
+    timezone?: string;
+    location?: string;
+    targetPersonIds?: string[];
+  }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
     title: fields.title,
@@ -33,6 +43,7 @@ export function createRehearsal(
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
     location: fields.location,
+    person_ids: fields.targetPersonIds,
   });
 }
 
@@ -45,6 +56,14 @@ export function confirmRehearsal(client: ApiClient, rehearsalId: string): Promis
   return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/confirm`);
 }
 
+/** POST /rehearsals/{id}/cancel - "中止する" (稽古を中止する). Soft
+ * status-only transition to CANCELLED (CancelRehearsalUseCase.php); the
+ * record is never physically deleted and keeps appearing in the
+ * Rehearsal list with its CANCELLED status. */
+export function cancelRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/cancel`);
+}
+
 /** GET /rehearsals/{id}/attendances?phase=X - the full roster for one
  * Rehearsal/phase, not just the caller's own record (see
  * RehearsalAttendanceRestController.php: read is Production-membership-
@@ -55,6 +74,23 @@ export function fetchRehearsalAttendances(
   phase: string
 ): Promise<RehearsalAttendance[]> {
   return client.get<RehearsalAttendance[]>(`/rehearsals/${rehearsalId}/attendances`, { phase });
+}
+
+/** POST /rehearsals/{id}/attendances - "稽古詳細画面で未選択メンバーを追加".
+ * Adds RehearsalAttendance targets for Production members who were not
+ * selected at creation/confirm time. Backend validates each personId is
+ * a currently-ACTIVE, Person-subject Participant of this Rehearsal's
+ * Production, and is idempotent per Person - someone who already has an
+ * Attendance record for the Rehearsal's current phase is left untouched
+ * (no resend), only genuinely new targets get created
+ * (AddRehearsalAttendanceTargetsUseCase.php). Returns only the
+ * newly-created records. */
+export function addRehearsalAttendanceTargets(
+  client: ApiClient,
+  rehearsalId: string,
+  personIds: string[]
+): Promise<RehearsalAttendance[]> {
+  return client.post<RehearsalAttendance[]>(`/rehearsals/${rehearsalId}/attendances`, { person_ids: personIds });
 }
 
 /** PUT /rehearsal-attendances/{id}/respond - self-response only; the

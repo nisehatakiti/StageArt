@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\RehearsalAttendance;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -16,6 +17,8 @@ use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsCommand;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceQuery;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesQuery;
@@ -32,9 +35,12 @@ use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\Rehearsal\RehearsalId;
+use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
@@ -64,6 +70,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     private GetRehearsalAttendanceUseCase $getAttendance;
     private RespondRehearsalAttendanceUseCase $respondAttendance;
     private RecordActualRehearsalAttendanceStatusUseCase $recordActualStatus;
+    private AddRehearsalAttendanceTargetsUseCase $addTargets;
 
     protected function setUp(): void
     {
@@ -128,6 +135,15 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $identity,
             $authorization
         );
+        $this->addTargets = new AddRehearsalAttendanceTargetsUseCase(
+            $this->attendances,
+            $this->rehearsals,
+            $productionContext,
+            $memberResolver,
+            $identity,
+            $authorization,
+            $transactions
+        );
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
@@ -166,7 +182,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     public function test_person_can_respond_to_own_phase1_attendance(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $member = $this->addActivePersonParticipant($production, 2);
 
         $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -176,7 +192,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$member->id()->toString()]
         ));
 
         $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
@@ -190,8 +207,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     public function test_person_cannot_respond_to_someone_elses_attendance(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
-        $this->addActivePersonParticipant($production, 3);
+        $memberTwo = $this->addActivePersonParticipant($production, 2);
+        $memberThree = $this->addActivePersonParticipant($production, 3);
 
         $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -201,7 +218,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$memberTwo->id()->toString(), $memberThree->id()->toString()]
         ));
 
         $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
@@ -220,7 +238,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     public function test_manager_can_record_actual_status_after_self_declared_attending(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $member = $this->addActivePersonParticipant($production, 2);
 
         $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -230,7 +248,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$member->id()->toString()]
         ));
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
 
@@ -250,7 +269,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     public function test_plain_member_cannot_record_actual_status(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $member = $this->addActivePersonParticipant($production, 2);
 
         $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
@@ -260,7 +279,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$member->id()->toString()]
         ));
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
 
@@ -276,7 +296,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     public function test_get_attendance_rejects_non_production_member(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $member = $this->addActivePersonParticipant($production, 2);
         $this->givenProductionWithPrimaryManager(99);
 
         $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
@@ -287,12 +307,167 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             null,
             null,
             null,
-            null
+            null,
+            [$member->id()->toString()]
         ));
 
         $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
 
         $this->expectException(RehearsalAttendanceAccessDeniedException::class);
         $this->getAttendance->execute(new GetRehearsalAttendanceQuery($roster[0]->id, 99));
+    }
+
+    public function test_manager_can_add_an_unselected_member_as_attendance_target(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $unselectedMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $created = $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$unselectedMember->id()->toString()]
+        ));
+
+        $this->assertCount(1, $created);
+        $this->assertSame($unselectedMember->id()->toString(), $created[0]->personId);
+        $this->assertSame('UNANSWERED', $created[0]->status);
+
+        $roster = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($rehearsal->id),
+            RehearsalAttendancePhase::scheduleAdjustment()
+        );
+        $rosterPersonIds = array_map(static fn ($a) => $a->personId()->toString(), $roster);
+
+        $this->assertCount(2, $roster, 'the existing selected member must still be present, unmodified');
+        $this->assertContains($selectedMember->id()->toString(), $rosterPersonIds);
+        $this->assertContains($unselectedMember->id()->toString(), $rosterPersonIds);
+    }
+
+    public function test_add_targets_rejects_a_person_who_is_not_an_active_participant(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $notAMember = PersonId::generate()->toString();
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand($rehearsal->id, 1, [$notAMember]));
+    }
+
+    public function test_add_targets_does_not_duplicate_an_already_targeted_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $created = $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $this->assertCount(0, $created, 'an already-targeted member must not be re-created');
+
+        $roster = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($rehearsal->id),
+            RehearsalAttendancePhase::scheduleAdjustment()
+        );
+        $this->assertCount(1, $roster, 'no duplicate Attendance record for the same Person+Phase');
+    }
+
+    public function test_add_targets_after_confirm_creates_a_phase2_record(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $newMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $created = $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$newMember->id()->toString()]
+        ));
+
+        $this->assertCount(1, $created);
+        $this->assertSame('ATTENDANCE_CONFIRMATION', $created[0]->phase);
+
+        $phase2 = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($rehearsal->id),
+            RehearsalAttendancePhase::attendanceConfirmation()
+        );
+        $this->assertCount(2, $phase2, 'the pre-existing member (from confirm) plus the newly-added one');
+    }
+
+    public function test_non_manager_cannot_add_attendance_targets(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $unselectedMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $this->expectException(RehearsalAttendanceAccessDeniedException::class);
+        $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            2,
+            [$unselectedMember->id()->toString()]
+        ));
     }
 }

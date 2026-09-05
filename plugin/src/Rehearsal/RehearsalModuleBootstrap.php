@@ -15,6 +15,7 @@ use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesUseCase;
 use StageArt\Application\RehearsalAttendance\RecordActualRehearsalAttendanceStatusUseCase;
@@ -176,6 +177,15 @@ final class RehearsalModuleBootstrap
             $identity,
             $authorization
         );
+        $addRehearsalAttendanceTargets = new AddRehearsalAttendanceTargetsUseCase(
+            $rehearsalAttendances,
+            $rehearsals,
+            $productionContext,
+            $membership,
+            $identity,
+            $authorization,
+            $transactions
+        );
 
         $createScheduleComment = new CreateScheduleCommentUseCase(
             $scheduleComments,
@@ -330,7 +340,8 @@ final class RehearsalModuleBootstrap
                 $listRehearsalAttendances,
                 $getRehearsalAttendance,
                 $respondRehearsalAttendance,
-                $recordActualRehearsalAttendanceStatus
+                $recordActualRehearsalAttendanceStatus,
+                $addRehearsalAttendanceTargets
             ),
             new ScheduleCommentRestController(
                 $createScheduleComment,

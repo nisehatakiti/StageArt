@@ -16,7 +16,7 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
 
 /**
- * Recording the day-of actual result (ATTENDED/LATE/ABSENT) is
+ * Recording the day-of actual result (ATTENDED/LATE/EARLY_LEFT/ABSENT) is
  * management-only, not self-service: RehearsalAttendance.md draws a hard
  * line between a Person's own prior intent (ATTENDING/NOT_ATTENDING, via
  * RespondRehearsalAttendanceUseCase) and the actual outcome, which only

@@ -475,6 +475,12 @@ Personが実際にRehearsalへ参加した。
 
 Personが遅刻して参加した。
 
+### EARLY_LEFT
+
+Personが早退した（実際には参加したが、途中で退出した）。
+
+早退は実際に参加した実績として扱う。
+
 ### ABSENT
 
 Personが参加予定だったが、
@@ -503,6 +509,7 @@ NOT_ATTENDING
 ATTENDING
     ├──→ ATTENDED
     ├──→ LATE
+    ├──→ EARLY_LEFT
     └──→ ABSENT
 
 必要に応じて、
@@ -757,6 +764,7 @@ RehearsalAttendanceが管理するもの：
 - 不参加予定
 - 実参加
 - 遅刻
+- 早退
 - 欠席
 
 RehearsalAttendanceが管理しないもの：

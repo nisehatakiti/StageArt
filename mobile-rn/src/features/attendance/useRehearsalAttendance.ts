@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { fetchRehearsalAttendances, recordActualRehearsalAttendanceStatus, respondRehearsalAttendance } from './api';
+import {
+  addRehearsalAttendanceTargets,
+  fetchRehearsalAttendances,
+  recordActualRehearsalAttendanceStatus,
+  respondRehearsalAttendance,
+} from './api';
 
 export function useRehearsalAttendances(rehearsalId: string | undefined, phase: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -25,6 +30,21 @@ export function useRespondRehearsalAttendance(rehearsalId: string | undefined, p
   return useMutation({
     mutationFn: (params: { attendanceId: string; status: string }) =>
       respondRehearsalAttendance(apiClient, params.attendanceId, params.status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rehearsal-attendances', rehearsalId, phase] });
+    },
+  });
+}
+
+/** Invalidates the roster Query on success so newly-added targets appear
+ * (and disappear from the "未選択メンバー" list computed against the same
+ * roster) without a manual cache write. */
+export function useAddRehearsalAttendanceTargets(rehearsalId: string | undefined, phase: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (personIds: string[]) => addRehearsalAttendanceTargets(apiClient, rehearsalId as string, personIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rehearsal-attendances', rehearsalId, phase] });
     },

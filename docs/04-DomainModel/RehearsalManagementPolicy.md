@@ -86,7 +86,7 @@ V1では、稽古ごとにキャスト一人ひとりを選択して参加対象
 出席   → ATTENDING / ATTENDED
 欠席   → NOT_ATTENDING / ABSENT
 遅刻   → LATE
-早退   → 早退状態として管理
+早退   → EARLY_LEFT（実際に参加した実績として、出席側に集計する）
 不明   → 未確定の出欠情報として管理
 ```
 
