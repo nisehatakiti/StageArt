@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty } from './__fixtures__/homeFixtures';
-import DashboardScreen from '../app/dashboard';
+import HomeScreen from '../app/(app)/home';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -19,10 +19,15 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-/** Kept in its own file - see web-dashboard-greeting.test.tsx's docblock
- * for why (cross-test async-timer leak when several AuthProvider trees
- * mount within one file, not specific to this screen). */
-describe('Web Dashboard: 団体（空の場合）', () => {
+/**
+ * StageArt Blueprint再構成 Phase 1c: renders the single canonical
+ * HomeScreen (see web-dashboard-greeting.test.tsx's docblock for why) -
+ * asserts the 団体 section's own empty-state prompt, distinct from
+ * home-empty-organizations.test.tsx (which asserts the primary nav grid
+ * still renders for an unaffiliated Person, not this section's own CTA
+ * text).
+ */
+describe('Home: 団体（空の場合）', () => {
   it('shows an empty-state prompt to create an Organization when the Person has none', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
@@ -34,13 +39,13 @@ describe('Web Dashboard: 団体（空の場合）', () => {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <DashboardScreen />
+            <HomeScreen />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('dashboard-organizations-empty')).toBeVisible());
-    expect(screen.queryByTestId('dashboard-organizations-list')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('organizations-empty')).toBeVisible());
+    expect(screen.queryByTestId('home-organizations-list')).toBeNull();
   });
 });

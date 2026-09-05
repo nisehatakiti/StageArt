@@ -22,7 +22,7 @@ describe('Home: Organization with no Productions', () => {
     renderRouter('src/app', { initialUrl: '/home' });
 
     await waitFor(() => expect(screen.getByTestId('productions-empty')).toBeVisible());
-    expect(screen.getByText('この団体には公演・活動がありません。')).toBeVisible();
+    expect(screen.getByText('公演・活動はまだありません')).toBeVisible();
     expect(screen.queryByTestId('productions-error')).toBeNull();
   });
 });

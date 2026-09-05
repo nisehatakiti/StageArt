@@ -11,11 +11,12 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * §27/§28, superseded by StageArt mobile-rn 修正指示書 §4: Person ID is
- * still shown (it remains useful for support/debugging), but demoted
- * behind an explicit "詳細情報を表示" toggle rather than being the
- * headline content of the アカウント card - the display name (from the
- * same GET /me response's family_name/given_name) takes that place now.
+ * §27/§28, superseded by StageArt Blueprint再構成 Phase 1d: this
+ * Production Shell tab renders ProfileContent (Person info only - see
+ * that Phase's report for why), unchanged in that it still shows Person
+ * ID behind an explicit "詳細情報を表示" toggle rather than as headline
+ * content - the display name (from the same GET /me response's
+ * family_name/given_name) takes that place now.
  */
 describe('My Page: identity from GET /me', () => {
   it('shows the display name up front, and the Person ID hidden by default', async () => {
@@ -27,10 +28,10 @@ describe('My Page: identity from GET /me', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/mypage' });
 
-    await waitFor(() => expect(screen.getByTestId('mypage-display-name')).toBeVisible());
-    expect(screen.getByTestId('mypage-display-name')).toHaveTextContent(`${currentPerson.family_name} ${currentPerson.given_name}`);
+    await waitFor(() => expect(screen.getByTestId('profile-display-name')).toBeVisible());
+    expect(screen.getByTestId('profile-display-name')).toHaveTextContent(`${currentPerson.family_name} ${currentPerson.given_name}`);
 
-    expect(screen.queryByTestId('mypage-person-id')).toBeNull();
-    expect(screen.getByTestId('mypage-details-toggle')).toBeVisible();
+    expect(screen.queryByTestId('profile-person-id')).toBeNull();
+    expect(screen.getByTestId('profile-details-toggle')).toBeVisible();
   });
 });

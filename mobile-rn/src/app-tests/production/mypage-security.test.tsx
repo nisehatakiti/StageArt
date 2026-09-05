@@ -33,7 +33,11 @@ describe('My Page: Credential never appears in UI or logs', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/mypage' });
 
-    await waitFor(() => expect(screen.getByTestId('mypage-display-name')).toBeVisible());
+    // StageArt Blueprint再構成 Phase 1d: this tab renders ProfileContent
+    // now (Person info only) - testID updated, the underlying credential-
+    // never-leaks concern this test checks is unchanged and still
+    // platform/screen-agnostic.
+    await waitFor(() => expect(screen.getByTestId('profile-display-name')).toBeVisible());
 
     expect(screen.queryByText(SECRET_REFRESH_TOKEN)).toBeNull();
 

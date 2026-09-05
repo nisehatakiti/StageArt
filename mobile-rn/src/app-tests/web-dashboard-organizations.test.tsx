@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty, orgOne, orgTwo, productionOne, productionTwo, projectOne, projectTwo } from './__fixtures__/homeFixtures';
-import DashboardScreen from '../app/dashboard';
+import HomeScreen from '../app/(app)/home';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -21,10 +21,15 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
-/** Kept in its own file - see web-dashboard-greeting.test.tsx's docblock
- * for why. */
-describe('Web Dashboard: 団体（参加中／管理中）', () => {
-  it('lists each Organization with its Role, 公開状態 and own Production names, and tapping navigates to its management screen', async () => {
+/**
+ * StageArt Blueprint再構成 Phase 1c: renders the single canonical
+ * HomeScreen (see web-dashboard-greeting.test.tsx's docblock for why).
+ * Distinct from home-single-org.test.tsx/home-multi-org-switch.test.tsx
+ * in asserting the 公開状態 pill ("下書き") specifically, which those
+ * files do not check.
+ */
+describe('Home: 団体（参加中／管理中）', () => {
+  it('lists each Organization with its Role, 公開状態 and own Productions, and tapping navigates to its management screen', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne, orgTwo] },
@@ -37,21 +42,21 @@ describe('Web Dashboard: 団体（参加中／管理中）', () => {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <DashboardScreen />
+            <HomeScreen />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('dashboard-organization-row-org-1')).toBeVisible());
-    const orgOneRow = within(screen.getByTestId('dashboard-organization-row-org-1'));
+    await waitFor(() => expect(screen.getByTestId('home-organization-row-org-1')).toBeVisible());
+    const orgOneRow = within(screen.getByTestId('home-organization-row-org-1'));
     expect(orgOneRow.getByText('○○演劇団')).toBeVisible();
     expect(orgOneRow.getByText('オーナー')).toBeVisible();
     expect(orgOneRow.getByText('下書き')).toBeVisible();
 
     await waitFor(() => expect(orgOneRow.getByText(/○○公演2026/)).toBeVisible());
 
-    fireEvent.press(screen.getByTestId('dashboard-organization-row-org-1'));
+    fireEvent.press(screen.getByTestId('home-organization-link-org-1'));
     expect(mockPush).toHaveBeenCalledWith('/organizations/org-1');
   });
 });

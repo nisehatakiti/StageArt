@@ -32,8 +32,8 @@ describe('Home: Dashboard fails, Production Navigator does not', () => {
 
     await waitFor(() => expect(screen.getByTestId('dashboard-error')).toBeVisible());
     expect(screen.getByTestId('dashboard-retry')).toBeVisible();
-    // The unrelated 公演 section must render normally regardless.
-    await waitFor(() => expect(screen.getByTestId('production-list')).toBeVisible());
+    // The unrelated 団体/公演 section must render normally regardless.
+    await waitFor(() => expect(screen.getByTestId(`home-organization-productions-${orgOne.id}`)).toBeVisible());
     expect(screen.getByText('○○公演2026')).toBeVisible();
   });
 });

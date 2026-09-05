@@ -6,6 +6,7 @@ import { createQueryClient } from '@/api/queryClient';
 import { AuthProvider } from '@/auth/AuthContext';
 import { BrandColors } from '@/constants/theme';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
+import { ConfirmAlertHost } from '@/utils/confirmAlert';
 
 /**
  * StageArt Web First Phase 1 (docs/04-CommonNavigationDesign.md §3): Web
@@ -57,28 +58,14 @@ export default function RootLayout() {
               <Stack.Screen name="registration-pending" options={{ headerShown: false }} />
               <Stack.Screen name="verify-email" options={{ headerShown: false }} />
               <Stack.Screen name="set-name" options={{ title: '姓名を設定' }} />
-              {/* Bottom Navigation's own 4 destinations
-                  (04-CommonNavigationDesign.md §2/§3.2): reached via the
-                  nav bar itself, not a back chain, so their own header
-                  stays off on every platform - the Web nav shell (added
-                  to AppShell) is their identification/navigation
-                  affordance instead. */}
-              <Stack.Screen name="home" options={{ headerShown: false }} />
-              <Stack.Screen name="discover" options={{ headerShown: false }} />
-              <Stack.Screen name="favorites" options={{ headerShown: false }} />
-              <Stack.Screen name="profile" options={{ headerShown: false, title: 'マイページ' }} />
-              <Stack.Screen name="discover-organizations" options={{ title: '団体を探す' }} />
-              <Stack.Screen name="discover-productions" options={{ title: '公演・活動を探す' }} />
-              <Stack.Screen name="viewing-history" options={{ title: '観劇履歴' }} />
-              <Stack.Screen name="participating-productions" options={{ title: '参加している公演・活動' }} />
-              <Stack.Screen name="production/[id]" options={{ headerShown: false }} />
-              {/* StageArt Web First Phase 2: AppShell already renders its
-                  own branded logo header on every one of these screens
-                  (create/publish flows and the public /o/* pages), so
-                  the Stack's own header stays off here too, matching
-                  home/discover/favorites/profile above. */}
-              <Stack.Screen name="organizations/create" options={{ headerShown: false }} />
-              <Stack.Screen name="organizations/[id]/productions/create" options={{ headerShown: false }} />
+              {/* StageArt Blueprint再構成 Phase 1b: every authenticated
+                  screen now lives under the (app) route group (a route
+                  group segment is invisible in the actual URL - none of
+                  these screens' paths changed), wrapped once by AppChrome
+                  (see app/(app)/_layout.tsx) instead of this Stack's own
+                  header. headerShown stays false here so AppChrome's
+                  header is the only one rendered. */}
+              <Stack.Screen name="(app)" options={{ headerShown: false }} />
               {/* Public Page Architecture phase
                   (docs/03-PublicPageURLAndPublicationSchedule.md): moved
                   to the URL root, matching stageart.top's intended path
@@ -86,21 +73,20 @@ export default function RootLayout() {
                   `/{organization-slug}/{production-slug}`) - see
                   OrganizationSlug.php's RESERVED list for why this is
                   safe (every real top-level route name below is
-                  reserved and can never collide with a real slug). */}
+                  reserved and can never collide with a real slug).
+                  Deliberately stays outside (app) - viewable while
+                  unauthenticated (StageArt Blueprint再構成 §26/Audience). */}
               <Stack.Screen name="[organizationSlug]/index" options={{ headerShown: false }} />
               <Stack.Screen name="[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
               {/* /o/{slug} kept as a redirect-only route for backward
                   compatibility with any pre-existing link. */}
               <Stack.Screen name="o/[organizationSlug]/index" options={{ headerShown: false }} />
               <Stack.Screen name="o/[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
-              {/* StageArt Web β版: Join Key発行 + 参加申請承認 (団体・公演
-                  管理者向け) と、参加コード入力・検索経由の所属申請 (一般
-                  利用者向け) - AppShell自身のヘッダーを使うため、ここでも
-                  headerShownはfalseのまま。 */}
-              <Stack.Screen name="organizations/[id]/invite" options={{ headerShown: false }} />
-              <Stack.Screen name="production-invite/[id]" options={{ headerShown: false }} />
-              <Stack.Screen name="join" options={{ headerShown: false }} />
             </Stack>
+            {/* Renders nothing on Native (Alert.alert already works there
+                natively) - only mounts the Web confirm-dialog Modal
+                target. See src/utils/confirmAlert.web.tsx's docblock. */}
+            <ConfirmAlertHost />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>

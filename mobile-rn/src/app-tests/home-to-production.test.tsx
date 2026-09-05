@@ -33,7 +33,10 @@ describe('Home -> Production Context -> back to Home', () => {
 
     await fireEvent.press(screen.getByTestId('back-to-home'));
 
-    await waitFor(() => expect(screen.getByTestId('production-list')).toBeVisible());
+    // StageArt Blueprint再構成 Phase 1c: no more "current Organization"
+    // selection - every Organization's own Production list renders
+    // unconditionally as home-organization-productions-{orgId}.
+    await waitFor(() => expect(screen.getByTestId(`home-organization-productions-${orgOne.id}`)).toBeVisible());
     expect(screen.queryByTestId('back-to-home')).toBeNull();
   });
 });

@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty } from './__fixtures__/homeFixtures';
-import { WebProfileContent } from '../components/web/WebProfileContent';
+import { ProfileContent } from '../features/person/ProfileContent';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -22,19 +22,17 @@ jest.mock('expo-router', () => ({
 }));
 
 /**
- * StageArt Web版 プロフィール Phase: 「プロフィール → プロフィールを編集 →
+ * StageArt Blueprint再構成 Phase 1e: 「プロフィール → プロフィールを編集 →
  * 姓名変更 → 保存 → プロフィールへ戻る」の最初の一歩 - reuses set-name.tsx
- * unchanged (see WebProfileContent's own docblock: that screen was
- * already platform-agnostic and already had this exact
- * `return_to=/profile` pattern from MyPageContent.tsx, so this only
- * needs to link there with the same hints/return_to shape).
+ * unchanged, same `return_to=/profile` pattern as before Phase 1d's
+ * Profile/Account split (only the rendered component moved from
+ * WebProfileContent to ProfileContent).
  */
-describe('Web プロフィール: プロフィールを編集への導線', () => {
+describe('Profile: プロフィールを編集への導線', () => {
   it('navigates to set-name with the current name as hints and return_to=/profile', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
-      { test: (u) => u.includes('/me/push-preference'), status: 200, body: { enabled: true, updated_at: '2026-08-18T00:00:00+09:00' } },
     ]);
 
     const queryClient = new QueryClient();
@@ -42,14 +40,14 @@ describe('Web プロフィール: プロフィールを編集への導線', () =
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <WebProfileContent />
+            <ProfileContent />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('web-profile-edit-link')).toBeVisible());
-    fireEvent.press(screen.getByTestId('web-profile-edit-link'));
+    await waitFor(() => expect(screen.getByTestId('profile-edit-link')).toBeVisible());
+    fireEvent.press(screen.getByTestId('profile-edit-link'));
 
     expect(mockPush).toHaveBeenCalledWith({
       pathname: '/set-name',

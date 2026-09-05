@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, productionOne } from './__fixtures__/homeFixtures';
-import ProductionEditScreen from '../app/productions/[id]/edit';
+import ProductionEditScreen from '../app/(app)/productions/[id]/edit';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
