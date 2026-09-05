@@ -18,8 +18,35 @@ use StageArt\Rehearsal\RehearsalInstaller;
  */
 final class Installer
 {
+    /**
+     * StageArt Admin Console V1: 'stageart_manage_accounts' is a new,
+     * dedicated WordPress Capability - deliberately not `manage_options`
+     * (that would make an Admin Console admin a full WordPress Site
+     * Administrator, far broader than intended) and never granted to
+     * the 'subscriber' role WordPressUserProvisioner assigns every
+     * auto-provisioned Google/Email StageArt User (see that class's own
+     * docblock) - so a regular StageArt user's WordPress User can never
+     * satisfy this check, however it authenticated.
+     *
+     * Granted to two roles: the new 'stageart_admin' role (created just
+     * for this - Admin Console administrators created via the "管理者
+     * アカウント作成" screen get this role and nothing else), and the
+     * built-in 'administrator' role (so the site's own WordPress
+     * Administrator can always reach the Admin Console to create the
+     * first StageArt admin account - otherwise nobody could ever
+     * bootstrap it). add_role()/add_cap() are idempotent (get_role()
+     * returns the existing role unchanged if already present), so this
+     * is safe to run on every upgrade, matching maybeUpgrade()'s own
+     * "runs once per CURRENT_VERSION bump, cheap no-op after that"
+     * design.
+     */
+    private const ADMIN_CONSOLE_CAPABILITY = 'stageart_manage_accounts';
+    private const ADMIN_CONSOLE_ROLE = 'stageart_admin';
+
     public static function install(): void
     {
+        self::installAdminConsoleRole();
+
         global $wpdb;
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -338,5 +365,25 @@ final class Installer
             PRIMARY KEY  (id),
             UNIQUE KEY person_target (person_id, target_type, target_id)
         ) {$charsetCollate};");
+    }
+
+    private static function installAdminConsoleRole(): void
+    {
+        if (! get_role(self::ADMIN_CONSOLE_ROLE)) {
+            add_role(self::ADMIN_CONSOLE_ROLE, 'StageArt Admin Console', [
+                'read' => true,
+                self::ADMIN_CONSOLE_CAPABILITY => true,
+            ]);
+        }
+
+        $adminConsoleRole = get_role(self::ADMIN_CONSOLE_ROLE);
+        if ($adminConsoleRole && ! $adminConsoleRole->has_cap(self::ADMIN_CONSOLE_CAPABILITY)) {
+            $adminConsoleRole->add_cap(self::ADMIN_CONSOLE_CAPABILITY);
+        }
+
+        $administratorRole = get_role('administrator');
+        if ($administratorRole && ! $administratorRole->has_cap(self::ADMIN_CONSOLE_CAPABILITY)) {
+            $administratorRole->add_cap(self::ADMIN_CONSOLE_CAPABILITY);
+        }
     }
 }

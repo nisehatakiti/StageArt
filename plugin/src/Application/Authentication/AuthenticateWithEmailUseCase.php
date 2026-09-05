@@ -58,6 +58,16 @@ final class AuthenticateWithEmailUseCase
 
         return $this->transactions->run(function () use ($credential): AuthenticationResult {
             $userAccount = $this->userAccounts->findById($credential->userAccountId());
+
+            // StageArt Admin Console V1: UserAccount.md's SUSPENDED/DISABLED
+            // status already forbade new Authentication in the Blueprint -
+            // this Phase is the first to actually enforce it (the Domain
+            // method existed, unused, before Admin Console's "ブロック"/
+            // "削除" needed something to call).
+            if (! $userAccount->isActive()) {
+                throw new UserAccountBlockedException('This account has been blocked or disabled.');
+            }
+
             $person = $this->people->findById($userAccount->personId());
 
             $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());

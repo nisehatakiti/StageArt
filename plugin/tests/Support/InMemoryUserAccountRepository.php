@@ -34,4 +34,12 @@ final class InMemoryUserAccountRepository implements UserAccountRepositoryInterf
 
         return null;
     }
+
+    /**
+     * @return UserAccount[]
+     */
+    public function findAll(): array
+    {
+        return array_values($this->userAccounts);
+    }
 }

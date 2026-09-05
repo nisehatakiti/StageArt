@@ -42,6 +42,15 @@ final class RefreshAccessTokenUseCase
             throw new InvalidRefreshTokenException('This Refresh Token is invalid, expired, or has been revoked.');
         }
 
+        // StageArt Admin Console V1: without this, a UserAccount blocked
+        // after already logging in could keep the session alive
+        // indefinitely by refreshing - see
+        // AuthenticateWithEmailUseCase's own comment for the matching
+        // login-time check.
+        if (! $userAccount->isActive()) {
+            throw new UserAccountBlockedException('This account has been blocked or disabled.');
+        }
+
         $person = $this->people->findById($userAccount->personId());
         $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());
 

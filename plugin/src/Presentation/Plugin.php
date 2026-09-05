@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation;
 
+use StageArt\Application\Admin\CreateAdminConsoleAccountUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
+use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
+use StageArt\Application\UserAccount\DeleteUserAccountsUseCase;
+use StageArt\Application\UserAccount\ListAllUserAccountsUseCase;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
@@ -101,7 +105,9 @@ use StageArt\Infrastructure\Authentication\GoogleIdTokenVerifier;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenIssuer;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenVerifier;
 use StageArt\Infrastructure\WordPress\Authentication\CurrentUserResolver;
+use StageArt\Infrastructure\WordPress\Authentication\WordPressAdminConsoleAccountProvisioner;
 use StageArt\Infrastructure\WordPress\Authentication\WordPressAuthMailer;
+use StageArt\Infrastructure\WordPress\Authentication\WordPressUserLookup;
 use StageArt\Infrastructure\WordPress\Authentication\WordPressUserProvisioner;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExternalIdentityRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRefreshTokenRepository;
@@ -126,6 +132,8 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressTimetableVersionPubli
 use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressUserAccountRepository;
 use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
+use StageArt\Presentation\Admin\AccountManagementAdminPage;
+use StageArt\Presentation\Admin\AdminConsoleAccountAdminPage;
 use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
 use StageArt\Presentation\Rest\AuthenticationRestController;
@@ -289,6 +297,21 @@ final class Plugin
             $emailVerificationTokens,
             $authMailer
         );
+
+        // StageArt Admin Console V1 (docs/architecture/StageArtAdminConsole.md):
+        // Account Management + Admin Account creation - every Use Case here
+        // reuses the same Repositories/Use Cases already wired above
+        // ($userAccounts/$people/$emailCredentials/$transactions/
+        // $requestPasswordReset); nothing about general authentication is
+        // duplicated, only the two new WordPress-specific dependencies
+        // (WordPressUserLookup, WordPressAdminConsoleAccountProvisioner)
+        // are new.
+        $wordPressUserLookup = new WordPressUserLookup();
+        $listAllUserAccounts = new ListAllUserAccountsUseCase($userAccounts, $people, $emailCredentials, $wordPressUserLookup);
+        $blockUserAccounts = new BlockUserAccountsUseCase($userAccounts, $transactions);
+        $deleteUserAccounts = new DeleteUserAccountsUseCase($userAccounts, $transactions);
+        $adminConsoleAccountProvisioner = new WordPressAdminConsoleAccountProvisioner();
+        $createAdminConsoleAccount = new CreateAdminConsoleAccountUseCase($adminConsoleAccountProvisioner);
 
         $createOrganization = new CreateOrganizationUseCase(
             $organizations,
@@ -617,5 +640,14 @@ final class Plugin
             $archiveProject,
             $listOrganizations
         ))->register();
+
+        (new AccountManagementAdminPage(
+            $listAllUserAccounts,
+            $blockUserAccounts,
+            $deleteUserAccounts,
+            $requestPasswordReset
+        ))->register();
+
+        (new AdminConsoleAccountAdminPage($createAdminConsoleAccount))->register();
     }
 }

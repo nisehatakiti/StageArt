@@ -17,9 +17,11 @@ use StageArt\Application\Authentication\RequestPasswordResetCommand;
 use StageArt\Application\Authentication\RequestPasswordResetUseCase;
 use StageArt\Application\Authentication\ResetPasswordCommand;
 use StageArt\Application\Authentication\ResetPasswordUseCase;
+use StageArt\Application\Authentication\UserAccountBlockedException;
 use StageArt\Application\Authentication\VerifyEmailCommand;
 use StageArt\Application\Authentication\VerifyEmailUseCase;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
+use StageArt\Domain\UserAccount\UserAccountId;
 use StageArt\Tests\Support\FakeAccessTokenIssuer;
 use StageArt\Tests\Support\FakeAuthMailer;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
@@ -194,6 +196,35 @@ final class EmailAuthenticationUseCaseTest extends TestCase
     {
         $this->expectException(InvalidCredentialsException::class);
         $this->authenticateWithEmail->execute(new AuthenticateWithEmailCommand('nobody@example.com', 'password123'));
+    }
+
+    /**
+     * StageArt Admin Console V1: the Account Management screen's "ブロック"
+     * bulk action calls UserAccount.suspend() - this confirms a blocked
+     * account's own correct password is no longer enough to log in.
+     */
+    public function test_a_suspended_useraccount_cannot_log_in_even_with_the_correct_password(): void
+    {
+        $registered = $this->registerWithEmail->execute(new RegisterWithEmailCommand('helen@example.com', 'password123'));
+
+        $userAccount = $this->userAccounts->findById(UserAccountId::fromString($registered->userAccountId));
+        $userAccount->suspend();
+        $this->userAccounts->save($userAccount);
+
+        $this->expectException(UserAccountBlockedException::class);
+        $this->authenticateWithEmail->execute(new AuthenticateWithEmailCommand('helen@example.com', 'password123'));
+    }
+
+    public function test_a_disabled_useraccount_cannot_log_in(): void
+    {
+        $registered = $this->registerWithEmail->execute(new RegisterWithEmailCommand('ian@example.com', 'password123'));
+
+        $userAccount = $this->userAccounts->findById(UserAccountId::fromString($registered->userAccountId));
+        $userAccount->disable();
+        $this->userAccounts->save($userAccount);
+
+        $this->expectException(UserAccountBlockedException::class);
+        $this->authenticateWithEmail->execute(new AuthenticateWithEmailCommand('ian@example.com', 'password123'));
     }
 
     // --- RequestPasswordResetUseCase / ResetPasswordUseCase -------------

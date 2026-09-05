@@ -16,6 +16,7 @@ use StageArt\Application\Authentication\LogoutCommand;
 use StageArt\Application\Authentication\LogoutUseCase;
 use StageArt\Application\Authentication\RefreshAccessTokenCommand;
 use StageArt\Application\Authentication\RefreshAccessTokenUseCase;
+use StageArt\Application\Authentication\UserAccountBlockedException;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\UserAccount\ExternalIdentity;
 use StageArt\Domain\UserAccount\UserAccount;
@@ -143,6 +144,39 @@ final class AuthenticationUseCaseTest extends TestCase
         }
     }
 
+    /**
+     * StageArt Admin Console V1: UserAccount.suspend()/disable() existed
+     * in the Domain before this Phase but had no caller anywhere -
+     * confirms the enforcement this Phase adds actually blocks a
+     * RETURNING Google user's login once their UserAccount is no longer
+     * ACTIVE.
+     */
+    public function test_a_suspended_returning_google_user_cannot_log_in(): void
+    {
+        $this->googleVerifier->registerValidToken('valid-token', 'google-sub-blocked', null);
+        $first = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $userAccount = $this->userAccounts->findById(UserAccountId::fromString($first->userAccountId));
+        $userAccount->suspend();
+        $this->userAccounts->save($userAccount);
+
+        $this->expectException(UserAccountBlockedException::class);
+        $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+    }
+
+    public function test_a_disabled_returning_google_user_cannot_log_in(): void
+    {
+        $this->googleVerifier->registerValidToken('valid-token', 'google-sub-disabled', null);
+        $first = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $userAccount = $this->userAccounts->findById(UserAccountId::fromString($first->userAccountId));
+        $userAccount->disable();
+        $this->userAccounts->save($userAccount);
+
+        $this->expectException(UserAccountBlockedException::class);
+        $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+    }
+
     // --- RefreshAccessTokenUseCase -------------------------------------
 
     public function test_valid_refresh_token_issues_a_new_access_token(): void
@@ -171,6 +205,25 @@ final class AuthenticationUseCaseTest extends TestCase
         $this->logout->execute(new LogoutCommand($auth->refreshToken));
 
         $this->expectException(InvalidRefreshTokenException::class);
+        $this->refreshAccessToken->execute(new RefreshAccessTokenCommand($auth->refreshToken));
+    }
+
+    /**
+     * StageArt Admin Console V1: without this check, a UserAccount
+     * blocked mid-session could keep renewing its Access Token
+     * indefinitely via an already-issued Refresh Token, never actually
+     * being cut off.
+     */
+    public function test_a_suspended_useraccounts_refresh_token_is_rejected(): void
+    {
+        $this->googleVerifier->registerValidToken('valid-token', 'google-sub-refresh-blocked', null);
+        $auth = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $userAccount = $this->userAccounts->findById(UserAccountId::fromString($auth->userAccountId));
+        $userAccount->suspend();
+        $this->userAccounts->save($userAccount);
+
+        $this->expectException(UserAccountBlockedException::class);
         $this->refreshAccessToken->execute(new RefreshAccessTokenCommand($auth->refreshToken));
     }
 

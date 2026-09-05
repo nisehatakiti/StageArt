@@ -74,6 +74,16 @@ final class AuthenticateWithGoogleUseCase
 
             if ($existingIdentity) {
                 $userAccount = $this->userAccounts->findById($existingIdentity->userAccountId());
+
+                // StageArt Admin Console V1: same enforcement as
+                // AuthenticateWithEmailUseCase - see that Use Case's own
+                // comment. Only applies to a RETURNING Google user
+                // (existingIdentity !== null); a brand-new UserAccount
+                // created just below is always freshly ACTIVE.
+                if (! $userAccount->isActive()) {
+                    throw new UserAccountBlockedException('This account has been blocked or disabled.');
+                }
+
                 $person = $this->people->findById($userAccount->personId());
             } else {
                 $wordPressUserId = $this->wordPressUserProvisioner->provision($claims->email);
