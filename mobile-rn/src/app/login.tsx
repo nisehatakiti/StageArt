@@ -1,15 +1,37 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, View, type ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
-import { StageArtLogo } from '@/components/brand/StageArtLogo';
+import { GoogleSignInButtonWeb } from '@/components/auth/GoogleSignInButtonWeb';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Spacing } from '@/constants/theme';
+
+/**
+ * StageArt ブランド反映 (2026-09-04): login.tsx-only dark "theatre" palette
+ * - deliberately not merged into the shared theme.ts (BrandColors there
+ * still follows the app's existing light/dark-mode-aware screens; this
+ * screen instead always renders dark, matching the brand's fixed
+ * "blackout black + warm stage illumination" identity, the same way
+ * startup-animation.tsx/WebSidebarNav.tsx/AppChrome.tsx already do).
+ * Kept local to avoid touching any other screen's styling.
+ */
+const STAGE = {
+  background: '#050505',
+  spotlight: BrandColors.warmGold,
+  inputBackground: '#101010',
+  inputBorder: '#2A2620',
+  inputText: '#F5EFE3',
+  placeholder: '#8A8272',
+  divider: '#3A342C',
+  link: BrandColors.stageWarmWhite,
+  error: '#E2836B',
+  accent: '#C89B5E',
+} as const;
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -161,6 +183,33 @@ export default function LoginScreen() {
     router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
   }
 
+  /**
+   * The shared "we already have a Google ID Token, finish logging in"
+   * path - identical regardless of how that token was obtained (native
+   * GoogleSignin.signIn() vs Web's GoogleSignInButtonWeb callback, see
+   * that component's own docblock for why Web cannot share the same
+   * button-press flow native uses). Callers own submittingGoogle's
+   * lifecycle around this call, since native's diagnostic path has an
+   * earlier failure branch (module/config errors) this function never
+   * needs to know about.
+   */
+  async function completeGoogleLogin(idToken: string) {
+    try {
+      const result = await loginWithGoogle(idToken);
+
+      if (!result.ok) {
+        setErrorMessage(result.message);
+        return;
+      }
+
+      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+    } catch (error) {
+      const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
+      Alert.alert('Googleサインイン診断', message);
+      setErrorMessage(message);
+    }
+  }
+
   async function handleGoogleSubmit() {
     setSubmittingGoogle(true);
     setErrorMessage(null);
@@ -191,18 +240,24 @@ export default function LoginScreen() {
     }
 
     try {
-      const result = await loginWithGoogle(diagnostic.idToken);
+      await completeGoogleLogin(diagnostic.idToken);
+    } finally {
+      setSubmittingGoogle(false);
+    }
+  }
 
-      if (!result.ok) {
-        setErrorMessage(result.message);
-        return;
-      }
+  /**
+   * Web entry point: called from GoogleSignInButtonWeb's own callback,
+   * which Google Identity Services invokes once the user completes its
+   * popup - not from a press on this screen's own button (see that
+   * component's docblock for why).
+   */
+  async function handleGoogleWebIdToken(idToken: string) {
+    setSubmittingGoogle(true);
+    setErrorMessage(null);
 
-      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
-    } catch (error) {
-      const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
-      Alert.alert('Googleサインイン診断', message);
-      setErrorMessage(message);
+    try {
+      await completeGoogleLogin(idToken);
     } finally {
       setSubmittingGoogle(false);
     }
@@ -212,24 +267,32 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ThemedView style={styles.container}>
+          <View style={styles.spotlight} pointerEvents="none" />
+
           <ThemedView style={styles.brand}>
-            <StageArtLogo width={200} height={60} />
+            <Image
+              testID="login-brand-logo"
+              accessibilityLabel="StageArt"
+              source={require('../../assets/images/stageart-logo-lockup.png')}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
           </ThemedView>
 
           {/*
-           * StageArt mobile-rn 修正指示書 §6: a Web deploy (this app's
-           * current public environment) can never satisfy
-           * isGoogleSignInAvailable() - @react-native-google-signin/
-           * google-signin is native-only, so the button was previously
-           * always shown and always failed the moment it was tapped, with
-           * only a diagnostic Alert to show for it. Hiding it entirely
-           * until a real Web-capable implementation exists (see
-           * googleSignIn.ts's own docblock) avoids the "何も起きない"
-           * dead-end the instruction explicitly called out, at the cost
-           * of the Web login screen offering Email+Password only, for now.
+           * StageArt Google Web Sign-In (2026-09-04): isGoogleSignInAvailable()
+           * now returns true on Web once a Web Client ID is configured
+           * (see googleSignIn.web.ts) - Web renders GoogleSignInButtonWeb
+           * (Google Identity Services) instead of this custom button,
+           * since GIS can only issue an ID Token through its own
+           * rendered button's callback (see that component's docblock
+           * for why a differently-styled proxy button cannot trigger
+           * it). Native's button below is unchanged.
            */}
-          {isGoogleSignInAvailable() && (
-            <>
+          {isGoogleSignInAvailable() &&
+            (Platform.OS === 'web' ? (
+              <GoogleSignInButtonWeb onIdToken={handleGoogleWebIdToken} disabled={submitting} />
+            ) : (
               <TouchableOpacity
                 testID="login-google-button"
                 onPress={handleGoogleSubmit}
@@ -237,7 +300,7 @@ export default function LoginScreen() {
                 style={[styles.googleButton, submitting && styles.buttonDisabled]}
               >
                 {submittingGoogle ? (
-                  <ActivityIndicator />
+                  <ActivityIndicator color={STAGE.link} />
                 ) : (
                   <>
                     {/* The official Google "G" mark, rendered by
@@ -280,15 +343,16 @@ export default function LoginScreen() {
                   </>
                 )}
               </TouchableOpacity>
+            ))}
 
-              <ThemedView style={styles.dividerRow}>
-                <ThemedView style={styles.dividerLine} />
-                <ThemedText type="small" themeColor="textSecondary">
-                  または
-                </ThemedText>
-                <ThemedView style={styles.dividerLine} />
-              </ThemedView>
-            </>
+          {isGoogleSignInAvailable() && (
+            <ThemedView style={styles.dividerRow}>
+              <ThemedView style={styles.dividerLine} />
+              <ThemedText type="small" style={styles.dividerText}>
+                または
+              </ThemedText>
+              <ThemedView style={styles.dividerLine} />
+            </ThemedView>
           )}
 
           <ThemedTextInput
@@ -299,6 +363,7 @@ export default function LoginScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
+            placeholderTextColor={STAGE.placeholder}
             style={styles.input}
           />
           <ThemedTextInput
@@ -311,11 +376,12 @@ export default function LoginScreen() {
             secureTextEntry
             textContentType="password"
             autoComplete="current-password"
+            placeholderTextColor={STAGE.placeholder}
             style={styles.input}
           />
 
           {errorMessage && (
-            <ThemedText testID="login-error" themeColor="text" style={styles.error}>
+            <ThemedText testID="login-error" style={styles.error}>
               {errorMessage}
             </ThemedText>
           )}
@@ -330,13 +396,13 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
-            <ThemedText type="linkPrimary" style={styles.linkCentered}>
+            <ThemedText type="linkPrimary" style={[styles.linkCentered, styles.linkColor]}>
               アカウントを新規登録
             </ThemedText>
           </TouchableOpacity>
 
           <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
-            <ThemedText type="link" style={styles.linkCentered}>
+            <ThemedText type="link" style={[styles.linkCentered, styles.linkColor]}>
               パスワードを忘れた
             </ThemedText>
           </TouchableOpacity>
@@ -347,14 +413,38 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
+  safeArea: { flex: 1, backgroundColor: STAGE.background },
   flex: { flex: 1 },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { alignItems: 'center', marginBottom: Spacing.two },
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.three,
+    backgroundColor: STAGE.background,
+  },
+  // A single soft, low-opacity warm glow centered behind the logo - the
+  // "spotlight" cue from docs/03-BrandIdentity.md §4's restrained
+  // lighting direction, not a literal beam. Same technique already used
+  // by startup-animation.tsx's `glow` style, reused here rather than
+  // reinvented.
+  spotlight: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '2%',
+    width: 460,
+    height: 460,
+    borderRadius: 230,
+    backgroundColor: STAGE.spotlight,
+    opacity: 0.07,
+  },
+  brand: { alignItems: 'center', marginBottom: Spacing.two, backgroundColor: 'transparent' },
+  // Aspect ratio matches the canonical asset's own viewBox (1400x420 =
+  // 10:3) exactly, so this display size never distorts the source image.
+  brandLogo: { width: 240, height: 72 },
   googleButton: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: '#dadce0',
+    borderColor: STAGE.inputBorder,
     borderRadius: 8,
     paddingVertical: Spacing.three,
     alignItems: 'center',
@@ -362,22 +452,25 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   googleIcon: { width: 20, height: 20 },
-  googleButtonText: { fontWeight: '600' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#ccc' },
+  googleButtonText: { fontWeight: '600', color: STAGE.inputText },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, backgroundColor: 'transparent' },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: STAGE.divider },
+  dividerText: { color: STAGE.placeholder },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: STAGE.inputBorder,
     borderRadius: 8,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 16,
+    backgroundColor: STAGE.inputBackground,
+    color: STAGE.inputText,
   },
-  error: { color: '#a6483a' },
+  error: { color: STAGE.error },
   button: {
-    // StageArt Web First Phase 1 (docs/03-BrandIdentity.md): warm amber,
-    // not the earlier unrelated purple.
-    backgroundColor: BrandColors.warmAmber,
+    // StageArt ブランド反映 (2026-09-04): the brand guide's specified
+    // bronze (#C89B5E) - matches the logo mark's own A-color exactly.
+    backgroundColor: STAGE.accent,
     borderRadius: 8,
     paddingVertical: Spacing.three,
     alignItems: 'center',
@@ -386,4 +479,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
   linkCentered: { textAlign: 'center' },
+  linkColor: { color: STAGE.link },
 });
