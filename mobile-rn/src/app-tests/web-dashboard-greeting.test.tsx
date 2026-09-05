@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty } from './__fixtures__/homeFixtures';
-import DashboardScreen from '../app/dashboard';
+import HomeScreen from '../app/(app)/home';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -22,26 +22,44 @@ jest.mock('expo-router', () => ({
 }));
 
 /**
- * StageArt Web版 再設計 Phase 2続き: dashboard.tsx is the destination
- * WebLayout's own header logo / sidebar top item already point to (see
- * WebLayout.tsx's TOP_LEVEL_ITEMS) - this is the first coverage either
- * dashboard.tsx or WebLayout has had (WebLayout renders as part of this
- * screen's tree, unmocked).
+ * StageArt Blueprint再構成 Phase 1c: `/dashboard` no longer has its own
+ * screen content (it is a plain redirect stub to /home) - this test
+ * previously rendered the old `DashboardScreen`, now renders the single
+ * canonical `HomeScreen` instead, since the greeting + quick-create
+ * actions it asserts on live there now.
  *
  * §6 (home-multi-org-switch.test.tsx's own docblock): kept one behavior
  * per file - a full AuthProvider/QueryClientProvider tree's async boot
- * (SecureStore -> /auth/refresh -> /me) was found to leave a react-query
- * notifyManager-scheduled timer still pending past a test's own
- * assertions when several such trees are mounted back-to-back inside one
- * file, causing later tests in that file to intermittently fail to find
- * elements that render correctly in isolation - the same class of
- * cross-test leak already disclosed there, not a defect in this screen.
+ * was found to leave a react-query notifyManager-scheduled timer still
+ * pending past a test's own assertions when several such trees are
+ * mounted back-to-back inside one file.
+ *
+ * StageArt Home仕様追加 (2026-09-05): PrimaryNavGrid's only remaining
+ * tile (お気に入り) is now conditional on actually having a favorite -
+ * this test supplies one via its own /me/favorites route (overriding
+ * homeFixtures.ts's default empty-array fallback) specifically so that
+ * tile is present to press.
  */
-describe('Web Dashboard: greeting + quick actions', () => {
-  it('greets the current Person by family name and offers the primary Web entry points', async () => {
+describe('Home: greeting + quick actions', () => {
+  it('greets the current Person by family name and offers the primary entry points', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      {
+        test: (url) => url.endsWith('/me/favorites'),
+        status: 200,
+        body: [
+          {
+            id: 'favorite-1',
+            target_type: 'ORGANIZATION',
+            target_id: 'org-1',
+            target_name: '○○演劇団',
+            target_slug: 'oo-gekidan',
+            organization_slug: null,
+            favorited_at: '2026-01-01T00:00:00+09:00',
+          },
+        ],
+      },
     ]);
 
     const queryClient = new QueryClient();
@@ -49,19 +67,20 @@ describe('Web Dashboard: greeting + quick actions', () => {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <DashboardScreen />
+            <HomeScreen />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('dashboard-greeting')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-greeting')).toBeVisible());
     expect(screen.getByText(/舞台さん/)).toBeVisible();
 
-    fireEvent.press(screen.getByTestId('dashboard-quick-action-create-organization'));
+    fireEvent.press(screen.getByTestId('home-quick-action-create-organization'));
     expect(mockPush).toHaveBeenCalledWith('/organizations/create');
 
-    fireEvent.press(screen.getByTestId('dashboard-quick-action-discover-organizations'));
-    expect(mockPush).toHaveBeenCalledWith('/discover-organizations');
+    await waitFor(() => expect(screen.getByTestId('home-nav-favorites')).toBeVisible());
+    fireEvent.press(screen.getByTestId('home-nav-favorites'));
+    expect(mockPush).toHaveBeenCalledWith('/favorites');
   });
 });

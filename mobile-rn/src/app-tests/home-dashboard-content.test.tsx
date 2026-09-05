@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 import type { MyDashboard } from '@/types/api';
 
-import HomeScreen from '../app/home';
+import HomeScreen from '../app/(app)/home';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -139,7 +139,7 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
   it('renders nothing for Personal Overview when both lists are empty, not an error', async () => {
     await renderHome({ upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] });
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
     expect(screen.queryByTestId('upcoming-rehearsals-list')).toBeNull();
     expect(screen.queryByTestId('home-notifications-list')).toBeNull();
     expect(screen.queryByTestId('dashboard-loading')).toBeNull();
@@ -182,7 +182,7 @@ describe('Home: フォロー中の新着 (StageArt Follow)', () => {
   it('renders nothing when nothing is followed, not an empty-state message', async () => {
     await renderHome({ upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] });
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
     expect(screen.queryByTestId('followed-organizations-feed-section')).toBeNull();
     expect(screen.queryByText(/フォローなし/)).toBeNull();
   });

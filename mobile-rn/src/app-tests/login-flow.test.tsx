@@ -49,6 +49,6 @@ describe('login flow', () => {
     await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
     await fireEvent.press(screen.getByTestId('login-submit'));
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
   });
 });

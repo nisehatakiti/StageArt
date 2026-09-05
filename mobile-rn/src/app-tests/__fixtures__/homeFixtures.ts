@@ -96,6 +96,19 @@ const DEFAULT_ROUTES: { test: (url: string) => boolean; status: number; body: un
     status: 200,
     body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' },
   },
+  // StageArt Home仕様追加 (2026-09-05): Home now unconditionally calls
+  // useMyFavorites() to decide whether to show its お気に入り tile at
+  // all - every renderRouter()-mounted test that reaches Home needs a
+  // working response for this, same reasoning as /auth/refresh and /me
+  // above. Empty by default (no favorites) so a test that doesn't care
+  // about this tile sees the same "nothing to show" behavior a real
+  // empty account would; a test specifically about the favorites tile
+  // overrides this with its own /me/favorites route.
+  {
+    test: (url) => url.endsWith('/me/favorites'),
+    status: 200,
+    body: [],
+  },
 ];
 
 /** Routes by URL suffix, most-specific match first (so /productions/{id}

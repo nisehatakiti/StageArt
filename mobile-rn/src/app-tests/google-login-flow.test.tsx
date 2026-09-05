@@ -66,7 +66,10 @@ describe('login flow: Google', () => {
 
     fireEvent.press(screen.getByTestId('login-google-button'));
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    // StageArt Home仕様追加 (2026-09-05): home-primary-nav is now
+    // conditional on having favorites - home-quick-action-create-organization
+    // is the unconditional "we've reached Home" marker instead.
+    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
 
     const googleCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/auth/google'));
     expect(googleCall).toBeDefined();

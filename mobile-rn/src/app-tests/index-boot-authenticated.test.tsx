@@ -33,6 +33,6 @@ describe('index.tsx: boot with a stored session', () => {
 
     renderRouter('src/app', { initialUrl: '/' });
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
   });
 });
