@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { ACTUAL_STATUS_OPTIONS, attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
+import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import {
   useActivateRehearsal,
   useCancelRehearsal,
@@ -41,6 +42,24 @@ import { getErrorMessage } from '@/utils/errorMessage';
 import type { Participant, RehearsalAttendance, ScheduleComment, TimetableItem } from '@/types/api';
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
+
+/** Same map as the Rehearsal list screen (schedule/attendance/index.tsx)
+ * - docs/20-RehearsalManagementScreen.md §4/§4.1 confirms the Detail
+ * screen must display Status/Date/Start time/End time/Location too, not
+ * just the list. Duplicated locally rather than exported/shared,
+ * matching this file's own existing PARTICIPANT_TYPE_LABEL precedent. */
+const REHEARSAL_STATUS_LABELS: Record<string, string> = {
+  DRAFT: '下書き',
+  SCHEDULED: '調整中',
+  CONFIRMED: '確定',
+  ACTIVE: '実施中',
+  COMPLETED: '実施済み',
+  CANCELLED: '中止',
+};
+
+function rehearsalStatusLabel(status: string): string {
+  return REHEARSAL_STATUS_LABELS[status] ?? status;
+}
 
 /**
  * §17-19: Attendance roster + self-response for one Rehearsal. Whether
@@ -204,6 +223,20 @@ export default function RehearsalAttendanceScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <ThemedView>
+              {rehearsalQuery.data && (
+                <ThemedView style={styles.summaryCard} testID="rehearsal-info">
+                  <ThemedText testID="rehearsal-info-status">{rehearsalStatusLabel(rehearsalQuery.data.status)}</ThemedText>
+                  {rehearsalQuery.data.start_date_time && (
+                    <ThemedText testID="rehearsal-info-datetime">
+                      {formatDayHeader(new Date(rehearsalQuery.data.start_date_time))} {formatTime(rehearsalQuery.data.start_date_time)}
+                      {rehearsalQuery.data.end_date_time ? `〜${formatTime(rehearsalQuery.data.end_date_time)}` : ''}
+                    </ThemedText>
+                  )}
+                  {rehearsalQuery.data.location && (
+                    <ThemedText testID="rehearsal-info-location">{rehearsalQuery.data.location}</ThemedText>
+                  )}
+                </ThemedView>
+              )}
               <RehearsalManagementPanel
                 rehearsalStatus={rehearsalQuery.data?.status}
                 onEdit={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsalId}/edit`)}

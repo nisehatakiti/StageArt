@@ -38,6 +38,13 @@ describe('Attendance detail: full roster, already-responded state', () => {
     expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('出席');
     expect(screen.getAllByTestId('attendance-roster-row')).toHaveLength(1);
 
+    // docs/20-RehearsalManagementScreen.md §4/§4.1: the Detail screen
+    // must show Status/Date/Start-End time/Location, not just the
+    // attendance roster.
+    expect(screen.getByTestId('rehearsal-info-status')).toHaveTextContent('確定');
+    expect(screen.getByTestId('rehearsal-info-datetime')).toHaveTextContent('2026/8/20（木） 10:00〜12:00');
+    expect(screen.getByTestId('rehearsal-info-location')).toHaveTextContent('稽古場A');
+
     expect(screen.getByTestId('attendance-summary-attending')).toHaveTextContent('出席 1名');
     expect(screen.getByTestId('attendance-summary-not-attending')).toHaveTextContent('欠席 0名');
     expect(screen.getByTestId('attendance-summary-unanswered')).toHaveTextContent('未回答 0名');
