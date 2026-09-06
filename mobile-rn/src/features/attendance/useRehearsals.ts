@@ -2,7 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { activateRehearsal, cancelRehearsal, completeRehearsal, confirmRehearsal, createRehearsal, fetchRehearsal, fetchRehearsals } from './api';
+import {
+  activateRehearsal,
+  cancelRehearsal,
+  completeRehearsal,
+  confirmRehearsal,
+  createRehearsal,
+  fetchRehearsal,
+  fetchRehearsals,
+  updateRehearsal,
+} from './api';
 
 export function useRehearsals(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -68,6 +77,26 @@ export function useActivateRehearsal(rehearsalId: string | undefined) {
   return useMutation({
     mutationFn: () => activateRehearsal(apiClient, rehearsalId as string),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] }),
+  });
+}
+
+export function useUpdateRehearsal(rehearsalId: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (fields: {
+      title?: string;
+      description: string | null;
+      startDateTime?: string;
+      endDateTime?: string;
+      timezone?: string;
+      location?: string;
+    }) => updateRehearsal(apiClient, rehearsalId as string, fields),
+    onSuccess: (rehearsal) => {
+      queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] });
+      queryClient.invalidateQueries({ queryKey: ['production-rehearsals', rehearsal.production_id] });
+    },
   });
 }
 

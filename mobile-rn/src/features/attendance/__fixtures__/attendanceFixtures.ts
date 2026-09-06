@@ -49,6 +49,13 @@ export const rehearsalActive: Rehearsal = {
   status: 'ACTIVE',
 };
 
+export const rehearsalCompleted: Rehearsal = {
+  ...rehearsalScheduleAdjustment,
+  id: 'rehearsal-4',
+  title: '第4回稽古（実施済み）',
+  status: 'COMPLETED',
+};
+
 export const rehearsals: Rehearsal[] = [rehearsalScheduleAdjustment, rehearsalConfirmed];
 
 export const scheduleAdjustmentRoster: RehearsalAttendance[] = [

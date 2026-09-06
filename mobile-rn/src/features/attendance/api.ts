@@ -47,6 +47,38 @@ export function createRehearsal(
   });
 }
 
+/** PUT /rehearsals/{id} - "稽古情報の編集" (UpdateRehearsalUseCase.php).
+ * Valid for DRAFT/SCHEDULED/CONFIRMED/ACTIVE (rejected for the two
+ * terminal statuses - Rehearsal.php's own `isTerminal()` guard); never
+ * changes Status itself. Every field the Backend accepts is applied
+ * unconditionally (no per-field "only if provided" merge, matching
+ * updateOrganization()'s identical contract) - `description` is
+ * therefore always required here even though no Mobile UI edits it yet,
+ * so callers must pass the Rehearsal's own current description back
+ * unchanged rather than omit it, or a real (if currently always-null in
+ * practice) value would be silently wiped. */
+export function updateRehearsal(
+  client: ApiClient,
+  rehearsalId: string,
+  fields: {
+    title?: string;
+    description: string | null;
+    startDateTime?: string;
+    endDateTime?: string;
+    timezone?: string;
+    location?: string;
+  }
+): Promise<Rehearsal> {
+  return client.put<Rehearsal>(`/rehearsals/${rehearsalId}`, {
+    title: fields.title,
+    description: fields.description,
+    start_date_time: fields.startDateTime,
+    end_date_time: fields.endDateTime,
+    timezone: fields.timezone,
+    location: fields.location,
+  });
+}
+
 /** POST /rehearsals/{id}/confirm - "稽古情報の確定" (docs/04-HomeRoleBasedMenu.md
  * §07's 稽古管理). Moves the Attendance phase from SCHEDULE_ADJUSTMENT to
  * ATTENDANCE_CONFIRMATION (see features/attendance/phase.ts's own

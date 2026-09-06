@@ -44,6 +44,7 @@ describe('Attendance detail: CONFIRMED Rehearsal management actions', () => {
     await waitFor(() => expect(screen.getByTestId('rehearsal-activate')).toBeVisible());
     expect(screen.queryByTestId('rehearsal-confirm')).toBeNull();
     expect(screen.getByTestId('rehearsal-cancel')).toBeVisible();
+    expect(screen.getByTestId('rehearsal-edit')).toBeVisible();
 
     fireEvent.press(screen.getByTestId('rehearsal-activate'));
 

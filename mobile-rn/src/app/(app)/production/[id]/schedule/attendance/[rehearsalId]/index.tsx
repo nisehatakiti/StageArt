@@ -206,6 +206,7 @@ export default function RehearsalAttendanceScreen() {
             <ThemedView>
               <RehearsalManagementPanel
                 rehearsalStatus={rehearsalQuery.data?.status}
+                onEdit={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsalId}/edit`)}
                 onConfirm={() => confirmRehearsal.mutate()}
                 isConfirmPending={confirmRehearsal.isPending}
                 confirmError={confirmRehearsal.isError ? confirmRehearsal.error : null}
@@ -421,6 +422,7 @@ function AttendanceRow({
  */
 function RehearsalManagementPanel({
   rehearsalStatus,
+  onEdit,
   onConfirm,
   isConfirmPending,
   confirmError,
@@ -444,6 +446,7 @@ function RehearsalManagementPanel({
   publishSuccess,
 }: {
   rehearsalStatus: string | undefined;
+  onEdit: () => void;
   onConfirm: () => void;
   isConfirmPending: boolean;
   confirmError: unknown;
@@ -558,6 +561,9 @@ function RehearsalManagementPanel({
 
       {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED' || rehearsalStatus === 'ACTIVE') && (
         <ThemedView style={managementStyles.section}>
+          <TouchableOpacity testID="rehearsal-edit" onPress={onEdit} style={managementStyles.secondaryButton}>
+            <ThemedText type="link">編集</ThemedText>
+          </TouchableOpacity>
           {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED') && (
             <>
               <TouchableOpacity

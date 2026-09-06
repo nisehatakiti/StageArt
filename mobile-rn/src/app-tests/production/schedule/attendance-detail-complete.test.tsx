@@ -46,6 +46,7 @@ describe('Attendance detail: ACTIVE Rehearsal management actions', () => {
     expect(screen.queryByTestId('rehearsal-confirm')).toBeNull();
     expect(screen.queryByTestId('rehearsal-activate')).toBeNull();
     expect(screen.getByTestId('rehearsal-cancel')).toBeVisible();
+    expect(screen.getByTestId('rehearsal-edit')).toBeVisible();
 
     fireEvent.press(screen.getByTestId('rehearsal-complete'));
 
