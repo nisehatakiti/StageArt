@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\Rehearsal;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
@@ -27,6 +28,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
+use StageArt\Application\Rehearsal\UpdateRehearsalCommand;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
@@ -513,5 +515,142 @@ final class RehearsalUseCaseTest extends TestCase
 
         $this->expectException(RehearsalAccessDeniedException::class);
         $this->listRehearsals->execute(new ListRehearsalsForProductionQuery($productionB->id()->toString(), 1));
+    }
+
+    /**
+     * Regression coverage for the Rehearsal datetime/timezone bug: a
+     * JST-offset input must come back out through RehearsalResult with
+     * the SAME offset (not silently re-labelled UTC) AND the SAME
+     * absolute instant. Two separate assertions on purpose - Domain
+     * Design Option C (RehearsalInstaller.php: `start_date_time DATETIME`
+     * + separate `timezone` column) means the guarantee this project
+     * makes is "the wall-clock digits and the declared timezone travel
+     * together unchanged", which implies (but is more specific than)
+     * "the absolute instant is unchanged" - a test that only checked the
+     * instant would pass even if the offset were swapped for another
+     * offset that happens to name the same instant, which is not what
+     * Rehearsal.md's Location/timezone design promises.
+     *
+     * These Create/Get/Update cases exercise CreateRehearsalUseCase /
+     * GetRehearsalUseCase / UpdateRehearsalUseCase against
+     * InMemoryRehearsalRepository, which stores the Rehearsal Domain
+     * Entity object directly (no DB string round-trip - see
+     * tests/Support/InMemoryRehearsalRepository.php). They confirm the
+     * Application layer's own parsing (`parseOptionalDateTime()`) and
+     * serialization (`RehearsalResult::fromDomain()`) never lose the
+     * offset, which was already correct before this fix. They do NOT
+     * exercise WordPressRehearsalRepository::hydrate() (the actual
+     * Infrastructure-layer bug/fix), because that class requires a real
+     * `wpdb` (a WordPress core global) and this project's own tests/
+     * tier is Domain/Application-only with no WordPress dependency (see
+     * CLAUDE.md and this suite's exclusive use of InMemory* Fakes) - no
+     * `wpdb` stub exists anywhere in this codebase's autoload, and
+     * introducing one would be a new architectural precedent, not a
+     * minimal regression test. That Repository round-trip case is
+     * instead verified against the real dev server (real WordPress
+     * bootstrap, real MySQL) as part of this fix's browser/API
+     * verification.
+     */
+    public function test_create_rehearsal_preserves_start_date_time_offset_and_instant(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T21:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-20T18:00:00+09:00', $result->startDateTime);
+        $this->assertSame(
+            (new DateTimeImmutable('2026-09-20T09:00:00+00:00'))->getTimestamp(),
+            (new DateTimeImmutable($result->startDateTime))->getTimestamp(),
+            'The absolute instant represented by start_date_time must not shift.'
+        );
+    }
+
+    public function test_create_rehearsal_preserves_end_date_time_offset_and_instant(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T21:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-20T21:00:00+09:00', $result->endDateTime);
+        $this->assertSame(
+            (new DateTimeImmutable('2026-09-20T12:00:00+00:00'))->getTimestamp(),
+            (new DateTimeImmutable($result->endDateTime))->getTimestamp(),
+            'The absolute instant represented by end_date_time must not shift.'
+        );
+    }
+
+    public function test_create_then_get_rehearsal_preserves_date_time_offset(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T21:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $fetched = $this->getRehearsal->execute(new GetRehearsalQuery($created->id, 1));
+
+        $this->assertSame('2026-09-20T18:00:00+09:00', $fetched->startDateTime);
+        $this->assertSame('2026-09-20T21:00:00+09:00', $fetched->endDateTime);
+    }
+
+    public function test_update_rehearsal_date_time_reflects_new_offset_without_stale_leftover(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T19:30:00+09:00',
+            '2026-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-20T19:30:00+09:00', $updated->startDateTime);
+
+        $refetched = $this->getRehearsal->execute(new GetRehearsalQuery($created->id, 1));
+        $this->assertSame(
+            '2026-09-20T19:30:00+09:00',
+            $refetched->startDateTime,
+            'A re-fetch after Update must show the new time, not the value the Rehearsal was originally created with.'
+        );
     }
 }

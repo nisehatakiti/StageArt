@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use RuntimeException;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
@@ -99,15 +100,37 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    /**
+     * start_date_time/end_date_time are stored as naive local wall-clock
+     * values (DATETIME, no offset - see RehearsalInstaller.php's schema),
+     * deliberately paired with this Rehearsal's own separate `timezone`
+     * column to give them meaning (Rehearsal.md's "Location"/timezone
+     * design: a real-world rehearsal happens at a wall-clock time in
+     * whatever place it's held, not at a fixed UTC instant). Without an
+     * explicit DateTimeZone here, PHP's DateTimeImmutable falls back to
+     * date_default_timezone_get() - which WordPress's own
+     * wp-settings.php unconditionally forces to 'UTC' on every request,
+     * regardless of the server's real system timezone. That silently
+     * mislabels the exact same wall-clock digits as UTC instead of this
+     * Rehearsal's own timezone, corrupting every DATE_ATOM-formatted API
+     * response downstream (RehearsalResult, RehearsalUpcomingRehearsal
+     * Provider) with a wrong offset while leaving the digits unchanged.
+     * Passing the Rehearsal's own timezone here instead fixes this at
+     * the one point the naive string is reconstructed into a
+     * DateTimeImmutable, rather than patching every serialization call
+     * site separately.
+     */
     private function hydrate(array $row): Rehearsal
     {
+        $timezone = $row['timezone'] !== null ? new DateTimeZone($row['timezone']) : null;
+
         return Rehearsal::reconstitute(
             RehearsalId::fromString($row['id']),
             ProductionId::fromString($row['production_id']),
             $row['title'],
             $row['description'],
-            $row['start_date_time'] !== null ? new DateTimeImmutable($row['start_date_time']) : null,
-            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time']) : null,
+            $row['start_date_time'] !== null ? new DateTimeImmutable($row['start_date_time'], $timezone) : null,
+            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time'], $timezone) : null,
             $row['timezone'],
             $row['location'],
             RehearsalStatus::fromString($row['status']),
