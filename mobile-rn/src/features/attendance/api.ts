@@ -59,9 +59,25 @@ export function confirmRehearsal(client: ApiClient, rehearsalId: string): Promis
 /** POST /rehearsals/{id}/cancel - "中止する" (稽古を中止する). Soft
  * status-only transition to CANCELLED (CancelRehearsalUseCase.php); the
  * record is never physically deleted and keeps appearing in the
- * Rehearsal list with its CANCELLED status. */
+ * Rehearsal list with its CANCELLED status. Valid from DRAFT/SCHEDULED/
+ * CONFIRMED/ACTIVE (Rehearsal.md's own Status Lifecycle "中止の場合"
+ * section - anything short of the two terminal statuses). */
 export function cancelRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/cancel`);
+}
+
+/** POST /rehearsals/{id}/activate - "稽古を開始する" (Rehearsal.md's own
+ * ACTIVE definition: "Rehearsalが実施中である状態"). Only a CONFIRMED
+ * Rehearsal may become ACTIVE (ActivateRehearsalUseCase.php). */
+export function activateRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/activate`);
+}
+
+/** POST /rehearsals/{id}/complete - "実施済みにする" (Rehearsal.md's own
+ * COMPLETED definition: "Rehearsalが実施済みとなった状態"). Only an ACTIVE
+ * Rehearsal may become COMPLETED (CompleteRehearsalUseCase.php). */
+export function completeRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/complete`);
 }
 
 /** GET /rehearsals/{id}/attendances?phase=X - the full roster for one

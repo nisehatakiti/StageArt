@@ -10,7 +10,13 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { ACTUAL_STATUS_OPTIONS, attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
-import { useCancelRehearsal, useConfirmRehearsal, useRehearsal } from '@/features/attendance/useRehearsals';
+import {
+  useActivateRehearsal,
+  useCancelRehearsal,
+  useCompleteRehearsal,
+  useConfirmRehearsal,
+  useRehearsal,
+} from '@/features/attendance/useRehearsals';
 import {
   useAddRehearsalAttendanceTargets,
   useRecordActualRehearsalAttendanceStatus,
@@ -93,6 +99,8 @@ export default function RehearsalAttendanceScreen() {
 
   const confirmRehearsal = useConfirmRehearsal(rehearsalId);
   const cancelRehearsal = useCancelRehearsal(rehearsalId);
+  const activateRehearsal = useActivateRehearsal(rehearsalId);
+  const completeRehearsal = useCompleteRehearsal(rehearsalId);
   const draftItemsQuery = useRehearsalDraftTimetableItems(rehearsalId);
   const createTimetableItem = useCreateTimetableItem(rehearsalId);
   const publishTimetable = usePublishRehearsalTimetable(rehearsalId);
@@ -209,6 +217,12 @@ export default function RehearsalAttendanceScreen() {
                 }
                 isCancelPending={cancelRehearsal.isPending}
                 cancelError={cancelRehearsal.isError ? cancelRehearsal.error : null}
+                onActivate={() => activateRehearsal.mutate()}
+                isActivatePending={activateRehearsal.isPending}
+                activateError={activateRehearsal.isError ? activateRehearsal.error : null}
+                onComplete={() => completeRehearsal.mutate()}
+                isCompletePending={completeRehearsal.isPending}
+                completeError={completeRehearsal.isError ? completeRehearsal.error : null}
                 draftItems={draftItemsQuery.data}
                 isDraftItemsLoading={draftItemsQuery.isLoading}
                 onAddItem={(fields) => createTimetableItem.mutate(fields)}
@@ -413,6 +427,12 @@ function RehearsalManagementPanel({
   onCancel,
   isCancelPending,
   cancelError,
+  onActivate,
+  isActivatePending,
+  activateError,
+  onComplete,
+  isCompletePending,
+  completeError,
   draftItems,
   isDraftItemsLoading,
   onAddItem,
@@ -430,6 +450,12 @@ function RehearsalManagementPanel({
   onCancel: () => void;
   isCancelPending: boolean;
   cancelError: unknown;
+  onActivate: () => void;
+  isActivatePending: boolean;
+  activateError: unknown;
+  onComplete: () => void;
+  isCompletePending: boolean;
+  completeError: unknown;
   draftItems: TimetableItem[] | undefined;
   isDraftItemsLoading: boolean;
   onAddItem: (fields: { title: string; startDateTime: string; category?: string; venue?: string }) => void;
@@ -530,17 +556,47 @@ function RehearsalManagementPanel({
         {publishError !== null && <ThemedText testID="rehearsal-publish-error">{getErrorMessage(publishError)}</ThemedText>}
       </ThemedView>
 
-      {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED') && (
+      {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED' || rehearsalStatus === 'ACTIVE') && (
         <ThemedView style={managementStyles.section}>
-          <TouchableOpacity
-            testID="rehearsal-confirm"
-            onPress={onConfirm}
-            disabled={isConfirmPending}
-            style={managementStyles.secondaryButton}
-          >
-            {isConfirmPending ? <ActivityIndicator /> : <ThemedText type="link">稽古情報を確定する</ThemedText>}
-          </TouchableOpacity>
-          {confirmError !== null && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmError)}</ThemedText>}
+          {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED') && (
+            <>
+              <TouchableOpacity
+                testID="rehearsal-confirm"
+                onPress={onConfirm}
+                disabled={isConfirmPending}
+                style={managementStyles.secondaryButton}
+              >
+                {isConfirmPending ? <ActivityIndicator /> : <ThemedText type="link">稽古情報を確定する</ThemedText>}
+              </TouchableOpacity>
+              {confirmError !== null && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmError)}</ThemedText>}
+            </>
+          )}
+          {rehearsalStatus === 'CONFIRMED' && (
+            <>
+              <TouchableOpacity
+                testID="rehearsal-activate"
+                onPress={onActivate}
+                disabled={isActivatePending}
+                style={managementStyles.secondaryButton}
+              >
+                {isActivatePending ? <ActivityIndicator /> : <ThemedText type="link">稽古を開始する</ThemedText>}
+              </TouchableOpacity>
+              {activateError !== null && <ThemedText testID="rehearsal-activate-error">{getErrorMessage(activateError)}</ThemedText>}
+            </>
+          )}
+          {rehearsalStatus === 'ACTIVE' && (
+            <>
+              <TouchableOpacity
+                testID="rehearsal-complete"
+                onPress={onComplete}
+                disabled={isCompletePending}
+                style={managementStyles.secondaryButton}
+              >
+                {isCompletePending ? <ActivityIndicator /> : <ThemedText type="link">実施済みにする</ThemedText>}
+              </TouchableOpacity>
+              {completeError !== null && <ThemedText testID="rehearsal-complete-error">{getErrorMessage(completeError)}</ThemedText>}
+            </>
+          )}
           <TouchableOpacity testID="rehearsal-cancel" onPress={onCancel} disabled={isCancelPending} style={managementStyles.secondaryButton}>
             {isCancelPending ? <ActivityIndicator /> : <ThemedText type="link">中止する</ThemedText>}
           </TouchableOpacity>
