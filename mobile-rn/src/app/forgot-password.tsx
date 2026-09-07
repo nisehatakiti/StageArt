@@ -1,12 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
 import { requestPasswordReset } from '@/features/auth/api';
 import { NetworkError } from '@/api/errors';
 
@@ -50,104 +49,67 @@ export default function ForgotPasswordScreen() {
 
   if (submitted) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.brand}>
-            確認メールを送信しました
-          </ThemedText>
-          <ThemedText testID="forgot-password-success" type="default" style={styles.description}>
-            ご入力いただいたメールアドレス宛にパスワード再設定用のご案内をお送りしました。メール内のコードを次の画面で入力してください。
-          </ThemedText>
+      <AuthLayout>
+        <ThemedText type="title" style={authStyles.title}>
+          確認メールを送信しました
+        </ThemedText>
+        <ThemedText testID="forgot-password-success" type="default" style={authStyles.description}>
+          ご入力いただいたメールアドレス宛にパスワード再設定用のご案内をお送りしました。メール内のコードを次の画面で入力してください。
+        </ThemedText>
 
-          <TouchableOpacity
-            testID="forgot-password-to-reset-link"
-            onPress={() => router.push('/reset-password')}
-            style={styles.button}
-          >
-            <ThemedText style={styles.buttonText}>パスワードを再設定する</ThemedText>
-          </TouchableOpacity>
+        <TouchableOpacity testID="forgot-password-to-reset-link" onPress={() => router.push('/reset-password')} style={authStyles.button}>
+          <ThemedText style={authStyles.buttonText}>パスワードを再設定する</ThemedText>
+        </TouchableOpacity>
 
-          <TouchableOpacity testID="forgot-password-login-link" onPress={() => router.replace('/login')}>
-            <ThemedText type="link" style={styles.linkCentered}>
-              ログイン画面へ戻る
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
-      </SafeAreaView>
+        <TouchableOpacity testID="forgot-password-login-link" onPress={() => router.replace('/login')}>
+          <ThemedText type="link" style={authStyles.linkCentered}>
+            ← ログイン画面へ戻る
+          </ThemedText>
+        </TouchableOpacity>
+      </AuthLayout>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.brand}>
-            パスワードを忘れた場合
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
-            登録済みのメールアドレスを入力してください。パスワード再設定用のご案内をお送りします。
-          </ThemedText>
+    <AuthLayout>
+      <ThemedText type="title" style={authStyles.title}>
+        パスワードを忘れた場合
+      </ThemedText>
+      <ThemedText type="small" style={authStyles.description}>
+        登録済みのメールアドレスを入力してください。パスワード再設定用のご案内をお送りします。
+      </ThemedText>
 
-          <ThemedTextInput
-            testID="forgot-password-email"
-            placeholder="メールアドレス"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={styles.input}
-          />
+      <ThemedTextInput
+        testID="forgot-password-email"
+        placeholder="メールアドレス"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        style={authStyles.input}
+      />
 
-          {errorMessage && (
-            <ThemedText testID="forgot-password-error" themeColor="text" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
+      {errorMessage && (
+        <ThemedText testID="forgot-password-error" style={authStyles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
 
-          <TouchableOpacity
-            testID="forgot-password-submit"
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={[styles.button, submitting && styles.buttonDisabled]}
-          >
-            {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>送信する</ThemedText>}
-          </TouchableOpacity>
+      <TouchableOpacity
+        testID="forgot-password-submit"
+        onPress={handleSubmit}
+        disabled={submitting}
+        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+      >
+        {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>送信する</ThemedText>}
+      </TouchableOpacity>
 
-          <TouchableOpacity testID="forgot-password-login-link" onPress={() => router.back()} disabled={submitting}>
-            <ThemedText type="link" style={styles.linkCentered}>
-              ログイン画面へ戻る
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <TouchableOpacity testID="forgot-password-login-link" onPress={() => router.back()} disabled={submitting}>
+        <ThemedText type="link" style={authStyles.linkCentered}>
+          ← ログイン画面へ戻る
+        </ThemedText>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  flex: { flex: 1 },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { fontSize: 24, lineHeight: 30, textAlign: 'center' },
-  description: { textAlign: 'center', marginBottom: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  error: { color: '#a6483a' },
-  button: {
-    backgroundColor: '#4a3f7a',
-    borderRadius: 8,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  linkCentered: { textAlign: 'center' },
-});

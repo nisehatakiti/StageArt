@@ -51,10 +51,19 @@ export default function RootLayout() {
           <OrganizationProvider>
             <Stack screenOptions={webHeaderOptions}>
               <Stack.Screen name="index" options={{ headerShown: false }} />
+              {/* StageArt 認証画面デザイン統一 (2026-09-07): every
+                  authentication screen now renders its own dark
+                  AuthLayout shell (background/spotlight/logo) plus an
+                  in-content "← ログイン画面へ戻る" link, so the Stack's own
+                  black webHeaderOptions bar (title + browser back button)
+                  is no longer needed here - it used to be the only thing
+                  distinguishing register/forgot-password/reset-password
+                  from login (which already had headerShown: false), which
+                  is exactly why those three looked like a different app. */}
               <Stack.Screen name="login" options={{ headerShown: false }} />
-              <Stack.Screen name="register" options={{ title: 'アカウント登録' }} />
-              <Stack.Screen name="forgot-password" options={{ title: 'パスワードを忘れた' }} />
-              <Stack.Screen name="reset-password" options={{ title: 'パスワード再設定' }} />
+              <Stack.Screen name="register" options={{ headerShown: false }} />
+              <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+              <Stack.Screen name="reset-password" options={{ headerShown: false }} />
               <Stack.Screen name="registration-pending" options={{ headerShown: false }} />
               <Stack.Screen name="verify-email" options={{ headerShown: false }} />
               <Stack.Screen name="set-name" options={{ title: '姓名を設定' }} />

@@ -1,37 +1,17 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, View, type ViewProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 
 import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { authStyles } from '@/components/auth/authStyles';
+import { STAGE } from '@/components/auth/authTheme';
 import { GoogleSignInButtonWeb } from '@/components/auth/GoogleSignInButtonWeb';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { BrandColors, Spacing } from '@/constants/theme';
-
-/**
- * StageArt ブランド反映 (2026-09-04): login.tsx-only dark "theatre" palette
- * - deliberately not merged into the shared theme.ts (BrandColors there
- * still follows the app's existing light/dark-mode-aware screens; this
- * screen instead always renders dark, matching the brand's fixed
- * "blackout black + warm stage illumination" identity, the same way
- * startup-animation.tsx/WebSidebarNav.tsx/AppChrome.tsx already do).
- * Kept local to avoid touching any other screen's styling.
- */
-const STAGE = {
-  background: '#050505',
-  spotlight: BrandColors.warmGold,
-  inputBackground: '#101010',
-  inputBorder: '#2A2620',
-  inputText: '#F5EFE3',
-  placeholder: '#8A8272',
-  divider: '#3A342C',
-  link: BrandColors.stageWarmWhite,
-  error: '#E2836B',
-  accent: '#C89B5E',
-} as const;
+import { Spacing } from '@/constants/theme';
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -264,189 +244,151 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <View style={styles.spotlight} pointerEvents="none" />
-
-          <ThemedView style={styles.brand}>
-            <Image
-              testID="login-brand-logo"
-              accessibilityLabel="StageArt"
-              source={require('../../assets/images/stageart-logo-lockup.png')}
-              style={styles.brandLogo}
-              resizeMode="contain"
-            />
-          </ThemedView>
-
-          {/*
-           * StageArt Google Web Sign-In (2026-09-04): isGoogleSignInAvailable()
-           * now returns true on Web once a Web Client ID is configured
-           * (see googleSignIn.web.ts) - Web renders GoogleSignInButtonWeb
-           * (Google Identity Services) instead of this custom button,
-           * since GIS can only issue an ID Token through its own
-           * rendered button's callback (see that component's docblock
-           * for why a differently-styled proxy button cannot trigger
-           * it). Native's button below is unchanged.
-           */}
-          {isGoogleSignInAvailable() &&
-            (Platform.OS === 'web' ? (
-              <GoogleSignInButtonWeb onIdToken={handleGoogleWebIdToken} disabled={submitting} />
-            ) : (
-              <TouchableOpacity
-                testID="login-google-button"
-                onPress={handleGoogleSubmit}
-                disabled={submitting}
-                style={[styles.googleButton, submitting && styles.buttonDisabled]}
-              >
-                {submittingGoogle ? (
-                  <ActivityIndicator color={STAGE.link} />
-                ) : (
-                  <>
-                    {/* The official Google "G" mark, rendered by
-                        @react-native-google-signin/google-signin's own
-                        GoogleSigninButton widget (already a dependency of
-                        this app for the sign-in flow itself - no new
-                        dependency added here) - Google provides this exact
-                        component so apps render their brand mark correctly,
-                        rather than an approximation drawn by hand. Absent
-                        entirely (see useGoogleSigninButtonComponent's
-                        docblock) rather than crashing when the native
-                        module isn't available yet.
-                        `pointerEvents="none"` makes it purely decorative so
-                        taps still go to this TouchableOpacity, which keeps
-                        StageArt's own Japanese label/testID/loading-state
-                        handling unchanged. */}
-                    {GoogleIcon && (
-                      // react-hooks/static-components flags any component
-                      // reference read from a hook/state and used as a JSX
-                      // tag, since its identity could in general change
-                      // every render (causing unwanted remounts). Here it
-                      // genuinely cannot: useGoogleSigninButtonComponent's
-                      // state only ever transitions null -> the one loaded
-                      // module export, exactly once, and then stays
-                      // referentially stable for the rest of this screen's
-                      // lifetime - this is the dynamic-import-for-an-old-
-                      // binary/test-environment pattern (see that hook's
-                      // own docblock), not a same-render component factory.
-                      // eslint-disable-next-line react-hooks/static-components
-                      <GoogleIcon
-                        size={GoogleIcon.Size.Icon}
-                        color={GoogleIcon.Color.Light}
-                        style={styles.googleIcon}
-                        pointerEvents="none"
-                      />
-                    )}
-                    <ThemedText type="default" style={styles.googleButtonText}>
-                      Googleで続ける
-                    </ThemedText>
-                  </>
-                )}
-              </TouchableOpacity>
-            ))}
-
-          {isGoogleSignInAvailable() && (
-            <ThemedView style={styles.dividerRow}>
-              <ThemedView style={styles.dividerLine} />
-              <ThemedText type="small" style={styles.dividerText}>
-                または
-              </ThemedText>
-              <ThemedView style={styles.dividerLine} />
-            </ThemedView>
-          )}
-
-          <ThemedTextInput
-            testID="login-email"
-            placeholder="メールアドレス"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            placeholderTextColor={STAGE.placeholder}
-            style={styles.input}
-          />
-          <ThemedTextInput
-            testID="login-password"
-            placeholder="パスワード"
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            textContentType="password"
-            autoComplete="current-password"
-            placeholderTextColor={STAGE.placeholder}
-            style={styles.input}
-          />
-
-          {errorMessage && (
-            <ThemedText testID="login-error" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
-
+    <AuthLayout logoTestID="login-brand-logo">
+      {/*
+       * StageArt Google Web Sign-In (2026-09-04): isGoogleSignInAvailable()
+       * now returns true on Web once a Web Client ID is configured
+       * (see googleSignIn.web.ts) - Web renders GoogleSignInButtonWeb
+       * (Google Identity Services) instead of this custom button,
+       * since GIS can only issue an ID Token through its own
+       * rendered button's callback (see that component's docblock
+       * for why a differently-styled proxy button cannot trigger
+       * it). Native's button below is unchanged.
+       */}
+      {isGoogleSignInAvailable() &&
+        (Platform.OS === 'web' ? (
+          <GoogleSignInButtonWeb onIdToken={handleGoogleWebIdToken} disabled={submitting} />
+        ) : (
           <TouchableOpacity
-            testID="login-submit"
-            onPress={handleEmailSubmit}
+            testID="login-google-button"
+            onPress={handleGoogleSubmit}
             disabled={submitting}
-            style={[styles.button, submitting && styles.buttonDisabled]}
+            style={[styles.googleButton, submitting && authStyles.buttonDisabled]}
           >
-            {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>ログイン</ThemedText>}
+            {submittingGoogle ? (
+              <ActivityIndicator color={STAGE.link} />
+            ) : (
+              <>
+                {/* The official Google "G" mark, rendered by
+                    @react-native-google-signin/google-signin's own
+                    GoogleSigninButton widget (already a dependency of
+                    this app for the sign-in flow itself - no new
+                    dependency added here) - Google provides this exact
+                    component so apps render their brand mark correctly,
+                    rather than an approximation drawn by hand. Absent
+                    entirely (see useGoogleSigninButtonComponent's
+                    docblock) rather than crashing when the native
+                    module isn't available yet.
+                    `pointerEvents="none"` makes it purely decorative so
+                    taps still go to this TouchableOpacity, which keeps
+                    StageArt's own Japanese label/testID/loading-state
+                    handling unchanged. */}
+                {GoogleIcon && (
+                  // react-hooks/static-components flags any component
+                  // reference read from a hook/state and used as a JSX
+                  // tag, since its identity could in general change
+                  // every render (causing unwanted remounts). Here it
+                  // genuinely cannot: useGoogleSigninButtonComponent's
+                  // state only ever transitions null -> the one loaded
+                  // module export, exactly once, and then stays
+                  // referentially stable for the rest of this screen's
+                  // lifetime - this is the dynamic-import-for-an-old-
+                  // binary/test-environment pattern (see that hook's
+                  // own docblock), not a same-render component factory.
+                  // eslint-disable-next-line react-hooks/static-components
+                  <GoogleIcon
+                    size={GoogleIcon.Size.Icon}
+                    color={GoogleIcon.Color.Light}
+                    style={styles.googleIcon}
+                    pointerEvents="none"
+                  />
+                )}
+                <ThemedText type="default" style={styles.googleButtonText}>
+                  Googleで続ける
+                </ThemedText>
+              </>
+            )}
           </TouchableOpacity>
+        ))}
 
-          <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
-            <ThemedText type="linkPrimary" style={[styles.linkCentered, styles.linkColor]}>
-              アカウントを新規登録
-            </ThemedText>
-          </TouchableOpacity>
-
-          <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
-            <ThemedText type="link" style={[styles.linkCentered, styles.linkColor]}>
-              パスワードを忘れた
-            </ThemedText>
-          </TouchableOpacity>
+      {isGoogleSignInAvailable() && (
+        <ThemedView style={styles.dividerRow}>
+          <ThemedView style={styles.dividerLine} />
+          <ThemedText type="small" style={styles.dividerText}>
+            または
+          </ThemedText>
+          <ThemedView style={styles.dividerLine} />
         </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      )}
+
+      <ThemedTextInput
+        testID="login-email"
+        placeholder="メールアドレス"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        placeholderTextColor={STAGE.placeholder}
+        style={authStyles.input}
+      />
+      <ThemedTextInput
+        testID="login-password"
+        placeholder="パスワード"
+        value={password}
+        onChangeText={setPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        textContentType="password"
+        autoComplete="current-password"
+        placeholderTextColor={STAGE.placeholder}
+        style={authStyles.input}
+      />
+
+      {errorMessage && (
+        <ThemedText testID="login-error" style={authStyles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
+
+      <TouchableOpacity
+        testID="login-submit"
+        onPress={handleEmailSubmit}
+        disabled={submitting}
+        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+      >
+        {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>ログイン</ThemedText>}
+      </TouchableOpacity>
+
+      <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
+        <ThemedText type="linkPrimary" style={authStyles.linkCentered}>
+          アカウントを新規登録
+        </ThemedText>
+      </TouchableOpacity>
+
+      <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
+        <ThemedText type="link" style={authStyles.linkCentered}>
+          パスワードを忘れた
+        </ThemedText>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: STAGE.background },
-  flex: { flex: 1 },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.three,
-    backgroundColor: STAGE.background,
-  },
-  // A single soft, low-opacity warm glow centered behind the logo - the
-  // "spotlight" cue from docs/03-BrandIdentity.md §4's restrained
-  // lighting direction, not a literal beam. Same technique already used
-  // by startup-animation.tsx's `glow` style, reused here rather than
-  // reinvented.
-  spotlight: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: '2%',
-    width: 460,
-    height: 460,
-    borderRadius: 230,
-    backgroundColor: STAGE.spotlight,
-    opacity: 0.07,
-  },
-  brand: { alignItems: 'center', marginBottom: Spacing.two, backgroundColor: 'transparent' },
-  // Aspect ratio matches the canonical asset's own viewBox (1400x420 =
-  // 10:3) exactly, so this display size never distorts the source image.
-  brandLogo: { width: 240, height: 72 },
+  // Explicit dark fill (not just an outline) so the button reads as a
+  // deliberate, filled button rather than a ghost/outline one - matching
+  // the weight of the email-login button beside it, per the redesign's
+  // "Googleログインだけ小さく見えない" requirement. Same paddingVertical as
+  // authStyles.input/button so all three sit on one visual rhythm.
   googleButton: {
     flexDirection: 'row',
+    backgroundColor: STAGE.inputBackground,
     borderWidth: 1,
     borderColor: STAGE.inputBorder,
     borderRadius: 8,
-    paddingVertical: Spacing.three,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
@@ -456,28 +398,4 @@ const styles = StyleSheet.create({
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, backgroundColor: 'transparent' },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: STAGE.divider },
   dividerText: { color: STAGE.placeholder },
-  input: {
-    borderWidth: 1,
-    borderColor: STAGE.inputBorder,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-    backgroundColor: STAGE.inputBackground,
-    color: STAGE.inputText,
-  },
-  error: { color: STAGE.error },
-  button: {
-    // StageArt ブランド反映 (2026-09-04): the brand guide's specified
-    // bronze (#C89B5E) - matches the logo mark's own A-color exactly.
-    backgroundColor: STAGE.accent,
-    borderRadius: 8,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  linkCentered: { textAlign: 'center' },
-  linkColor: { color: STAGE.link },
 });

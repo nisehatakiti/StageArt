@@ -86,6 +86,15 @@ function generateNonce(): string {
  * still worth doing after this is deployed, since Google's own button
  * cannot be pixel-styled to match the app's other buttons.
  *
+ * StageArt 認証画面デザイン統一 (2026-09-07): `theme: 'filled_black'` is
+ * Google's own official dark GIS button theme (the `GoogleButtonConfiguration`
+ * type below already declared this as a valid value) - used instead of
+ * `outline` so this button no longer reads as a bright white rectangle on
+ * the dark auth background, without touching GIS's own rendered markup/
+ * CSS in any unsupported way (see this screen's own docblock on why a
+ * differently-styled proxy button cannot be substituted). `width: 400`
+ * matches the unified auth content max-width other auth screens now use.
+ *
  * The ID Token this callback receives is audienced (`aud` claim) to the
  * same Web-type OAuth Client ID native's GoogleSignin.configure({
  * webClientId }) already uses - StageArt's Backend
@@ -118,13 +127,13 @@ export function GoogleSignInButtonWeb({ onIdToken, disabled }: { onIdToken: (idT
         if (node) {
           window.google.accounts.id.renderButton(node, {
             type: 'standard',
-            theme: 'outline',
+            theme: 'filled_black',
             size: 'large',
             shape: 'rectangular',
             text: 'continue_with',
             logo_alignment: 'left',
             locale: 'ja',
-            width: 320,
+            width: 400,
           });
         }
       })

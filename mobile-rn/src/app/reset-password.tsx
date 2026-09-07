@@ -1,13 +1,12 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
 import { ApiError } from '@/api/errors';
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
 import { resetPassword } from '@/features/auth/api';
 
 /**
@@ -56,93 +55,62 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.brand}>
-            パスワードの再設定
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
-            メールに記載されたコードと、新しいパスワードを入力してください。
-          </ThemedText>
+    <AuthLayout>
+      <ThemedText type="title" style={authStyles.title}>
+        パスワードの再設定
+      </ThemedText>
+      <ThemedText type="small" style={authStyles.description}>
+        メールに記載されたコードと、新しいパスワードを入力してください。
+      </ThemedText>
 
-          <ThemedTextInput
-            testID="reset-password-token"
-            placeholder="メールに記載されたコード"
-            value={token}
-            onChangeText={setToken}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-          />
-          {/* textContentType="oneTimeCode": deliberate, not an oversight -
-              suppresses iOS's "Use Strong Password?" suggestion overlay,
-              which was confirmed (register.tsx, reached the same way via
-              Stack push) to fight this controlled TextInput's value on
-              every keystroke when textContentType="newPassword" was used
-              instead. See register.tsx's own comment for the full
-              real-device evidence. */}
-          <ThemedTextInput
-            testID="reset-password-new-password"
-            placeholder="新しいパスワード（8文字以上）"
-            value={newPassword}
-            onChangeText={setNewPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            textContentType="oneTimeCode"
-            style={styles.input}
-          />
+      <ThemedTextInput
+        testID="reset-password-token"
+        placeholder="メールに記載されたコード"
+        value={token}
+        onChangeText={setToken}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={authStyles.input}
+      />
+      {/* textContentType="oneTimeCode": deliberate, not an oversight -
+          suppresses iOS's "Use Strong Password?" suggestion overlay,
+          which was confirmed (register.tsx, reached the same way via
+          Stack push) to fight this controlled TextInput's value on
+          every keystroke when textContentType="newPassword" was used
+          instead. See register.tsx's own comment for the full
+          real-device evidence. */}
+      <ThemedTextInput
+        testID="reset-password-new-password"
+        placeholder="新しいパスワード（8文字以上）"
+        value={newPassword}
+        onChangeText={setNewPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        textContentType="oneTimeCode"
+        style={authStyles.input}
+      />
 
-          {errorMessage && (
-            <ThemedText testID="reset-password-error" themeColor="text" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
+      {errorMessage && (
+        <ThemedText testID="reset-password-error" style={authStyles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
 
-          <TouchableOpacity
-            testID="reset-password-submit"
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={[styles.button, submitting && styles.buttonDisabled]}
-          >
-            {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>再設定する</ThemedText>}
-          </TouchableOpacity>
+      <TouchableOpacity
+        testID="reset-password-submit"
+        onPress={handleSubmit}
+        disabled={submitting}
+        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+      >
+        {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>再設定する</ThemedText>}
+      </TouchableOpacity>
 
-          <TouchableOpacity testID="reset-password-login-link" onPress={() => router.replace('/login')} disabled={submitting}>
-            <ThemedText type="link" style={styles.linkCentered}>
-              ログイン画面へ戻る
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <TouchableOpacity testID="reset-password-login-link" onPress={() => router.replace('/login')} disabled={submitting}>
+        <ThemedText type="link" style={authStyles.linkCentered}>
+          ← ログイン画面へ戻る
+        </ThemedText>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  flex: { flex: 1 },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { fontSize: 24, lineHeight: 30, textAlign: 'center' },
-  description: { textAlign: 'center', marginBottom: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  error: { color: '#a6483a' },
-  button: {
-    backgroundColor: '#4a3f7a',
-    borderRadius: 8,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  linkCentered: { textAlign: 'center' },
-});
