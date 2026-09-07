@@ -126,6 +126,98 @@ Development
 
 ---
 
+# Application Management Page と Public Page の区別
+
+## 基本原則
+
+StageArtでは、同じOrganizationおよびProductionを対象としていても、**ログイン後に利用者が管理・参加するApplication画面**と、**一般利用者へ公開するPublic Page**を明確に別物として扱う。
+
+「団体ページ」「公演ページ」という呼称だけで画面種別を判断してはならない。
+
+今後の設計・実装・レビューでは、少なくとも次の4種類を区別する。
+
+| 正式分類 | 対象 | 利用領域 |
+|---|---|---|
+| Organization Management Page | Organization | Application |
+| Production Management Page | Production | Application |
+| Organization Public Page | Organization | Public Site |
+| Production Public Page | Production | Public Site |
+
+## Application側
+
+`app.stageart.top` は、認証されたStageArt利用者がOrganizationやProductionを**管理・運営・参加するためのApplication領域**である。
+
+同じOrganization / Productionを表示していても、ここに配置される画面をPublic Pageとして扱ってはならない。
+
+概念上のURL構造は以下とする。
+
+```text
+Organization Management Page
+https://app.stageart.top/{organization-slug}/...
+
+Production Management Page
+https://app.stageart.top/{organization-slug}/{production-slug}/...
+```
+
+Application側のOrganization / Production画面では、ログイン後Application Shell、共通左サイドメニュー、Context Area、Role / Permissionに応じた操作を利用する。
+
+## Public Site側
+
+`stageart.top` は、OrganizationおよびProductionの情報を**一般公開するPublic領域**である。
+
+公開ページはApplicationの管理画面とは別Shell、別Navigation、別の利用目的を持つ。
+
+Canonical URLは以下とする。
+
+```text
+Organization Public Page
+https://stageart.top/{organization-slug}
+
+Production Public Page
+https://stageart.top/{organization-slug}/{production-slug}
+```
+
+## ホスト名による責務分離
+
+同じPath構造を使用していても、Hostが異なれば画面種別と責務は異なる。
+
+```text
+https://app.stageart.top/kujira
+    = Organization Management / Application
+
+https://stageart.top/kujira
+    = Organization Public Page
+
+https://app.stageart.top/kujira/kappa
+    = Production Management / Application
+
+https://stageart.top/kujira/kappa
+    = Production Public Page
+```
+
+したがって、URLまたは画面を評価する際は、**Pathだけではなく必ずHostを確認してApplicationかPublic Siteかを判定する**。
+
+## 実装・設計時の禁止事項
+
+以下の混同を禁止する。
+
+- `app.stageart.top/{organization-slug}` をOrganization Public Pageとして扱うこと
+- `app.stageart.top/{organization-slug}/{production-slug}` をProduction Public Pageとして扱うこと
+- Public PageのNavigation仕様をApplication Management Pageへ流用すること
+- Application Shellの左メニュー仕様をPublic PageのNavigation仕様と混同すること
+- 「団体ページ」「公演ページ」という曖昧な呼称だけで画面仕様を決定すること
+
+画面仕様を記述する際は、可能な限り以下の正式分類を使用する。
+
+```text
+Organization Management Page
+Production Management Page
+Organization Public Page
+Production Public Page
+```
+
+---
+
 # 01 公開URL
 
 ## Organization
