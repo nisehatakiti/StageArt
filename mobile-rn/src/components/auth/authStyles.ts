@@ -17,13 +17,19 @@ import { AUTH_CONTENT_MAX_WIDTH, STAGE } from './authTheme';
  */
 export const authStyles = StyleSheet.create({
   // overflow: 'hidden' matters on web specifically: AuthSpotlight renders
-  // a fixed-size (640px) square that overflows a narrower mobile-width
+  // a fixed-size (820px) square that overflows a narrower mobile-width
   // viewport on both sides once centered - without clipping here, that
   // overflow silently widens the page's own scrollable area (visible as
   // a blank strip past the visible edge, and horizontal scroll on Web).
   safeArea: { flex: 1, backgroundColor: STAGE.background, overflow: 'hidden' },
   flex: { flex: 1 },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: Spacing.four },
+  // StageArt 認証画面 ロゴ強化 (2026-09-07): flex-start + paddingTop (not
+  // justifyContent:'center') so the brand block sits noticeably higher
+  // than screen-center on a tall PC viewport, per the "ロゴブロックが
+  // ログインエリア全体の少し上寄りに配置される" requirement - centering
+  // would otherwise push a now-taller brand block back down toward the
+  // middle, undoing the repositioning.
+  scrollContent: { flexGrow: 1, justifyContent: 'flex-start', paddingTop: Spacing.six, paddingBottom: Spacing.four },
   contentWrapper: {
     width: '100%',
     maxWidth: AUTH_CONTENT_MAX_WIDTH,
@@ -31,12 +37,35 @@ export const authStyles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     gap: Spacing.three,
   },
-  brand: { alignItems: 'center', marginBottom: Spacing.two },
-  // Aspect ratio matches the canonical asset's own viewBox (1400x420 =
-  // 10:3) exactly, so this display size never distorts the source image -
-  // and the source PNG is 1400x420 natively, so displaying it at roughly
-  // 1.7x the previous 240x72 size still has a wide quality margin.
-  brandLogo: { width: 400, height: 120 },
+  brand: { alignItems: 'center', marginBottom: Spacing.one },
+  // stageart-logo-icon-wordmark.png is a tight crop of the canonical
+  // docs/assets/brand/stageart-logo.svg (icon + "StageArt" wordmark only
+  // - the Japanese tagline <text> element is deliberately excluded, not
+  // merely scaled down, since it renders unreadably small baked into a
+  // raster image at any practical display width; see `tagline` below,
+  // which renders it as real HTML/RN text instead so its size is
+  // independently controllable). Source is 3150x930 (rasterized at 3x
+  // from a 1050x310 viewBox), so this display width is still well inside
+  // its quality margin. width: '100%' (not a fixed pixel width) so the
+  // logo fills contentWrapper's own available width on every screen size
+  // - a fixed width wide enough to look prominent on PC (contentWrapper
+  // capped at AUTH_CONTENT_MAX_WIDTH=460) overflowed a narrow mobile
+  // viewport, where contentWrapper is only ~390 - 2*Spacing.four wide.
+  // `aspectRatio` (CSS) was tried first but did not resolve correctly in
+  // this RN-Web static export - the Image kept its raw intrinsic pixel
+  // height (930) regardless, ballooning the layout. A fixed `height` +
+  // resizeMode="contain" avoids that: contain never overflows its own
+  // box on the width axis, and on a narrower box the rendered glyphs
+  // simply end up smaller (letterboxed within this height), never
+  // clipped or stretched.
+  brandLogo: { width: '100%', height: 130 },
+  tagline: {
+    textAlign: 'center',
+    color: STAGE.tagline,
+    fontSize: 15,
+    lineHeight: 22,
+    letterSpacing: 0.3,
+  },
   title: { fontSize: 26, lineHeight: 32, textAlign: 'center', color: STAGE.inputText },
   description: { textAlign: 'center', color: STAGE.placeholder },
   input: {

@@ -14,14 +14,23 @@ import { STAGE } from './authTheme';
  *
  * Rendered as one FIXED-size square (not stretched to the screen's own
  * width/height) so the gradient itself never becomes an ellipse on a wide
- * viewport - centered within an absolutely-positioned, screen-covering
- * wrapper instead, which is what actually centers it on the auth content
- * regardless of aspect ratio. Sits behind AuthLayout's content (rendered
- * before it), covering the whole auth screen rather than only the logo,
- * so it reads as "light around the person operating the form" rather
- * than "light source parked behind the wordmark".
+ * viewport - centered horizontally within an absolutely-positioned,
+ * screen-covering wrapper instead, which is what actually centers it on
+ * the auth content regardless of aspect ratio. Sits behind AuthLayout's
+ * content (rendered before it), covering the whole auth screen rather
+ * than only the logo, so it reads as "light around the person operating
+ * the form" rather than "light source parked behind the wordmark".
+ *
+ * StageArt 認証画面 ロゴ強化 (2026-09-07): the wrapper's own vertical
+ * anchor moved from `justifyContent: 'center'` to a fixed `paddingTop`,
+ * matching AuthLayout's content moving from screen-center to a
+ * flex-start + paddingTop position (a bigger logo pushed toward the top
+ * of the screen). SIZE grew accordingly so the glow still comfortably
+ * reaches from the logo down through the form and links, instead of
+ * only covering the vertical screen-center the old centered content used
+ * to occupy.
  */
-const SIZE = 640;
+const SIZE = 820;
 
 export function AuthSpotlight() {
   return (
@@ -48,6 +57,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 40,
   },
 });

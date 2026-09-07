@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { authStyles } from './authStyles';
 import { AuthSpotlight } from './AuthSpotlight';
+import { ThemedText } from '@/components/themed-text';
 
 /**
  * StageArt 認証画面デザイン統一 (2026-09-07): the one shared shell for
@@ -21,6 +22,15 @@ import { AuthSpotlight } from './AuthSpotlight';
  * (or is pushed up by the keyboard) scrolls instead of being clipped,
  * while the background/spotlight stay fixed behind it (rendered outside
  * the ScrollView, not scrolled with the content).
+ *
+ * StageArt 認証画面 ロゴ強化 (2026-09-07): the Japanese tagline is real
+ * HTML/RN text (authStyles.tagline), not baked into the logo image - the
+ * canonical logo SVG draws it at font-size 25 inside a 420-tall viewBox,
+ * which becomes unreadably small at any raster display size a real login
+ * screen would use. stageart-logo-icon-wordmark.png is a tight crop of
+ * that same canonical SVG with the tagline <text> element removed
+ * entirely, so the icon+wordmark can be sized independently of (and
+ * larger than) the tagline, whose own font size is now controlled here.
  */
 export function AuthLayout({ children, logoTestID = 'auth-brand-logo' }: { children: ReactNode; logoTestID?: string }) {
   return (
@@ -33,10 +43,11 @@ export function AuthLayout({ children, logoTestID = 'auth-brand-logo' }: { child
               <Image
                 testID={logoTestID}
                 accessibilityLabel="StageArt"
-                source={require('../../../assets/images/stageart-logo-lockup.png')}
+                source={require('../../../assets/images/stageart-logo-icon-wordmark.png')}
                 style={authStyles.brandLogo}
                 resizeMode="contain"
               />
+              <ThemedText style={authStyles.tagline}>舞台と人をつなぐ、すべての人のために。</ThemedText>
             </View>
             {children}
           </View>

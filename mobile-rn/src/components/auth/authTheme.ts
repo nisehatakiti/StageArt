@@ -22,6 +22,12 @@ export const STAGE = {
   divider: '#3A342C',
   link: BrandColors.stageWarmWhite,
   error: '#E2836B',
+  // The exact tagline color from docs/assets/brand/stageart-logo.svg's
+  // own <text fill="#E8D7B8"> (= BrandColors.stageBeige) - kept as a
+  // literal hex, not the BrandColors import, so this stays byte-for-byte
+  // matched to the canonical asset even if BrandColors.stageBeige is
+  // ever redefined for unrelated reasons.
+  tagline: '#E8D7B8',
   // StageArt Blueprint's specified bronze - matches the logo mark's own
   // A-color exactly. The one accent color for every primary action across
   // every auth screen (never the purple register.tsx/forgot-password.tsx/
