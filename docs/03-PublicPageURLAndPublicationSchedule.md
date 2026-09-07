@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.2
+Version : 1.3
 Status : Confirmed
 
 ---
@@ -12,6 +12,59 @@ Status : Confirmed
 StageArt上で作成・管理されるOrganizationおよびProductionを、そのまま一般公開可能な団体ページ・公演ページとして利用できるようにする。
 
 また、初回Onboardingにおいて、利用者が団体を作成する場合だけでなく、既存Organizationや既存Productionへの所属・参加を申請できるFlowを確定する。
+
+---
+
+# StageArt Subdomain Architecture
+
+StageArtのWeb利用領域は、用途ごとに以下の3つのSubdomainへ分離する。
+
+## Application
+
+```text
+https://app.stageart.top/
+```
+
+通常のStageArt利用、認証後のHome、My Page、Settings、Organization / Production Context、System Administration Context等のアプリケーション画面はすべて `app.stageart.top` 配下に配置する。
+
+ログイン画面のCanonical URLは以下とする。
+
+```text
+https://app.stageart.top/login/
+```
+
+## API
+
+```text
+https://api.stageart.top/
+```
+
+REST APIその他のApplication Programming Interfaceは `api.stageart.top` 配下に配置する。
+
+API Endpointは原則としてUI Application Domainとは分離し、Browser / Mobile等のClientから `api.stageart.top` を利用する。
+
+## Public Site
+
+```text
+https://stageart.top/
+```
+
+一般公開されるOrganization Public PageおよびProduction Public Pageは、認証済みアプリケーションとは分離し、Root Domainである `stageart.top` 配下に配置する。
+
+### Subdomain正本
+
+```text
+Application
+https://app.stageart.top/
+
+API
+https://api.stageart.top/
+
+Public Site
+https://stageart.top/
+```
+
+この3分離をStageArtのWeb URL Architectureの正本とする。
 
 ---
 
