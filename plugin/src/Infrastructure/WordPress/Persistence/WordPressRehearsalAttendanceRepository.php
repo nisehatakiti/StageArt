@@ -112,11 +112,9 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
         return $row ? $this->hydrate($row) : null;
     }
 
-    public function findUpcomingByPersonId(
+    public function findByPersonIdExcludingRehearsalStatuses(
         PersonId $personId,
-        DateTimeImmutable $from,
-        array $excludedRehearsalStatuses,
-        int $limit
+        array $excludedRehearsalStatuses
     ): array {
         $rehearsalsTable = $this->wpdb->prefix . 'stageart_rehearsals';
 
@@ -125,19 +123,13 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             ? ''
             : "AND r.status NOT IN ({$statusPlaceholders})";
 
-        $params = array_merge(
-            [$personId->toString(), $from->format('Y-m-d H:i:s')],
-            $excludedRehearsalStatuses,
-            [$limit]
-        );
+        $params = array_merge([$personId->toString()], $excludedRehearsalStatuses);
 
         $rows = $this->wpdb->get_results(
             $this->wpdb->prepare(
                 "SELECT ra.* FROM {$this->table} ra "
                 . "INNER JOIN {$rehearsalsTable} r ON r.id = ra.rehearsal_id "
-                . "WHERE ra.person_id = %s AND r.start_date_time >= %s {$statusClause} "
-                . "ORDER BY r.start_date_time ASC "
-                . "LIMIT %d",
+                . "WHERE ra.person_id = %s {$statusClause}",
                 $params
             ),
             ARRAY_A

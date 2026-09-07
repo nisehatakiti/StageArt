@@ -52,11 +52,9 @@ final class RehearsalUpcomingRehearsalProvider implements UpcomingRehearsalProvi
 
     public function findUpcomingRehearsalsForPerson(PersonId $personId, DateTimeImmutable $now, int $limit): array
     {
-        $attendances = $this->attendances->findUpcomingByPersonId(
+        $attendances = $this->attendances->findByPersonIdExcludingRehearsalStatuses(
             $personId,
-            $now,
-            self::EXCLUDED_REHEARSAL_STATUSES,
-            $limit
+            self::EXCLUDED_REHEARSAL_STATUSES
         );
 
         if ($attendances === []) {
@@ -79,7 +77,7 @@ final class RehearsalUpcomingRehearsalProvider implements UpcomingRehearsalProvi
             $rehearsals
         ));
 
-        $results = [];
+        $eligible = [];
 
         foreach ($attendances as $attendance) {
             $rehearsal = $rehearsalsById[$attendance->rehearsalId()->toString()] ?? null;
@@ -96,6 +94,36 @@ final class RehearsalUpcomingRehearsalProvider implements UpcomingRehearsalProvi
                 continue;
             }
 
+            // DashboardPolicy.md: "過去に終了したRehearsalは今後の予定一覧に
+            // 表示しない" - a Rehearsal that hasn't ENDED yet counts as
+            // upcoming, including one currently in progress (start
+            // passed, end not yet). Uses each Rehearsal's own
+            // timezone-restored DateTimeImmutable (via
+            // RehearsalRepositoryInterface::findByIds()'s hydration) -
+            // never a raw string/SQL comparison, which previously
+            // compared a naive local wall-clock DB value against a
+            // UTC-formatted "now" and produced a wrong result whenever a
+            // Rehearsal's own timezone differed from PHP's default.
+            if (! self::isNotYetEnded($rehearsal, $now)) {
+                continue;
+            }
+
+            $eligible[] = $attendance;
+        }
+
+        usort(
+            $eligible,
+            static fn ($a, $b): int =>
+                $rehearsalsById[$a->rehearsalId()->toString()]->startDateTime()
+                    <=> $rehearsalsById[$b->rehearsalId()->toString()]->startDateTime()
+        );
+
+        $eligible = array_slice($eligible, 0, $limit);
+
+        $results = [];
+
+        foreach ($eligible as $attendance) {
+            $rehearsal = $rehearsalsById[$attendance->rehearsalId()->toString()];
             $production = $productionsById[$rehearsal->productionId()->toString()] ?? null;
 
             if (! $production) {
@@ -115,5 +143,27 @@ final class RehearsalUpcomingRehearsalProvider implements UpcomingRehearsalProvi
         }
 
         return $results;
+    }
+
+    /**
+     * DashboardPolicy.md's "終了していない" test: endDateTime takes
+     * priority when present (a Rehearsal in progress - start passed, end
+     * not yet - still counts as upcoming); falls back to startDateTime
+     * when endDateTime is absent. A Rehearsal with neither date set has
+     * nothing to judge "not yet ended" against, so it is excluded -
+     * matching the prior behavior (a SQL `NULL >= x` comparison was
+     * always false), not a newly invented rule.
+     */
+    private static function isNotYetEnded(Rehearsal $rehearsal, DateTimeImmutable $now): bool
+    {
+        if ($rehearsal->endDateTime() !== null) {
+            return $rehearsal->endDateTime() >= $now;
+        }
+
+        if ($rehearsal->startDateTime() !== null) {
+            return $rehearsal->startDateTime() >= $now;
+        }
+
+        return false;
     }
 }
