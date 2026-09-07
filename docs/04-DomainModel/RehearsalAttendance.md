@@ -520,6 +520,117 @@ Rehearsal Domainで定義する。
 
 ---
 
+# Rehearsal Status × Attendance Operation Policy
+
+RehearsalAttendanceへの書き込み操作は、
+以下の3種類に分類する。
+
+- Target追加
+- Attendance回答（予定確認段階のStatus変更）
+- Actual Status記録・修正（実施段階のStatus変更）
+
+Attendance閲覧は、
+Rehearsal Statusにかかわらず、
+常に可能とする。
+
+上記3種類の書き込み操作について、
+RehearsalのStatusに応じた可否を
+以下のPolicyとして定義する。
+
+これは、
+既存のAttendance Phase guard
+（SCHEDULE_ADJUSTMENT / ATTENDANCE_CONFIRMATION、
+どちらのPhaseのAttendanceかによってどのStatus値へ
+変更できるかを制御する既存ルール）
+を変更するものではない。
+
+RehearsalのStatusによる可否判定は、
+既存のPhase guardに加えて適用される、
+もう一段階の制御である。
+
+```text
+Rehearsal Status → Target追加 → Attendance回答 → Actual Status記録・修正 → 閲覧
+DRAFT            → 可          → 可              → 不可                    → 可
+SCHEDULED        → 可          → 可              → 不可                    → 可
+CONFIRMED        → 現行仕様を維持 → 可              → 不可                    → 可
+ACTIVE           → 不可        → 不可            → 可                      → 可
+COMPLETED        → 不可        → 不可            → 可（事後修正可）          → 可
+CANCELLED        → 不可        → 不可            → 不可                    → 可
+```
+
+## DRAFT / SCHEDULED
+
+稽古実施前であるため、
+Target追加とAttendance回答（予定確認）を許可する。
+
+Actual Statusは実際の稽古実績であるため、
+稽古開始前には記録できない。
+
+## CONFIRMED
+
+Attendance回答は引き続き許可する。
+
+Target追加については、
+Rehearsal.confirm()によってPhase2
+（ATTENDANCE_CONFIRMATION）のAttendanceが
+生成される構造であるため、
+CONFIRMED以降に新規Targetを追加する場合、
+どのPhaseのAttendanceを生成するかというDomain仕様に関わる。
+
+この判断は今回のPolicyの対象外とし、
+既存実装・既存仕様を維持する。
+
+## ACTIVE
+
+ACTIVEになった時点で、
+「誰が対象者か」および「事前の参加予定回答」は
+確定した情報として扱う。
+
+そのため、Target追加とAttendance回答（予定確認）は不可とする。
+
+一方、実際の参加結果（Actual Status）は
+ACTIVEの時点から記録できる。
+
+## COMPLETED
+
+Target追加とAttendance回答（予定確認）は不可とする。
+
+Actual Statusは、
+稽古終了後の実績確認・訂正のため、
+COMPLETED後も記録・修正を許可する。
+
+例えば、
+
+```text
+ATTENDED  → LATE
+LATE      → ATTENDED
+EARLY_LEFT → ATTENDED
+ABSENT    → ATTENDED
+```
+
+のような修正を許可する。
+
+COMPLETEDは、
+RehearsalAttendance全体を
+ロックする状態ではない。
+
+COMPLETED後に変更可能なのは、
+Actual Statusのみである。
+
+## CANCELLED
+
+CANCELLEDは、
+そのRehearsalが実施されなかった状態として扱う。
+
+そのため、
+Target追加・Attendance回答・Actual Status記録・修正の
+すべてを不可とする。
+
+既存のRehearsalAttendanceレコードは削除せず、
+履歴として閲覧可能なまま保持する。
+
+---
+
 # Rehearsal Cancellation
 
 RehearsalがCANCELLEDになった場合、

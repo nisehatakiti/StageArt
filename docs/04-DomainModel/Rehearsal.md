@@ -530,6 +530,7 @@ RehearsalAttendanceは、
 
 - ATTENDED
 - LATE
+- EARLY_LEFT
 - ABSENT
 
 ---
