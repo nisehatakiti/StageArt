@@ -739,3 +739,48 @@ Authentication IdentityにはUserAccountという名称を使用する。
 - 会計AccountはOrganization Scopeで管理する。
 - UserAccountはAuthentication Scopeで管理する。
 - Blueprintを唯一の設計基準とする。
+
+---
+
+# System Administrator Attribute
+
+UserAccountには、Organization RoleやProduction Roleとは別に、StageArtサービス全体の管理者属性を保持できる。
+
+属性名は以下とする。
+
+```text
+systemAdministratorFlag
+```
+
+この属性はOrganization / ProductionのMembershipやRoleとは独立したSystem-wide Account Attributeである。
+
+基本構造：
+
+```text
+UserAccount
+├─ id
+├─ personId
+├─ status
+├─ systemAdministratorFlag
+├─ createdAt
+└─ updatedAt
+```
+
+通常のUserAccount作成時はsystemAdministratorFlagをfalseとする。
+
+System Administrator付与・解除・確認のDomain Operationとして、少なくとも以下の概念を持つ。
+
+- grantSystemAdministrator()
+- revokeSystemAdministrator()
+- isSystemAdministrator()
+
+System Administrator属性は通常のAccount作成APIから任意指定可能にしない。権限昇格経路は別途厳格に管理する。
+
+UserAccountのstatusとsystemAdministratorFlagは別概念である。
+
+```text
+status = ACTIVE
+systemAdministratorFlag = true
+```
+
+のように組み合わせてSAGODを表現する。
