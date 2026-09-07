@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
+use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
@@ -11,6 +12,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
@@ -29,6 +31,21 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  */
 final class RecordActualRehearsalAttendanceStatusUseCase
 {
+    /**
+     * docs/04-DomainModel/RehearsalAttendance.md "Rehearsal Status x
+     * Attendance Operation Policy": Actual Status may be recorded (and,
+     * per that doc, re-recorded/corrected) only while the Rehearsal is
+     * ACTIVE or COMPLETED - never before ACTIVE (no actual result exists
+     * yet) and never once CANCELLED (the Rehearsal never happened).
+     * COMPLETED is intentionally included, not excluded: this is not a
+     * lock, it is the documented "Manager may correct Actual Status
+     * after the fact" behavior.
+     */
+    private const ACTUAL_STATUS_ALLOWED_STATUSES = [
+        RehearsalStatus::ACTIVE,
+        RehearsalStatus::COMPLETED,
+    ];
+
     private RehearsalAttendanceRepositoryInterface $attendances;
     private RehearsalRepositoryInterface $rehearsals;
     private ProductionContextContract $productionContext;
@@ -79,6 +96,12 @@ final class RecordActualRehearsalAttendanceStatusUseCase
         if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new RehearsalAttendanceAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can record the actual attendance result.'
+            );
+        }
+
+        if (! in_array($rehearsal->status()->toString(), self::ACTUAL_STATUS_ALLOWED_STATUSES, true)) {
+            throw new InvalidArgumentException(
+                "Actual attendance status cannot be recorded while the Rehearsal is {$rehearsal->status()->toString()}."
             );
         }
 

@@ -169,7 +169,7 @@ final class RehearsalModuleBootstrap
             $identity,
             $membership
         );
-        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $identity);
+        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $rehearsals, $identity);
         $recordActualRehearsalAttendanceStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $rehearsalAttendances,
             $rehearsals,

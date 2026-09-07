@@ -14,8 +14,10 @@ use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -51,6 +53,21 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  */
 final class AddRehearsalAttendanceTargetsUseCase
 {
+    /**
+     * docs/04-DomainModel/RehearsalAttendance.md "Rehearsal Status x
+     * Attendance Operation Policy": Target addition is not allowed once
+     * the Rehearsal is ACTIVE, COMPLETED, or CANCELLED. CONFIRMED
+     * deliberately stays unguarded here (existing behavior, per that
+     * same doc's explicit "現行仕様を維持" for CONFIRMED) - which Phase a
+     * newly added Target's Attendance record belongs to is a separate,
+     * not-yet-decided Domain question this guard must not preempt.
+     */
+    private const TARGET_ADDITION_BLOCKED_STATUSES = [
+        RehearsalStatus::ACTIVE,
+        RehearsalStatus::COMPLETED,
+        RehearsalStatus::CANCELLED,
+    ];
+
     private RehearsalAttendanceRepositoryInterface $attendances;
     private RehearsalRepositoryInterface $rehearsals;
     private ProductionContextContract $productionContext;
@@ -107,6 +124,8 @@ final class AddRehearsalAttendanceTargetsUseCase
             );
         }
 
+        $this->guardTargetAdditionAllowed($rehearsal);
+
         $activeMemberIdStrings = array_map(
             static fn (PersonId $personId): string => $personId->toString(),
             $this->membership->activeProductionMemberPersonIds($productionId)
@@ -150,5 +169,14 @@ final class AddRehearsalAttendanceTargetsUseCase
             static fn (RehearsalAttendance $attendance): RehearsalAttendanceResult => RehearsalAttendanceResult::fromDomain($attendance),
             $created
         );
+    }
+
+    private function guardTargetAdditionAllowed(Rehearsal $rehearsal): void
+    {
+        if (in_array($rehearsal->status()->toString(), self::TARGET_ADDITION_BLOCKED_STATUSES, true)) {
+            throw new InvalidArgumentException(
+                "Rehearsal Attendance targets cannot be added while the Rehearsal is {$rehearsal->status()->toString()}."
+            );
+        }
     }
 }

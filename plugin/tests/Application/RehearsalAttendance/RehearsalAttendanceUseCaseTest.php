@@ -127,7 +127,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $identity,
             $memberResolver
         );
-        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $identity);
+        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $this->rehearsals, $identity);
         $this->recordActualStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $this->attendances,
             $this->rehearsals,
@@ -258,6 +258,10 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $record = $phase2Roster[0];
 
         $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->activate();
+        $this->rehearsals->save($rehearsalEntity);
 
         $result = $this->recordActualStatus->execute(
             new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED')
@@ -469,5 +473,251 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             2,
             [$unselectedMember->id()->toString()]
         ));
+    }
+
+    // --- Rehearsal Status x Attendance Operation Policy
+    // (docs/04-DomainModel/RehearsalAttendance.md) ---------------------
+
+    public function test_add_targets_rejected_when_rehearsal_is_active(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $newMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->activate();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$newMember->id()->toString()]
+        ));
+    }
+
+    public function test_add_targets_rejected_when_rehearsal_is_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $newMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->cancel();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$newMember->id()->toString()]
+        ));
+    }
+
+    public function test_respond_rejected_when_rehearsal_is_active(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->activate();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+    }
+
+    public function test_respond_rejected_when_rehearsal_is_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+
+        $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
+        $record = $roster[0];
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->cancel();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'AVAILABLE'));
+    }
+
+    public function test_respond_still_succeeds_when_rehearsal_is_confirmed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+
+        $updated = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+        $this->assertSame('ATTENDING', $updated->status);
+    }
+
+    public function test_record_actual_status_succeeds_when_completed_including_early_left(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->activate();
+        $this->rehearsals->save($rehearsalEntity);
+
+        // EARLY_LEFT (docs/04-DomainModel/RehearsalAttendance.md: a
+        // formal Actual Status, never removed/replaced/special-cased).
+        $result = $this->recordActualStatus->execute(
+            new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'EARLY_LEFT')
+        );
+        $this->assertSame('EARLY_LEFT', $result->status);
+
+        $rehearsalEntity->complete();
+        $this->rehearsals->save($rehearsalEntity);
+
+        // COMPLETED must still allow re-recording (Manager correction),
+        // never lock Actual Status.
+        $corrected = $this->recordActualStatus->execute(
+            new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED')
+        );
+        $this->assertSame('ATTENDED', $corrected->status);
+    }
+
+    public function test_record_actual_status_rejected_when_rehearsal_is_confirmed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+
+        // Rehearsal is still CONFIRMED (never activated) - Actual Status
+        // recording is not yet allowed.
+        $this->expectException(InvalidArgumentException::class);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED'));
+    }
+
+    public function test_record_actual_status_rejected_when_rehearsal_is_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->cancel();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED'));
     }
 }
