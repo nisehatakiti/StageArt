@@ -66,9 +66,27 @@ https://stageart.top/
 
 この3分離をStageArtのProduction Web URL Architectureの正本とする。
 
+## System Administration
+
+```text
+https://admin.stageart.top/
+```
+
+StageArtのシステム全体管理者向け管理画面は `admin.stageart.top` 配下に配置する。
+
+System Administrationは通常のStageArt Applicationとは別Shellとして扱う。ただし、System Administratorは通常のUserAccountとして認証され、SystemAdministratorFlag等の既存権限設計に基づいて管理機能へのアクセスを許可する。
+
 ## Development Environment
 
-開発環境については、Production環境とは独立した以下のURLを正本とする。
+Development環境については、Production環境と同じ用途分離を維持しつつ、独立したSubdomainを使用する。
+
+### Public-Test
+
+```text
+https://dummy.stageart.top/
+```
+
+公開ページのDevelopment / Test用途には `dummy.stageart.top` を使用する。
 
 ### Development Application
 
@@ -76,40 +94,35 @@ https://stageart.top/
 https://dev.stageart.top/
 ```
 
-開発環境のStageArt Applicationは `dev.stageart.top` を利用する。
-
 ### Development API
 
 ```text
 https://dev-api.stageart.top/
 ```
 
-開発環境のStageArt APIは `dev-api.stageart.top` を利用する。
-
-### Development URL正本
+### Development Administration
 
 ```text
-Development Application
-https://dev.stageart.top/
-
-Development API
-https://dev-api.stageart.top/
+https://dev-admin.stageart.top/
 ```
 
-開発環境では、ApplicationとAPIをProduction環境と同じ思想で分離する。
+### StageArt URL Architecture（正本）
 
 ```text
 Production
-├─ Application : https://app.stageart.top/
-├─ API         : https://api.stageart.top/
-└─ Public Site : https://stageart.top/
+├─ https://stageart.top/       Public
+├─ https://app.stageart.top/   Application
+├─ https://api.stageart.top/   API
+└─ https://admin.stageart.top/ System Administration
 
 Development
-├─ Application : https://dev.stageart.top/
-└─ API         : https://dev-api.stageart.top/
+├─ https://dummy.stageart.top/     Public-Test
+├─ https://dev.stageart.top/       Development Application
+├─ https://dev-api.stageart.top/   Development API
+└─ https://dev-admin.stageart.top/ Development Administration
 ```
 
-なお、公開サイトのDevelopment用URLは本書では未定義とし、必要になった時点で別途設計する。
+この8つのURLを、StageArtのProduction / Development URL Architectureの正本とする。
 
 ---
 
