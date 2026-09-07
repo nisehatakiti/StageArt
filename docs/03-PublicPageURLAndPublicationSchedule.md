@@ -23,13 +23,31 @@ StageArt上で作成・管理されるOrganizationおよびProductionを、そ�
 https://stageart.top/{organization-slug}
 ```
 
+このURLをOrganization Public Pageの正式なCanonical URLとする。
+
 ## Production
 
 ```text
 https://stageart.top/{organization-slug}/{production-slug}
 ```
 
+このURLをProduction Public Pageの正式なCanonical URLとする。
+
 ProductionはOrganizationの配下で公開する。
+
+### URL正本
+
+StageArtの公開ページURLについては、本書に記載する以下の2形式を正本とする。
+
+```text
+Organization Public Page
+https://stageart.top/{organization-slug}
+
+Production Public Page
+https://stageart.top/{organization-slug}/{production-slug}
+```
+
+過去の設計資料や旧記述に異なるドメイン・パス形式が残っている場合は、本書の上記URL形式を優先し、旧URL形式は廃止された設計として扱う。
 
 ---
 
