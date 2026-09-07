@@ -64,7 +64,52 @@ Public Site
 https://stageart.top/
 ```
 
-この3分離をStageArtのWeb URL Architectureの正本とする。
+この3分離をStageArtのProduction Web URL Architectureの正本とする。
+
+## Development Environment
+
+開発環境については、Production環境とは独立した以下のURLを正本とする。
+
+### Development Application
+
+```text
+https://dev.stageart.top/
+```
+
+開発環境のStageArt Applicationは `dev.stageart.top` を利用する。
+
+### Development API
+
+```text
+https://dev-api.stageart.top/
+```
+
+開発環境のStageArt APIは `dev-api.stageart.top` を利用する。
+
+### Development URL正本
+
+```text
+Development Application
+https://dev.stageart.top/
+
+Development API
+https://dev-api.stageart.top/
+```
+
+開発環境では、ApplicationとAPIをProduction環境と同じ思想で分離する。
+
+```text
+Production
+├─ Application : https://app.stageart.top/
+├─ API         : https://api.stageart.top/
+└─ Public Site : https://stageart.top/
+
+Development
+├─ Application : https://dev.stageart.top/
+└─ API         : https://dev-api.stageart.top/
+```
+
+なお、公開サイトのDevelopment用URLは本書では未定義とし、必要になった時点で別途設計する。
 
 ---
 
