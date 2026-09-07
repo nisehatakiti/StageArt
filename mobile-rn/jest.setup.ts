@@ -35,7 +35,7 @@ jest.mock('expo-constants', () => ({
     expoConfig: {
       extra: {
         apiEnv: 'development',
-        apiBaseUrl: 'https://dev-stageart.hatakiti.com/stageart-test/wp-json/stageart/v1',
+        apiBaseUrl: 'https://dev-api.stageart.top/wp-json/stageart/v1',
       },
     },
   },

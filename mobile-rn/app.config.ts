@@ -3,7 +3,7 @@ import type { ExpoConfig } from 'expo/config';
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 const GOOGLE_IOS_URL_SCHEME = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ?? '';
 const googleSignInPlugin: [string, { iosUrlScheme: string }] = ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }];
-const DEV_API_BASE_URL = 'https://dev-stageart.hatakiti.com/stageart-test/wp-json/stageart/v1';
+const DEV_API_BASE_URL = 'https://dev-api.stageart.top/wp-json/stageart/v1';
 const WEB_EXPORT_BASE_URL = process.env.STAGEART_WEB_EXPORT_BASE_URL;
 const apiEnv = process.env.EAS_BUILD_PROFILE ?? 'development';
 function resolveApiBaseUrl(env: string): string {
