@@ -1224,3 +1224,88 @@ Resource.Action
 - CredentialをPermissionやRoleの内容として公開しない。
 - Authorizationの具体的な実装はInfrastructure Layerへ依存しない。
 - Blueprintを唯一の設計基準とする。
+
+---
+
+# System Administrator Override
+
+StageArtには、Organization Scope / Production Scopeとは別に、System AdministratorによるSystem-wide Authorization Overrideを設ける。
+
+System AdministratorはRole、Membership、PrimaryManager、ProductionDelegate、Participantを実際に保有していると偽装しない。
+
+```text
+UserAccount
+      ↓
+systemAdministratorFlag
+      ↓
+System Administrator?
+      │
+      ├── Yes
+      │     ↓
+      │ Scope Authorization Decision = Allow
+      │
+      └── No
+            ↓
+      Existing Role / Permission Decision
+```
+
+## Organization Scope
+
+OrganizationAuthorizationServiceはPersonから対応するUserAccountを解決し、isSystemAdministrator(Person)を判定できるようにする。
+
+Organization ScopeのAuthorization DecisionではSystem AdministratorであればAllowし、それ以外は既存のMembership / Role判定を行う。
+
+roleFor()はDomain Factを返すため、System AdministratorだからOWNER等のRoleを返すようにしてはならない。
+
+## Production Scope
+
+ProductionAuthorizationServiceは既存のOrganizationAuthorizationService依存を利用してSystem Administrator判定を行う。
+
+Production ScopeのAuthorization DecisionではSystem AdministratorであればAllowする。
+
+対象には少なくとも以下を含む。
+
+- isProductionMember()
+- canReadProduction()
+- canManageProduction()
+- canManageProductionDelegates()
+- canManageParticipants()
+- hasProductionCapability()等のCapability判定
+
+一方、以下のようなDomain Fact / Identity ResolutionはOverrideしない。
+
+- resolveCurrentPerson()
+- isPrimaryManager()
+- activeDelegateFor()
+- hasActiveDelegateRole()
+- isActivePersonParticipant()
+
+## Authorization Decision Order
+
+認証済み利用者について、Scope Authorizationを行う場合はSystem Administrator判定を通常のRole / Membership / Capability判定より優先して評価できる。
+
+ただしResource OwnershipやIdentity OwnershipをDomain Ruleとして要求する場合は、System Administrator Overrideだけで他人本人であると扱ってはならない。
+
+## Data Model and Persistence
+
+UserAccountの永続化にはsystem_administrator_flagを保持する。
+
+WordPressのStageArt UserAccountテーブルでは以下の概念を追加する。
+
+```text
+wp_stageart_user_accounts
+├─ id
+├─ person_id
+├─ status
+├─ system_administrator_flag
+├─ created_at
+└─ updated_at
+```
+
+既存環境へのSchema更新はInstaller / SchemaUpgraderの通常のSchema Version更新手順に従う。
+
+# System Administration Application Boundary
+
+StageArt全体を横断する管理操作はSystemAdministration専用Application UseCaseとして実装し、SystemAdministratorFlagをServer Sideで確認する。
+
+既存の「My Dashboard」「My Follow」等をSystem Administratorだから全件返すように変更してはならない。
