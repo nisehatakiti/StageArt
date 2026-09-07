@@ -675,3 +675,66 @@ Homeに「どこにも所属していない」という状態を不要に強調�
 ---
 
 End of Blueprint
+
+
+---
+
+# ApplicationからPublic Pageへのリンクと管理入口の責務
+
+## 「管理する」と「公開ページ」は別の操作
+
+Organization / Production一覧など、Application側の管理画面に同一Entityについて「管理する」と「公開ページ」の両方を表示する場合、両者の遷移先を混同してはならない。
+
+### Productionの例
+
+    Production
+    ├─ 管理する
+    │   └─ Application
+    │      └─ Production Management Context
+    │         ├─ 概要
+    │         ├─ 公開情報設定
+    │         ├─ 参加者
+    │         ├─ スケジュール
+    │         ├─ 稽古
+    │         └─ その他の管理機能
+    │
+    └─ 公開ページ
+        └─ Public Site
+           └─ https://stageart.top/{organization-slug}/{production-slug}
+
+「公開ページ」リンクをApplication画面内のスケジュール画面やProduction内部画面へ接続してはならない。
+
+逆に、「管理する」をPublic Pageへ接続してもならない。
+
+## 公開情報設定とPublic Pageの区別
+
+Application側には、Organization / Productionの公開ページに表示する情報を設定・管理するための機能を持たせる。
+
+これはPublic Pageそのものではない。
+
+    Application
+    公開情報を編集する
+    公開状態を変更する
+    公開日時を設定する
+    公開内容を確認する
+            ↓
+    Public Site
+    一般利用者が公開済み情報を閲覧する
+
+同じ公開情報を扱う場合でも、
+
+- Application：管理・編集・公開制御
+- Public Site：一般閲覧
+
+という責務を分離する。
+
+## 画面レビュー時の確認ルール
+
+Organization / Productionに関する画面を確認する際は、必ず次の順で判定する。
+
+1. Hostは app.stageart.top か stageart.top か
+2. その画面の利用者は管理・参加者か一般閲覧者か
+3. その画面は情報を編集・運営するのか、公開済み情報を閲覧するのか
+4. 「管理する」導線と「公開ページ」導線が別責務として実装されているか
+
+URLのPathや画面タイトルだけで「団体ページ」「公演ページ」を判定してはならない。
