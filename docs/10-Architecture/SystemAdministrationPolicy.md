@@ -359,3 +359,92 @@ V1で以下を設計対象とする。
 - Backup / Recovery操作はAudit対象とする。
 - ミラーリング／レプリケーションはV1の必須要件としない。
 - 将来のサービス移行を妨げないバックアップ・データ管理を目指す。
+
+---
+
+# 19. SAGOD and System Administrator Account Model
+
+StageArtのシステム管理者アカウントは、通常のUserAccountとは別Entityや別Authentication経路を作らず、通常のUserAccountにSystem Administrator属性を持たせて実現する。
+
+V1の代表的なシステム管理者アカウント名は以下とする。
+
+- SAGOD
+- StageArt General Organization Director
+- 「SA神」という呼称上のダブルミーニングを持つ
+
+SAGODは通常のWordPress User / StageArt Person / UserAccountとして認証される。
+
+```text
+WordPress User
+      ↓
+Person
+      ↓
+UserAccount
+      ↓
+systemAdministratorFlag = true
+```
+
+SAGOD専用のLogin方式、Person偽装、impersonation機能は基本設計としない。
+
+# 20. Normal Screen Access
+
+System AdministratorがOrganizationまたはProductionを選択した場合、対象の通常画面へ移動する。
+
+このとき操作主体はSAGOD自身であり、対象OrganizationのOwnerや対象ProductionのPrimaryManagerになりすますものではない。
+
+```text
+SAGOD
+  ↓
+Organization / Productionを選択
+  ↓
+通常画面へ移動
+  ↓
+既存Authorization Decisionが
+System AdministratorとしてAllow
+```
+
+Role / Membership / PrimaryManager / Delegate / Participant等のDomain Factを偽装してはならない。
+
+# 21. System-wide Administration Functions
+
+StageArt全体を横断する以下の機能は、既存のMy系画面やOrganization / Production単位のUseCaseを無理に拡張せず、SystemAdministration専用Application UseCaseとして実装する。
+
+- System Administration Dashboard
+- Global Notification
+- Account Management
+- Organization Management
+- Production Management
+- Log Management
+
+Dashboardでは少なくとも以下を表示する。
+
+- Account数
+- Organization数
+- Production数
+- 最新Log約50件
+
+Account / Organization / Productionの横断検索、集計、一覧はSystemAdministratorFlagをServer Sideで確認した専用UseCaseから提供する。
+
+# 22. Identity Ownership Boundary
+
+System Administrator OverrideはScope Authorizationに対して適用する。
+
+一方、以下のような「本人そのもの」であることを要求するIdentity Ownershipは、System Administratorであっても自動的に偽装・Overrideしない。
+
+- 自分のAttendance Response
+- 自分が作成したCommentの編集
+- 自分のFollow
+- 自分のPush Preference
+- 自分自身を対象とする通知状態
+
+System Administratorは全体管理者であるが、他のPersonになるものではない。
+
+# 23. Business Rules
+
+- SAGODは通常のUserAccountとして登録する。
+- SAGODのUserAccountにはsystemAdministratorFlagを設定する。
+- System AdministratorはOrganization / Productionの通常画面へ移動できる。
+- impersonationを基本機能として実装しない。
+- 通常画面での操作主体は常にSAGOD自身としてAuditする。
+- 全体横断管理機能はSystemAdministration専用UseCaseとして実装する。
+- Identity Ownershipを必要とする操作は、System Administratorであることだけでは他人として実行できない。
