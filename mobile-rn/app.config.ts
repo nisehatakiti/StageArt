@@ -1,16 +1,17 @@
 import type { ExpoConfig } from 'expo/config';
 
+import { resolveApiBaseUrl } from './src/api/environment';
+
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 const GOOGLE_IOS_URL_SCHEME = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ?? '';
 const googleSignInPlugin: [string, { iosUrlScheme: string }] = ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }];
-const DEV_API_BASE_URL = 'https://dev-api.stageart.top/wp-json/stageart/v1';
 const WEB_EXPORT_BASE_URL = process.env.STAGEART_WEB_EXPORT_BASE_URL;
+// No EAS_BUILD_PROFILE at all (a plain local `expo start`/`export:web`,
+// not an EAS build) defaults to "development" - a genuinely different
+// case from an unrecognized *value*, which src/api/environment.js's
+// resolveApiBaseUrl() deliberately refuses to guess about (see its own
+// docblock).
 const apiEnv = process.env.EAS_BUILD_PROFILE ?? 'development';
-function resolveApiBaseUrl(env: string): string {
-  if (env === 'development') return DEV_API_BASE_URL;
-  console.warn(`[app.config.ts] No real "${env}" API URL exists yet. Falling back to the Development backend.`);
-  return DEV_API_BASE_URL;
-}
 const config: ExpoConfig = {
   name: 'StageArt', slug: 'stageart', version: '1.0.0', orientation: 'portrait',
   icon: './assets/images/icon.png', scheme: 'stageart', userInterfaceStyle: 'automatic',
