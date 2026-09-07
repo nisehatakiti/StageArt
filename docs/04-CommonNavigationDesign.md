@@ -671,3 +671,121 @@ Mobile版ではHoverが存在しないため、同じ業務意味を持つ状態
 - Home、Organization、Production、Rehearsal等の個別画面ごとに独自の配色・世界観を作らず、共通Application Shellを優先する。
 - ログイン画面からログイン後のApplication画面まで、StageArtの世界観が途切れないようにする。
 - Mobile版でも同じデザインコンセプトを維持し、Hoverの代わりとなるPressed / Focus等の端末適合表現を用いてよい。
+
+
+---
+
+## 19. Production Management Pageの責務と「管理する」の遷移先
+
+### 19.1 「管理する」はスケジュール画面への直行を意味しない
+
+Organizationの公演一覧等に表示する「管理する」は、Productionの単一機能画面へ遷移する操作ではない。
+
+特に、以下のような画面をProduction Management Pageの入口としてはならない。
+
+- スケジュール一覧だけを表示する画面
+- カレンダーだけを表示する画面
+- 稽古予定だけを表示する画面
+- 参加者一覧だけを表示する画面
+
+「管理する」は、対象Productionの運営・設定・公開情報・参加者・スケジュール・稽古等へ入るための**Production Management Contextの入口**を意味する。
+
+### 19.2 Production Management Pageの基本構造
+
+Production Management Pageは、少なくとも以下のContext固有機能へ到達できる構造を持つ。
+
+    Production Management
+    ├─ 概要
+    │   ├─ 公演基本情報
+    │   ├─ 管理状態
+    │   ├─ 公開状態
+    │   └─ 公開ページへの導線
+    ├─ 公開情報
+    │   ├─ 公開ページに表示する情報
+    │   ├─ 公開・非公開設定
+    │   ├─ 公開日時 / 情報公開タイミング
+    │   └─ 公開内容の確認
+    ├─ 参加者
+    │   ├─ 出演者
+    │   ├─ スタッフ
+    │   ├─ 参加申請
+    │   └─ 権限に応じた参加者管理
+    ├─ スケジュール
+    │   ├─ 公演日程
+    │   ├─ 公演回
+    │   └─ その他Production関連予定
+    ├─ 稽古
+    │   ├─ 稽古一覧
+    │   ├─ 稽古詳細
+    │   ├─ 出欠管理
+    │   └─ 稽古関連の運営操作
+    └─ 権限に応じたその他のProduction管理機能
+
+実際に表示する項目はRole / Permissionおよび実装済み機能に従うが、**Production Management Context自体を単一の業務機能画面へ縮退させない**。
+
+### 19.3 左サイドメニューとの対応
+
+Web版ではProduction Contextに入った場合、共通左サイドメニューのContext AreaをProduction Management Contextとして使用する。
+
+最低限の基本構造は以下とする。
+
+    ホーム
+
+    ────────────
+
+    [Production名]
+
+    ────────────
+
+    概要
+    参加者
+    スケジュール
+    稽古
+
+    ────────────
+
+    マイページ
+    設定
+    ログアウト
+
+公開情報の編集・公開設定が独立した業務量を持つ場合は、「概要」配下に隠して到達不能にするのではなく、Context Areaに「公開情報」等の明示的な入口を追加してよい。
+
+重要なのは、Productionを管理する利用者が、現在どのProductionを操作しているかを認識したうえで、必要な管理機能へ自然に到達できることである。
+
+### 19.4 現在の画面実装を正本としない
+
+現行Applicationに存在するURLや既存画面が、Blueprint上のProduction Management Pageの正しい責務を満たしていない場合、**現行画面を正本として設計を合わせてはならない**。
+
+例として、Productionの「管理する」操作後にスケジュール画面だけが開き、
+
+- 公開ページの内容を設定できない
+- 公開状態を確認・変更できない
+- 公開情報の公開タイミングを管理できない
+- 稽古管理へ到達できない
+- Production全体の管理Contextを識別できない
+
+状態は、Production Management Pageとして不完全である。
+
+この場合は「現在そのURLが存在する」ことを理由に仕様を正当化せず、Blueprintの責務に合わせて画面構造・導線・メニューを修正する。
+
+### 19.5 「公開ページ」リンクとの役割分離
+
+Production一覧やProduction Management Pageに表示される操作は、以下の責務を明確に分ける。
+
+| 操作 | 意味 | 遷移先 |
+|---|---|---|
+| 管理する | Productionの管理・運営Contextへ入る | Application / Production Management Page |
+| 公開ページ | 一般公開されているProduction Public Pageを表示する | Public Site / Production Public Page |
+
+「管理する」と「公開ページ」は、同じProductionを対象としていても、同じ画面または同じShellを意味しない。
+
+「公開ページ」はApplicationからPublic Siteへ移動する外部責務のリンクであり、Application内の公開情報設定画面やスケジュール画面を指してはならない。
+
+### 19.6 確定事項
+
+- 「管理する」はProduction Management Contextへの入口とする。
+- 「管理する」の遷移先をスケジュール等の単一機能画面へ固定してはならない。
+- Production Management Pageから、Role / Permissionに応じて公開情報設定、参加者、スケジュール、稽古等の管理機能へ到達できる構造を持たせる。
+- 公開ページの内容・公開状態・公開タイミングを管理するApplication側の機能と、一般利用者が閲覧するPublic Pageを混同しない。
+- 「公開ページ」はPublic Siteへの遷移を意味し、「管理する」とは別責務とする。
+- 現行URLや現行画面がBlueprintと矛盾する場合、現行実装ではなくBlueprintを正本として修正する。
