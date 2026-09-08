@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.7
+Version : 1.8
 Status : Confirmed
 
 ---
@@ -411,7 +411,9 @@ Organization Context Menuは、選択中のOrganizationを管理するための�
 団体情報
 
 メンバー管理
-└─ メンバー追加
+├─ メンバーを追加
+├─ 代理人を設定
+└─ 代表者交代
 
 公演管理
 ├─ 公演を作る
@@ -425,6 +427,16 @@ Organization Context Menuは、選択中のOrganizationを管理するための�
 ├─ 損益計算書
 ├─ 予算作成
 └─ 会計締め処理
+
+## メンバー管理の操作入口
+
+Organization Context Menuの「メンバー管理」配下には、以下の操作入口を配置する。
+
+- メンバーを追加
+- 代理人を設定
+- 代表者交代
+
+既存のOrganization Member Management画面との整合は別途維持し、各操作の詳細仕様は既存のConfirmed Blueprintおよび後続の個別画面仕様を正本とする。
 
 ## 会計機能の表示条件
 
