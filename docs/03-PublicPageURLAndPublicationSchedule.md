@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.4
+Version : 2.5
 Status : Confirmed
 
 ---
@@ -471,6 +471,99 @@ stageart.top/new-slug
 「公開ページを見る」リンクは常に現在保存されているOrganization Slugを参照する。
 
 このリンクはOrganizationの管理画面から公開状態を確認するための閲覧用リンクであり、Organizationの公開 / 非公開状態を変更する操作ではない。Organizationは保存と同時に公開される仕様とする。
+
+## 団体管理メニュー構成
+
+団体管理の左メニューは以下の構成とする。
+
+```text
+団体管理
+├─ 団体情報
+├─ 公開ページ管理
+│   ├─ ABOUT
+│   ├─ SNS
+│   └─ リンク
+├─ メンバー管理
+├─ 公演管理
+└─ 会計管理
+```
+
+会計管理は団体情報で会計機能がONの場合のみ表示する。
+
+## 公開ページ管理
+
+公開ページ管理では、Organization Public Pageに表示する団体固有の公開情報を管理する。
+
+### ABOUT
+
+ABOUTでは、Organization Public Pageに表示する団体紹介文を長文で編集する。
+
+団体について、活動方針、団体の歴史、メッセージ等を自由に記載できるフリースペースとする。
+
+```text
+ABOUT
+
+[                                      ]
+[                                      ]
+[                                      ]
+[                                      ]
+[                                      ]
+
+                    [ 保存 ]
+```
+
+保存成功後は成功通知を表示し、同じABOUT編集画面に戻り、最新の保存内容を表示する。
+
+### SNS
+
+SNSでは、Organizationの公式SNSアカウントを登録する。SNSのURL全体ではなく、アカウント名のみを入力する形式とする。
+
+初期対象SNSは以下の3つとする。
+
+- X
+- Instagram
+- Facebook
+
+```text
+SNS
+
+X
+[@ account                         ]
+
+Instagram
+[@ account                         ]
+
+Facebook
+[@ account                         ]
+
+                    [ 保存 ]
+```
+
+公開ページ側では、登録されたアカウント情報から各SNSを表示する。SNS本体についてはStageArtが独自に再現するのではなく、各SNSの公式埋め込み機能を利用して埋め込む。
+
+保存成功後は成功通知を表示し、同じSNS編集画面に戻り、最新の保存内容を表示する。
+
+### リンク
+
+リンクでは、Organization Public PageのOTHER LINKSに表示する外部リンクを複数管理できる。
+
+```text
+リンク管理
+
+リンク名                    URL
+────────────────────────────────────
+公式YouTube                 https://...
+公式オンラインショップ       https://...
+劇団ブログ                   https://...
+
+[ ＋ リンクを追加 ]
+
+                         [ 保存 ]
+```
+
+リンクは複数登録可能とする。YouTube URLについては、既存の公開ページ仕様に従い、可能な範囲でサムネイルを取得して公開ページ上に表示する。
+
+保存成功後は成功通知を表示し、同じリンク管理画面に戻り、最新の保存内容を表示する。
 
 ## Organization Context Menu
 
