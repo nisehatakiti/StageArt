@@ -677,3 +677,154 @@ Production
 ```
 
 This hierarchy is the business structure to be reflected consistently across Web, Mobile, API, Domain Models, and screen specifications.
+
+
+---
+
+## 20. Production Information Screen Specification
+
+### 20.1 Purpose
+
+The Production Information screen manages the basic and public information for a Production.
+
+Production information is not divided into separate left-menu subpages such as Basic Information, Flyer, Description, Schedule, Venue, Script, or Direction. These items are entered and edited together on a single Production Information screen.
+
+The input screen should follow the same basic information structure and order as the Production public page so that an administrator can intuitively understand where each managed item is displayed publicly.
+
+### 20.2 Production Navigation
+
+The Production management navigation is based on the following structure:
+
+\`\`\`text
+Production
+│
+├─ 公演情報
+├─ メンバー管理
+├─ 公演回管理
+├─ チケット管理
+├─ 稽古管理
+└─ 小屋入り～本番
+\`\`\`
+
+### 20.3 Screen Layout
+
+The Production Information screen layout is:
+
+\`\`\`text
+[ Production名 ]
+
+公演情報                                    [ 公開ページを見る ↗ ]
+
+────────────────────────────
+
+■ 基本情報
+
+公演名
+[ 第○回公演 ○○○○ ]
+
+Slug
+[ xxxxxxxxxx ]
+
+────────────────────────────
+
+■ フライヤー
+
+[          フライヤー画像          ]
+
+[ 画像を変更 ]
+
+情報公開日時
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────
+
+■ 公演説明
+
+[                               ]
+[                               ]
+[                               ]
+[                               ]
+
+情報公開日時
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────
+
+■ 日程
+
+開始日 ～ 終了日
+[ YYYY/MM/DD ] ～ [ YYYY/MM/DD ]
+
+情報公開日時
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────
+
+■ 会場
+
+[ 会場名                         ]
+
+情報公開日時
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────
+
+■ 脚本 / 演出
+
+[                    ] / [                    ]
+
+情報公開日時
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────
+
+                         [ 保存 ]
+\`\`\`
+
+### 20.4 Basic Information
+
+The Basic Information section manages:
+
+- Production name
+- Production Slug
+
+The Production Slug must be checked for uniqueness. When the Slug is changed, the Production public URL is resolved using the new Slug. The public page itself is not treated as a separately moved entity.
+
+### 20.5 Public Information and Publication Date/Time
+
+The following Production information items can each have their own publication date/time:
+
+- Flyer
+- Production description
+- Production schedule/period
+- Venue
+- Script / Direction
+
+Each item remains hidden from the public Production page until its own configured publication date/time is reached. Different information items may therefore be released in stages.
+
+### 20.6 Schedule Scope
+
+The Schedule section manages the Production-wide period:
+
+- Start date
+- End date
+
+Individual Performance occurrences, such as specific date/time performances, are managed separately under Performance Management / 公演回管理.
+
+### 20.7 Public Page Link
+
+The top of the Production Information screen provides:
+
+[ 公開ページを見る ↗ ]
+
+This opens the relevant Production public page in a separate window or tab. The URL follows the confirmed public URL structure:
+
+\`\`\`text
+/{organizationSlug}/{productionSlug}
+\`\`\`
+
+### 20.8 Save Behavior
+
+All changes on the Production Information screen are saved together using the single [ 保存 ] button at the bottom of the screen.
+
+After saving, the user remains on the Production Information screen and the saved values are reflected in the current screen.
