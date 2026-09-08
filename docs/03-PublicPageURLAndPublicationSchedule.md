@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.6
+Version : 1.7
 Status : Confirmed
 
 ---
@@ -449,6 +449,30 @@ Organization Informationには、既存の基本情報に加えて機能設定�
    └─ ON / OFF
 
 会計機能のON / OFFはOrganization単位の設定とし、設定変更はOrganization Context Menuの表示制御に反映する。
+## Organization保存後の動作
+
+Organizationの作成・団体情報の保存に、非公開状態を設けない。保存が成功したOrganizationは保存と同時に公開状態とする。
+
+Organization作成直後に「団体を公開する」操作を要求する作成完了画面は使用しない。
+
+### OnboardingからOrganization Create Flowを利用した場合
+
+Organizationの保存・作成完了後は、Onboardingの次のStepへ戻る。
+
+```text
+Organization保存
+    ↓
+Organization公開（保存と同時）
+    ↓
+直近の公演・活動を作成しますか？
+[ はい ] [ いいえ ]
+```
+
+### 通常の団体管理からOrganization Create / Information Flowを利用した場合
+
+保存成功後は「保存しました」を通知し、作成完了専用画面を表示せず、元の画面へ戻る。
+
+通常利用では、保存後にOnboardingの「直近の公演・活動を作成しますか？」へ遷移しない。
 
 ---
 
