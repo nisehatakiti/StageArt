@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.3
+Version : 1.4
 Status : Confirmed
 
 ---
@@ -262,7 +262,110 @@ https://stageart.top/{organization-slug}/{production-slug}
 
 ---
 
-# 03 団体管理者の初回Onboarding
+# 03 共通作成Flowの再利用
+
+## 基本方針
+
+Onboarding専用のOrganization作成画面およびProduction作成画面を別途実装しない。
+
+初回Onboarding中にOrganizationまたはProductionを作成する場合も、通常のApplicationからOrganizationまたはProductionを作成する場合と同一の作成Flow・画面・入力項目・バリデーションを利用する。
+
+```text
+Onboarding
+    ↓
+Organization / Production作成を開始
+    ↓
+共通Create Flow
+    ↓
+Organization / Production作成完了
+    ↓
+呼び出し元のFlowへ復帰
+```
+
+## Organization Create Flow
+
+以下の内容は、Onboardingから作成する場合と通常のApplicationから作成する場合で共通とする。
+
+```text
+団体名
+Organization Slug
+説明
+Logo
+```
+
+作成者はOrganizationの管理者として登録する。
+
+Onboardingから開始した場合は、Organization作成完了後にOnboardingの次のStepへ戻る。
+
+通常のApplicationから開始した場合は、Organization作成完了後に通常のOrganization Management Flowへ遷移する。
+
+## Production Create Flow
+
+以下の内容は、Onboardingから作成する場合と通常のApplicationから作成する場合で共通のProduction作成Flowを利用する。
+
+```text
+公演基本情報
+├─ 公演名
+└─ Production Slug
+
+本番期間・公演回
+├─ 本番開始日
+├─ 本番終了日
+├─ 日程未定設定
+├─ 本番期間情報の公開設定 / 情報公開日
+└─ 公演回（複数）
+
+会場・公開設定
+├─ 会場
+├─ 会場未定設定
+└─ 会場情報の公開設定 / 情報公開日
+
+出演予定者・公開設定
+├─ 出演予定者
+└─ 出演予定者情報の公開設定 / 情報公開日
+
+チケット情報・公開設定
+├─ チケット情報
+└─ チケット情報の公開設定 / 情報公開日
+```
+
+未決定情報は後から追加・変更可能とする。
+
+稽古日程は初回Onboardingでは入力せず、Home到達後に設定する。
+
+Onboardingから開始した場合は、Production作成完了後にOnboardingの次のStepまたは完了処理へ戻る。
+
+通常のApplicationから開始した場合は、Production作成完了後に通常のProduction Management Flowへ遷移する。
+
+## 共通化の範囲
+
+共通化するのは画面の見た目だけではなく、作成Flowそのものとする。
+
+以下をOnboarding専用に重複実装してはならない。
+
+- 入力項目
+- 入力バリデーション
+- Slug生成・編集処理
+- Organization / Production作成処理
+- 作成画面の画面仕様
+
+Onboardingと通常作成で異なってよいのは、作成Flowの呼び出し元および作成完了後の遷移先である。
+
+```text
+CreateOrganizationFlow
+├─ Onboardingから呼び出す
+└─ 通常Applicationから呼び出す
+
+CreateProductionFlow
+├─ Onboardingから呼び出す
+└─ 通常Applicationから呼び出す
+```
+
+作成内容そのものは呼び出し元によって変更しない。
+
+---
+
+# 04 団体管理者の初回Onboarding
 
 団体管理者を選択したPersonは、初回Onboarding中にOrganizationを作成する。
 
@@ -345,7 +448,7 @@ Production Slug
 
 ---
 
-# 04 団体・公演所属者の初回Onboarding
+# 05 団体・公演所属者の初回Onboarding
 
 団体管理者ではないPerson、または初回目的選択で団体・公演所属者を選択したPersonは、既存OrganizationおよびProductionへの所属・参加を設定できる。
 
@@ -541,7 +644,7 @@ Production側または権限を持つOrganization側が承認した時点で `ac
 
 ---
 
-# 05 Key / QRによる参加
+# 06 Key / QRによる参加
 
 OrganizationおよびProductionには参加用KeyとQRコードを発行できる。
 
@@ -563,7 +666,7 @@ Key / QR
 
 ---
 
-# 06 Membership状態
+# 07 Membership状態
 
 Organizationへの所属とProductionへの参加は、単純な所属有無ではなく状態を持つ。
 
@@ -596,7 +699,7 @@ Person
 
 ---
 
-# 07 所属なしユーザー
+# 08 所属なしユーザー
 
 OrganizationにもProductionにも所属していないPersonは正常な利用者状態である。
 
@@ -614,7 +717,7 @@ Homeに「どこにも所属していない」という状態を不要に強調�
 
 ---
 
-# 08 初回Onboarding Flow全体
+# 09 初回Onboarding Flow全体
 
 ```text
 アカウント登録 / Google認証
@@ -656,7 +759,7 @@ Homeに「どこにも所属していない」という状態を不要に強調�
 
 ---
 
-# 09 Blueprint確定事項
+# 10 Blueprint確定事項
 
 1. 団体所属と公演参加は初回Onboardingでそれぞれ個別に設定できる。
 2. 団体と公演はそれぞれスキップ可能。
