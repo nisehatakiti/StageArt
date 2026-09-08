@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.5
+Version : 2.6
 Status : Confirmed
 
 ---
@@ -1244,3 +1244,134 @@ Organization / Productionに関する画面を確認する際は、必ず次の�
 4. 「管理する」導線と「公開ページ」導線が別責務として実装されているか
 
 URLのPathや画面タイトルだけで「団体ページ」「公演ページ」を判定してはならない。
+
+
+---
+
+## StageArt内 Organization閲覧画面
+
+### URL
+
+ログイン済みStageArtユーザーがOrganizationを閲覧する画面は以下とする。
+
+```text
+app.stageart.top/[Organization Slug]
+```
+
+この画面は外部公開ページ（`stageart.top/[Organization Slug]`）と同じOrganization公開データを参照するが、StageArtユーザー向けの操作を追加した画面とする。
+
+### 表示内容
+
+- 団体ロゴ
+- 団体名
+- フォロー
+- お気に入り
+- 最新公演
+- ABOUT
+- メンバー一覧
+
+SNSおよび外部リンクはこの画面には表示しない。SNSとOTHER LINKSは外部公開ページのみの表示対象とする。
+
+### メンバー一覧と It's ME
+
+メンバー一覧では、未紐付けのOrganization Memberについて、ログイン中のStageArtユーザーが本人であることを申請できる `It's ME` を表示する。
+
+```text
+MEMBERS
+
+山田 太郎              [ It's ME ]
+佐藤 花子              [ It's ME ]
+```
+
+`It's ME` は即時紐付けではなく、団体側の承認制とする。
+
+### It's ME 申請
+
+ユーザーが `It's ME` を押すと、本人確認の申請確認を行う。
+
+```text
+このメンバーはあなたですか？
+
+「山田 太郎」のメンバー情報を
+あなたのStageArtプロフィールと紐付けます。
+
+団体管理者の承認後に
+紐付けが完了します。
+
+[ キャンセル ] [ 申請する ]
+```
+
+申請後、対象のOrganization Memberと申請したStageArt Personは即時には紐付けない。申請は承認待ち状態とする。
+
+### 承認通知
+
+承認依頼はOrganization ContextのHomeではなく、承認権限を持つ管理者本人の個人Homeに通知する。
+
+団体のメンバーに関する It's ME 申請は、当該Organizationについてメンバー管理権限を持つPersonが承認対象とする。
+
+個人Homeでは承認通知を表示し、通知をクリックすると対象の専用承認画面へ遷移する。
+
+Homeは通知の入口であり、承認操作自体はHome上では行わない。
+
+### It's ME 承認画面
+
+```text
+It's ME 承認
+
+「劇団○○」のメンバーとして
+本人確認の申請があります。
+
+────────────────────
+
+団体メンバー
+
+山田 太郎
+
+────────────────────
+
+申請したStageArtユーザー
+
+山田 太郎
+
+[ 個人ページを見る ]
+
+────────────────────
+
+このユーザーを
+「劇団○○」の「山田 太郎」として
+紐付けますか？
+
+[ 却下 ]        [ 承認 ]
+```
+
+管理者は `個人ページを見る` から申請したStageArtユーザーの個人ページを確認し、その内容を確認した上で承認または却下する。
+
+公演管理に関する It's ME 承認では、同じ承認通知・承認画面の仕組みを利用し、団体に相当する対象表示を公演に置き換える。
+
+### 承認時の処理
+
+承認を押すと、既存のOrganization Memberと申請したStageArt Personを内部的に紐付ける。
+
+新しいMemberを作成するのではなく、既存Memberに対してPersonとの紐付けを確定する。
+
+```text
+Organization Member
+        ↕
+StageArt Person
+```
+
+### 却下時の処理
+
+却下した場合、MemberとPersonの紐付けは行わない。
+
+申請結果は申請者側へ通知し、対象Memberは再度 It's ME を申請できる状態に戻す。
+
+### 紐付け完了後の表示
+
+承認されたStageArtユーザー本人が団体ページを閲覧した場合、対象Memberは以下のように表示する。
+
+```text
+山田 太郎              ✓ あなた
+```
+
+他のStageArtユーザーが閲覧した場合は、Member名のみを表示し、`It's ME` は表示しない。
