@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.1
+Version : 2.2
 Status : Confirmed
 
 ---
@@ -403,6 +403,36 @@ CreateProductionFlow
 Organization Management Contextでは、Application標準の左サイドメニュー内にOrganization Context Menuを表示する。
 
 Organization Context Menuは、選択中のOrganizationを管理するための機能入口とする。
+
+## 団体管理Home画面
+
+Organization Contextに入った際のHome画面（団体管理Home）は、選択中のOrganizationを明確に識別できる画面とする。
+
+### 上部表示
+
+画面上部に以下を表示する。
+
+- Organization名
+- 登録されているOrganization Logo
+
+```text
+［Organization Logo］
+Organization Name
+```
+
+### 公開ページへのリンク
+
+団体管理Home画面には、Organizationの公開ページを確認するための「公開ページを見る」リンクを表示する。
+
+「公開ページを見る」はOrganizationの公開ページを別ウィンドウで開く。
+
+```text
+［Organization Logo］ Organization Name
+
+[ 公開ページを見る ↗ ]
+```
+
+このリンクはOrganizationの管理画面から公開状態を確認するための閲覧用リンクであり、Organizationの公開 / 非公開状態を変更する操作ではない。Organizationは保存と同時に公開される仕様とする。
 
 ## Organization Context Menu
 
