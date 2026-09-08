@@ -2,243 +2,217 @@
 
 # Domain Consistency Policy : Rehearsal Management
 
-Version : 1.1
+Version : 1.2
+Status : Confirmed MVP policy
 
 ---
 
 # Purpose
 
-既存のRehearsal / RehearsalAttendance Domainを前提として、V1の稽古管理における参加対象、出欠回答、回答期限、当日管理、Google Calendar自動連携の具体的な運用を定義する。
+本書は、既存のRehearsal / RehearsalAttendance Domainを前提として、稽古管理のDomain整合性を定義する。
 
-Rehearsal自体のLifecycleはRehearsal Domainで定義し、権限はAuthorization Domainで管理する。
+画面・通知・業務操作の詳細な確定仕様は、以下を正本とする。
+
+- docs/20-RehearsalManagementScreen.md
+
+本書では、Domainとして維持すべき整合性と実装上の基本方針を定義する。
 
 ---
 
-# Rehearsal Type
+# Domain Principle
 
-Rehearsalには、稽古種別を自由入力できる項目を持つ。
+既存のRehearsal DomainおよびRehearsalAttendance Domainを可能な限り維持する。
 
-例：
+MVP仕様のために新しい稽古管理モデルを新設するのではなく、既存の以下を土台として改修する。
 
-- 立ち稽古
-- 通し稽古
-- 読み合わせ
-- ダンス稽古
-- スタッフ打ち合わせ
+- Rehearsal
+- RehearsalAttendance
+- RehearsalStatus
+- RehearsalAttendancePhase
+- RehearsalAttendanceStatus
 
-固定Enumとして限定せず、Productionごとの実際の運用に合わせて自由に入力できるものとする。
+既存の本人回答フェーズと管理者による実績更新フェーズが分離されている場合は、その構造を維持してよい。
 
 ---
 
 # Rehearsal Information
 
-基本的な稽古情報は以下を保持する。
+Rehearsalは少なくとも以下の業務情報を扱う。
 
-- 日時
+- 日付
+- 開始時刻
+- 終了時刻
 - 場所
-- 稽古種別
-- 稽古内容・連絡事項
-- 出欠回答期限
+- 連絡事項
+- 回答期限
+- 参加対象メンバー
 
-既存Rehearsal DomainのTitle / Description等と重複する項目は、実装時に既存フィールドへ対応させる。
+稽古名はMVPの利用者向け業務仕様では使用しない。
+
+既存DomainやAPIにTitle等が存在する場合でも、内部互換性のために保持することは許容するが、利用者に入力・表示させない。
 
 ---
 
 # Attendance Target
 
-稽古の参加対象者は、キャストとスタッフで扱いを分ける。
+参加対象者はProductionの現行メンバーから選択する。
 
-## Cast
+稽古作成時のUIでは、Productionメンバー全員を初期状態で選択済みとする。
 
-キャストは、原則としてProductionに所属するキャスト全員を参加対象とする。
+管理者はそこからチェックを調整する。
 
-個別の細かい参加条件や連絡事項は、稽古の稽古種別・内容・連絡事項等の自由入力欄を利用して共有する。
+稽古作成後も参加者を追加できる。
 
-V1では、稽古ごとにキャスト一人ひとりを選択して参加対象から外すことを基本としない。
-
-## Staff
-
-スタッフは、稽古ごとに参加対象者を選択できる。
-
-すべてのスタッフが毎回参加対象になるとは限らないため、稽古ごとの対象者設定を許可する。
-
-演出は通常のスタッフ選択対象には含めず、別扱いとする。
+新規追加者にのみ通知し、既存参加者には重複通知を行わない。
 
 ---
 
-# Attendance Status
+# Attendance Model
 
-出欠回答・当日出欠は、以下の状態を扱う。
+## Planning Stage
+
+調整中の本人回答は既存実装の状態を正とする。
+
+- UNANSWERED
+- AVAILABLE
+- UNAVAILABLE
+
+UI上の表示は既存実装に対応する「未回答」「参加可能」「参加不可」とする。
+
+本仕様では、調整中の回答を「出席／欠席／未定」へ変更しない。
+
+## Confirmed / Actual Stage
+
+既存の確定後回答および実績更新構造を維持する。
+
+管理側の最終的な出欠状態として、少なくとも以下を扱えるようにする。
 
 - 出席
-- 欠席
 - 遅刻
 - 早退
-- 不明
-- 未回答
+- 欠席
 
-既存RehearsalAttendance Domainの予定段階・実施段階のStatusへ対応させる。
-
-具体的な対応例：
-
-```text
-未回答 → UNANSWERED
-出席   → ATTENDING / ATTENDED
-欠席   → NOT_ATTENDING / ABSENT
-遅刻   → LATE
-早退   → 早退状態として管理
-不明   → 未確定の出欠情報として管理
-```
-
-既存Domainで状態Enumが定義されている場合、V1 UI上の表示名とDomain Statusを分離して対応する。
+遅刻・早退について既存Statusが存在する場合は、それを活用する。
 
 ---
 
 # Attendance Comment
 
-出欠回答にはコメント欄を設ける。
+出欠回答には自由記述の備考を持たせる。
 
-遅刻理由、早退予定、欠席理由、その他の連絡事項等の詳細はコメントへ記載できる。
+備考は回答ステータスとともに保持する。
 
-コメントを理由別の固定項目として細分化しない。
+回答期限前は本人が回答と備考を変更できる。
+
+管理者が出欠を変更した場合、本人への通知は不要とする。
 
 ---
 
 # Response Deadline
 
-稽古管理者は、Rehearsalごとに出欠回答期限を設定できる。
+調整中のRehearsalには回答期限を必須とする。
 
-回答期限は固定値ではなく、管理者が具体的な日時を入力できるものとする。
+回答期限は日時として保持する。
 
-用途に応じた目安：
+期限前は本人による回答・変更・備考変更を許可する。
 
-- 稽古予定の参加確認：登録日から3日後程度
-- 稽古本体の最終確認：稽古前日まで
+期限後は本人による回答・変更・備考変更を拒否する。
 
-上記は目安であり、システム上の固定期限とはしない。
-
----
-
-# Notification
-
-Rehearsalの予定確認・変更等について、対象者へStageArtの通知を行える構造とする。
-
-出欠回答期限を設定し、対象者は通知から出欠回答へ進めることを基本とする。
+この制御はUIだけでなくApplication / API側でも保証する。
 
 ---
 
-# Day-of-Rehearsal Management
+# Reminder
 
-稽古当日の管理画面では、そのRehearsalの出席予定者だけを表示する。
+回答期限の24時間前をリマインド基準時刻とする。
 
-Production全メンバーを一覧表示して対象者を探す方式にはしない。
+対象は未回答の参加対象者のみとする。
 
-基本表示例：
+回答期限変更時は、新しい期限を基準にリマインド時刻を再計算する。
 
-```text
-8/25 19:00～
-○○スタジオ
+期限延長時は即時通知を行わない。
 
-出席予定者
-- A：出席
-- B：遅刻
-- C：未回答
-- D：不明
-```
+期限前倒し時、新しいリマインド時刻が既に経過している場合は未回答者へ即時通知する。
 
-実施後はRehearsalAttendanceの実績状態を保持し、過去の稽古履歴として参照できる。
+通知履歴のUIは不要とする。
 
 ---
 
-# Google Calendar Integration
+# Rehearsal Lifecycle
 
-Google Calendar連携はStageArt V1から自動連携を基本とする。
+Rehearsalは既存Lifecycleを基本として維持する。
 
-StageArtのRehearsalを正本とし、Google Calendarは連携先とする。
+- 調整中
+- 確定
+- 完了
+- 中止
 
-稽古日程が確定した段階で、Google Calendar連携を有効にしている利用者へ予定を自動登録する。
+中止済みRehearsalは削除せず履歴として保持する。
 
-個人連携：
-
-```text
-Person
-  ↓
-自身のGoogle Accountを連携
-  ↓
-自身のGoogle Calendar
-  ↓
-確定したRehearsalを自動登録
-```
-
-団体連携：
-
-```text
-Organization
-  ↓
-団体設定のGoogle Account
-  ↓
-Google Calendar
-  ↓
-確定したRehearsalを自動登録
-```
-
-団体のGoogle Accountは、既存のDrive公開用Google連携と同一の連携設定を利用できる構造を基本とする。
-
-個人のGoogle Accountは、団体Google Accountとは独立して各Person自身が連携する。
+中止済みRehearsalはメンバー実績集計の対象外とする。
 
 ---
 
-# Calendar Source of Truth
+# Editing Rules
 
-StageArtがRehearsalの正本である。
+調整中のRehearsalは通常の編集を許可する。
 
-Google Calendar側で予定を直接変更しても、その変更をStageArtへ逆同期しない。
+確定済みRehearsalは以下の制御を行う。
 
-StageArt上で以下が変更された場合は、連携済みGoogle Calendar Eventへ自動反映する。
+- 日付変更：不可
+- 開始時刻変更：可能
+- 終了時刻変更：可能
+- 場所変更：可能
+- 連絡事項変更：可能
 
-- 日時変更
-- 場所変更
-- 稽古内容変更
-
-RehearsalがCANCELLEDとなった場合は、連携済みGoogle Calendar Eventを削除する。
-
-Google Calendar Eventの削除後も、StageArt側のRehearsalおよびRehearsalAttendance履歴は保持する。
-
-StageArt側で再度確定した場合は、新しいGoogle Calendar Eventとして連携する。
-
-Google Calendar EventとStageArt Rehearsalの対応関係を保持し、変更・削除対象を特定できるようにする。
-
-具体的なGoogle Calendar API操作はExternal Integration / Infrastructureで定義する。
+日付変更が必要な場合は、既存Rehearsalを中止し、新しい日付で新規作成する。
 
 ---
 
-# V1 Principle
+# Authorization
 
-V1では、StageArtの稽古管理を中心とし、Google Calendarは予定確認を容易にするための自動外部連携として利用する。
+以下の権限を持つユーザーが稽古管理操作を行える。
 
-Google Calendarを稽古管理の正本にしない。
+- 公演管理者
+- 稽古管理代理人
 
-出欠情報もGoogle Calendarへ同期することを基本要件とせず、StageArt内のRehearsalAttendanceを正本とする。
+管理操作には以下を含む。
+
+- 稽古作成
+- 稽古編集
+- 稽古確定
+- 稽古中止
+- 参加者追加
+- 管理者による出欠変更
+
+参加対象メンバーは、自分自身の出欠回答を行える。
 
 ---
 
-# Business Rules
+# Member Performance Aggregation
 
-- 稽古種別は自由入力とする。
-- キャストは原則としてProduction所属キャスト全員を参加対象とする。
-- スタッフはRehearsalごとに参加対象者を選択できる。
-- 演出は通常のスタッフ選択対象には含めない。
-- 出欠UIでは出席・欠席・遅刻・早退・不明・未回答を扱う。
-- 出欠回答には自由記述コメントを付けられる。
-- 出欠回答期限は稽古管理者がRehearsalごとに設定する。
-- 回答期限の目安は、予定調整では登録日から3日後程度、最終確認では稽古前日までとする。
-- 当日の管理画面には出席予定者だけを表示する。
-- Google Calendar連携はStageArtを正本として行う。
-- 個人Google Calendarは各Person自身のGoogle Account連携によって利用する。
-- 団体Google Calendarは団体設定のGoogle Accountを利用できる。
-- 団体Google AccountはDrive公開用の既存Google連携設定と共有できる構造を基本とする。
-- 稽古が確定した時点で、連携対象のGoogle CalendarへEventを自動登録する。
-- StageArt側で稽古の日時・場所・内容を変更した場合、連携済みGoogle Calendar Eventを自動更新する。
-- StageArt側で稽古をCANCELLEDにした場合、連携済みGoogle Calendar Eventを自動削除する。
-- Google Calendar側の変更をStageArtへ逆同期しない。
-- Google Calendar Event削除後もStageArt側の稽古履歴を保持する。
+公演終了後のメンバー実績では、中止を除き、そのメンバーが参加対象として紐づいているRehearsalを集計対象とする。
+
+集計項目：
+
+- 出席
+- 遅刻
+- 早退
+- 欠席
+- 稽古回数
+
+参加実績が確定していないものは、公演終了後の実績集計では欠席として扱う。
+
+したがって、
+
+出席 ＋ 遅刻 ＋ 早退 ＋ 欠席 ＝ 稽古回数
+
+が成立する。
+
+---
+
+# Implementation Boundary
+
+Rehearsal Managementの詳細な画面・通知・操作仕様はdocs/20-RehearsalManagementScreen.mdを正本とする。
+
+本Policyと画面仕様が矛盾する場合、より新しいConfirmed Blueprintを優先する。
