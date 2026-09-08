@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.4
+Version : 1.5
 Status : Confirmed
 
 ---
@@ -349,7 +349,38 @@ Onboardingから開始した場合は、Production作成完了後にOnboarding�
 - Organization / Production作成処理
 - 作成画面の画面仕様
 
-Onboardingと通常作成で異なってよいのは、作成Flowの呼び出し元および作成完了後の遷移先である。
+Onboardingと通常作成で異なってよいのは、作成Flowの呼び出し元、作成完了後の遷移先、および画面Shell（Navigation表示）である。
+
+## Onboarding利用時のNavigation
+
+通常のApplicationからOrganization Create FlowまたはProduction Create Flowを利用する場合は、Application標準の画面Shellを使用し、左メニューを表示する。
+
+一方、Onboardingから同じCreate Flowを利用する場合は、Onboarding専用の画面Shellで表示し、左メニューを表示しない。
+
+```text
+通常Application
+
+┌────────────┬──────────────────────────┐
+│ 左メニュー │ Organization / Production │
+│            │ Create Flow              │
+└────────────┴──────────────────────────┘
+
+
+Onboarding
+
+┌───────────────────────────────────────┐
+│ Onboarding Header / Progress          │
+├───────────────────────────────────────┤
+│                                       │
+│ Organization / Production             │
+│ Create Flow                           │
+│                                       │
+└───────────────────────────────────────┘
+```
+
+Organization Create FlowおよびProduction Create Flowの画面本体、入力項目、入力バリデーション、Slug生成・編集処理、作成処理は共通とする。
+
+共通FlowをOnboardingから呼び出す場合は、Flow本体を複製せず、Onboarding Shellで包んで表示する。
 
 ```text
 CreateOrganizationFlow
