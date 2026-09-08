@@ -1,20 +1,32 @@
 # StageArt Blueprint
-# Chapter 20 : Rehearsal Management Screen Specification
+# Chapter 20 : Rehearsal Management Specification
 
-Version : 1.1
-Status : Confirmed business specification
-
----
-
-## 1. Purpose
-
-This document defines the confirmed screen structure and user operations for Production-level rehearsal management.
-
-Rehearsal Management belongs directly to Production and manages rehearsals for a specific Production.
+Version : 1.2
+Status : Confirmed MVP business specification
 
 ---
 
-## 2. Related Screen Structure
+# 1. Purpose
+
+Productionに紐づく稽古について、以下を管理する。
+
+- 稽古予定の作成・編集
+- 稽古参加メンバーの管理
+- 調整中稽古に対する参加可否の回答
+- 回答期限管理
+- 回答期限前のリマインド
+- 稽古確定後の出欠管理
+- 管理者による出欠修正
+- 稽古の中止
+- 稽古実績の集計
+
+本仕様は、既存の稽古管理実装を可能な限り活用しながら、MVPで必要な仕様へ改修することを目的とする。
+
+稽古管理については、本仕様に記載された機能をすべてMVP対象とする。
+
+---
+
+# 2. Related Screen Structure
 
 Production ＞ 稽古管理 consists of:
 
@@ -22,325 +34,504 @@ Production ＞ 稽古管理 consists of:
 - 稽古作成
 - 稽古詳細
 
-Notifications are delivered through 個人Home. When Push notifications are enabled for the recipient, Push notification is also sent.
+通知は個人Homeに表示する。対象者がPush通知を有効にしている場合はPush通知も送信する。
 
-There is no separate attendance-response screen. The notification navigates the participant to the relevant 稽古詳細 screen, where the participant registers attendance.
-
----
-
-## 3. Rehearsal List
-
-The main screen provides:
-
-- 「稽古を作成する」
-- list of existing rehearsals
-
-Each row displays:
-
-- Status: 確定 / 調整中 / 中止
-- Date
-- Start time
-- End time
-- Location
-
-Selecting a rehearsal opens its detail screen.
+出欠専用の別画面は設けない。通知から該当する稽古詳細画面へ遷移し、その画面で出欠を登録する。
 
 ---
 
-## 4. Rehearsal Creation
+# 3. Rehearsal Status
 
-### 4.1 Input Items
+稽古は以下の状態を持つ。
 
-The screen provides:
+```text
+調整中
+↓
+確定
+↓
+完了
 
-- Status
-- Date
-- Start time
-- End time
-- Location
+または
+
+調整中／確定
+↓
+中止
+```
+
+## 3.1 調整中
+
+稽古日時の候補として作成された状態。
+
+参加対象メンバーは参加可否を回答する。
+
+調整中の稽古には回答期限を設定する。
+
+## 3.2 確定
+
+稽古日程が確定した状態。
+
+参加対象メンバーは、確定後の出欠状況を登録する。
+
+## 3.3 完了
+
+稽古終了後の状態。
+
+既存実装の完了処理が存在する場合は、それを維持する。
+
+## 3.4 中止
+
+稽古を中止した状態。
+
+中止された稽古は削除せず履歴として保持する。
+
+中止済み稽古は、メンバー実績集計の対象外とする。
+
+---
+
+# 4. Rehearsal Information
+
+稽古には以下の情報を持たせる。
+
+| 項目 | 必須 | 備考 |
+|---|---|---|
+| ステータス | 必須 | 調整中／確定／中止等 |
+| 日付 | 必須 | 稽古実施日 |
+| 開始時刻 | 必須 | |
+| 終了時刻 | 必須 | |
+| 場所 | 必須 | |
+| 連絡事項 | 任意 | 稽古内容等を自由記述 |
+| 回答期限 | 条件付き必須 | 調整中の場合は必須 |
+| 参加メンバー | 必須 | Productionメンバーから選択 |
+
+## 4.1 稽古名
+
+稽古名は使用しない。
+
+Productionに紐づく稽古であるため、個別の稽古名を設定する必要はない。
+
+既存実装に稽古名が存在する場合は、MVPのUIおよび業務仕様から除外する。
+
+データ移行や既存API互換性のために内部的に保持する必要がある場合は、実装側で互換性を維持してよいが、利用者に入力・表示させない。
+
+---
+
+# 5. Rehearsal Creation
+
+## 5.1 Authorized Roles
+
+以下の権限を持つユーザーが作成できる。
+
+- 公演管理者
+- 稽古管理代理人
+
+## 5.2 Input Items
+
+作成画面は以下の項目を持つ。
+
+- ステータス
+- 日付
+- 開始時刻
+- 終了時刻
+- 場所
 - 連絡事項
 - 回答期限（調整中の場合）
-- Participating members
+- 参加メンバー
 
-### 4.2 Status
+ステータスの選択肢は「確定」「調整」とし、初期値は「調整」とする。稽古一覧では「調整中」と表示する。
 
-Status options:
+## 5.3 Response Deadline
 
-- 確定
-- 調整
+調整中で作成する稽古では、回答期限を必須とする。
 
-Default: 調整
+回答期限が未入力の場合、保存不可とする。
 
-The main list displays this state as 調整中.
+## 5.4 Participating Members
 
-### 4.3 Contact Information
+Productionに所属する対象メンバーを一覧表示する。
 
-連絡事項 is an optional free-text field.
+初期状態では、全員にチェックが入った状態で表示する。
 
-It may contain rehearsal content, target scenes, meeting instructions, items to bring, warnings, and other information.
+管理者は作成前にチェックを外し、参加対象外のメンバーを調整できる。
 
-### 4.4 Response Deadline
+メンバー選択エリアには以下を設ける。
 
-When a rehearsal is created with status 調整, 回答期限 is required.
-
-A planning-stage rehearsal cannot be saved without a response deadline.
-
-### 4.5 Participating Members
-
-Participating members are selected from the current Production members.
-
-The member selection area provides:
-
-- checkbox for each Production member
+- 各Productionメンバーのチェックボックス
 - 全選択
 - 全選択解除
 
-Only selected members are assigned as participants.
+## 5.5 Same Date/Time
 
-### 4.6 Save
+同じ日時の稽古を複数作成可能とする。
 
-Saving creates the rehearsal and sends the applicable attendance confirmation request to participating members.
+場所が異なる、参加メンバーが異なる、別グループで同時に稽古を行う等のケースを許容する。
 
----
-
-## 5. Two-Stage Attendance Confirmation
-
-### 5.1 調整中
-
-Available responses:
-
-- 出席
-- 欠席
-- 未定
-
-An optional 備考 field is available.
-
-The system also displays 未回答 for participants who have not submitted a response. 未回答 is not selectable by the participant.
-
-### 5.2 確定
-
-Available responses:
-
-- 出席
-- 欠席
-- 早退
-- 遅刻
-- 未定
-
-An optional 備考 field is available.
-
-The confirmed-stage response is a new confirmation stage. A response given during 調整中 does not substitute for the response after confirmation.
+日時重複による作成制限は行わない。
 
 ---
 
-## 6. Attendance Note
+# 6. Participant Management
 
-Attendance registration includes an optional free-text 備考 field.
+## 6.1 Creation
 
-Examples:
+稽古作成時は、全員チェック済みの状態から参加者を調整する。
+
+## 6.2 Add After Creation
+
+稽古作成後も、稽古詳細画面からProductionメンバーを追加できる。
+
+新規追加者にのみ通知する。
+
+既に参加対象となっているメンバーには、追加操作や保存操作による重複通知を行わない。
+
+参加メンバーの削除可否は既存実装および業務上の整合性を確認し、既存仕様に準拠する。
+
+---
+
+# 7. Two-Stage Attendance
+
+既存実装の出欠モデルを基本として維持する。
+
+## 7.1 調整中
+
+既存実装の状態を正とする。
+
+```text
+未回答
+参加可能
+参加不可
+```
+
+本仕様では、調整中の回答を「出席／欠席／未定」へ変更しない。
+
+## 7.2 確定後
+
+既存の本人回答・管理者による実績更新構造を基本として維持する。
+
+管理側で扱う最終的な出欠状態には以下を含める。
+
+```text
+出席
+遅刻
+早退
+欠席
+```
+
+既存実装に存在する遅刻等のステータスは削除せず活用する。
+
+本人回答用の状態と管理者による最終実績状態が既存実装で分離されている場合は、その構造を維持してよい。
+
+## 7.3 Attendance Note
+
+出欠回答には自由記述の備考欄を設ける。
+
+例：
 
 - 直前までバイトのため14時から稽古参加になります
 - 17時まで別件があるため途中で退席します
 - 仕事の都合で参加できません
 
-Administrators and rehearsal management delegates can view the attendance status and note together.
+---
+
+# 8. Planning-Stage Response Deadline
+
+## 8.1 Before Deadline
+
+回答期限前であれば、対象メンバーは自由に以下を変更できる。
+
+- 回答
+- 回答内容
+- 出欠備考
+
+## 8.2 After Deadline
+
+回答期限後は、対象メンバーによる以下を禁止する。
+
+- 新規回答
+- 回答変更
+- 出欠備考変更
+
+UIだけでなくAPI側でも回答期限を検証し、期限後の更新を拒否する。
 
 ---
 
-## 7. Planning-Stage Response Deadline
+# 9. Planning-Stage Notifications
 
-### 7.1 Before Deadline
+## 9.1 Initial Notification
 
-Before the response deadline, participants may freely:
+稽古が調整中として作成された場合、参加対象メンバーへ通知する。
 
-- submit a response
-- change the response
-- edit the attendance note
-
-### 7.2 After Deadline
-
-After the response deadline:
-
-- new responses are not allowed
-- response changes are not allowed
-- attendance note changes are not allowed
-
-Participants who did not answer remain 未回答.
-
----
-
-## 8. Planning-Stage Notifications
-
-### 8.1 Initial Notification
-
-Destinations:
+通知先：
 
 1. 個人Home
-2. Push notification when enabled
+2. Push通知設定済みの場合はPush通知
 
-Message:
+通知文面：
 
-> 公演○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
+> ○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
 
-The Production name and rehearsal date are inserted.
+○○にはProduction名を使用する。
 
-### 8.2 Reminder
+## 9.2 Reminder
 
-A reminder is sent exactly 24 hours before the response deadline.
+回答期限の24時間前にリマインド通知を送信する。
 
-Only participants who are still 未回答 receive it.
+対象は、その時点で未回答の参加対象メンバーのみとする。
 
-Participants who have answered 出席、欠席、or 未定 do not receive the reminder.
+リマインド文面は元通知の先頭に【Remind】を付ける。
 
-Reminder message:
+> 【Remind】○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
 
-> 【Remind】公演○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
+## 9.3 Notification History
 
-The reminder is the same as the original message with 【Remind】 prepended.
-
-### 8.3 Notification History
-
-No notification-history UI is required.
-
-The system does not need to display notification timestamps, counts, or history in rehearsal management.
+通知履歴の保存・表示機能は不要とする。
 
 ---
 
-## 9. Response Deadline Changes
+# 10. Response Deadline Changes
 
-### 9.1 Extension
+## 10.1 Extension
 
-When the response deadline is extended:
+回答期限を延長した場合：
 
-- no immediate notification is sent solely because the deadline changed
-- the reminder schedule is recalculated from the new deadline
-- the normal reminder is sent 24 hours before the new deadline to participants still 未回答
+- 変更時点では追加通知を行わない
+- 新しい回答期限を基準にリマインド時刻を再計算する
+- 新しい回答期限の24時間前に、未回答者へ通常のリマインドを送信する
 
-### 9.2 Deadline Brought Forward
+## 10.2 Deadline Brought Forward
 
-When the deadline is moved earlier:
+回答期限を前倒しした場合：
 
-- the reminder schedule is recalculated from the new deadline
-- if the new reminder time is still in the future, the reminder is sent at that time
-- if the new reminder time has already passed when the deadline is changed, a reminder is sent immediately to participants still 未回答
-
----
-
-## 10. Rehearsal Detail
-
-The detail screen displays and manages:
-
-- Status
-- Date
-- Start time
-- End time
-- Location
-- 連絡事項
-- Participating members
-- Attendance status
-- Attendance notes
-
-Members currently participating are displayed separately from Production members who are not participating.
-
-An unselected Production member can be added from this screen.
-
-When members are newly added and saved, attendance confirmation is sent only to newly added members. Existing participants are not sent duplicate confirmation merely because the rehearsal is saved.
+- 新しい回答期限を基準にリマインド時刻を再計算する
+- 新しいリマインド時刻が未来の場合は、その時刻に通知する
+- 新しいリマインド時刻が既に過ぎている場合は、未回答の対象者へ即時リマインド通知する
 
 ---
 
-## 11. Attendance Summary
+# 11. Rehearsal Confirmation
 
-For 調整中:
+調整中の稽古を確定状態へ変更できる。
 
-- 出席 N名
-- 欠席 N名
-- 未定 N名
-- 未回答 N名
+確定操作を行えるのは以下。
 
-For 確定:
+- 公演管理者
+- 稽古管理代理人
 
-- 出席 N名
-- 欠席 N名
-- 早退 N名
-- 遅刻 N名
-- 未定 N名
-- 未回答 N名
+確定後は、参加対象メンバーに対して確定稽古として出欠登録を依頼する。
 
----
-
-## 12. Confirmation / Cancellation
-
-When the rehearsal is 調整中, authorized users can:
-
-- 稽古日程を確定する
-- 中止する
-
-### 12.1 Confirmation
-
-Confirmation changes the status to 確定 and begins the confirmed-stage attendance confirmation.
-
-Destinations:
+通知先：
 
 1. 個人Home
-2. Push notification when enabled
+2. Push通知設定済みの場合はPush通知
 
-Message:
+通知文面：
 
 > ○○の稽古日程がYY/MM/DDで確定しました。詳細を確認して出欠登録をお願いします。
 
-The Production name and rehearsal date are inserted.
-
-### 12.2 Cancellation
-
-Cancellation changes the status to 中止.
-
-The rehearsal record is not deleted and remains visible in the list.
+○○にはProduction名を使用する。
 
 ---
 
-## 13. Permissions
+# 12. Rehearsal Detail
 
-The following roles can:
+稽古詳細画面では、少なくとも以下を表示する。
 
-- create rehearsals
-- edit rehearsals
-- confirm rehearsals
-- cancel rehearsals
-- add participants
+- ステータス
+- 日付
+- 開始時刻
+- 終了時刻
+- 場所
+- 連絡事項
+- 回答期限（調整中の場合）
+- 参加メンバー
+- 出欠状況
+- 出欠備考
 
-Authorized roles:
+権限に応じて以下を行える。
 
-- 管理者
+- 編集
+- 確定
+- 中止
+- 参加メンバー追加
+- 管理者による出欠変更
+
+---
+
+# 13. Administrator Attendance Update
+
+稽古詳細画面に参加メンバー一覧を表示する。
+
+各メンバーの右側に、出欠状況をプルダウンで表示する。
+
+管理者側では以下を扱える。
+
+```text
+出席
+遅刻
+早退
+欠席
+```
+
+管理者が変更後、［更新］を押すことで保存する。
+
+管理者が出欠を変更した場合、対象メンバーへの通知は行わない。
+
+既存の管理者用出欠更新機能を土台として更新する。
+
+---
+
+# 14. Last Updated Time
+
+稽古情報および出欠情報について、管理者側では最終更新時刻を確認できるようにする。
+
+一般メンバー向け画面での表示は必須としない。
+
+---
+
+# 15. Rehearsal List
+
+稽古一覧では稽古名を表示しない。
+
+各行は以下を表示する。
+
+- ステータス
+- 日付
+- 開始時刻
+- 終了時刻
+- 場所
+
+Selecting a rehearsal opens its detail screen.
+
+---
+
+# 16. Editing Rules After Confirmation
+
+確定済み稽古については、以下のルールとする。
+
+| 項目 | 変更可否 |
+|---|---|
+| 日付 | 不可 |
+| 開始時刻 | 可能 |
+| 終了時刻 | 可能 |
+| 場所 | 可能 |
+| 連絡事項 | 可能 |
+
+日付を変更したい場合は、既存の確定済み稽古を中止し、新しい日付で新規作成する。
+
+---
+
+# 17. Cancellation
+
+稽古は以下の権限を持つユーザーが中止できる。
+
+- 公演管理者
 - 稽古管理代理人
 
-General participants cannot perform these management operations.
+中止済み稽古は削除せず履歴として残す。
 
-All participants may register and update their own attendance while the relevant attendance stage is open.
+中止時は参加対象メンバーへ通知する。
 
----
+通知文面：
 
-## 14. Business Rules
+> ○○のYY/MM/DDの稽古は中止となりました。
 
-1. Rehearsal Management is a Production-level function.
-2. Participating members are selected from current Production members.
-3. 調整中 attendance responses are 出席 / 欠席 / 未定.
-4. 確定 attendance responses are 出席 / 欠席 / 早退 / 遅刻 / 未定.
-5. Attendance registration always supports an optional 備考.
-6. 調整中 rehearsals require a response deadline.
-7. Before the planning-stage deadline, responses and notes may be freely changed.
-8. After the planning-stage deadline, attendance registration and changes are not allowed.
-9. A reminder is sent 24 hours before the deadline to 未回答 participants only.
-10. Deadline extension causes no immediate notification.
-11. If a deadline is brought forward and the recalculated reminder time has passed, 未回答 participants receive an immediate reminder.
-12. Confirmation triggers a new confirmed-stage attendance request.
-13. Notification history is not managed in the rehearsal UI.
-14. Only 管理者 and 稽古管理代理人 can perform rehearsal management operations.
-15. Cancellation does not delete the rehearsal record.
+通知先：
+
+1. 個人Home
+2. Push通知設定済みの場合はPush通知
 
 ---
 
-## 15. Status
+# 18. Permissions
 
-This chapter is a Confirmed business specification.
+| 操作 | 公演管理者 | 稽古管理代理人 | 一般メンバー |
+|---|---|---|---|
+| 稽古作成 | ○ | ○ | × |
+| 稽古編集 | ○ | ○ | × |
+| 稽古確定 | ○ | ○ | × |
+| 稽古中止 | ○ | ○ | × |
+| 参加者追加 | ○ | ○ | × |
+| 管理者出欠変更 | ○ | ○ | × |
+| 自分の出欠回答 | ○ | ○ | ○ |
 
-Implementation must follow this specification unless a later Blueprint or Domain specification explicitly supersedes it.
+---
+
+# 19. Member Performance Aggregation
+
+公演終了後のメンバー実績確認では、中止された稽古を集計対象から除外する。
+
+各メンバーについて以下を集計する。
+
+- 出席
+- 遅刻
+- 早退
+- 欠席
+- 稽古回数
+
+稽古回数は、
+
+> 中止を除き、そのメンバーが参加対象として紐づいている稽古数
+
+とする。
+
+公演終了後の実績確認では、参加実績が確定していないものは欠席として扱う。
+
+最終集計では、
+
+```text
+出席
+＋ 遅刻
+＋ 早退
+＋ 欠席
+＝ 稽古回数
+```
+
+が成立するようにする。
+
+---
+
+# 20. Implementation Principle
+
+既存の稽古管理実装を破棄せず、既存のDomain・API・画面を調査した上で本仕様との差分を改修する。
+
+主な追加・改修対象：
+
+## 追加
+
+- 回答期限
+- 回答期限後の回答制御
+- 出欠回答備考
+- 24時間前リマインド
+- 回答期限変更時のリマインド再計算
+- 参加メンバー選択UI
+- 作成後の参加者追加
+- 追加者のみ通知
+- 最終更新時刻表示
+- 稽古中止通知
+- 確定通知
+
+## 修正
+
+- 作成画面から稽古名を除外
+- 稽古一覧から稽古名を除外
+- 稽古作成時にProductionメンバー全員をチェック済みで表示
+- 確定済み稽古の日付変更を禁止
+- 管理者用出欠UIを既存実装をベースに更新
+- 遅刻・早退を既存ステータスとして活用
+
+## 維持
+
+- 既存のRehearsal Domain
+- 既存のRehearsalAttendance Domain
+- 調整中の参加可能／参加不可モデル
+- 既存の確定処理
+- 既存の中止処理
+- 既存の権限制御
+- 既存の稽古一覧・詳細・作成画面をベースとした画面構成
+
+---
+
+# 21. Status
+
+This chapter is a Confirmed MVP business specification.
+
+Implementation must follow this specification unless a later Blueprint explicitly supersedes it.
