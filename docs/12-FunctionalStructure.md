@@ -1004,3 +1004,278 @@ The [ 更新 ] button saves the following changes together:
 - Member information publication date/time changes
 
 After saving, the user remains on the Production Member Management screen and the updated member list is displayed.
+
+
+---
+
+## 22. Production Performance Management Screen Specification
+
+### 22.1 Purpose
+
+The Production Performance Management screen manages individual performance occurrences for a Production.
+
+The screen uses the same basic interaction pattern as Production Member Management:
+
+- Existing records are displayed in an editable list
+- New records are added in a registration area below the list
+- Changes are saved together using [ 更新 ]
+
+### 22.2 Screen Layout
+
+\`\`\`text
+[ Production名 ]
+
+公演回管理
+
+────────────────────────────────────────────
+
+公演スケジュール表示形式
+
+○ 表形式
+○ 罫線形式
+
+────────────────────────────────────────────
+
+公演スケジュール プレビュー
+
+（選択した表示形式で、保存済みの公演回情報から生成）
+
+────────────────────────────────────────────
+
+登録済み公演回
+
+削除　　公演日　　　　　 開演時刻　　　　備考　　　　　　　　　　　記号
+────────────────────────────────────────────────────────
+□　　　[ YYYY/MM/DD ]　　[ HH:MM ]　　　[ A班　　　　　　　]　　　[ ● ]
+
+□　　　[ YYYY/MM/DD ]　　[ HH:MM ]　　　[ B班　　　　　　　]　　　[ ★ ]
+
+────────────────────────────────────────────
+
+全体備考
+
+[ 開場は開演の30分前です　　　　　　　　　　　　　　　]
+[　　　　　　　　　　　　　　　　　　　　　　　　　　　]
+
+────────────────────────────────────────────
+
+情報公開日時
+
+[ YYYY/MM/DD HH:MM ]
+
+────────────────────────────────────────────
+
+公演回を追加
+
+公演日
+[ YYYY/MM/DD ]
+
+開演時刻
+[ HH:MM ]
+
+備考
+[　　　　　　　　　　　　　　　　　　　　　　　　　　　]
+
+記号
+[　　　　　　　　　]
+
+[ ＋ 追加 ]
+
+────────────────────────────────────────────
+
+　　　　　　　　　　　　　　　　　　　　　　[ 更新 ]
+\`\`\`
+
+### 22.3 Registered Performance List
+
+Existing performances are displayed in ascending chronological order.
+
+The following values can be edited directly in the registered performance list:
+
+- Performance date
+- Start time
+- Remarks
+- Identifier
+
+The deletion target is selected using the checkbox on the left.
+
+### 22.4 Performance Date and Time
+
+Performance date and start time are entered and edited separately.
+
+\`\`\`text
+公演日
+[ YYYY/MM/DD ]
+
+開演時刻
+[ HH:MM ]
+\`\`\`
+
+Performance records are ordered automatically by the combined date and start time in ascending order.
+
+### 22.5 Duplicate Date/Time Rule
+
+Only one Performance can exist for the same Production at the exact same combination of:
+
+- Performance date
+- Start time
+
+Duplicate performance date/time combinations are not allowed.
+
+A duplicate must be rejected when adding or updating a Performance.
+
+### 22.6 Remarks
+
+Each Performance has its own remarks field.
+
+Examples include:
+
+- A班
+- ○○さんの代理として○○さんが出演
+
+Remarks can be edited directly in the registered Performance list.
+
+### 22.7 Identifier
+
+Each Performance has an identifier used for visual identification in the performance schedule and public page.
+
+Examples include:
+
+- ●
+- ★
+- A
+- X
+- TeamA
+
+The identifier accepts a maximum of 5 characters.
+
+The same identifier is used consistently in:
+
+- Registered Performance list
+- Performance schedule preview
+- Public Production page
+- Public Performance list
+
+In schedule displays, identifiers are horizontally and vertically centered within their corresponding display area.
+
+### 22.8 Overall Remarks
+
+The screen provides one overall remarks field for information shared across all Performance occurrences.
+
+Examples include:
+
+- 開場は開演の30分前です
+- 受付開始は開演の45分前です
+
+This information is independent of the remarks attached to individual Performance records.
+
+### 22.9 Performance Information Publication Date/Time
+
+Performance information uses one publication date/time for the entire Performance information set.
+
+Publication is not configured individually for each Performance.
+
+Until the configured date/time is reached, the following are hidden from the public Production page:
+
+- Performance schedule display
+- Performance list
+- Individual Performance remarks
+- Overall remarks
+
+Once the publication date/time is reached, the Performance information set is published together.
+
+### 22.10 Performance Schedule Display Format
+
+The administrator can select one of two formats:
+
+- 表形式
+- 罫線形式
+
+The selected format is used for both:
+
+- Management screen schedule preview
+- Public Production page schedule display
+
+### 22.11 Schedule Date Range
+
+The schedule displays every calendar date from the earliest registered Performance date through the latest registered Performance date.
+
+Dates with no Performance are still displayed.
+
+For example, if Performances exist on October 10 and October 12, the schedule includes:
+
+\`\`\`text
+10/10    10/11    10/12
+\`\`\`
+
+### 22.12 Table Format Rules
+
+In table format:
+
+- The date is displayed as a column
+- The start time is displayed as a row
+- The Performance identifier is displayed in the corresponding date/time cell
+- The identifier is centered within the cell
+- A date/time cell with no Performance displays a centered full-width hyphen: －
+
+Example:
+
+\`\`\`text
+              10/10          10/11
+────────────────────────────────
+14:00           ●              A
+19:00           ★              －
+\`\`\`
+
+### 22.13 Line Format Rules
+
+In line format:
+
+- Each start time is represented as a horizontal timeline row
+- The schedule continues across all displayed dates
+- A Performance identifier is centered within the corresponding date area
+- When no Performance exists for a date/time position, the horizontal line continues without interruption
+
+Example:
+
+\`\`\`text
+             10/10          10/11
+
+14:00 ───────●──────────A──────
+
+19:00 ───────★──────────────────
+\`\`\`
+
+### 22.14 Schedule Preview Update Timing
+
+The schedule preview does not update in real time while fields are being edited.
+
+The preview is regenerated using the saved Performance information after [ 更新 ] is executed.
+
+### 22.15 Public Production Page Display
+
+Once the Performance information publication date/time has been reached, the public Production page displays:
+
+1. Performance schedule using the selected table or line format
+2. Performance list containing each identifier, date/time, and remarks
+3. Overall remarks
+
+The schedule visualization and detailed Performance list are both displayed.
+
+### 22.16 Update Behavior
+
+The [ 更新 ] button saves the following together:
+
+- Performance additions
+- Performance deletions
+- Performance date changes
+- Start time changes
+- Individual remarks changes
+- Identifier changes
+- Overall remarks changes
+- Performance information publication date/time changes
+- Schedule display format changes
+
+After saving, the user remains on the Production Performance Management screen.
+
+The registered Performance list is refreshed in chronological ascending order and the schedule preview is regenerated from the saved information.
