@@ -769,6 +769,22 @@ Slug
 
 ────────────────────────────
 
+■ 公演日程
+
+（公演回情報があれば表示）
+
+[ + 公演回を追加する ] ⇒ 公演回設定画面へ
+
+────────────────────────────
+
+■ チケット
+
+（チケット情報があれば表示）
+
+[ + チケット情報を追加する ] ⇒ チケット設定画面へ
+
+────────────────────────────
+
 ■ 脚本 / 演出
 
 [                    ] / [                    ]
@@ -802,16 +818,33 @@ The following Production information items can each have their own publication d
 
 Each item remains hidden from the public Production page until its own configured publication date/time is reached. Different information items may therefore be released in stages.
 
-### 20.6 Schedule Scope
+### 20.6 Performance Schedule Display
 
-The Schedule section manages the Production-wide period:
+The Production Information screen additionally displays a 公演日程 section below the Venue section.
 
-- Start date
-- End date
+If Performance / 公演回 information has already been registered, the existing Performance information is displayed in this section.
 
-Individual Performance occurrences, such as specific date/time performances, are managed separately under Performance Management / 公演回管理.
+The section also provides:
 
-### 20.7 Public Page Link
+[ + 公演回を追加する ]
+
+Selecting this action transitions to the 公演回設定画面.
+
+The Production-wide period remains managed in the 日程 section. Individual Performance occurrences are managed through 公演回設定 and are surfaced on the Production Information screen as registered information.
+
+### 20.7 Ticket Display
+
+The Production Information screen additionally displays a チケット section below the 公演日程 section.
+
+If ticket information has already been registered, the existing ticket information is displayed in this section.
+
+The section also provides:
+
+[ + チケット情報を追加する ]
+
+Selecting this action transitions to the チケット設定画面.
+
+### 20.8 Public Page Link
 
 The top of the Production Information screen provides:
 
@@ -823,7 +856,7 @@ This opens the relevant Production public page in a separate window or tab. The 
 /{organizationSlug}/{productionSlug}
 \`\`\`
 
-### 20.8 Save Behavior
+### 20.9 Save Behavior
 
 All changes on the Production Information screen are saved together using the single [ 保存 ] button at the bottom of the screen.
 
