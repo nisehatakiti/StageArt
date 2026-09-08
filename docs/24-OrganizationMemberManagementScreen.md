@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 24 : Organization Member Management Screen Specification
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
@@ -16,39 +16,79 @@ Organization membership and Production participation remain separate relationshi
 
 ---
 
-## 2. Member Management Main Screen
+## 2. Member Management / Add Screen
 
-The Organization Member Management screen provides:
+The Organization Member Management screen manages existing Organization member records and adds new members on the same screen.
 
-- **「メンバー追加」** link/button
-- Existing member records displayed as a list
-- Checkbox for each member record
-- **「削除」** button
+The screen provides:
+
+- Existing member records displayed at the top
+- Checkbox at the left of each existing member record for deletion selection
+- Role dropdown for each existing member record
+- **「更新」** button to apply role changes and selected deletions together
+- New member search and add area below the existing member list
 
 Example:
 
 ```text
-メンバー管理
+メンバー管理・追加
 
-[ メンバー追加 ]
+現在のメンバー
 
-☑ 山田 太郎　代表
-☐ 山田 太郎　会計
-☐ 佐藤 花子　制作
-☐ 鈴木 一郎　その他
+☐ 山田 太郎　[ 代表 ▼ ]
+☐ 山田 太郎　[ 会計 ▼ ]
+☐ 佐藤 花子　[ 制作 ▼ ]
+☐ 鈴木 一郎　[ その他 ▼ ]
 
-[ 削除 ]
+[ 更新 ]
+
+────────────────────
+
+メンバーを追加
+
+姓　：[　　　　　　]
+名　：[　　　　　　]
+
+[ メンバー検索 ]
+
+ID　：[　　　　　　]
+
+役割：[ 代表　　 ▼ ]
+
+[ 追加 ]
 ```
 
-Each list record represents a **Person + Organization Role** assignment.
+Each existing member list record represents a **Person + Organization Role** assignment.
 
-Multiple records can be selected and deleted.
+The same Person may therefore appear on multiple rows when the Person has multiple Organization roles.
+
+### 2.1 Existing Member Update
+
+For existing member records:
+
+- The checkbox at the left selects the record for deletion.
+- The role can be changed directly using the row's dropdown.
+- Changes are not applied immediately.
+- Pressing **「更新」** applies all pending role changes and selected deletions together.
 
 Deleting a record removes that Organization membership/role assignment only. It does not delete the underlying Person or StageArt account.
 
+### 2.2 Deletion Confirmation
+
+When one or more existing member records are selected for deletion, pressing **「更新」** must require confirmation before the deletion is finalized.
+
+Role changes and deletion operations are reflected only after the update operation succeeds.
+
+### 2.3 New Member Add Area
+
+The existing member list is followed by the new member add area.
+
+New member search, Person selection, role selection, and add behavior use the existing Organization Member Add specification defined below, except that successful creation remains on this screen and the new record is reflected in the existing member list.
+
+
 ---
 
-## 3. Member Add Screen
+## 3. New Member Add Area
 
 The Member Add screen uses the same structure as Production Member Add.
 
@@ -92,11 +132,11 @@ Pressing **OK** sets the selected Person ID on the Member Add screen.
 
 ### 3.4 Save
 
-Pressing **「保存」** creates the Organization member record using the selected Person ID and Organization Role, then returns to Organization Member Management.
+Pressing **「追加」** creates the Organization member record using the selected Person ID and Organization Role, then refreshes or updates the existing member list on the same screen.
 
-### 3.5 Cancel
+### 3.5 Add Cancellation
 
-Pressing **「キャンセル」** returns to Organization Member Management without creating a record.
+Clearing or cancelling the new member add operation does not create a record and leaves the existing member management screen open.
 
 ---
 
@@ -135,6 +175,13 @@ The Organization Member Management screen therefore manages Organization Members
 ---
 
 ## 6. Confirmed UX Rules
+
+- The Organization Member Management and Add workflow is provided on one screen.
+- Existing member records are displayed at the top of the screen.
+- Each existing member record has a deletion-selection checkbox and an editable role dropdown.
+- 「更新」 applies role changes and selected deletions together.
+- New member addition is performed in a dedicated area below the existing member list.
+
 
 - Organization Member Management uses the same basic screen structure as Production Member Management.
 - Existing members are displayed as selectable records using checkboxes.
