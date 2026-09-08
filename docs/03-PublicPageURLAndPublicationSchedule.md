@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.2
+Version : 2.3
 Status : Confirmed
 
 ---
@@ -422,15 +422,36 @@ Organization Name
 
 ### 公開ページへのリンク
 
+Organizationの公開ページURLは、以下とする。
+
+```text
+stageart.top/[Organization Slug]
+```
+
 団体管理Home画面には、Organizationの公開ページを確認するための「公開ページを見る」リンクを表示する。
 
-「公開ページを見る」はOrganizationの公開ページを別ウィンドウで開く。
+「公開ページを見る」は、現在のOrganization Slugを使用した公開ページURLを別ウィンドウで開く。
 
 ```text
 ［Organization Logo］ Organization Name
 
 [ 公開ページを見る ↗ ]
 ```
+
+Organization Slugが変更された場合、公開ページそのものを別途作成・移動するのではなく、公開ページURLに使用されるSlugが更新される。
+
+```text
+変更前
+stageart.top/old-slug
+
+Slug変更
+    ↓
+
+変更後
+stageart.top/new-slug
+```
+
+「公開ページを見る」リンクは常に現在保存されているOrganization Slugを参照する。
 
 このリンクはOrganizationの管理画面から公開状態を確認するための閲覧用リンクであり、Organizationの公開 / 非公開状態を変更する操作ではない。Organizationは保存と同時に公開される仕様とする。
 
