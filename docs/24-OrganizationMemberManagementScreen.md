@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # Chapter 24 : Organization Member Management Screen Specification
 
-Version : 1.1
+Version : 1.2
 Status : Confirmed business specification
 
 ---
@@ -78,6 +78,26 @@ Deleting a record removes that Organization membership/role assignment only. It 
 When one or more existing member records are selected for deletion, pressing **「更新」** must require confirmation before the deletion is finalized.
 
 Role changes and deletion operations are reflected only after the update operation succeeds.
+
+### 2.3 Post-Add / Post-Update Return Behavior
+
+After a successful add or update operation, the user returns to the same **「メンバー管理・追加」** screen.
+
+The screen must then retrieve and display the latest Organization member list so that additions, role changes, and deletions are immediately reflected.
+
+```text
+追加 または 更新
+    ↓
+処理成功
+    ↓
+成功通知（例：保存しました）
+    ↓
+同じ メンバー管理・追加 画面へ戻る
+    ↓
+最新のメンバー一覧を再取得・再表示
+```
+
+This screen remains the canonical management screen after add and update operations. Successful operations do not navigate the user to a separate completion screen or another management page.
 
 ### 2.3 New Member Add Area
 
