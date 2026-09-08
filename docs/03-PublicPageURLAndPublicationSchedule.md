@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.8
+Version : 1.9
 Status : Confirmed
 
 ---
@@ -411,7 +411,7 @@ Organization Context Menuは、選択中のOrganizationを管理するための�
 団体情報
 
 メンバー管理
-├─ メンバーを追加
+├─ メンバー管理・追加
 ├─ 代理人を設定
 └─ 代表者交代
 
@@ -432,7 +432,7 @@ Organization Context Menuは、選択中のOrganizationを管理するための�
 
 Organization Context Menuの「メンバー管理」配下には、以下の操作入口を配置する。
 
-- メンバーを追加
+- メンバー管理・追加
 - 代理人を設定
 - 代表者交代
 
