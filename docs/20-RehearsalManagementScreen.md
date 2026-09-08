@@ -1,50 +1,55 @@
 # StageArt Blueprint
 # Chapter 20 : Rehearsal Management Screen Specification
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
 
 ---
 
 ## 1. Purpose
 
-This document defines the screen structure and user operations for Production-level rehearsal management.
+This document defines the confirmed screen structure and user operations for Production-level rehearsal management.
 
-Rehearsal Management belongs directly to Production. It is a sibling of Member Management and Performance Management.
-
-The user experience should be expressed as managing rehearsals for a specific Production.
+Rehearsal Management belongs directly to Production and manages rehearsals for a specific Production.
 
 ---
 
-## 2. Rehearsal Management Main Screen
+## 2. Related Screen Structure
 
-The main screen is entered from a Production context.
+Production ＞ 稽古管理 consists of:
 
-The screen provides:
+- 稽古一覧
+- 稽古作成
+- 稽古詳細
 
-- A **「稽古を作成する」** operation.
-- A list of existing rehearsal schedules.
+Notifications are delivered through 個人Home. When Push notifications are enabled for the recipient, Push notification is also sent.
 
-Each existing rehearsal is selectable and opens its Rehearsal Detail screen.
+There is no separate attendance-response screen. The notification navigates the participant to the relevant 稽古詳細 screen, where the participant registers attendance.
 
-### 2.1 Rehearsal List
+---
+
+## 3. Rehearsal List
+
+The main screen provides:
+
+- 「稽古を作成する」
+- list of existing rehearsals
 
 Each row displays:
 
-- Status: **確定 / 調整中 / 中止**
+- Status: 確定 / 調整中 / 中止
 - Date
-- Time: From - To
+- Start time
+- End time
 - Location
 
-The list is a list of rehearsal schedules belonging to the current Production.
+Selecting a rehearsal opens its detail screen.
 
 ---
 
-## 3. Rehearsal Creation Screen
+## 4. Rehearsal Creation
 
-Selecting **「稽古を作成する」** opens the Rehearsal Creation screen.
-
-### 3.1 Input Items
+### 4.1 Input Items
 
 The screen provides:
 
@@ -53,46 +58,175 @@ The screen provides:
 - Start time
 - End time
 - Location
+- 連絡事項
+- 回答期限（調整中の場合）
 - Participating members
 
-### 3.2 Status
+### 4.2 Status
 
-The status is selected from a dropdown:
+Status options:
 
-- **確定**
-- **調整**
+- 確定
+- 調整
 
-The default value is **調整**.
+Default: 調整
 
-The main list displays the corresponding adjustment state as **調整中**.
+The main list displays this state as 調整中.
 
-The UI labels are presentation terms; they must not be interpreted as requiring a separate Domain status merely because the displayed wording differs.
+### 4.3 Contact Information
 
-### 3.3 Participating Members
+連絡事項 is an optional free-text field.
 
-Participating members are selected from the members of the current Production.
+It may contain rehearsal content, target scenes, meeting instructions, items to bring, warnings, and other information.
+
+### 4.4 Response Deadline
+
+When a rehearsal is created with status 調整, 回答期限 is required.
+
+A planning-stage rehearsal cannot be saved without a response deadline.
+
+### 4.5 Participating Members
+
+Participating members are selected from the current Production members.
 
 The member selection area provides:
 
-- Checkbox for each Production member
-- **全選択** button
-- **全選択解除** button
+- checkbox for each Production member
+- 全選択
+- 全選択解除
 
-Only members selected for the rehearsal are assigned as participating members.
+Only selected members are assigned as participants.
 
-### 3.4 Save
+### 4.6 Save
 
-Selecting **保存** creates the rehearsal with the entered information and selected members.
-
-After saving, StageArt sends an attendance confirmation request to the participating members.
-
-The attendance confirmation is associated with the created rehearsal.
+Saving creates the rehearsal and sends the applicable attendance confirmation request to participating members.
 
 ---
 
-## 4. Rehearsal Detail Screen
+## 5. Two-Stage Attendance Confirmation
 
-Selecting a rehearsal from the Rehearsal Management main screen opens its detail screen.
+### 5.1 調整中
+
+Available responses:
+
+- 出席
+- 欠席
+- 未定
+
+An optional 備考 field is available.
+
+The system also displays 未回答 for participants who have not submitted a response. 未回答 is not selectable by the participant.
+
+### 5.2 確定
+
+Available responses:
+
+- 出席
+- 欠席
+- 早退
+- 遅刻
+- 未定
+
+An optional 備考 field is available.
+
+The confirmed-stage response is a new confirmation stage. A response given during 調整中 does not substitute for the response after confirmation.
+
+---
+
+## 6. Attendance Note
+
+Attendance registration includes an optional free-text 備考 field.
+
+Examples:
+
+- 直前までバイトのため14時から稽古参加になります
+- 17時まで別件があるため途中で退席します
+- 仕事の都合で参加できません
+
+Administrators and rehearsal management delegates can view the attendance status and note together.
+
+---
+
+## 7. Planning-Stage Response Deadline
+
+### 7.1 Before Deadline
+
+Before the response deadline, participants may freely:
+
+- submit a response
+- change the response
+- edit the attendance note
+
+### 7.2 After Deadline
+
+After the response deadline:
+
+- new responses are not allowed
+- response changes are not allowed
+- attendance note changes are not allowed
+
+Participants who did not answer remain 未回答.
+
+---
+
+## 8. Planning-Stage Notifications
+
+### 8.1 Initial Notification
+
+Destinations:
+
+1. 個人Home
+2. Push notification when enabled
+
+Message:
+
+> 公演○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
+
+The Production name and rehearsal date are inserted.
+
+### 8.2 Reminder
+
+A reminder is sent exactly 24 hours before the response deadline.
+
+Only participants who are still 未回答 receive it.
+
+Participants who have answered 出席、欠席、or 未定 do not receive the reminder.
+
+Reminder message:
+
+> 【Remind】公演○○の稽古がYYYY/MM/DDに計画されています。詳細を確認して出欠登録をお願いします。
+
+The reminder is the same as the original message with 【Remind】 prepended.
+
+### 8.3 Notification History
+
+No notification-history UI is required.
+
+The system does not need to display notification timestamps, counts, or history in rehearsal management.
+
+---
+
+## 9. Response Deadline Changes
+
+### 9.1 Extension
+
+When the response deadline is extended:
+
+- no immediate notification is sent solely because the deadline changed
+- the reminder schedule is recalculated from the new deadline
+- the normal reminder is sent 24 hours before the new deadline to participants still 未回答
+
+### 9.2 Deadline Brought Forward
+
+When the deadline is moved earlier:
+
+- the reminder schedule is recalculated from the new deadline
+- if the new reminder time is still in the future, the reminder is sent at that time
+- if the new reminder time has already passed when the deadline is changed, a reminder is sent immediately to participants still 未回答
+
+---
+
+## 10. Rehearsal Detail
 
 The detail screen displays and manages:
 
@@ -101,160 +235,112 @@ The detail screen displays and manages:
 - Start time
 - End time
 - Location
+- 連絡事項
 - Participating members
-- Attendance confirmation status
+- Attendance status
+- Attendance notes
 
-### 4.1 Status
+Members currently participating are displayed separately from Production members who are not participating.
 
-The detail screen displays the rehearsal status as:
+An unselected Production member can be added from this screen.
 
-- **確定**
-- **調整中**
-
-When the rehearsal is in adjustment status, additional operations are available as defined below.
-
-### 4.2 Participating Members
-
-The member area distinguishes selected and unselected Production members.
-
-- Members currently selected for the rehearsal are displayed above.
-- Members not currently selected are displayed below.
-- An unselected member can be added to the rehearsal from this screen.
-
-The member list is therefore managed in the context of the current Production and the current rehearsal.
-
-### 4.3 Attendance Confirmation Summary
-
-The detail screen displays the current attendance confirmation status as a summary:
-
-- **出席 N 名**
-- **欠席 N 名**
-- **未定 N 名**
-- **未回答 N 名**
-
-The values represent the current attendance confirmation responses for the rehearsal participants.
-
-### 4.4 Save
-
-Selecting **保存** updates the rehearsal information.
-
-When new members have been added to the rehearsal, attendance confirmation is sent **only to the newly added members**.
-
-Existing participants who have already received attendance confirmation are not sent a duplicate confirmation merely because the rehearsal was saved.
+When members are newly added and saved, attendance confirmation is sent only to newly added members. Existing participants are not sent duplicate confirmation merely because the rehearsal is saved.
 
 ---
 
-## 5. Rehearsal Confirmation / Cancellation
+## 11. Attendance Summary
 
-When the rehearsal is in **調整中** status, the detail screen provides the following operations:
+For 調整中:
 
-- **稽古日程を確定する**
-- **中止する**
+- 出席 N名
+- 欠席 N名
+- 未定 N名
+- 未回答 N名
 
-### 5.1 稽古日程を確定する
+For 確定:
 
-Selecting **稽古日程を確定する** changes the rehearsal status to **確定**.
-
-When the rehearsal is confirmed, attendance confirmation is sent to the members associated with the rehearsal.
-
-### 5.2 中止する
-
-Selecting **中止する** changes the rehearsal status to **中止**.
-
-A cancelled rehearsal is displayed as **中止** in the Rehearsal Management main list.
-
----
-
-## 6. Relationship to Rehearsal Domain
-
-A Rehearsal belongs to a Production.
-
-The screen terminology **調整 / 調整中** corresponds to the business state in which the rehearsal schedule is being coordinated and attendance confirmation is relevant. The exact Domain status names and persistence rules remain governed by the Rehearsal Domain specification.
-
-Rehearsal attendance is managed per rehearsal and per participating Person.
-
-The screen specification does not redefine the underlying Rehearsal Domain model; it defines the confirmed user-facing operations and information display.
+- 出席 N名
+- 欠席 N名
+- 早退 N名
+- 遅刻 N名
+- 未定 N名
+- 未回答 N名
 
 ---
 
-## 7. Confirmed User Flow
+## 12. Confirmation / Cancellation
 
-Production
-↓
-Rehearsal Management
-↓
-稽古を作成する
-↓
-Rehearsal Creation
-↓
-参加メンバー選択
-↓
-保存
-↓
-出席確認送信
+When the rehearsal is 調整中, authorized users can:
 
-Existing rehearsal:
+- 稽古日程を確定する
+- 中止する
 
-Production
-↓
-Rehearsal Management
-↓
-Rehearsal List
-↓
-Rehearsal Detail
-↓
-編集 / メンバー追加 / 保存
+### 12.1 Confirmation
 
-When adjusting:
+Confirmation changes the status to 確定 and begins the confirmed-stage attendance confirmation.
 
-Rehearsal Detail
-↓
-稽古日程を確定する
-↓
-確定
+Destinations:
 
-or:
+1. 個人Home
+2. Push notification when enabled
 
-Rehearsal Detail
-↓
-中止する
-↓
-中止
+Message:
+
+> ○○の稽古日程がYY/MM/DDで確定しました。詳細を確認して出欠登録をお願いします。
+
+The Production name and rehearsal date are inserted.
+
+### 12.2 Cancellation
+
+Cancellation changes the status to 中止.
+
+The rehearsal record is not deleted and remains visible in the list.
 
 ---
 
-## 8. Business Rules
+## 13. Permissions
 
-1. Rehearsal Management is a **Production-level** function.
-2. Rehearsal Management is a sibling of Production Member Management and Performance Management.
-3. A rehearsal is created for a specific Production.
-4. Participating members are selected from the current Production members.
-5. Rehearsal creation defaults to **調整**.
-6. Saving a newly created rehearsal sends attendance confirmation to its participating members.
-7. Adding members to an existing rehearsal and saving sends attendance confirmation only to the newly added members.
-8. An adjustment-status rehearsal can be changed to **確定** or **中止** from its detail screen.
-9. Confirming the rehearsal sends attendance confirmation to the rehearsal members.
-10. The rehearsal list displays **確定 / 調整中 / 中止** as the user-facing status labels.
-11. Cancelling a rehearsal does not delete the rehearsal record; it changes its state to **中止**.
+The following roles can:
 
----
+- create rehearsals
+- edit rehearsals
+- confirm rehearsals
+- cancel rehearsals
+- add participants
 
-## 9. Out of Scope
+Authorized roles:
 
-The following are not fixed by this screen specification unless separately confirmed:
+- 管理者
+- 稽古管理代理人
 
-- Detailed notification delivery implementation
-- Exact notification message wording
-- Exact attendance-response UI
-- API endpoint structure
-- Persistence implementation
-- Authorization implementation details
-- Additional rehearsal fields not listed above
+General participants cannot perform these management operations.
+
+All participants may register and update their own attendance while the relevant attendance stage is open.
 
 ---
 
-## 10. Status
+## 14. Business Rules
 
-This chapter is a **Confirmed business specification** for the Rehearsal Management screens.
+1. Rehearsal Management is a Production-level function.
+2. Participating members are selected from current Production members.
+3. 調整中 attendance responses are 出席 / 欠席 / 未定.
+4. 確定 attendance responses are 出席 / 欠席 / 早退 / 遅刻 / 未定.
+5. Attendance registration always supports an optional 備考.
+6. 調整中 rehearsals require a response deadline.
+7. Before the planning-stage deadline, responses and notes may be freely changed.
+8. After the planning-stage deadline, attendance registration and changes are not allowed.
+9. A reminder is sent 24 hours before the deadline to 未回答 participants only.
+10. Deadline extension causes no immediate notification.
+11. If a deadline is brought forward and the recalculated reminder time has passed, 未回答 participants receive an immediate reminder.
+12. Confirmation triggers a new confirmed-stage attendance request.
+13. Notification history is not managed in the rehearsal UI.
+14. Only 管理者 and 稽古管理代理人 can perform rehearsal management operations.
+15. Cancellation does not delete the rehearsal record.
+
+---
+
+## 15. Status
+
+This chapter is a Confirmed business specification.
 
 Implementation must follow this specification unless a later Blueprint or Domain specification explicitly supersedes it.
