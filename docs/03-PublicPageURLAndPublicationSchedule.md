@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.3
+Version : 2.4
 Status : Confirmed
 
 ---
@@ -437,6 +437,23 @@ stageart.top/[Organization Slug]
 
 [ 公開ページを見る ↗ ]
 ```
+
+## Organization Slugの一意性チェック
+
+Organization Slugは公開ページURLの識別子として使用するため、Organization間で重複してはならない。
+
+Organization作成時およびOrganization Information画面でSlugを変更する場合、保存前に既存Organizationで同じSlugが使用されていないかをチェックする。
+
+```text
+Organization Slug入力 / 変更
+    ↓
+既存Slugの使用状況をチェック
+    ↓
+未使用 → 保存可能
+使用済み → 保存不可
+```
+
+使用済みの場合は、Slugが既に使用されていることを画面上で通知し、別のSlugを入力するまで保存できない。
 
 Organization Slugが変更された場合、公開ページそのものを別途作成・移動するのではなく、公開ページURLに使用されるSlugが更新される。
 
