@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 1.5
+Version : 1.6
 Status : Confirmed
 
 ---
@@ -393,6 +393,62 @@ CreateProductionFlow
 ```
 
 作成内容そのものは呼び出し元によって変更しない。
+
+---
+
+# Organization Context Navigation and Accounting Feature
+
+## 基本方針
+
+Organization Management Contextでは、Application標準の左サイドメニュー内にOrganization Context Menuを表示する。
+
+Organization Context Menuは、選択中のOrganizationを管理するための機能入口とする。
+
+## Organization Context Menu
+
+［Organization Name / Logo］
+
+団体情報
+
+メンバー管理
+└─ メンバー追加
+
+公演管理
+├─ 公演を作る
+├─ 過去公演を登録する
+└─ 公演を編集する
+
+会計管理（会計機能がONの場合のみ表示）
+├─ 会計入力
+├─ 仕訳一覧
+├─ 貸借対照表
+├─ 損益計算書
+├─ 予算作成
+└─ 会計締め処理
+
+## 会計機能の表示条件
+
+Organization単位で会計機能の有効 / 無効を設定する。
+
+会計機能がONの場合のみ、Organization Context Menuに「会計管理」およびその配下のメニューを表示する。
+
+会計機能がOFFの場合は、「会計管理」カテゴリ自体を左メニューに表示しない。
+
+## Organization Informationへの追加
+
+Organization Informationには、既存の基本情報に加えて機能設定を持たせる。
+
+基本情報
+├─ 団体名
+├─ Organization Slug
+├─ 説明
+└─ Logo
+
+機能設定
+└─ 会計機能
+   └─ ON / OFF
+
+会計機能のON / OFFはOrganization単位の設定とし、設定変更はOrganization Context Menuの表示制御に反映する。
 
 ---
 
