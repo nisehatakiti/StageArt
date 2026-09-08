@@ -861,3 +861,146 @@ This opens the relevant Production public page in a separate window or tab. The 
 All changes on the Production Information screen are saved together using the single [ 保存 ] button at the bottom of the screen.
 
 After saving, the user remains on the Production Information screen and the saved values are reflected in the current screen.
+
+
+---
+
+## 21. Production Member Management Screen Specification
+
+### 21.1 Purpose
+
+The Production Member Management screen manages all people participating in a specific Production.
+
+Production participants are independent of organization membership. A Production member does not need to be a member of the organization and does not need to have a StageArt user account.
+
+The screen supports both registered member maintenance and new member registration in one place.
+
+### 21.2 Screen Layout
+
+\`\`\`text
+[ Production名 ]
+
+メンバー管理
+
+────────────────────────────────────────────────────────────
+
+登録済みメンバー
+
+削除　　氏名　　　　　　役割　　　　　　　備考　　　　　　　　　　　　　　アカウント
+────────────────────────────────────────────────────────────
+□　　　山田 太郎　　　　[ 出演者 ▼ ]　　　[ チームA　　　　　　　　　　　]　@yamada
+
+□　　　鈴木 花子　　　　[ 出演者 ▼ ]　　　[ ○○日は出演しないので　　　　]　@suzuki
+　　　　　　　　　　　　　　　　　　　　 [ ○○さんが代わりに出演します　　]
+
+□　　　佐藤 次郎　　　　[ スタッフ ▼ ]　　[　　　　　　　　　　　　　　]　－
+
+────────────────────────────────────────────────────────────
+
+メンバー情報公開日時
+
+[ YYYY/MM/DD HH:MM ]
+
+※設定日時になるまで、Production公開ページのメンバー情報は表示しない。
+
+────────────────────────────────────────────────────────────
+
+メンバーを追加
+
+氏名
+
+[　　　　　　　　　　　　　　　　　　　　　　　　　]
+
+役割
+
+[ 選択してください ▼ ]
+
+備考
+
+[　　　　　　　　　　　　　　　　　　　　　　　　　]
+[　　　　　　　　　　　　　　　　　　　　　　　　　]
+
+[ ＋ 追加 ]
+
+────────────────────────────────────────────────────────────
+
+　　　　　　　　　　　　　　　　　　　　　　　[ 更新 ]
+\`\`\`
+
+### 21.3 Registered Members
+
+Existing Production members are displayed at the top of the screen.
+
+The following operations can be performed directly in the member list:
+
+- Select members for deletion using the left-side checkbox
+- Change role using a dropdown
+- Edit remarks directly in the list
+
+Member changes are saved together using the [ 更新 ] button.
+
+### 21.4 Member Registration Scope
+
+The following people can be registered as Production members:
+
+- Organization members
+- People not belonging to the organization
+- StageArt users
+- People without a StageArt account
+
+Organization membership and StageArt account ownership are not prerequisites for Production participation.
+
+### 21.5 Role
+
+Production member roles are selected using the same dropdown-based role selection approach as Organization Member Management.
+
+### 21.6 Remarks
+
+Each Production member has a Production-specific remarks field.
+
+Examples include:
+
+- チームA
+- ○○日は出演しないので代わりに○○さんになります
+- ダブルキャスト
+- 一部公演のみ出演
+
+Remarks are displayed and edited directly in the registered member list.
+
+### 21.7 Member Information Publication Date/Time
+
+Production member publication is controlled by one publication date/time for the entire member information set.
+
+Publication is not configured individually for each member.
+
+Until the configured publication date/time is reached, the member information section is hidden from the Production public page. Once reached, the member list is made public as a whole.
+
+### 21.8 StageArt Account Linking Display
+
+The same linking display rules as Organization Member Management apply.
+
+#### Administrator Screen
+
+If a member is linked to a StageArt account, the account ID is displayed.
+
+If no account is linked, a dash is displayed.
+
+#### General Screen
+
+For an unlinked member, [ It's ME ] is displayed so that a StageArt user can request linking to the member.
+
+#### Linked Person's Own Screen
+
+When the StageArt user linked to the member views the same member, [ It's ME ] is not shown and the member is displayed as あなた.
+
+### 21.9 Update Behavior
+
+The [ 更新 ] button saves the following changes together:
+
+- Member additions
+- Member deletions
+- Role changes
+- Remark changes
+- Member information publication date/time changes
+
+After saving, the user remains on the Production Member Management screen and the updated member list is displayed.
