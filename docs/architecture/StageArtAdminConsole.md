@@ -149,3 +149,38 @@ The final direction is therefore:
 - StageArt Admin Console, initially compatible with WordPress Admin
 
 This separation is a Blueprint decision and should guide future dashboard, ticket analytics, and plugin-product design.
+
+---
+
+## Confirmed Platform Administration Console
+
+System Administrator用のPlatform Administration Consoleは、通常のOrganization / Production Administrationとは別のSystem-wide UIとして扱う。
+
+V1の左メニューは以下を基本構成とする。
+
+- 全体通知
+- アカウント管理
+- 団体管理
+- 公演管理
+- ログ管理
+
+Dashboardには少なくとも以下を表示する。
+
+- アカウント数 → アカウント管理へ
+- 団体数 → 団体管理へ
+- 公演数 → 公演管理へ
+- 最新ログ約50件をコードブロック風ログウィンドウで表示
+
+アカウント管理では、一覧、複数選択、一括操作を扱う。
+
+想定操作：
+
+- アカウント削除
+- アカウントブロック
+- パスワードリセット
+
+団体管理では、団体名のあいまい検索と一覧を提供し、一覧には団体名とSlugを表示する。選択した団体はSystem Administratorとして通常の団体管理画面へ移動する。
+
+公演管理では、公演名のあいまい検索と一覧を提供し、一覧には団体名、団体Slug、公演名、公演Slugを表示する。選択した公演はSystem Administratorとして通常の公演管理画面へ移動する。
+
+この遷移はimpersonationではない。操作主体はSystem Administrator自身であり、既存のScope Authorization DecisionがsystemAdministratorFlagにより許可される。
