@@ -189,6 +189,15 @@ export type Production = {
   direction_credit: string | null;
   script_direction_published_at: string | null;
   member_info_published_at: string | null;
+  /**
+   * Phase 2 Performance基盤 §9: internal management data only, never
+   * shown on the public page - the initial capacity value new
+   * Performances inherit (see `Performance.capacity` below).
+   */
+  capacity: number | null;
+  /** §14: one shared free-form field covering both 開場情報 and 全体備考,
+   * reused across every Performance under this Production. */
+  performance_common_remarks: string | null;
 };
 
 /**
@@ -282,6 +291,32 @@ export type Rehearsal = {
   end_date_time: string | null;
   timezone: string | null;
   location: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Phase 2 Performance基盤 (StageArt Phase 2：Performance（公演回）基盤):
+ * one concrete date/time occurrence of a Production ("公演回"). No
+ * `venue`/`timezone` field of its own - venue is always the parent
+ * Production's own `venue_name` (§13), and `start_time`/`end_time` are
+ * plain "HH:mm:ss" wall-clock strings sharing `performance_date`, not
+ * full date-times (Backend's Performance Entity deliberately mirrors
+ * Production's own DATE-only `schedule_start_date` convention rather
+ * than Rehearsal's per-row timezone column - see
+ * `plugin/src/Domain/Performance/Performance.php`'s own docblock).
+ * `status` is one of DRAFT/PUBLISHED/SOLD_OUT/FINISHED/CANCELLED.
+ */
+export type Performance = {
+  id: string;
+  production_id: string;
+  performance_date: string;
+  start_time: string;
+  end_time: string | null;
+  capacity: number;
+  remarks: string | null;
+  symbol: string | null;
   status: string;
   created_at: string;
   updated_at: string;

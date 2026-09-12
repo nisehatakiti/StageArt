@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Schema;
 
 use StageArt\Accounting\AccountingInstaller;
+use StageArt\Performance\PerformanceInstaller;
 use StageArt\Rehearsal\RehearsalInstaller;
 
 /**
@@ -234,6 +235,8 @@ final class Installer
             direction_credit VARCHAR(255) NULL,
             script_direction_published_at DATETIME NULL,
             member_info_published_at DATETIME NULL,
+            capacity INT NULL,
+            performance_common_remarks TEXT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -284,6 +287,12 @@ final class Installer
         // class's own docblock. Byte-identical SQL to before this
         // extraction; only the physical location moved.
         RehearsalInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 2 Performance基盤:
+        // Performance Module's own single table, owned and migrated by
+        // PerformanceInstaller, not created here - see that class's own
+        // docblock, and RehearsalInstaller's identical precedent above.
+        PerformanceInstaller::install($wpdb, $charsetCollate);
 
         /*
          * Phase 7.0 (NotificationPolicy.md "未読 / 既読"): a lazily-created

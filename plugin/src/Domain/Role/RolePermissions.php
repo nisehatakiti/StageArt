@@ -10,32 +10,41 @@ namespace StageArt\Domain\Role;
  * Phase's explicit instruction not to build a general RBAC/ABAC engine
  * beyond what Blueprint currently requires:
  *
- * Only PARTICIPANT_MANAGER and REHEARSAL_MANAGER have real entries here,
- * copied verbatim from Authorization.md's own worked examples
- * ("REHEARSAL_MANAGER ↓ Rehearsal.Read/Create/Update/Delete, Schedule.
- * Read" / "PARTICIPANT_MANAGER ↓ Participant.Read/Create/Update/
- * Delete"). These are the two Roles ProductionAuthorizationService
- * actually gates Production-Scope operations on
- * (canManageParticipants/canManageRehearsals).
+ * PARTICIPANT_MANAGER, REHEARSAL_MANAGER and PERFORMANCE_MANAGER have
+ * real entries here, copied verbatim from Authorization.md's own worked
+ * examples ("REHEARSAL_MANAGER ↓ Rehearsal.Read/Create/Update/Delete,
+ * Schedule.Read" / "PARTICIPANT_MANAGER ↓ Participant.Read/Create/
+ * Update/Delete"). PARTICIPANT_MANAGER/REHEARSAL_MANAGER are the two
+ * Roles ProductionAuthorizationService gates its own
+ * canManageParticipants/canManageRehearsals on; PERFORMANCE_MANAGER
+ * (added by Phase 2 Performance基盤, per that Phase's own instruction
+ * §17/§18) is instead evaluated generically through
+ * `AuthorizationContract::canForProduction()` against
+ * `PerformanceCapability::CREATE/UPDATE/CANCEL`, the same Core/Module
+ * Capability-check path REHEARSAL_MANAGER's own
+ * `RehearsalCapability::MANAGE` already uses - no
+ * ProductionAuthorizationService-level `canManagePerformances()` method
+ * was added, since Core does not need to know a Capability string exists
+ * ahead of time (see AuthorizationContract's own docblock).
  *
  * OWNER and MEMBER intentionally have no entry here. Organization Scope
  * authorization (OrganizationAuthorizationService::hasRole()) continues
  * to check membership in an explicit allowed-RoleKey list per call site
  * (e.g. [RoleKey::OWNER] for Account creation) rather than a Permission
  * lookup - Authorization.md gives no enumerated Permission catalog for
- * "every Organization-Scope operation" the way it does for the two
+ * "every Organization-Scope operation" the way it does for the
  * Production-Scope Roles above, and inventing one here would be
  * building Permission strings Blueprint never defined. Both paths
  * apply the exact same Domain\Role\RoleKey type, which is what Role.md
  * requires ("同じRole Definitionを両Scopeで利用できる") - a shared
  * Permission-lookup mechanism for every Role is not itself required.
  *
- * RESERVATION_MANAGER and PERFORMANCE_MANAGER (also named in
- * Authorization.md's examples) are not added: their Domains (Reservation,
- * Performance) are not implemented in Backend yet (see the Phase 5.6
- * audit), so there is nothing yet for a Permission Set to gate access
- * to. ACCOUNTING_MANAGER is likewise not added as a RoleKey value at all
- * this Phase - see this Phase's report's "Accounting" section for why.
+ * RESERVATION_MANAGER (also named in Authorization.md's examples) is not
+ * added: Reservation is not implemented in Backend yet (see the Phase
+ * 5.6 audit / Phase 2 Performance基盤's own pre-implementation audit).
+ * ACCOUNTING_MANAGER is likewise not added as a RoleKey value at all
+ * this Phase - see the relevant Phase's report's "Accounting" section
+ * for why.
  */
 final class RolePermissions
 {
@@ -53,6 +62,12 @@ final class RolePermissions
             'Rehearsal.Update',
             'Rehearsal.Delete',
             'Schedule.Read',
+        ],
+        RoleKey::PERFORMANCE_MANAGER => [
+            'Performance.Read',
+            'Performance.Create',
+            'Performance.Update',
+            'Performance.Cancel',
         ],
     ];
 

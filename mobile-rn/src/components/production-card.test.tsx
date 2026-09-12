@@ -30,6 +30,8 @@ const baseProduction: Production = {
   direction_credit: null,
   script_direction_published_at: null,
   member_info_published_at: null,
+  capacity: null,
+  performance_common_remarks: null,
 };
 
 describe('ProductionCard: title heading (Phase 7.1)', () => {

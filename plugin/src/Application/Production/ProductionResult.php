@@ -34,6 +34,8 @@ final class ProductionResult
     public ?string $directionCredit;
     public ?string $scriptDirectionPublishedAt;
     public ?string $memberInfoPublishedAt;
+    public ?int $capacity;
+    public ?string $performanceCommonRemarks;
 
     private function __construct(
         string $id,
@@ -60,7 +62,9 @@ final class ProductionResult
         ?string $scriptCredit,
         ?string $directionCredit,
         ?string $scriptDirectionPublishedAt,
-        ?string $memberInfoPublishedAt
+        ?string $memberInfoPublishedAt,
+        ?int $capacity,
+        ?string $performanceCommonRemarks
     ) {
         $this->id = $id;
         $this->projectId = $projectId;
@@ -87,6 +91,8 @@ final class ProductionResult
         $this->directionCredit = $directionCredit;
         $this->scriptDirectionPublishedAt = $scriptDirectionPublishedAt;
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
+        $this->capacity = $capacity;
+        $this->performanceCommonRemarks = $performanceCommonRemarks;
     }
 
     public static function fromDomain(
@@ -119,7 +125,9 @@ final class ProductionResult
             $production->scriptCredit(),
             $production->directionCredit(),
             $production->scriptDirectionPublishedAt()?->format(DATE_ATOM),
-            $production->memberInfoPublishedAt()?->format(DATE_ATOM)
+            $production->memberInfoPublishedAt()?->format(DATE_ATOM),
+            $production->capacity(),
+            $production->performanceCommonRemarks()
         );
     }
 
@@ -154,6 +162,8 @@ final class ProductionResult
             'direction_credit' => $this->directionCredit,
             'script_direction_published_at' => $this->scriptDirectionPublishedAt,
             'member_info_published_at' => $this->memberInfoPublishedAt,
+            'capacity' => $this->capacity,
+            'performance_common_remarks' => $this->performanceCommonRemarks,
         ];
     }
 }

@@ -22,6 +22,11 @@ final class RoleKeyTest extends TestCase
         $this->assertSame('REHEARSAL_MANAGER', RoleKey::rehearsalManager()->toString());
     }
 
+    public function test_performance_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('PERFORMANCE_MANAGER', RoleKey::performanceManager()->toString());
+    }
+
     public function test_unknown_role_key_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);

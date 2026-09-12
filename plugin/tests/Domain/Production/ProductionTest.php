@@ -400,4 +400,57 @@ final class ProductionTest extends TestCase
 
         $this->assertEquals($publishedAt, $production->memberInfoPublishedAt());
     }
+
+    public function test_capacity_is_null_by_default(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->capacity());
+    }
+
+    public function test_change_capacity_sets_the_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->changeCapacity(100);
+
+        $this->assertSame(100, $production->capacity());
+    }
+
+    public function test_change_capacity_rejects_non_positive_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->changeCapacity(0);
+    }
+
+    public function test_change_capacity_allows_clearing_back_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production->changeCapacity(100);
+
+        $production->changeCapacity(null);
+
+        $this->assertNull($production->capacity());
+    }
+
+    public function test_update_performance_common_remarks_sets_and_trims_the_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updatePerformanceCommonRemarks('  開場は開演30分前です  ');
+
+        $this->assertSame('開場は開演30分前です', $production->performanceCommonRemarks());
+    }
+
+    public function test_update_performance_common_remarks_normalizes_empty_string_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production->updatePerformanceCommonRemarks('some notes');
+
+        $production->updatePerformanceCommonRemarks('');
+
+        $this->assertNull($production->performanceCommonRemarks());
+    }
 }

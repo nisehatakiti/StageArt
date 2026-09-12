@@ -46,6 +46,16 @@ final class UpdateProductionCommand
     public ?string $directionCredit;
     public ?string $scriptDirectionPublishedAt;
     public ?string $memberInfoPublishedAt;
+    /**
+     * Phase 2 Performance基盤 §9/§11: internal-only management data. Null
+     * means "leave capacity unchanged" would be Organization-style, but
+     * per this same screen's own §20.9 "whole form every time" convention
+     * every other field here already follows, whatever is sent replaces
+     * the current value - a client that wants to keep the existing
+     * capacity must send it back explicitly, exactly like `titleHeading`.
+     */
+    public ?int $capacity;
+    public ?string $performanceCommonRemarks;
 
     public function __construct(
         string $productionId,
@@ -67,7 +77,9 @@ final class UpdateProductionCommand
         ?string $scriptCredit = null,
         ?string $directionCredit = null,
         ?string $scriptDirectionPublishedAt = null,
-        ?string $memberInfoPublishedAt = null
+        ?string $memberInfoPublishedAt = null,
+        ?int $capacity = null,
+        ?string $performanceCommonRemarks = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -89,5 +101,7 @@ final class UpdateProductionCommand
         $this->directionCredit = $directionCredit;
         $this->scriptDirectionPublishedAt = $scriptDirectionPublishedAt;
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
+        $this->capacity = $capacity;
+        $this->performanceCommonRemarks = $performanceCommonRemarks;
     }
 }

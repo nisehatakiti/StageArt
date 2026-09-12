@@ -46,6 +46,23 @@ final class RolePermissionsTest extends TestCase
         $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Participant.Update')));
     }
 
+    public function test_performance_manager_has_performance_permissions(): void
+    {
+        $role = RoleKey::performanceManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Read')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Create')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Update')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Cancel')));
+    }
+
+    public function test_performance_manager_does_not_have_rehearsal_permissions(): void
+    {
+        $role = RoleKey::performanceManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Rehearsal.Update')));
+    }
+
     public function test_owner_and_member_have_no_entries_in_the_permission_set_registry(): void
     {
         // Organization Scope authorization (OrganizationAuthorizationService::hasRole())

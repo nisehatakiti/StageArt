@@ -17,6 +17,7 @@ use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
 use StageArt\Accounting\AccountingModuleBootstrap;
+use StageArt\Performance\PerformanceModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
 use StageArt\Application\Favorite\AddFavoriteUseCase;
 use StageArt\Application\Favorite\ListMyFavoritesUseCase;
@@ -120,6 +121,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
@@ -183,6 +185,7 @@ final class Plugin
         $productionDelegates = new WordPressProductionDelegateRepository($wpdb);
         $participants        = new WordPressParticipantRepository($wpdb);
         $rehearsals           = new WordPressRehearsalRepository($wpdb);
+        $performances         = new WordPressPerformanceRepository($wpdb);
         $rehearsalAttendances = new WordPressRehearsalAttendanceRepository($wpdb);
         $scheduleComments     = new WordPressScheduleCommentRepository($wpdb);
         $timetables           = new WordPressTimetableRepository($wpdb);
@@ -364,7 +367,7 @@ final class Plugin
         $getProduction = new GetProductionUseCase($productions, $productionAuthorization);
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
-        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization);
+        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
         $startProductionPlanning = new StartProductionPlanningUseCase($productions, $productionAuthorization);
         $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization);
         $completeProduction = new CompleteProductionUseCase($productions, $productionAuthorization);
@@ -421,6 +424,20 @@ final class Plugin
             $membershipContract,
             $notificationContract,
             $transactions
+        );
+
+        // StageArt Core/Module Architecture Phase 2 Performance基盤:
+        // Performance Module's entire own wiring, consolidated into
+        // PerformanceModuleBootstrap - see that class's own docblock.
+        // Only Core Contracts and Performance's own Repository interface
+        // cross this boundary, matching RehearsalModuleBootstrap's
+        // precedent above.
+        $performanceModule = new PerformanceModuleBootstrap(
+            $performances,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $membershipContract
         );
 
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
@@ -596,6 +613,14 @@ final class Plugin
         // sourced from the Bootstrap instead of a local variable.
         foreach ($rehearsalModule->restControllers() as $rehearsalRestController) {
             add_action('rest_api_init', [$rehearsalRestController, 'register_routes']);
+        }
+
+        // StageArt Core/Module Architecture Phase 2 Performance基盤: every
+        // Performance Module REST Controller is constructed inside
+        // PerformanceModuleBootstrap - registered identically to every
+        // other Controller here.
+        foreach ($performanceModule->restControllers() as $performanceRestController) {
+            add_action('rest_api_init', [$performanceRestController, 'register_routes']);
         }
 
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);

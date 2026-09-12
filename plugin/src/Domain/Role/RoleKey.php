@@ -23,7 +23,8 @@ use InvalidArgumentException;
  * Which Roles are meaningful in which Scope is left to how Membership/
  * ProductionDelegate actually use them (Organization Setup currently
  * only ever assigns OWNER/MEMBER; ProductionDelegate currently only ever
- * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER) - Role.md is explicit
+ * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER -
+ * the last added by Phase 2 Performance基盤) - Role.md is explicit
  * that Role Definitions themselves carry no ScopeType ("Roleそのものは、
  * OrganizationやProductionなどのScopeを持たない"), so this catalog
  * deliberately does not partition its values by Scope.
@@ -39,12 +40,14 @@ final class RoleKey
     public const MEMBER = 'MEMBER';
     public const PARTICIPANT_MANAGER = 'PARTICIPANT_MANAGER';
     public const REHEARSAL_MANAGER = 'REHEARSAL_MANAGER';
+    public const PERFORMANCE_MANAGER = 'PERFORMANCE_MANAGER';
 
     private const VALID = [
         self::OWNER,
         self::MEMBER,
         self::PARTICIPANT_MANAGER,
         self::REHEARSAL_MANAGER,
+        self::PERFORMANCE_MANAGER,
     ];
 
     private string $value;
@@ -76,6 +79,11 @@ final class RoleKey
     public static function rehearsalManager(): self
     {
         return new self(self::REHEARSAL_MANAGER);
+    }
+
+    public static function performanceManager(): self
+    {
+        return new self(self::PERFORMANCE_MANAGER);
     }
 
     public static function fromString(string $value): self

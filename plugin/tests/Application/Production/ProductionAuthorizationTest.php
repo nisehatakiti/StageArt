@@ -24,9 +24,11 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
 
 /**
  * Verifies ProductionAuthorizationService's literal reading of
@@ -62,7 +64,12 @@ final class ProductionAuthorizationTest extends TestCase
         );
 
         $this->getProduction = new GetProductionUseCase($this->productions, $productionAuthorization);
-        $this->updateProduction = new UpdateProductionUseCase($this->productions, $productionAuthorization);
+        $this->updateProduction = new UpdateProductionUseCase(
+            $this->productions,
+            $productionAuthorization,
+            new InMemoryPerformanceRepository(),
+            new InMemoryTransactionManager()
+        );
     }
 
     private function givenProduction(int $primaryManagerWordPressUserId): Production

@@ -49,6 +49,8 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             'direction_credit' => $production->directionCredit(),
             'script_direction_published_at' => $production->scriptDirectionPublishedAt()?->format('Y-m-d H:i:s'),
             'member_info_published_at' => $production->memberInfoPublishedAt()?->format('Y-m-d H:i:s'),
+            'capacity' => $production->capacity(),
+            'performance_common_remarks' => $production->performanceCommonRemarks(),
             'updated_at' => $production->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -182,7 +184,9 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             $row['script_credit'] ?? null,
             $row['direction_credit'] ?? null,
             ! empty($row['script_direction_published_at']) ? new DateTimeImmutable($row['script_direction_published_at']) : null,
-            ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null
+            ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null,
+            isset($row['capacity']) && $row['capacity'] !== null && $row['capacity'] !== '' ? (int) $row['capacity'] : null,
+            $row['performance_common_remarks'] ?? null
         );
     }
 }

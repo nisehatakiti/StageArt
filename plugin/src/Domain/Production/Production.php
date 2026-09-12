@@ -62,6 +62,25 @@ final class Production
      */
     private ?DateTimeImmutable $memberInfoPublishedAt;
 
+    /**
+     * Phase 2 Performance基盤 instruction §9: internal management data
+     * only ("公開ページには表示しない"), independent from any Ticket Type's
+     * own sales quota/ノルマ concept. Nullable because pre-existing
+     * Productions never had a value for it (non-destructive ALTER ADD
+     * COLUMN, matching every other Phase 1 addition's own nullable
+     * convention) - a null capacity blocks Performance creation until
+     * explicitly set (see CreatePerformanceUseCase).
+     */
+    private ?int $capacity;
+
+    /**
+     * §14: "開場情報" and "全体備考" are deliberately NOT two separate
+     * fields - one free-form "公演回共通備考" covering both, reused across
+     * every Performance under this Production (§13 - Performance itself
+     * carries no venue/common-notes field of its own).
+     */
+    private ?string $performanceCommonRemarks;
+
     private function __construct(
         ProductionId $id,
         ProjectId $projectId,
@@ -85,7 +104,9 @@ final class Production
         ?string $scriptCredit = null,
         ?string $directionCredit = null,
         ?DateTimeImmutable $scriptDirectionPublishedAt = null,
-        ?DateTimeImmutable $memberInfoPublishedAt = null
+        ?DateTimeImmutable $memberInfoPublishedAt = null,
+        ?int $capacity = null,
+        ?string $performanceCommonRemarks = null
     ) {
         $this->id = $id;
         $this->projectId = $projectId;
@@ -110,6 +131,8 @@ final class Production
         $this->directionCredit = $directionCredit;
         $this->scriptDirectionPublishedAt = $scriptDirectionPublishedAt;
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
+        $this->capacity = $capacity;
+        $this->performanceCommonRemarks = $performanceCommonRemarks;
     }
 
     /**
@@ -167,7 +190,9 @@ final class Production
         ?string $scriptCredit = null,
         ?string $directionCredit = null,
         ?DateTimeImmutable $scriptDirectionPublishedAt = null,
-        ?DateTimeImmutable $memberInfoPublishedAt = null
+        ?DateTimeImmutable $memberInfoPublishedAt = null,
+        ?int $capacity = null,
+        ?string $performanceCommonRemarks = null
     ): self {
         return new self(
             $id,
@@ -192,7 +217,9 @@ final class Production
             $scriptCredit,
             $directionCredit,
             $scriptDirectionPublishedAt,
-            $memberInfoPublishedAt
+            $memberInfoPublishedAt,
+            $capacity,
+            $performanceCommonRemarks
         );
     }
 
@@ -457,6 +484,33 @@ final class Production
         $this->touch();
     }
 
+    /**
+     * Phase 2 Performance基盤 §11/§12: the trigger side of the mandatory
+     * Production-capacity cascade - UpdateProductionUseCase calls this to
+     * update Production's own stored value, then separately (via
+     * PerformanceRepositoryInterface, in the same Transaction) overwrites
+     * every child Performance's capacity to match. This method only
+     * updates Production's own field; it deliberately does not reach into
+     * Performance itself (§19 - "ProductionとPerformanceの責務を混在させ
+     * ない" / "不必要に巨大なDomain Entityへ複数Aggregateの更新責務を集中さ
+     * せない").
+     */
+    public function changeCapacity(?int $capacity): void
+    {
+        if ($capacity !== null && $capacity < 1) {
+            throw new InvalidArgumentException('Production capacity must be a positive integer.');
+        }
+
+        $this->capacity = $capacity;
+        $this->touch();
+    }
+
+    public function updatePerformanceCommonRemarks(?string $performanceCommonRemarks): void
+    {
+        $this->performanceCommonRemarks = self::normalizeNullableString($performanceCommonRemarks);
+        $this->touch();
+    }
+
     private static function normalizeNullableString(?string $value): ?string
     {
         if ($value === null) {
@@ -586,5 +640,15 @@ final class Production
     public function memberInfoPublishedAt(): ?DateTimeImmutable
     {
         return $this->memberInfoPublishedAt;
+    }
+
+    public function capacity(): ?int
+    {
+        return $this->capacity;
+    }
+
+    public function performanceCommonRemarks(): ?string
+    {
+        return $this->performanceCommonRemarks;
     }
 }

@@ -34,7 +34,8 @@ final class CoreProductionContextAdapter implements ProductionContextContract
         return new ProductionSummary(
             $production->id(),
             $production->name()->toString(),
-            $production->status()->toString()
+            $production->status()->toString(),
+            $production->capacity()
         );
     }
 
@@ -50,7 +51,8 @@ final class CoreProductionContextAdapter implements ProductionContextContract
             $byId[$production->id()->toString()] = new ProductionSummary(
                 $production->id(),
                 $production->name()->toString(),
-                $production->status()->toString()
+                $production->status()->toString(),
+                $production->capacity()
             );
         }
 

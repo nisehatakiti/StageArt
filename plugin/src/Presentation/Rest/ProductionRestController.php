@@ -322,7 +322,9 @@ final class ProductionRestController
                 $this->stringOrNull($request->get_param('script_credit')),
                 $this->stringOrNull($request->get_param('direction_credit')),
                 $this->stringOrNull($request->get_param('script_direction_published_at')),
-                $this->stringOrNull($request->get_param('member_info_published_at'))
+                $this->stringOrNull($request->get_param('member_info_published_at')),
+                $this->intOrNull($request->get_param('capacity')),
+                $this->stringOrNull($request->get_param('performance_common_remarks'))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);
@@ -456,5 +458,10 @@ final class ProductionRestController
     private function stringOrNull($value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    private function intOrNull($value): ?int
+    {
+        return $value === null || $value === '' ? null : (int) $value;
     }
 }

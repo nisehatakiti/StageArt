@@ -116,6 +116,25 @@ describe('useNavMenu', () => {
     expect(members?.disabled).toBe(true);
     const rehearsal = result.current.contextItems.find((item) => item.key === 'production-rehearsal');
     expect(rehearsal?.disabled).toBeUndefined();
+    // productionTwo's delegate_role is REHEARSAL_MANAGER, not PERFORMANCE_MANAGER.
+    const performances = result.current.contextItems.find((item) => item.key === 'production-performances');
+    expect(performances?.disabled).toBe(true);
+  });
+
+  it('enables 公演回管理 for a Primary Manager', async () => {
+    mockPathname = `/productions/${productionOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    const performances = result.current.contextItems.find((item) => item.key === 'production-performances');
+    expect(performances?.disabled).toBe(false);
   });
 
   it('renders チケット管理／小屋入り～本番／公演終了・精算処理 as disabled placeholders even for a Primary Manager', async () => {

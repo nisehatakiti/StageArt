@@ -94,14 +94,22 @@ function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuIte
  * Mirrors productions/[id]/index.tsx's own menuGrid gating exactly
  * (公演情報: disabled for non-Primary-Manager; メンバー管理: disabled
  * unless Primary Manager or a PARTICIPANT_MANAGER Delegate; 稽古管理:
- * always available). チケット管理／小屋入り～本番／公演終了・精算処理 are
- * always disabled this Phase - see this file's own docblock.
+ * always available; 公演回管理 - added by Phase 2 Performance基盤 - disabled
+ * unless Primary Manager or a PERFORMANCE_MANAGER Delegate). チケット管理
+ * ／小屋入り～本番／公演終了・精算処理 are always disabled this Phase - see
+ * this file's own docblock.
  */
-function buildProductionContextItems(id: string, isPrimaryManager: boolean, canManageParticipants: boolean): NavMenuItem[] {
+function buildProductionContextItems(
+  id: string,
+  isPrimaryManager: boolean,
+  canManageParticipants: boolean,
+  canManagePerformances: boolean
+): NavMenuItem[] {
   return [
     { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
     { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
     { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
+    { key: 'production-performances', label: '公演回管理', href: `/productions/${id}/performances` as Href, disabled: !canManagePerformances },
     { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}` as Href, disabled: true },
     { key: 'production-reception', label: '小屋入り～本番', href: `/productions/${id}` as Href, disabled: true },
     { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}` as Href, disabled: true },
@@ -142,11 +150,12 @@ export function useNavMenu() {
     const production = productionQuery.data;
     const isPrimaryManager = !!production?.is_primary_manager;
     const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
+    const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
       contextLabel: production?.name ?? '公演',
-      contextItems: buildProductionContextItems(context.productionId, isPrimaryManager, canManageParticipants),
+      contextItems: buildProductionContextItems(context.productionId, isPrimaryManager, canManageParticipants, canManagePerformances),
     };
   }
 

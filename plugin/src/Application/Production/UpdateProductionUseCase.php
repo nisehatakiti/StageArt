@@ -7,6 +7,8 @@ namespace StageArt\Application\Production;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
@@ -20,16 +22,34 @@ use StageArt\Domain\Production\ProductionSlug;
  * Phase 6.1: no longer touches Status. See UpdateProductionCommand's
  * docblock - Status changes go through the dedicated Lifecycle Action
  * UseCases instead.
+ *
+ * Phase 2 Performance基盤 §11/§12: depends directly on
+ * `Domain\Performance\PerformanceRepositoryInterface` (a Domain-layer
+ * interface, not any Performance Module Application/Core-Contract type)
+ * per the instruction's own explicit direction - "定員一括上書きの業務処理
+ * は、Production更新のApplication UseCase内でRepositoryを利用して処理する
+ * 構成を基本としてください". Production save and the full Performance
+ * capacity cascade run inside one `TransactionManagerInterface::run()`
+ * call so a failure partway through never leaves Production's own
+ * capacity and its Performances' capacities inconsistent (§12).
  */
 final class UpdateProductionUseCase
 {
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
+    private PerformanceRepositoryInterface $performances;
+    private TransactionManagerInterface $transactions;
 
-    public function __construct(ProductionRepositoryInterface $productions, ProductionAuthorizationService $authorization)
-    {
+    public function __construct(
+        ProductionRepositoryInterface $productions,
+        ProductionAuthorizationService $authorization,
+        PerformanceRepositoryInterface $performances,
+        TransactionManagerInterface $transactions
+    ) {
         $this->productions = $productions;
         $this->authorization = $authorization;
+        $this->performances = $performances;
+        $this->transactions = $transactions;
     }
 
     public function execute(UpdateProductionCommand $command): ProductionResult
@@ -88,8 +108,28 @@ final class UpdateProductionUseCase
             $this->parseOptionalDateTime($command->scriptDirectionPublishedAt)
         );
         $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
+        $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
 
-        $this->productions->save($production);
+        $previousCapacity = $production->capacity();
+        $production->changeCapacity($command->capacity);
+        $newCapacity = $production->capacity();
+        $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
+
+        $this->transactions->run(function () use ($production, $capacityChanged, $newCapacity): void {
+            $this->productions->save($production);
+
+            if (! $capacityChanged) {
+                return;
+            }
+
+            // §11/§26: unconditional overwrite of every child Performance's
+            // capacity, including individually-customized and CANCELLED
+            // ones - no filtering by status here on purpose.
+            foreach ($this->performances->findByProductionId($production->id()) as $performance) {
+                $performance->changeCapacity($newCapacity);
+                $this->performances->save($performance);
+            }
+        });
 
         return ProductionResult::fromDomain(
             $production,

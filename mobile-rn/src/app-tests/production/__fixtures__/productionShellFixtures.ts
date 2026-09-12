@@ -26,6 +26,8 @@ export const productionOne: Production = {
   direction_credit: null,
   script_direction_published_at: null,
   member_info_published_at: null,
+  capacity: null,
+  performance_common_remarks: null,
 };
 
 export const productionWithTitleHeading: Production = {
