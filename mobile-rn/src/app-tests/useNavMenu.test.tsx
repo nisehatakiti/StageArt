@@ -15,6 +15,12 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+let mockPathname = '/home';
+jest.mock('expo-router', () => ({
+  ...jest.requireActual('expo-router'),
+  usePathname: () => mockPathname,
+}));
+
 function wrapper({ children }: PropsWithChildren) {
   const queryClient = new QueryClient();
   return (
@@ -24,12 +30,20 @@ function wrapper({ children }: PropsWithChildren) {
   );
 }
 
-/** StageArt Blueprint再構成 Phase 1 §8/§9: useNavMenu() is the single
- * authorization source WebSidebarNav/NativeDrawerMenu both render from -
- * these tests verify its admin-menu gating directly, independent of
- * either shell's own rendering. */
+/**
+ * StageArt Phase 1: useNavMenu() now derives its Context (home /
+ * organization / production) from the current route rather than from
+ * admin-permission scanning across every Organization/Production the
+ * Person belongs to - these tests verify that derivation and the
+ * per-Context item gating directly, independent of either shell's own
+ * rendering.
+ */
 describe('useNavMenu', () => {
-  it('always includes the four basic menu items regardless of admin permission', async () => {
+  beforeEach(() => {
+    mockPathname = '/home';
+  });
+
+  it('returns the four Fixed Area items and the Home Context items on /home', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
@@ -38,18 +52,20 @@ describe('useNavMenu', () => {
 
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
-    await waitFor(() => {
-      expect(result.current.basicItems.map((item) => item.key)).toEqual([
-        'discover-organizations',
-        'discover-productions',
-        'profile',
-        'account',
-      ]);
-    });
-    expect(result.current.adminItems).toEqual([]);
+    expect(result.current.fixedItems.map((item) => item.key)).toEqual(['home', 'mypage', 'settings']);
+    expect(result.current.contextType).toBe('home');
+    expect(result.current.contextItems.map((item) => item.key)).toEqual([
+      'discover-organizations',
+      'discover-productions',
+      'favorites',
+      'my-organizations',
+      'participating-productions',
+      'viewing-history',
+    ]);
   });
 
-  it('shows 団体情報 only for an Organization where current_person_role is OWNER, not MEMBER', async () => {
+  it('switches to Organization Context on an /organizations/{id} route, enabling Owner-only items only for the Owner', async () => {
+    mockPathname = `/organizations/${orgOne.id}/edit`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne, orgTwo] },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
@@ -58,31 +74,15 @@ describe('useNavMenu', () => {
 
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
-    await waitFor(() => {
-      const orgAdmin = result.current.adminItems.find((item) => item.key === 'org-admin');
-      expect(orgAdmin).toBeDefined();
-      expect(orgAdmin?.href).toBe(`/organizations/${orgOne.id}`);
-    });
+    await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
+    expect(result.current.contextType).toBe('organization');
+    const info = result.current.contextItems.find((item) => item.key === 'organization-info');
+    expect(info?.disabled).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(true);
   });
 
-  it('shows 公演情報 for a Production the Person is Primary Manager or Delegate of, ignoring mere Participant status', async () => {
-    mockFetchRoutes([
-      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
-      { test: (url) => url.endsWith('/productions'), status: 200, body: [productionOne, productionTwo] },
-      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
-    ]);
-
-    const { result } = await renderHook(() => useNavMenu(), { wrapper });
-
-    await waitFor(() => {
-      const productionAdmin = result.current.adminItems.find((item) => item.key === 'production-admin');
-      expect(productionAdmin).toBeDefined();
-      // Two matching Productions (primary manager + delegate) -> the list screen, not a single deep link.
-      expect(productionAdmin?.href).toBe('/participating-productions');
-    });
-  });
-
-  it('omits both admin items when the Person holds no management permission anywhere', async () => {
+  it('hides Owner-only Organization Context items and disables 団体情報 for a MEMBER', async () => {
+    mockPathname = `/organizations/${orgTwo.id}/members`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgTwo] },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
@@ -91,8 +91,47 @@ describe('useNavMenu', () => {
 
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
-    await waitFor(() => {
-      expect(result.current.adminItems).toEqual([]);
-    });
+    await waitFor(() => expect(result.current.contextType).toBe('organization'));
+    const info = result.current.contextItems.find((item) => item.key === 'organization-info');
+    expect(info?.disabled).toBe(true);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(false);
+  });
+
+  it('switches to Production Context on a /productions/{id} route, disabling management items for a non-manager', async () => {
+    mockPathname = `/productions/${productionTwo.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${productionTwo.id}`), status: 200, body: productionTwo },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    const info = result.current.contextItems.find((item) => item.key === 'production-info');
+    expect(info?.disabled).toBe(true);
+    // productionTwo's delegate_role is REHEARSAL_MANAGER, not PARTICIPANT_MANAGER.
+    const members = result.current.contextItems.find((item) => item.key === 'production-members');
+    expect(members?.disabled).toBe(true);
+    const rehearsal = result.current.contextItems.find((item) => item.key === 'production-rehearsal');
+    expect(rehearsal?.disabled).toBeUndefined();
+  });
+
+  it('renders チケット管理／小屋入り～本番／公演終了・精算処理 as disabled placeholders even for a Primary Manager', async () => {
+    mockPathname = `/production/${productionOne.id}/schedule`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/production/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(true);
+    expect(result.current.contextItems.find((item) => item.key === 'production-reception')?.disabled).toBe(true);
+    expect(result.current.contextItems.find((item) => item.key === 'production-settlement')?.disabled).toBe(true);
   });
 });

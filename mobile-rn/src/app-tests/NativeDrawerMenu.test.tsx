@@ -17,6 +17,12 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+let mockPathname = '/home';
+jest.mock('expo-router', () => ({
+  ...jest.requireActual('expo-router'),
+  usePathname: () => mockPathname,
+}));
+
 function Harness() {
   const [visible, setVisible] = useState(true);
   return <NativeDrawerMenu visible={visible} onClose={() => setVisible(false)} />;
@@ -33,13 +39,18 @@ function renderHarness() {
   );
 }
 
-/** StageArt Blueprint再構成 Phase 1 §27: Native's Hamburger Menu -
- * confirms the basic menu items render and that logout is reachable
- * (and actually confirmed, not fired blind) from inside it, matching
- * the same confirmAlert() pattern already proven for WebLayout/home.tsx
- * logout in the earlier logout-bug fix. */
+/**
+ * StageArt Phase 1: Native's Hamburger Menu, rebuilt around the Context
+ * Area design - confirms the Fixed Area items always render, that Home
+ * Context's items render on /home, and that logout is reachable (and
+ * actually confirmed, not fired blind).
+ */
 describe('NativeDrawerMenu', () => {
-  it('renders the basic menu items and the logout entry', async () => {
+  beforeEach(() => {
+    mockPathname = '/home';
+  });
+
+  it('renders the Fixed Area items, Home Context items, and the logout entry', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
@@ -50,12 +61,20 @@ describe('NativeDrawerMenu', () => {
 
     await waitFor(() => expect(screen.getByTestId('native-drawer-discover-organizations')).toBeVisible());
     expect(screen.getByTestId('native-drawer-discover-productions')).toBeVisible();
-    expect(screen.getByTestId('native-drawer-profile')).toBeVisible();
-    expect(screen.getByTestId('native-drawer-account')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-favorites')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-my-organizations')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-participating-productions')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-viewing-history')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-home')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-mypage')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-settings')).toBeVisible();
     expect(screen.getByTestId('native-drawer-logout')).toBeVisible();
+    // Home Context shows no Context heading (this is the Fixed Area's own ホーム, not a named Context).
+    expect(screen.queryByTestId('native-drawer-context-label')).toBeNull();
   });
 
-  it('includes the 団体情報 admin entry when the Person owns an Organization', async () => {
+  it('shows the Organization name as the Context label inside Organization Context', async () => {
+    mockPathname = `/organizations/${orgOne.id}/edit`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
@@ -64,7 +83,9 @@ describe('NativeDrawerMenu', () => {
 
     renderHarness();
 
-    await waitFor(() => expect(screen.getByTestId('native-drawer-org-admin')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('native-drawer-context-label')).toHaveTextContent(orgOne.name));
+    expect(screen.getByTestId('native-drawer-organization-info')).toBeVisible();
+    expect(screen.getByTestId('native-drawer-organization-members')).toBeVisible();
   });
 
   it('shows a confirmation before logging out, and does nothing if cancelled', async () => {

@@ -57,16 +57,57 @@ export function createProduction(
  * endpoints - a `status` key here is rejected with 422) - this function
  * has never sent one and must not start now.
  */
+/**
+ * StageArt Phase 1 (docs/12-FunctionalStructure.md §20): the five
+ * Production Information sections - `description`/`flyerUrl`/
+ * `venueName`/`scheduleStartDate`/`scheduleEndDate`/`scriptCredit`/
+ * `directionCredit` and each section's own `*PublishedAt` are all
+ * optional/trailing. Every field this function is called with replaces
+ * the Production's current value (matching `titleHeading`'s existing
+ * convention - omitting a key sends it as `undefined`, which the
+ * backend then reads as `null`/"clear this field").
+ */
 export function updateProduction(
   client: ApiClient,
   id: string,
-  fields: { name: string; titleHeading: string | null; slug?: string; published?: boolean }
+  fields: {
+    name: string;
+    titleHeading: string | null;
+    slug?: string;
+    published?: boolean;
+    description?: string | null;
+    descriptionPublishedAt?: string | null;
+    flyerUrl?: string | null;
+    flyerPublishedAt?: string | null;
+    venueName?: string | null;
+    venuePublishedAt?: string | null;
+    scheduleStartDate?: string | null;
+    scheduleEndDate?: string | null;
+    schedulePublishedAt?: string | null;
+    scriptCredit?: string | null;
+    directionCredit?: string | null;
+    scriptDirectionPublishedAt?: string | null;
+    memberInfoPublishedAt?: string | null;
+  }
 ): Promise<Production> {
   return client.put<Production>(`/productions/${id}`, {
     name: fields.name,
     title_heading: fields.titleHeading,
     slug: fields.slug,
     published: fields.published,
+    description: fields.description,
+    description_published_at: fields.descriptionPublishedAt,
+    flyer_url: fields.flyerUrl,
+    flyer_published_at: fields.flyerPublishedAt,
+    venue_name: fields.venueName,
+    venue_published_at: fields.venuePublishedAt,
+    schedule_start_date: fields.scheduleStartDate,
+    schedule_end_date: fields.scheduleEndDate,
+    schedule_published_at: fields.schedulePublishedAt,
+    script_credit: fields.scriptCredit,
+    direction_credit: fields.directionCredit,
+    script_direction_published_at: fields.scriptDirectionPublishedAt,
+    member_info_published_at: fields.memberInfoPublishedAt,
   });
 }
 

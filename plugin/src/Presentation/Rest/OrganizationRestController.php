@@ -204,7 +204,10 @@ final class OrganizationRestController
                 (string) $request->get_param('name'),
                 (string) $request->get_param('slug'),
                 $this->stringOrNull($request->get_param('type')),
-                $this->stringOrNull($request->get_param('description'))
+                $this->stringOrNull($request->get_param('description')),
+                (bool) $request->get_param('accounting_enabled'),
+                $this->intOrNull($request->get_param('opening_cash_balance')),
+                $this->intOrNull($request->get_param('opening_bank_balance'))
             );
 
             return new WP_REST_Response($this->createOrganization->execute($command)->toArray(), 201);
@@ -373,5 +376,13 @@ final class OrganizationRestController
     private function stringOrNull($value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function intOrNull($value): ?int
+    {
+        return $value === null || $value === '' ? null : (int) $value;
     }
 }

@@ -43,4 +43,13 @@ final class InMemoryJournalEntryRepository implements JournalEntryRepositoryInte
                 && $entry->status()->equals(JournalEntryStatus::fromString(JournalEntryStatus::POSTED))
         ));
     }
+
+    /**
+     * Test-introspection only - not part of JournalEntryRepositoryInterface.
+     * @return JournalEntry[]
+     */
+    public function all(): array
+    {
+        return array_values($this->entries);
+    }
 }

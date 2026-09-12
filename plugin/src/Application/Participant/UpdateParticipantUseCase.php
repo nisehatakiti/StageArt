@@ -56,6 +56,7 @@ final class UpdateParticipantUseCase
 
         $participant->changeParticipantType(ParticipantType::fromString($command->participantType));
         $participant->changeStatus(ParticipantStatus::fromString($command->status));
+        $participant->changeRemarks($command->remarks);
 
         $this->participants->save($participant);
 

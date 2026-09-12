@@ -298,4 +298,106 @@ final class ProductionTest extends TestCase
 
         $this->assertSame('new-slug', $production->slug()?->toString());
     }
+
+    public function test_a_new_production_has_no_information_section_content_or_publication_dates(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->description());
+        $this->assertNull($production->descriptionPublishedAt());
+        $this->assertNull($production->flyerUrl());
+        $this->assertNull($production->venueName());
+        $this->assertNull($production->scheduleStartDate());
+        $this->assertNull($production->scheduleEndDate());
+        $this->assertNull($production->scriptCredit());
+        $this->assertNull($production->directionCredit());
+    }
+
+    public function test_update_description_sets_value_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateDescription('あらすじ本文', $publishedAt);
+
+        $this->assertSame('あらすじ本文', $production->description());
+        $this->assertEquals($publishedAt, $production->descriptionPublishedAt());
+    }
+
+    public function test_update_description_normalizes_blank_string_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updateDescription('   ', null);
+
+        $this->assertNull($production->description());
+    }
+
+    public function test_update_venue_sets_value_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateVenue('○○ホール', $publishedAt);
+
+        $this->assertSame('○○ホール', $production->venueName());
+        $this->assertEquals($publishedAt, $production->venuePublishedAt());
+    }
+
+    public function test_update_schedule_sets_start_end_and_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $start = new DateTimeImmutable('2026-10-10');
+        $end = new DateTimeImmutable('2026-10-12');
+        $publishedAt = new DateTimeImmutable('2026-09-01 00:00:00');
+
+        $production->updateSchedule($start, $end, $publishedAt);
+
+        $this->assertEquals($start, $production->scheduleStartDate());
+        $this->assertEquals($end, $production->scheduleEndDate());
+        $this->assertEquals($publishedAt, $production->schedulePublishedAt());
+    }
+
+    public function test_update_schedule_rejects_an_end_date_before_the_start_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $production->updateSchedule(new DateTimeImmutable('2026-10-12'), new DateTimeImmutable('2026-10-10'), null);
+    }
+
+    public function test_update_flyer_sets_url_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateFlyer('https://example.com/flyer.jpg', $publishedAt);
+
+        $this->assertSame('https://example.com/flyer.jpg', $production->flyerUrl());
+        $this->assertEquals($publishedAt, $production->flyerPublishedAt());
+    }
+
+    public function test_update_script_direction_sets_both_credits_and_one_shared_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateScriptDirection('山田太郎', '鈴木花子', $publishedAt);
+
+        $this->assertSame('山田太郎', $production->scriptCredit());
+        $this->assertSame('鈴木花子', $production->directionCredit());
+        $this->assertEquals($publishedAt, $production->scriptDirectionPublishedAt());
+    }
+
+    public function test_update_member_info_published_at_sets_the_one_shared_date_for_the_whole_roster(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $this->assertNull($production->memberInfoPublishedAt());
+
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+        $production->updateMemberInfoPublishedAt($publishedAt);
+
+        $this->assertEquals($publishedAt, $production->memberInfoPublishedAt());
+    }
 }

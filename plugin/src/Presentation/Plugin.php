@@ -317,6 +317,8 @@ final class Plugin
             $organizations,
             $people,
             $memberships,
+            $accounts,
+            $journalEntries,
             $transactions
         );
         $getOrganization    = new GetOrganizationUseCase($organizations, $organizationFollows, $authorization);

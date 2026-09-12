@@ -30,6 +30,8 @@ describe('deriveMyParticipantTypes', () => {
       status: 'ACTIVE',
       created_at: '',
       updated_at: '',
+      remarks: null,
+      display_name: null,
     },
     {
       id: 'p2',
@@ -40,6 +42,8 @@ describe('deriveMyParticipantTypes', () => {
       status: 'CANCELLED',
       created_at: '',
       updated_at: '',
+      remarks: null,
+      display_name: null,
     },
     {
       id: 'p3',
@@ -50,6 +54,8 @@ describe('deriveMyParticipantTypes', () => {
       status: 'ACTIVE',
       created_at: '',
       updated_at: '',
+      remarks: null,
+      display_name: null,
     },
   ];
 

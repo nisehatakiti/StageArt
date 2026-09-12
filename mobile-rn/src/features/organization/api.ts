@@ -20,8 +20,29 @@ export function fetchOrganizations(client: ApiClient): Promise<Organization[]> {
  * updateOrganization's slug, which is optional (only sent when the user
  * is actually changing it).
  */
-export function createOrganization(client: ApiClient, name: string, slug: string): Promise<Organization> {
-  return client.post<Organization>('/organizations', { name, slug });
+/**
+ * StageArt Phase 1 (OrganizationSetupPolicy.md "Step 2/3"): `accounting`
+ * is optional/trailing - omitting it entirely (every pre-existing call
+ * site) leaves Accounting OFF, exactly as before. When
+ * `accounting.enabled` is true, `openingCashBalance`/`openingBankBalance`
+ * are each optional Yen amounts (Step 3 - "現在の流動資産を入力する", not
+ * required to be non-zero); the backend creates 現金/預金/元入金 Accounts
+ * regardless once Accounting is enabled and additionally posts one
+ * opening-balance JournalEntry only when at least one amount is > 0.
+ */
+export function createOrganization(
+  client: ApiClient,
+  name: string,
+  slug: string,
+  accounting?: { enabled: boolean; openingCashBalance?: number; openingBankBalance?: number }
+): Promise<Organization> {
+  return client.post<Organization>('/organizations', {
+    name,
+    slug,
+    accounting_enabled: accounting?.enabled ?? false,
+    opening_cash_balance: accounting?.openingCashBalance ?? null,
+    opening_bank_balance: accounting?.openingBankBalance ?? null,
+  });
 }
 
 /**

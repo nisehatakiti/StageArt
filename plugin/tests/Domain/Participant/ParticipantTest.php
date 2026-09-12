@@ -131,4 +131,37 @@ final class ParticipantTest extends TestCase
 
         $participant->approve();
     }
+
+    public function test_create_name_only_generates_a_placeholder_subject_id_and_carries_the_display_name(): void
+    {
+        $participant = Participant::createNameOnly(ProductionId::generate(), '山田太郎', ParticipantType::cast());
+
+        $this->assertSame(ParticipantSubjectType::NAME_ONLY, $participant->subjectType()->toString());
+        $this->assertSame('山田太郎', $participant->displayName());
+        $this->assertNotEmpty($participant->subjectId());
+        $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
+    }
+
+    public function test_create_name_only_rejects_an_empty_display_name(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Participant::createNameOnly(ProductionId::generate(), '   ', ParticipantType::cast());
+    }
+
+    public function test_change_remarks_sets_and_normalizes_blank_to_null(): void
+    {
+        $participant = Participant::create(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $participant->changeRemarks('チームA');
+        $this->assertSame('チームA', $participant->remarks());
+
+        $participant->changeRemarks('   ');
+        $this->assertNull($participant->remarks());
+    }
 }

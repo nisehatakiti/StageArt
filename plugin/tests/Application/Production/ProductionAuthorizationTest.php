@@ -99,6 +99,42 @@ final class ProductionAuthorizationTest extends TestCase
         $this->assertSame('旗揚げ公演', $updated->titleHeading);
     }
 
+    public function test_primary_manager_can_update_the_information_sections_with_their_own_publication_dates(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $updated = $this->updateProduction->execute(new UpdateProductionCommand(
+            $production->id()->toString(),
+            1,
+            'Renamed Show',
+            null,
+            null,
+            null,
+            null,
+            'あらすじ本文',
+            '2026-10-01T00:00:00+09:00',
+            null,
+            null,
+            '○○ホール',
+            '2026-09-15T00:00:00+09:00',
+            '2026-10-10',
+            '2026-10-12',
+            '2026-09-01T00:00:00+09:00',
+            '山田太郎',
+            '鈴木花子',
+            '2026-09-20T00:00:00+09:00'
+        ));
+
+        $this->assertSame('あらすじ本文', $updated->description);
+        $this->assertNotNull($updated->descriptionPublishedAt);
+        $this->assertSame('○○ホール', $updated->venueName);
+        $this->assertSame('2026-10-10', $updated->scheduleStartDate);
+        $this->assertSame('2026-10-12', $updated->scheduleEndDate);
+        $this->assertSame('山田太郎', $updated->scriptCredit);
+        $this->assertSame('鈴木花子', $updated->directionCredit);
+        $this->assertNotNull($updated->scriptDirectionPublishedAt);
+    }
+
     public function test_organization_owner_without_primary_manager_or_delegate_status_cannot_read_production(): void
     {
         $production = $this->givenProduction(1);

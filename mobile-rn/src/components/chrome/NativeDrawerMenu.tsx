@@ -2,31 +2,27 @@ import { useRouter, type Href } from 'expo-router';
 import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { BrandColors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useLogout } from '@/features/mypage/useLogout';
 import { confirmAlert } from '@/utils/confirmAlert';
 
 import { useNavMenu, type NavMenuItem } from './useNavMenu';
 
 /**
- * StageArt Blueprint再構成 Phase 1 §27: Native's primary navigation
- * surface - a Hamburger Menu, not Bottom Navigation (Blueprint's
- * explicit instruction, superseding docs/04-CommonNavigationDesign.md's
- * earlier Bottom Nav design per the user's own confirmed decision).
- * `Modal` (not `Alert`) is used deliberately - react-native-web's own
- * `Alert.alert` is a no-op (see confirmAlert.web.tsx's docblock), but
- * `Modal` has a real implementation there too, already proven by that
- * same file's confirm dialog.
- *
- * Logout lives in this drawer AND is reachable via /account (Blueprint
- * §7 - "どの画面からでもアカウント管理とログアウトへ到達できる" - this
- * drawer being reachable from the header on every authenticated screen,
- * via AppChrome, is what actually satisfies that requirement).
+ * StageArt Phase 1: Native's Hamburger Menu, rebuilt around the Context
+ * Area design (same source and layout ordering as WebSidebarNav.tsx -
+ * see that file's docblock). `Modal` (not `Alert`) is used deliberately
+ * - react-native-web's own `Alert.alert` is a no-op (see
+ * confirmAlert.web.tsx's docblock), but `Modal` has a real
+ * implementation there too.
  */
 export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const router = useRouter();
-  const { basicItems, adminItems } = useNavMenu();
+  const { fixedItems, contextType, contextLabel, contextItems } = useNavMenu();
   const logout = useLogout();
+
+  const homeItem = fixedItems.find((item) => item.key === 'home')!;
+  const bottomFixedItems = fixedItems.filter((item) => item.key !== 'home');
 
   function navigateTo(href: Href) {
     onClose();
@@ -58,20 +54,26 @@ export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClo
           testID="native-drawer-backdrop"
         />
         <View style={styles.panel}>
-          {basicItems.map((item) => (
+          <DrawerLink item={homeItem} onPress={() => navigateTo(homeItem.href)} />
+
+          <View style={styles.divider} />
+
+          {contextType !== 'home' && (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.contextLabel} testID="native-drawer-context-label">
+              {contextLabel}
+            </ThemedText>
+          )}
+
+          {contextItems.map((item) => (
             <DrawerLink key={item.key} item={item} onPress={() => navigateTo(item.href)} />
           ))}
 
-          {adminItems.length > 0 && (
-            <>
-              <View style={styles.divider} />
-              {adminItems.map((item) => (
-                <DrawerLink key={item.key} item={item} onPress={() => navigateTo(item.href)} />
-              ))}
-            </>
-          )}
-
           <View style={styles.divider} />
+
+          {bottomFixedItems.map((item) => (
+            <DrawerLink key={item.key} item={item} onPress={() => navigateTo(item.href)} />
+          ))}
+
           <TouchableOpacity testID="native-drawer-logout" onPress={handleLogout} style={styles.linkRow}>
             <ThemedText type="default">ログアウト</ThemedText>
           </TouchableOpacity>
@@ -82,6 +84,16 @@ export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClo
 }
 
 function DrawerLink({ item, onPress }: { item: NavMenuItem; onPress: () => void }) {
+  if (item.disabled) {
+    return (
+      <View testID={`native-drawer-${item.key}`} style={styles.linkRow}>
+        <ThemedText type="default" themeColor="textSecondary">
+          {item.label}
+        </ThemedText>
+      </View>
+    );
+  }
+
   return (
     <TouchableOpacity testID={`native-drawer-${item.key}`} onPress={onPress} style={styles.linkRow}>
       <ThemedText type="default">{item.label}</ThemedText>
@@ -99,5 +111,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   linkRow: { paddingVertical: Spacing.three },
+  contextLabel: { paddingVertical: Spacing.one, textTransform: 'uppercase' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e1dee6', marginVertical: Spacing.two },
 });

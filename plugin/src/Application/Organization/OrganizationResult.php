@@ -16,6 +16,7 @@ final class OrganizationResult
     public ?string $description;
     public string $status;
     public ?string $publishedAt;
+    public bool $accountingEnabled;
     public string $createdAt;
     public string $updatedAt;
     public string $currentPersonRole;
@@ -29,6 +30,7 @@ final class OrganizationResult
         ?string $description,
         string $status,
         ?string $publishedAt,
+        bool $accountingEnabled,
         string $createdAt,
         string $updatedAt,
         string $currentPersonRole,
@@ -41,6 +43,7 @@ final class OrganizationResult
         $this->description = $description;
         $this->status = $status;
         $this->publishedAt = $publishedAt;
+        $this->accountingEnabled = $accountingEnabled;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
         $this->currentPersonRole = $currentPersonRole;
@@ -64,6 +67,7 @@ final class OrganizationResult
             $organization->description(),
             $organization->status()->toString(),
             $organization->publishedAt()?->format(DATE_ATOM),
+            $organization->isAccountingEnabled(),
             $organization->createdAt()->format(DATE_ATOM),
             $organization->updatedAt()->format(DATE_ATOM),
             $currentPersonRole->toString(),
@@ -84,6 +88,7 @@ final class OrganizationResult
             'description' => $this->description,
             'status' => $this->status,
             'published_at' => $this->publishedAt,
+            'accounting_enabled' => $this->accountingEnabled,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
             'current_person_role' => $this->currentPersonRole,

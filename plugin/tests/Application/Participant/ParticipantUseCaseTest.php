@@ -314,4 +314,64 @@ final class ParticipantUseCaseTest extends TestCase
         // WordPress user 2 is PrimaryManager of Production B only.
         $this->getParticipant->execute(new GetParticipantQuery($created->id, 2));
     }
+
+    public function test_primary_manager_can_register_a_name_only_member_without_a_stageart_account(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'NAME_ONLY',
+            null,
+            'CAST',
+            '山田太郎',
+            'チームA'
+        ));
+
+        $this->assertSame('NAME_ONLY', $result->subjectType);
+        $this->assertSame('山田太郎', $result->displayName);
+        $this->assertSame('チームA', $result->remarks);
+        $this->assertSame('ACTIVE', $result->status);
+    }
+
+    public function test_registering_a_name_only_member_without_a_display_name_is_rejected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $this->expectException(ParticipantSubjectNotEligibleException::class);
+
+        $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'NAME_ONLY',
+            null,
+            'CAST'
+        ));
+    }
+
+    public function test_primary_manager_can_update_a_participants_remarks(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $castPerson = Person::create(2);
+        $this->people->save($castPerson);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $castPerson->id()->toString(),
+            'CAST'
+        ));
+
+        $updated = $this->updateParticipant->execute(new UpdateParticipantCommand(
+            $created->id,
+            1,
+            'CAST',
+            'ACTIVE',
+            '○○日は出演しないので代わりに出演します'
+        ));
+
+        $this->assertSame('○○日は出演しないので代わりに出演します', $updated->remarks);
+    }
 }

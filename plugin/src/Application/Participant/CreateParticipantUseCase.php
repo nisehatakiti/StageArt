@@ -64,9 +64,30 @@ final class CreateParticipantUseCase
         }
 
         $subjectType = ParticipantSubjectType::fromString($command->subjectType);
-        $this->assertSubjectExists($subjectType, $command->subjectId);
-
         $participantType = ParticipantType::fromString($command->participantType);
+
+        if ($subjectType->equals(ParticipantSubjectType::nameOnly())) {
+            if ($command->displayName === null || trim($command->displayName) === '') {
+                throw new ParticipantSubjectNotEligibleException('displayName is required for a NAME_ONLY Participant.');
+            }
+
+            $participant = $this->transactions->run(
+                function () use ($production, $command, $participantType): Participant {
+                    $participant = Participant::createNameOnly($production->id(), $command->displayName, $participantType, $command->remarks);
+                    $this->participants->save($participant);
+
+                    return $participant;
+                }
+            );
+
+            return ParticipantResult::fromDomain($participant);
+        }
+
+        if ($command->subjectId === null || $command->subjectId === '') {
+            throw new ParticipantSubjectNotEligibleException('subjectId is required for a PERSON/ORGANIZATION Participant.');
+        }
+
+        $this->assertSubjectExists($subjectType, $command->subjectId);
 
         if ($this->participants->findByProductionAndSubject(
             $production->id(),
@@ -81,7 +102,13 @@ final class CreateParticipantUseCase
 
         $participant = $this->transactions->run(
             function () use ($production, $subjectType, $command, $participantType): Participant {
-                $participant = Participant::create($production->id(), $subjectType, $command->subjectId, $participantType);
+                $participant = Participant::create(
+                    $production->id(),
+                    $subjectType,
+                    $command->subjectId,
+                    $participantType,
+                    $command->remarks
+                );
                 $this->participants->save($participant);
 
                 return $participant;

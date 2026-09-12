@@ -36,6 +36,19 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             'status' => $production->status()->toString(),
             'published_at' => $production->publishedAt()?->format('Y-m-d H:i:s'),
             'primary_manager_person_id' => $production->primaryManagerPersonId()->toString(),
+            'description' => $production->description(),
+            'description_published_at' => $production->descriptionPublishedAt()?->format('Y-m-d H:i:s'),
+            'flyer_url' => $production->flyerUrl(),
+            'flyer_published_at' => $production->flyerPublishedAt()?->format('Y-m-d H:i:s'),
+            'venue_name' => $production->venueName(),
+            'venue_published_at' => $production->venuePublishedAt()?->format('Y-m-d H:i:s'),
+            'schedule_start_date' => $production->scheduleStartDate()?->format('Y-m-d'),
+            'schedule_end_date' => $production->scheduleEndDate()?->format('Y-m-d'),
+            'schedule_published_at' => $production->schedulePublishedAt()?->format('Y-m-d H:i:s'),
+            'script_credit' => $production->scriptCredit(),
+            'direction_credit' => $production->directionCredit(),
+            'script_direction_published_at' => $production->scriptDirectionPublishedAt()?->format('Y-m-d H:i:s'),
+            'member_info_published_at' => $production->memberInfoPublishedAt()?->format('Y-m-d H:i:s'),
             'updated_at' => $production->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -156,7 +169,20 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at']),
             $row['slug'] !== null && $row['slug'] !== '' ? new ProductionSlug($row['slug']) : null,
-            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null
+            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null,
+            $row['description'] ?? null,
+            ! empty($row['description_published_at']) ? new DateTimeImmutable($row['description_published_at']) : null,
+            $row['flyer_url'] ?? null,
+            ! empty($row['flyer_published_at']) ? new DateTimeImmutable($row['flyer_published_at']) : null,
+            $row['venue_name'] ?? null,
+            ! empty($row['venue_published_at']) ? new DateTimeImmutable($row['venue_published_at']) : null,
+            ! empty($row['schedule_start_date']) ? new DateTimeImmutable($row['schedule_start_date']) : null,
+            ! empty($row['schedule_end_date']) ? new DateTimeImmutable($row['schedule_end_date']) : null,
+            ! empty($row['schedule_published_at']) ? new DateTimeImmutable($row['schedule_published_at']) : null,
+            $row['script_credit'] ?? null,
+            $row['direction_credit'] ?? null,
+            ! empty($row['script_direction_published_at']) ? new DateTimeImmutable($row['script_direction_published_at']) : null,
+            ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null
         );
     }
 }

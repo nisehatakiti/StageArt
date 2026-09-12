@@ -154,4 +154,36 @@ final class OrganizationTest extends TestCase
 
         $this->assertSame('new-slug', $organization->slug()?->toString());
     }
+
+    public function test_accounting_is_disabled_by_default(): void
+    {
+        $organization = Organization::create(new OrganizationName('Fresh Theatre'));
+
+        $this->assertFalse($organization->isAccountingEnabled());
+    }
+
+    public function test_a_newly_created_organization_can_start_with_accounting_already_enabled(): void
+    {
+        $organization = Organization::create(new OrganizationName('Accounting From Day One'), null, null, null, true);
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
+
+    public function test_enable_accounting_turns_the_flag_on(): void
+    {
+        $organization = Organization::create(new OrganizationName('Turning It On'));
+
+        $organization->enableAccounting();
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
+
+    public function test_enable_accounting_is_idempotent(): void
+    {
+        $organization = Organization::create(new OrganizationName('Idempotent'), null, null, null, true);
+
+        $organization->enableAccounting();
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
 }

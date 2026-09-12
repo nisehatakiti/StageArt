@@ -16,6 +16,7 @@ final class Organization
     private ?string $description;
     private OrganizationStatus $status;
     private ?DateTimeImmutable $publishedAt;
+    private bool $accountingEnabled;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -27,6 +28,7 @@ final class Organization
         ?string $description,
         OrganizationStatus $status,
         ?DateTimeImmutable $publishedAt,
+        bool $accountingEnabled,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -37,6 +39,7 @@ final class Organization
         $this->description = $description;
         $this->status = $status;
         $this->publishedAt = $publishedAt;
+        $this->accountingEnabled = $accountingEnabled;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -59,7 +62,8 @@ final class Organization
         OrganizationName $name,
         ?string $type = null,
         ?string $description = null,
-        ?OrganizationSlug $slug = null
+        ?OrganizationSlug $slug = null,
+        bool $accountingEnabled = false
     ): self {
         $now = new DateTimeImmutable();
 
@@ -71,6 +75,7 @@ final class Organization
             $description,
             OrganizationStatus::active(),
             null,
+            $accountingEnabled,
             $now,
             $now
         );
@@ -85,9 +90,10 @@ final class Organization
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?OrganizationSlug $slug = null,
-        ?DateTimeImmutable $publishedAt = null
+        ?DateTimeImmutable $publishedAt = null,
+        bool $accountingEnabled = false
     ): self {
-        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $createdAt, $updatedAt);
+        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $accountingEnabled, $createdAt, $updatedAt);
     }
 
     public function rename(OrganizationName $name): void
@@ -172,6 +178,29 @@ final class Organization
     {
         $this->status = OrganizationStatus::fromString(OrganizationStatus::ARCHIVED);
         $this->touch();
+    }
+
+    /**
+     * OrganizationSetupPolicy.md §13/Step 2: Accounting is one-way -
+     * "一度有効化した後、会計履歴を失わせる目的で単純にOFFへ戻す設計は採用
+     * しない". No `disableAccounting()` exists by design. Idempotent
+     * (calling this on an already-enabled Organization is a no-op, not
+     * an error) since nothing about re-confirming an existing state is a
+     * business violation.
+     */
+    public function enableAccounting(): void
+    {
+        if ($this->accountingEnabled) {
+            return;
+        }
+
+        $this->accountingEnabled = true;
+        $this->touch();
+    }
+
+    public function isAccountingEnabled(): bool
+    {
+        return $this->accountingEnabled;
     }
 
     private function touch(): void

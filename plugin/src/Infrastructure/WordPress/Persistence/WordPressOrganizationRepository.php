@@ -34,6 +34,7 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
             'description' => $organization->description(),
             'status' => $organization->status()->toString(),
             'published_at' => $organization->publishedAt()?->format('Y-m-d H:i:s'),
+            'accounting_enabled' => $organization->isAccountingEnabled() ? 1 : 0,
             'created_at' => $organization->createdAt()->format('Y-m-d H:i:s'),
             'updated_at' => $organization->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -138,7 +139,8 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at']),
             $row['slug'] !== null && $row['slug'] !== '' ? new OrganizationSlug($row['slug']) : null,
-            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null
+            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null,
+            ! empty($row['accounting_enabled'])
         );
     }
 }

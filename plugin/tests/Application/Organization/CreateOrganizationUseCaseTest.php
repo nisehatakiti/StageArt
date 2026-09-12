@@ -11,6 +11,8 @@ use StageArt\Application\Organization\OrganizationSlugAlreadyTakenException;
 use StageArt\Domain\Organization\OrganizationId;
 use RuntimeException;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Tests\Support\InMemoryAccountRepository;
+use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -19,13 +21,28 @@ use StageArt\Tests\Support\SaveFailingMembershipRepository;
 
 final class CreateOrganizationUseCaseTest extends TestCase
 {
+    private function makeUseCase(
+        InMemoryOrganizationRepository $organizations,
+        InMemoryPersonRepository $people,
+        $memberships
+    ): CreateOrganizationUseCase {
+        return new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
+    }
+
     public function test_creating_an_organization_makes_the_requester_its_owner(): void
     {
         $organizations = new InMemoryOrganizationRepository();
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
 
-        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
 
         $result = $useCase->execute(new CreateOrganizationCommand(42, 'New Theatre', 'new-theatre'));
 
@@ -49,7 +66,7 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
 
-        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
 
         $useCase->execute(new CreateOrganizationCommand(7, 'First Org', 'first-org'));
         $useCase->execute(new CreateOrganizationCommand(7, 'Second Org', 'second-org'));
@@ -65,7 +82,7 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $people = new InMemoryPersonRepository();
         $memberships = new SaveFailingMembershipRepository(new InMemoryMembershipRepository());
 
-        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
 
         $this->expectException(RuntimeException::class);
 
@@ -83,7 +100,7 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
 
-        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
 
         $useCase->execute(new CreateOrganizationCommand(1, 'First Theatre', 'shared-slug'));
 
@@ -98,11 +115,119 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $people = new InMemoryPersonRepository();
         $memberships = new InMemoryMembershipRepository();
 
-        $useCase = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
 
         $result = $useCase->execute(new CreateOrganizationCommand(1, 'New Theatre', 'new-theatre-2'));
 
         $this->assertSame('new-theatre-2', $result->slug);
         $this->assertNull($result->publishedAt);
+    }
+
+    public function test_accounting_disabled_by_default_and_creates_no_accounts_or_journal_entries(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $accounts = new InMemoryAccountRepository();
+        $journalEntries = new InMemoryJournalEntryRepository();
+
+        $useCase = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            $accounts,
+            $journalEntries,
+            new InMemoryTransactionManager()
+        );
+
+        $result = $useCase->execute(new CreateOrganizationCommand(1, 'No Accounting Theatre', 'no-accounting'));
+
+        $this->assertFalse($result->accountingEnabled);
+        $this->assertCount(0, $accounts->findByOrganizationId(OrganizationId::fromString($result->id)));
+        $this->assertCount(0, $journalEntries->all());
+    }
+
+    public function test_enabling_accounting_with_an_opening_balance_creates_accounts_and_a_posted_opening_journal_entry(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $accounts = new InMemoryAccountRepository();
+        $journalEntries = new InMemoryJournalEntryRepository();
+
+        $useCase = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            $accounts,
+            $journalEntries,
+            new InMemoryTransactionManager()
+        );
+
+        $result = $useCase->execute(new CreateOrganizationCommand(
+            1,
+            'Accounting Theatre',
+            'accounting-theatre',
+            null,
+            null,
+            true,
+            10000,
+            50000
+        ));
+
+        $this->assertTrue($result->accountingEnabled);
+
+        $organizationAccounts = $accounts->findByOrganizationId(OrganizationId::fromString($result->id));
+        $this->assertCount(3, $organizationAccounts);
+
+        $entries = $journalEntries->all();
+        $this->assertCount(1, $entries);
+        $entry = $entries[0];
+        $this->assertTrue($entry->status()->equals(\StageArt\Domain\JournalEntry\JournalEntryStatus::fromString(\StageArt\Domain\JournalEntry\JournalEntryStatus::POSTED)));
+        $this->assertCount(3, $entry->lines());
+    }
+
+    public function test_enabling_accounting_with_no_opening_balance_still_creates_the_standard_accounts_but_no_journal_entry(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+        $accounts = new InMemoryAccountRepository();
+        $journalEntries = new InMemoryJournalEntryRepository();
+
+        $useCase = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            $accounts,
+            $journalEntries,
+            new InMemoryTransactionManager()
+        );
+
+        $result = $useCase->execute(new CreateOrganizationCommand(
+            1,
+            'Zero Balance Theatre',
+            'zero-balance-theatre',
+            null,
+            null,
+            true
+        ));
+
+        $this->assertTrue($result->accountingEnabled);
+        $this->assertCount(3, $accounts->findByOrganizationId(OrganizationId::fromString($result->id)));
+        $this->assertCount(0, $journalEntries->all());
+    }
+
+    public function test_a_negative_opening_balance_is_rejected(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $people = new InMemoryPersonRepository();
+        $memberships = new InMemoryMembershipRepository();
+
+        $useCase = $this->makeUseCase($organizations, $people, $memberships);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $useCase->execute(new CreateOrganizationCommand(1, 'Bad Theatre', 'bad-theatre', null, null, true, -1));
     }
 }

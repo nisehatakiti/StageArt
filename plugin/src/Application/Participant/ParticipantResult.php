@@ -16,6 +16,8 @@ final class ParticipantResult
     public string $status;
     public string $createdAt;
     public string $updatedAt;
+    public ?string $remarks;
+    public ?string $displayName;
 
     private function __construct(
         string $id,
@@ -25,7 +27,9 @@ final class ParticipantResult
         string $participantType,
         string $status,
         string $createdAt,
-        string $updatedAt
+        string $updatedAt,
+        ?string $remarks,
+        ?string $displayName
     ) {
         $this->id = $id;
         $this->productionId = $productionId;
@@ -35,6 +39,8 @@ final class ParticipantResult
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
+        $this->remarks = $remarks;
+        $this->displayName = $displayName;
     }
 
     public static function fromDomain(Participant $participant): self
@@ -47,7 +53,9 @@ final class ParticipantResult
             $participant->participantType()->toString(),
             $participant->status()->toString(),
             $participant->createdAt()->format(DATE_ATOM),
-            $participant->updatedAt()->format(DATE_ATOM)
+            $participant->updatedAt()->format(DATE_ATOM),
+            $participant->remarks(),
+            $participant->displayName()
         );
     }
 
@@ -65,6 +73,8 @@ final class ParticipantResult
             'status' => $this->status,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
+            'remarks' => $this->remarks,
+            'display_name' => $this->displayName,
         ];
     }
 }

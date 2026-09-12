@@ -74,6 +74,21 @@ final class UpdateProductionUseCase
             $production->unpublish();
         }
 
+        $production->updateDescription($command->description, $this->parseOptionalDateTime($command->descriptionPublishedAt));
+        $production->updateFlyer($command->flyerUrl, $this->parseOptionalDateTime($command->flyerPublishedAt));
+        $production->updateVenue($command->venueName, $this->parseOptionalDateTime($command->venuePublishedAt));
+        $production->updateSchedule(
+            $this->parseOptionalDateTime($command->scheduleStartDate),
+            $this->parseOptionalDateTime($command->scheduleEndDate),
+            $this->parseOptionalDateTime($command->schedulePublishedAt)
+        );
+        $production->updateScriptDirection(
+            $command->scriptCredit,
+            $command->directionCredit,
+            $this->parseOptionalDateTime($command->scriptDirectionPublishedAt)
+        );
+        $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
+
         $this->productions->save($production);
 
         return ProductionResult::fromDomain(

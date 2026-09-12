@@ -95,6 +95,7 @@ export type Organization = {
   status: string;
   slug: string | null;
   published_at: string | null;
+  accounting_enabled: boolean;
   created_at: string;
   updated_at: string;
   current_person_role: string;
@@ -175,6 +176,19 @@ export type Production = {
   updated_at: string;
   is_primary_manager: boolean;
   delegate_role: string | null;
+  description: string | null;
+  description_published_at: string | null;
+  flyer_url: string | null;
+  flyer_published_at: string | null;
+  venue_name: string | null;
+  venue_published_at: string | null;
+  schedule_start_date: string | null;
+  schedule_end_date: string | null;
+  schedule_published_at: string | null;
+  script_credit: string | null;
+  direction_credit: string | null;
+  script_direction_published_at: string | null;
+  member_info_published_at: string | null;
 };
 
 /**
@@ -207,6 +221,8 @@ export type Participant = {
   status: string;
   created_at: string;
   updated_at: string;
+  remarks: string | null;
+  display_name: string | null;
 };
 
 export type TimetableItem = {

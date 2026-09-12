@@ -1,100 +1,159 @@
-import type { Href } from 'expo-router';
+import { usePathname, type Href } from 'expo-router';
 
-import { useHasAccountingActivity } from '@/features/accounting/useHasAccountingActivity';
 import { useOrganizations } from '@/features/organization/useOrganizations';
-import { useMyManagedProductions } from '@/features/production/useMyManagedProductions';
-import type { Organization } from '@/types/api';
+import { useProduction } from '@/features/production/useProductions';
 
-/** See this file's own docblock (§9 correction) for why OWNER is the
- * accurate definition today rather than a placeholder for "admin" -
- * update this single function, not its call sites, once an
- * Organization-scope Delegate exists in the Domain. */
-function hasOrganizationManagementPermission(organization: Organization): boolean {
-  return organization.current_person_role === 'OWNER';
-}
+export type NavMenuItem = { key: string; label: string; href: Href; disabled?: boolean };
 
-export type NavMenuItem = { key: string; label: string; href: Href };
+export type ContextAreaType = 'home' | 'organization' | 'production';
 
 /**
- * StageArt Blueprint再構成 Phase 1 §8: the common menu(団体を探す/公演を
- * 探す/プロフィール/経費精算/アカウント管理) plus the conditional admin menu
- * (団体情報/公演情報), computed once here so both WebSidebarNav and
- * NativeDrawerMenu render the exact same items from the exact same
- * authorization source instead of re-deriving it.
+ * StageArt Phase 1 (docs/04-CommonNavigationDesign.md, Context Area
+ * design confirmed 2026-09-07, `c06cc8d`, adopted over
+ * docs/12-FunctionalStructure.md §15.1's un-migrated flat-menu text
+ * per explicit user decision during this Phase's pre-work
+ * reconciliation - see this Phase's completion report): which Context
+ * is active is derived purely from the current route, not from any
+ * sticky "last selected Organization" state (OrganizationContext.tsx
+ * serves a different purpose - Query scoping - and does not reset when
+ * navigating away, so it cannot answer "what is the user looking at
+ * right now").
  *
- * StageArt Blueprint再構成 Phase 1c §3: "経費精算" is shown only when
- * `useHasAccountingActivity()` finds real accounting data (Budget/
- * Actual) on a Production the Person is affiliated with - see that
- * hook's own docblock for why this is Production-affiliation-only (no
- * Organization-level accounting summary endpoint exists to check
- * against literally). Not gated on management permission - §3's own
- * condition is "所属・参加している", not "管理権限を持つ".
- *
- * Admin menu items resolve directly to the one Organization/Production
- * the Person manages when there's exactly one (mirrors home.tsx's own
- * "single Membership auto-selects" precedent), otherwise to the list
- * screen - no new picker UI needed for this Phase.
- *
- * StageArt Blueprint再構成 Phase 1 §9 (2026-09-02 correction): "団体情報"
- * must show for anyone holding Organization management permission, not
- * "OWNER" as a permanent hardcoded definition - Organization
- * Administrators are meant to sit alongside an Organization-scope
- * Management Delegate. Checked the current Domain/API for one
- * (RoleKey.php, OrganizationAuthorizationService.php, Membership
- * fields exposed on `Organization`): **no Organization-scope Delegate
- * exists today** - Delegate is a Production-only concept
- * (`ProductionDelegate`/`delegate_role`, used below for "公演情報").
- * `current_person_role === 'OWNER'` is therefore not a stand-in for
- * "has admin permission" - for Organization scope it currently *is*
- * the complete, accurate definition (the only two Roles are
- * OWNER/MEMBER). This is a real Domain gap, not a Navigation-layer
- * shortcut: flagged in the Phase 1 report rather than inventing an
- * Organization Delegate concept here. Once one exists, replace this
- * check with the equivalent "has Organization management permission"
- * read (mirroring how `hasProductionManagementPermission` below reads
- * `is_primary_manager || delegate_role` instead of a single Role).
- *
- * Production's own admin check deliberately does NOT look at
- * Participant status (Phase 9's concern, not Navigation's) - a Person
- * can be an ACTIVE Production Participant without holding any
- * management permission, and this menu must not conflate the two
- * (Blueprint §5, §9).
+ * Matches `/organizations/{id}/...` (excluding the literal `/organizations/create`
+ * segment) and `/production(s)/{id}/...` (both the Web card-grid family
+ * `productions/[id]/...` and the native Tab-shell family
+ * `production/[id]/...` resolve to the same Production Context).
  */
-export function useNavMenu() {
-  const organizationsQuery = useOrganizations();
-  const managedProductionsQuery = useMyManagedProductions();
-  const hasAccountingActivity = useHasAccountingActivity();
+function useCurrentContext(): { type: ContextAreaType; organizationId: string | null; productionId: string | null } {
+  const pathname = usePathname();
 
-  const basicItems: NavMenuItem[] = [
-    { key: 'discover-organizations', label: '団体を探す', href: '/discover-organizations' as Href },
-    { key: 'discover-productions', label: '公演を探す', href: '/discover-productions' as Href },
-    { key: 'profile', label: 'プロフィール', href: '/profile' as Href },
-    ...(hasAccountingActivity ? [{ key: 'accounting', label: '経費精算', href: '/participating-productions' as Href }] : []),
-    { key: 'account', label: 'アカウント管理', href: '/account' as Href },
+  const orgMatch = pathname.match(/^\/organizations\/([^/]+)(\/|$)/);
+  if (orgMatch && orgMatch[1] !== 'create') {
+    return { type: 'organization', organizationId: orgMatch[1], productionId: null };
+  }
+
+  const prodMatch = pathname.match(/^\/productions?\/([^/]+)(\/|$)/);
+  if (prodMatch && prodMatch[1] !== 'create') {
+    return { type: 'production', organizationId: null, productionId: prodMatch[1] };
+  }
+
+  return { type: 'home', organizationId: null, productionId: null };
+}
+
+/**
+ * Home Context (§4 of this Phase's instruction): entry points that
+ * already have a real destination screen. お知らせ/通知/稽古予定 are
+ * intentionally NOT items here - they are not their own screens, they
+ * already render inline on Home itself (PersonalOverviewSection, see
+ * home.tsx) and adding a duplicate Context Area entry for them would
+ * not "reuse existing implemented wiring", it would just be a second
+ * path to content already visible on the page the user is on.
+ */
+const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
+  { key: 'discover-organizations', label: '団体を探す', href: '/discover-organizations' as Href },
+  { key: 'discover-productions', label: '公演を探す', href: '/discover-productions' as Href },
+  { key: 'favorites', label: 'お気に入り', href: '/favorites' as Href },
+  { key: 'my-organizations', label: '所属団体', href: '/organizations' as Href },
+  { key: 'participating-productions', label: '参加中の公演・活動', href: '/participating-productions' as Href },
+  { key: 'viewing-history', label: '観劇履歴', href: '/viewing-history' as Href },
+];
+
+/**
+ * Mirrors organizations/[id]/index.tsx's own menuGrid gating exactly
+ * (団体情報: disabled for non-Owner; 参加申請/招待: Owner-only, omitted
+ * rather than disabled for everyone else; メンバー/公演一覧: always
+ * available) so the Context Area never offers a link the target screen
+ * itself would refuse.
+ */
+function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuItem[] {
+  const items: NavMenuItem[] = [
+    { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
+    { key: 'organization-members', label: 'メンバー', href: `/organizations/${id}/members` as Href },
   ];
 
-  const organizationsWithManagementPermission = organizationsQuery.data?.filter(hasOrganizationManagementPermission) ?? [];
-  const managedProductions = managedProductionsQuery.data ?? [];
-
-  const adminItems: NavMenuItem[] = [];
-
-  if (organizationsWithManagementPermission.length > 0) {
-    adminItems.push({
-      key: 'org-admin',
-      label: '団体情報',
-      href: (organizationsWithManagementPermission.length === 1
-        ? `/organizations/${organizationsWithManagementPermission[0].id}`
-        : '/organizations') as Href,
-    });
+  if (isOwner) {
+    items.push(
+      { key: 'organization-requests', label: '参加申請', href: `/organizations/${id}/membership-requests` as Href },
+      { key: 'organization-invite', label: '招待', href: `/organizations/${id}/invite` as Href }
+    );
   }
 
-  if (managedProductions.length > 0) {
-    adminItems.push({
-      key: 'production-admin',
-      label: '公演情報',
-      href: (managedProductions.length === 1 ? `/productions/${managedProductions[0].id}` : '/participating-productions') as Href,
-    });
+  items.push({ key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href });
+
+  return items;
+}
+
+/**
+ * Production Context basic structure per this Phase's explicit
+ * instruction §4. チケット管理／小屋入り～本番／公演終了・精算処理 are
+ * rendered as disabled placeholders: the menu shape is allowed to exist
+ * ahead of the feature (instruction §4/§6 - "将来配置されることを前提に
+ * するのは問題ない"), but nothing behind them is built this Phase, so
+ * they must not be clickable dead ends.
+ *
+ * Mirrors productions/[id]/index.tsx's own menuGrid gating exactly
+ * (公演情報: disabled for non-Primary-Manager; メンバー管理: disabled
+ * unless Primary Manager or a PARTICIPANT_MANAGER Delegate; 稽古管理:
+ * always available). チケット管理／小屋入り～本番／公演終了・精算処理 are
+ * always disabled this Phase - see this file's own docblock.
+ */
+function buildProductionContextItems(id: string, isPrimaryManager: boolean, canManageParticipants: boolean): NavMenuItem[] {
+  return [
+    { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
+    { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
+    { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
+    { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}` as Href, disabled: true },
+    { key: 'production-reception', label: '小屋入り～本番', href: `/productions/${id}` as Href, disabled: true },
+    { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}` as Href, disabled: true },
+  ];
+}
+
+/**
+ * Fixed area (§2 of this Phase's instruction): always the same four
+ * destinations regardless of Context. There is no dedicated マイページ
+ * or 設定 screen - per this Phase's explicit instruction ("プロフィールは
+ * 共通固定領域の「マイページ」配下", "アカウント管理は共通固定領域の「設定」
+ * 配下"), these fixed items ARE the entry point that existing プロフィール
+ * (/profile) and アカウント管理 (/account) screens already serve, not a
+ * new screen wrapping them.
+ */
+const FIXED_ITEMS: NavMenuItem[] = [
+  { key: 'home', label: 'ホーム', href: '/home' as Href },
+  { key: 'mypage', label: 'マイページ', href: '/profile' as Href },
+  { key: 'settings', label: '設定', href: '/account' as Href },
+];
+
+export function useNavMenu() {
+  const context = useCurrentContext();
+  const organizationsQuery = useOrganizations();
+  const productionQuery = useProduction(context.productionId ?? undefined);
+
+  if (context.type === 'organization' && context.organizationId) {
+    const organization = organizationsQuery.data?.find((org) => org.id === context.organizationId);
+    return {
+      fixedItems: FIXED_ITEMS,
+      contextType: 'organization' as const,
+      contextLabel: organization?.name ?? '団体',
+      contextItems: buildOrganizationContextItems(context.organizationId, organization?.current_person_role === 'OWNER'),
+    };
   }
 
-  return { basicItems, adminItems };
+  if (context.type === 'production' && context.productionId) {
+    const production = productionQuery.data;
+    const isPrimaryManager = !!production?.is_primary_manager;
+    const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
+    return {
+      fixedItems: FIXED_ITEMS,
+      contextType: 'production' as const,
+      contextLabel: production?.name ?? '公演',
+      contextItems: buildProductionContextItems(context.productionId, isPrimaryManager, canManageParticipants),
+    };
+  }
+
+  return {
+    fixedItems: FIXED_ITEMS,
+    contextType: 'home' as const,
+    contextLabel: 'ホーム',
+    contextItems: HOME_CONTEXT_ITEMS,
+  };
 }

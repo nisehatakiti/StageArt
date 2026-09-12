@@ -309,7 +309,20 @@ final class ProductionRestController
                 $this->stringOrNull($request->get_param('title_heading')),
                 $this->stringOrNull($slugParam),
                 $publishedParam === null ? null : (bool) $publishedParam,
-                $this->stringOrNull($request->get_param('published_at'))
+                $this->stringOrNull($request->get_param('published_at')),
+                $this->stringOrNull($request->get_param('description')),
+                $this->stringOrNull($request->get_param('description_published_at')),
+                $this->stringOrNull($request->get_param('flyer_url')),
+                $this->stringOrNull($request->get_param('flyer_published_at')),
+                $this->stringOrNull($request->get_param('venue_name')),
+                $this->stringOrNull($request->get_param('venue_published_at')),
+                $this->stringOrNull($request->get_param('schedule_start_date')),
+                $this->stringOrNull($request->get_param('schedule_end_date')),
+                $this->stringOrNull($request->get_param('schedule_published_at')),
+                $this->stringOrNull($request->get_param('script_credit')),
+                $this->stringOrNull($request->get_param('direction_credit')),
+                $this->stringOrNull($request->get_param('script_direction_published_at')),
+                $this->stringOrNull($request->get_param('member_info_published_at'))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);

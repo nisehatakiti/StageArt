@@ -31,6 +31,37 @@ final class Production
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
+    /**
+     * StageArt Phase 1 (docs/12-FunctionalStructure.md §20.5 "Public
+     * Information and Publication Date/Time"): five independently-
+     * publishable Production Information sections, each with its own
+     * publication date/time separate from the whole-Production
+     * `publishedAt` above (which gates the Production's public page
+     * existing at all - these five gate each section's own visibility
+     * once the page exists). 脚本/演出 share one publication date/time
+     * per the Blueprint's screen layout (one "情報公開日時" field under a
+     * single "脚本 / 演出" section, not two).
+     */
+    private ?string $description;
+    private ?DateTimeImmutable $descriptionPublishedAt;
+    private ?string $flyerUrl;
+    private ?DateTimeImmutable $flyerPublishedAt;
+    private ?string $venueName;
+    private ?DateTimeImmutable $venuePublishedAt;
+    private ?DateTimeImmutable $scheduleStartDate;
+    private ?DateTimeImmutable $scheduleEndDate;
+    private ?DateTimeImmutable $schedulePublishedAt;
+    private ?string $scriptCredit;
+    private ?string $directionCredit;
+    private ?DateTimeImmutable $scriptDirectionPublishedAt;
+    /**
+     * §21.7 "Member Information Publication Date/Time": one publication
+     * date/time for the entire Production member list (not per-member) -
+     * a sixth independently-publishable section alongside description/
+     * flyer/venue/schedule/script-direction above.
+     */
+    private ?DateTimeImmutable $memberInfoPublishedAt;
+
     private function __construct(
         ProductionId $id,
         ProjectId $projectId,
@@ -41,7 +72,20 @@ final class Production
         ?DateTimeImmutable $publishedAt,
         PersonId $primaryManagerPersonId,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $description = null,
+        ?DateTimeImmutable $descriptionPublishedAt = null,
+        ?string $flyerUrl = null,
+        ?DateTimeImmutable $flyerPublishedAt = null,
+        ?string $venueName = null,
+        ?DateTimeImmutable $venuePublishedAt = null,
+        ?DateTimeImmutable $scheduleStartDate = null,
+        ?DateTimeImmutable $scheduleEndDate = null,
+        ?DateTimeImmutable $schedulePublishedAt = null,
+        ?string $scriptCredit = null,
+        ?string $directionCredit = null,
+        ?DateTimeImmutable $scriptDirectionPublishedAt = null,
+        ?DateTimeImmutable $memberInfoPublishedAt = null
     ) {
         $this->id = $id;
         $this->projectId = $projectId;
@@ -53,6 +97,19 @@ final class Production
         $this->primaryManagerPersonId = $primaryManagerPersonId;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
+        $this->description = $description;
+        $this->descriptionPublishedAt = $descriptionPublishedAt;
+        $this->flyerUrl = $flyerUrl;
+        $this->flyerPublishedAt = $flyerPublishedAt;
+        $this->venueName = $venueName;
+        $this->venuePublishedAt = $venuePublishedAt;
+        $this->scheduleStartDate = $scheduleStartDate;
+        $this->scheduleEndDate = $scheduleEndDate;
+        $this->schedulePublishedAt = $schedulePublishedAt;
+        $this->scriptCredit = $scriptCredit;
+        $this->directionCredit = $directionCredit;
+        $this->scriptDirectionPublishedAt = $scriptDirectionPublishedAt;
+        $this->memberInfoPublishedAt = $memberInfoPublishedAt;
     }
 
     /**
@@ -97,7 +154,20 @@ final class Production
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?ProductionSlug $slug = null,
-        ?DateTimeImmutable $publishedAt = null
+        ?DateTimeImmutable $publishedAt = null,
+        ?string $description = null,
+        ?DateTimeImmutable $descriptionPublishedAt = null,
+        ?string $flyerUrl = null,
+        ?DateTimeImmutable $flyerPublishedAt = null,
+        ?string $venueName = null,
+        ?DateTimeImmutable $venuePublishedAt = null,
+        ?DateTimeImmutable $scheduleStartDate = null,
+        ?DateTimeImmutable $scheduleEndDate = null,
+        ?DateTimeImmutable $schedulePublishedAt = null,
+        ?string $scriptCredit = null,
+        ?string $directionCredit = null,
+        ?DateTimeImmutable $scriptDirectionPublishedAt = null,
+        ?DateTimeImmutable $memberInfoPublishedAt = null
     ): self {
         return new self(
             $id,
@@ -109,7 +179,20 @@ final class Production
             $publishedAt,
             $primaryManagerPersonId,
             $createdAt,
-            $updatedAt
+            $updatedAt,
+            $description,
+            $descriptionPublishedAt,
+            $flyerUrl,
+            $flyerPublishedAt,
+            $venueName,
+            $venuePublishedAt,
+            $scheduleStartDate,
+            $scheduleEndDate,
+            $schedulePublishedAt,
+            $scriptCredit,
+            $directionCredit,
+            $scriptDirectionPublishedAt,
+            $memberInfoPublishedAt
         );
     }
 
@@ -311,6 +394,80 @@ final class Production
         $this->touch();
     }
 
+    /**
+     * §20.5: each of these five sections is saved together with its own
+     * publication date/time via the Production Information screen's
+     * single [保存] button - one Domain call per section, value and
+     * publish date/time set together, matching how the UI actually
+     * submits them.
+     */
+    public function updateDescription(?string $description, ?DateTimeImmutable $publishedAt): void
+    {
+        $this->description = self::normalizeNullableString($description);
+        $this->descriptionPublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    /**
+     * `flyerUrl` is the uploaded flyer's resulting URL - actual image
+     * upload/normalization (Asset Policy's 1600px/600px pipeline) is
+     * infrastructure this Phase does not build (no such pipeline exists
+     * anywhere in this codebase yet for any Organization/Production/
+     * Person image - a pre-existing, cross-cutting gap, not specific to
+     * this field). This method only records where the flyer lives once
+     * uploaded by whatever mechanism eventually provides one.
+     */
+    public function updateFlyer(?string $flyerUrl, ?DateTimeImmutable $publishedAt): void
+    {
+        $this->flyerUrl = self::normalizeNullableString($flyerUrl);
+        $this->flyerPublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    public function updateVenue(?string $venueName, ?DateTimeImmutable $publishedAt): void
+    {
+        $this->venueName = self::normalizeNullableString($venueName);
+        $this->venuePublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    public function updateSchedule(?DateTimeImmutable $startDate, ?DateTimeImmutable $endDate, ?DateTimeImmutable $publishedAt): void
+    {
+        if ($startDate !== null && $endDate !== null && $endDate < $startDate) {
+            throw new InvalidArgumentException('Production schedule end date must not be before its start date.');
+        }
+
+        $this->scheduleStartDate = $startDate;
+        $this->scheduleEndDate = $endDate;
+        $this->schedulePublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    public function updateScriptDirection(?string $scriptCredit, ?string $directionCredit, ?DateTimeImmutable $publishedAt): void
+    {
+        $this->scriptCredit = self::normalizeNullableString($scriptCredit);
+        $this->directionCredit = self::normalizeNullableString($directionCredit);
+        $this->scriptDirectionPublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    public function updateMemberInfoPublishedAt(?DateTimeImmutable $publishedAt): void
+    {
+        $this->memberInfoPublishedAt = $publishedAt;
+        $this->touch();
+    }
+
+    private static function normalizeNullableString(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
     private function touch(): void
     {
         $this->updatedAt = new DateTimeImmutable();
@@ -364,5 +521,70 @@ final class Production
     public function updatedAt(): DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function description(): ?string
+    {
+        return $this->description;
+    }
+
+    public function descriptionPublishedAt(): ?DateTimeImmutable
+    {
+        return $this->descriptionPublishedAt;
+    }
+
+    public function flyerUrl(): ?string
+    {
+        return $this->flyerUrl;
+    }
+
+    public function flyerPublishedAt(): ?DateTimeImmutable
+    {
+        return $this->flyerPublishedAt;
+    }
+
+    public function venueName(): ?string
+    {
+        return $this->venueName;
+    }
+
+    public function venuePublishedAt(): ?DateTimeImmutable
+    {
+        return $this->venuePublishedAt;
+    }
+
+    public function scheduleStartDate(): ?DateTimeImmutable
+    {
+        return $this->scheduleStartDate;
+    }
+
+    public function scheduleEndDate(): ?DateTimeImmutable
+    {
+        return $this->scheduleEndDate;
+    }
+
+    public function schedulePublishedAt(): ?DateTimeImmutable
+    {
+        return $this->schedulePublishedAt;
+    }
+
+    public function scriptCredit(): ?string
+    {
+        return $this->scriptCredit;
+    }
+
+    public function directionCredit(): ?string
+    {
+        return $this->directionCredit;
+    }
+
+    public function scriptDirectionPublishedAt(): ?DateTimeImmutable
+    {
+        return $this->scriptDirectionPublishedAt;
+    }
+
+    public function memberInfoPublishedAt(): ?DateTimeImmutable
+    {
+        return $this->memberInfoPublishedAt;
     }
 }

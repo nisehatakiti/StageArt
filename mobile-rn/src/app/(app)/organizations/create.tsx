@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, TouchableOpacity } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -51,6 +51,9 @@ export default function CreateOrganizationScreen() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugEditedManually, setSlugEditedManually] = useState(false);
+  const [accountingEnabled, setAccountingEnabled] = useState(false);
+  const [cashBalance, setCashBalance] = useState('');
+  const [bankBalance, setBankBalance] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedOrganization | null>(null);
@@ -87,7 +90,11 @@ export default function CreateOrganizationScreen() {
     setErrorMessage(null);
 
     try {
-      const organization = await createOrganization(apiClient, name.trim(), slug);
+      const organization = await createOrganization(apiClient, name.trim(), slug, {
+        enabled: accountingEnabled,
+        openingCashBalance: accountingEnabled && cashBalance.trim() !== '' ? Number(cashBalance) : undefined,
+        openingBankBalance: accountingEnabled && bankBalance.trim() !== '' ? Number(bankBalance) : undefined,
+      });
       await createProject(apiClient, organization.id);
       selectOrganization(organization.id);
       // Without this, Home's GET /organizations list (queryKey ['organizations'])
@@ -252,6 +259,51 @@ export default function CreateOrganizationScreen() {
           </ThemedText>
         )}
 
+        <ThemedText type="subtitle" style={styles.sectionTitle}>
+          会計
+        </ThemedText>
+        <ThemedText themeColor="textSecondary" style={styles.body}>
+          会計機能を有効にすると、団体の収支を記録できます。後から有効化できますが、一度有効にした後は無効へ戻せません。
+        </ThemedText>
+
+        <TouchableOpacity
+          testID="create-organization-accounting-toggle-row"
+          style={styles.switchRow}
+          onPress={() => setAccountingEnabled((value) => !value)}
+          activeOpacity={1}
+        >
+          <ThemedText>会計を使用する</ThemedText>
+          <Switch testID="create-organization-accounting-toggle" value={accountingEnabled} onValueChange={setAccountingEnabled} />
+        </TouchableOpacity>
+
+        {accountingEnabled && (
+          <>
+            <ThemedText type="small" themeColor="textSecondary">
+              現金（開始残高）
+            </ThemedText>
+            <ThemedTextInput
+              testID="create-organization-cash-balance"
+              placeholder="0"
+              value={cashBalance}
+              onChangeText={setCashBalance}
+              keyboardType="numeric"
+              style={styles.input}
+            />
+
+            <ThemedText type="small" themeColor="textSecondary">
+              預金（開始残高）
+            </ThemedText>
+            <ThemedTextInput
+              testID="create-organization-bank-balance"
+              placeholder="0"
+              value={bankBalance}
+              onChangeText={setBankBalance}
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          </>
+        )}
+
         {errorMessage && (
           <ThemedText testID="create-organization-error" style={styles.error}>
             {errorMessage}
@@ -274,7 +326,15 @@ export default function CreateOrganizationScreen() {
 const styles = StyleSheet.create({
   container: { padding: Spacing.four, gap: Spacing.two },
   title: { fontSize: 22, lineHeight: 28 },
+  sectionTitle: { fontSize: 18, marginTop: Spacing.three },
   body: { marginBottom: Spacing.two },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.two,
+    marginBottom: Spacing.two,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { cancelParticipant, fetchParticipants } from './api';
+import { cancelParticipant, createNameOnlyParticipant, fetchParticipants, updateParticipant } from './api';
 
 export function useParticipants(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -20,6 +20,28 @@ export function useCancelParticipant(productionId: string | undefined) {
 
   return useMutation({
     mutationFn: (participantId: string) => cancelParticipant(apiClient, participantId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['participants', productionId] }),
+  });
+}
+
+export function useCreateNameOnlyParticipant(productionId: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (fields: { displayName: string; participantType: string; remarks?: string | null }) =>
+      createNameOnlyParticipant(apiClient, productionId as string, fields),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['participants', productionId] }),
+  });
+}
+
+export function useUpdateParticipant(productionId: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, ...fields }: { id: string; participantType: string; status: string; remarks?: string | null }) =>
+      updateParticipant(apiClient, id, fields),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['participants', productionId] }),
   });
 }

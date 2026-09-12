@@ -17,6 +17,19 @@ const baseProduction: Production = {
   updated_at: '',
   is_primary_manager: true,
   delegate_role: null,
+  description: null,
+  description_published_at: null,
+  flyer_url: null,
+  flyer_published_at: null,
+  venue_name: null,
+  venue_published_at: null,
+  schedule_start_date: null,
+  schedule_end_date: null,
+  schedule_published_at: null,
+  script_credit: null,
+  direction_credit: null,
+  script_direction_published_at: null,
+  member_info_published_at: null,
 };
 
 describe('ProductionCard: title heading (Phase 7.1)', () => {

@@ -45,6 +45,12 @@ export default function ProductionEditScreen() {
   const [name, setName] = useState('');
   const [titleHeading, setTitleHeading] = useState('');
   const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [venueName, setVenueName] = useState('');
+  const [scheduleStartDate, setScheduleStartDate] = useState('');
+  const [scheduleEndDate, setScheduleEndDate] = useState('');
+  const [scriptCredit, setScriptCredit] = useState('');
+  const [directionCredit, setDirectionCredit] = useState('');
   const [initialized, setInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -54,6 +60,12 @@ export default function ProductionEditScreen() {
       setName(production.name);
       setTitleHeading(production.title_heading ?? '');
       setSlug(production.slug ?? '');
+      setDescription(production.description ?? '');
+      setVenueName(production.venue_name ?? '');
+      setScheduleStartDate(production.schedule_start_date ?? '');
+      setScheduleEndDate(production.schedule_end_date ?? '');
+      setScriptCredit(production.script_credit ?? '');
+      setDirectionCredit(production.direction_credit ?? '');
       setInitialized(true);
     }
   }, [production, initialized]);
@@ -71,10 +83,35 @@ export default function ProductionEditScreen() {
     setErrorMessage(null);
 
     try {
+      const trimmedDescription = description.trim() || null;
+      const trimmedVenue = venueName.trim() || null;
+      const trimmedScript = scriptCredit.trim() || null;
+      const trimmedDirection = directionCredit.trim() || null;
+      const trimmedStart = scheduleStartDate.trim() || null;
+      const trimmedEnd = scheduleEndDate.trim() || null;
+      const now = new Date().toISOString();
+
       await updateProduction(apiClient, production.id, {
         name: name.trim(),
         titleHeading: titleHeading.trim() ? titleHeading.trim() : null,
         slug: slugChanged ? slug : undefined,
+        description: trimmedDescription,
+        // §20.5: each section keeps its own publication date/time once
+        // set (a scheduled/future date is not overwritten just because
+        // the section was saved again); the first time a section gets
+        // non-empty content, it publishes immediately. A dedicated
+        // per-section date/time picker (scheduling publication for a
+        // future moment) is not built this Phase - see this Phase's
+        // report.
+        descriptionPublishedAt: trimmedDescription ? production.description_published_at ?? now : null,
+        venueName: trimmedVenue,
+        venuePublishedAt: trimmedVenue ? production.venue_published_at ?? now : null,
+        scheduleStartDate: trimmedStart,
+        scheduleEndDate: trimmedEnd,
+        schedulePublishedAt: trimmedStart || trimmedEnd ? production.schedule_published_at ?? now : null,
+        scriptCredit: trimmedScript,
+        directionCredit: trimmedDirection,
+        scriptDirectionPublishedAt: trimmedScript || trimmedDirection ? production.script_direction_published_at ?? now : null,
       });
       await queryClient.invalidateQueries({ queryKey: ['production', production.id] });
       await queryClient.invalidateQueries({ queryKey: ['productions'] });
@@ -159,6 +196,63 @@ export default function ProductionEditScreen() {
           </ThemedText>
         )}
 
+        <ThemedText type="small" themeColor="textSecondary">
+          公演説明（任意）
+        </ThemedText>
+        <ThemedTextInput
+          testID="production-edit-description"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          style={[styles.input, styles.multilineInput]}
+        />
+
+        <ThemedText type="small" themeColor="textSecondary">
+          会場名（任意）
+        </ThemedText>
+        <ThemedTextInput testID="production-edit-venue" value={venueName} onChangeText={setVenueName} style={styles.input} />
+
+        <ThemedText type="small" themeColor="textSecondary">
+          日程（開始日 〜 終了日、任意・YYYY-MM-DD）
+        </ThemedText>
+        <View style={styles.row}>
+          <ThemedTextInput
+            testID="production-edit-schedule-start"
+            value={scheduleStartDate}
+            onChangeText={setScheduleStartDate}
+            placeholder="YYYY-MM-DD"
+            style={[styles.input, styles.rowInput]}
+          />
+          <ThemedText>〜</ThemedText>
+          <ThemedTextInput
+            testID="production-edit-schedule-end"
+            value={scheduleEndDate}
+            onChangeText={setScheduleEndDate}
+            placeholder="YYYY-MM-DD"
+            style={[styles.input, styles.rowInput]}
+          />
+        </View>
+
+        <ThemedText type="small" themeColor="textSecondary">
+          脚本 / 演出（任意）
+        </ThemedText>
+        <View style={styles.row}>
+          <ThemedTextInput
+            testID="production-edit-script-credit"
+            value={scriptCredit}
+            onChangeText={setScriptCredit}
+            placeholder="脚本"
+            style={[styles.input, styles.rowInput]}
+          />
+          <ThemedTextInput
+            testID="production-edit-direction-credit"
+            value={directionCredit}
+            onChangeText={setDirectionCredit}
+            placeholder="演出"
+            style={[styles.input, styles.rowInput]}
+          />
+        </View>
+
         {errorMessage && (
           <ThemedText testID="production-edit-error" style={styles.error}>
             {errorMessage}
@@ -196,6 +290,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   error: { color: '#a6483a', marginBottom: Spacing.two },
+  multilineInput: { minHeight: 96, textAlignVertical: 'top' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  rowInput: { flex: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.four, marginTop: Spacing.two },
   button: {
     backgroundColor: BrandColors.warmAmber,
