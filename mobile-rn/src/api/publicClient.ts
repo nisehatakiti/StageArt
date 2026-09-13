@@ -11,7 +11,7 @@ import { ApiError, NetworkError } from './errors';
  * ApiError/NetworkError shape so callers get identical error handling
  * regardless of which client made the request.
  */
-async function publicRequest<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+async function publicRequest<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
   let response: Response;
 
   try {
@@ -49,4 +49,11 @@ export function publicGet<T>(path: string): Promise<T> {
 
 export function publicPost<T>(path: string, body?: unknown): Promise<T> {
   return publicRequest<T>('POST', path, body);
+}
+
+/** Phase 3 Ticket/Reservation基盤: added for the self-service Reservation
+ * change endpoint (`PUT /reservations/{number}`) - the first public,
+ * unauthenticated PUT this codebase needed. */
+export function publicPut<T>(path: string, body?: unknown): Promise<T> {
+  return publicRequest<T>('PUT', path, body);
 }

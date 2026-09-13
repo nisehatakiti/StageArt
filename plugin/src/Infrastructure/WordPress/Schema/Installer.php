@@ -7,6 +7,7 @@ namespace StageArt\Infrastructure\WordPress\Schema;
 use StageArt\Accounting\AccountingInstaller;
 use StageArt\Performance\PerformanceInstaller;
 use StageArt\Rehearsal\RehearsalInstaller;
+use StageArt\Ticket\TicketInstaller;
 
 /**
  * StageArt Core/Module Architecture Phase 3: this class is now Core's
@@ -237,6 +238,16 @@ final class Installer
             member_info_published_at DATETIME NULL,
             capacity INT NULL,
             performance_common_remarks TEXT NULL,
+            ticket_publication_at DATETIME NULL,
+            ticket_sales_start_at DATETIME NULL,
+            ticket_sales_end_rule VARCHAR(30) NULL,
+            ticket_sales_end_parameter VARCHAR(20) NULL,
+            quota_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            quota_count INT NULL,
+            quota_buyback_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            quota_shortfall_unit_price INT NULL,
+            ticket_back_mode VARCHAR(20) NULL,
+            ticket_back_rules TEXT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -293,6 +304,13 @@ final class Installer
         // PerformanceInstaller, not created here - see that class's own
         // docblock, and RehearsalInstaller's identical precedent above.
         PerformanceInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: Ticket Module's own tables (tickets, reservations,
+        // issued_tickets) are owned and migrated by TicketInstaller, not
+        // created here - see that class's own docblock, and
+        // PerformanceInstaller's identical precedent above.
+        TicketInstaller::install($wpdb, $charsetCollate);
 
         /*
          * Phase 7.0 (NotificationPolicy.md "未読 / 既読"): a lazily-created

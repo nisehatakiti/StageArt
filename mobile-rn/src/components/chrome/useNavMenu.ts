@@ -95,22 +95,26 @@ function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuIte
  * (公演情報: disabled for non-Primary-Manager; メンバー管理: disabled
  * unless Primary Manager or a PARTICIPANT_MANAGER Delegate; 稽古管理:
  * always available; 公演回管理 - added by Phase 2 Performance基盤 - disabled
- * unless Primary Manager or a PERFORMANCE_MANAGER Delegate). チケット管理
- * ／小屋入り～本番／公演終了・精算処理 are always disabled this Phase - see
- * this file's own docblock.
+ * unless Primary Manager or a PERFORMANCE_MANAGER Delegate; チケット管理 -
+ * enabled by Phase 3 Ticket/Reservation基盤, previously a permanent
+ * disabled placeholder - disabled unless Primary Manager or a
+ * TICKET_MANAGER Delegate, per instruction §23/§24). 小屋入り～本番／
+ * 公演終了・精算処理 remain disabled placeholders (Check-in/Settlement are
+ * explicitly out of Phase 3's scope - instruction §48).
  */
 function buildProductionContextItems(
   id: string,
   isPrimaryManager: boolean,
   canManageParticipants: boolean,
-  canManagePerformances: boolean
+  canManagePerformances: boolean,
+  canManageTickets: boolean
 ): NavMenuItem[] {
   return [
     { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
     { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
     { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
     { key: 'production-performances', label: '公演回管理', href: `/productions/${id}/performances` as Href, disabled: !canManagePerformances },
-    { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}` as Href, disabled: true },
+    { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
     { key: 'production-reception', label: '小屋入り～本番', href: `/productions/${id}` as Href, disabled: true },
     { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}` as Href, disabled: true },
   ];
@@ -151,11 +155,12 @@ export function useNavMenu() {
     const isPrimaryManager = !!production?.is_primary_manager;
     const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
     const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
+    const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
       contextLabel: production?.name ?? '公演',
-      contextItems: buildProductionContextItems(context.productionId, isPrimaryManager, canManageParticipants, canManagePerformances),
+      contextItems: buildProductionContextItems(context.productionId, isPrimaryManager, canManageParticipants, canManagePerformances, canManageTickets),
     };
   }
 

@@ -18,6 +18,8 @@ use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
 use StageArt\Accounting\AccountingModuleBootstrap;
 use StageArt\Performance\PerformanceModuleBootstrap;
+use StageArt\Reservation\ReservationModuleBootstrap;
+use StageArt\Ticket\TicketModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
 use StageArt\Application\Favorite\AddFavoriteUseCase;
 use StageArt\Application\Favorite\ListMyFavoritesUseCase;
@@ -121,7 +123,10 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressReservationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
@@ -186,6 +191,9 @@ final class Plugin
         $participants        = new WordPressParticipantRepository($wpdb);
         $rehearsals           = new WordPressRehearsalRepository($wpdb);
         $performances         = new WordPressPerformanceRepository($wpdb);
+        $tickets              = new WordPressTicketRepository($wpdb);
+        $reservations         = new WordPressReservationRepository($wpdb);
+        $issuedTickets        = new WordPressIssuedTicketRepository($wpdb);
         $rehearsalAttendances = new WordPressRehearsalAttendanceRepository($wpdb);
         $scheduleComments     = new WordPressScheduleCommentRepository($wpdb);
         $timetables           = new WordPressTimetableRepository($wpdb);
@@ -440,6 +448,32 @@ final class Plugin
             $membershipContract
         );
 
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: Ticket Module's own wiring, consolidated into
+        // TicketModuleBootstrap - see that class's own docblock.
+        $ticketModule = new TicketModuleBootstrap(
+            $tickets,
+            $productions,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $membershipContract
+        );
+
+        // Reservation Module's own wiring, kept separate from Ticket's
+        // per instruction §26 - see ReservationModuleBootstrap's own
+        // docblock.
+        $reservationModule = new ReservationModuleBootstrap(
+            $reservations,
+            $issuedTickets,
+            $tickets,
+            $performances,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $transactions
+        );
+
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
             $productionContextContract,
             $timetableVersionPublishedNotifications,
@@ -621,6 +655,18 @@ final class Plugin
         // other Controller here.
         foreach ($performanceModule->restControllers() as $performanceRestController) {
             add_action('rest_api_init', [$performanceRestController, 'register_routes']);
+        }
+
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: every Ticket Module and Reservation Module REST Controller
+        // is constructed inside their own Bootstraps - registered
+        // identically to every other Controller here.
+        foreach ($ticketModule->restControllers() as $ticketRestController) {
+            add_action('rest_api_init', [$ticketRestController, 'register_routes']);
+        }
+
+        foreach ($reservationModule->restControllers() as $reservationRestController) {
+            add_action('rest_api_init', [$reservationRestController, 'register_routes']);
         }
 
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);

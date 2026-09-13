@@ -1,9 +1,18 @@
 import type { ApiClient } from '@/api/client';
-import type { Performance } from '@/types/api';
+import { publicGet } from '@/api/publicClient';
+import type { Performance, PublicPerformance } from '@/types/api';
 
 /** GET /productions/{id}/performances (Backend's ListPerformancesUseCase). */
 export function fetchPerformances(client: ApiClient, productionId: string): Promise<Performance[]> {
   return client.get<Performance[]>(`/productions/${productionId}/performances`);
+}
+
+/** GET /productions/{id}/public-performances - Phase 3 Ticket/Reservation
+ * 基盤 §33: unauthenticated, the Public Page's own Performance listing a
+ * visitor picks from before reserving a Ticket. Excludes DRAFT/CANCELLED
+ * Performances and never carries `capacity` (§34). */
+export function fetchPublicPerformances(productionId: string): Promise<PublicPerformance[]> {
+  return publicGet<PublicPerformance[]>(`/productions/${productionId}/public-performances`);
 }
 
 /** GET /performances/{id}. */

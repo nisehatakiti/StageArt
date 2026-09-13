@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { cancelPerformance, createPerformance, fetchPerformance, fetchPerformances, updatePerformance } from './api';
+import { cancelPerformance, createPerformance, fetchPerformance, fetchPerformances, fetchPublicPerformances, updatePerformance } from './api';
 
 export function usePerformances(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -11,6 +11,14 @@ export function usePerformances(productionId: string | undefined) {
     queryKey: ['production-performances', productionId],
     queryFn: () => fetchPerformances(apiClient, productionId as string),
     enabled: status === 'authenticated' && !!productionId,
+  });
+}
+
+export function usePublicPerformances(productionId: string | undefined) {
+  return useQuery({
+    queryKey: ['public-performances', productionId],
+    queryFn: () => fetchPublicPerformances(productionId as string),
+    enabled: !!productionId,
   });
 }
 

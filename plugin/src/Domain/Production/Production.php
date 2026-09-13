@@ -81,6 +81,45 @@ final class Production
      */
     private ?string $performanceCommonRemarks;
 
+    /**
+     * Phase 3 Ticket/Reservation基盤 §36: Ticket販売条件はProduction共通
+     * 設定として保持する（Ticket Type単位・Performance単位ではない - §7/§8/
+     * 指示書§36「Ticket Typeごとの販売開始日時は追加しない」「Performanceごとの
+     * 販売終了絶対日時も追加しない」）。`ticketSalesEndRule`/
+     * `ticketSalesEndParameter` はDomain\Ticket\SalesEndRuleの語彙
+     * （DAY_BEFORE_AT_TIME/HOURS_BEFORE_START）を保存するが、Production
+     * (Core) はTicket Module固有の型に依存しない設計とするため、ここでは
+     * 素の文字列として保持し、実際の妥当性検証はApplication層で
+     * SalesEndRule::fromStored()を通して行う。
+     */
+    private ?DateTimeImmutable $ticketPublicationAt;
+    private ?DateTimeImmutable $ticketSalesStartAt;
+    private ?string $ticketSalesEndRule;
+    private ?string $ticketSalesEndParameter;
+
+    /**
+     * §19/§20: ノルマはProduction全体設定のみ（メンバー別設定は今回明示的に
+     * 不採用 - Chapter 32 §5の上書き宣言と一致）。買取OFFの場合は
+     * `quotaShortfallUnitPrice`を必ずnullへ正規化する（Domain/API/UIの
+     * 一貫性を保つため、「買取OFFなのに単価が残る」状態を構造的に作れない
+     * ようにする）。
+     */
+    private bool $quotaEnabled;
+    private ?int $quotaCount;
+    private bool $quotaBuybackEnabled;
+    private ?int $quotaShortfallUnitPrice;
+
+    /**
+     * §27/§28: Ticket BackもProduction全体設定。`ticketBackRules`は
+     * 優先順位付き複数条件（{priority,threshold,comparator,rate}の配列）
+     * をJSON文字列として保持する - Opaqueな文字列ではなく、Application/
+     * Domain\Ticket\TicketBackCondition側でパース・検証可能な構造化データ
+     * （指示書§37「将来の計算・検証が困難になるようなOpaqueな文字列保存は
+     * 避ける」）。
+     */
+    private ?string $ticketBackMode;
+    private ?string $ticketBackRules;
+
     private function __construct(
         ProductionId $id,
         ProjectId $projectId,
@@ -106,7 +145,17 @@ final class Production
         ?DateTimeImmutable $scriptDirectionPublishedAt = null,
         ?DateTimeImmutable $memberInfoPublishedAt = null,
         ?int $capacity = null,
-        ?string $performanceCommonRemarks = null
+        ?string $performanceCommonRemarks = null,
+        ?DateTimeImmutable $ticketPublicationAt = null,
+        ?DateTimeImmutable $ticketSalesStartAt = null,
+        ?string $ticketSalesEndRule = null,
+        ?string $ticketSalesEndParameter = null,
+        bool $quotaEnabled = false,
+        ?int $quotaCount = null,
+        bool $quotaBuybackEnabled = false,
+        ?int $quotaShortfallUnitPrice = null,
+        ?string $ticketBackMode = null,
+        ?string $ticketBackRules = null
     ) {
         $this->id = $id;
         $this->projectId = $projectId;
@@ -133,6 +182,16 @@ final class Production
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
         $this->capacity = $capacity;
         $this->performanceCommonRemarks = $performanceCommonRemarks;
+        $this->ticketPublicationAt = $ticketPublicationAt;
+        $this->ticketSalesStartAt = $ticketSalesStartAt;
+        $this->ticketSalesEndRule = $ticketSalesEndRule;
+        $this->ticketSalesEndParameter = $ticketSalesEndParameter;
+        $this->quotaEnabled = $quotaEnabled;
+        $this->quotaCount = $quotaCount;
+        $this->quotaBuybackEnabled = $quotaBuybackEnabled;
+        $this->quotaShortfallUnitPrice = $quotaShortfallUnitPrice;
+        $this->ticketBackMode = $ticketBackMode;
+        $this->ticketBackRules = $ticketBackRules;
     }
 
     /**
@@ -192,7 +251,17 @@ final class Production
         ?DateTimeImmutable $scriptDirectionPublishedAt = null,
         ?DateTimeImmutable $memberInfoPublishedAt = null,
         ?int $capacity = null,
-        ?string $performanceCommonRemarks = null
+        ?string $performanceCommonRemarks = null,
+        ?DateTimeImmutable $ticketPublicationAt = null,
+        ?DateTimeImmutable $ticketSalesStartAt = null,
+        ?string $ticketSalesEndRule = null,
+        ?string $ticketSalesEndParameter = null,
+        bool $quotaEnabled = false,
+        ?int $quotaCount = null,
+        bool $quotaBuybackEnabled = false,
+        ?int $quotaShortfallUnitPrice = null,
+        ?string $ticketBackMode = null,
+        ?string $ticketBackRules = null
     ): self {
         return new self(
             $id,
@@ -219,7 +288,17 @@ final class Production
             $scriptDirectionPublishedAt,
             $memberInfoPublishedAt,
             $capacity,
-            $performanceCommonRemarks
+            $performanceCommonRemarks,
+            $ticketPublicationAt,
+            $ticketSalesStartAt,
+            $ticketSalesEndRule,
+            $ticketSalesEndParameter,
+            $quotaEnabled,
+            $quotaCount,
+            $quotaBuybackEnabled,
+            $quotaShortfallUnitPrice,
+            $ticketBackMode,
+            $ticketBackRules
         );
     }
 
@@ -511,6 +590,76 @@ final class Production
         $this->touch();
     }
 
+    /**
+     * Phase 3 §7/§9: Ticket情報公開日時とProduction共通の販売開始日時。
+     * どちらも絶対日時のまま保存する（販売開始は指示書§7で明示的に
+     * Production共通の絶対日時と確定している一方、公開日時は指示書§36の
+     * DBカラム設計を正としてProduction側に置く - 指示書§5の記述は
+     * Ticket管理機能が扱う概念一覧としての言及であり、フィールドの所属
+     * Entityを規定するものではないと解釈した）。
+     */
+    public function updateTicketPublicationAt(?DateTimeImmutable $at): void
+    {
+        $this->ticketPublicationAt = $at;
+        $this->touch();
+    }
+
+    public function updateTicketSalesStartAt(?DateTimeImmutable $at): void
+    {
+        $this->ticketSalesStartAt = $at;
+        $this->touch();
+    }
+
+    /**
+     * §8: 固定絶対日時ではなく「ルール」を保存する。ここでは`$rule`/
+     * `$parameter`の妥当性検証を行わない - Ticket Moduleの
+     * `Domain\Ticket\SalesEndRule::fromStored()`がPersistence直前に
+     * 検証済みの値のみをここへ渡す前提とすることで、Production(Core)が
+     * Ticket Module固有の語彙(DAY_BEFORE_AT_TIME/HOURS_BEFORE_START)に
+     * 依存しないようにする。
+     */
+    public function updateTicketSalesEndRule(?string $rule, ?string $parameter): void
+    {
+        $this->ticketSalesEndRule = self::normalizeNullableString($rule);
+        $this->ticketSalesEndParameter = self::normalizeNullableString($parameter);
+        $this->touch();
+    }
+
+    /**
+     * §19/§20: 買取OFFの場合は未達単価を必ずnullへ正規化する
+     * （Domain層で条件を強制することで、UIだけの制御に依存しない - 指示書
+     * §20「UIだけで入力欄を隠す実装にはしない」）。ノルマ設定なしの場合も
+     * 同様にノルマ枚数をnullへ正規化する。
+     */
+    public function updateQuota(bool $enabled, ?int $count, bool $buybackEnabled, ?int $shortfallUnitPrice): void
+    {
+        if ($enabled && ($count === null || $count < 1)) {
+            throw new InvalidArgumentException('Quota count must be a positive integer when quota is enabled.');
+        }
+
+        if ($enabled && $buybackEnabled && ($shortfallUnitPrice === null || $shortfallUnitPrice < 1)) {
+            throw new InvalidArgumentException('Quota shortfall unit price must be a positive integer when buyback is enabled.');
+        }
+
+        $this->quotaEnabled = $enabled;
+        $this->quotaCount = $enabled ? $count : null;
+        $this->quotaBuybackEnabled = $enabled && $buybackEnabled;
+        $this->quotaShortfallUnitPrice = ($enabled && $buybackEnabled) ? $shortfallUnitPrice : null;
+        $this->touch();
+    }
+
+    /**
+     * §27/§37: `$rulesJson`は事前にDomain\Ticket\TicketBackConditionの
+     * 配列としてApplication層で検証済みのJSON文字列を渡す前提（Production
+     * (Core)はTicket Module固有の条件Value Objectに依存しない）。
+     */
+    public function updateTicketBack(?string $mode, ?string $rulesJson): void
+    {
+        $this->ticketBackMode = self::normalizeNullableString($mode);
+        $this->ticketBackRules = self::normalizeNullableString($rulesJson);
+        $this->touch();
+    }
+
     private static function normalizeNullableString(?string $value): ?string
     {
         if ($value === null) {
@@ -650,5 +799,55 @@ final class Production
     public function performanceCommonRemarks(): ?string
     {
         return $this->performanceCommonRemarks;
+    }
+
+    public function ticketPublicationAt(): ?DateTimeImmutable
+    {
+        return $this->ticketPublicationAt;
+    }
+
+    public function ticketSalesStartAt(): ?DateTimeImmutable
+    {
+        return $this->ticketSalesStartAt;
+    }
+
+    public function ticketSalesEndRule(): ?string
+    {
+        return $this->ticketSalesEndRule;
+    }
+
+    public function ticketSalesEndParameter(): ?string
+    {
+        return $this->ticketSalesEndParameter;
+    }
+
+    public function quotaEnabled(): bool
+    {
+        return $this->quotaEnabled;
+    }
+
+    public function quotaCount(): ?int
+    {
+        return $this->quotaCount;
+    }
+
+    public function quotaBuybackEnabled(): bool
+    {
+        return $this->quotaBuybackEnabled;
+    }
+
+    public function quotaShortfallUnitPrice(): ?int
+    {
+        return $this->quotaShortfallUnitPrice;
+    }
+
+    public function ticketBackMode(): ?string
+    {
+        return $this->ticketBackMode;
+    }
+
+    public function ticketBackRules(): ?string
+    {
+        return $this->ticketBackRules;
     }
 }

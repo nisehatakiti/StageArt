@@ -51,6 +51,16 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             'member_info_published_at' => $production->memberInfoPublishedAt()?->format('Y-m-d H:i:s'),
             'capacity' => $production->capacity(),
             'performance_common_remarks' => $production->performanceCommonRemarks(),
+            'ticket_publication_at' => $production->ticketPublicationAt()?->format('Y-m-d H:i:s'),
+            'ticket_sales_start_at' => $production->ticketSalesStartAt()?->format('Y-m-d H:i:s'),
+            'ticket_sales_end_rule' => $production->ticketSalesEndRule(),
+            'ticket_sales_end_parameter' => $production->ticketSalesEndParameter(),
+            'quota_enabled' => $production->quotaEnabled() ? 1 : 0,
+            'quota_count' => $production->quotaCount(),
+            'quota_buyback_enabled' => $production->quotaBuybackEnabled() ? 1 : 0,
+            'quota_shortfall_unit_price' => $production->quotaShortfallUnitPrice(),
+            'ticket_back_mode' => $production->ticketBackMode(),
+            'ticket_back_rules' => $production->ticketBackRules(),
             'updated_at' => $production->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -186,7 +196,19 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             ! empty($row['script_direction_published_at']) ? new DateTimeImmutable($row['script_direction_published_at']) : null,
             ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null,
             isset($row['capacity']) && $row['capacity'] !== null && $row['capacity'] !== '' ? (int) $row['capacity'] : null,
-            $row['performance_common_remarks'] ?? null
+            $row['performance_common_remarks'] ?? null,
+            ! empty($row['ticket_publication_at']) ? new DateTimeImmutable($row['ticket_publication_at']) : null,
+            ! empty($row['ticket_sales_start_at']) ? new DateTimeImmutable($row['ticket_sales_start_at']) : null,
+            $row['ticket_sales_end_rule'] ?? null,
+            $row['ticket_sales_end_parameter'] ?? null,
+            ! empty($row['quota_enabled']),
+            isset($row['quota_count']) && $row['quota_count'] !== null && $row['quota_count'] !== '' ? (int) $row['quota_count'] : null,
+            ! empty($row['quota_buyback_enabled']),
+            isset($row['quota_shortfall_unit_price']) && $row['quota_shortfall_unit_price'] !== null && $row['quota_shortfall_unit_price'] !== ''
+                ? (int) $row['quota_shortfall_unit_price']
+                : null,
+            $row['ticket_back_mode'] ?? null,
+            $row['ticket_back_rules'] ?? null
         );
     }
 }

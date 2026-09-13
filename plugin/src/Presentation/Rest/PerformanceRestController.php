@@ -13,6 +13,8 @@ use StageArt\Application\Performance\GetPerformanceQuery;
 use StageArt\Application\Performance\GetPerformanceUseCase;
 use StageArt\Application\Performance\ListPerformancesForProductionQuery;
 use StageArt\Application\Performance\ListPerformancesUseCase;
+use StageArt\Application\Performance\ListPublicPerformancesQuery;
+use StageArt\Application\Performance\ListPublicPerformancesUseCase;
 use StageArt\Application\Performance\PerformanceAccessDeniedException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
 use StageArt\Application\Performance\UpdatePerformanceCommand;
@@ -37,19 +39,22 @@ final class PerformanceRestController
     private ListPerformancesUseCase $listPerformances;
     private UpdatePerformanceUseCase $updatePerformance;
     private CancelPerformanceUseCase $cancelPerformance;
+    private ListPublicPerformancesUseCase $listPublicPerformances;
 
     public function __construct(
         CreatePerformanceUseCase $createPerformance,
         GetPerformanceUseCase $getPerformance,
         ListPerformancesUseCase $listPerformances,
         UpdatePerformanceUseCase $updatePerformance,
-        CancelPerformanceUseCase $cancelPerformance
+        CancelPerformanceUseCase $cancelPerformance,
+        ListPublicPerformancesUseCase $listPublicPerformances
     ) {
         $this->createPerformance = $createPerformance;
         $this->getPerformance = $getPerformance;
         $this->listPerformances = $listPerformances;
         $this->updatePerformance = $updatePerformance;
         $this->cancelPerformance = $cancelPerformance;
+        $this->listPublicPerformances = $listPublicPerformances;
     }
 
     public function register_routes(): void
@@ -64,6 +69,14 @@ final class PerformanceRestController
                 'methods' => 'POST',
                 'callback' => [$this, 'create'],
                 'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/public-performances', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listPublic'],
+                'permission_callback' => '__return_true',
             ],
         ]);
 
@@ -112,6 +125,23 @@ final class PerformanceRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_performance_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listPublic(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListPublicPerformancesQuery((string) $request->get_param('id'));
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->listPublicPerformances->execute($query)),
+                200
+            );
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }
     }
 

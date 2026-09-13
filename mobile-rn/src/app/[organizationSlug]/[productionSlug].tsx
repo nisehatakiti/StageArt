@@ -13,6 +13,8 @@ import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchPublicProductionBySlug } from '@/features/production/api';
 import { useRequestProductionParticipation } from '@/features/participation/useParticipation';
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
+import { usePublicPerformances } from '@/features/performance/usePerformances';
+import { usePublicTickets } from '@/features/ticket/useTickets';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -54,6 +56,8 @@ export default function PublicProductionScreen() {
   });
 
   const requestParticipation = useRequestProductionParticipation();
+  const performancesQuery = usePublicPerformances(query.data?.id);
+  const ticketsQuery = usePublicTickets(query.data?.id);
 
   const myFavoritesQuery = useMyFavorites();
   const { add: addFavorite, remove: removeFavorite } = useToggleFavorite();
@@ -152,6 +156,50 @@ export default function PublicProductionScreen() {
                 )}
               </ThemedView>
             )}
+
+            {(ticketsQuery.data?.tickets.length ?? 0) > 0 && (
+              <ThemedView style={styles.ticketSection} testID="public-production-tickets">
+                <ThemedText type="subtitle">チケット</ThemedText>
+                {ticketsQuery.data!.tickets.map((ticket) => (
+                  <ThemedView key={ticket.id} style={styles.ticketRow} testID={`public-ticket-${ticket.id}`}>
+                    <ThemedText type="smallBold">{ticket.name}</ThemedText>
+                    <ThemedText themeColor="textSecondary">{ticket.price}円</ThemedText>
+                    {ticket.remarks && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {ticket.remarks}
+                      </ThemedText>
+                    )}
+                  </ThemedView>
+                ))}
+              </ThemedView>
+            )}
+
+            {(performancesQuery.data?.length ?? 0) > 0 && (
+              <ThemedView style={styles.performanceSection} testID="public-production-performances">
+                <ThemedText type="subtitle">公演回</ThemedText>
+                {performancesQuery.data!.map((performance) => (
+                  <ThemedView key={performance.id} style={styles.performanceRow} testID={`public-performance-${performance.id}`}>
+                    <ThemedText>
+                      {performance.performance_date} {performance.start_time.slice(0, 5)}
+                      {performance.end_time ? `〜${performance.end_time.slice(0, 5)}` : ''}
+                    </ThemedText>
+                    {(ticketsQuery.data?.tickets.length ?? 0) > 0 && performance.status !== 'CANCELLED' && performance.status !== 'FINISHED' && (
+                      <TouchableOpacity
+                        testID={`public-performance-reserve-${performance.id}`}
+                        onPress={() => router.push(`/reserve/${performance.id}?productionId=${query.data!.id}` as Href)}
+                        style={styles.reserveButton}
+                      >
+                        <ThemedText style={styles.reserveButtonText}>予約する</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </ThemedView>
+                ))}
+              </ThemedView>
+            )}
+
+            <TouchableOpacity testID="public-production-manage-reservation" onPress={() => router.push('/my-reservation' as Href)} style={styles.manageReservationLink}>
+              <ThemedText type="link">予約の確認・変更・キャンセルはこちら</ThemedText>
+            </TouchableOpacity>
           </ThemedView>
         )}
       </ScrollView>
@@ -163,6 +211,25 @@ const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
   participationSection: { marginTop: Spacing.three, gap: Spacing.two },
+  ticketSection: { marginTop: Spacing.three, gap: Spacing.one },
+  ticketRow: { paddingVertical: Spacing.one, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  performanceSection: { marginTop: Spacing.three, gap: Spacing.one },
+  performanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.one,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#eee',
+  },
+  reserveButton: {
+    backgroundColor: BrandColors.warmAmber,
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+  },
+  reserveButtonText: { color: '#fff', fontWeight: '600' },
+  manageReservationLink: { marginTop: Spacing.three },
   favoriteLink: { marginTop: Spacing.two },
   typeRow: { flexDirection: 'row', gap: Spacing.two },
   typeOption: {

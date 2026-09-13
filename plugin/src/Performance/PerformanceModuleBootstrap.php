@@ -8,6 +8,7 @@ use StageArt\Application\Performance\CancelPerformanceUseCase;
 use StageArt\Application\Performance\CreatePerformanceUseCase;
 use StageArt\Application\Performance\GetPerformanceUseCase;
 use StageArt\Application\Performance\ListPerformancesUseCase;
+use StageArt\Application\Performance\ListPublicPerformancesUseCase;
 use StageArt\Application\Performance\UpdatePerformanceUseCase;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
@@ -47,6 +48,7 @@ final class PerformanceModuleBootstrap
         $listPerformances = new ListPerformancesUseCase($performances, $productionContext, $identity, $membership);
         $updatePerformance = new UpdatePerformanceUseCase($performances, $productionContext, $identity, $authorization);
         $cancelPerformance = new CancelPerformanceUseCase($performances, $productionContext, $identity, $authorization);
+        $listPublicPerformances = new ListPublicPerformancesUseCase($performances, $productionContext);
 
         $this->restControllers = [
             new PerformanceRestController(
@@ -54,7 +56,8 @@ final class PerformanceModuleBootstrap
                 $getPerformance,
                 $listPerformances,
                 $updatePerformance,
-                $cancelPerformance
+                $cancelPerformance,
+                $listPublicPerformances
             ),
         ];
     }

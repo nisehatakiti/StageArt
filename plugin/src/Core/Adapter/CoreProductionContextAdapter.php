@@ -8,6 +8,7 @@ use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Project\ProjectNotFoundException;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Core\Contract\ProductionSummary;
+use StageArt\Core\Contract\ProductionTicketSettings;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
@@ -72,5 +73,27 @@ final class CoreProductionContextAdapter implements ProductionContextContract
         } catch (ProjectNotFoundException $exception) {
             return null;
         }
+    }
+
+    public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings
+    {
+        $production = $this->productions->findById($productionId);
+
+        if ($production === null) {
+            return null;
+        }
+
+        return new ProductionTicketSettings(
+            $production->ticketPublicationAt()?->format(DATE_ATOM),
+            $production->ticketSalesStartAt()?->format(DATE_ATOM),
+            $production->ticketSalesEndRule(),
+            $production->ticketSalesEndParameter(),
+            $production->quotaEnabled(),
+            $production->quotaCount(),
+            $production->quotaBuybackEnabled(),
+            $production->quotaShortfallUnitPrice(),
+            $production->ticketBackMode(),
+            $production->ticketBackRules()
+        );
     }
 }

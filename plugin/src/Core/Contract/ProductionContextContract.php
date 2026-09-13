@@ -44,4 +44,12 @@ interface ProductionContextContract
      * to call it at all.
      */
     public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId;
+
+    /**
+     * Phase 3 Ticket/Reservation基盤: the Ticket Module's own read
+     * access to Production's ticket-sales/quota/ticket-back settings -
+     * see `ProductionTicketSettings`'s own docblock for why this is a
+     * separate method rather than growing `ProductionSummary`.
+     */
+    public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings;
 }

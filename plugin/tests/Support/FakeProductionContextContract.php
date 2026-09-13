@@ -6,6 +6,7 @@ namespace StageArt\Tests\Support;
 
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Core\Contract\ProductionSummary;
+use StageArt\Core\Contract\ProductionTicketSettings;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 
@@ -22,6 +23,9 @@ final class FakeProductionContextContract implements ProductionContextContract
 
     /** @var array<string, OrganizationId> */
     private array $organizationIds = [];
+
+    /** @var array<string, ProductionTicketSettings> */
+    private array $ticketSettings = [];
 
     public function register(ProductionId $id, string $name, string $status = 'DRAFT', ?OrganizationId $organizationId = null): void
     {
@@ -55,5 +59,15 @@ final class FakeProductionContextContract implements ProductionContextContract
     public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId
     {
         return $this->organizationIds[$productionId->toString()] ?? null;
+    }
+
+    public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings
+    {
+        return $this->ticketSettings[$productionId->toString()] ?? null;
+    }
+
+    public function registerTicketSettings(ProductionId $productionId, ProductionTicketSettings $settings): void
+    {
+        $this->ticketSettings[$productionId->toString()] = $settings;
     }
 }

@@ -201,6 +201,106 @@ export type Production = {
 };
 
 /**
+ * Phase 3 Ticket/Reservation基盤: `PUT /productions/{id}/ticket-sales-
+ * settings` response (Backend's `TicketSalesSettingsResult`) - a
+ * separate, narrower read than `Production` itself (that endpoint
+ * updates only Production's ticket-publication/sales-start/sales-end
+ * fields, not the whole Production record - see
+ * `UpdateTicketSalesSettingsUseCase`'s own docblock for why).
+ */
+export type TicketSalesSettings = {
+  production_id: string;
+  ticket_publication_at: string | null;
+  ticket_sales_start_at: string | null;
+  ticket_sales_end_rule: string | null;
+  ticket_sales_end_parameter: string | null;
+};
+
+/**
+ * Phase 3 Ticket/Reservation基盤: `PUT /productions/{id}/quota-ticket-
+ * back-settings` response (Backend's `QuotaAndTicketBackSettingsResult`).
+ * Internal management data only - never sent to the Public Page (§34).
+ */
+export type TicketBackCondition = {
+  priority: number;
+  threshold: number;
+  comparator: 'GTE' | 'LTE' | 'LT';
+  rate_percent: number;
+};
+
+export type QuotaAndTicketBackSettings = {
+  production_id: string;
+  quota_enabled: boolean;
+  quota_count: number | null;
+  quota_buyback_enabled: boolean;
+  quota_shortfall_unit_price: number | null;
+  ticket_back_mode: 'PROGRESSIVE' | 'SEPARATED' | null;
+  ticket_back_conditions: TicketBackCondition[];
+};
+
+/**
+ * Phase 3 Ticket/Reservation基盤 (Ticket.md v2.0系列を否定し、Chapter 32の
+ * フラット構造を採用 - Ticket TypeをMatrixにしない、Ticket名+料金のみ):
+ * `Ticket`はProduction所属の販売条件。0円Ticketは扱わない
+ * (`price`は常に正の整数)。
+ */
+export type Ticket = {
+  id: string;
+  production_id: string;
+  name: string;
+  price: number;
+  remarks: string | null;
+  status: 'ACTIVE' | 'ARCHIVED';
+  created_at: string;
+  updated_at: string;
+};
+
+/** GET /productions/{id}/public-tickets - the Public Page's own Ticket
+ * listing (§9/§34): only name/price/remarks per Ticket (never internal
+ * Status), plus the Production's own sales-window settings so the
+ * client can compute per-Performance availability for display (the
+ * server remains the sole authority on whether a Reservation attempt
+ * actually succeeds). Empty `tickets` before `ticket_publication_at`. */
+export type PublicTicketList = {
+  tickets: Array<{ id: string; name: string; price: number; remarks: string | null }>;
+  sales_start_at: string | null;
+  sales_end_rule: 'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START' | null;
+  sales_end_parameter: string | null;
+};
+
+/** GET /productions/{id}/public-performances - the Public Page's own
+ * Performance listing (§33), deliberately excluding `capacity` (§34). */
+export type PublicPerformance = {
+  id: string;
+  performance_date: string;
+  start_time: string;
+  end_time: string | null;
+  status: string;
+};
+
+/**
+ * Reservation.md v6.0's AggregateRoot. `booker_name`/`booker_email` are
+ * plain scalars, not a StageArt account reference (§10 - general
+ * audience never needs one); `reservation_number` (not `id`) is what a
+ * booker actually uses for self-service lookup/change/cancel.
+ */
+export type Reservation = {
+  id: string;
+  reservation_number: string;
+  performance_id: string;
+  ticket_id: string;
+  booker_name: string;
+  booker_email: string;
+  guest_count: number;
+  price_snapshot: number;
+  status: 'RESERVED' | 'CHECKED_IN' | 'CANCELLED' | 'NO_SHOW';
+  created_by: string | null;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+/**
  * GET /productions/by-slug/{slug} (Backend Web First Phase 2's
  * GetPublicProductionBySlugUseCase). Never carries `status`/
  * `primary_manager_person_id`. `organization` is the resolved parent

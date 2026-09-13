@@ -39,12 +39,16 @@ namespace StageArt\Domain\Role;
  * requires ("同じRole Definitionを両Scopeで利用できる") - a shared
  * Permission-lookup mechanism for every Role is not itself required.
  *
- * RESERVATION_MANAGER (also named in Authorization.md's examples) is not
- * added: Reservation is not implemented in Backend yet (see the Phase
- * 5.6 audit / Phase 2 Performance基盤's own pre-implementation audit).
- * ACCOUNTING_MANAGER is likewise not added as a RoleKey value at all
- * this Phase - see the relevant Phase's report's "Accounting" section
- * for why.
+ * TICKET_MANAGER and RESERVATION_MANAGER (Phase 3 Ticket/Reservation
+ * 基盤, instruction §23/§32) follow the same generic Capability-check
+ * path as PERFORMANCE_MANAGER - `TicketCapability::MANAGE`/
+ * `ReservationCapability::MANAGE` - not a
+ * ProductionAuthorizationService-level method. RESERVATION_MANAGER now
+ * has a real entry (superseding the earlier "not implemented yet" note
+ * this docblock previously carried).
+ *
+ * ACCOUNTING_MANAGER is not added as a RoleKey value at all this Phase -
+ * see the relevant Phase's report's "Accounting" section for why.
  */
 final class RolePermissions
 {
@@ -68,6 +72,12 @@ final class RolePermissions
             'Performance.Create',
             'Performance.Update',
             'Performance.Cancel',
+        ],
+        RoleKey::TICKET_MANAGER => [
+            'Ticket.Manage',
+        ],
+        RoleKey::RESERVATION_MANAGER => [
+            'Reservation.Manage',
         ],
     ];
 

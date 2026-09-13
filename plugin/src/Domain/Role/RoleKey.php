@@ -23,8 +23,9 @@ use InvalidArgumentException;
  * Which Roles are meaningful in which Scope is left to how Membership/
  * ProductionDelegate actually use them (Organization Setup currently
  * only ever assigns OWNER/MEMBER; ProductionDelegate currently only ever
- * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER -
- * the last added by Phase 2 Performance基盤) - Role.md is explicit
+ * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER/
+ * TICKET_MANAGER/RESERVATION_MANAGER - the last two added by Phase 3
+ * Ticket/Reservation基盤) - Role.md is explicit
  * that Role Definitions themselves carry no ScopeType ("Roleそのものは、
  * OrganizationやProductionなどのScopeを持たない"), so this catalog
  * deliberately does not partition its values by Scope.
@@ -41,6 +42,8 @@ final class RoleKey
     public const PARTICIPANT_MANAGER = 'PARTICIPANT_MANAGER';
     public const REHEARSAL_MANAGER = 'REHEARSAL_MANAGER';
     public const PERFORMANCE_MANAGER = 'PERFORMANCE_MANAGER';
+    public const TICKET_MANAGER = 'TICKET_MANAGER';
+    public const RESERVATION_MANAGER = 'RESERVATION_MANAGER';
 
     private const VALID = [
         self::OWNER,
@@ -48,6 +51,8 @@ final class RoleKey
         self::PARTICIPANT_MANAGER,
         self::REHEARSAL_MANAGER,
         self::PERFORMANCE_MANAGER,
+        self::TICKET_MANAGER,
+        self::RESERVATION_MANAGER,
     ];
 
     private string $value;
@@ -84,6 +89,16 @@ final class RoleKey
     public static function performanceManager(): self
     {
         return new self(self::PERFORMANCE_MANAGER);
+    }
+
+    public static function ticketManager(): self
+    {
+        return new self(self::TICKET_MANAGER);
+    }
+
+    public static function reservationManager(): self
+    {
+        return new self(self::RESERVATION_MANAGER);
     }
 
     public static function fromString(string $value): self

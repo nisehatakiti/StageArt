@@ -265,6 +265,20 @@ final class Performance
         return $this->startTime;
     }
 
+    /**
+     * Phase 3 Ticket/Reservation基盤: a pure derived getter (no new
+     * field, no schema impact) combining `performanceDate` + `startTime`
+     * into a single instant - needed by the Ticket Module's
+     * `Domain\Ticket\SalesEndRule::computeDeadline()` (§8's "開演の指定
+     * 時間前まで" rule) and by Reservation modification Validation (§29's
+     * "開演後" cutoff), without requiring the Ticket Module to duplicate
+     * Performance's own date+time composition logic.
+     */
+    public function startDateTime(): DateTimeImmutable
+    {
+        return new DateTimeImmutable($this->performanceDate->format('Y-m-d') . ' ' . $this->startTime);
+    }
+
     public function endTime(): ?string
     {
         return $this->endTime;

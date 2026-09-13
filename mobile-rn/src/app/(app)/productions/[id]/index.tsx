@@ -49,6 +49,7 @@ export default function ProductionManagementScreen() {
   const isPrimaryManager = !!production?.is_primary_manager;
   const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
   const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
+  const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
 
   const breadcrumbs = [
     { label: 'StageArt', href: '/dashboard' as Href },
@@ -177,6 +178,13 @@ export default function ProductionManagementScreen() {
           description="公演回の一覧・作成・編集"
           onPress={() => router.push(`/productions/${id}/performances` as Href)}
           disabled={!canManagePerformances}
+        />
+        <MenuCard
+          testID="production-management-menu-tickets"
+          label="チケット管理"
+          description="チケット設定・ノルマ・チケットバック"
+          onPress={() => router.push(`/productions/${id}/tickets` as Href)}
+          disabled={!canManageTickets}
         />
         <MenuCard
           testID="production-management-menu-accounting"

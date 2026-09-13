@@ -132,12 +132,12 @@ describe('useNavMenu', () => {
 
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
-    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
     const performances = result.current.contextItems.find((item) => item.key === 'production-performances');
     expect(performances?.disabled).toBe(false);
   });
 
-  it('renders チケット管理／小屋入り～本番／公演終了・精算処理 as disabled placeholders even for a Primary Manager', async () => {
+  it('renders 小屋入り～本番／公演終了・精算処理 as disabled placeholders even for a Primary Manager', async () => {
     mockPathname = `/production/${productionOne.id}/schedule`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
@@ -149,8 +149,37 @@ describe('useNavMenu', () => {
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
     await waitFor(() => expect(result.current.contextType).toBe('production'));
-    expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(true);
     expect(result.current.contextItems.find((item) => item.key === 'production-reception')?.disabled).toBe(true);
     expect(result.current.contextItems.find((item) => item.key === 'production-settlement')?.disabled).toBe(true);
+  });
+
+  it('enables チケット管理 for a Primary Manager but disables it for a non-TICKET_MANAGER delegate', async () => {
+    mockPathname = `/productions/${productionOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(false);
+  });
+
+  it('disables チケット管理 for a REHEARSAL_MANAGER delegate (not TICKET_MANAGER)', async () => {
+    mockPathname = `/productions/${productionTwo.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${productionTwo.id}`), status: 200, body: productionTwo },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(true);
   });
 });
