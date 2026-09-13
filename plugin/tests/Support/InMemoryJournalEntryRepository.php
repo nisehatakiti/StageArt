@@ -44,6 +44,24 @@ final class InMemoryJournalEntryRepository implements JournalEntryRepositoryInte
         ));
     }
 
+    public function findBySourceEvent(string $sourceEventType, string $sourceEventId): ?JournalEntry
+    {
+        $matches = array_values(array_filter(
+            $this->entries,
+            static fn (JournalEntry $entry): bool => $entry->sourceEventType() === $sourceEventType
+                && $entry->sourceEventId() === $sourceEventId
+                && ! $entry->status()->equals(JournalEntryStatus::fromString(JournalEntryStatus::REVERSED))
+        ));
+
+        if ($matches === []) {
+            return null;
+        }
+
+        usort($matches, static fn (JournalEntry $a, JournalEntry $b): int => $b->createdAt() <=> $a->createdAt());
+
+        return $matches[0];
+    }
+
     /**
      * Test-introspection only - not part of JournalEntryRepositoryInterface.
      * @return JournalEntry[]

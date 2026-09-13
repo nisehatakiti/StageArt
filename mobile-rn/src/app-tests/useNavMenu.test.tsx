@@ -137,20 +137,20 @@ describe('useNavMenu', () => {
     expect(performances?.disabled).toBe(false);
   });
 
-  it('renders 小屋入り～本番／公演終了・精算処理 as disabled placeholders even for a Primary Manager', async () => {
+  it('enables 小屋入り～本番／公演終了・精算処理 for a Primary Manager (Phase 4 Check-in/精算/会計連携)', async () => {
     mockPathname = `/production/${productionOne.id}/schedule`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
-      { test: (url) => url.endsWith(`/production/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
       { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
       { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
     ]);
 
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
-    await waitFor(() => expect(result.current.contextType).toBe('production'));
-    expect(result.current.contextItems.find((item) => item.key === 'production-reception')?.disabled).toBe(true);
-    expect(result.current.contextItems.find((item) => item.key === 'production-settlement')?.disabled).toBe(true);
+    await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
+    expect(result.current.contextItems.find((item) => item.key === 'production-reception')?.disabled).toBe(false);
+    expect(result.current.contextItems.find((item) => item.key === 'production-settlement')?.disabled).toBe(false);
   });
 
   it('enables チケット管理 for a Primary Manager but disables it for a non-TICKET_MANAGER delegate', async () => {

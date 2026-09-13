@@ -17,6 +17,7 @@ final class ReservationResult
     public int $guestCount;
     public int $priceSnapshot;
     public string $status;
+    public ?string $attributedPersonId;
     public ?string $createdBy;
     public string $createdAt;
     public ?string $updatedBy;
@@ -32,6 +33,7 @@ final class ReservationResult
         int $guestCount,
         int $priceSnapshot,
         string $status,
+        ?string $attributedPersonId,
         ?string $createdBy,
         string $createdAt,
         ?string $updatedBy,
@@ -46,6 +48,7 @@ final class ReservationResult
         $this->guestCount = $guestCount;
         $this->priceSnapshot = $priceSnapshot;
         $this->status = $status;
+        $this->attributedPersonId = $attributedPersonId;
         $this->createdBy = $createdBy;
         $this->createdAt = $createdAt;
         $this->updatedBy = $updatedBy;
@@ -64,6 +67,7 @@ final class ReservationResult
             $reservation->guestCount(),
             $reservation->priceSnapshot(),
             $reservation->status()->toString(),
+            $reservation->attributedPersonId()?->toString(),
             $reservation->createdBy()?->toString(),
             $reservation->createdAt()->format(DATE_ATOM),
             $reservation->updatedBy()?->toString(),
@@ -86,6 +90,7 @@ final class ReservationResult
             'guest_count' => $this->guestCount,
             'price_snapshot' => $this->priceSnapshot,
             'status' => $this->status,
+            'attributed_person_id' => $this->attributedPersonId,
             'created_by' => $this->createdBy,
             'created_at' => $this->createdAt,
             'updated_by' => $this->updatedBy,

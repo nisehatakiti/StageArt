@@ -52,7 +52,10 @@ final class TicketInstaller
          * are nullable (Phase 3 instruction §10: a general-audience
          * booking is created via self-service with no authenticated
          * Person at all - see Domain\Reservation\Reservation's own
-         * docblock).
+         * docblock). `attributed_person_id` is new in Phase 4 (Check-in/
+         * 精算/会計連携) - see Reservation::class's own docblock for why
+         * this "誰扱い" fact is distinct from both `created_by` and the
+         * Booker.
          */
         dbDelta("CREATE TABLE {$reservations} (
             id CHAR(36) NOT NULL,
@@ -64,6 +67,7 @@ final class TicketInstaller
             guest_count INT NOT NULL,
             price_snapshot INT NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'RESERVED',
+            attributed_person_id CHAR(36) NULL,
             created_by CHAR(36) NULL,
             created_at DATETIME NOT NULL,
             updated_by CHAR(36) NULL,

@@ -44,6 +44,7 @@ final class RoleKey
     public const PERFORMANCE_MANAGER = 'PERFORMANCE_MANAGER';
     public const TICKET_MANAGER = 'TICKET_MANAGER';
     public const RESERVATION_MANAGER = 'RESERVATION_MANAGER';
+    public const CHECKIN_MANAGER = 'CHECKIN_MANAGER';
 
     private const VALID = [
         self::OWNER,
@@ -53,6 +54,7 @@ final class RoleKey
         self::PERFORMANCE_MANAGER,
         self::TICKET_MANAGER,
         self::RESERVATION_MANAGER,
+        self::CHECKIN_MANAGER,
     ];
 
     private string $value;
@@ -99,6 +101,11 @@ final class RoleKey
     public static function reservationManager(): self
     {
         return new self(self::RESERVATION_MANAGER);
+    }
+
+    public static function checkInManager(): self
+    {
+        return new self(self::CHECKIN_MANAGER);
     }
 
     public static function fromString(string $value): self

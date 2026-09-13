@@ -30,6 +30,21 @@ use StageArt\Domain\Ticket\TicketId;
  * PersonId = a WordPress-authenticated Production staff member acting on
  * someone's behalf), matching Reservation.md's "BookerとCreatedByは異なる
  * 場合がある" distinction.
+ *
+ * Phase 4 (Check-in/精算/会計連携): `attributedPersonId` is new -
+ * ProductionSettlementScreen.md (Chapter 29) confirms Ticket Back
+ * settlement is computed and settled per Production Member ("メンバー名
+ * チケットバック未払い金"), so a genuinely separate "whose sales
+ * performance does this Reservation count toward" fact is required -
+ * this is NOT `createdBy` (the staff operator who happened to key in the
+ * booking) and NOT the Booker (the paying customer, who is not a
+ * StageArt Person at all in the general case). Deliberately nullable: a
+ * self-service online booking or an unattributed walk-up/box-office sale
+ * has no specific member to credit, and still counts toward Production-
+ * wide Quota achievement without counting toward anyone's individual
+ * Ticket Back. This field was not part of Phase 3's shipped Reservation
+ * shape; its absence was confirmed a genuine gap during this Phase's
+ * required pre-implementation research, not a silent behavior change.
  */
 final class Reservation
 {
@@ -42,6 +57,7 @@ final class Reservation
     private int $guestCount;
     private int $priceSnapshot;
     private ReservationStatus $status;
+    private ?PersonId $attributedPersonId;
     private ?PersonId $createdBy;
     private DateTimeImmutable $createdAt;
     private ?PersonId $updatedBy;
@@ -57,6 +73,7 @@ final class Reservation
         int $guestCount,
         int $priceSnapshot,
         ReservationStatus $status,
+        ?PersonId $attributedPersonId,
         ?PersonId $createdBy,
         DateTimeImmutable $createdAt,
         ?PersonId $updatedBy,
@@ -71,6 +88,7 @@ final class Reservation
         $this->guestCount = $guestCount;
         $this->priceSnapshot = $priceSnapshot;
         $this->status = $status;
+        $this->attributedPersonId = $attributedPersonId;
         $this->createdBy = $createdBy;
         $this->createdAt = $createdAt;
         $this->updatedBy = $updatedBy;
@@ -84,7 +102,8 @@ final class Reservation
         string $bookerEmail,
         int $guestCount,
         int $priceSnapshot,
-        ?PersonId $createdBy
+        ?PersonId $createdBy,
+        ?PersonId $attributedPersonId = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -98,6 +117,7 @@ final class Reservation
             self::validateGuestCount($guestCount),
             self::validatePriceSnapshot($priceSnapshot),
             ReservationStatus::reserved(),
+            $attributedPersonId,
             $createdBy,
             $now,
             $createdBy,
@@ -118,7 +138,8 @@ final class Reservation
         ?PersonId $createdBy,
         DateTimeImmutable $createdAt,
         ?PersonId $updatedBy,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?PersonId $attributedPersonId = null
     ): self {
         return new self(
             $id,
@@ -130,11 +151,26 @@ final class Reservation
             $guestCount,
             $priceSnapshot,
             $status,
+            $attributedPersonId,
             $createdBy,
             $createdAt,
             $updatedBy,
             $updatedAt
         );
+    }
+
+    /**
+     * Corrects which Production Member (if any) this Reservation's sales
+     * performance is attributed to. No status guard: this is
+     * administrative bookkeeping metadata, not a booking-content change,
+     * so a reception-desk correction must remain possible even after
+     * Check-in (e.g. a walk-up sale initially logged with no attribution,
+     * then assigned to the member who actually made the sale).
+     */
+    public function changeAttribution(?PersonId $attributedPersonId, ?PersonId $updatedBy): void
+    {
+        $this->attributedPersonId = $attributedPersonId;
+        $this->touch($updatedBy);
     }
 
     /**
@@ -207,6 +243,26 @@ final class Reservation
         }
 
         $this->status = ReservationStatus::fromString(ReservationStatus::NO_SHOW);
+        $this->touch($updatedBy);
+    }
+
+    /**
+     * Phase 4 (Check-in/精算/会計連携): the counterpart to checkIn() for
+     * Check-in cancellation. CheckIn.md's "Check In Reversal" section
+     * requires "Reservationの状態については、Reservation Domainのルールに
+     * 従って更新する" without naming a specific target Status - reverting
+     * to RESERVED (rather than leaving CHECKED_IN or inventing a new
+     * Status) is the only choice consistent with Reservation's own
+     * existing Status vocabulary and with a corrected Reservation being
+     * eligible for a fresh, correct Check-in afterward.
+     */
+    public function reverseCheckIn(?PersonId $updatedBy): void
+    {
+        if (! $this->status->equals(ReservationStatus::fromString(ReservationStatus::CHECKED_IN))) {
+            throw new InvalidArgumentException('Only a CHECKED_IN Reservation can have its Check-in reversed.');
+        }
+
+        $this->status = ReservationStatus::reserved();
         $this->touch($updatedBy);
     }
 
@@ -320,6 +376,11 @@ final class Reservation
     public function status(): ReservationStatus
     {
         return $this->status;
+    }
+
+    public function attributedPersonId(): ?PersonId
+    {
+        return $this->attributedPersonId;
     }
 
     public function createdBy(): ?PersonId

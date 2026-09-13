@@ -294,10 +294,55 @@ export type Reservation = {
   guest_count: number;
   price_snapshot: number;
   status: 'RESERVED' | 'CHECKED_IN' | 'CANCELLED' | 'NO_SHOW';
+  /** Phase 4 Check-in/精算/会計連携: "誰扱い" - which Production Member
+   * this Reservation's sales performance counts toward (Ticket Back),
+   * distinct from `created_by`. Null for self-service/unattributed
+   * sales. */
+  attributed_person_id: string | null;
   created_by: string | null;
   created_at: string;
   updated_by: string | null;
   updated_at: string;
+};
+
+/**
+ * Phase 4 Check-in/精算/会計連携: `POST /performances/{id}/checkin/...`
+ * response shape shared by every Check-in entry point (search/QR/number/
+ * walk-up). `already_processed` reflects CheckIn.md's idempotent
+ * "duplicate Check-in = 受付済み" handling - re-checking-in an already
+ * CHECKED_IN Reservation returns its existing Check-in rather than an
+ * error.
+ */
+export type CheckInResultDto = {
+  check_in_id: string;
+  reservation_id: string;
+  reservation_number: string;
+  performance_id: string;
+  status: 'COMPLETED' | 'REVERSED';
+  reservation_status: 'RESERVED' | 'CHECKED_IN' | 'CANCELLED' | 'NO_SHOW';
+  checked_in_by: string;
+  checked_in_at: string;
+  already_processed: boolean;
+};
+
+/**
+ * Phase 4: `GET /productions/{id}/settlement` (ProductionSettlementScreen.md
+ * Chapter 29). `quota_shortfall_*` is read-only context - Quota has no
+ * per-member settlement action defined by Blueprint (Quota buyback is
+ * Production-wide only), only Ticket Back does.
+ */
+export type ProductionMemberSettlementLine = {
+  person_id: string;
+  display_name: string | null;
+  confirmed_ticket_back_amount: number;
+  already_settled_amount: number;
+  outstanding_amount: number;
+};
+
+export type ProductionSettlementSummary = {
+  members: ProductionMemberSettlementLine[];
+  quota_shortfall_count: number;
+  quota_shortfall_payable: number;
 };
 
 /**

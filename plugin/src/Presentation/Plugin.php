@@ -17,8 +17,11 @@ use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
 use StageArt\Accounting\AccountingModuleBootstrap;
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
+use StageArt\CheckIn\CheckInModuleBootstrap;
 use StageArt\Performance\PerformanceModuleBootstrap;
 use StageArt\Reservation\ReservationModuleBootstrap;
+use StageArt\Settlement\SettlementModuleBootstrap;
 use StageArt\Ticket\TicketModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
 use StageArt\Application\Favorite\AddFavoriteUseCase;
@@ -99,6 +102,8 @@ use StageArt\Application\UserAccount\RegisterEmailCredentialUseCase;
 use StageArt\Application\UserAccount\RequestEmailVerificationUseCase;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressAccountRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressBudgetRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressCheckInRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressSettlementRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExpenseRepository;
@@ -194,6 +199,8 @@ final class Plugin
         $tickets              = new WordPressTicketRepository($wpdb);
         $reservations         = new WordPressReservationRepository($wpdb);
         $issuedTickets        = new WordPressIssuedTicketRepository($wpdb);
+        $checkIns             = new WordPressCheckInRepository($wpdb);
+        $settlements          = new WordPressSettlementRepository($wpdb);
         $rehearsalAttendances = new WordPressRehearsalAttendanceRepository($wpdb);
         $scheduleComments     = new WordPressScheduleCommentRepository($wpdb);
         $timetables           = new WordPressTimetableRepository($wpdb);
@@ -378,7 +385,12 @@ final class Plugin
         $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
         $startProductionPlanning = new StartProductionPlanningUseCase($productions, $productionAuthorization);
         $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization);
-        $completeProduction = new CompleteProductionUseCase($productions, $productionAuthorization);
+        $completeProduction = new CompleteProductionUseCase(
+            $productions,
+            $productionAuthorization,
+            new ProductionSettlementCalculator($performances, $reservations, $tickets),
+            $settlements
+        );
         $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization);
         $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization);
         $changePrimaryManager = new ChangePrimaryManagerUseCase(
@@ -521,6 +533,42 @@ final class Plugin
             $identityContract,
             $authorizationContract,
             $membershipContract,
+            $transactions
+        );
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): Check-in Module's own wiring, mirroring every other
+        // Module Bootstrap above - see CheckInModuleBootstrap's own
+        // docblock.
+        $checkInModule = new CheckInModuleBootstrap(
+            $reservations,
+            $performances,
+            $tickets,
+            $issuedTickets,
+            $checkIns,
+            $accounts,
+            $journalEntries,
+            $productionContextContract,
+            $organizationContextContract,
+            $identityContract,
+            $authorizationContract,
+            $transactions
+        );
+
+        // Settlement Module's own wiring - see SettlementModuleBootstrap's
+        // own docblock, including why CompleteProductionUseCase above
+        // constructs its own separate ProductionSettlementCalculator
+        // rather than sharing this Bootstrap's instance.
+        $settlementModule = new SettlementModuleBootstrap(
+            $productions,
+            $performances,
+            $reservations,
+            $tickets,
+            $settlements,
+            $membershipContract,
+            $people,
+            $identityContract,
+            $authorizationContract,
             $transactions
         );
 
@@ -684,6 +732,18 @@ final class Plugin
         // other Controller here.
         foreach ($accountingModule->restControllers() as $accountingRestController) {
             add_action('rest_api_init', [$accountingRestController, 'register_routes']);
+        }
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): every Check-in Module and Settlement Module REST
+        // Controller is constructed inside their own Bootstraps -
+        // registered identically to every other Controller here.
+        foreach ($checkInModule->restControllers() as $checkInRestController) {
+            add_action('rest_api_init', [$checkInRestController, 'register_routes']);
+        }
+
+        foreach ($settlementModule->restControllers() as $settlementRestController) {
+            add_action('rest_api_init', [$settlementRestController, 'register_routes']);
         }
 
         // Phase 2 (StageArt Authentication): registers the StageArt

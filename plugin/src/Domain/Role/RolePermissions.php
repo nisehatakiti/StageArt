@@ -47,6 +47,15 @@ namespace StageArt\Domain\Role;
  * has a real entry (superseding the earlier "not implemented yet" note
  * this docblock previously carried).
  *
+ * CHECKIN_MANAGER (Phase 4 Check-in/精算/会計連携, per that Phase's
+ * instruction confirming a dedicated reception-staff Role) follows the
+ * same generic path via `CheckInCapability::MANAGE` - reception staff
+ * need Check-in/Reservation-search/walk-up capability but explicitly do
+ * NOT need Settlement or Accounting-close authority, which stay
+ * PrimaryManager-only (via `AccountingCapability::MANAGE`/a dedicated
+ * Settlement check), so CHECKIN_MANAGER's own Permission Set is scoped
+ * narrowly to `CheckIn.Manage` alone.
+ *
  * ACCOUNTING_MANAGER is not added as a RoleKey value at all this Phase -
  * see the relevant Phase's report's "Accounting" section for why.
  */
@@ -78,6 +87,9 @@ final class RolePermissions
         ],
         RoleKey::RESERVATION_MANAGER => [
             'Reservation.Manage',
+        ],
+        RoleKey::CHECKIN_MANAGER => [
+            'CheckIn.Manage',
         ],
     ];
 

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Schema;
 
 use StageArt\Accounting\AccountingInstaller;
+use StageArt\CheckIn\CheckInInstaller;
 use StageArt\Performance\PerformanceInstaller;
 use StageArt\Rehearsal\RehearsalInstaller;
+use StageArt\Settlement\SettlementInstaller;
 use StageArt\Ticket\TicketInstaller;
 
 /**
@@ -311,6 +313,15 @@ final class Installer
         // created here - see that class's own docblock, and
         // PerformanceInstaller's identical precedent above.
         TicketInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): Check-in Module's own table (check_ins) and
+        // Settlement Module's own table (production_member_settlements),
+        // owned and migrated by their own Installers - see those
+        // classes' own docblocks, and TicketInstaller's identical
+        // precedent above.
+        CheckInInstaller::install($wpdb, $charsetCollate);
+        SettlementInstaller::install($wpdb, $charsetCollate);
 
         /*
          * Phase 7.0 (NotificationPolicy.md "未読 / 既読"): a lazily-created

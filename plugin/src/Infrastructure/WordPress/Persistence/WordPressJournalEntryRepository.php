@@ -120,6 +120,21 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         return $this->hydrateBulk($rows ?: []);
     }
 
+    public function findBySourceEvent(string $sourceEventType, string $sourceEventId): ?JournalEntry
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE source_event_type = %s AND source_event_id = %s AND status != %s ORDER BY created_at DESC LIMIT 1",
+                $sourceEventType,
+                $sourceEventId,
+                JournalEntryStatus::REVERSED
+            ),
+            ARRAY_A
+        );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
     /**
      * @param array<int, array<string, mixed>> $rows
      * @return JournalEntry[]

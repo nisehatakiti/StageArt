@@ -17,8 +17,10 @@ use StageArt\Application\Production\CompleteProductionCommand;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionSettlementIncompleteException;
 use StageArt\Application\Production\StartProductionPlanningCommand;
 use StageArt\Application\Production\StartProductionPlanningUseCase;
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
@@ -26,12 +28,20 @@ use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Ticket\TicketBackCondition;
+use StageArt\Domain\Ticket\TicketBackMode;
+use StageArt\Domain\Ticket\TicketId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryReservationRepository;
+use StageArt\Tests\Support\InMemorySettlementRepository;
+use StageArt\Tests\Support\InMemoryTicketRepository;
 
 /**
  * Phase 6.1: covers the Production Lifecycle Action UseCases end to end -
@@ -47,6 +57,10 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private InMemoryPersonRepository $people;
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
+    private InMemoryPerformanceRepository $performances;
+    private InMemoryReservationRepository $reservations;
+    private InMemoryTicketRepository $tickets;
+    private InMemorySettlementRepository $settlements;
 
     private StartProductionPlanningUseCase $startPlanning;
     private ActivateProductionUseCase $activate;
@@ -60,6 +74,10 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->people = new InMemoryPersonRepository();
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
+        $this->performances = new InMemoryPerformanceRepository();
+        $this->reservations = new InMemoryReservationRepository();
+        $this->tickets = new InMemoryTicketRepository();
+        $this->settlements = new InMemorySettlementRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
@@ -70,7 +88,12 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->startPlanning = new StartProductionPlanningUseCase($this->productions, $productionAuthorization);
         $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization);
-        $this->complete = new CompleteProductionUseCase($this->productions, $productionAuthorization);
+        $this->complete = new CompleteProductionUseCase(
+            $this->productions,
+            $productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
+            $this->settlements
+        );
         $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization);
         $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization);
     }
@@ -173,5 +196,72 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         // WordPress user 2 (PrimaryManager of Production B only) attempts
         // to advance Production A's Lifecycle.
         $this->startPlanning->execute(new StartProductionPlanningCommand($productionA->id()->toString(), 2));
+    }
+
+    // --- Phase 4 (Check-in/精算/会計連携): the settlement Guard fills in
+    // Production::complete()'s own long-standing disclosed Open Item.
+
+    private function givenActiveProductionWithUnsettledTicketBack(): Production
+    {
+        [$production, $primaryManager] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $production->updateTicketBack(
+            TicketBackMode::PROGRESSIVE,
+            json_encode([['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => 10]])
+        );
+        $this->productions->save($production);
+
+        $performance = \StageArt\Domain\Performance\Performance::create(
+            $production->id(),
+            new \DateTimeImmutable('-1 day'),
+            '18:00',
+            null,
+            20,
+            null,
+            null
+        );
+        $this->performances->save($performance);
+
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+
+        $member = Person::create(5);
+        $this->people->save($member);
+
+        $reservation = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 1, 3000, null, $member->id());
+        $reservation->checkIn(null);
+        $this->reservations->save($reservation);
+
+        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        return $production;
+    }
+
+    public function test_complete_is_blocked_while_a_member_has_an_unsettled_ticket_back_amount(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+
+        $this->expectException(ProductionSettlementIncompleteException::class);
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+    }
+
+    public function test_complete_succeeds_once_the_member_is_fully_settled(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+
+        // Confirmed Ticket Back for 1 sold unit at 3000円, 10% rate = 300円.
+        $member = null;
+        foreach ($this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id()) as $reservation) {
+            $member = $reservation->attributedPersonId();
+        }
+
+        $settlement = \StageArt\Domain\Settlement\ProductionMemberSettlement::openFor($production->id(), $member);
+        $settlement->recordSettlement(300, $member);
+        $this->settlements->save($settlement);
+
+        $result = $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
     }
 }

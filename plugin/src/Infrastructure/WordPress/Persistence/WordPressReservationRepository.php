@@ -38,6 +38,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             'guest_count' => $reservation->guestCount(),
             'price_snapshot' => $reservation->priceSnapshot(),
             'status' => $reservation->status()->toString(),
+            'attributed_person_id' => $reservation->attributedPersonId()?->toString(),
             'updated_by' => $reservation->updatedBy()?->toString(),
             'updated_at' => $reservation->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -129,7 +130,8 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             ! empty($row['created_by']) ? PersonId::fromString($row['created_by']) : null,
             new DateTimeImmutable($row['created_at']),
             ! empty($row['updated_by']) ? PersonId::fromString($row['updated_by']) : null,
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            ! empty($row['attributed_person_id']) ? PersonId::fromString($row['attributed_person_id']) : null
         );
     }
 }
