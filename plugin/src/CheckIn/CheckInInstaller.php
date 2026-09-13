@@ -42,5 +42,29 @@ final class CheckInInstaller
             KEY reservation_id (reservation_id),
             KEY performance_id (performance_id)
         ) {$charsetCollate};");
+
+        self::installWalkUpIdempotencyKeys($wpdb, $charsetCollate);
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-3: one row per confirmed walk-up (当日券)
+     * Frontend action - `idempotency_key` is UNIQUE so a concurrent or
+     * retried request with the same key can never insert a second row;
+     * `WordPressWalkUpIdempotencyStore::record()` treats any insert
+     * failure on this table as that race, not a generic DB error.
+     *
+     * @param \wpdb $wpdb
+     */
+    private static function installWalkUpIdempotencyKeys($wpdb, string $charsetCollate): void
+    {
+        $keys = $wpdb->prefix . 'stageart_walkup_idempotency_keys';
+
+        dbDelta("CREATE TABLE {$keys} (
+            idempotency_key VARCHAR(100) NOT NULL,
+            reservation_id CHAR(36) NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (idempotency_key),
+            KEY reservation_id (reservation_id)
+        ) {$charsetCollate};");
     }
 }

@@ -13,6 +13,14 @@ final class CreateWalkUpReservationCommand
     public int $guestCount;
     public ?string $attributedPersonId;
     public int $requestedByWordPressUserId;
+    /**
+     * Phase 0-4統合監査 P1-3: a client-generated identifier, one per
+     * confirmed Frontend action (the final "OK" in the two-step
+     * confirmation flow) - required so retries/double-submits of the
+     * exact same confirmed action reuse the same Reservation instead of
+     * creating a duplicate.
+     */
+    public string $idempotencyKey;
 
     public function __construct(
         string $performanceId,
@@ -21,7 +29,8 @@ final class CreateWalkUpReservationCommand
         string $bookerEmail,
         int $guestCount,
         ?string $attributedPersonId,
-        int $requestedByWordPressUserId
+        int $requestedByWordPressUserId,
+        string $idempotencyKey
     ) {
         $this->performanceId = $performanceId;
         $this->ticketId = $ticketId;
@@ -30,5 +39,6 @@ final class CreateWalkUpReservationCommand
         $this->guestCount = $guestCount;
         $this->attributedPersonId = $attributedPersonId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
+        $this->idempotencyKey = $idempotencyKey;
     }
 }

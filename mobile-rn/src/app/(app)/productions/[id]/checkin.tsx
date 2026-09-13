@@ -13,10 +13,12 @@ import {
   useReverseCheckIn,
   useSearchReservationsForCheckIn,
 } from '@/features/checkin/useCheckIn';
+import { useParticipants } from '@/features/participant/useParticipant';
 import { usePerformances } from '@/features/performance/usePerformances';
 import { useProduction } from '@/features/production/useProductions';
 import { useTickets } from '@/features/ticket/useTickets';
 import type { Reservation } from '@/types/api';
+import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 const STATUS_LABEL: Record<Reservation['status'], string> = {
@@ -25,6 +27,18 @@ const STATUS_LABEL: Record<Reservation['status'], string> = {
   CANCELLED: 'キャンセル済み',
   NO_SHOW: '不参加（連絡済み）',
 };
+
+/** Phase 0-4統合監査 P1-3: one fresh identifier per confirmed walk-up
+ * action, so a retried/double-submitted confirmation reuses the same
+ * server-side result instead of registering twice. Same fallback shape
+ * already used by GoogleSignInButtonWeb.tsx's generateNonce() for
+ * environments without crypto.randomUUID. */
+function generateIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `walkup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 /**
  * CheckIn.md/CheckInConsistencyPolicy.md (Phase 4 Check-in/精算/会計連携):
@@ -43,6 +57,7 @@ export default function ProductionCheckInScreen() {
   const production = productionQuery.data;
   const performancesQuery = usePerformances(id);
   const ticketsQuery = useTickets(id);
+  const participantsQuery = useParticipants(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
   const canManage = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
@@ -66,7 +81,12 @@ export default function ProductionCheckInScreen() {
   const [walkUpName, setWalkUpName] = useState('');
   const [walkUpEmail, setWalkUpEmail] = useState('');
   const [walkUpGuestCount, setWalkUpGuestCount] = useState('1');
+  const [walkUpAttributedPersonId, setWalkUpAttributedPersonId] = useState<string | null>(null);
   const createWalkUp = useCreateWalkUpReservation(activePerformanceId ?? undefined);
+
+  const memberParticipants = (participantsQuery.data ?? []).filter(
+    (p) => p.subject_type === 'PERSON' && p.status === 'ACTIVE'
+  );
 
   async function handleCheckIn(reservationId: string) {
     setErrorMessage(null);
@@ -113,7 +133,33 @@ export default function ProductionCheckInScreen() {
     }
   }
 
-  async function handleWalkUp() {
+  /**
+   * Phase 0-4統合監査 P1-3: 当日券登録は「入力→OK→確認ポップアップ→OK→登録」
+   * の2段階操作にする。この関数は第1段階の「OK」で呼ばれ、まだ何も登録しな
+   * い - 内容を確認ポップアップ（confirmAlert、既存のコメント削除確認等と
+   * 同じ仕組み）に表示し、そこでの最終「OK」でのみ実際にperformWalkUp()を
+   * 呼ぶ。ポップアップの「キャンセル」は登録処理を一切実行しない。
+   */
+  function handleWalkUpFirstStage() {
+    const selectedTicket = activeTickets.find((t) => t.id === walkUpTicketId);
+    const guestCount = Number(walkUpGuestCount.trim()) || 1;
+    const attributionLabel = walkUpAttributedPersonId
+      ? memberParticipants.find((p) => p.subject_id === walkUpAttributedPersonId)?.display_name ?? '（選択したメンバー）'
+      : '未設定';
+    const idempotencyKey = generateIdempotencyKey();
+
+    confirmAlert(
+      '当日券の登録確認',
+      `当日券${guestCount}名を登録します。\n\nチケット種別：${selectedTicket?.name ?? ''}\n誰扱い：${attributionLabel}`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'OK', style: 'default', onPress: () => performWalkUp(guestCount, idempotencyKey) },
+      ]
+    );
+  }
+
+  /** 第2段階の最終「OK」でのみ実行される、実際の登録処理。 */
+  async function performWalkUp(guestCount: number, idempotencyKey: string) {
     setErrorMessage(null);
     setMessage(null);
     try {
@@ -121,12 +167,15 @@ export default function ProductionCheckInScreen() {
         ticketId: walkUpTicketId,
         bookerName: walkUpName.trim(),
         bookerEmail: walkUpEmail.trim(),
-        guestCount: Number(walkUpGuestCount.trim()) || 1,
+        guestCount,
+        attributedPersonId: walkUpAttributedPersonId,
+        idempotencyKey,
       });
       setMessage('当日券を発行し、受付を完了しました。');
       setWalkUpName('');
       setWalkUpEmail('');
       setWalkUpGuestCount('1');
+      setWalkUpAttributedPersonId(null);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -303,13 +352,36 @@ export default function ProductionCheckInScreen() {
             style={styles.input}
           />
 
+          <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+            誰扱い（任意）
+          </ThemedText>
+          <View style={styles.radioRow}>
+            <TouchableOpacity testID="walkup-attribution-none" onPress={() => setWalkUpAttributedPersonId(null)} style={styles.radioOption}>
+              <ThemedText>{walkUpAttributedPersonId === null ? '◉' : '○'} 未設定</ThemedText>
+            </TouchableOpacity>
+            {memberParticipants.map((participant) => (
+              <TouchableOpacity
+                key={participant.id}
+                testID={`walkup-attribution-${participant.subject_id}`}
+                onPress={() => setWalkUpAttributedPersonId(participant.subject_id)}
+                style={styles.radioOption}
+              >
+                <ThemedText>
+                  {walkUpAttributedPersonId === participant.subject_id ? '◉' : '○'} {participant.display_name ?? '（名前未設定）'}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity
             testID="production-checkin-walkup-submit"
-            onPress={handleWalkUp}
+            onPress={handleWalkUpFirstStage}
             disabled={!walkUpTicketId || !walkUpName.trim() || !walkUpEmail.trim() || createWalkUp.isPending}
             style={[styles.button, (!walkUpTicketId || !walkUpName.trim() || !walkUpEmail.trim() || createWalkUp.isPending) && styles.buttonDisabled]}
           >
-            <ThemedText style={styles.buttonText}>当日券を発行して受付する</ThemedText>
+            <ThemedText style={styles.buttonText}>
+              {createWalkUp.isPending ? '登録中…' : '当日券を発行して受付する'}
+            </ThemedText>
           </TouchableOpacity>
         </>
       )}

@@ -72,8 +72,14 @@ export function useCreateWalkUpReservation(performanceId: string | undefined) {
   const invalidate = useInvalidateCheckInSearch(performanceId);
 
   return useMutation({
-    mutationFn: (fields: { ticketId: string; bookerName: string; bookerEmail: string; guestCount: number; attributedPersonId?: string | null }) =>
-      createWalkUpReservation(apiClient, performanceId as string, fields),
+    mutationFn: (fields: {
+      ticketId: string;
+      bookerName: string;
+      bookerEmail: string;
+      guestCount: number;
+      attributedPersonId?: string | null;
+      idempotencyKey: string;
+    }) => createWalkUpReservation(apiClient, performanceId as string, fields),
     onSuccess: invalidate,
   });
 }

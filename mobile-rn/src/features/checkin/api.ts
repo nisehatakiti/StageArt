@@ -31,11 +31,22 @@ export function reverseCheckIn(client: ApiClient, performanceId: string, reserva
 }
 
 /** POST /performances/{id}/checkin/walk-up - 当日券: create + immediately
- * Check-in one Reservation, in a single atomic Application-layer call. */
+ * Check-in one Reservation, in a single atomic Application-layer call.
+ * `idempotencyKey` (Phase 0-4統合監査 P1-3) must be a fresh identifier
+ * per confirmed Frontend action - retrying the SAME confirmed action
+ * (double-tap, network retry) with the SAME key reuses the original
+ * registration instead of creating a duplicate one. */
 export function createWalkUpReservation(
   client: ApiClient,
   performanceId: string,
-  fields: { ticketId: string; bookerName: string; bookerEmail: string; guestCount: number; attributedPersonId?: string | null }
+  fields: {
+    ticketId: string;
+    bookerName: string;
+    bookerEmail: string;
+    guestCount: number;
+    attributedPersonId?: string | null;
+    idempotencyKey: string;
+  }
 ): Promise<CheckInResultDto> {
   return client.post<CheckInResultDto>(`/performances/${performanceId}/checkin/walk-up`, {
     ticket_id: fields.ticketId,
@@ -43,6 +54,7 @@ export function createWalkUpReservation(
     booker_email: fields.bookerEmail,
     guest_count: fields.guestCount,
     attributed_person_id: fields.attributedPersonId ?? null,
+    idempotency_key: fields.idempotencyKey,
   });
 }
 

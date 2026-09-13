@@ -13,9 +13,11 @@ use StageArt\Application\CheckIn\MarkNoShowUseCase;
 use StageArt\Application\CheckIn\ReverseCheckInUseCase;
 use StageArt\Application\CheckIn\SearchReservationsForCheckInUseCase;
 use StageArt\Application\CheckIn\StandardAccountResolver;
+use StageArt\Application\CheckIn\WalkUpIdempotencyStoreInterface;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
@@ -52,6 +54,8 @@ final class CheckInModuleBootstrap
         OrganizationContextContract $organizationContext,
         IdentityContract $identity,
         AuthorizationContract $authorization,
+        MembershipContract $membership,
+        WalkUpIdempotencyStoreInterface $walkUpIdempotencyStore,
         TransactionManagerInterface $transactions
     ) {
         $standardAccounts = new StandardAccountResolver($accounts);
@@ -90,9 +94,12 @@ final class CheckInModuleBootstrap
             $tickets,
             $reservations,
             $issuedTickets,
+            $checkIns,
             $identity,
             $authorization,
+            $membership,
             $processor,
+            $walkUpIdempotencyStore,
             $transactions
         );
         $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization);

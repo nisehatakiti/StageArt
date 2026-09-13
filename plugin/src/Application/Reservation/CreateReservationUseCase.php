@@ -66,7 +66,7 @@ final class CreateReservationUseCase
         $this->transactions = $transactions;
     }
 
-    public function execute(CreateReservationCommand $command): ReservationResult
+    public function execute(CreateReservationCommand $command): PublicReservationResult
     {
         // 1. Performance存在確認
         $performanceId = PerformanceId::fromString($command->performanceId);
@@ -166,6 +166,6 @@ final class CreateReservationUseCase
             return $reservation;
         });
 
-        return ReservationResult::fromDomain($reservation);
+        return PublicReservationResult::fromDomain($reservation);
     }
 }

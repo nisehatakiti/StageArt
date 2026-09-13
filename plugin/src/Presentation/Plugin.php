@@ -104,6 +104,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressAccountRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressBudgetRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressCheckInRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressSettlementRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressWalkUpIdempotencyStore;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExpenseRepository;
@@ -200,6 +201,7 @@ final class Plugin
         $reservations         = new WordPressReservationRepository($wpdb);
         $issuedTickets        = new WordPressIssuedTicketRepository($wpdb);
         $checkIns             = new WordPressCheckInRepository($wpdb);
+        $walkUpIdempotencyStore = new WordPressWalkUpIdempotencyStore($wpdb);
         $settlements          = new WordPressSettlementRepository($wpdb);
         $rehearsalAttendances = new WordPressRehearsalAttendanceRepository($wpdb);
         $scheduleComments     = new WordPressScheduleCommentRepository($wpdb);
@@ -552,6 +554,8 @@ final class Plugin
             $organizationContextContract,
             $identityContract,
             $authorizationContract,
+            $membershipContract,
+            $walkUpIdempotencyStore,
             $transactions
         );
 

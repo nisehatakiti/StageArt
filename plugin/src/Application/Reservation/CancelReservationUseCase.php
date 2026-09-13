@@ -33,7 +33,7 @@ final class CancelReservationUseCase
         $this->performances = $performances;
     }
 
-    public function execute(CancelReservationCommand $command): ReservationResult
+    public function execute(CancelReservationCommand $command): PublicReservationResult
     {
         $reservation = $this->reservations->findByReservationNumber(ReservationNumber::fromString($command->reservationNumber));
 
@@ -44,7 +44,7 @@ final class CancelReservationUseCase
         SelfServiceAuthenticator::verify($reservation, $command->email);
 
         if ($reservation->status()->equals(ReservationStatus::fromString(ReservationStatus::CANCELLED))) {
-            return ReservationResult::fromDomain($reservation);
+            return PublicReservationResult::fromDomain($reservation);
         }
 
         $performance = $this->performances->findById($reservation->performanceId());
@@ -67,6 +67,6 @@ final class CancelReservationUseCase
 
         $this->reservations->save($reservation);
 
-        return ReservationResult::fromDomain($reservation);
+        return PublicReservationResult::fromDomain($reservation);
     }
 }

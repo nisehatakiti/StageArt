@@ -192,6 +192,52 @@ final class ReservationUseCaseTest extends TestCase
         $this->assertSame(2, $result->guestCount);
     }
 
+    /**
+     * Phase 0-4統合監査 P1-2: every public self-service Reservation
+     * endpoint (create/lookup/update/cancel) must return
+     * `PublicReservationResult`, not the management-only
+     * `ReservationResult` - the latter's `attributed_person_id`/
+     * `created_by`/`updated_by` fields must never reach an unauthenticated
+     * general-audience caller.
+     */
+    public function test_public_reservation_endpoints_never_expose_internal_fields(): void
+    {
+        $performanceStart = new DateTimeImmutable('+10 days');
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance($performanceStart);
+
+        $created = $this->createReservation->execute(new CreateReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            '山田太郎',
+            'yamada@example.com',
+            2
+        ));
+        $this->assertInstanceOf(\StageArt\Application\Reservation\PublicReservationResult::class, $created);
+        $this->assertNotInternalFields($created->toArray());
+
+        $looked_up = $this->getReservationByNumber->execute(new GetReservationByNumberQuery($created->reservationNumber, 'yamada@example.com'));
+        $this->assertInstanceOf(\StageArt\Application\Reservation\PublicReservationResult::class, $looked_up);
+        $this->assertNotInternalFields($looked_up->toArray());
+
+        $updated = $this->updateReservation->execute(new UpdateReservationCommand($created->reservationNumber, 'yamada@example.com', 3));
+        $this->assertInstanceOf(\StageArt\Application\Reservation\PublicReservationResult::class, $updated);
+        $this->assertNotInternalFields($updated->toArray());
+
+        $cancelled = $this->cancelReservation->execute(new CancelReservationCommand($created->reservationNumber, 'yamada@example.com'));
+        $this->assertInstanceOf(\StageArt\Application\Reservation\PublicReservationResult::class, $cancelled);
+        $this->assertNotInternalFields($cancelled->toArray());
+    }
+
+    /**
+     * @param array<string, mixed> $responseArray
+     */
+    private function assertNotInternalFields(array $responseArray): void
+    {
+        $this->assertArrayNotHasKey('attributed_person_id', $responseArray);
+        $this->assertArrayNotHasKey('created_by', $responseArray);
+        $this->assertArrayNotHasKey('updated_by', $responseArray);
+    }
+
     public function test_create_reservation_rejects_when_ticket_not_published(): void
     {
         $performanceStart = new DateTimeImmutable('+10 days');

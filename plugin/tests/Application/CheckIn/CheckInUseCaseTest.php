@@ -6,6 +6,7 @@ namespace StageArt\Tests\Application\CheckIn;
 
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\CheckIn\AttributedPersonNotProductionMemberException;
 use StageArt\Application\CheckIn\ChangeReservationAttributionCommand;
 use StageArt\Application\CheckIn\ChangeReservationAttributionUseCase;
 use StageArt\Application\CheckIn\CheckInAccessDeniedException;
@@ -33,6 +34,7 @@ use StageArt\Application\Ticket\UpdateTicketSalesSettingsCommand;
 use StageArt\Application\Ticket\UpdateTicketSalesSettingsUseCase;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\JournalEntry\DebitCredit;
@@ -63,6 +65,7 @@ use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryReservationRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\InMemoryWalkUpIdempotencyStore;
 
 final class CheckInUseCaseTest extends TestCase
 {
@@ -71,6 +74,7 @@ final class CheckInUseCaseTest extends TestCase
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
     private InMemoryPerformanceRepository $performances;
     private InMemoryTicketRepository $tickets;
     private InMemoryReservationRepository $reservations;
@@ -78,6 +82,7 @@ final class CheckInUseCaseTest extends TestCase
     private InMemoryCheckInRepository $checkIns;
     private InMemoryAccountRepository $accounts;
     private InMemoryJournalEntryRepository $journalEntries;
+    private InMemoryWalkUpIdempotencyStore $walkUpIdempotencyStore;
 
     private CreateTicketUseCase $createTicket;
     private UpdateTicketSalesSettingsUseCase $updateSalesSettings;
@@ -96,6 +101,7 @@ final class CheckInUseCaseTest extends TestCase
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
         $this->performances = new InMemoryPerformanceRepository();
         $this->tickets = new InMemoryTicketRepository();
         $this->reservations = new InMemoryReservationRepository();
@@ -103,17 +109,19 @@ final class CheckInUseCaseTest extends TestCase
         $this->checkIns = new InMemoryCheckInRepository();
         $this->accounts = new InMemoryAccountRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->walkUpIdempotencyStore = new InMemoryWalkUpIdempotencyStore();
 
         $organizationAuthorization = new \StageArt\Application\Organization\OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants
         );
         $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
         $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
+        $membership = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
         $transactions = new InMemoryTransactionManager();
 
         $this->createTicket = new CreateTicketUseCase($productionContext, $this->tickets, $identity, $authorization);
@@ -148,9 +156,12 @@ final class CheckInUseCaseTest extends TestCase
             $this->tickets,
             $this->reservations,
             $this->issuedTickets,
+            $this->checkIns,
             $identity,
             $authorization,
+            $membership,
             $processor,
+            $this->walkUpIdempotencyStore,
             $transactions
         );
         $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization);
@@ -238,6 +249,42 @@ final class CheckInUseCaseTest extends TestCase
         $creditLine = $lines[0]->debitCredit()->equals(DebitCredit::credit()) ? $lines[0] : $lines[1];
         $this->assertSame(3000, $debitLine->amount());
         $this->assertSame(3000, $creditLine->amount());
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-1: a GuestCount=4 Reservation at 3,000円 must
+     * post 12,000円 (priceSnapshot × guestCount), not 3,000円.
+     */
+    public function test_check_in_revenue_is_price_snapshot_times_guest_count_for_a_multi_guest_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $entries = $this->journalEntries->all();
+        $this->assertCount(1, $entries);
+        $lines = $entries[0]->lines();
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $creditLine = $lines[0]->debitCredit()->equals(DebitCredit::credit()) ? $lines[0] : $lines[1];
+        $this->assertSame(12000, $debitLine->amount());
+        $this->assertSame(12000, $creditLine->amount());
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-1: the GuestCount=1 case must remain unchanged
+     * (priceSnapshot × 1 = priceSnapshot).
+     */
+    public function test_check_in_revenue_for_a_single_guest_reservation_is_unchanged(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 1);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $lines = $this->journalEntries->all()[0]->lines();
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $this->assertSame(3000, $debitLine->amount());
     }
 
     public function test_check_in_generates_no_journal_entry_when_accounting_is_disabled(): void
@@ -389,11 +436,97 @@ final class CheckInUseCaseTest extends TestCase
             'walkup@example.com',
             1,
             null,
-            1
+            1,
+            'walkup-request-1'
         ));
 
         $this->assertSame('CHECKED_IN', $result->reservationStatus);
         $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-3: a retried confirmed action (same
+     * idempotency key) must resolve to the SAME Reservation/Check-in,
+     * never create a second one - covers both the double-tap and the
+     * network-retry scenario the audit flagged.
+     */
+    public function test_walk_up_with_the_same_idempotency_key_does_not_create_a_duplicate(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+
+        $command = new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            '当日券太郎',
+            'walkup@example.com',
+            2,
+            null,
+            1,
+            'same-request-id'
+        );
+
+        $first = $this->createWalkUp->execute($command);
+        $second = $this->createWalkUp->execute($command);
+
+        $this->assertFalse($first->alreadyProcessed);
+        $this->assertTrue($second->alreadyProcessed);
+        $this->assertSame($first->reservationId, $second->reservationId);
+        $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertCount(1, $this->journalEntries->all());
+    }
+
+    public function test_walk_up_with_a_different_idempotency_key_creates_a_separate_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 1, null, 1, 'request-a'
+        ));
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'B', 'b@example.com', 1, null, 1, 'request-b'
+        ));
+
+        $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    public function test_walk_up_rejects_an_attribution_that_is_not_a_production_member(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        $outsider = Person::create(50);
+        $this->people->save($outsider);
+
+        $this->expectException(AttributedPersonNotProductionMemberException::class);
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            'A',
+            'a@example.com',
+            1,
+            $outsider->id()->toString(),
+            1,
+            'attribution-reject'
+        ));
+    }
+
+    public function test_walk_up_accepts_an_attribution_that_is_a_production_member(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        // The PrimaryManager is always a Production member.
+        $result = $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            'A',
+            'a@example.com',
+            1,
+            $production->primaryManagerPersonId()->toString(),
+            1,
+            'attribution-accept'
+        ));
+
+        $reservation = $this->reservations->findById(\StageArt\Domain\Reservation\ReservationId::fromString($result->reservationId));
+        $this->assertTrue($reservation->attributedPersonId()->equals($production->primaryManagerPersonId()));
     }
 
     public function test_walk_up_bypasses_the_public_sales_window(): void
@@ -433,7 +566,8 @@ final class CheckInUseCaseTest extends TestCase
             'walkup@example.com',
             1,
             null,
-            1
+            1,
+            'sales-window-bypass-request'
         ));
 
         $this->assertSame('CHECKED_IN', $result->reservationStatus);

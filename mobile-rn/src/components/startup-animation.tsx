@@ -133,7 +133,23 @@ function StartupVideo({
   );
 }
 
+/**
+ * dev.stageart.top初期表示アニメーション縦サイズ修正 (Phase 0-4統合監査
+ * 別件): on Web, a `<video>` element is a CSS "replaced element" - inside
+ * a column flex container it gets an automatic minimum height derived
+ * from its OWN intrinsic aspect ratio unless `minHeight: 0` is set
+ * explicitly (the standard flexbox `min-height: auto` overflow bug,
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_flexible_box_layout/Mastering_wrapping_of_flex_items#min-size-and-flex-basis).
+ * Without it, a source video taller (relative to its width) than the
+ * viewport forces `container`/`video` past the visible viewport height
+ * regardless of `flex: 1` - `contentFit="contain"` (-> CSS
+ * `object-fit: contain`) can only letterbox the video WITHIN whatever
+ * box these two Views are actually given, and that box was never
+ * properly bounded to the viewport without this. `minHeight: 0` on both
+ * the container and the video itself is the minimal, standard fix - no
+ * animation content, timing, or video asset is touched.
+ */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BrandColors.blackoutBlack },
-  video: { flex: 1 },
+  container: { flex: 1, minHeight: 0, backgroundColor: BrandColors.blackoutBlack },
+  video: { flex: 1, minHeight: 0, minWidth: 0 },
 });

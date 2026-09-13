@@ -20,7 +20,7 @@ final class GetReservationByNumberUseCase
         $this->reservations = $reservations;
     }
 
-    public function execute(GetReservationByNumberQuery $query): ReservationResult
+    public function execute(GetReservationByNumberQuery $query): PublicReservationResult
     {
         $reservation = $this->reservations->findByReservationNumber(ReservationNumber::fromString($query->reservationNumber));
 
@@ -30,6 +30,6 @@ final class GetReservationByNumberUseCase
 
         SelfServiceAuthenticator::verify($reservation, $query->email);
 
-        return ReservationResult::fromDomain($reservation);
+        return PublicReservationResult::fromDomain($reservation);
     }
 }

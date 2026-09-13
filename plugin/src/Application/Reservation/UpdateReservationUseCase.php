@@ -38,7 +38,7 @@ final class UpdateReservationUseCase
         $this->productionContext = $productionContext;
     }
 
-    public function execute(UpdateReservationCommand $command): ReservationResult
+    public function execute(UpdateReservationCommand $command): PublicReservationResult
     {
         $reservation = $this->reservations->findByReservationNumber(ReservationNumber::fromString($command->reservationNumber));
 
@@ -98,6 +98,6 @@ final class UpdateReservationUseCase
 
         $this->reservations->save($reservation);
 
-        return ReservationResult::fromDomain($reservation);
+        return PublicReservationResult::fromDomain($reservation);
     }
 }

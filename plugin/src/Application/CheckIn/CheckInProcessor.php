@@ -30,12 +30,16 @@ use StageArt\Domain\Reservation\ReservationRepositoryInterface;
  * within it, so a walk-up Reservation's creation and its immediate
  * Check-in stay one atomic operation.
  *
- * Revenue Recognition (TicketRevenueConsistencyPolicy.md): uses
- * `reservation->priceSnapshot()` as-is, the same frozen transaction
- * amount Reservation itself already treats as immutable - never
- * recomputed from the Ticket's current price or from GuestCount, per
- * that Policy's explicit "Guest Countから単純計算して売上金額を再構成しない"
- * rule.
+ * Revenue Recognition (TicketRevenueConsistencyPolicy.md): the posted
+ * amount is `priceSnapshot() * guestCount()`. `priceSnapshot` itself is
+ * still the frozen per-Reservation unit price fixed at booking time -
+ * never recomputed from the Ticket's current price - matching the
+ * Policy's "Ticketの現在価格を参照して...再計算してはならない" rule. What
+ * changed (Phase 0-4統合監査 P1-1) is that this Policy's OTHER explicit
+ * rule - "Reservationに記録された実際の取引金額を利用する" - requires the
+ * full party amount, not a single unit: a GuestCount=4 booking at 3,000円
+ * is a 12,000円 sale, not 3,000円. The prior single-unit amount was a
+ * genuine bug, not an intentional simplification.
  */
 final class CheckInProcessor
 {
@@ -122,7 +126,7 @@ final class CheckInProcessor
         $cashAccount = $this->standardAccounts->resolveCashAccount($organizationId);
         $revenueAccount = $this->standardAccounts->resolveTicketRevenueAccount($organizationId);
 
-        $amount = $reservation->priceSnapshot();
+        $amount = $reservation->priceSnapshot() * $reservation->guestCount();
 
         $journalEntry = JournalEntry::create(
             $organizationId,

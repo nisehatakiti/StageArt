@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
+use StageArt\Application\CheckIn\AttributedPersonNotProductionMemberException;
 use StageArt\Application\CheckIn\ChangeReservationAttributionCommand;
 use StageArt\Application\CheckIn\ChangeReservationAttributionUseCase;
 use StageArt\Application\CheckIn\CheckInAccessDeniedException;
@@ -238,6 +239,15 @@ final class CheckInRestController
     {
         try {
             $attributedPersonId = $request->get_param('attributed_person_id');
+            $idempotencyKey = $request->get_param('idempotency_key');
+
+            if ($idempotencyKey === null || $idempotencyKey === '') {
+                return new WP_Error(
+                    'stageart_checkin_invalid',
+                    'idempotency_key is required for a walk-up ticket sale.',
+                    ['status' => 422]
+                );
+            }
 
             $command = new CreateWalkUpReservationCommand(
                 (string) $request->get_param('id'),
@@ -246,7 +256,8 @@ final class CheckInRestController
                 (string) $request->get_param('booker_email'),
                 (int) $request->get_param('guest_count'),
                 $attributedPersonId !== null && $attributedPersonId !== '' ? (string) $attributedPersonId : null,
-                get_current_user_id()
+                get_current_user_id(),
+                (string) $idempotencyKey
             );
 
             return new WP_REST_Response($this->createWalkUpReservation->execute($command)->toArray(), 201);
@@ -310,6 +321,14 @@ final class CheckInRestController
 
         if ($exception instanceof PerformanceAlreadyStartedException) {
             return new WP_Error('stageart_performance_already_started', $exception->getMessage(), ['status' => 422]);
+        }
+
+        if ($exception instanceof AttributedPersonNotProductionMemberException) {
+            return new WP_Error('stageart_attributed_person_not_production_member', $exception->getMessage(), ['status' => 422]);
+        }
+
+        if ($exception instanceof \StageArt\Application\CheckIn\WalkUpDuplicateRequestException) {
+            return new WP_Error('stageart_walkup_duplicate_request', $exception->getMessage(), ['status' => 409]);
         }
 
         if ($exception instanceof InvalidArgumentException) {
