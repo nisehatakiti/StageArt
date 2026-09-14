@@ -410,6 +410,14 @@ function PersonalOverviewSection({
           </ThemedView>
         </>
       )}
+
+      {/* Notification基盤実装 phase §15: the new personal Notification
+          feed (Rehearsal Cancel/Reminder) - a distinct feed from the
+          Production-scoped Timetable one above, so its own link, always
+          visible regardless of whether there is anything unread yet. */}
+      <TouchableOpacity testID="home-my-notifications-link" style={styles.myNotificationsLink} onPress={() => router.push('/my-notifications')}>
+        <ThemedText type="link">すべてのお知らせを見る</ThemedText>
+      </TouchableOpacity>
     </ThemedView>
   );
 }
@@ -553,6 +561,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
     gap: Spacing.half,
+  },
+  myNotificationsLink: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
   },
   navGrid: {
     flexDirection: 'row',

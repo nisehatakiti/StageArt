@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace StageArt\Presentation;
 
 use StageArt\Application\Admin\CreateAdminConsoleAccountUseCase;
+use StageArt\Application\Notification\InAppNotificationAdapter;
+use StageArt\Application\Notification\ListMyNotificationsUseCase;
+use StageArt\Application\Notification\MarkMyNotificationReadUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
 use StageArt\Application\UserAccount\DeleteUserAccountsUseCase;
 use StageArt\Application\UserAccount\ListAllUserAccountsUseCase;
@@ -16,7 +20,9 @@ use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
+use StageArt\Infrastructure\WordPress\Notification\WordPressEmailNotificationAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationRepository;
 use StageArt\Infrastructure\WordPress\Rehearsal\WordPressRehearsalReminderScheduler;
 use StageArt\Accounting\AccountingModuleBootstrap;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
@@ -213,6 +219,7 @@ final class Plugin
         $timetableVersionPublishedNotifications = new WordPressTimetableVersionPublishedNotificationRepository($wpdb);
         $notificationReadStates = new WordPressNotificationReadStateRepository($wpdb);
         $pushPreferences      = new WordPressPushPreferenceRepository($wpdb);
+        $notifications        = new WordPressNotificationRepository($wpdb);
         $accounts             = new WordPressAccountRepository($wpdb);
         $budgets              = new WordPressBudgetRepository($wpdb);
         $journalEntries       = new WordPressJournalEntryRepository($wpdb);
@@ -231,7 +238,20 @@ final class Plugin
         $identityContract = new CoreIdentityAdapter($people);
         $authorizationContract = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
-        $notificationDispatcher = new WordPressNotificationDispatcher();
+
+        // Notification基盤実装 phase: In-App (highest priority per this
+        // phase's instruction) and Email delivery Adapters, registered
+        // with the dispatcher below. Push has no real provider decided
+        // yet - see WordPressNotificationDispatcher's own docblock for
+        // why the `do_action('stageart_notification', ...)` hook stays
+        // as that channel's event-emission point instead of a fake
+        // implementation. WordPressUserLookup is stateless and
+        // constructed again (harmlessly) at its own original call site
+        // further down for ListAllUserAccountsUseCase.
+        $notificationInAppAdapter = new InAppNotificationAdapter($notifications);
+        $personEmailResolver = new PersonEmailResolver($people, $userAccounts, $emailCredentials, new WordPressUserLookup());
+        $notificationEmailAdapter = new WordPressEmailNotificationAdapter($personEmailResolver);
+        $notificationDispatcher = new WordPressNotificationDispatcher([$notificationInAppAdapter, $notificationEmailAdapter]);
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
         $rehearsalReminderScheduler = new WordPressRehearsalReminderScheduler();
 
@@ -515,6 +535,8 @@ final class Plugin
             $identityContract,
             $membershipContract
         );
+        $listMyNotifications = new ListMyNotificationsUseCase($notifications, $identityContract);
+        $markMyNotificationRead = new MarkMyNotificationReadUseCase($notifications, $identityContract);
         $getMyDashboard = new GetMyDashboardUseCase(
             $productions,
             $productionDelegates,
@@ -686,7 +708,12 @@ final class Plugin
             $listPendingParticipantRequests
         );
 
-        $notificationRestController = new NotificationRestController($listNotificationsForProduction, $markNotificationRead);
+        $notificationRestController = new NotificationRestController(
+            $listNotificationsForProduction,
+            $markNotificationRead,
+            $listMyNotifications,
+            $markMyNotificationRead
+        );
         $dashboardRestController = new DashboardRestController($getMyDashboard);
 
         $pushPreferenceRestController = new PushPreferenceRestController($getPushPreference, $updatePushPreference);

@@ -10,6 +10,7 @@ use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
+use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
 
 /**
  * Phase 7 (Rehearsal仕様整合): the actual "send the Reminder now" work,
@@ -24,14 +25,18 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * (see that class's own docblock) rather than introducing a queue/
  * outbox this codebase has no other example of.
  *
- * Recipients: every current Phase 1 (SCHEDULE_ADJUSTMENT) Attendance
- * target for this Rehearsal - "予定稽古には回答期限を設定する" reads the
- * deadline as governing that phase specifically. Sent to ALL of them
- * regardless of whether they have already answered: no existing rule
- * anywhere in this codebase defines an "already answered, so skip"
- * exclusion for any notification type, and Phase 7's own instruction
- * says not to invent one - see this Phase's report for the disclosed
- * 要判断事項.
+ * Recipients (Notification基盤実装 phase §1, confirmed): every current
+ * Phase 1 (SCHEDULE_ADJUSTMENT) Attendance target whose status is
+ * UNANSWERED *at the moment this method runs* - re-read from the
+ * Repository fresh each call, never cached from Reminder-scheduling
+ * time, per "Reminder作成時ではなく、実行される時点で最新の回答状態を確認
+ * する". AVAILABLE/UNAVAILABLE are both "already answered" and excluded
+ * (Phase 1 has exactly these three values - see
+ * RehearsalAttendanceStatus::PHASE_1_VALUES - there is no separate
+ * "undecided" value to special-case; this phase's instruction's
+ * "「未定」は回答済みとして扱う" note has no distinct Phase 1 status to
+ * apply to, so the rule collapses to "only UNANSWERED", which is what
+ * this filter already does).
  */
 final class RehearsalReminderDispatcher
 {
@@ -64,6 +69,10 @@ final class RehearsalReminderDispatcher
         $message = RehearsalNotificationMessageBuilder::buildReminderMessage($production->name, $rehearsal->startDateTime());
 
         foreach ($this->attendances->findByRehearsalIdAndPhase($rehearsal->id(), RehearsalAttendancePhase::scheduleAdjustment()) as $attendance) {
+            if ($attendance->status()->toString() !== RehearsalAttendanceStatus::UNANSWERED) {
+                continue;
+            }
+
             $this->notificationContract->notify($attendance->personId(), 'rehearsal_response_reminder', [
                 'rehearsal_id' => $rehearsal->id()->toString(),
                 'production_id' => $rehearsal->productionId()->toString(),

@@ -453,6 +453,23 @@ export type NotificationFact = {
   is_read: boolean;
 };
 
+/**
+ * Notification基盤実装 phase: the new personal, per-recipient Notification
+ * Fact (Rehearsal Cancel/Reminder today) - deliberately a different,
+ * simpler shape than `NotificationFact` (that one is Timetable-specific
+ * with no generic `message` field; this one already carries its own
+ * ready-to-display text server-side via RehearsalNotificationMessageBuilder,
+ * so no client-side title-by-type lookup is needed).
+ */
+export type MyNotification = {
+  id: string;
+  type: string;
+  message: string;
+  production_id: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
 export type Rehearsal = {
   id: string;
   production_id: string;

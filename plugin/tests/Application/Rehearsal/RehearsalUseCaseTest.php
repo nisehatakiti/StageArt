@@ -1165,4 +1165,77 @@ final class RehearsalUseCaseTest extends TestCase
         $this->assertSame('CANCELLED', $result->status);
         $this->assertCount(0, array_filter($this->notificationDispatcher->dispatched(), static fn ($n) => $n['type'] === 'rehearsal_cancelled'));
     }
+
+    // --- Notification基盤実装 phase §1: Reminder対象者は実行時点でUNANSWEREDの人のみ ---
+
+    public function test_reminder_only_notifies_targets_who_are_still_unanswered_at_send_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $unanswered = $this->addActivePersonParticipant($production, 2);
+        $available = $this->addActivePersonParticipant($production, 3);
+        $unavailable = $this->addActivePersonParticipant($production, 4);
+
+        // No deadline yet at creation, so no Reminder fires here - only
+        // after the three members' current attendance state is set up
+        // below does the deadline get pulled into "overdue", so the
+        // dispatch this test inspects reflects each member's status at
+        // that later point in time, not at creation time.
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            null,
+            'Asia/Tokyo',
+            null,
+            [$unanswered->id()->toString(), $available->id()->toString(), $unavailable->id()->toString()]
+        ));
+
+        $roster = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($created->id),
+            \StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase::scheduleAdjustment()
+        );
+
+        foreach ($roster as $attendance) {
+            if ($attendance->personId()->equals($available->id())) {
+                $attendance->respondScheduleAdjustment(
+                    \StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus::fromString('AVAILABLE')
+                );
+                $this->attendances->save($attendance);
+            } elseif ($attendance->personId()->equals($unavailable->id())) {
+                $attendance->respondScheduleAdjustment(
+                    \StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus::fromString('UNAVAILABLE')
+                );
+                $this->attendances->save($attendance);
+            }
+        }
+
+        // Now set an already-overdue deadline: newDeadline - 24h is already
+        // in the past, so this triggers ACTION_SEND_NOW immediately.
+        // startDateTime is echoed back unchanged (whole-field-overwrite
+        // convention - a null here would wipe it, which would make
+        // RehearsalReminderDispatcher bail out with nothing to notify).
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            null,
+            'Asia/Tokyo',
+            null,
+            (new DateTimeImmutable('+1 hour'))->format(DATE_ATOM)
+        ));
+
+        $reminderNotifications = array_values(array_filter(
+            $this->notificationDispatcher->dispatched(),
+            static fn ($n) => $n['type'] === 'rehearsal_response_reminder'
+        ));
+        $notifiedPersonIds = array_map(static fn ($n) => $n['personId']->toString(), $reminderNotifications);
+
+        $this->assertContains($unanswered->id()->toString(), $notifiedPersonIds);
+        $this->assertNotContains($available->id()->toString(), $notifiedPersonIds);
+        $this->assertNotContains($unavailable->id()->toString(), $notifiedPersonIds);
+    }
 }

@@ -72,6 +72,7 @@ final class Installer
         $participants = $wpdb->prefix . 'stageart_participants';
         $notificationReadStates = $wpdb->prefix . 'stageart_notification_read_states';
         $pushPreferences = $wpdb->prefix . 'stageart_push_preferences';
+        $notifications = $wpdb->prefix . 'stageart_notifications';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
@@ -356,6 +357,29 @@ final class Installer
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Notification基盤実装 phase: the generic, per-recipient In-App
+         * Notification Fact (see Notification::class's own docblock for
+         * why this is a NEW table rather than a
+         * stageart_timetable_version_published_notifications refactor -
+         * that table's audience-not-stored design stays as-is). One row
+         * per (Person, event); read/unread lives directly on the row
+         * (read_at NULL = unread), not through
+         * stageart_notification_read_states, since a per-recipient row
+         * already exists and a second table would add nothing.
+         */
+        dbDelta("CREATE TABLE {$notifications} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            type VARCHAR(50) NOT NULL,
+            message TEXT NOT NULL,
+            production_id CHAR(36) NULL,
+            read_at DATETIME NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY person_id (person_id)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Accounting Module's
