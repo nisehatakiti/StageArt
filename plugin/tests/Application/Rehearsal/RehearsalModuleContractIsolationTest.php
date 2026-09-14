@@ -9,6 +9,8 @@ use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\RehearsalId;
@@ -17,7 +19,9 @@ use StageArt\Tests\Support\FakeAuthorizationContract;
 use StageArt\Tests\Support\FakeIdentityContract;
 use StageArt\Tests\Support\FakeMembershipContract;
 use StageArt\Tests\Support\FakeProductionContextContract;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 
@@ -65,11 +69,15 @@ final class RehearsalModuleContractIsolationTest extends TestCase
         $membership = new FakeMembershipContract();
         $membership->setMembers($productionId, [$phantomMember]);
 
+        $reminderDispatcher = new RehearsalReminderDispatcher($attendances, $productionContext, new CoreNotificationAdapter(new InMemoryNotificationDispatcher()));
+
         $createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $rehearsals,
             $attendances,
             $membership,
+            $reminderDispatcher,
+            new InMemoryRehearsalReminderScheduler(),
             $identity,
             $authorization,
             $transactions
@@ -117,11 +125,15 @@ final class RehearsalModuleContractIsolationTest extends TestCase
 
         $membership = new FakeMembershipContract();
 
+        $reminderDispatcher = new RehearsalReminderDispatcher($attendances, $productionContext, new CoreNotificationAdapter(new InMemoryNotificationDispatcher()));
+
         $createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $rehearsals,
             $attendances,
             $membership,
+            $reminderDispatcher,
+            new InMemoryRehearsalReminderScheduler(),
             $identity,
             $authorization,
             $transactions

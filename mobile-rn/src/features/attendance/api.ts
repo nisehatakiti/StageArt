@@ -35,6 +35,8 @@ export function createRehearsal(
     timezone?: string;
     location?: string;
     targetPersonIds?: string[];
+    /** Phase 7 (Rehearsal仕様整合): "回答期限" - optional. */
+    responseDeadline?: string;
   }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
@@ -44,6 +46,7 @@ export function createRehearsal(
     timezone: fields.timezone,
     location: fields.location,
     person_ids: fields.targetPersonIds,
+    response_deadline: fields.responseDeadline,
   });
 }
 
@@ -67,6 +70,9 @@ export function updateRehearsal(
     endDateTime?: string;
     timezone?: string;
     location?: string;
+    /** Phase 7 (Rehearsal仕様整合): "回答期限" - whole-field overwrite,
+     * matching every other field here; omitting it clears the deadline. */
+    responseDeadline?: string;
   }
 ): Promise<Rehearsal> {
   return client.put<Rehearsal>(`/rehearsals/${rehearsalId}`, {
@@ -76,6 +82,7 @@ export function updateRehearsal(
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
     location: fields.location,
+    response_deadline: fields.responseDeadline,
   });
 }
 

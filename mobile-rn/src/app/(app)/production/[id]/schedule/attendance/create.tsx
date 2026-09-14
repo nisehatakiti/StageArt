@@ -39,6 +39,8 @@ export default function CreateRehearsalScreen() {
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [location, setLocation] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
 
   /**
    * 稽古の参加対象は、稽古作成時に選択されたProductionメンバーのみ
@@ -106,6 +108,7 @@ export default function CreateRehearsalScreen() {
   async function handleSubmit() {
     const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
     const endDateTime = date && endTime ? `${date}T${endTime}:00+09:00` : undefined;
+    const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
 
     const rehearsal = await createRehearsal.mutateAsync({
       title: title.trim(),
@@ -114,6 +117,7 @@ export default function CreateRehearsalScreen() {
       timezone: 'Asia/Tokyo',
       location: location.trim() || undefined,
       targetPersonIds: Array.from(selectedPersonIds),
+      responseDeadline,
     });
 
     if (confirmOnCreate) {
@@ -205,6 +209,30 @@ export default function CreateRehearsalScreen() {
           場所
         </ThemedText>
         <ThemedTextInput testID="rehearsal-create-location" placeholder="○○スタジオ" value={location} onChangeText={setLocation} style={styles.input} />
+
+        <ThemedText type="small" themeColor="textSecondary">
+          回答期限（任意・YYYY-MM-DD）
+        </ThemedText>
+        <ThemedTextInput
+          testID="rehearsal-create-deadline-date"
+          placeholder="2026-09-19"
+          value={deadlineDate}
+          onChangeText={setDeadlineDate}
+          autoCapitalize="none"
+          style={styles.input}
+        />
+
+        <ThemedText type="small" themeColor="textSecondary">
+          回答期限の時刻（HH:mm）
+        </ThemedText>
+        <ThemedTextInput
+          testID="rehearsal-create-deadline-time"
+          placeholder="18:00"
+          value={deadlineTime}
+          onChangeText={setDeadlineTime}
+          autoCapitalize="none"
+          style={styles.input}
+        />
 
         <ThemedText type="small" themeColor="textSecondary">
           参加メンバー

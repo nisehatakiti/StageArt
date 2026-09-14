@@ -74,6 +74,15 @@ export default function RehearsalAttendanceScreen() {
 
   const rehearsalQuery = useRehearsal(rehearsalId);
   const phase = rehearsalQuery.data ? phaseForRehearsalStatus(rehearsalQuery.data.status) : undefined;
+  /** Phase 7 (Rehearsal仕様整合) §4/§10: "回答期限" governs
+   * SCHEDULE_ADJUSTMENT (予定) self-response specifically - Backend
+   * (RespondRehearsalAttendanceUseCase) is the authority (this is UX
+   * only, so the member sees why before submitting rather than only
+   * after a 422). */
+  const responseDeadlinePassed =
+    phase === 'SCHEDULE_ADJUSTMENT' &&
+    !!rehearsalQuery.data?.response_deadline &&
+    new Date() > new Date(rehearsalQuery.data.response_deadline);
 
   const attendancesQuery = useRehearsalAttendances(rehearsalId, phase);
   const currentPersonQuery = useCurrentPerson();
@@ -328,12 +337,18 @@ export default function RehearsalAttendanceScreen() {
                 <ThemedView style={styles.myCard} testID="attendance-my-record">
                   <ThemedText type="smallBold">あなたの回答</ThemedText>
                   <ThemedText testID="attendance-my-status">{statusLabel(myRecord.status)}</ThemedText>
+                  {responseDeadlinePassed && (
+                    <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
+                      回答期限を過ぎたため、回答・変更はできません。
+                    </ThemedText>
+                  )}
                   <ThemedTextInput
                     testID="attendance-remarks-input"
                     placeholder="備考（任意）"
                     value={remarksDraft}
                     onChangeText={setRemarksDraft}
                     multiline
+                    editable={!responseDeadlinePassed}
                   />
                   <ThemedView style={styles.buttonRow}>
                     {responseOptionsForPhase(phase).map((option) => (
@@ -347,7 +362,7 @@ export default function RehearsalAttendanceScreen() {
                             remarks: remarksDraft.trim() || null,
                           })
                         }
-                        disabled={respondMutation.isPending}
+                        disabled={respondMutation.isPending || responseDeadlinePassed}
                       >
                         <ThemedText type="link">{statusLabel(option)}</ThemedText>
                       </TouchableOpacity>

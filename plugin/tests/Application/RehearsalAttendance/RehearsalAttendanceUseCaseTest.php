@@ -13,9 +13,11 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsCommand;
 use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
@@ -43,6 +45,7 @@ use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -50,6 +53,7 @@ use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 
@@ -94,12 +98,17 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
+        $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
+        $reminderScheduler = new InMemoryRehearsalReminderScheduler();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
             $transactions
@@ -781,5 +790,123 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED'));
+    }
+
+    // --- Phase 7 (Rehearsal仕様整合) §4: 回答期限による自己回答の制限 ---
+
+    public function test_self_response_is_rejected_after_the_response_deadline_has_passed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->changeResponseDeadline(new \DateTimeImmutable('-1 hour'));
+        $this->rehearsals->save($rehearsalEntity);
+
+        $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
+        $ownRecord = $roster[0];
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($ownRecord->id, 2, 'AVAILABLE'));
+    }
+
+    public function test_self_response_is_allowed_before_the_response_deadline(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->changeResponseDeadline(new \DateTimeImmutable('+1 hour'));
+        $this->rehearsals->save($rehearsalEntity);
+
+        $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
+        $ownRecord = $roster[0];
+
+        $updated = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($ownRecord->id, 2, 'AVAILABLE'));
+        $this->assertSame('AVAILABLE', $updated->status);
+    }
+
+    public function test_self_response_with_no_deadline_set_is_unaffected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+
+        $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
+        $ownRecord = $roster[0];
+
+        $updated = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($ownRecord->id, 2, 'AVAILABLE'));
+        $this->assertSame('AVAILABLE', $updated->status);
+    }
+
+    /**
+     * The deadline governs Phase 1 (SCHEDULE_ADJUSTMENT/予定) response
+     * specifically ("予定稽古には回答期限を設定する") - a Phase 2
+     * (ATTENDANCE_CONFIRMATION/確定) response is a separate, later period
+     * this deadline does not describe, so an expired Phase 1 deadline
+     * must not block it.
+     */
+    public function test_response_deadline_does_not_affect_phase2_attendance_confirmation_response(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->changeResponseDeadline(new \DateTimeImmutable('-1 hour'));
+        $this->rehearsals->save($rehearsalEntity);
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+
+        $updated = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+        $this->assertSame('ATTENDING', $updated->status);
     }
 }

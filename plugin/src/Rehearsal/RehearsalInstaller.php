@@ -45,6 +45,14 @@ final class RehearsalInstaller
         $timetableItemParticipants = $wpdb->prefix . 'stageart_timetable_item_participants';
         $timetableVersionPublishedNotifications = $wpdb->prefix . 'stageart_timetable_version_published_notifications';
 
+        /*
+         * Phase 7 (Rehearsal仕様整合) §4: response_deadline is the
+         * confirmed "回答期限" field (nullable - a Rehearsal need not have
+         * one). reminder_sent_at is the 24h-before-deadline Reminder's
+         * duplicate-send guard (Rehearsal::markReminderSent()/
+         * clearReminderSentMark()) - both dbDelta-added, not part of the
+         * original Phase 3 schema.
+         */
         dbDelta("CREATE TABLE {$rehearsals} (
             id CHAR(36) NOT NULL,
             production_id CHAR(36) NOT NULL,
@@ -55,6 +63,8 @@ final class RehearsalInstaller
             timezone VARCHAR(64) NULL,
             location VARCHAR(255) NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+            response_deadline DATETIME NULL,
+            reminder_sent_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),

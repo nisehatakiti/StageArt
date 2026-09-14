@@ -26,6 +26,8 @@ use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
@@ -50,6 +52,8 @@ use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryReservationRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
@@ -97,12 +101,17 @@ final class MemberPerformanceSummaryUseCaseTest extends TestCase
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
         $calculator = new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets);
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
+        $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
+        $reminderScheduler = new InMemoryRehearsalReminderScheduler();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
             $transactions

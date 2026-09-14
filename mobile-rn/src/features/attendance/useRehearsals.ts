@@ -45,6 +45,7 @@ export function useCreateRehearsal(productionId: string | undefined) {
       timezone?: string;
       location?: string;
       targetPersonIds?: string[];
+      responseDeadline?: string;
     }) => createRehearsal(apiClient, productionId as string, fields),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-rehearsals', productionId] }),
   });
@@ -92,6 +93,7 @@ export function useUpdateRehearsal(rehearsalId: string | undefined) {
       endDateTime?: string;
       timezone?: string;
       location?: string;
+      responseDeadline?: string;
     }) => updateRehearsal(apiClient, rehearsalId as string, fields),
     onSuccess: (rehearsal) => {
       queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] });

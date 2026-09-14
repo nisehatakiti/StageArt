@@ -27,6 +27,21 @@ use StageArt\Domain\Production\ProductionId;
  */
 final class Rehearsal
 {
+    /**
+     * Phase 7 (Rehearsal仕様整合): a CONFIRMED/ACTIVE Rehearsal's DATE may
+     * no longer be changed - members have already committed to it via
+     * their Phase 1/2 Attendance response, so moving the date out from
+     * under them silently is exactly the scenario the confirmed spec
+     * forbids ("確定済み稽古の日付変更は禁止"). The TIME may still change
+     * (a same-day schedule adjustment is not the same risk). A genuine
+     * date change on a CONFIRMED/ACTIVE Rehearsal must go through Cancel +
+     * create a new Rehearsal instead - see `updateBasicInfo()`.
+     */
+    private const DATE_CHANGE_LOCKED_STATUSES = [
+        RehearsalStatus::CONFIRMED,
+        RehearsalStatus::ACTIVE,
+    ];
+
     private RehearsalId $id;
     private ProductionId $productionId;
     private ?string $title;
@@ -36,6 +51,8 @@ final class Rehearsal
     private ?string $timezone;
     private ?string $location;
     private RehearsalStatus $status;
+    private ?DateTimeImmutable $responseDeadline;
+    private ?DateTimeImmutable $reminderSentAt;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -49,6 +66,8 @@ final class Rehearsal
         ?string $timezone,
         ?string $location,
         RehearsalStatus $status,
+        ?DateTimeImmutable $responseDeadline,
+        ?DateTimeImmutable $reminderSentAt,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -61,6 +80,8 @@ final class Rehearsal
         $this->timezone = $timezone;
         $this->location = $location;
         $this->status = $status;
+        $this->responseDeadline = $responseDeadline;
+        $this->reminderSentAt = $reminderSentAt;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -72,7 +93,8 @@ final class Rehearsal
         ?DateTimeImmutable $startDateTime,
         ?DateTimeImmutable $endDateTime,
         ?string $timezone,
-        ?string $location
+        ?string $location,
+        ?DateTimeImmutable $responseDeadline = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -86,6 +108,8 @@ final class Rehearsal
             $timezone,
             $location,
             RehearsalStatus::scheduled(),
+            $responseDeadline,
+            null,
             $now,
             $now
         );
@@ -102,7 +126,9 @@ final class Rehearsal
         ?string $location,
         RehearsalStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?DateTimeImmutable $responseDeadline = null,
+        ?DateTimeImmutable $reminderSentAt = null
     ): self {
         return new self(
             $id,
@@ -114,6 +140,8 @@ final class Rehearsal
             $timezone,
             $location,
             $status,
+            $responseDeadline,
+            $reminderSentAt,
             $createdAt,
             $updatedAt
         );
@@ -133,12 +161,87 @@ final class Rehearsal
             );
         }
 
+        if ($this->dateWouldChange($startDateTime, $endDateTime) && $this->isDateChangeLocked()) {
+            throw new InvalidArgumentException(
+                'A CONFIRMED or ACTIVE Rehearsal\'s date cannot be changed - cancel this Rehearsal and create a new one instead.'
+            );
+        }
+
         $this->title = $title;
         $this->description = $description;
         $this->startDateTime = $startDateTime;
         $this->endDateTime = $endDateTime;
         $this->timezone = $timezone;
         $this->location = $location;
+        $this->touch();
+    }
+
+    private function dateWouldChange(?DateTimeImmutable $newStartDateTime, ?DateTimeImmutable $newEndDateTime): bool
+    {
+        return $this->datePart($newStartDateTime) !== $this->datePart($this->startDateTime)
+            || $this->datePart($newEndDateTime) !== $this->datePart($this->endDateTime);
+    }
+
+    private function datePart(?DateTimeImmutable $value): ?string
+    {
+        return $value?->format('Y-m-d');
+    }
+
+    private function isDateChangeLocked(): bool
+    {
+        foreach (self::DATE_CHANGE_LOCKED_STATUSES as $lockedStatus) {
+            if ($this->status->equals(RehearsalStatus::fromString($lockedStatus))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Phase 7 (Rehearsal仕様整合): "予定稽古には回答期限を設定する" - a
+     * nullable deadline governing Phase 1 (SCHEDULE_ADJUSTMENT) self-
+     * response (see `RespondRehearsalAttendanceUseCase`'s own deadline
+     * guard). Overwritten unconditionally, matching this Entity's other
+     * setters - the Application layer (`RehearsalReminderPolicy`) is
+     * responsible for deciding what a *change* in this value means for
+     * any already-scheduled Reminder before calling this.
+     */
+    public function changeResponseDeadline(?DateTimeImmutable $responseDeadline): void
+    {
+        if ($this->isTerminal()) {
+            throw new InvalidArgumentException(
+                'A COMPLETED or CANCELLED Rehearsal\'s response deadline cannot be changed.'
+            );
+        }
+
+        $this->responseDeadline = $responseDeadline;
+        $this->touch();
+    }
+
+    public function hasResponseDeadlinePassed(DateTimeImmutable $now): bool
+    {
+        return $this->responseDeadline !== null && $now > $this->responseDeadline;
+    }
+
+    /**
+     * Phase 7: the Reminder duplicate-send guard - set once the 24h-
+     * before Reminder has actually been dispatched for the CURRENT
+     * `responseDeadline`. `clearReminderSentMark()` resets this when the
+     * Application layer decides the deadline changed enough to need a
+     * fresh Reminder opportunity (see `RehearsalReminderPolicy` - never
+     * reset merely because the deadline was extended, per the confirmed
+     * "extending leaves the existing Reminder untouched" rule).
+     */
+    public function markReminderSent(DateTimeImmutable $at): void
+    {
+        $this->reminderSentAt = $at;
+        $this->touch();
+    }
+
+    public function clearReminderSentMark(): void
+    {
+        $this->reminderSentAt = null;
         $this->touch();
     }
 
@@ -245,6 +348,16 @@ final class Rehearsal
     public function status(): RehearsalStatus
     {
         return $this->status;
+    }
+
+    public function responseDeadline(): ?DateTimeImmutable
+    {
+        return $this->responseDeadline;
+    }
+
+    public function reminderSentAt(): ?DateTimeImmutable
+    {
+        return $this->reminderSentAt;
     }
 
     public function createdAt(): DateTimeImmutable

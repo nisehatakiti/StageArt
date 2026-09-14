@@ -46,6 +46,8 @@ final class CreateRehearsalUseCase
     private RehearsalRepositoryInterface $rehearsals;
     private RehearsalAttendanceRepositoryInterface $attendances;
     private MembershipContract $membership;
+    private RehearsalReminderDispatcher $reminderDispatcher;
+    private RehearsalReminderSchedulerInterface $reminderScheduler;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
@@ -55,6 +57,8 @@ final class CreateRehearsalUseCase
         RehearsalRepositoryInterface $rehearsals,
         RehearsalAttendanceRepositoryInterface $attendances,
         MembershipContract $membership,
+        RehearsalReminderDispatcher $reminderDispatcher,
+        RehearsalReminderSchedulerInterface $reminderScheduler,
         IdentityContract $identity,
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions
@@ -63,6 +67,8 @@ final class CreateRehearsalUseCase
         $this->rehearsals = $rehearsals;
         $this->attendances = $attendances;
         $this->membership = $membership;
+        $this->reminderDispatcher = $reminderDispatcher;
+        $this->reminderScheduler = $reminderScheduler;
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
@@ -91,6 +97,7 @@ final class CreateRehearsalUseCase
 
         $startDateTime = $this->parseOptionalDateTime($command->startDateTime);
         $endDateTime = $this->parseOptionalDateTime($command->endDateTime);
+        $responseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
 
         $activeMemberIdStrings = array_map(
             static fn (PersonId $personId): string => $personId->toString(),
@@ -106,7 +113,7 @@ final class CreateRehearsalUseCase
         }
 
         $rehearsal = $this->transactions->run(
-            function () use ($productionId, $command, $startDateTime, $endDateTime): Rehearsal {
+            function () use ($productionId, $command, $startDateTime, $endDateTime, $responseDeadline): Rehearsal {
                 $rehearsal = Rehearsal::create(
                     $productionId,
                     $command->title,
@@ -114,7 +121,8 @@ final class CreateRehearsalUseCase
                     $startDateTime,
                     $endDateTime,
                     $command->timezone,
-                    $command->location
+                    $command->location,
+                    $responseDeadline
                 );
 
                 $this->rehearsals->save($rehearsal);
@@ -124,6 +132,9 @@ final class CreateRehearsalUseCase
                         RehearsalAttendance::createPhase1($rehearsal->id(), PersonId::fromString($targetPersonIdString))
                     );
                 }
+
+                $this->applyReminderPolicy($rehearsal, null, $responseDeadline);
+                $this->rehearsals->save($rehearsal);
 
                 return $rehearsal;
             }
@@ -142,6 +153,30 @@ final class CreateRehearsalUseCase
             return new DateTimeImmutable($value);
         } catch (Exception $exception) {
             throw new InvalidArgumentException("Invalid date/time value: {$value}");
+        }
+    }
+
+    /**
+     * Phase 7: shared with `UpdateRehearsalUseCase` in spirit (not code -
+     * each has its own copy since `$oldDeadline` is trivially `null` here,
+     * always a "new deadline" or "no deadline" decision, never a genuine
+     * change-direction one) - applies `RehearsalReminderPolicy`'s decision
+     * for this Rehearsal's just-created deadline.
+     */
+    private function applyReminderPolicy(Rehearsal $rehearsal, ?DateTimeImmutable $oldDeadline, ?DateTimeImmutable $newDeadline): void
+    {
+        $decision = RehearsalReminderPolicy::decideOnDeadlineChange($oldDeadline, $newDeadline, new DateTimeImmutable());
+
+        switch ($decision['action']) {
+            case RehearsalReminderPolicy::ACTION_SEND_NOW:
+                $this->reminderDispatcher->dispatch($rehearsal);
+                break;
+            case RehearsalReminderPolicy::ACTION_SCHEDULE:
+                $this->reminderScheduler->scheduleReminderAt($rehearsal->id(), $decision['reminderAt']);
+                break;
+            case RehearsalReminderPolicy::ACTION_CANCEL:
+                $this->reminderScheduler->cancelReminder($rehearsal->id());
+                break;
         }
     }
 }

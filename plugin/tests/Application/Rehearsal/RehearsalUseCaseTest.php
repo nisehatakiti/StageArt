@@ -23,9 +23,12 @@ use StageArt\Application\Rehearsal\GetRehearsalQuery;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsForProductionQuery;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Application\Rehearsal\RehearsalReminderPolicy;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
 use StageArt\Application\Rehearsal\UpdateRehearsalCommand;
@@ -46,6 +49,7 @@ use StageArt\Domain\Project\Project;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -53,6 +57,7 @@ use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 
@@ -66,6 +71,8 @@ final class RehearsalUseCaseTest extends TestCase
     private InMemoryParticipantRepository $participants;
     private InMemoryRehearsalRepository $rehearsals;
     private InMemoryRehearsalAttendanceRepository $attendances;
+    private InMemoryNotificationDispatcher $notificationDispatcher;
+    private InMemoryRehearsalReminderScheduler $reminderScheduler;
 
     private CreateRehearsalUseCase $createRehearsal;
     private GetRehearsalUseCase $getRehearsal;
@@ -98,19 +105,33 @@ final class RehearsalUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $this->notificationDispatcher = new InMemoryNotificationDispatcher();
+        $notificationContract = new CoreNotificationAdapter($this->notificationDispatcher);
+        $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
+        $this->reminderScheduler = new InMemoryRehearsalReminderScheduler();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
+            $reminderDispatcher,
+            $this->reminderScheduler,
             $identity,
             $authorization,
             $transactions
         );
         $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
         $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
-        $this->updateRehearsal = new UpdateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
+        $this->updateRehearsal = new UpdateRehearsalUseCase(
+            $this->rehearsals,
+            $productionContext,
+            $reminderDispatcher,
+            $this->reminderScheduler,
+            $identity,
+            $authorization,
+            $transactions
+        );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
             $productionContext,
@@ -122,7 +143,16 @@ final class RehearsalUseCaseTest extends TestCase
         );
         $this->activateRehearsal = new ActivateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
         $this->completeRehearsal = new CompleteRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
-        $this->cancelRehearsal = new CancelRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
+        $this->cancelRehearsal = new CancelRehearsalUseCase(
+            $this->rehearsals,
+            $this->attendances,
+            $productionContext,
+            $notificationContract,
+            $this->reminderScheduler,
+            $identity,
+            $authorization,
+            $transactions
+        );
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
@@ -652,5 +682,487 @@ final class RehearsalUseCaseTest extends TestCase
             $refetched->startDateTime,
             'A re-fetch after Update must show the new time, not the value the Rehearsal was originally created with.'
         );
+    }
+
+    // --- Phase 7 (Rehearsal仕様整合) §3: CONFIRMED/ACTIVEの日付変更禁止 ---
+
+    private function createAndConfirmRehearsal(Production $production, string $startDateTime, string $endDateTime): string
+    {
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            $startDateTime,
+            $endDateTime,
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        return $created->id;
+    }
+
+    public function test_date_change_is_allowed_while_scheduled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-21T18:00:00+09:00',
+            '2026-09-21T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-21T18:00:00+09:00', $updated->startDateTime);
+    }
+
+    public function test_date_change_is_rejected_while_confirmed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $rehearsalId,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-21T18:00:00+09:00',
+            '2026-09-21T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+    }
+
+    public function test_date_change_is_rejected_while_active(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $rehearsalId,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-21T18:00:00+09:00',
+            '2026-09-21T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+    }
+
+    public function test_date_change_is_rejected_while_completed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
+        $this->completeRehearsal->execute(new CompleteRehearsalCommand($rehearsalId, 1));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $rehearsalId,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-21T18:00:00+09:00',
+            '2026-09-21T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+    }
+
+    public function test_date_change_is_rejected_while_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            '2026-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+        $this->cancelRehearsal->execute(new \StageArt\Application\Rehearsal\CancelRehearsalCommand($created->id, 1));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-21T18:00:00+09:00',
+            '2026-09-21T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+    }
+
+    public function test_time_only_change_is_still_allowed_while_confirmed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $rehearsalId,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T19:00:00+09:00',
+            '2026-09-20T21:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-20T19:00:00+09:00', $updated->startDateTime);
+        $this->assertSame('CONFIRMED', $updated->status);
+    }
+
+    public function test_time_only_change_is_still_allowed_while_active(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $rehearsalId,
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T19:00:00+09:00',
+            '2026-09-20T21:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('2026-09-20T19:00:00+09:00', $updated->startDateTime);
+    }
+
+    // --- Phase 7 §4: 回答期限 ---
+
+    public function test_response_deadline_can_be_set_at_creation_and_round_trips(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            null,
+            'Asia/Tokyo',
+            null,
+            null,
+            '2026-09-19T18:00:00+09:00'
+        ));
+
+        $this->assertSame('2026-09-19T18:00:00+09:00', $result->responseDeadline);
+
+        $fetched = $this->getRehearsal->execute(new GetRehearsalQuery($result->id, 1));
+        $this->assertSame('2026-09-19T18:00:00+09:00', $fetched->responseDeadline);
+    }
+
+    public function test_response_deadline_defaults_to_null(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->assertNull($result->responseDeadline);
+    }
+
+    // --- Phase 7 §5: Reminderスケジューリング（UseCase配線） ---
+
+    public function test_setting_a_future_deadline_schedules_a_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $farFutureDeadline = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $farFutureDeadline
+        ));
+
+        $rehearsalId = RehearsalId::fromString($result->id);
+        $this->assertTrue($this->reminderScheduler->isScheduled($rehearsalId));
+        $this->assertSame(
+            RehearsalReminderPolicy::computeReminderAt(new DateTimeImmutable($farFutureDeadline))->getTimestamp(),
+            $this->reminderScheduler->scheduledAt($rehearsalId)->getTimestamp()
+        );
+    }
+
+    public function test_extending_the_deadline_does_not_reschedule_the_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $original = (new DateTimeImmutable('+10 days'))->format(DATE_ATOM);
+        $extended = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $original
+        ));
+        $rehearsalId = RehearsalId::fromString($created->id);
+        $originalReminderAt = $this->reminderScheduler->scheduledAt($rehearsalId);
+
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            $extended
+        ));
+
+        $this->assertSame(
+            $originalReminderAt->getTimestamp(),
+            $this->reminderScheduler->scheduledAt($rehearsalId)->getTimestamp(),
+            'Extending the deadline must leave the already-scheduled Reminder untouched.'
+        );
+    }
+
+    public function test_pulling_the_deadline_earlier_reschedules_the_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $original = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+        $pulledEarlier = (new DateTimeImmutable('+10 days'))->format(DATE_ATOM);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $original
+        ));
+        $rehearsalId = RehearsalId::fromString($created->id);
+
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            $pulledEarlier
+        ));
+
+        $this->assertSame(
+            RehearsalReminderPolicy::computeReminderAt(new DateTimeImmutable($pulledEarlier))->getTimestamp(),
+            $this->reminderScheduler->scheduledAt($rehearsalId)->getTimestamp()
+        );
+    }
+
+    public function test_pulling_the_deadline_so_far_earlier_that_the_reminder_is_overdue_sends_immediately(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $original = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+        // Only 1 hour from now: deadline - 24h is already in the past.
+        $overdue = (new DateTimeImmutable('+1 hour'))->format(DATE_ATOM);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()],
+            $original
+        ));
+        $rehearsalId = RehearsalId::fromString($created->id);
+
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            $overdue
+        ));
+
+        $this->assertFalse($this->reminderScheduler->isScheduled($rehearsalId), 'An overdue Reminder must be sent now, not scheduled.');
+
+        $dispatched = $this->notificationDispatcher->dispatched();
+        $reminderNotifications = array_values(array_filter($dispatched, static fn ($n) => $n['type'] === 'rehearsal_response_reminder'));
+        $this->assertCount(1, $reminderNotifications);
+        $this->assertTrue($reminderNotifications[0]['personId']->equals($member->id()));
+        $this->assertStringStartsWith('【Remind】', $reminderNotifications[0]['payload']['message']);
+    }
+
+    public function test_clearing_the_deadline_cancels_the_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $deadline = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $deadline
+        ));
+        $rehearsalId = RehearsalId::fromString($created->id);
+        $this->assertTrue($this->reminderScheduler->isScheduled($rehearsalId));
+
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->assertFalse($this->reminderScheduler->isScheduled($rehearsalId));
+    }
+
+    // --- Phase 7 §8: Cancel時の一括通知 ---
+
+    public function test_cancelling_a_rehearsal_notifies_every_target_participant(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberA = $this->addActivePersonParticipant($production, 2);
+        $memberB = $this->addActivePersonParticipant($production, 3);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            null,
+            'Asia/Tokyo',
+            null,
+            [$memberA->id()->toString(), $memberB->id()->toString()]
+        ));
+
+        $this->cancelRehearsal->execute(new \StageArt\Application\Rehearsal\CancelRehearsalCommand($created->id, 1));
+
+        $dispatched = $this->notificationDispatcher->dispatched();
+        $cancelNotifications = array_values(array_filter($dispatched, static fn ($n) => $n['type'] === 'rehearsal_cancelled'));
+        $notifiedPersonIds = array_map(static fn ($n) => $n['personId']->toString(), $cancelNotifications);
+
+        $this->assertCount(2, $cancelNotifications);
+        $this->assertContains($memberA->id()->toString(), $notifiedPersonIds);
+        $this->assertContains($memberB->id()->toString(), $notifiedPersonIds);
+        $this->assertSame(
+            'Showの2026/09/20の稽古は中止となりました',
+            $cancelNotifications[0]['payload']['message'],
+            'Cancel message must follow the confirmed template and the existing Y/m/d date format.'
+        );
+    }
+
+    public function test_cancelling_a_rehearsal_cancels_any_pending_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $deadline = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $deadline
+        ));
+        $rehearsalId = RehearsalId::fromString($created->id);
+        $this->assertTrue($this->reminderScheduler->isScheduled($rehearsalId));
+
+        $this->cancelRehearsal->execute(new \StageArt\Application\Rehearsal\CancelRehearsalCommand($created->id, 1));
+
+        $this->assertFalse($this->reminderScheduler->isScheduled($rehearsalId));
+    }
+
+    public function test_cancelling_a_rehearsal_with_no_targets_does_not_error(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2026-09-20T18:00:00+09:00',
+            null,
+            'Asia/Tokyo',
+            null
+        ));
+
+        $result = $this->cancelRehearsal->execute(new \StageArt\Application\Rehearsal\CancelRehearsalCommand($created->id, 1));
+
+        $this->assertSame('CANCELLED', $result->status);
+        $this->assertCount(0, array_filter($this->notificationDispatcher->dispatched(), static fn ($n) => $n['type'] === 'rehearsal_cancelled'));
     }
 }

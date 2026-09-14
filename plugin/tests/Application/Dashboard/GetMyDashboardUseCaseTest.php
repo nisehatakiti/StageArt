@@ -19,6 +19,8 @@ use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Rehearsal\RehearsalUpcomingRehearsalProvider;
 use StageArt\Domain\Membership\Membership;
@@ -38,7 +40,9 @@ use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Timetable\TimetableId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryNotificationReadStateRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
@@ -96,12 +100,17 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
+        $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
+        $reminderScheduler = new InMemoryRehearsalReminderScheduler();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
             $transactions

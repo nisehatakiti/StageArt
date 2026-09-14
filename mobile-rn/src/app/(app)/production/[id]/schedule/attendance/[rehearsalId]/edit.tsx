@@ -39,6 +39,8 @@ export default function EditRehearsalScreen() {
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [location, setLocation] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
 
   // "Adjust state during render, exactly once" - unlike create.tsx's own
   // member-selection seeding (which intentionally re-seeds whenever the
@@ -55,13 +57,25 @@ export default function EditRehearsalScreen() {
     setTime(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(11, 16) : '');
     setEndTime(rehearsalQuery.data.end_date_time ? rehearsalQuery.data.end_date_time.slice(11, 16) : '');
     setLocation(rehearsalQuery.data.location ?? '');
+    setDeadlineDate(rehearsalQuery.data.response_deadline ? rehearsalQuery.data.response_deadline.slice(0, 10) : '');
+    setDeadlineTime(rehearsalQuery.data.response_deadline ? rehearsalQuery.data.response_deadline.slice(11, 16) : '');
   }
+
+  // Phase 7 (Rehearsal仕様整合) §3/§11: Backend rejects a date change while
+  // CONFIRMED/ACTIVE (Rehearsal::updateBasicInfo()'s own guard) - this UX
+  // guard mirrors that, disabling the date input and explaining why,
+  // rather than letting the user hit a 422 with no context. Time remains
+  // editable (the Backend guard is date-only), matching the confirmed
+  // spec that a date change must instead go through Cancel + a new
+  // Rehearsal.
+  const isDateLocked = rehearsalQuery.data?.status === 'CONFIRMED' || rehearsalQuery.data?.status === 'ACTIVE';
 
   async function handleSubmit() {
     if (!rehearsalQuery.data) return;
 
     const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
     const endDateTime = date && endTime ? `${date}T${endTime}:00+09:00` : undefined;
+    const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
 
     await updateRehearsal.mutateAsync({
       title: title.trim(),
@@ -73,6 +87,7 @@ export default function EditRehearsalScreen() {
       endDateTime,
       timezone: 'Asia/Tokyo',
       location: location.trim() || undefined,
+      responseDeadline,
     });
 
     router.replace(`/production/${productionId}/schedule/attendance/${rehearsalId}`);
@@ -115,8 +130,14 @@ export default function EditRehearsalScreen() {
             value={date}
             onChangeText={setDate}
             autoCapitalize="none"
-            style={styles.input}
+            editable={!isDateLocked}
+            style={[styles.input, isDateLocked && styles.inputDisabled]}
           />
+          {isDateLocked && (
+            <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-edit-date-locked-caption" style={styles.caption}>
+              確定済みの稽古は日付を変更できません。日付を変更するにはこの稽古を中止し、新しく作成してください。
+            </ThemedText>
+          )}
 
           <ThemedText type="small" themeColor="textSecondary">
             開始時刻（HH:mm）
@@ -153,6 +174,30 @@ export default function EditRehearsalScreen() {
             style={styles.input}
           />
 
+          <ThemedText type="small" themeColor="textSecondary">
+            回答期限（任意・YYYY-MM-DD）
+          </ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-edit-deadline-date"
+            placeholder="2026-09-19"
+            value={deadlineDate}
+            onChangeText={setDeadlineDate}
+            autoCapitalize="none"
+            style={styles.input}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            回答期限の時刻（HH:mm）
+          </ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-edit-deadline-time"
+            placeholder="18:00"
+            value={deadlineTime}
+            onChangeText={setDeadlineTime}
+            autoCapitalize="none"
+            style={styles.input}
+          />
+
           {updateRehearsal.isError && <ThemedText style={styles.error}>{getErrorMessage(updateRehearsal.error)}</ThemedText>}
 
           <TouchableOpacity
@@ -183,6 +228,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: Spacing.two,
   },
+  inputDisabled: { opacity: 0.5 },
+  caption: { marginTop: -Spacing.one, marginBottom: Spacing.two },
   button: {
     backgroundColor: '#4a3f7a',
     borderRadius: Radius.medium,

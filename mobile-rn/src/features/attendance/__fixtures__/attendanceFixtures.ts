@@ -31,6 +31,7 @@ export const rehearsalScheduleAdjustment: Rehearsal = {
   timezone: 'Asia/Tokyo',
   location: '稽古場A',
   status: 'DRAFT',
+  response_deadline: null,
   created_at: '',
   updated_at: '',
 };

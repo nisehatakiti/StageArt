@@ -15,7 +15,9 @@ use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
+use StageArt\Infrastructure\WordPress\Rehearsal\WordPressRehearsalReminderScheduler;
 use StageArt\Accounting\AccountingModuleBootstrap;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\CheckIn\CheckInModuleBootstrap;
@@ -231,6 +233,7 @@ final class Plugin
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
         $notificationDispatcher = new WordPressNotificationDispatcher();
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
+        $rehearsalReminderScheduler = new WordPressRehearsalReminderScheduler();
 
         $createUserAccount        = new CreateUserAccountUseCase($people, $userAccounts, $transactions);
         $registerEmailCredential  = new RegisterEmailCredentialUseCase(
@@ -446,8 +449,17 @@ final class Plugin
             $authorizationContract,
             $membershipContract,
             $notificationContract,
+            $rehearsalReminderScheduler,
             $transactions
         );
+
+        // Phase 7 (Rehearsal仕様整合) §12: the sole Cron hook registration
+        // in this plugin - WordPressRehearsalReminderScheduler schedules
+        // this event, SendRehearsalReminderUseCase is what actually runs
+        // when it fires.
+        add_action(WordPressRehearsalReminderScheduler::HOOK, static function (string $rehearsalId) use ($rehearsalModule): void {
+            $rehearsalModule->sendRehearsalReminder()->execute(new SendRehearsalReminderCommand($rehearsalId));
+        });
 
         // StageArt Core/Module Architecture Phase 2 Performance基盤:
         // Performance Module's entire own wiring, consolidated into

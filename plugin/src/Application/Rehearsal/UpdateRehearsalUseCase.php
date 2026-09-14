@@ -8,9 +8,11 @@ use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 
@@ -23,19 +25,28 @@ final class UpdateRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
     private ProductionContextContract $productionContext;
+    private RehearsalReminderDispatcher $reminderDispatcher;
+    private RehearsalReminderSchedulerInterface $reminderScheduler;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
+        RehearsalReminderDispatcher $reminderDispatcher,
+        RehearsalReminderSchedulerInterface $reminderScheduler,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
+        $this->reminderDispatcher = $reminderDispatcher;
+        $this->reminderScheduler = $reminderScheduler;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
     }
 
     public function execute(UpdateRehearsalCommand $command): RehearsalResult
@@ -65,18 +76,53 @@ final class UpdateRehearsalUseCase
             );
         }
 
-        $rehearsal->updateBasicInfo(
-            $command->title,
-            $command->description,
-            $this->parseOptionalDateTime($command->startDateTime),
-            $this->parseOptionalDateTime($command->endDateTime),
-            $command->timezone,
-            $command->location
-        );
+        $newResponseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
 
-        $this->rehearsals->save($rehearsal);
+        $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline): void {
+            $rehearsal->updateBasicInfo(
+                $command->title,
+                $command->description,
+                $this->parseOptionalDateTime($command->startDateTime),
+                $this->parseOptionalDateTime($command->endDateTime),
+                $command->timezone,
+                $command->location
+            );
+
+            $oldResponseDeadline = $rehearsal->responseDeadline();
+            $rehearsal->changeResponseDeadline($newResponseDeadline);
+            $this->applyReminderPolicy($rehearsal, $oldResponseDeadline, $newResponseDeadline);
+
+            $this->rehearsals->save($rehearsal);
+        });
 
         return RehearsalResult::fromDomain($rehearsal);
+    }
+
+    /**
+     * Phase 7: applies `RehearsalReminderPolicy`'s decision for this
+     * deadline change - resets the duplicate-send guard only on an
+     * actual reschedule (SCHEDULE/SEND_NOW), never on ACTION_NONE (an
+     * extension must leave an already-sent Reminder's history alone, per
+     * the confirmed spec) or ACTION_CANCEL (nothing to guard once there
+     * is no deadline at all).
+     */
+    private function applyReminderPolicy(Rehearsal $rehearsal, ?DateTimeImmutable $oldDeadline, ?DateTimeImmutable $newDeadline): void
+    {
+        $decision = RehearsalReminderPolicy::decideOnDeadlineChange($oldDeadline, $newDeadline, new DateTimeImmutable());
+
+        switch ($decision['action']) {
+            case RehearsalReminderPolicy::ACTION_SEND_NOW:
+                $rehearsal->clearReminderSentMark();
+                $this->reminderDispatcher->dispatch($rehearsal);
+                break;
+            case RehearsalReminderPolicy::ACTION_SCHEDULE:
+                $rehearsal->clearReminderSentMark();
+                $this->reminderScheduler->scheduleReminderAt($rehearsal->id(), $decision['reminderAt']);
+                break;
+            case RehearsalReminderPolicy::ACTION_CANCEL:
+                $this->reminderScheduler->cancelReminder($rehearsal->id());
+                break;
+        }
     }
 
     private function parseOptionalDateTime(?string $value): ?DateTimeImmutable

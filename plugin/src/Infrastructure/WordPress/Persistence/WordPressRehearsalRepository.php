@@ -36,6 +36,8 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
             'timezone' => $rehearsal->timezone(),
             'location' => $rehearsal->location(),
             'status' => $rehearsal->status()->toString(),
+            'response_deadline' => $rehearsal->responseDeadline() !== null ? $rehearsal->responseDeadline()->format('Y-m-d H:i:s') : null,
+            'reminder_sent_at' => $rehearsal->reminderSentAt() !== null ? $rehearsal->reminderSentAt()->format('Y-m-d H:i:s') : null,
             'updated_at' => $rehearsal->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -135,7 +137,13 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
             $row['location'],
             RehearsalStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            isset($row['response_deadline']) && $row['response_deadline'] !== null
+                ? new DateTimeImmutable($row['response_deadline'], $timezone)
+                : null,
+            isset($row['reminder_sent_at']) && $row['reminder_sent_at'] !== null
+                ? new DateTimeImmutable($row['reminder_sent_at'])
+                : null
         );
     }
 }

@@ -29,6 +29,7 @@ use StageArt\Tests\Support\FakeMembershipContract;
 use StageArt\Tests\Support\FakeProductionContextContract;
 use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryScheduleCommentRepository;
 use StageArt\Tests\Support\InMemoryTimetableItemRepository;
@@ -170,6 +171,7 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             $authorization,
             $membership,
             $notification,
+            new InMemoryRehearsalReminderScheduler(),
             new InMemoryTransactionManager()
         );
     }
@@ -205,6 +207,7 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             $authorization,
             $membership,
             $notification,
+            new InMemoryRehearsalReminderScheduler(),
             new InMemoryTransactionManager()
         );
     }

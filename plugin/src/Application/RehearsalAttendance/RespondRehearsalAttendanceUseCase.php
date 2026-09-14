@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Core\Contract\IdentityContract;
@@ -87,6 +88,24 @@ final class RespondRehearsalAttendanceUseCase
             throw new InvalidArgumentException(
                 "Attendance response is not allowed while the Rehearsal is {$rehearsal->status()->toString()}."
             );
+        }
+
+        /*
+         * Phase 7 (Rehearsal仕様整合) §4: "予定稽古には回答期限を設定する" -
+         * `responseDeadline` governs Phase 1 (SCHEDULE_ADJUSTMENT)
+         * self-response specifically; a Phase 2 (ATTENDANCE_CONFIRMATION)
+         * response is unaffected by it (it is a separate, later
+         * response period this deadline does not describe). Checked here
+         * (Application), not only in Frontend, per this Phase's explicit
+         * "Backend/Applicationでも同じルールを保証する" requirement -
+         * management-side operations (RecordActualRehearsalAttendanceStatus
+         * UseCase) are untouched, matching "管理者側による管理操作まで
+         * 禁止する仕様ではない".
+         */
+        if ($attendance->phase()->equals(RehearsalAttendancePhase::scheduleAdjustment())
+            && $rehearsal->hasResponseDeadlinePassed(new DateTimeImmutable())
+        ) {
+            throw new InvalidArgumentException('The response deadline for this Rehearsal has already passed.');
         }
 
         $status = RehearsalAttendanceStatus::fromString($command->status);

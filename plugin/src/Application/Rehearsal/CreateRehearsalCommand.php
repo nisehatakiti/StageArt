@@ -14,6 +14,9 @@ final class CreateRehearsalCommand
     public ?string $endDateTime;
     public ?string $timezone;
     public ?string $location;
+    /** Phase 7 (Rehearsal仕様整合): "予定稽古には回答期限を設定する" -
+     * optional, ISO-8601-parseable string; null means no deadline. */
+    public ?string $responseDeadline;
     /** @var string[] PersonId strings of the Production Participants who
      * become this Rehearsal's Attendance targets - not "every active
      * Production member" (that auto-targeting was removed; see
@@ -34,7 +37,8 @@ final class CreateRehearsalCommand
         ?string $endDateTime,
         ?string $timezone,
         ?string $location,
-        ?array $targetPersonIds = null
+        ?array $targetPersonIds = null,
+        ?string $responseDeadline = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -45,5 +49,6 @@ final class CreateRehearsalCommand
         $this->timezone = $timezone;
         $this->location = $location;
         $this->targetPersonIds = $targetPersonIds ?? [];
+        $this->responseDeadline = $responseDeadline;
     }
 }

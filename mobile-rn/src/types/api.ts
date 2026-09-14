@@ -463,6 +463,9 @@ export type Rehearsal = {
   timezone: string | null;
   location: string | null;
   status: string;
+  /** Phase 7 (Rehearsal仕様整合): "回答期限" - governs SCHEDULE_ADJUSTMENT
+   * (予定) phase self-response specifically; null means no deadline. */
+  response_deadline: string | null;
   created_at: string;
   updated_at: string;
 };
