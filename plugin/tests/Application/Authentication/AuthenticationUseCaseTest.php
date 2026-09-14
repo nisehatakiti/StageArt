@@ -17,6 +17,7 @@ use StageArt\Application\Authentication\LogoutUseCase;
 use StageArt\Application\Authentication\RefreshAccessTokenCommand;
 use StageArt\Application\Authentication\RefreshAccessTokenUseCase;
 use StageArt\Application\Authentication\UserAccountBlockedException;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\UserAccount\ExternalIdentity;
 use StageArt\Domain\UserAccount\UserAccount;
@@ -25,6 +26,7 @@ use StageArt\Tests\Support\FakeAccessTokenIssuer;
 use StageArt\Tests\Support\FakeGoogleIdTokenVerifier;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -36,6 +38,7 @@ final class AuthenticationUseCaseTest extends TestCase
     private InMemoryUserAccountRepository $userAccounts;
     private InMemoryExternalIdentityRepository $externalIdentities;
     private InMemoryRefreshTokenRepository $refreshTokens;
+    private InMemoryNotificationEmailRepository $notificationEmails;
     private FakeGoogleIdTokenVerifier $googleVerifier;
     private FakeAccessTokenIssuer $accessTokenIssuer;
     private FakeWordPressUserProvisioner $wordPressUserProvisioner;
@@ -51,10 +54,12 @@ final class AuthenticationUseCaseTest extends TestCase
         $this->userAccounts = new InMemoryUserAccountRepository();
         $this->externalIdentities = new InMemoryExternalIdentityRepository();
         $this->refreshTokens = new InMemoryRefreshTokenRepository();
+        $this->notificationEmails = new InMemoryNotificationEmailRepository();
         $this->googleVerifier = new FakeGoogleIdTokenVerifier();
         $this->accessTokenIssuer = new FakeAccessTokenIssuer();
         $this->wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $transactions = new InMemoryTransactionManager();
+        $notificationEmailSeeder = new NotificationEmailSeeder($this->notificationEmails);
 
         $this->authenticateWithGoogle = new AuthenticateWithGoogleUseCase(
             $this->googleVerifier,
@@ -64,7 +69,8 @@ final class AuthenticationUseCaseTest extends TestCase
             $this->refreshTokens,
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder
         );
         $this->refreshAccessToken = new RefreshAccessTokenUseCase(
             $this->refreshTokens,
@@ -78,7 +84,8 @@ final class AuthenticationUseCaseTest extends TestCase
             $this->people,
             $this->userAccounts,
             $this->externalIdentities,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $notificationEmailSeeder
         );
     }
 
@@ -175,6 +182,101 @@ final class AuthenticationUseCaseTest extends TestCase
 
         $this->expectException(UserAccountBlockedException::class);
         $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+    }
+
+    // --- Google認証ユーザーのEmail通知先対応: NotificationEmail seeding ---
+
+    public function test_new_google_user_with_a_verified_email_gets_a_notification_email_seeded(): void
+    {
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-seed-1',
+            'verified@example.com',
+            null,
+            null,
+            true
+        );
+
+        $result = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $notificationEmail = $this->notificationEmails->findByPersonId(
+            \StageArt\Domain\Person\PersonId::fromString($result->personId)
+        );
+        $this->assertNotNull($notificationEmail);
+        $this->assertSame('verified@example.com', $notificationEmail->email());
+        $this->assertTrue($notificationEmail->verified());
+        $this->assertSame('GOOGLE', $notificationEmail->source());
+    }
+
+    public function test_new_google_user_with_an_unverified_email_gets_no_notification_email_seeded(): void
+    {
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-seed-2',
+            'unverified@example.com',
+            null,
+            null,
+            false
+        );
+
+        $result = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $this->assertNull($this->notificationEmails->findByPersonId(
+            \StageArt\Domain\Person\PersonId::fromString($result->personId)
+        ));
+    }
+
+    public function test_new_google_user_with_no_email_gets_no_notification_email_seeded(): void
+    {
+        $this->googleVerifier->registerValidToken('valid-token', 'google-sub-seed-3', null);
+
+        $result = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $this->assertNull($this->notificationEmails->findByPersonId(
+            \StageArt\Domain\Person\PersonId::fromString($result->personId)
+        ));
+    }
+
+    public function test_returning_google_user_never_has_an_existing_notification_email_overwritten(): void
+    {
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-seed-4',
+            'original@example.com',
+            null,
+            null,
+            true
+        );
+        $first = $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        // Simulate the Person having since changed their StageArt-side
+        // notification email through some other means.
+        $personId = \StageArt\Domain\Person\PersonId::fromString($first->personId);
+        $existing = $this->notificationEmails->findByPersonId($personId);
+        $this->notificationEmails->save(\StageArt\Domain\Notification\NotificationEmail::reconstitute(
+            $existing->id(),
+            $personId,
+            'changed-by-user@example.com',
+            true,
+            'GOOGLE',
+            $existing->createdAt(),
+            $existing->updatedAt()
+        ));
+
+        // A later Google re-login reports a DIFFERENT verified email -
+        // must not revert the StageArt-side change.
+        $this->googleVerifier->registerValidToken(
+            'second-login-token',
+            'google-sub-seed-4',
+            'different-google-email@example.com',
+            null,
+            null,
+            true
+        );
+        $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('second-login-token'));
+
+        $notificationEmail = $this->notificationEmails->findByPersonId($personId);
+        $this->assertSame('changed-by-user@example.com', $notificationEmail->email());
     }
 
     // --- RefreshAccessTokenUseCase -------------------------------------
@@ -320,5 +422,25 @@ final class AuthenticationUseCaseTest extends TestCase
 
         $userAccount = $this->userAccounts->findByPersonId($person->id());
         $this->assertCount(1, $this->externalIdentities->findByUserAccountId($userAccount->id()));
+    }
+
+    public function test_linking_google_with_a_verified_email_seeds_a_notification_email_when_absent(): void
+    {
+        $person = Person::create(6);
+        $this->people->save($person);
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-10',
+            'linked@example.com',
+            null,
+            null,
+            true
+        );
+
+        $this->linkGoogleIdentity->execute(new LinkGoogleIdentityCommand(6, 'valid-token'));
+
+        $notificationEmail = $this->notificationEmails->findByPersonId($person->id());
+        $this->assertNotNull($notificationEmail);
+        $this->assertSame('linked@example.com', $notificationEmail->email());
     }
 }

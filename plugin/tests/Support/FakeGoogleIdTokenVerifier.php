@@ -25,9 +25,10 @@ final class FakeGoogleIdTokenVerifier implements GoogleIdTokenVerifierInterface
         string $sub,
         ?string $email = null,
         ?string $familyName = null,
-        ?string $givenName = null
+        ?string $givenName = null,
+        bool $emailVerified = false
     ): void {
-        $this->validTokens[$idToken] = new GoogleIdTokenClaims($sub, $email, $familyName, $givenName);
+        $this->validTokens[$idToken] = new GoogleIdTokenClaims($sub, $email, $emailVerified, $familyName, $givenName);
     }
 
     public function verify(string $idToken): GoogleIdTokenClaims

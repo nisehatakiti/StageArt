@@ -67,6 +67,16 @@ final class GoogleIdTokenVerifier implements GoogleIdTokenVerifierInterface
         }
 
         $email = isset($decoded->email) && is_string($decoded->email) ? $decoded->email : null;
+        // Google認証ユーザーのEmail通知先対応 phase: Google's OIDC
+        // `email_verified` claim arrives as a real JSON boolean in every
+        // case observed from Google's own token endpoint, but some OIDC
+        // stacks (and therefore some test/mocked tokens) send the string
+        // "true"/"false" instead - normalized to a strict bool here so
+        // downstream code (GoogleIdTokenClaims, NotificationEmailSeeder)
+        // never has to special-case the claim's wire representation.
+        // Absent claim defaults to false (fail closed - never treat an
+        // unverified/unknown email as verified).
+        $emailVerified = self::normalizeEmailVerified($decoded->email_verified ?? null);
         // StageArt Authentication Phase 6: family_name/given_name are
         // standard OIDC claims Google includes when the `profile` scope
         // was granted (the default Google Sign-In SDK scope set) - not
@@ -76,7 +86,20 @@ final class GoogleIdTokenVerifier implements GoogleIdTokenVerifierInterface
         $familyName = isset($decoded->family_name) && is_string($decoded->family_name) ? $decoded->family_name : null;
         $givenName = isset($decoded->given_name) && is_string($decoded->given_name) ? $decoded->given_name : null;
 
-        return new GoogleIdTokenClaims($subject, $email, $familyName, $givenName);
+        return new GoogleIdTokenClaims($subject, $email, $emailVerified, $familyName, $givenName);
+    }
+
+    private static function normalizeEmailVerified(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            return $value === 'true';
+        }
+
+        return false;
     }
 
     /**

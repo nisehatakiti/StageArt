@@ -6,11 +6,13 @@ namespace StageArt\Tests\Application\Notification;
 
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Notification\PersonEmailResolver;
+use StageArt\Domain\Notification\NotificationEmail;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\UserAccount\EmailCredential;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Tests\Support\FakeWordPressUserLookup;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
@@ -20,6 +22,7 @@ final class PersonEmailResolverTest extends TestCase
     private InMemoryUserAccountRepository $userAccounts;
     private InMemoryEmailCredentialRepository $emailCredentials;
     private FakeWordPressUserLookup $wordPressUsers;
+    private InMemoryNotificationEmailRepository $notificationEmails;
     private PersonEmailResolver $resolver;
 
     protected function setUp(): void
@@ -28,7 +31,14 @@ final class PersonEmailResolverTest extends TestCase
         $this->userAccounts = new InMemoryUserAccountRepository();
         $this->emailCredentials = new InMemoryEmailCredentialRepository();
         $this->wordPressUsers = new FakeWordPressUserLookup();
-        $this->resolver = new PersonEmailResolver($this->people, $this->userAccounts, $this->emailCredentials, $this->wordPressUsers);
+        $this->notificationEmails = new InMemoryNotificationEmailRepository();
+        $this->resolver = new PersonEmailResolver(
+            $this->people,
+            $this->userAccounts,
+            $this->emailCredentials,
+            $this->wordPressUsers,
+            $this->notificationEmails
+        );
     }
 
     public function test_prefers_the_email_credential_when_one_exists(): void
@@ -85,5 +95,70 @@ final class PersonEmailResolverTest extends TestCase
         $email = $this->resolver->resolve(\StageArt\Domain\Person\PersonId::generate());
 
         $this->assertNull($email);
+    }
+
+    // --- Google認証ユーザーのEmail通知先対応: NotificationEmail priority ---
+
+    public function test_prefers_a_verified_notification_email_over_the_email_credential(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'password-login@example.com', 'hash'));
+        $this->notificationEmails->save(
+            NotificationEmail::create($person->id(), 'notification@example.com', true, NotificationEmail::SOURCE_GOOGLE)
+        );
+
+        $email = $this->resolver->resolve($person->id());
+
+        $this->assertSame('notification@example.com', $email);
+    }
+
+    public function test_prefers_a_verified_notification_email_over_the_wordpress_user_email(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $this->wordPressUsers->register(1, 'wp-fallback@example.com', 'Someone');
+        $this->notificationEmails->save(
+            NotificationEmail::create($person->id(), 'notification@example.com', true, NotificationEmail::SOURCE_GOOGLE)
+        );
+
+        $email = $this->resolver->resolve($person->id());
+
+        $this->assertSame('notification@example.com', $email);
+    }
+
+    public function test_falls_back_to_the_email_credential_when_the_notification_email_is_unverified(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'password-login@example.com', 'hash'));
+        $this->notificationEmails->save(
+            NotificationEmail::create($person->id(), 'unverified@example.com', false, NotificationEmail::SOURCE_GOOGLE)
+        );
+
+        $email = $this->resolver->resolve($person->id());
+
+        $this->assertSame(
+            'password-login@example.com',
+            $email,
+            'An unverified NotificationEmail must never be used as a notification destination.'
+        );
+    }
+
+    public function test_falls_back_to_the_email_credential_when_no_notification_email_row_exists(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'password-login@example.com', 'hash'));
+
+        $email = $this->resolver->resolve($person->id());
+
+        $this->assertSame('password-login@example.com', $email);
     }
 }

@@ -19,6 +19,7 @@ use StageArt\Application\Authentication\RefreshAccessTokenCommand;
 use StageArt\Application\Authentication\RefreshAccessTokenUseCase;
 use StageArt\Application\Authentication\RegisterWithEmailCommand;
 use StageArt\Application\Authentication\RegisterWithEmailUseCase;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\UserAccount\UserAccountId;
@@ -30,6 +31,7 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -75,6 +77,7 @@ final class AuthenticationMatrixTest extends TestCase
         $this->accessTokenIssuer = new FakeAccessTokenIssuer();
         $this->wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $this->mailer = new FakeAuthMailer();
+        $notificationEmailSeeder = new NotificationEmailSeeder(new InMemoryNotificationEmailRepository());
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
@@ -103,14 +106,16 @@ final class AuthenticationMatrixTest extends TestCase
             $this->refreshTokens,
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $notificationEmailSeeder
         );
         $this->linkGoogleIdentity = new LinkGoogleIdentityUseCase(
             $this->googleVerifier,
             $this->people,
             $this->userAccounts,
             $this->externalIdentities,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $notificationEmailSeeder
         );
         $this->refreshAccessToken = new RefreshAccessTokenUseCase(
             $this->refreshTokens,

@@ -12,6 +12,7 @@ use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\RegisterWithEmailCommand;
 use StageArt\Application\Authentication\RegisterWithEmailUseCase;
 use StageArt\Application\Authentication\UserAccountBlockedException;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\UserAccount\AdminAccountResult;
 use StageArt\Application\UserAccount\BlockUserAccountsCommand;
 use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
@@ -27,6 +28,7 @@ use StageArt\Tests\Support\FakeWordPressUserProvisioner;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -68,6 +70,7 @@ final class AdminAccountManagementUseCaseTest extends TestCase
         $accessTokenIssuer = new FakeAccessTokenIssuer();
         $wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $transactions = new InMemoryTransactionManager();
+        $notificationEmailSeeder = new NotificationEmailSeeder(new InMemoryNotificationEmailRepository());
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
@@ -96,7 +99,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $refreshTokens,
             $accessTokenIssuer,
             $wordPressUserProvisioner,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder
         );
         $this->listAllUserAccounts = new ListAllUserAccountsUseCase(
             $this->userAccounts,

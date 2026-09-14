@@ -73,6 +73,7 @@ final class Installer
         $notificationReadStates = $wpdb->prefix . 'stageart_notification_read_states';
         $pushPreferences = $wpdb->prefix . 'stageart_push_preferences';
         $notifications = $wpdb->prefix . 'stageart_notifications';
+        $notificationEmails = $wpdb->prefix . 'stageart_notification_emails';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
@@ -380,6 +381,33 @@ final class Installer
             created_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Google認証ユーザーのEmail通知先対応 phase: a Person's own
+         * StageArt-managed notification destination email, one row per
+         * Person (unique on person_id, same "save()'s exists-check-
+         * then-insert/update pattern always finds at most one existing
+         * row" shape as stageart_push_preferences above). Deliberately
+         * separate from stageart_email_credentials (password-login
+         * email, keyed by user_account_id) and
+         * stageart_external_identities (OAuth linkage, never stores the
+         * provider's email) - see NotificationEmail::class's own
+         * docblock. A missing row means "no StageArt-managed
+         * notification email yet"; it is seeded only once, from a
+         * verified Google email, and never overwritten afterward (see
+         * NotificationEmailSeeder::class).
+         */
+        dbDelta("CREATE TABLE {$notificationEmails} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            verified TINYINT(1) NOT NULL DEFAULT 0,
+            source VARCHAR(30) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_id (person_id)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Accounting Module's

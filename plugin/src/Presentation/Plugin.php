@@ -9,6 +9,7 @@ use StageArt\Application\Notification\InAppNotificationAdapter;
 use StageArt\Application\Notification\ListMyNotificationsUseCase;
 use StageArt\Application\Notification\MarkMyNotificationReadUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
 use StageArt\Application\UserAccount\DeleteUserAccountsUseCase;
@@ -144,6 +145,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressReservationRepository
 use StageArt\Infrastructure\WordPress\Persistence\WordPressTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationEmailRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressScheduleCommentRepository;
@@ -220,6 +222,7 @@ final class Plugin
         $notificationReadStates = new WordPressNotificationReadStateRepository($wpdb);
         $pushPreferences      = new WordPressPushPreferenceRepository($wpdb);
         $notifications        = new WordPressNotificationRepository($wpdb);
+        $notificationEmails   = new WordPressNotificationEmailRepository($wpdb);
         $accounts             = new WordPressAccountRepository($wpdb);
         $budgets              = new WordPressBudgetRepository($wpdb);
         $journalEntries       = new WordPressJournalEntryRepository($wpdb);
@@ -249,11 +252,15 @@ final class Plugin
         // constructed again (harmlessly) at its own original call site
         // further down for ListAllUserAccountsUseCase.
         $notificationInAppAdapter = new InAppNotificationAdapter($notifications);
-        $personEmailResolver = new PersonEmailResolver($people, $userAccounts, $emailCredentials, new WordPressUserLookup());
+        $personEmailResolver = new PersonEmailResolver($people, $userAccounts, $emailCredentials, new WordPressUserLookup(), $notificationEmails);
         $notificationEmailAdapter = new WordPressEmailNotificationAdapter($personEmailResolver);
         $notificationDispatcher = new WordPressNotificationDispatcher([$notificationInAppAdapter, $notificationEmailAdapter]);
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
         $rehearsalReminderScheduler = new WordPressRehearsalReminderScheduler();
+        // Google認証ユーザーのEmail通知先対応 phase: shared by both
+        // AuthenticateWithGoogleUseCase and LinkGoogleIdentityUseCase
+        // below - see NotificationEmailSeeder's own docblock.
+        $notificationEmailSeeder = new NotificationEmailSeeder($notificationEmails);
 
         $createUserAccount        = new CreateUserAccountUseCase($people, $userAccounts, $transactions);
         $registerEmailCredential  = new RegisterEmailCredentialUseCase(
@@ -295,7 +302,8 @@ final class Plugin
             $refreshTokens,
             $accessTokenIssuer,
             $wordPressUserProvisioner,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder
         );
         $registerWithEmail = new RegisterWithEmailUseCase(
             $emailCredentials,
@@ -323,7 +331,8 @@ final class Plugin
             $people,
             $userAccounts,
             $externalIdentities,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder
         );
         $requestPasswordReset = new RequestPasswordResetUseCase(
             $emailCredentials,

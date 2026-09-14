@@ -6,6 +6,7 @@ namespace StageArt\Application\Authentication;
 
 use DateInterval;
 use DateTimeImmutable;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
@@ -43,6 +44,7 @@ final class AuthenticateWithGoogleUseCase
     private AccessTokenIssuerInterface $accessTokenIssuer;
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
+    private NotificationEmailSeeder $notificationEmailSeeder;
 
     public function __construct(
         GoogleIdTokenVerifierInterface $googleVerifier,
@@ -52,7 +54,8 @@ final class AuthenticateWithGoogleUseCase
         RefreshTokenRepositoryInterface $refreshTokens,
         AccessTokenIssuerInterface $accessTokenIssuer,
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        NotificationEmailSeeder $notificationEmailSeeder
     ) {
         $this->googleVerifier = $googleVerifier;
         $this->externalIdentities = $externalIdentities;
@@ -62,6 +65,7 @@ final class AuthenticateWithGoogleUseCase
         $this->accessTokenIssuer = $accessTokenIssuer;
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
+        $this->notificationEmailSeeder = $notificationEmailSeeder;
     }
 
     public function execute(AuthenticateWithGoogleCommand $command): AuthenticationResult
@@ -97,6 +101,14 @@ final class AuthenticateWithGoogleUseCase
                 $identity = ExternalIdentity::create($userAccount->id(), 'google', $claims->sub);
                 $this->externalIdentities->save($identity);
             }
+
+            // Google認証ユーザーのEmail通知先対応 phase: seeds
+            // NotificationEmail only when absent (see
+            // NotificationEmailSeeder's own docblock) - applies to both
+            // branches above, since a RETURNING Google user who has
+            // never had a notification email captured still deserves
+            // one, exactly like a brand-new user.
+            $this->notificationEmailSeeder->seedFromGoogle($person->id(), $claims->email, $claims->emailVerified);
 
             $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());
             $refreshTokenValue = bin2hex(random_bytes(32));
