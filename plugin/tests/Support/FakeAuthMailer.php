@@ -14,6 +14,9 @@ final class FakeAuthMailer implements AuthMailerInterface
     /** @var array<int, array{to: string, token: string}> */
     public array $verificationEmails = [];
 
+    /** @var array<int, array{to: string, token: string}> */
+    public array $notificationEmailChangeVerificationEmails = [];
+
     public function sendPasswordResetEmail(string $toEmail, string $token): void
     {
         $this->passwordResetEmails[] = ['to' => $toEmail, 'token' => $token];
@@ -22,5 +25,10 @@ final class FakeAuthMailer implements AuthMailerInterface
     public function sendEmailVerificationEmail(string $toEmail, string $token): void
     {
         $this->verificationEmails[] = ['to' => $toEmail, 'token' => $token];
+    }
+
+    public function sendNotificationEmailChangeVerificationEmail(string $toEmail, string $token): void
+    {
+        $this->notificationEmailChangeVerificationEmails[] = ['to' => $toEmail, 'token' => $token];
     }
 }

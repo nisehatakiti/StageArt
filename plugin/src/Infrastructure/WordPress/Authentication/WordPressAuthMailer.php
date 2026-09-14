@@ -99,4 +99,42 @@ final class WordPressAuthMailer implements AuthMailerInterface
             ['Content-Type: text/html; charset=UTF-8']
         );
     }
+
+    /**
+     * 通知用Email確認・変更機能: same HTML-with-a-single-link shape as
+     * sendEmailVerificationEmail() above (the token never appears as
+     * visible plain text), but its own distinct copy and its own Web
+     * confirmation route (`/verify-notification-email`, not
+     * `/verify-email`) - clicking the wrong stale email must never land
+     * on the wrong verification screen.
+     */
+    public function sendNotificationEmailChangeVerificationEmail(string $toEmail, string $token): void
+    {
+        $verificationUrl = esc_url($this->emailVerificationBaseUrl . '/verify-notification-email?token=' . rawurlencode($token));
+
+        $body = sprintf(
+            '<div style="font-family: sans-serif; font-size: 15px; line-height: 1.7; color: #2A2320;">'
+                . '<p>%1$s</p>'
+                . '<p>%2$s</p>'
+                . '<p style="text-align:center; margin: 28px 0;">'
+                    . '<a href="%3$s" style="display:inline-block; background-color:#C4432F; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:bold;">%4$s</a>'
+                . '</p>'
+                . '<p>%5$s</p>'
+                . '<p>%6$s</p>'
+            . '</div>',
+            esc_html__('StageArtの通知用メールアドレス変更のリクエストを受け付けました。', 'stageart'),
+            esc_html__('このメールアドレスを新しい通知先として設定するには、下のボタンを押してください。', 'stageart'),
+            $verificationUrl,
+            esc_html__('通知先を確認する', 'stageart'),
+            esc_html__('このリンクの有効期限は24時間です。', 'stageart'),
+            esc_html__('心当たりがない場合は、このメールを破棄してください。通知先は変更されません。', 'stageart')
+        );
+
+        wp_mail(
+            $toEmail,
+            __('StageArt - 通知用メールアドレスの確認', 'stageart'),
+            $body,
+            ['Content-Type: text/html; charset=UTF-8']
+        );
+    }
 }

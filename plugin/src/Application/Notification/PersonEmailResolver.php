@@ -68,16 +68,30 @@ final class PersonEmailResolver
 
     public function resolve(PersonId $personId): ?string
     {
+        return $this->resolveWithSource($personId)->email;
+    }
+
+    /**
+     * 通知用Email確認・変更機能 §3: same priority chain as resolve()
+     * above (this IS its implementation - resolve() just discards the
+     * source), but also discloses WHICH of the three sources the email
+     * came from, so Settings display can show a Case-B fallback email
+     * without implying it is a saved `NotificationEmail` (仕様書 §3B's
+     * explicit "この値を「NotificationEmailとして保存済み」と誤認させな
+     * いでください").
+     */
+    public function resolveWithSource(PersonId $personId): PersonEmailResolution
+    {
         $person = $this->people->findById($personId);
 
         if ($person === null) {
-            return null;
+            return new PersonEmailResolution(null, PersonEmailResolution::SOURCE_NONE);
         }
 
         $notificationEmail = $this->notificationEmails->findByPersonId($personId);
 
         if ($notificationEmail !== null && $notificationEmail->verified()) {
-            return $notificationEmail->email();
+            return new PersonEmailResolution($notificationEmail->email(), PersonEmailResolution::SOURCE_NOTIFICATION_EMAIL);
         }
 
         $userAccount = $this->userAccounts->findByPersonId($personId);
@@ -86,16 +100,16 @@ final class PersonEmailResolver
             $credential = $this->emailCredentials->findByUserAccountId($userAccount->id());
 
             if ($credential !== null) {
-                return $credential->email();
+                return new PersonEmailResolution($credential->email(), PersonEmailResolution::SOURCE_EMAIL_CREDENTIAL);
             }
         }
 
         $wpUser = $this->wordPressUsers->find($person->wordPressUserId());
 
         if ($wpUser !== null && ! str_ends_with($wpUser->email, self::WORDPRESS_PLACEHOLDER_DOMAIN)) {
-            return $wpUser->email;
+            return new PersonEmailResolution($wpUser->email, PersonEmailResolution::SOURCE_WORDPRESS_USER);
         }
 
-        return null;
+        return new PersonEmailResolution(null, PersonEmailResolution::SOURCE_NONE);
     }
 }

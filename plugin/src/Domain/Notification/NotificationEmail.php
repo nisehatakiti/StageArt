@@ -29,17 +29,25 @@ use StageArt\Domain\Person\PersonId;
  * `WordPressEmailNotificationAdapter` never call back into Google).
  *
  * `verified` reflects the verification state *as observed at write
- * time* (Google's own `email_verified` claim) - this Entity is never
- * mutated after creation in this phase (no in-app email-change feature
- * is built yet), so `verified` is fixed for the row's lifetime.
+ * time* (Google's own `email_verified` claim, or - since 通知用Email確認
+ * ・変更機能 - the Settings-UI change flow's own verification link).
  * `PersonEmailResolver` still checks it explicitly rather than assuming
- * every row is verified, since a future writer (e.g. a Settings-UI
- * email-change flow) could legitimately create an unverified row
- * pending its own confirmation step.
+ * every row is verified.
+ *
+ * 通知用Email確認・変更機能: `changeEmail()` is this Entity's only
+ * mutator, called exactly once, by `VerifyNotificationEmailChangeUseCase`,
+ * and only after its own `NotificationEmailChangeRequest` token has been
+ * confirmed - never at change-request time (仕様書 §4's explicit
+ * "Email入力時点ではNotificationEmailを変更しないでください"). It always
+ * writes `verified = true` (unverified emails are never accepted this
+ * way) and keeps the same id/personId/createdAt - a Settings-driven
+ * change is a mutation of this Person's one existing notification
+ * destination, not a new one.
  */
 final class NotificationEmail
 {
     public const SOURCE_GOOGLE = 'GOOGLE';
+    public const SOURCE_USER = 'USER';
 
     private NotificationEmailId $id;
     private PersonId $personId;
@@ -92,6 +100,20 @@ final class NotificationEmail
         DateTimeImmutable $updatedAt
     ): self {
         return new self($id, $personId, $email, $verified, $source, $createdAt, $updatedAt);
+    }
+
+    /**
+     * Replaces this Person's notification destination with a newly
+     * user-verified email - always `verified = true` (a caller must
+     * never invoke this with an unverified email; there is no parameter
+     * to accidentally pass false for).
+     */
+    public function changeEmail(string $newEmail): void
+    {
+        $this->email = self::validateEmail($newEmail);
+        $this->verified = true;
+        $this->source = self::SOURCE_USER;
+        $this->updatedAt = new DateTimeImmutable();
     }
 
     public function id(): NotificationEmailId

@@ -74,6 +74,7 @@ final class Installer
         $pushPreferences = $wpdb->prefix . 'stageart_push_preferences';
         $notifications = $wpdb->prefix . 'stageart_notifications';
         $notificationEmails = $wpdb->prefix . 'stageart_notification_emails';
+        $notificationEmailChangeRequests = $wpdb->prefix . 'stageart_notification_email_change_requests';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
@@ -408,6 +409,31 @@ final class Installer
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * 通知用Email確認・変更機能: one PENDING row per Person (unique on
+         * person_id, same upsert-by-person shape as stageart_push_
+         * preferences/stageart_notification_emails above) - a fresh
+         * change request always REPLACES this row in place (same id,
+         * new candidate_email/token_hash/expires_at, consumed_at reset
+         * to NULL), which is what makes an old verification link stop
+         * matching anything the instant a newer request is made (仕様書
+         * §9). candidate_email is NOT the Person's notification email
+         * until this token is verified - see NotificationEmail::
+         * changeEmail(), the only writer that ever promotes it there.
+         */
+        dbDelta("CREATE TABLE {$notificationEmailChangeRequests} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            candidate_email VARCHAR(255) NOT NULL,
+            token_hash CHAR(64) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_id (person_id),
+            UNIQUE KEY token_hash (token_hash)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Accounting Module's

@@ -8,6 +8,7 @@ import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useAddEmailCredential, useChangePassword, useLinkGoogleAccount, useRequestEmailVerification } from '@/features/mypage/useAccountLinking';
 import { useLogout } from '@/features/mypage/useLogout';
+import { useNotificationEmailSettings, useRequestNotificationEmailChange } from '@/features/notificationEmail/useNotificationEmail';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { usePushPreference, useUpdatePushPreference } from '@/features/pushPreference/usePushPreference';
 import { confirmAlert } from '@/utils/confirmAlert';
@@ -87,6 +88,8 @@ export function AccountContent() {
         )}
       </SectionCard>
 
+      <NotificationEmailCard />
+
       <TouchableOpacity
         onPress={handleLogout}
         disabled={loggingOut}
@@ -132,6 +135,110 @@ function ResendVerificationRow() {
       )}
     </>
   );
+}
+
+/**
+ * 通知用Email確認・変更機能 §2/§13: deliberately labeled "メール通知" /
+ * "通知先" throughout - never "Googleアカウントのメールアドレス" or
+ * "ログイン用メールアドレス", since this is StageArt's own notification
+ * destination, independent of whichever method the Person authenticates
+ * with (see NotificationEmail.php's own docblock). §21's four UI states
+ * (通常/確認待ち/確認成功/Email未設定) map to: current_email present vs.
+ * null, and pending_email present vs. null - "確認成功" is simply the
+ * moment pending_email next becomes null and current_email has changed,
+ * which the existing invalidateQueries()-on-success/refetch-on-focus
+ * pattern already surfaces without a dedicated fifth state.
+ */
+function NotificationEmailCard() {
+  const settingsQuery = useNotificationEmailSettings();
+  const requestChange = useRequestNotificationEmailChange();
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setFeedback(null);
+    try {
+      const result = await requestChange.mutateAsync(newEmail.trim());
+      setFeedback(
+        result.status === 'ALREADY_CURRENT'
+          ? '現在の通知先と同じメールアドレスです。'
+          : `${newEmail.trim()} に確認メールを送信しました。メール内のリンクから確認してください。`
+      );
+      setNewEmail('');
+      setFormOpen(false);
+    } catch (error) {
+      setFeedback(mapRequestNotificationEmailChangeError(error));
+    }
+  }
+
+  return (
+    <SectionCard title="メール通知" testID="account-notification-email-section">
+      {settingsQuery.isLoading && <ActivityIndicator testID="account-notification-email-loading" />}
+      {settingsQuery.isError && (
+        <ThemedText testID="account-notification-email-error">{getErrorMessage(settingsQuery.error)}</ThemedText>
+      )}
+      {settingsQuery.data && (
+        <>
+          <View style={styles.row}>
+            <ThemedText type="default">通知先</ThemedText>
+            <ThemedText testID="account-notification-email-current" type="default">
+              {settingsQuery.data.current_email ?? 'メール通知先は設定されていません'}
+            </ThemedText>
+          </View>
+          {settingsQuery.data.current_email && (
+            <ThemedText type="small" themeColor="textSecondary">
+              StageArtからのお知らせをこのメールアドレスに送信します。
+            </ThemedText>
+          )}
+          {settingsQuery.data.pending_email && (
+            <ThemedText testID="account-notification-email-pending" type="small" themeColor="textSecondary">
+              {settingsQuery.data.pending_email} に確認メールを送信しました。メール内のリンクから確認してください。
+            </ThemedText>
+          )}
+
+          <TouchableOpacity testID="account-notification-email-toggle" onPress={() => setFormOpen((open) => !open)} style={styles.linkRow}>
+            <ThemedText type="linkPrimary">変更する</ThemedText>
+          </TouchableOpacity>
+          {formOpen && (
+            <View style={styles.inlineForm}>
+              <ThemedTextInput
+                testID="account-notification-email-input"
+                placeholder="新しいメールアドレス"
+                value={newEmail}
+                onChangeText={setNewEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                style={styles.input}
+              />
+              <TouchableOpacity
+                testID="account-notification-email-submit"
+                onPress={handleSubmit}
+                disabled={requestChange.isPending || newEmail.trim().length === 0}
+                style={styles.smallButton}
+              >
+                {requestChange.isPending ? <ActivityIndicator /> : <ThemedText style={styles.smallButtonText}>確認メールを送信する</ThemedText>}
+              </TouchableOpacity>
+            </View>
+          )}
+          {feedback && (
+            <ThemedText testID="account-notification-email-feedback" type="small" themeColor="textSecondary">
+              {feedback}
+            </ThemedText>
+          )}
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+function mapRequestNotificationEmailChangeError(error: unknown): string {
+  if (error instanceof ApiError && error.statusCode === 422) {
+    return '正しいメールアドレスを入力してください。';
+  }
+  return getErrorMessage(error);
 }
 
 function SectionCard({ title, testID, children }: { title: string; testID?: string; children: React.ReactNode }) {

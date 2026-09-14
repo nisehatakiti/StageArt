@@ -161,4 +161,45 @@ final class PersonEmailResolverTest extends TestCase
 
         $this->assertSame('password-login@example.com', $email);
     }
+
+    // --- 通知用Email確認・変更機能 §3: resolveWithSource() ---
+
+    public function test_resolve_with_source_tags_a_saved_notification_email_correctly(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $this->notificationEmails->save(
+            NotificationEmail::create($person->id(), 'notify@example.com', true, NotificationEmail::SOURCE_GOOGLE)
+        );
+
+        $resolution = $this->resolver->resolveWithSource($person->id());
+
+        $this->assertSame('notify@example.com', $resolution->email);
+        $this->assertSame(\StageArt\Application\Notification\PersonEmailResolution::SOURCE_NOTIFICATION_EMAIL, $resolution->source);
+    }
+
+    public function test_resolve_with_source_tags_an_email_credential_fallback_correctly(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'foo@example.com', 'hash'));
+
+        $resolution = $this->resolver->resolveWithSource($person->id());
+
+        $this->assertSame('foo@example.com', $resolution->email);
+        $this->assertSame(\StageArt\Application\Notification\PersonEmailResolution::SOURCE_EMAIL_CREDENTIAL, $resolution->source);
+    }
+
+    public function test_resolve_with_source_tags_no_deliverable_email_correctly(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+
+        $resolution = $this->resolver->resolveWithSource($person->id());
+
+        $this->assertNull($resolution->email);
+        $this->assertSame(\StageArt\Application\Notification\PersonEmailResolution::SOURCE_NONE, $resolution->source);
+    }
 }

@@ -18,4 +18,15 @@ interface AuthMailerInterface
     public function sendPasswordResetEmail(string $toEmail, string $token): void;
 
     public function sendEmailVerificationEmail(string $toEmail, string $token): void;
+
+    /**
+     * 通知用Email確認・変更機能 §17: a distinct message from
+     * sendEmailVerificationEmail() above - this confirms a candidate
+     * *notification* destination, not an EmailCredential login email,
+     * and is deliberately not the Notification Email Adapter's own
+     * `wp_mail()` call either (this is "通知先Email変更の本人確認", not
+     * an "Email Notification" - see that Adapter's own docblock for why
+     * the two stay separate responsibilities).
+     */
+    public function sendNotificationEmailChangeVerificationEmail(string $toEmail, string $token): void;
 }

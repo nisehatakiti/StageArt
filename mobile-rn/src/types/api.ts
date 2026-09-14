@@ -545,6 +545,25 @@ export type PushPreference = {
 };
 
 /**
+ * GET /me/notification-email (通知用Email確認・変更機能). `source`
+ * distinguishes a saved NotificationEmail from a resolver fallback so
+ * the client never implies a fallback (EmailCredential/WordPress user
+ * email) is a saved notification destination - see
+ * PersonEmailResolution.php's own docblock. `pending_email` is only
+ * ever set while a requested change is awaiting verification - the
+ * actual delivery destination stays `current_email` until then.
+ */
+export type NotificationEmailSettings = {
+  current_email: string | null;
+  source: 'NOTIFICATION_EMAIL' | 'EMAIL_CREDENTIAL' | 'WORDPRESS_USER' | 'NONE';
+  pending_email: string | null;
+};
+
+export type RequestNotificationEmailChangeResult = {
+  status: 'PENDING_VERIFICATION' | 'ALREADY_CURRENT';
+};
+
+/**
  * GET /productions/{id}/accounting (Backend Phase 6.0's
  * GetProductionAccountingSummaryUseCase). has_budget / has_actual let the
  * client distinguish "not set" from "zero" - see AccountingPolicy.md's

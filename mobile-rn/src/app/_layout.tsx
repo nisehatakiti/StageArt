@@ -66,6 +66,7 @@ export default function RootLayout() {
               <Stack.Screen name="reset-password" options={{ headerShown: false }} />
               <Stack.Screen name="registration-pending" options={{ headerShown: false }} />
               <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+              <Stack.Screen name="verify-notification-email" options={{ headerShown: false }} />
               <Stack.Screen name="set-name" options={{ title: '姓名を設定' }} />
               {/* StageArt Blueprint再構成 Phase 1b: every authenticated
                   screen now lives under the (app) route group (a route

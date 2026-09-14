@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace StageArt\Presentation;
 
 use StageArt\Application\Admin\CreateAdminConsoleAccountUseCase;
+use StageArt\Application\Notification\GetNotificationEmailSettingsUseCase;
 use StageArt\Application\Notification\InAppNotificationAdapter;
 use StageArt\Application\Notification\ListMyNotificationsUseCase;
 use StageArt\Application\Notification\MarkMyNotificationReadUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
 use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Notification\PersonEmailResolver;
+use StageArt\Application\Notification\RequestNotificationEmailChangeUseCase;
+use StageArt\Application\Notification\VerifyNotificationEmailChangeUseCase;
 use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
 use StageArt\Application\UserAccount\DeleteUserAccountsUseCase;
 use StageArt\Application\UserAccount\ListAllUserAccountsUseCase;
@@ -146,6 +149,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationEmailRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationEmailChangeRequestRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressScheduleCommentRepository;
@@ -174,6 +178,7 @@ use StageArt\Presentation\Rest\ProductionDelegateRestController;
 use StageArt\Presentation\Rest\ProductionRestController;
 use StageArt\Presentation\Rest\ProjectRestController;
 use StageArt\Presentation\Rest\PushPreferenceRestController;
+use StageArt\Presentation\Rest\NotificationEmailRestController;
 use StageArt\Presentation\Rest\UserAccountRestController;
 
 final class Plugin
@@ -223,6 +228,7 @@ final class Plugin
         $pushPreferences      = new WordPressPushPreferenceRepository($wpdb);
         $notifications        = new WordPressNotificationRepository($wpdb);
         $notificationEmails   = new WordPressNotificationEmailRepository($wpdb);
+        $notificationEmailChangeRequests = new WordPressNotificationEmailChangeRequestRepository($wpdb);
         $accounts             = new WordPressAccountRepository($wpdb);
         $budgets              = new WordPressBudgetRepository($wpdb);
         $journalEntries       = new WordPressJournalEntryRepository($wpdb);
@@ -349,6 +355,33 @@ final class Plugin
             $emailCredentials,
             $emailVerificationTokens,
             $authMailer
+        );
+
+        // 通知用Email確認・変更機能: Settings screen's own read/write
+        // Use Cases - reuses $productionAuthorization (the same "resolve
+        // my own Person" path GetPushPreferenceUseCase/
+        // UpdatePushPreferenceUseCase already use), $personEmailResolver
+        // (now the single resolution point for both delivery AND
+        // display, see PersonEmailResolver::resolveWithSource()'s own
+        // docblock), and $authMailer (a new interface method on the same
+        // Port, see AuthMailerInterface's own docblock) - no new
+        // dependency kind is introduced.
+        $getNotificationEmailSettings = new GetNotificationEmailSettingsUseCase(
+            $productionAuthorization,
+            $personEmailResolver,
+            $notificationEmailChangeRequests
+        );
+        $requestNotificationEmailChange = new RequestNotificationEmailChangeUseCase(
+            $productionAuthorization,
+            $personEmailResolver,
+            $notificationEmailChangeRequests,
+            $authMailer,
+            $transactions
+        );
+        $verifyNotificationEmailChange = new VerifyNotificationEmailChangeUseCase(
+            $notificationEmailChangeRequests,
+            $notificationEmails,
+            $transactions
         );
 
         // StageArt Admin Console V1 (docs/architecture/StageArtAdminConsole.md):
@@ -723,6 +756,11 @@ final class Plugin
             $listMyNotifications,
             $markMyNotificationRead
         );
+        $notificationEmailRestController = new NotificationEmailRestController(
+            $getNotificationEmailSettings,
+            $requestNotificationEmailChange,
+            $verifyNotificationEmailChange
+        );
         $dashboardRestController = new DashboardRestController($getMyDashboard);
 
         $pushPreferenceRestController = new PushPreferenceRestController($getPushPreference, $updatePushPreference);
@@ -789,6 +827,7 @@ final class Plugin
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);
         add_action('rest_api_init', [$dashboardRestController, 'register_routes']);
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
+        add_action('rest_api_init', [$notificationEmailRestController, 'register_routes']);
         add_action('rest_api_init', [$meRestController, 'register_routes']);
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
