@@ -76,6 +76,7 @@ final class RehearsalInstaller
             person_id CHAR(36) NOT NULL,
             phase VARCHAR(30) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'UNANSWERED',
+            remarks TEXT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),

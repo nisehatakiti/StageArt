@@ -92,9 +92,9 @@ final class RespondRehearsalAttendanceUseCase
         $status = RehearsalAttendanceStatus::fromString($command->status);
 
         if ($attendance->phase()->equals(RehearsalAttendancePhase::scheduleAdjustment())) {
-            $attendance->respondScheduleAdjustment($status);
+            $attendance->respondScheduleAdjustment($status, $command->remarks);
         } else {
-            $attendance->respondAttendanceConfirmation($status);
+            $attendance->respondAttendanceConfirmation($status, $command->remarks);
         }
 
         $this->attendances->save($attendance);

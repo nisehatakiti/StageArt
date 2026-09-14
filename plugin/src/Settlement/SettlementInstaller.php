@@ -26,6 +26,7 @@ final class SettlementInstaller
             production_id CHAR(36) NOT NULL,
             person_id CHAR(36) NOT NULL,
             total_settled_amount INT NOT NULL DEFAULT 0,
+            last_settled_amount INT NOT NULL DEFAULT 0,
             last_settled_by CHAR(36) NULL,
             last_settled_at DATETIME NULL,
             created_at DATETIME NOT NULL,

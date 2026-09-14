@@ -51,6 +51,8 @@ export default function ProductionEditScreen() {
   const [scheduleEndDate, setScheduleEndDate] = useState('');
   const [scriptCredit, setScriptCredit] = useState('');
   const [directionCredit, setDirectionCredit] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [performanceCommonRemarks, setPerformanceCommonRemarks] = useState('');
   const [initialized, setInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,13 +68,17 @@ export default function ProductionEditScreen() {
       setScheduleEndDate(production.schedule_end_date ?? '');
       setScriptCredit(production.script_credit ?? '');
       setDirectionCredit(production.direction_credit ?? '');
+      setCapacity(production.capacity !== null && production.capacity !== undefined ? String(production.capacity) : '');
+      setPerformanceCommonRemarks(production.performance_common_remarks ?? '');
       setInitialized(true);
     }
   }, [production, initialized]);
 
   const slugChanged = slug !== (production?.slug ?? '');
   const slugValid = isValidSlug(slug);
-  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && !submitting;
+  const capacityTrimmed = capacity.trim();
+  const capacityValid = capacityTrimmed === '' || (/^\d+$/.test(capacityTrimmed) && Number(capacityTrimmed) > 0);
+  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && capacityValid && !submitting;
 
   async function handleSubmit() {
     if (!production || !canSubmit) {
@@ -112,6 +118,8 @@ export default function ProductionEditScreen() {
         scriptCredit: trimmedScript,
         directionCredit: trimmedDirection,
         scriptDirectionPublishedAt: trimmedScript || trimmedDirection ? production.script_direction_published_at ?? now : null,
+        capacity: capacityTrimmed === '' ? null : Number(capacityTrimmed),
+        performanceCommonRemarks: performanceCommonRemarks.trim() || null,
       });
       await queryClient.invalidateQueries({ queryKey: ['production', production.id] });
       await queryClient.invalidateQueries({ queryKey: ['productions'] });
@@ -253,6 +261,36 @@ export default function ProductionEditScreen() {
           />
         </View>
 
+        <ThemedText type="small" themeColor="textSecondary">
+          収容人数（任意・非公開）
+        </ThemedText>
+        <ThemedTextInput
+          testID="production-edit-capacity"
+          value={capacity}
+          onChangeText={setCapacity}
+          keyboardType="number-pad"
+          style={styles.input}
+        />
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          変更すると、この公演のすべての公演回の収容人数が一括で上書きされます（個別に変更済みの公演回も含む）。
+        </ThemedText>
+        {!capacityValid && (
+          <ThemedText type="small" style={styles.error}>
+            収容人数は1以上の整数で入力してください。
+          </ThemedText>
+        )}
+
+        <ThemedText type="small" themeColor="textSecondary">
+          公演回共通備考（任意）
+        </ThemedText>
+        <ThemedTextInput
+          testID="production-edit-performance-common-remarks"
+          value={performanceCommonRemarks}
+          onChangeText={setPerformanceCommonRemarks}
+          multiline
+          style={[styles.input, styles.multilineInput]}
+        />
+
         {errorMessage && (
           <ThemedText testID="production-edit-error" style={styles.error}>
             {errorMessage}
@@ -290,6 +328,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   error: { color: '#a6483a', marginBottom: Spacing.two },
+  caption: { marginBottom: Spacing.two },
   multilineInput: { minHeight: 96, textAlignVertical: 'top' },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   rowInput: { flex: 1 },

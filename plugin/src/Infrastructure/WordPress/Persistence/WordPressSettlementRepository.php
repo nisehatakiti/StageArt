@@ -30,6 +30,7 @@ final class WordPressSettlementRepository implements SettlementRepositoryInterfa
             'production_id' => $settlement->productionId()->toString(),
             'person_id' => $settlement->personId()->toString(),
             'total_settled_amount' => $settlement->totalSettledAmount(),
+            'last_settled_amount' => $settlement->lastSettledAmount(),
             'last_settled_by' => $settlement->lastSettledBy()?->toString(),
             'last_settled_at' => $settlement->lastSettledAt()?->format('Y-m-d H:i:s'),
             'updated_at' => $settlement->updatedAt()->format('Y-m-d H:i:s'),
@@ -93,7 +94,8 @@ final class WordPressSettlementRepository implements SettlementRepositoryInterfa
             ! empty($row['last_settled_by']) ? PersonId::fromString($row['last_settled_by']) : null,
             ! empty($row['last_settled_at']) ? new DateTimeImmutable($row['last_settled_at']) : null,
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            (int) ($row['last_settled_amount'] ?? 0)
         );
     }
 }

@@ -204,6 +204,68 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $this->assertSame('AVAILABLE', $updated->status);
     }
 
+    public function test_respond_carries_remarks_through_to_the_result(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+
+        $roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1));
+        $ownRecord = $roster[0];
+
+        $updated = $this->respondAttendance->execute(
+            new RespondRehearsalAttendanceCommand($ownRecord->id, 2, 'AVAILABLE', '19時以降なら参加可能です')
+        );
+        $this->assertSame('19時以降なら参加可能です', $updated->remarks);
+
+        $fetched = $this->getAttendance->execute(new GetRehearsalAttendanceQuery($ownRecord->id, 2));
+        $this->assertSame('19時以降なら参加可能です', $fetched->remarks);
+    }
+
+    public function test_recording_actual_status_does_not_alter_the_members_remarks(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+        $phase2Roster = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1));
+        $record = $phase2Roster[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING', '本人の備考'));
+
+        $rehearsalEntity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $rehearsalEntity->activate();
+        $this->rehearsals->save($rehearsalEntity);
+
+        $result = $this->recordActualStatus->execute(
+            new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED')
+        );
+
+        $this->assertSame('本人の備考', $result->remarks);
+    }
+
     public function test_person_cannot_respond_to_someone_elses_attendance(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);

@@ -67,6 +67,7 @@ export const scheduleAdjustmentRoster: RehearsalAttendance[] = [
     status: 'UNANSWERED',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
   {
     id: 'attendance-2',
@@ -76,6 +77,7 @@ export const scheduleAdjustmentRoster: RehearsalAttendance[] = [
     status: 'AVAILABLE',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
 ];
 
@@ -88,6 +90,7 @@ export const attendanceConfirmationRoster: RehearsalAttendance[] = [
     status: 'ATTENDING',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
 ];
 

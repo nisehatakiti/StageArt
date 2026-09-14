@@ -15,6 +15,8 @@ use StageArt\Application\CheckIn\CheckInCommand;
 use StageArt\Application\CheckIn\CheckInReservationUseCase;
 use StageArt\Application\CheckIn\CreateWalkUpReservationCommand;
 use StageArt\Application\CheckIn\CreateWalkUpReservationUseCase;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountCommand;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountUseCase;
 use StageArt\Application\CheckIn\MarkNoShowCommand;
 use StageArt\Application\CheckIn\MarkNoShowUseCase;
 use StageArt\Application\CheckIn\PerformanceMismatchException;
@@ -50,6 +52,7 @@ final class CheckInRestController
     private SearchReservationsForCheckInUseCase $searchReservations;
     private CreateWalkUpReservationUseCase $createWalkUpReservation;
     private ChangeReservationAttributionUseCase $changeAttribution;
+    private DecreaseReservationGuestCountUseCase $decreaseGuestCount;
 
     public function __construct(
         CheckInReservationUseCase $checkInReservation,
@@ -58,7 +61,8 @@ final class CheckInRestController
         ReverseCheckInUseCase $reverseCheckIn,
         SearchReservationsForCheckInUseCase $searchReservations,
         CreateWalkUpReservationUseCase $createWalkUpReservation,
-        ChangeReservationAttributionUseCase $changeAttribution
+        ChangeReservationAttributionUseCase $changeAttribution,
+        DecreaseReservationGuestCountUseCase $decreaseGuestCount
     ) {
         $this->checkInReservation = $checkInReservation;
         $this->checkInByNumber = $checkInByNumber;
@@ -67,6 +71,7 @@ final class CheckInRestController
         $this->searchReservations = $searchReservations;
         $this->createWalkUpReservation = $createWalkUpReservation;
         $this->changeAttribution = $changeAttribution;
+        $this->decreaseGuestCount = $decreaseGuestCount;
     }
 
     public function register_routes(): void
@@ -107,6 +112,14 @@ final class CheckInRestController
             [
                 'methods' => 'POST',
                 'callback' => [$this, 'reverse'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/performances/(?P<id>[^/]+)/checkin/reservations/(?P<reservation_id>[^/]+)/guest-count', [
+            [
+                'methods' => 'PUT',
+                'callback' => [$this, 'decreaseGuestCount'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -227,6 +240,25 @@ final class CheckInRestController
             $this->reverseCheckIn->execute($command);
 
             return new WP_REST_Response(['status' => 'ok'], 200);
+        } catch (\Throwable $exception) {
+            return $this->mapException($exception);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function decreaseGuestCount(WP_REST_Request $request)
+    {
+        try {
+            $command = new DecreaseReservationGuestCountCommand(
+                (string) $request->get_param('id'),
+                (string) $request->get_param('reservation_id'),
+                (int) $request->get_param('guest_count'),
+                get_current_user_id()
+            );
+
+            return new WP_REST_Response($this->decreaseGuestCount->execute($command)->toArray(), 200);
         } catch (\Throwable $exception) {
             return $this->mapException($exception);
         }

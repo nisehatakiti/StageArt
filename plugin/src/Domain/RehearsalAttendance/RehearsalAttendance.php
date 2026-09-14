@@ -16,6 +16,7 @@ final class RehearsalAttendance
     private PersonId $personId;
     private RehearsalAttendancePhase $phase;
     private RehearsalAttendanceStatus $status;
+    private ?string $remarks;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -25,6 +26,7 @@ final class RehearsalAttendance
         PersonId $personId,
         RehearsalAttendancePhase $phase,
         RehearsalAttendanceStatus $status,
+        ?string $remarks,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -33,6 +35,7 @@ final class RehearsalAttendance
         $this->personId = $personId;
         $this->phase = $phase;
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -51,6 +54,7 @@ final class RehearsalAttendance
             $personId,
             RehearsalAttendancePhase::scheduleAdjustment(),
             RehearsalAttendanceStatus::unanswered(),
+            null,
             $now,
             $now
         );
@@ -71,6 +75,7 @@ final class RehearsalAttendance
             $personId,
             RehearsalAttendancePhase::attendanceConfirmation(),
             RehearsalAttendanceStatus::unanswered(),
+            null,
             $now,
             $now
         );
@@ -83,9 +88,10 @@ final class RehearsalAttendance
         RehearsalAttendancePhase $phase,
         RehearsalAttendanceStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $remarks = null
     ): self {
-        return new self($id, $rehearsalId, $personId, $phase, $status, $createdAt, $updatedAt);
+        return new self($id, $rehearsalId, $personId, $phase, $status, $remarks, $createdAt, $updatedAt);
     }
 
     /**
@@ -95,7 +101,7 @@ final class RehearsalAttendance
      * for this transition, so only the target value and the record's own
      * Phase are validated here.
      */
-    public function respondScheduleAdjustment(RehearsalAttendanceStatus $status): void
+    public function respondScheduleAdjustment(RehearsalAttendanceStatus $status, ?string $remarks = null): void
     {
         if (! $this->phase->equals(RehearsalAttendancePhase::scheduleAdjustment())) {
             throw new InvalidArgumentException('Only a Phase = SCHEDULE_ADJUSTMENT record can receive this response.');
@@ -106,6 +112,7 @@ final class RehearsalAttendance
         }
 
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->touch();
     }
 
@@ -113,7 +120,7 @@ final class RehearsalAttendance
      * Phase 2 response: ATTENDING/NOT_ATTENDING only, matching the same
      * free-swap graph as Phase 1's response values.
      */
-    public function respondAttendanceConfirmation(RehearsalAttendanceStatus $status): void
+    public function respondAttendanceConfirmation(RehearsalAttendanceStatus $status, ?string $remarks = null): void
     {
         if (! $this->phase->equals(RehearsalAttendancePhase::attendanceConfirmation())) {
             throw new InvalidArgumentException('Only a Phase = ATTENDANCE_CONFIRMATION record can receive this response.');
@@ -124,6 +131,7 @@ final class RehearsalAttendance
         }
 
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->touch();
     }
 
@@ -143,6 +151,14 @@ final class RehearsalAttendance
      * EARLY_LEFT (早退) is a confirmed addition alongside ATTENDED/LATE/
      * ABSENT: someone who left early still actually attended, so it
      * follows the exact same source/target rules as LATE.
+     */
+    /**
+     * Deliberately does NOT touch `remarks` - that field belongs to the
+     * member's own response (see respondScheduleAdjustment()/
+     * respondAttendanceConfirmation()), and this is a Manager correction
+     * of the day-of result, not a re-response - overwriting it here
+     * would risk silently wiping a member's note whenever a Manager
+     * corrects ATTENDED -> LATE, for example.
      */
     public function recordActualStatus(RehearsalAttendanceStatus $status): void
     {
@@ -201,6 +217,11 @@ final class RehearsalAttendance
     public function status(): RehearsalAttendanceStatus
     {
         return $this->status;
+    }
+
+    public function remarks(): ?string
+    {
+        return $this->remarks;
     }
 
     public function createdAt(): DateTimeImmutable

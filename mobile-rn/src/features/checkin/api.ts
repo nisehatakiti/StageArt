@@ -58,6 +58,22 @@ export function createWalkUpReservation(
   });
 }
 
+/** PUT /performances/{id}/checkin/reservations/{reservationId}/guest-count -
+ * reception's own day-of guest-count-decrease action, before Check-in
+ * (e.g. 4名予約のうち1名が来られなくなった場合)。Reuses the same Domain
+ * operation the public self-service flow already has; this is the
+ * authenticated/reception equivalent, decrease-only. */
+export function decreaseReservationGuestCount(
+  client: ApiClient,
+  performanceId: string,
+  reservationId: string,
+  guestCount: number
+): Promise<Reservation> {
+  return client.put<Reservation>(`/performances/${performanceId}/checkin/reservations/${reservationId}/guest-count`, {
+    guest_count: guestCount,
+  });
+}
+
 /** PUT /reservations/{id}/attribution - corrects "誰扱い". */
 export function changeReservationAttribution(client: ApiClient, reservationId: string, attributedPersonId: string | null): Promise<Reservation> {
   return client.put<Reservation>(`/reservations/${reservationId}/attribution`, { attributed_person_id: attributedPersonId });

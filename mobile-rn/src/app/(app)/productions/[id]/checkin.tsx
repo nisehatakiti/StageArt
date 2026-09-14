@@ -9,6 +9,7 @@ import {
   useCheckInByNumber,
   useCheckInReservation,
   useCreateWalkUpReservation,
+  useDecreaseReservationGuestCount,
   useMarkNoShow,
   useReverseCheckIn,
   useSearchReservationsForCheckIn,
@@ -76,6 +77,8 @@ export default function ProductionCheckInScreen() {
   const checkInByNumber = useCheckInByNumber(activePerformanceId ?? undefined);
   const markNoShow = useMarkNoShow(activePerformanceId ?? undefined);
   const reverseCheckIn = useReverseCheckIn(activePerformanceId ?? undefined);
+  const decreaseGuestCount = useDecreaseReservationGuestCount(activePerformanceId ?? undefined);
+  const [guestCountEdits, setGuestCountEdits] = useState<Record<string, string>>({});
 
   const [walkUpTicketId, setWalkUpTicketId] = useState('');
   const [walkUpName, setWalkUpName] = useState('');
@@ -128,6 +131,25 @@ export default function ProductionCheckInScreen() {
     try {
       await reverseCheckIn.mutateAsync(reservationId);
       setMessage('受付を取り消しました。');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  /** Check-in前に人数を減らす（例: 4名予約のうち1名が来られなくなった場合）。
+   * 既存の公開自己サービス側と同じDomain操作の、受付担当者向け経路。 */
+  async function handleDecreaseGuestCount(reservationId: string) {
+    setErrorMessage(null);
+    setMessage(null);
+    const newValue = Number((guestCountEdits[reservationId] ?? '').trim());
+    try {
+      await decreaseGuestCount.mutateAsync({ reservationId, guestCount: newValue });
+      setMessage('人数を変更しました。');
+      setGuestCountEdits((current) => {
+        const next = { ...current };
+        delete next[reservationId];
+        return next;
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -296,6 +318,25 @@ export default function ProductionCheckInScreen() {
                 <View style={styles.actionButtons}>
                   {reservation.status === 'RESERVED' && (
                     <>
+                      <ThemedTextInput
+                        testID={`checkin-guest-count-input-${reservation.id}`}
+                        value={guestCountEdits[reservation.id] ?? ''}
+                        onChangeText={(value) => setGuestCountEdits((current) => ({ ...current, [reservation.id]: value }))}
+                        placeholder={String(reservation.guest_count)}
+                        keyboardType="number-pad"
+                        style={styles.guestCountInput}
+                      />
+                      <TouchableOpacity
+                        testID={`checkin-action-decrease-guest-count-${reservation.id}`}
+                        onPress={() => handleDecreaseGuestCount(reservation.id)}
+                        disabled={
+                          !guestCountEdits[reservation.id] ||
+                          Number(guestCountEdits[reservation.id]) < 1 ||
+                          Number(guestCountEdits[reservation.id]) >= reservation.guest_count
+                        }
+                      >
+                        <ThemedText type="link">人数変更</ThemedText>
+                      </TouchableOpacity>
                       <TouchableOpacity testID={`checkin-action-checkin-${reservation.id}`} onPress={() => handleCheckIn(reservation.id)}>
                         <ThemedText type="link">受付</ThemedText>
                       </TouchableOpacity>
@@ -413,7 +454,16 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   colInfo: { flex: 1 },
-  actionButtons: { flexDirection: 'row', gap: Spacing.two },
+  actionButtons: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  guestCountInput: {
+    width: 48,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: Spacing.half,
+    fontSize: 14,
+  },
   radioRow: { gap: Spacing.one, marginBottom: Spacing.two },
   radioOption: { paddingVertical: Spacing.half },
   input: {

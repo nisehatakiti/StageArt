@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { fetchProductionSettlementSummary, settleProductionMember } from './api';
+import { cancelProductionMemberSettlement, fetchProductionSettlementSummary, settleProductionMember } from './api';
 
 export function useProductionSettlementSummary(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -20,6 +20,16 @@ export function useSettleProductionMember(productionId: string | undefined) {
 
   return useMutation({
     mutationFn: (personId: string) => settleProductionMember(apiClient, productionId as string, personId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-settlement', productionId] }),
+  });
+}
+
+export function useCancelProductionMemberSettlement(productionId: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (personId: string) => cancelProductionMemberSettlement(apiClient, productionId as string, personId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-settlement', productionId] }),
   });
 }

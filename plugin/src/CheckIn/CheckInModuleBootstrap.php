@@ -9,6 +9,7 @@ use StageArt\Application\CheckIn\CheckInByNumberUseCase;
 use StageArt\Application\CheckIn\CheckInProcessor;
 use StageArt\Application\CheckIn\CheckInReservationUseCase;
 use StageArt\Application\CheckIn\CreateWalkUpReservationUseCase;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountUseCase;
 use StageArt\Application\CheckIn\MarkNoShowUseCase;
 use StageArt\Application\CheckIn\ReverseCheckInUseCase;
 use StageArt\Application\CheckIn\SearchReservationsForCheckInUseCase;
@@ -103,6 +104,7 @@ final class CheckInModuleBootstrap
             $transactions
         );
         $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization);
+        $decreaseGuestCount = new DecreaseReservationGuestCountUseCase($reservations, $performances, $identity, $authorization, $transactions);
 
         $this->restControllers = [
             new CheckInRestController(
@@ -112,7 +114,8 @@ final class CheckInModuleBootstrap
                 $reverseCheckIn,
                 $searchReservations,
                 $createWalkUpReservation,
-                $changeAttribution
+                $changeAttribution,
+                $decreaseGuestCount
             ),
         ];
     }

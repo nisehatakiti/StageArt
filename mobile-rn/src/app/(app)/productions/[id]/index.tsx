@@ -1,11 +1,20 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
-import { useProduction } from '@/features/production/useProductions';
+import {
+  useActivateProduction,
+  useArchiveProduction,
+  useCancelProduction,
+  useCompleteProduction,
+  useProduction,
+  useStartProductionPlanning,
+} from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
+import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /** ProductionLifecycle.md's DRAFT/PLANNING/ACTIVE/COMPLETED/ARCHIVED,
@@ -51,6 +60,30 @@ export default function ProductionManagementScreen() {
   const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
   const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
   const canManageCheckIn = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
+
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const startPlanning = useStartProductionPlanning(id);
+  const activate = useActivateProduction(id);
+  const complete = useCompleteProduction(id);
+  const archive = useArchiveProduction(id);
+  const cancel = useCancelProduction(id);
+  const lifecycleBusy = startPlanning.isPending || activate.isPending || complete.isPending || archive.isPending || cancel.isPending;
+
+  async function runLifecycleAction(mutation: { mutateAsync: () => Promise<unknown> }) {
+    setLifecycleError(null);
+    try {
+      await mutation.mutateAsync();
+    } catch (error) {
+      setLifecycleError(getErrorMessage(error));
+    }
+  }
+
+  function confirmAndRun(title: string, message: string, mutation: { mutateAsync: () => Promise<unknown> }) {
+    confirmAlert(title, message, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: 'OK', style: 'default', onPress: () => runLifecycleAction(mutation) },
+    ]);
+  }
 
   const breadcrumbs = [
     { label: 'StageArt', href: '/dashboard' as Href },
@@ -134,6 +167,72 @@ export default function ProductionManagementScreen() {
         )}
       </View>
 
+      {isPrimaryManager && (production.status === 'DRAFT' || production.status === 'PLANNING' || production.status === 'ACTIVE' || production.status === 'COMPLETED') && (
+        <View style={styles.lifecycleRow} testID="production-management-lifecycle-actions">
+          {lifecycleError && (
+            <ThemedText testID="production-management-lifecycle-error" style={styles.lifecycleError}>
+              {lifecycleError}
+            </ThemedText>
+          )}
+          {production.status === 'DRAFT' && (
+            <TouchableOpacity
+              testID="production-management-start-planning"
+              onPress={() => runLifecycleAction(startPlanning)}
+              disabled={lifecycleBusy}
+              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
+            >
+              <ThemedText type="linkPrimary">企画を開始する</ThemedText>
+            </TouchableOpacity>
+          )}
+          {production.status === 'PLANNING' && (
+            <TouchableOpacity
+              testID="production-management-activate"
+              onPress={() => runLifecycleAction(activate)}
+              disabled={lifecycleBusy}
+              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
+            >
+              <ThemedText type="linkPrimary">制作を開始する</ThemedText>
+            </TouchableOpacity>
+          )}
+          {production.status === 'ACTIVE' && (
+            <TouchableOpacity
+              testID="production-management-complete"
+              onPress={() =>
+                confirmAndRun(
+                  '公演終了・精算完了',
+                  'この公演を終了し、決算完了（COMPLETED）にします。未精算のメンバーが残っている場合はエラーになります。よろしいですか？',
+                  complete
+                )
+              }
+              disabled={lifecycleBusy}
+              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
+            >
+              <ThemedText type="linkPrimary">公演を終了する（決算完了）</ThemedText>
+            </TouchableOpacity>
+          )}
+          {production.status === 'COMPLETED' && (
+            <TouchableOpacity
+              testID="production-management-archive"
+              onPress={() => confirmAndRun('アーカイブ', 'この公演をアーカイブします。よろしいですか？', archive)}
+              disabled={lifecycleBusy}
+              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
+            >
+              <ThemedText type="linkPrimary">アーカイブする</ThemedText>
+            </TouchableOpacity>
+          )}
+          {(production.status === 'DRAFT' || production.status === 'PLANNING' || production.status === 'ACTIVE') && (
+            <TouchableOpacity
+              testID="production-management-cancel"
+              onPress={() => confirmAndRun('公演の中止', 'この公演を中止します。この操作は取り消せません。よろしいですか？', cancel)}
+              disabled={lifecycleBusy}
+              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
+            >
+              <ThemedText style={styles.destructiveText}>この公演を中止する</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       <ThemedText type="subtitle" style={styles.sectionTitle}>
         公演管理
       </ThemedText>
@@ -199,6 +298,13 @@ export default function ProductionManagementScreen() {
           label="精算"
           description="チケットバックの精算"
           onPress={() => router.push(`/productions/${id}/settlement` as Href)}
+          disabled={!isPrimaryManager}
+        />
+        <MenuCard
+          testID="production-management-menu-member-performance-summary"
+          label="メンバー実績サマリー"
+          description="稽古出欠・チケット販売実績"
+          onPress={() => router.push(`/productions/${id}/member-performance-summary` as Href)}
           disabled={!isPrimaryManager}
         />
         <MenuCard
@@ -279,6 +385,9 @@ const styles = StyleSheet.create({
   pillDraft: { backgroundColor: '#f7e4de' },
   pillTextPublished: { color: '#2f7a4a', fontWeight: '600' },
   pillTextDraft: { color: '#a6483a', fontWeight: '600' },
+  lifecycleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.three },
+  lifecycleError: { color: '#a6483a', width: '100%' },
+  destructiveText: { color: '#a6483a', fontWeight: '600' },
   sectionTitle: { marginTop: Spacing.two, marginBottom: Spacing.one },
   menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
   menuCard: {

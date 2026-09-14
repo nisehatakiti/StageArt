@@ -41,4 +41,39 @@ final class ProductionMemberSettlementTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $settlement->recordSettlement(0, PersonId::generate());
     }
+
+    public function test_cancel_last_settlement_reverses_only_the_most_recent_amount(): void
+    {
+        $settlement = ProductionMemberSettlement::openFor(ProductionId::generate(), PersonId::generate());
+        $settledBy = PersonId::generate();
+
+        $settlement->recordSettlement(5000, $settledBy);
+        $settlement->recordSettlement(2000, $settledBy);
+
+        $cancelledBy = PersonId::generate();
+        $settlement->cancelLastSettlement($cancelledBy);
+
+        $this->assertSame(5000, $settlement->totalSettledAmount());
+        $this->assertSame(0, $settlement->lastSettledAmount());
+        $this->assertTrue($settlement->lastSettledBy()->equals($cancelledBy));
+    }
+
+    public function test_cancel_last_settlement_rejects_when_nothing_to_cancel(): void
+    {
+        $settlement = ProductionMemberSettlement::openFor(ProductionId::generate(), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $settlement->cancelLastSettlement(PersonId::generate());
+    }
+
+    public function test_cancel_last_settlement_cannot_be_called_twice_in_a_row(): void
+    {
+        $settlement = ProductionMemberSettlement::openFor(ProductionId::generate(), PersonId::generate());
+        $settlement->recordSettlement(3000, PersonId::generate());
+
+        $settlement->cancelLastSettlement(PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $settlement->cancelLastSettlement(PersonId::generate());
+    }
 }

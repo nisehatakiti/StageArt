@@ -13,6 +13,7 @@ final class RehearsalAttendanceResult
     public string $personId;
     public string $phase;
     public string $status;
+    public ?string $remarks;
     public string $createdAt;
     public string $updatedAt;
 
@@ -22,6 +23,7 @@ final class RehearsalAttendanceResult
         string $personId,
         string $phase,
         string $status,
+        ?string $remarks,
         string $createdAt,
         string $updatedAt
     ) {
@@ -30,6 +32,7 @@ final class RehearsalAttendanceResult
         $this->personId = $personId;
         $this->phase = $phase;
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -42,6 +45,7 @@ final class RehearsalAttendanceResult
             $attendance->personId()->toString(),
             $attendance->phase()->toString(),
             $attendance->status()->toString(),
+            $attendance->remarks(),
             $attendance->createdAt()->format(DATE_ATOM),
             $attendance->updatedAt()->format(DATE_ATOM)
         );
@@ -58,6 +62,7 @@ final class RehearsalAttendanceResult
             'person_id' => $this->personId,
             'phase' => $this->phase,
             'status' => $this->status,
+            'remarks' => $this->remarks,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
         ];

@@ -25,6 +25,14 @@ use StageArt\Domain\Production\ProductionId;
  * settled here to get the current outstanding balance - see that
  * class's own docblock for why a "settled/unsettled" flag alone would be
  * unsafe once further Check-ins can occur after a settlement.
+ *
+ * Phase 5 (Production運営UI §7): "チェックを外してUpdate: settlement
+ * cancellation" requires reversing a settlement, not just recording new
+ * ones - `lastSettledAmount` tracks exactly how much the MOST RECENT
+ * `recordSettlement()` call added, so `cancelLastSettlement()` can
+ * reverse precisely that action (not the member's entire all-time
+ * total) and reset to 0 once cancelled, so a second cancel with nothing
+ * to undo is rejected rather than silently going negative.
  */
 final class ProductionMemberSettlement
 {
@@ -32,6 +40,7 @@ final class ProductionMemberSettlement
     private ProductionId $productionId;
     private PersonId $personId;
     private int $totalSettledAmount;
+    private int $lastSettledAmount;
     private ?PersonId $lastSettledBy;
     private ?DateTimeImmutable $lastSettledAt;
     private DateTimeImmutable $createdAt;
@@ -42,6 +51,7 @@ final class ProductionMemberSettlement
         ProductionId $productionId,
         PersonId $personId,
         int $totalSettledAmount,
+        int $lastSettledAmount,
         ?PersonId $lastSettledBy,
         ?DateTimeImmutable $lastSettledAt,
         DateTimeImmutable $createdAt,
@@ -51,6 +61,7 @@ final class ProductionMemberSettlement
         $this->productionId = $productionId;
         $this->personId = $personId;
         $this->totalSettledAmount = $totalSettledAmount;
+        $this->lastSettledAmount = $lastSettledAmount;
         $this->lastSettledBy = $lastSettledBy;
         $this->lastSettledAt = $lastSettledAt;
         $this->createdAt = $createdAt;
@@ -61,7 +72,7 @@ final class ProductionMemberSettlement
     {
         $now = new DateTimeImmutable();
 
-        return new self(SettlementId::generate(), $productionId, $personId, 0, null, null, $now, $now);
+        return new self(SettlementId::generate(), $productionId, $personId, 0, 0, null, null, $now, $now);
     }
 
     public static function reconstitute(
@@ -72,9 +83,10 @@ final class ProductionMemberSettlement
         ?PersonId $lastSettledBy,
         ?DateTimeImmutable $lastSettledAt,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        int $lastSettledAmount = 0
     ): self {
-        return new self($id, $productionId, $personId, $totalSettledAmount, $lastSettledBy, $lastSettledAt, $createdAt, $updatedAt);
+        return new self($id, $productionId, $personId, $totalSettledAmount, $lastSettledAmount, $lastSettledBy, $lastSettledAt, $createdAt, $updatedAt);
     }
 
     /**
@@ -90,7 +102,28 @@ final class ProductionMemberSettlement
         }
 
         $this->totalSettledAmount += $amount;
+        $this->lastSettledAmount = $amount;
         $this->lastSettledBy = $settledBy;
+        $this->lastSettledAt = new DateTimeImmutable();
+        $this->touch();
+    }
+
+    /**
+     * Reverses the MOST RECENT `recordSettlement()` call - Phase 5's
+     * "精算済み" checkbox being unchecked. Only ever undoes the last
+     * recorded action, never the member's cumulative history, and can't
+     * be called twice in a row (lastSettledAmount resets to 0 once
+     * cancelled).
+     */
+    public function cancelLastSettlement(PersonId $cancelledBy): void
+    {
+        if ($this->lastSettledAmount <= 0) {
+            throw new InvalidArgumentException('There is no settlement to cancel for this member.');
+        }
+
+        $this->totalSettledAmount -= $this->lastSettledAmount;
+        $this->lastSettledAmount = 0;
+        $this->lastSettledBy = $cancelledBy;
         $this->lastSettledAt = new DateTimeImmutable();
         $this->touch();
     }
@@ -118,6 +151,11 @@ final class ProductionMemberSettlement
     public function totalSettledAmount(): int
     {
         return $this->totalSettledAmount;
+    }
+
+    public function lastSettledAmount(): int
+    {
+        return $this->lastSettledAmount;
     }
 
     public function lastSettledBy(): ?PersonId

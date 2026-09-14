@@ -7,6 +7,7 @@ import {
   checkInByNumber,
   checkInReservation,
   createWalkUpReservation,
+  decreaseReservationGuestCount,
   markNoShow,
   reverseCheckIn,
   searchReservationsForCheckIn,
@@ -80,6 +81,17 @@ export function useCreateWalkUpReservation(performanceId: string | undefined) {
       attributedPersonId?: string | null;
       idempotencyKey: string;
     }) => createWalkUpReservation(apiClient, performanceId as string, fields),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDecreaseReservationGuestCount(performanceId: string | undefined) {
+  const { apiClient } = useAuth();
+  const invalidate = useInvalidateCheckInSearch(performanceId);
+
+  return useMutation({
+    mutationFn: (vars: { reservationId: string; guestCount: number }) =>
+      decreaseReservationGuestCount(apiClient, performanceId as string, vars.reservationId, vars.guestCount),
     onSuccess: invalidate,
   });
 }

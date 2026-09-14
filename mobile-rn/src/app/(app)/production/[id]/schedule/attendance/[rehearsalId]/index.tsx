@@ -177,6 +177,12 @@ export default function RehearsalAttendanceScreen() {
     () => attendancesQuery.data?.find((a) => a.person_id === myPersonId),
     [attendancesQuery.data, myPersonId]
   );
+  const [remarksDraft, setRemarksDraft] = useState('');
+  const [remarksInitializedForId, setRemarksInitializedForId] = useState<string | null>(null);
+  if (myRecord && remarksInitializedForId !== myRecord.id) {
+    setRemarksDraft(myRecord.remarks ?? '');
+    setRemarksInitializedForId(myRecord.id);
+  }
   const summary = useMemo(
     () => attendanceSummary((attendancesQuery.data ?? []).map((a) => a.status)),
     [attendancesQuery.data]
@@ -322,12 +328,25 @@ export default function RehearsalAttendanceScreen() {
                 <ThemedView style={styles.myCard} testID="attendance-my-record">
                   <ThemedText type="smallBold">あなたの回答</ThemedText>
                   <ThemedText testID="attendance-my-status">{statusLabel(myRecord.status)}</ThemedText>
+                  <ThemedTextInput
+                    testID="attendance-remarks-input"
+                    placeholder="備考（任意）"
+                    value={remarksDraft}
+                    onChangeText={setRemarksDraft}
+                    multiline
+                  />
                   <ThemedView style={styles.buttonRow}>
                     {responseOptionsForPhase(phase).map((option) => (
                       <TouchableOpacity
                         key={option}
                         testID={`attendance-respond-${option}`}
-                        onPress={() => respondMutation.mutate({ attendanceId: myRecord.id, status: option })}
+                        onPress={() =>
+                          respondMutation.mutate({
+                            attendanceId: myRecord.id,
+                            status: option,
+                            remarks: remarksDraft.trim() || null,
+                          })
+                        }
                         disabled={respondMutation.isPending}
                       >
                         <ThemedText type="link">{statusLabel(option)}</ThemedText>

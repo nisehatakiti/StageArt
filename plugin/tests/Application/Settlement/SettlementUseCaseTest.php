@@ -6,8 +6,11 @@ namespace StageArt\Tests\Application\Settlement;
 
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Settlement\CancelProductionMemberSettlementCommand;
+use StageArt\Application\Settlement\CancelProductionMemberSettlementUseCase;
 use StageArt\Application\Settlement\GetProductionSettlementSummaryQuery;
 use StageArt\Application\Settlement\GetProductionSettlementSummaryUseCase;
+use StageArt\Application\Settlement\NothingToCancelException;
 use StageArt\Application\Settlement\NothingToSettleException;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Application\Settlement\SettleProductionMemberCommand;
@@ -54,6 +57,7 @@ final class SettlementUseCaseTest extends TestCase
 
     private GetProductionSettlementSummaryUseCase $getSummary;
     private SettleProductionMemberUseCase $settleMember;
+    private CancelProductionMemberSettlementUseCase $cancelSettlement;
 
     protected function setUp(): void
     {
@@ -88,6 +92,13 @@ final class SettlementUseCaseTest extends TestCase
             $this->productions,
             $this->settlements,
             $calculator,
+            $identity,
+            $authorization,
+            new InMemoryTransactionManager()
+        );
+        $this->cancelSettlement = new CancelProductionMemberSettlementUseCase(
+            $this->productions,
+            $this->settlements,
             $identity,
             $authorization,
             new InMemoryTransactionManager()
@@ -181,6 +192,48 @@ final class SettlementUseCaseTest extends TestCase
         $summary = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1));
         $lineTwo = current(array_filter($summary->members, static fn ($line) => $line->personId === $memberTwo->id()->toString()));
         $this->assertSame(300, $lineTwo->outstandingAmount);
+    }
+
+    public function test_cancelling_a_settlement_restores_the_outstanding_amount(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settleMember->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+
+        $summary = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1));
+        $this->assertSame(0, $summary->members[0]->alreadySettledAmount);
+        $this->assertSame(300, $summary->members[0]->outstandingAmount);
+    }
+
+    public function test_cancelling_with_nothing_settled_is_rejected(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+
+        $this->expectException(NothingToCancelException::class);
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+    }
+
+    public function test_cancelling_twice_in_a_row_is_rejected(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settleMember->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+
+        $this->expectException(NothingToCancelException::class);
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+    }
+
+    public function test_non_primary_manager_cannot_cancel_a_settlement(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settleMember->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+
+        $stranger = Person::create(99);
+        $this->people->save($stranger);
+
+        $this->expectException(SettlementAccessDeniedException::class);
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 99));
     }
 
     public function test_non_primary_manager_cannot_view_the_settlement_summary(): void

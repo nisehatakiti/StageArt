@@ -12,3 +12,10 @@ export function fetchProductionSettlementSummary(client: ApiClient, productionId
 export function settleProductionMember(client: ApiClient, productionId: string, personId: string): Promise<void> {
   return client.post(`/productions/${productionId}/settlement/members/${personId}/settle`);
 }
+
+/** POST /productions/{id}/settlement/members/{personId}/cancel-settlement -
+ * reverses that member's MOST RECENT settle action only (Phase 5 §7's
+ * "精算済み" checkbox unchecked), not their whole settlement history. */
+export function cancelProductionMemberSettlement(client: ApiClient, productionId: string, personId: string): Promise<void> {
+  return client.post(`/productions/${productionId}/settlement/members/${personId}/cancel-settlement`);
+}

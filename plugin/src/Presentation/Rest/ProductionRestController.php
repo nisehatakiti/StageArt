@@ -23,6 +23,7 @@ use StageArt\Application\Production\GetPublicProductionBySlugQuery;
 use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsForPersonQuery;
 use StageArt\Application\Production\ListProductionsUseCase;
+use StageArt\Application\Production\ProductionSettlementIncompleteException;
 use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
@@ -388,6 +389,8 @@ final class ProductionRestController
             return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionSettlementIncompleteException $exception) {
+            return new WP_Error('stageart_production_settlement_incomplete', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid_transition', $exception->getMessage(), ['status' => 422]);
         }

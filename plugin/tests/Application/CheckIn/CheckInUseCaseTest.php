@@ -17,6 +17,8 @@ use StageArt\Application\CheckIn\CheckInProcessor;
 use StageArt\Application\CheckIn\CheckInReservationUseCase;
 use StageArt\Application\CheckIn\CreateWalkUpReservationCommand;
 use StageArt\Application\CheckIn\CreateWalkUpReservationUseCase;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountCommand;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountUseCase;
 use StageArt\Application\CheckIn\MarkNoShowCommand;
 use StageArt\Application\CheckIn\MarkNoShowUseCase;
 use StageArt\Application\CheckIn\PerformanceMismatchException;
@@ -93,6 +95,7 @@ final class CheckInUseCaseTest extends TestCase
     private SearchReservationsForCheckInUseCase $searchReservations;
     private CreateWalkUpReservationUseCase $createWalkUp;
     private ChangeReservationAttributionUseCase $changeAttribution;
+    private DecreaseReservationGuestCountUseCase $decreaseGuestCount;
 
     protected function setUp(): void
     {
@@ -165,6 +168,13 @@ final class CheckInUseCaseTest extends TestCase
             $transactions
         );
         $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization);
+        $this->decreaseGuestCount = new DecreaseReservationGuestCountUseCase(
+            $this->reservations,
+            $this->performances,
+            $identity,
+            $authorization,
+            $transactions
+        );
     }
 
     /**
@@ -571,6 +581,70 @@ final class CheckInUseCaseTest extends TestCase
         ));
 
         $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    public function test_decrease_guest_count_reduces_the_reservations_guest_count(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $result = $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
+
+        $this->assertSame(3, $result->guestCount);
+        $refetched = $this->reservations->findById($reservation->id());
+        $this->assertSame(3, $refetched->guestCount());
+    }
+
+    public function test_decrease_guest_count_rejects_a_value_that_is_not_lower(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 3);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_a_non_positive_value(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 3);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 0, 1)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_an_unauthorized_user(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $stranger = Person::create(99);
+        $this->people->save($stranger);
+
+        $this->expectException(CheckInAccessDeniedException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 99)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_after_the_performance_has_started(): void
+    {
+        [$production, , $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $pastStart = new DateTimeImmutable('-1 hour');
+        $pastPerformance = Performance::create($production->id(), $pastStart, $pastStart->format('H:i'), null, 20, null, null);
+        $this->performances->save($pastPerformance);
+        $reservation = $this->givenReservedReservation($pastPerformance, $ticketId, 4);
+
+        $this->expectException(\StageArt\Application\Reservation\PerformanceAlreadyStartedException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($pastPerformance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
     }
 
     public function test_change_attribution_updates_the_reservation(): void

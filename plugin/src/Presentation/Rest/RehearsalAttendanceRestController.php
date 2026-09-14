@@ -175,10 +175,13 @@ final class RehearsalAttendanceRestController
     public function respond(WP_REST_Request $request)
     {
         try {
+            $remarks = $request->get_param('remarks');
+
             $command = new RespondRehearsalAttendanceCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
-                (string) $request->get_param('status')
+                (string) $request->get_param('status'),
+                $remarks !== null && $remarks !== '' ? (string) $remarks : null
             );
 
             return new WP_REST_Response($this->respondAttendance->execute($command)->toArray(), 200);

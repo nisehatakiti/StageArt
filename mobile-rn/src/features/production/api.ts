@@ -88,6 +88,14 @@ export function updateProduction(
     directionCredit?: string | null;
     scriptDirectionPublishedAt?: string | null;
     memberInfoPublishedAt?: string | null;
+    /** Internal-only (never shown on the Public Page). Like `name`, null
+     * here REPLACES the current value (it does not mean "leave
+     * unchanged") - a caller that wants to keep the existing capacity
+     * must send it back explicitly. Changing it cascades server-side to
+     * overwrite every existing Performance's own capacity for this
+     * Production (UpdateProductionUseCase's own confirmed behavior). */
+    capacity?: number | null;
+    performanceCommonRemarks?: string | null;
   }
 ): Promise<Production> {
   return client.put<Production>(`/productions/${id}`, {
@@ -108,7 +116,37 @@ export function updateProduction(
     direction_credit: fields.directionCredit,
     script_direction_published_at: fields.scriptDirectionPublishedAt,
     member_info_published_at: fields.memberInfoPublishedAt,
+    capacity: fields.capacity,
+    performance_common_remarks: fields.performanceCommonRemarks,
   });
+}
+
+/**
+ * Phase 5 (Production運営UI §8): the existing Lifecycle Action endpoints
+ * (`PATCH /productions/{id}/{action}`, Phase 6.1) - Status can no longer
+ * be changed via the generic `updateProduction()` PUT above, only
+ * through these. `complete` enforces the existing Settlement-completion
+ * Guard server-side (CompleteProductionUseCase) - this function does not
+ * duplicate that check client-side.
+ */
+export function startProductionPlanning(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/start-planning`);
+}
+
+export function activateProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/activate`);
+}
+
+export function completeProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/complete`);
+}
+
+export function archiveProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/archive`);
+}
+
+export function cancelProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/cancel`);
 }
 
 /** GET /productions/by-slug/{slug} - public, unauthenticated (see

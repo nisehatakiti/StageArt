@@ -15,9 +15,10 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
-describe('Attendance detail: 回答 (respond)', () => {
-  it('sends the respond PUT and shows the updated status after refetch', async () => {
+describe('Attendance detail: 備考 (remarks)', () => {
+  it('pre-fills an existing remark and sends an edited remark on the next respond', async () => {
     let respondBody: unknown = null;
+    const myRecordWithRemarks = { ...scheduleAdjustmentRoster[0], remarks: '既存の備考' };
 
     global.fetch = jest.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
@@ -46,16 +47,14 @@ describe('Attendance detail: 回答 (respond)', () => {
       }
       if (url.includes('/rehearsal-attendances/attendance-1/respond')) {
         respondBody = init?.body ? JSON.parse(String(init.body)) : null;
-        const updated = { ...scheduleAdjustmentRoster[0], status: 'AVAILABLE' };
+        const updated = { ...myRecordWithRemarks, status: 'AVAILABLE', remarks: '更新後の備考' };
         return { ok: true, status: 200, text: async () => JSON.stringify(updated), json: async () => updated } as Response;
       }
       if (url.includes('/rehearsals/rehearsal-1/attendances')) {
-        // Reflects the just-sent respond result on refetch, matching
-        // the roster-invalidation-on-success mutation pattern.
         const rows =
           respondBody !== null
-            ? [{ ...scheduleAdjustmentRoster[0], status: 'AVAILABLE' }, scheduleAdjustmentRoster[1]]
-            : scheduleAdjustmentRoster;
+            ? [{ ...myRecordWithRemarks, status: 'AVAILABLE', remarks: '更新後の備考' }, scheduleAdjustmentRoster[1]]
+            : [myRecordWithRemarks, scheduleAdjustmentRoster[1]];
         return { ok: true, status: 200, text: async () => JSON.stringify(rows), json: async () => rows } as Response;
       }
 
@@ -64,11 +63,14 @@ describe('Attendance detail: 回答 (respond)', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/schedule/attendance/rehearsal-1' });
 
-    await waitFor(() => expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('未回答'));
+    await waitFor(() => expect(screen.getByTestId('attendance-remarks-input')).toHaveDisplayValue('既存の備考'));
+
+    fireEvent.changeText(screen.getByTestId('attendance-remarks-input'), '更新後の備考');
+    await waitFor(() => expect(screen.getByTestId('attendance-remarks-input')).toHaveDisplayValue('更新後の備考'));
 
     fireEvent.press(screen.getByTestId('attendance-respond-AVAILABLE'));
 
-    await waitFor(() => expect(respondBody).toEqual({ status: 'AVAILABLE', remarks: null }));
-    await waitFor(() => expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('参加可能'));
+    await waitFor(() => expect(respondBody).toEqual({ status: 'AVAILABLE', remarks: '更新後の備考' }));
+    await waitFor(() => expect(screen.getByTestId('attendance-remarks-input')).toHaveDisplayValue('更新後の備考'));
   });
 });

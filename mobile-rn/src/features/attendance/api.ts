@@ -142,13 +142,17 @@ export function addRehearsalAttendanceTargets(
 }
 
 /** PUT /rehearsal-attendances/{id}/respond - self-response only; the
- * Backend rejects (403) if the caller does not own this record. */
+ * Backend rejects (403) if the caller does not own this record.
+ * `remarks` (Phase 5 §3) always replaces the current value, including to
+ * `null` when omitted - the same "whole field overwrite" convention this
+ * codebase already uses for its other multi-field update calls. */
 export function respondRehearsalAttendance(
   client: ApiClient,
   attendanceId: string,
-  status: string
+  status: string,
+  remarks?: string | null
 ): Promise<RehearsalAttendance> {
-  return client.put<RehearsalAttendance>(`/rehearsal-attendances/${attendanceId}/respond`, { status });
+  return client.put<RehearsalAttendance>(`/rehearsal-attendances/${attendanceId}/respond`, { status, remarks: remarks ?? null });
 }
 
 /** PUT /rehearsal-attendances/{id}/record-actual-status - the

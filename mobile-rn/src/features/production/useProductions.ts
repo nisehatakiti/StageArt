@@ -1,10 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { useAuth } from '@/auth/AuthContext';
 import { fetchProjects } from '@/features/organization/api';
 
-import { fetchProduction, fetchProductions } from './api';
+import {
+  activateProduction,
+  archiveProduction,
+  cancelProduction,
+  completeProduction,
+  fetchProduction,
+  fetchProductions,
+  startProductionPlanning,
+} from './api';
 
 /**
  * Organization-scoped Production list.
@@ -89,4 +97,40 @@ export function useProduction(id: string | undefined) {
     queryFn: () => fetchProduction(apiClient, id as string),
     enabled: status === 'authenticated' && !!id,
   });
+}
+
+/** Phase 5 §8: one shared shape for all 5 existing Lifecycle Actions -
+ * each just PATCHes and invalidates the same two caches, differing only
+ * in which endpoint they call. */
+function useProductionLifecycleAction(id: string | undefined, action: (client: ReturnType<typeof useAuth>['apiClient'], id: string) => Promise<unknown>) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => action(apiClient, id as string),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production', id] });
+      queryClient.invalidateQueries({ queryKey: ['productions'] });
+    },
+  });
+}
+
+export function useStartProductionPlanning(id: string | undefined) {
+  return useProductionLifecycleAction(id, startProductionPlanning);
+}
+
+export function useActivateProduction(id: string | undefined) {
+  return useProductionLifecycleAction(id, activateProduction);
+}
+
+export function useCompleteProduction(id: string | undefined) {
+  return useProductionLifecycleAction(id, completeProduction);
+}
+
+export function useArchiveProduction(id: string | undefined) {
+  return useProductionLifecycleAction(id, archiveProduction);
+}
+
+export function useCancelProduction(id: string | undefined) {
+  return useProductionLifecycleAction(id, cancelProduction);
 }

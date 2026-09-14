@@ -43,6 +43,7 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             'person_id' => $attendance->personId()->toString(),
             'phase' => $attendance->phase()->toString(),
             'status' => $attendance->status()->toString(),
+            'remarks' => $attendance->remarks(),
             'updated_at' => $attendance->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -147,7 +148,8 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             RehearsalAttendancePhase::fromString($row['phase']),
             RehearsalAttendanceStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            ! empty($row['remarks']) ? $row['remarks'] : null
         );
     }
 }

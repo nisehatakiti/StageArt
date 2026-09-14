@@ -337,12 +337,38 @@ export type ProductionMemberSettlementLine = {
   confirmed_ticket_back_amount: number;
   already_settled_amount: number;
   outstanding_amount: number;
+  /** Phase 5 §7: >0 means the most recent settle action for this member
+   * can still be cancelled (checkbox shows CHECKED); 0 means nothing to
+   * cancel (never settled, or already cancelled). */
+  last_settled_amount: number;
 };
 
 export type ProductionSettlementSummary = {
   members: ProductionMemberSettlementLine[];
   quota_shortfall_count: number;
   quota_shortfall_payable: number;
+};
+
+/**
+ * Phase 5 §9: Member Performance Summary - `ticket_sales_count` is
+ * Check-in-based sales performance (CHECKED_IN + NO_SHOW);
+ * `ticket_attendance_count` is actual attendance (CHECKED_IN only) - kept
+ * as two separate counts per the confirmed NO_SHOW distinction.
+ */
+export type MemberPerformanceSummaryLine = {
+  person_id: string;
+  display_name: string | null;
+  attended_count: number;
+  absent_count: number;
+  late_count: number;
+  early_left_count: number;
+  rehearsal_count: number;
+  ticket_sales_count: number;
+  ticket_attendance_count: number;
+};
+
+export type MemberPerformanceSummary = {
+  members: MemberPerformanceSummaryLine[];
 };
 
 /**
@@ -484,6 +510,11 @@ export type RehearsalAttendance = {
   person_id: string;
   phase: string;
   status: string;
+  /** Phase 5 §3: the member's own note on their response. Only ever set
+   * via their own respond call (respondScheduleAdjustment()/
+   * respondAttendanceConfirmation()) - a Manager's actual-status
+   * correction never touches it. */
+  remarks: string | null;
   created_at: string;
   updated_at: string;
 };

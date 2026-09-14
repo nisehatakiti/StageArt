@@ -113,7 +113,8 @@ final class GetProductionSettlementSummaryUseCase
                 $displayName,
                 $confirmed,
                 $alreadySettled,
-                max(0, $confirmed - $alreadySettled)
+                max(0, $confirmed - $alreadySettled),
+                $settlement !== null ? $settlement->lastSettledAmount() : 0
             );
         }
 

@@ -153,4 +153,49 @@ final class RehearsalAttendanceTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDED));
     }
+
+    public function test_new_record_has_no_remarks(): void
+    {
+        $attendance = RehearsalAttendance::createPhase1(RehearsalId::generate(), PersonId::generate());
+
+        $this->assertNull($attendance->remarks());
+    }
+
+    public function test_respond_schedule_adjustment_records_remarks(): void
+    {
+        $attendance = RehearsalAttendance::createPhase1(RehearsalId::generate(), PersonId::generate());
+
+        $attendance->respondScheduleAdjustment(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::AVAILABLE), '19時以降なら参加可能です');
+
+        $this->assertSame('19時以降なら参加可能です', $attendance->remarks());
+    }
+
+    public function test_respond_attendance_confirmation_records_remarks(): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
+
+        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDING), '少し遅れます');
+
+        $this->assertSame('少し遅れます', $attendance->remarks());
+    }
+
+    public function test_responding_again_overwrites_the_previous_remarks(): void
+    {
+        $attendance = RehearsalAttendance::createPhase1(RehearsalId::generate(), PersonId::generate());
+        $attendance->respondScheduleAdjustment(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::AVAILABLE), '最初の備考');
+
+        $attendance->respondScheduleAdjustment(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::UNAVAILABLE), null);
+
+        $this->assertNull($attendance->remarks());
+    }
+
+    public function test_record_actual_status_does_not_touch_the_members_remarks(): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
+        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDING), '本人の備考');
+
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::LATE));
+
+        $this->assertSame('本人の備考', $attendance->remarks());
+    }
 }

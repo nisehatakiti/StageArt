@@ -28,8 +28,8 @@ export function useRespondRehearsalAttendance(rehearsalId: string | undefined, p
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: { attendanceId: string; status: string }) =>
-      respondRehearsalAttendance(apiClient, params.attendanceId, params.status),
+    mutationFn: (params: { attendanceId: string; status: string; remarks?: string | null }) =>
+      respondRehearsalAttendance(apiClient, params.attendanceId, params.status, params.remarks),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rehearsal-attendances', rehearsalId, phase] });
     },

@@ -21,6 +21,7 @@ use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\CheckIn\CheckInModuleBootstrap;
 use StageArt\Performance\PerformanceModuleBootstrap;
 use StageArt\Reservation\ReservationModuleBootstrap;
+use StageArt\MemberPerformanceSummary\MemberPerformanceSummaryModuleBootstrap;
 use StageArt\Settlement\SettlementModuleBootstrap;
 use StageArt\Ticket\TicketModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
@@ -576,6 +577,22 @@ final class Plugin
             $transactions
         );
 
+        // Phase 5 (Production運営UI §9): Member Performance Summary
+        // Module's own wiring - see MemberPerformanceSummaryModuleBootstrap's
+        // own docblock.
+        $memberPerformanceSummaryModule = new MemberPerformanceSummaryModuleBootstrap(
+            $productions,
+            $rehearsals,
+            $rehearsalAttendances,
+            $performances,
+            $reservations,
+            $tickets,
+            $membershipContract,
+            $people,
+            $identityContract,
+            $authorizationContract
+        );
+
         $organizationRestController = new OrganizationRestController(
             $createOrganization,
             $getOrganization,
@@ -748,6 +765,10 @@ final class Plugin
 
         foreach ($settlementModule->restControllers() as $settlementRestController) {
             add_action('rest_api_init', [$settlementRestController, 'register_routes']);
+        }
+
+        foreach ($memberPerformanceSummaryModule->restControllers() as $memberPerformanceSummaryRestController) {
+            add_action('rest_api_init', [$memberPerformanceSummaryRestController, 'register_routes']);
         }
 
         // Phase 2 (StageArt Authentication): registers the StageArt

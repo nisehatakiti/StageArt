@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Settlement;
 
+use StageArt\Application\Settlement\CancelProductionMemberSettlementUseCase;
 use StageArt\Application\Settlement\GetProductionSettlementSummaryUseCase;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Application\Settlement\SettleProductionMemberUseCase;
@@ -63,9 +64,16 @@ final class SettlementModuleBootstrap
             $authorization,
             $transactions
         );
+        $cancelSettlement = new CancelProductionMemberSettlementUseCase(
+            $productions,
+            $settlements,
+            $identity,
+            $authorization,
+            $transactions
+        );
 
         $this->restControllers = [
-            new SettlementRestController($getSummary, $settleMember),
+            new SettlementRestController($getSummary, $settleMember, $cancelSettlement),
         ];
     }
 
