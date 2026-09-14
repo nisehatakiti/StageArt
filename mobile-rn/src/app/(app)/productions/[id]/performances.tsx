@@ -19,6 +19,17 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: '中止',
 };
 
+/** Phase 6: the manually-settable Status options exposed here. CANCELLED
+ * is deliberately excluded - it already has its own dedicated "中止"
+ * button (`cancelPerformance`, idempotency-guarded with its own error
+ * message), and offering it a second way through this generic selector
+ * would let a manager bypass that guard without gaining anything.
+ * Performance::changeStatus() itself enforces no transition graph beyond
+ * "not from CANCELLED" (see its own docblock: "no strict transition
+ * graph is mandated among DRAFT/PUBLISHED/SOLD_OUT/FINISHED"), so any of
+ * these four may be selected from any of the other three. */
+const EDITABLE_STATUS_OPTIONS = ['DRAFT', 'PUBLISHED', 'SOLD_OUT', 'FINISHED'] as const;
+
 type EditState = {
   performanceDate: string;
   startTime: string;
@@ -26,6 +37,7 @@ type EditState = {
   capacity: string;
   remarks: string;
   symbol: string;
+  status: string;
 };
 
 function toEditState(performance: Performance): EditState {
@@ -36,6 +48,7 @@ function toEditState(performance: Performance): EditState {
     capacity: String(performance.capacity),
     remarks: performance.remarks ?? '',
     symbol: performance.symbol ?? '',
+    status: performance.status,
   };
 }
 
@@ -43,9 +56,14 @@ function toEditState(performance: Performance): EditState {
  * StageArt Phase 2 Performance基盤 §22/§23/§24: 公演回管理 - Performance
  * list (公演日/開演時刻/終演予定時刻/定員/Status, plus 記号/備考), create
  * form (定員 pre-filled from Production.capacity, per §23), and inline
- * edit. "中止" is the only delete-like action (Status -> CANCELLED); a
- * cancelled Performance stays in the list as history, never physically
- * removed (§24).
+ * edit. "中止" (Status -> CANCELLED) is the one delete-like, dedicated,
+ * idempotency-guarded action with its own button; a cancelled Performance
+ * stays in the list as history, never physically removed (§24). Phase 6:
+ * the inline edit row also exposes DRAFT/PUBLISHED/SOLD_OUT/FINISHED as a
+ * direct Status selector (UpdatePerformanceUseCase already accepted this
+ * field - Performance::changeStatus() itself enforces no transition graph
+ * among these four, only that CANCELLED is terminal - this was simply
+ * never sent by this screen before).
  */
 export default function ProductionPerformancesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -60,7 +78,6 @@ export default function ProductionPerformancesScreen() {
   const canManage = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [newDate, setNewDate] = useState('');
@@ -156,20 +173,13 @@ export default function ProductionPerformancesScreen() {
       {performances.length > 0 && (
         <View style={styles.list} testID="production-performances-list">
           {performances.map((performance) =>
-            editingId === performance.id && editState ? (
+            editingId === performance.id ? (
               <PerformanceEditRow
                 key={performance.id}
-                edit={editState}
-                onChange={setEditState}
-                onCancelEdit={() => {
-                  setEditingId(null);
-                  setEditState(null);
-                }}
+                initialEdit={toEditState(performance)}
+                onCancelEdit={() => setEditingId(null)}
                 performanceId={performance.id}
-                onSaved={() => {
-                  setEditingId(null);
-                  setEditState(null);
-                }}
+                onSaved={() => setEditingId(null)}
                 onError={setErrorMessage}
               />
             ) : (
@@ -182,10 +192,7 @@ export default function ProductionPerformancesScreen() {
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     testID={`performance-edit-${performance.id}`}
-                    onPress={() => {
-                      setEditingId(performance.id);
-                      setEditState(toEditState(performance));
-                    }}
+                    onPress={() => setEditingId(performance.id)}
                     disabled={performance.status === 'CANCELLED'}
                   >
                     <ThemedText type="link">編集</ThemedText>
@@ -274,21 +281,27 @@ export default function ProductionPerformancesScreen() {
   );
 }
 
+/**
+ * Phase 6: form state lives locally here (initialized once from
+ * `initialEdit`), matching this codebase's own established pattern for
+ * every other inline edit form (production `edit.tsx`, Rehearsal
+ * attendance remarks) - not lifted to the list-level parent, which only
+ * needs to know WHICH row is open.
+ */
 function PerformanceEditRow({
   performanceId,
-  edit,
-  onChange,
+  initialEdit,
   onCancelEdit,
   onSaved,
   onError,
 }: {
   performanceId: string;
-  edit: EditState;
-  onChange: (edit: EditState) => void;
+  initialEdit: EditState;
   onCancelEdit: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
 }) {
+  const [edit, setEdit] = useState(initialEdit);
   const updatePerformance = useUpdatePerformance(performanceId);
 
   async function handleSave() {
@@ -300,6 +313,7 @@ function PerformanceEditRow({
         capacity: Number(edit.capacity.trim()),
         remarks: edit.remarks.trim() || null,
         symbol: edit.symbol.trim() || null,
+        status: edit.status,
       });
       onSaved();
     } catch (error) {
@@ -312,28 +326,41 @@ function PerformanceEditRow({
       <ThemedTextInput
         testID={`performance-edit-date-${performanceId}`}
         value={edit.performanceDate}
-        onChangeText={(value) => onChange({ ...edit, performanceDate: value })}
+        onChangeText={(value) => setEdit({ ...edit, performanceDate: value })}
         style={styles.editInput}
       />
       <ThemedTextInput
         testID={`performance-edit-start-time-${performanceId}`}
         value={edit.startTime}
-        onChangeText={(value) => onChange({ ...edit, startTime: value })}
+        onChangeText={(value) => setEdit({ ...edit, startTime: value })}
         style={styles.editInput}
       />
       <ThemedTextInput
         testID={`performance-edit-end-time-${performanceId}`}
         value={edit.endTime}
-        onChangeText={(value) => onChange({ ...edit, endTime: value })}
+        onChangeText={(value) => setEdit({ ...edit, endTime: value })}
         style={styles.editInput}
       />
       <ThemedTextInput
         testID={`performance-edit-capacity-${performanceId}`}
         value={edit.capacity}
-        onChangeText={(value) => onChange({ ...edit, capacity: value })}
+        onChangeText={(value) => setEdit({ ...edit, capacity: value })}
         keyboardType="number-pad"
         style={styles.editInput}
       />
+      <View style={styles.statusOptions}>
+        {EDITABLE_STATUS_OPTIONS.map((option) => (
+          <TouchableOpacity
+            key={option}
+            testID={`performance-edit-status-${option}-${performanceId}`}
+            onPress={() => setEdit({ ...edit, status: option })}
+            style={[styles.statusOption, edit.status === option && styles.statusOptionSelected]}
+            accessibilityState={{ selected: edit.status === option }}
+          >
+            <ThemedText type={edit.status === option ? 'smallBold' : 'small'}>{STATUS_LABEL[option]}</ThemedText>
+          </TouchableOpacity>
+        ))}
+      </View>
       <View style={styles.actionButtons}>
         <TouchableOpacity testID={`performance-edit-save-${performanceId}`} onPress={handleSave} disabled={updatePerformance.isPending}>
           <ThemedText type="link">保存</ThemedText>
@@ -370,6 +397,15 @@ const styles = StyleSheet.create({
   colTime: { width: 70 },
   colCapacity: { width: 60 },
   colStatus: { width: 80 },
+  statusOptions: { flexDirection: 'row', gap: Spacing.one },
+  statusOption: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Radius.medium,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  statusOptionSelected: { borderColor: BrandColors.warmAmber, backgroundColor: BrandColors.warmAmber + '22' },
   actionButtons: { flexDirection: 'row', gap: Spacing.two },
   editInput: {
     width: 90,
