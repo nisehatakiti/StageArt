@@ -70,7 +70,11 @@ final class AdminAccountManagementUseCaseTest extends TestCase
         $accessTokenIssuer = new FakeAccessTokenIssuer();
         $wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $transactions = new InMemoryTransactionManager();
-        $notificationEmailSeeder = new NotificationEmailSeeder(new InMemoryNotificationEmailRepository());
+        $notificationEmailSeeder = new NotificationEmailSeeder(
+            new InMemoryNotificationEmailRepository(),
+            $this->userAccounts,
+            $this->emailCredentials
+        );
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,

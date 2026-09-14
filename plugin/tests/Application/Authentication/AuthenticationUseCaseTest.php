@@ -19,12 +19,14 @@ use StageArt\Application\Authentication\RefreshAccessTokenUseCase;
 use StageArt\Application\Authentication\UserAccountBlockedException;
 use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\UserAccount\EmailCredential;
 use StageArt\Domain\UserAccount\ExternalIdentity;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Domain\UserAccount\UserAccountId;
 use StageArt\Tests\Support\FakeAccessTokenIssuer;
 use StageArt\Tests\Support\FakeGoogleIdTokenVerifier;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
+use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -39,6 +41,7 @@ final class AuthenticationUseCaseTest extends TestCase
     private InMemoryExternalIdentityRepository $externalIdentities;
     private InMemoryRefreshTokenRepository $refreshTokens;
     private InMemoryNotificationEmailRepository $notificationEmails;
+    private InMemoryEmailCredentialRepository $emailCredentials;
     private FakeGoogleIdTokenVerifier $googleVerifier;
     private FakeAccessTokenIssuer $accessTokenIssuer;
     private FakeWordPressUserProvisioner $wordPressUserProvisioner;
@@ -55,11 +58,16 @@ final class AuthenticationUseCaseTest extends TestCase
         $this->externalIdentities = new InMemoryExternalIdentityRepository();
         $this->refreshTokens = new InMemoryRefreshTokenRepository();
         $this->notificationEmails = new InMemoryNotificationEmailRepository();
+        $this->emailCredentials = new InMemoryEmailCredentialRepository();
         $this->googleVerifier = new FakeGoogleIdTokenVerifier();
         $this->accessTokenIssuer = new FakeAccessTokenIssuer();
         $this->wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $transactions = new InMemoryTransactionManager();
-        $notificationEmailSeeder = new NotificationEmailSeeder($this->notificationEmails);
+        $notificationEmailSeeder = new NotificationEmailSeeder(
+            $this->notificationEmails,
+            $this->userAccounts,
+            $this->emailCredentials
+        );
 
         $this->authenticateWithGoogle = new AuthenticateWithGoogleUseCase(
             $this->googleVerifier,
@@ -279,6 +287,39 @@ final class AuthenticationUseCaseTest extends TestCase
         $this->assertSame('changed-by-user@example.com', $notificationEmail->email());
     }
 
+    /**
+     * 通知用Email優先順位仕様書 §5.2/§9 ケースB, AC-02: a Person who
+     * already has an EmailCredential must not have their notification
+     * destination silently switched to a different Google email just
+     * because no NotificationEmail row exists yet - EmailCredential
+     * stays the resolved destination (via PersonEmailResolver's rank-2
+     * fallback), and no NotificationEmail row is created at all.
+     */
+    public function test_a_returning_google_user_with_an_email_credential_never_gets_a_notification_email_seeded(): void
+    {
+        $person = Person::create(1);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'foo@example.com', 'hash'));
+        $this->externalIdentities->save(ExternalIdentity::create($userAccount->id(), 'google', 'google-sub-seed-5'));
+
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-seed-5',
+            'bar@gmail.com',
+            null,
+            null,
+            true
+        );
+        $this->authenticateWithGoogle->execute(new AuthenticateWithGoogleCommand('valid-token'));
+
+        $this->assertNull(
+            $this->notificationEmails->findByPersonId($person->id()),
+            'An EmailCredential must protect against auto-seeding a NotificationEmail from a different Google email.'
+        );
+    }
+
     // --- RefreshAccessTokenUseCase -------------------------------------
 
     public function test_valid_refresh_token_issues_a_new_access_token(): void
@@ -442,5 +483,65 @@ final class AuthenticationUseCaseTest extends TestCase
         $notificationEmail = $this->notificationEmails->findByPersonId($person->id());
         $this->assertNotNull($notificationEmail);
         $this->assertSame('linked@example.com', $notificationEmail->email());
+    }
+
+    /**
+     * 通知用Email優先順位仕様書 §9 ケースB, AC-02: linking Google to an
+     * existing legacy (Email/Password) account must never switch the
+     * notification destination to the Google email just because no
+     * NotificationEmail row exists yet - the existing EmailCredential
+     * must keep protecting the resolved destination.
+     */
+    public function test_linking_google_does_not_seed_a_notification_email_when_an_email_credential_already_exists(): void
+    {
+        $person = Person::create(7);
+        $this->people->save($person);
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'foo@example.com', 'hash'));
+
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-11',
+            'bar@gmail.com',
+            null,
+            null,
+            true
+        );
+        $this->linkGoogleIdentity->execute(new LinkGoogleIdentityCommand(7, 'valid-token'));
+
+        $this->assertNull($this->notificationEmails->findByPersonId($person->id()));
+    }
+
+    /**
+     * 通知用Email優先順位仕様書 §9 ケースA / AC-10: linking Google must
+     * never revert a notification email the user has already set
+     * explicitly through some other means.
+     */
+    public function test_linking_google_never_overwrites_a_user_set_notification_email(): void
+    {
+        $person = Person::create(8);
+        $this->people->save($person);
+        $this->notificationEmails->save(
+            \StageArt\Domain\Notification\NotificationEmail::create(
+                $person->id(),
+                'user-chosen@example.com',
+                true,
+                'GOOGLE'
+            )
+        );
+
+        $this->googleVerifier->registerValidToken(
+            'valid-token',
+            'google-sub-12',
+            'bar@gmail.com',
+            null,
+            null,
+            true
+        );
+        $this->linkGoogleIdentity->execute(new LinkGoogleIdentityCommand(8, 'valid-token'));
+
+        $notificationEmail = $this->notificationEmails->findByPersonId($person->id());
+        $this->assertSame('user-chosen@example.com', $notificationEmail->email());
     }
 }

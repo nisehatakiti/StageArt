@@ -260,7 +260,7 @@ final class Plugin
         // Google認証ユーザーのEmail通知先対応 phase: shared by both
         // AuthenticateWithGoogleUseCase and LinkGoogleIdentityUseCase
         // below - see NotificationEmailSeeder's own docblock.
-        $notificationEmailSeeder = new NotificationEmailSeeder($notificationEmails);
+        $notificationEmailSeeder = new NotificationEmailSeeder($notificationEmails, $userAccounts, $emailCredentials);
 
         $createUserAccount        = new CreateUserAccountUseCase($people, $userAccounts, $transactions);
         $registerEmailCredential  = new RegisterEmailCredentialUseCase(

@@ -77,7 +77,11 @@ final class AuthenticationMatrixTest extends TestCase
         $this->accessTokenIssuer = new FakeAccessTokenIssuer();
         $this->wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $this->mailer = new FakeAuthMailer();
-        $notificationEmailSeeder = new NotificationEmailSeeder(new InMemoryNotificationEmailRepository());
+        $notificationEmailSeeder = new NotificationEmailSeeder(
+            new InMemoryNotificationEmailRepository(),
+            $this->userAccounts,
+            $this->emailCredentials
+        );
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
