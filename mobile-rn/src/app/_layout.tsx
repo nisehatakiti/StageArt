@@ -87,7 +87,12 @@ export default function RootLayout() {
                   Deliberately stays outside (app) - viewable while
                   unauthenticated (StageArt Blueprint再構成 §26/Audience). */}
               <Stack.Screen name="[organizationSlug]/index" options={{ headerShown: false }} />
-              <Stack.Screen name="[organizationSlug]/[productionSlug]" options={{ headerShown: false }} />
+              <Stack.Screen name="[organizationSlug]/[productionSlug]/index" options={{ headerShown: false }} />
+              {/* アンケート実装指示書 §5: the public, unauthenticated
+                  Questionnaire answer page - same Production-slug-only
+                  resolution as the sibling page above, nested one segment
+                  deeper (`/{organization-slug}/{production-slug}/questionnaire`). */}
+              <Stack.Screen name="[organizationSlug]/[productionSlug]/questionnaire" options={{ headerShown: false }} />
               {/* /o/{slug} kept as a redirect-only route for backward
                   compatibility with any pre-existing link. */}
               <Stack.Screen name="o/[organizationSlug]/index" options={{ headerShown: false }} />

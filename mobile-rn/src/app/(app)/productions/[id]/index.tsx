@@ -60,6 +60,7 @@ export default function ProductionManagementScreen() {
   const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
   const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
   const canManageCheckIn = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
+  const canManageQuestionnaire = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
 
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const startPlanning = useStartProductionPlanning(id);
@@ -306,6 +307,13 @@ export default function ProductionManagementScreen() {
           description="稽古出欠・チケット販売実績"
           onPress={() => router.push(`/productions/${id}/member-performance-summary` as Href)}
           disabled={!isPrimaryManager}
+        />
+        <MenuCard
+          testID="production-management-menu-questionnaire"
+          label="アンケート"
+          description="公演後アンケートの作成・結果確認"
+          onPress={() => router.push(`/productions/${id}/questionnaire` as Href)}
+          disabled={!canManageQuestionnaire}
         />
         <MenuCard
           testID="production-management-menu-accounting"

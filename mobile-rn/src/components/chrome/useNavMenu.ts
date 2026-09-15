@@ -111,7 +111,8 @@ function buildProductionContextItems(
   canManageParticipants: boolean,
   canManagePerformances: boolean,
   canManageTickets: boolean,
-  canManageCheckIn: boolean
+  canManageCheckIn: boolean,
+  canManageQuestionnaire: boolean
 ): NavMenuItem[] {
   return [
     { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
@@ -121,6 +122,7 @@ function buildProductionContextItems(
     { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
     { key: 'production-reception', label: '小屋入り～本番', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
     { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !isPrimaryManager },
+    { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, disabled: !canManageQuestionnaire },
   ];
 }
 
@@ -161,6 +163,7 @@ export function useNavMenu() {
     const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
     const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
     const canManageCheckIn = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
+    const canManageQuestionnaire = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
@@ -171,7 +174,8 @@ export function useNavMenu() {
         canManageParticipants,
         canManagePerformances,
         canManageTickets,
-        canManageCheckIn
+        canManageCheckIn,
+        canManageQuestionnaire
       ),
     };
   }

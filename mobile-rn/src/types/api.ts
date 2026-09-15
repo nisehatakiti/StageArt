@@ -720,3 +720,91 @@ export type MyFavorite = {
   organization_slug: string | null;
   favorited_at: string;
 };
+
+/** アンケート機能: `type` is one of SINGLE_CHOICE/MULTIPLE_CHOICE/RATING_5/
+ * FREE_TEXT/YES_NO. `choices` only has entries for the two choice-based
+ * types. */
+export type QuestionChoice = {
+  id: string;
+  label: string;
+  display_order: number;
+};
+
+export type Question = {
+  id: string;
+  questionnaire_id: string;
+  text: string;
+  type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'RATING_5' | 'FREE_TEXT' | 'YES_NO';
+  required: boolean;
+  display_order: number;
+  choices: QuestionChoice[];
+  created_at: string;
+  updated_at: string;
+};
+
+/** GET/POST/PUT /productions/{id}/questionnaire - `status` is one of
+ * DRAFT/PUBLISHED/CLOSED. `public_url` is the single, anonymous, common
+ * URL every respondent uses (Email/QR/this screen all point to the exact
+ * same string - never a per-recipient link). */
+export type Questionnaire = {
+  id: string;
+  production_id: string;
+  title: string;
+  description: string | null;
+  status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  response_end_at: string | null;
+  created_at: string;
+  updated_at: string;
+  public_url: string;
+  questions: Question[];
+};
+
+/** GET /questionnaires/by-slug/{slug} - the public, unauthenticated
+ * shape. Deliberately carries nothing that could identify who is
+ * answering, and nothing about the Production beyond its display name. */
+export type PublicQuestionnaire = {
+  production_name: string;
+  title: string;
+  description: string | null;
+  status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  accepting_responses: boolean;
+  questions: {
+    id: string;
+    text: string;
+    type: Question['type'];
+    required: boolean;
+    display_order: number;
+    choices: { id: string; label: string }[];
+  }[];
+};
+
+/** POST /questionnaires/by-slug/{slug}/responses body shape - `value`
+ * shape depends on the answered Question's type (see QuestionnaireResponseUseCase
+ * on the Backend): SINGLE_CHOICE -> choice id string; MULTIPLE_CHOICE ->
+ * string[] of choice ids; RATING_5 -> 1-5 integer; FREE_TEXT -> string;
+ * YES_NO -> 'YES'|'NO'. */
+export type QuestionnaireAnswerInput = {
+  question_id: string;
+  value: string | number | string[];
+};
+
+/** GET /productions/{id}/questionnaire/results - one anonymous tally per
+ * Question; only the fields relevant to that Question's own type are
+ * non-null. */
+export type QuestionAggregateResult = {
+  question_id: string;
+  text: string;
+  type: Question['type'];
+  choice_counts: { choice_id: string; label: string; count: number }[] | null;
+  rating_counts: Record<string, number> | null;
+  rating_average: number | null;
+  yes_count: number | null;
+  no_count: number | null;
+  free_text_answers: string[] | null;
+};
+
+export type QuestionnaireResults = {
+  questionnaire_id: string;
+  total_responses: number;
+  questions: QuestionAggregateResult[];
+};
