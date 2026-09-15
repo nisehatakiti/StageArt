@@ -6,6 +6,7 @@ namespace StageArt\Application\ProductionDelegate;
 
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\ProductionDelegate\ProductionDelegateId;
@@ -16,15 +17,18 @@ final class UpdateProductionDelegateUseCase
 {
     private ProductionDelegateRepositoryInterface $delegates;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
 
     public function __construct(
         ProductionDelegateRepositoryInterface $delegates,
         ProductionRepositoryInterface $productions,
+        PersonRepositoryInterface $people,
         ProductionAuthorizationService $authorization
     ) {
         $this->delegates = $delegates;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
     }
 
@@ -62,6 +66,6 @@ final class UpdateProductionDelegateUseCase
 
         $this->delegates->save($delegate);
 
-        return ProductionDelegateResult::fromDomain($delegate);
+        return ProductionDelegateResult::fromDomain($delegate, $this->people->findById($delegate->personId()));
     }
 }

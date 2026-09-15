@@ -68,8 +68,8 @@ final class ProductionDelegateUseCaseTest extends TestCase
             $productionAuthorization,
             new InMemoryTransactionManager()
         );
-        $this->listDelegates = new ListProductionDelegatesUseCase($this->delegates, $this->productions, $productionAuthorization);
-        $this->updateDelegate = new UpdateProductionDelegateUseCase($this->delegates, $this->productions, $productionAuthorization);
+        $this->listDelegates = new ListProductionDelegatesUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
+        $this->updateDelegate = new UpdateProductionDelegateUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
         $this->deleteDelegate = new DeleteProductionDelegateUseCase($this->delegates, $this->productions, $productionAuthorization);
     }
 
@@ -214,5 +214,82 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $this->deleteDelegate->execute(new DeleteProductionDelegateCommand($created->id, 1));
 
         $this->assertCount(0, $this->listDelegates->execute(new ListProductionDelegatesQuery($production->id()->toString(), 1)));
+    }
+
+    /**
+     * ProductionDelegate実用化 instruction §2: the REST/UI layer needs a
+     * real name to render "誰に任せているか" - resolved via
+     * PersonRepositoryInterface the same way ParticipantRequestResult
+     * already does, not a new search capability.
+     */
+    public function test_create_and_list_resolve_the_target_persons_name(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $target = Person::create(2);
+        $target->setName('山田', '太郎');
+        $this->people->save($target);
+
+        $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'PARTICIPANT_MANAGER'
+        ));
+
+        $this->assertSame('山田', $created->personFamilyName);
+        $this->assertSame('太郎', $created->personGivenName);
+
+        $listed = $this->listDelegates->execute(new ListProductionDelegatesQuery($production->id()->toString(), 1));
+
+        $this->assertSame('山田', $listed[0]->personFamilyName);
+        $this->assertSame('太郎', $listed[0]->personGivenName);
+    }
+
+    public function test_list_tolerates_a_target_person_with_no_name_set_yet(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $target = Person::create(2);
+        $this->people->save($target);
+
+        $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'PARTICIPANT_MANAGER'
+        ));
+
+        $listed = $this->listDelegates->execute(new ListProductionDelegatesQuery($production->id()->toString(), 1));
+
+        $this->assertNull($listed[0]->personFamilyName);
+        $this->assertNull($listed[0]->personGivenName);
+    }
+
+    public function test_update_keeps_resolving_the_targets_name(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $target = Person::create(2);
+        $target->setName('鈴木', '花子');
+        $this->people->save($target);
+
+        $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'PARTICIPANT_MANAGER'
+        ));
+
+        $updated = $this->updateDelegate->execute(new UpdateProductionDelegateCommand(
+            $created->id,
+            1,
+            'REHEARSAL_MANAGER',
+            ProductionDelegate::STATUS_ACTIVE
+        ));
+
+        $this->assertSame('鈴木', $updated->personFamilyName);
+        $this->assertSame('花子', $updated->personGivenName);
+        $this->assertSame('REHEARSAL_MANAGER', $updated->role);
     }
 }

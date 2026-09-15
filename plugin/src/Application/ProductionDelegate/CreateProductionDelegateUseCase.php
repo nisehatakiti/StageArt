@@ -56,8 +56,9 @@ final class CreateProductionDelegateUseCase
         }
 
         $targetPersonId = PersonId::fromString($command->personId);
+        $targetPerson = $this->people->findById($targetPersonId);
 
-        if (! $this->people->findById($targetPersonId)) {
+        if (! $targetPerson) {
             throw new ProductionDelegateTargetNotEligibleException('The target Person does not exist.');
         }
 
@@ -78,6 +79,6 @@ final class CreateProductionDelegateUseCase
             }
         );
 
-        return ProductionDelegateResult::fromDomain($delegate);
+        return ProductionDelegateResult::fromDomain($delegate, $targetPerson);
     }
 }
