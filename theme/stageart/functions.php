@@ -59,7 +59,7 @@ function stageart_theme_menu_fallback(): void
 {
     echo '<nav class="stageart-nav" aria-label="メインメニュー"><ul>';
     echo '<li><a href="' . esc_url(home_url('/')) . '">ホーム</a></li>';
-    echo '<li><a href="' . esc_url(home_url('/production/')) . '">公演</a></li>';
+    echo '<li><a href="' . esc_url(home_url('/#productions')) . '">公演</a></li>';
     echo '<li><a href="' . esc_url(home_url('/members/')) . '">メンバー</a></li>';
     echo '</ul></nav>';
 }
