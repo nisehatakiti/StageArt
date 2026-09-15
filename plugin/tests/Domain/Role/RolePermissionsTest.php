@@ -77,6 +77,20 @@ final class RolePermissionsTest extends TestCase
         $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Ticket.Manage')));
     }
 
+    public function test_questionnaire_manager_has_questionnaire_permission(): void
+    {
+        $role = RoleKey::questionnaireManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Questionnaire.Manage')));
+    }
+
+    public function test_questionnaire_manager_does_not_have_checkin_permissions(): void
+    {
+        $role = RoleKey::questionnaireManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('CheckIn.Manage')));
+    }
+
     public function test_owner_and_member_have_no_entries_in_the_permission_set_registry(): void
     {
         // Organization Scope authorization (OrganizationAuthorizationService::hasRole())

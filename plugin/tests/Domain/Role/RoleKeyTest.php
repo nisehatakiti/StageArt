@@ -32,6 +32,11 @@ final class RoleKeyTest extends TestCase
         $this->assertSame('CHECKIN_MANAGER', RoleKey::checkInManager()->toString());
     }
 
+    public function test_questionnaire_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('QUESTIONNAIRE_MANAGER', RoleKey::questionnaireManager()->toString());
+    }
+
     public function test_unknown_role_key_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
