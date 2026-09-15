@@ -1,6 +1,6 @@
 # Performance & Ticket Module
 
-Status: **Blueprint updated / implementation not started.**
+Status: **Forward-looking architecture Blueprint — partially superseded by the actual implementation. See "Implementation Status" below before trusting anything else in this document as a description of current code.**
 
 This Module is not a standalone "ticket sales feature". It is the module that owns the operational chain from a StageArt Production to its individual performance sessions and the tickets sold or reserved for those sessions.
 
@@ -334,11 +334,27 @@ Before implementation is considered complete, add:
 
 ## Implementation Status
 
-No Ticket implementation exists yet.
+**Corrected 2026-09-16 (StageArt Implementation Gap Report audit) — the two paragraphs this replaces were stale and are factually wrong about the current codebase. Read this section, not the rest of this document, to find out what actually exists today.**
 
-No PerformanceSession implementation exists yet.
+Ticket, Reservation, IssuedTicket, and Check-in are **fully implemented** — real Domain/Application/Infrastructure/REST/mobile-rn code, not a stub:
 
-The next implementation phase must begin with a design audit of the existing Ticket-related Blueprint documents so their detailed business rules are mapped consistently to the confirmed canonical hierarchy before creating Domain code.
+- `plugin/src/Domain/Performance`, `plugin/src/Application/Performance`, `plugin/src/Performance/` (module bootstrap + installer)
+- `plugin/src/Domain/Ticket`, `plugin/src/Application/Ticket`, `plugin/src/Ticket/`
+- `plugin/src/Domain/Reservation`, `plugin/src/Application/Reservation`, `plugin/src/Reservation/`
+- `plugin/src/Domain/IssuedTicket`
+- `plugin/src/Domain/CheckIn`, `plugin/src/Application/CheckIn`, `plugin/src/CheckIn/`
+- REST controllers for all of the above, registered in `Presentation/Plugin.php`
+- mobile-rn screens: `productions/[id]/{performances,tickets,checkin}.tsx`, `my-reservation.tsx`
+- 44+ backend test files across this cluster (`plugin/tests/Domain|Application/{Performance,Ticket,Reservation,CheckIn}`)
+
+Two concrete deviations from this document's own architecture, disclosed so a future reader doesn't "fix" working code back toward this doc's original vision without a deliberate decision to do so:
+
+1. **Entity name is `Performance`, not `PerformanceSession`.** This document's "Confirmed Canonical Structure" names the concept `PerformanceSession`; the actual, shipped Domain Entity (and every layer built on it) is named `Performance`. Which name is authoritative between this doc and `docs/04-DomainModel/Performance.md`/`PerformanceSession.md` is itself unresolved — do not rename the working code to match this doc, and do not treat this doc's naming as the one to follow, without that decision being made explicitly first.
+2. **Performance and Ticket are separate module packages**, not merged into a single `plugin/src/PerformanceTicket/` package as this document's "Module Package Boundary" section describes. The standalone "Performance & Ticket" WordPress-plugin-extraction vision described throughout the rest of this document (reusable outside StageArt, adapter-based dual hosting mode, etc.) remains unimplemented and its priority undecided — it is a real forward-looking architecture note, not dead, but it should not be read as "nothing exists" the way the two replaced paragraphs claimed.
+
+QR Ticket (`docs/04-DomainModel/QRTicket.md`) is the one piece of this document's scope that is genuinely unimplemented (confirmed: zero QR-ticket code anywhere) — Check-in today works via reservation-number/manual entry only.
+
+The rest of this document (Core Contract usage, package boundary vision, testing requirements for a future module extraction) is retained as-is as a real architectural proposal for a possible future refactor — it was not implemented, but that's a deliberate scope decision each time, not an oversight, and this correction does not evaluate whether that future refactor is still wanted.
 
 ## Confirmed Architectural Decision
 
