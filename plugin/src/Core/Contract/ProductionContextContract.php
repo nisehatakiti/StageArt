@@ -52,4 +52,13 @@ interface ProductionContextContract
      * separate method rather than growing `ProductionSummary`.
      */
     public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings;
+
+    /**
+     * アンケート実装指示書 §5/§49: resolves the (organizationSlug,
+     * productionSlug) pair for building a public Questionnaire URL. Null
+     * if the Production, its parent Organization, or either slug does not
+     * exist yet - a Production/Organization is not required to have a
+     * slug assigned (see ProductionSlug/OrganizationSlug's own nullability).
+     */
+    public function getProductionPublicSlugs(ProductionId $productionId): ?ProductionPublicSlugs;
 }

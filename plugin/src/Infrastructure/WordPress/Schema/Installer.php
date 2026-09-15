@@ -7,6 +7,7 @@ namespace StageArt\Infrastructure\WordPress\Schema;
 use StageArt\Accounting\AccountingInstaller;
 use StageArt\CheckIn\CheckInInstaller;
 use StageArt\Performance\PerformanceInstaller;
+use StageArt\Questionnaire\QuestionnaireInstaller;
 use StageArt\Rehearsal\RehearsalInstaller;
 use StageArt\Settlement\SettlementInstaller;
 use StageArt\Ticket\TicketInstaller;
@@ -497,6 +498,12 @@ final class Installer
             PRIMARY KEY  (id),
             UNIQUE KEY person_target (person_id, target_type, target_id)
         ) {$charsetCollate};");
+
+        // アンケート実装指示書: Questionnaire Module's own 4 tables, owned
+        // and migrated by QuestionnaireInstaller, not created here - see
+        // that class's own docblock, and PerformanceInstaller's identical
+        // precedent above.
+        QuestionnaireInstaller::install($wpdb, $charsetCollate);
     }
 
     private static function installAdminConsoleRole(): void

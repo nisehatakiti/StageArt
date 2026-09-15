@@ -7,9 +7,11 @@ namespace StageArt\Application\Performance;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
+use Throwable;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\PerformanceFinishedListenerContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
@@ -21,6 +23,13 @@ use StageArt\Domain\Production\ProductionStatus;
  *
  * Phase 2 Performance基盤 instruction §8: a COMPLETED or ARCHIVED
  * Production blocks Performance edits, same guard as creation.
+ *
+ * アンケート実装指示書 §20/§42: `$performanceFinishedListener` is the one
+ * generic hook fired after a Status transition lands on FINISHED - see
+ * PerformanceFinishedListenerContract's own docblock for why this Module
+ * still does not know Questionnaire exists. Optional/nullable so every
+ * pre-existing caller (and every other Module's tests) keeps working
+ * unchanged; passing null simply means nothing is notified.
  */
 final class UpdatePerformanceUseCase
 {
@@ -28,17 +37,20 @@ final class UpdatePerformanceUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private ?PerformanceFinishedListenerContract $performanceFinishedListener;
 
     public function __construct(
         PerformanceRepositoryInterface $performances,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        ?PerformanceFinishedListenerContract $performanceFinishedListener = null
     ) {
         $this->performances = $performances;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->performanceFinishedListener = $performanceFinishedListener;
     }
 
     public function execute(UpdatePerformanceCommand $command): PerformanceResult
@@ -74,6 +86,8 @@ final class UpdatePerformanceUseCase
             );
         }
 
+        $wasFinished = $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
+
         $performance->updateBasicInfo(
             $this->parseDate($command->performanceDate),
             $command->startTime,
@@ -88,6 +102,19 @@ final class UpdatePerformanceUseCase
         }
 
         $this->performances->save($performance);
+
+        $isNowFinished = $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
+
+        if (! $wasFinished && $isNowFinished && $this->performanceFinishedListener !== null) {
+            try {
+                $this->performanceFinishedListener->onPerformanceFinished($performance->id());
+            } catch (Throwable $exception) {
+                // アンケート実装指示書 §42/§51: a listener failure (e.g. an
+                // invite-Email problem) must never turn this into a failed
+                // Performance update - the Performance Status change above
+                // is already saved either way.
+            }
+        }
 
         return PerformanceResult::fromDomain($performance);
     }

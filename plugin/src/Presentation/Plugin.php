@@ -32,6 +32,7 @@ use StageArt\Accounting\AccountingModuleBootstrap;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\CheckIn\CheckInModuleBootstrap;
 use StageArt\Performance\PerformanceModuleBootstrap;
+use StageArt\Questionnaire\QuestionnaireModuleBootstrap;
 use StageArt\Reservation\ReservationModuleBootstrap;
 use StageArt\MemberPerformanceSummary\MemberPerformanceSummaryModuleBootstrap;
 use StageArt\Settlement\SettlementModuleBootstrap;
@@ -144,6 +145,11 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRep
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireInviteRecordRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireResponseRepository;
+use StageArt\Infrastructure\WordPress\Questionnaire\WordPressQuestionnaireMailer;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressReservationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
@@ -216,6 +222,10 @@ final class Plugin
         $tickets              = new WordPressTicketRepository($wpdb);
         $reservations         = new WordPressReservationRepository($wpdb);
         $issuedTickets        = new WordPressIssuedTicketRepository($wpdb);
+        $questionnaires        = new WordPressQuestionnaireRepository($wpdb);
+        $questionnaireQuestions = new WordPressQuestionRepository($wpdb);
+        $questionnaireResponses = new WordPressQuestionnaireResponseRepository($wpdb);
+        $questionnaireInviteRecords = new WordPressQuestionnaireInviteRecordRepository($wpdb);
         $checkIns             = new WordPressCheckInRepository($wpdb);
         $walkUpIdempotencyStore = new WordPressWalkUpIdempotencyStore($wpdb);
         $settlements          = new WordPressSettlementRepository($wpdb);
@@ -243,7 +253,7 @@ final class Plugin
         $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
         $membershipContract = new CoreMembershipAdapter($participants, $productions, $people, $productionAuthorization);
-        $productionContextContract = new CoreProductionContextAdapter($productions, $productionOrganizationResolver);
+        $productionContextContract = new CoreProductionContextAdapter($productions, $productionOrganizationResolver, $organizations);
         $identityContract = new CoreIdentityAdapter($people);
         $authorizationContract = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
@@ -523,6 +533,31 @@ final class Plugin
             $rehearsalModule->sendRehearsalReminder()->execute(new SendRehearsalReminderCommand($rehearsalId));
         });
 
+        // アンケート実装指示書: Questionnaire Module's entire own wiring,
+        // consolidated into QuestionnaireModuleBootstrap - see that
+        // class's own docblock. Constructed before PerformanceModuleBootstrap
+        // below so its PerformanceFinishedListenerContract implementation
+        // can be handed in - see PerformanceFinishedListenerContract's own
+        // docblock for why Performance depends only on that generic
+        // Contract, never on this Module directly.
+        $publicSiteBaseUrl = defined('STAGEART_PUBLIC_SITE_BASE_URL')
+            ? STAGEART_PUBLIC_SITE_BASE_URL
+            : 'https://dummy.stageart.top';
+        $questionnaireMailer = new WordPressQuestionnaireMailer();
+        $questionnaireModule = new QuestionnaireModuleBootstrap(
+            $questionnaires,
+            $questionnaireQuestions,
+            $questionnaireResponses,
+            $questionnaireInviteRecords,
+            $performances,
+            $reservations,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $questionnaireMailer,
+            $publicSiteBaseUrl
+        );
+
         // StageArt Core/Module Architecture Phase 2 Performance基盤:
         // Performance Module's entire own wiring, consolidated into
         // PerformanceModuleBootstrap - see that class's own docblock.
@@ -534,7 +569,8 @@ final class Plugin
             $productionContextContract,
             $identityContract,
             $authorizationContract,
-            $membershipContract
+            $membershipContract,
+            $questionnaireModule->performanceFinishedListener()
         );
 
         // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
@@ -822,6 +858,13 @@ final class Plugin
 
         foreach ($reservationModule->restControllers() as $reservationRestController) {
             add_action('rest_api_init', [$reservationRestController, 'register_routes']);
+        }
+
+        // アンケート実装指示書: every Questionnaire Module REST Controller is
+        // constructed inside QuestionnaireModuleBootstrap - registered
+        // identically to every other Controller here.
+        foreach ($questionnaireModule->restControllers() as $questionnaireRestController) {
+            add_action('rest_api_init', [$questionnaireRestController, 'register_routes']);
         }
 
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);

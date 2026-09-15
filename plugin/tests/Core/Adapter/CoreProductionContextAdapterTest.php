@@ -9,12 +9,15 @@ use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Organization\OrganizationSlug;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Project\ProjectId;
+use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
 
@@ -114,5 +117,66 @@ final class CoreProductionContextAdapterTest extends TestCase
         $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
 
         $this->assertNull($adapter->getProductionOrganizationId($production->id()));
+    }
+
+    public function test_public_slugs_resolve_when_both_organization_and_production_have_one(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organization->changeSlug(new OrganizationSlug('theatre-co'));
+        $organizations->save($organization);
+
+        $project = Project::create($organization->id(), 'Season');
+        $projects->save($project);
+
+        $production = Production::create($project->id(), new ProductionName('Autumn Show'), PersonId::generate());
+        $production->changeSlug(new ProductionSlug('autumn-show'));
+        $productions->save($production);
+
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver($projects), $organizations);
+
+        $slugs = $adapter->getProductionPublicSlugs($production->id());
+
+        $this->assertNotNull($slugs);
+        $this->assertSame('theatre-co', $slugs->organizationSlug);
+        $this->assertSame('autumn-show', $slugs->productionSlug);
+    }
+
+    public function test_public_slugs_are_null_when_production_has_no_slug(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $organization->changeSlug(new OrganizationSlug('theatre-co'));
+        $organizations->save($organization);
+
+        $project = Project::create($organization->id(), 'Season');
+        $projects->save($project);
+
+        $production = Production::create($project->id(), new ProductionName('Autumn Show'), PersonId::generate());
+        $productions->save($production);
+
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver($projects), $organizations);
+
+        $this->assertNull($adapter->getProductionPublicSlugs($production->id()));
+    }
+
+    public function test_public_slugs_are_null_without_an_organization_repository(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+
+        $production = Production::create(ProjectId::generate(), new ProductionName('Autumn Show'), PersonId::generate());
+        $production->changeSlug(new ProductionSlug('autumn-show'));
+        $productions->save($production);
+
+        $adapter = new CoreProductionContextAdapter($productions, new ProductionOrganizationResolver($projects));
+
+        $this->assertNull($adapter->getProductionPublicSlugs($production->id()));
     }
 }

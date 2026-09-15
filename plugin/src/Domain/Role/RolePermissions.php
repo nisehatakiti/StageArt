@@ -91,6 +91,9 @@ final class RolePermissions
         RoleKey::CHECKIN_MANAGER => [
             'CheckIn.Manage',
         ],
+        RoleKey::QUESTIONNAIRE_MANAGER => [
+            'Questionnaire.Manage',
+        ],
     ];
 
     public static function hasPermission(RoleKey $role, Permission $permission): bool

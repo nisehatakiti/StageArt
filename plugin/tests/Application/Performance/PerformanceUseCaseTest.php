@@ -6,6 +6,7 @@ namespace StageArt\Tests\Application\Performance;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Performance\CancelPerformanceCommand;
 use StageArt\Application\Performance\CancelPerformanceUseCase;
@@ -24,7 +25,9 @@ use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Core\Contract\PerformanceFinishedListenerContract;
 use StageArt\Domain\Membership\Membership;
+use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\Person;
@@ -330,5 +333,89 @@ final class PerformanceUseCaseTest extends TestCase
 
         $this->expectException(PerformanceAccessDeniedException::class);
         $this->getPerformance->execute(new GetPerformanceQuery($created->id, 99));
+    }
+
+    public function test_update_to_finished_notifies_listener_exactly_once(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $listener = new class implements PerformanceFinishedListenerContract {
+            /** @var PerformanceId[] */
+            public array $notified = [];
+
+            public function onPerformanceFinished(PerformanceId $performanceId): void
+            {
+                $this->notified[] = $performanceId;
+            }
+        };
+
+        $updatePerformanceWithListener = new UpdatePerformanceUseCase(
+            $this->performances,
+            new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository())),
+            new CoreIdentityAdapter($this->people),
+            new CoreAuthorizationAdapter(
+                new ProductionAuthorizationService(new OrganizationAuthorizationService($this->people, $this->memberships), $this->delegates, $this->participants),
+                $this->productions,
+                $this->people
+            ),
+            $listener
+        );
+
+        $updatePerformanceWithListener->execute(new UpdatePerformanceCommand($created->id, 1, '2026-10-10', '13:00', null, 100, null, null, 'FINISHED'));
+        $this->assertCount(1, $listener->notified);
+
+        // A second update that keeps FINISHED must not notify again.
+        $updatePerformanceWithListener->execute(new UpdatePerformanceCommand($created->id, 1, '2026-10-10', '13:00', null, 100, '更新', null, 'FINISHED'));
+        $this->assertCount(1, $listener->notified);
+    }
+
+    public function test_listener_exception_does_not_fail_the_performance_update(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $throwingListener = new class implements PerformanceFinishedListenerContract {
+            public function onPerformanceFinished(PerformanceId $performanceId): void
+            {
+                throw new RuntimeException('invite email failed');
+            }
+        };
+
+        $updatePerformanceWithListener = new UpdatePerformanceUseCase(
+            $this->performances,
+            new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository())),
+            new CoreIdentityAdapter($this->people),
+            new CoreAuthorizationAdapter(
+                new ProductionAuthorizationService(new OrganizationAuthorizationService($this->people, $this->memberships), $this->delegates, $this->participants),
+                $this->productions,
+                $this->people
+            ),
+            $throwingListener
+        );
+
+        $result = $updatePerformanceWithListener->execute(new UpdatePerformanceCommand($created->id, 1, '2026-10-10', '13:00', null, 100, null, null, 'FINISHED'));
+
+        $this->assertSame('FINISHED', $result->status);
     }
 }
