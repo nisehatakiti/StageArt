@@ -405,6 +405,31 @@ export type Participant = {
   display_name: string | null;
 };
 
+/**
+ * ProductionDelegate実用化 Phase: `person_family_name`/`person_given_name`
+ * are resolved Backend-side (see ProductionDelegateResult.php) - both
+ * null when that Person has not completed their own name setup yet, not
+ * an error state. `role` is one of the 7 Production-scope RoleKey values
+ * (PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER/
+ * TICKET_MANAGER/RESERVATION_MANAGER/CHECKIN_MANAGER/QUESTIONNAIRE_MANAGER) -
+ * the Backend's RoleKey enum also technically accepts OWNER/MEMBER
+ * (Organization-scope values), but those are never valid here and this
+ * app never offers them.
+ */
+export type ProductionDelegate = {
+  id: string;
+  production_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  role: string;
+  status: string;
+  created_by: string;
+  created_at: string;
+  updated_by: string;
+  updated_at: string;
+};
+
 export type TimetableItem = {
   id: string;
   timetable_id: string;

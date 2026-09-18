@@ -247,6 +247,13 @@ export default function ProductionManagementScreen() {
           disabled={!isPrimaryManager}
         />
         <MenuCard
+          testID="production-management-menu-delegates"
+          label="担当者"
+          description="仕事を任せる担当者と役割を管理"
+          onPress={() => router.push(`/productions/${id}/delegates` as Href)}
+          disabled={!isPrimaryManager}
+        />
+        <MenuCard
           testID="production-management-menu-participants"
           label="出演者・参加者"
           description="参加者の確認・参加申請の承認"
