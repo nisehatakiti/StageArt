@@ -116,6 +116,14 @@ final class CreateOrganizationUseCase
                 $command->accountingEnabled
             );
 
+            // docs/03-PublicPageURLAndPublicationSchedule.md: "Organization
+            // の作成・団体情報の保存に、非公開状態を設けない。保存が成功した
+            // Organizationは保存と同時に公開状態とする" - a slug is always
+            // present here (CreateOrganizationCommand::$slug is required),
+            // so Organization::publish()'s own slug precondition always
+            // holds.
+            $organization->publish();
+
             $this->organizations->save($organization);
 
             $membership = Membership::createOwnerMembership($organization->id(), $person->id());

@@ -8,13 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { ApiError } from '@/api/errors';
-import { createOrganization, createProject, updateOrganization } from '@/features/organization/api';
+import { createOrganization, createProject } from '@/features/organization/api';
 import { useOrganizationContext } from '@/features/organization/OrganizationContext';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { isValidSlug, suggestSlug } from '@/utils/slug';
 
-type CreatedOrganization = { id: string; name: string; slug: string; publishedAt: string | null };
+type CreatedOrganization = { id: string; name: string; slug: string };
 
 /**
  * StageArt Web First Phase 2: the minimal 団体作成 onboarding this
@@ -57,13 +57,12 @@ export default function CreateOrganizationScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedOrganization | null>(null);
-  const [publishing, setPublishing] = useState(false);
 
   const effectiveCreated: CreatedOrganization | null =
     created ??
     (() => {
       const match = organizationsQuery.data?.find((candidate) => candidate.id === createdId);
-      return match ? { id: match.id, name: match.name, slug: match.slug ?? '', publishedAt: match.published_at } : null;
+      return match ? { id: match.id, name: match.name, slug: match.slug ?? '' } : null;
     })();
   const restoringFromReload = !created && !!createdId && organizationsQuery.isLoading;
 
@@ -106,7 +105,7 @@ export default function CreateOrganizationScreen() {
       // not a hypothetical - confirmed by reading useOrganizations()/home.tsx
       // together, matching the reported "登録したのに管理画面に辿り着けない" symptom.
       await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      setCreated({ id: organization.id, name: organization.name, slug: organization.slug ?? slug, publishedAt: organization.published_at });
+      setCreated({ id: organization.id, name: organization.name, slug: organization.slug ?? slug });
       router.setParams({ createdId: organization.id });
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stageart_organization_slug_taken') {
@@ -116,36 +115,6 @@ export default function CreateOrganizationScreen() {
       }
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handlePublish() {
-    if (!effectiveCreated) {
-      return;
-    }
-
-    setPublishing(true);
-    setErrorMessage(null);
-
-    try {
-      // type/description are always null at this point - createOrganization()
-      // (the only call that can precede this one) never sets them - so
-      // passing them through as null here is accurate, not a wipe of real
-      // data. See updateOrganization()'s own docblock for why they must be
-      // sent at all.
-      const organization = await updateOrganization(apiClient, effectiveCreated.id, {
-        name: effectiveCreated.name,
-        type: null,
-        description: null,
-        status: 'ACTIVE',
-        published: true,
-      });
-      await queryClient.invalidateQueries({ queryKey: ['organizations'] });
-      setCreated({ ...effectiveCreated, publishedAt: organization.published_at });
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setPublishing(false);
     }
   }
 
@@ -159,6 +128,12 @@ export default function CreateOrganizationScreen() {
     );
   }
 
+  // docs/03-PublicPageURLAndPublicationSchedule.md: "Organizationの作成・
+  // 団体情報の保存に、非公開状態を設けない。保存が成功したOrganizationは
+  // 保存と同時に公開状態とする" - createOrganization() above already
+  // published the Organization Backend-side (CreateOrganizationUseCase),
+  // so there is no separate publish step here, unlike the old flow this
+  // screen used to have.
   if (effectiveCreated) {
     const created = effectiveCreated;
     return (
@@ -167,32 +142,15 @@ export default function CreateOrganizationScreen() {
           <ThemedText type="title" style={styles.title}>
             団体を作成しました
           </ThemedText>
-          <ThemedText style={styles.body}>「{created.name}」を作成しました。まだ非公開です。</ThemedText>
+          <ThemedText style={styles.body}>「{created.name}」を作成し、公開しました。</ThemedText>
 
-          {errorMessage && (
-            <ThemedText testID="create-organization-publish-error" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
-
-          {!created.publishedAt ? (
-            <TouchableOpacity
-              testID="create-organization-publish"
-              onPress={handlePublish}
-              disabled={publishing}
-              style={[styles.button, publishing && styles.buttonDisabled]}
-            >
-              {publishing ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>団体を公開する</ThemedText>}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              testID="create-organization-view-public-page"
-              onPress={() => router.push(`/${created.slug}` as Href)}
-              style={styles.buttonSecondary}
-            >
-              <ThemedText style={styles.buttonSecondaryText}>公開ページを見る（/o/{created.slug}）</ThemedText>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            testID="create-organization-view-public-page"
+            onPress={() => router.push(`/${created.slug}` as Href)}
+            style={styles.buttonSecondary}
+          >
+            <ThemedText style={styles.buttonSecondaryText}>公開ページを見る（/o/{created.slug}）</ThemedText>
+          </TouchableOpacity>
 
           <TouchableOpacity
             testID="create-organization-create-production"

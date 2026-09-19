@@ -109,7 +109,13 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $useCase->execute(new CreateOrganizationCommand(2, 'Second Theatre', 'shared-slug'));
     }
 
-    public function test_created_organization_carries_its_slug_and_is_unpublished(): void
+    /**
+     * docs/03-PublicPageURLAndPublicationSchedule.md: "Organizationの作成・
+     * 団体情報の保存に、非公開状態を設けない。保存が成功したOrganizationは
+     * 保存と同時に公開状態とする" - creation itself publishes, with no
+     * separate publish step.
+     */
+    public function test_created_organization_carries_its_slug_and_is_published_immediately(): void
     {
         $organizations = new InMemoryOrganizationRepository();
         $people = new InMemoryPersonRepository();
@@ -120,7 +126,7 @@ final class CreateOrganizationUseCaseTest extends TestCase
         $result = $useCase->execute(new CreateOrganizationCommand(1, 'New Theatre', 'new-theatre-2'));
 
         $this->assertSame('new-theatre-2', $result->slug);
-        $this->assertNull($result->publishedAt);
+        $this->assertNotNull($result->publishedAt);
     }
 
     public function test_accounting_disabled_by_default_and_creates_no_accounts_or_journal_entries(): void
