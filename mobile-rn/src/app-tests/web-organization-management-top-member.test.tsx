@@ -12,16 +12,21 @@ jest.mock('expo-secure-store', () => ({
 
 /**
  * StageArt Web版 団体管理 Phase: this Phase's own explicit instruction
- * ("Frontendだけで「Ownerです」と決め打ちする実装は禁止") applied to the
- * management top screen itself - a plain MEMBER (orgTwo's fixed
- * `current_person_role: 'MEMBER'`) must not see Owner-only actions
- * (参加申請/招待), and the 団体情報 edit card must render disabled. The
- * server remains the actual authority (each Owner-only screen maps its
- * own 403 - see the edit/membership-requests test files); this only
- * covers the client-side card visibility this screen controls.
+ * ("Frontendだけで「Ownerです」と決め打ちする実装は禁止") applied to a plain
+ * MEMBER (orgTwo's fixed `current_person_role: 'MEMBER'`) viewing the
+ * management top screen.
+ *
+ * StageArt Organization Context Menu整理: this screen previously rendered
+ * its own MenuCard grid with Owner-only gating (参加申請/招待 hidden,
+ * 団体情報 disabled) duplicating the Organization Context left sidebar's
+ * own gating. That grid is now removed - the Owner/Member gating
+ * guarantee itself is covered at its actual source, useNavMenu.ts (see
+ * useNavMenu.test.tsx's "hides Owner-only Organization Context items and
+ * disables 団体情報 for a MEMBER"). This test now only confirms the
+ * management top screen itself still renders correctly for a non-Owner.
  */
 describe('Web 団体管理トップ: Member (not Owner)', () => {
-  it('hides Owner-only cards and disables 団体情報 for a plain Member', async () => {
+  it('renders the Organization name for a plain Member', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgTwo] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [] },
@@ -31,11 +36,7 @@ describe('Web 団体管理トップ: Member (not Owner)', () => {
 
     renderRouter('src/app', { initialUrl: '/organizations/org-2' });
 
-    await waitFor(() => expect(screen.getByTestId('organization-management-menu')).toBeVisible());
-    expect(screen.getByTestId('organization-management-menu-members')).toBeVisible();
-    expect(screen.getByTestId('organization-management-menu-productions')).toBeVisible();
-    expect(screen.queryByTestId('organization-management-menu-requests')).toBeNull();
-    expect(screen.queryByTestId('organization-management-menu-invite')).toBeNull();
-    expect(screen.getByTestId('organization-management-menu-edit').props.accessibilityState?.disabled).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('organization-management-name')).toBeVisible());
+    expect(screen.getByTestId('organization-management-name').props.children).toBe(orgTwo.name);
   });
 });

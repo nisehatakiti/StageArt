@@ -1,5 +1,5 @@
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useLocalSearchParams, type Href } from 'expo-router';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -22,14 +22,15 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * real Backend/API gap, not a Frontend oversight. Per this Phase's own
  * instruction ("実際にAPIから取得できない情報をUI上に架空表示しないでください"),
  * this screen shows only what real data supports today: the current
- * Person's own Role in this Organization (already present on every
- * `Organization` list item), plus working links to what an Owner CAN
- * actually do (参加申請 queue, 招待 code issuance) - never an invented
- * roster.
+ * Person's own Role in this Organization - never an invented roster.
+ *
+ * StageArt Organization Context Menu整理: previously also linked to
+ * 参加申請/招待 (both already reachable from the Organization Context
+ * left sidebar's own 参加申請/招待 items - see useNavMenu.ts) - removed
+ * as duplicate in-content navigation, not as a functionality change.
  */
 export default function OrganizationMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
   const organizationsQuery = useOrganizations();
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
@@ -86,25 +87,6 @@ export default function OrganizationMembersScreen() {
           Backendにまだ実装されていないため、他のメンバーの一覧はここに表示できません。
         </ThemedText>
       </View>
-
-      {isOwner && (
-        <View style={styles.linksRow}>
-          <TouchableOpacity
-            testID="organization-members-link-requests"
-            onPress={() => router.push(`/organizations/${id}/membership-requests` as Href)}
-            style={styles.linkButton}
-          >
-            <ThemedText type="linkPrimary">参加申請を管理する</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="organization-members-link-invite"
-            onPress={() => router.push(`/organizations/${id}/invite` as Href)}
-            style={styles.linkButton}
-          >
-            <ThemedText type="linkPrimary">招待コードを発行する</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
     </>
   );
 }
@@ -129,6 +111,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F5F1',
     maxWidth: 480,
   },
-  linksRow: { flexDirection: 'row', gap: Spacing.four, marginTop: Spacing.three },
-  linkButton: {},
 });
