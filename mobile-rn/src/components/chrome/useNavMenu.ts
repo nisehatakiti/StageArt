@@ -59,16 +59,27 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
 ];
 
 /**
- * Mirrors organizations/[id]/index.tsx's own menuGrid gating exactly
- * (団体情報: disabled for non-Owner; 参加申請/招待: Owner-only, omitted
- * rather than disabled for everyone else; メンバー/公演一覧: always
- * available) so the Context Area never offers a link the target screen
- * itself would refuse.
+ * StageArt Organization Context Menu仕様整合 (docs/03-
+ * PublicPageURLAndPublicationSchedule.md「Organization Context Menu」):
+ * label/接続先をその確定仕様に合わせた上で、既存に実装済みの画面だけを
+ * 接続している - 該当する既存画面がない仕様項目（公開ページ管理/ABOUT/
+ * SNS/リンク、メンバー管理配下の「追加」「代理人を設定」「代表者交代」、
+ * 公演管理の「過去公演を登録する」「公演を編集する」、会計管理）は今回
+ * 追加していない（要確認 - 作業報告参照）。
+ *
+ * 団体情報: disabled for non-Owner (既存のまま)。参加申請/招待: 仕様の
+ * 「メンバー管理」配下にどう位置付けるか確定できないため、既存の独立した
+ * 項目・Owner限定ゲーティングのまま変更していない。公演一覧: 既存のまま
+ * 維持（仕様の3項目のどれとも完全一致しないが、既存の実データ画面を削除
+ * しない）。公演を作る: 仕様の「公演管理」配下の項目のうち、既存の
+ * `/organizations/{id}/productions/create` 画面に接続可能な唯一の項目
+ * として追加 - 権限ゲーティングは接続先画面自体と同じ「制限なし」のまま
+ * （新しい権限ルールを追加していない）。
  */
 function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuItem[] {
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
-    { key: 'organization-members', label: 'メンバー', href: `/organizations/${id}/members` as Href },
+    { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href },
   ];
 
   if (isOwner) {
@@ -78,7 +89,10 @@ function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuIte
     );
   }
 
-  items.push({ key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href });
+  items.push(
+    { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href },
+    { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href }
+  );
 
   return items;
 }
