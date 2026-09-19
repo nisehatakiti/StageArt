@@ -40,7 +40,7 @@ describe('Web 公演一覧', () => {
     expect(screen.getByTestId('organization-production-view-public-prod-1')).toBeVisible();
 
     expect(screen.getByTestId('organization-production-row-prod-2')).toBeVisible();
-    expect(screen.getByText('下書き')).toBeVisible();
+    expect(screen.getByText('未公開')).toBeVisible();
     expect(screen.queryByTestId('organization-production-view-public-prod-2')).toBeNull();
 
     fireEvent.press(screen.getByTestId('organization-productions-create-link'));

@@ -55,12 +55,12 @@ function renderPublish(production = productionOne) {
   );
 }
 
-describe('Web 公開設定: 下書きから公開する', () => {
-  it('shows 下書き, and pressing 公開する calls the real publish endpoint with the current name/title_heading', async () => {
+describe('Web 公開設定: 未公開から公開する', () => {
+  it('shows 未公開, and pressing 公開する calls the real publish endpoint with the current name/title_heading', async () => {
     renderPublish();
 
     await waitFor(() => expect(screen.getByTestId('production-publish-status-pill')).toBeVisible());
-    expect(screen.getByText('下書き（未公開）')).toBeVisible();
+    expect(screen.getByText('未公開')).toBeVisible();
 
     fireEvent.press(screen.getByTestId('production-publish-button'));
 

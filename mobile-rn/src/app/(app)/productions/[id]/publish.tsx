@@ -135,7 +135,7 @@ export default function ProductionPublishScreen() {
           <ThemedText type="smallBold">現在の状態</ThemedText>
           <View style={[styles.pill, published ? styles.pillPublished : styles.pillDraft]} testID="production-publish-status-pill">
             <ThemedText type="small" style={published ? styles.pillTextPublished : styles.pillTextDraft}>
-              {published ? '公開中' : '下書き（未公開）'}
+              {published ? '公開中' : '未公開'}
             </ThemedText>
           </View>
         </View>

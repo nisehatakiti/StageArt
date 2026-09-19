@@ -1,4 +1,4 @@
-import { renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 
 import { mockFetchRoutes, myDashboardEmpty, orgOne, productionOne, projectOne } from './__fixtures__/homeFixtures';
 
@@ -32,7 +32,9 @@ describe('Web 公演管理トップ', () => {
     // name (see WebLayout.tsx's productionName prop) - scope to the page
     // title itself to avoid an ambiguous match.
     expect(screen.getByTestId('production-management-name').props.children).toBe('○○公演2026');
-    expect(screen.getByText('下書き')).toBeVisible();
+    // 公開状態Pillと「公開設定」MenuCardの説明文が、GitHub Issue #5以降どちらも
+    // 同一の「未公開」を表示するため、Pillの方はtestIDで一意に絞り込む。
+    expect(within(screen.getByTestId('production-status-pill')).getByText('未公開')).toBeVisible();
 
     expect(screen.getByTestId('production-management-menu-edit').props.accessibilityState?.disabled).toBeFalsy();
     expect(screen.getByTestId('production-management-menu-participants').props.accessibilityState?.disabled).toBeFalsy();

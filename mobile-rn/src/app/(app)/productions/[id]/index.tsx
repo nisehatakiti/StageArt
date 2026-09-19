@@ -263,7 +263,7 @@ export default function ProductionManagementScreen() {
         <MenuCard
           testID="production-management-menu-publish"
           label="公開設定"
-          description={published ? '公開中' : '下書き（未公開）'}
+          description={published ? '公開中' : '未公開'}
           onPress={() => router.push(`/productions/${id}/publish` as Href)}
           disabled={!isPrimaryManager}
         />
@@ -343,7 +343,7 @@ function StatusPill({ published }: { published: boolean }) {
   return (
     <View style={[styles.pill, published ? styles.pillPublished : styles.pillDraft]} testID="production-status-pill">
       <ThemedText type="small" style={published ? styles.pillTextPublished : styles.pillTextDraft}>
-        {published ? '公開中' : '下書き'}
+        {published ? '公開中' : '未公開'}
       </ThemedText>
     </View>
   );

@@ -136,7 +136,7 @@ function ProductionRow({ production, organizationSlug }: { production: Productio
         {STATUS_LABEL[production.status] ?? production.status}
       </ThemedText>
       <ThemedText type="small" themeColor="textSecondary" style={styles.colStatus}>
-        {published ? '公開中' : '下書き'}
+        {published ? '公開中' : '未公開'}
       </ThemedText>
       <View style={[styles.colAction, styles.actionLinks]}>
         <TouchableOpacity
