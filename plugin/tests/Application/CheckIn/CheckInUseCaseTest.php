@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Tests\Application\CheckIn;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\CheckIn\AttributedPersonNotProductionMemberException;
 use StageArt\Application\CheckIn\ChangeReservationAttributionCommand;
@@ -75,6 +76,7 @@ final class CheckInUseCaseTest extends TestCase
     private InMemoryPersonRepository $people;
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
+    private InMemoryProjectRepository $projects;
     private InMemoryProductionDelegateRepository $delegates;
     private InMemoryParticipantRepository $participants;
     private InMemoryPerformanceRepository $performances;
@@ -103,6 +105,7 @@ final class CheckInUseCaseTest extends TestCase
         $this->people = new InMemoryPersonRepository();
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
+        $this->projects = new InMemoryProjectRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
         $this->participants = new InMemoryParticipantRepository();
         $this->performances = new InMemoryPerformanceRepository();
@@ -120,7 +123,7 @@ final class CheckInUseCaseTest extends TestCase
             $this->delegates,
             $this->participants
         );
-        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver($this->projects));
         $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
@@ -190,6 +193,7 @@ final class CheckInUseCaseTest extends TestCase
         $this->memberships->save(Membership::createOwnerMembership($organization->id(), $primaryManager->id()));
 
         $project = Project::create($organization->id(), 'Season');
+        $this->projects->save($project);
 
         $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
         $production->changeCapacity($capacity);
@@ -405,8 +409,16 @@ final class CheckInUseCaseTest extends TestCase
 
         $entries = $this->journalEntries->all();
         $this->assertCount(2, $entries);
-        $original = $entries[0]->isPosted() ? $entries[0] : $entries[1];
-        $reversal = $entries[0]->isPosted() ? $entries[1] : $entries[0];
+        // Backend PHPUnit環境整備 Phase: JournalEntry::createReversalOf()
+        // gives the new reversal entry REVERSED status too (by design -
+        // see that method's own docblock: both the reversed original and
+        // its reversal record are excluded from Actual), so isPosted()
+        // can no longer tell the two entries apart here - both are
+        // REVERSED. reversalOfJournalEntryId() is the real distinguishing
+        // field (null on the original, set on the reversal), and is what
+        // this test actually wants to prove regardless.
+        $reversal = $entries[0]->reversalOfJournalEntryId() !== null ? $entries[0] : $entries[1];
+        $original = $reversal === $entries[0] ? $entries[1] : $entries[0];
         $this->assertSame('REVERSED', $original->status()->toString());
         $this->assertSame('REVERSED', $reversal->status()->toString());
         $this->assertTrue($reversal->reversalOfJournalEntryId()->equals($original->id()));

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Tests\Support;
 
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Core\Contract\ProductionPublicSlugs;
 use StageArt\Core\Contract\ProductionSummary;
 use StageArt\Core\Contract\ProductionTicketSettings;
 use StageArt\Domain\Organization\OrganizationId;
@@ -26,6 +27,9 @@ final class FakeProductionContextContract implements ProductionContextContract
 
     /** @var array<string, ProductionTicketSettings> */
     private array $ticketSettings = [];
+
+    /** @var array<string, ProductionPublicSlugs> */
+    private array $publicSlugs = [];
 
     public function register(ProductionId $id, string $name, string $status = 'DRAFT', ?OrganizationId $organizationId = null): void
     {
@@ -69,5 +73,22 @@ final class FakeProductionContextContract implements ProductionContextContract
     public function registerTicketSettings(ProductionId $productionId, ProductionTicketSettings $settings): void
     {
         $this->ticketSettings[$productionId->toString()] = $settings;
+    }
+
+    /**
+     * Backend PHPUnit環境整備 Phase: ProductionContextContract gained
+     * getProductionPublicSlugs() during the Questionnaire Phase - null
+     * by default (matching CoreProductionContextAdapter's own "no slug
+     * registered yet" behavior), only meaningful for a test that
+     * explicitly calls registerPublicSlugs() first.
+     */
+    public function getProductionPublicSlugs(ProductionId $productionId): ?ProductionPublicSlugs
+    {
+        return $this->publicSlugs[$productionId->toString()] ?? null;
+    }
+
+    public function registerPublicSlugs(ProductionId $productionId, ProductionPublicSlugs $slugs): void
+    {
+        $this->publicSlugs[$productionId->toString()] = $slugs;
     }
 }

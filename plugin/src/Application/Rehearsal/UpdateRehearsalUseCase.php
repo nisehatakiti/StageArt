@@ -112,6 +112,16 @@ final class UpdateRehearsalUseCase
 
         switch ($decision['action']) {
             case RehearsalReminderPolicy::ACTION_SEND_NOW:
+                // Backend PHPUnit環境整備 Phase: a prior deadline change
+                // on this same Rehearsal may already have scheduled a
+                // Reminder for a later time (ACTION_SCHEDULE below) -
+                // sending now instead must cancel that stale schedule,
+                // or the Scheduler would still fire it again later,
+                // producing a duplicate send. CreateRehearsalUseCase's
+                // own identical branch does not need this: `$oldDeadline`
+                // is always null there, so no prior schedule can exist
+                // to leak.
+                $this->reminderScheduler->cancelReminder($rehearsal->id());
                 $rehearsal->clearReminderSentMark();
                 $this->reminderDispatcher->dispatch($rehearsal);
                 break;

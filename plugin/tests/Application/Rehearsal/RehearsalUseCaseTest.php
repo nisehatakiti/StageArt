@@ -1013,15 +1013,22 @@ final class RehearsalUseCaseTest extends TestCase
         $original = (new DateTimeImmutable('+30 days'))->format(DATE_ATOM);
         // Only 1 hour from now: deadline - 24h is already in the past.
         $overdue = (new DateTimeImmutable('+1 hour'))->format(DATE_ATOM);
+        // RehearsalReminderDispatcher::dispatch() bails out with nothing
+        // to notify when startDateTime is null (see the sibling
+        // "unanswered members only" test's own comment on this exact
+        // point) - a real value is required here, echoed back unchanged
+        // on update so this deadline-only change doesn't also move the
+        // Rehearsal itself.
+        $startDateTime = (new DateTimeImmutable('+40 days'))->format(DATE_ATOM);
 
         $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             1,
             'Act 1 Run',
             null,
+            $startDateTime,
             null,
-            null,
-            null,
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()],
             $original
@@ -1033,9 +1040,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
+            $startDateTime,
             null,
-            null,
-            null,
+            'Asia/Tokyo',
             null,
             $overdue
         ));

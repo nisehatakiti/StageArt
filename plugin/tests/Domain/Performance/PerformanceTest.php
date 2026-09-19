@@ -31,9 +31,19 @@ final class PerformanceTest extends TestCase
         $this->assertSame(100, $performance->capacity());
     }
 
+    /**
+     * Backend PHPUnit環境整備 Phase: fixed from the original '9:05' input,
+     * which Performance::normalizeTime()'s own TIME_PATTERN (and its own
+     * "expected H:i or H:i:s" exception message) has always required to
+     * be zero-padded - a single-digit hour was never valid input, this
+     * assertion was simply never executed before now. The real, intended
+     * behavior this test name describes - "H:i" (already zero-padded)
+     * gets ":00" seconds appended to become "H:i:s" - is unchanged and is
+     * what this now actually verifies.
+     */
     public function test_create_normalizes_hi_time_to_hisss(): void
     {
-        $performance = Performance::create(ProductionId::generate(), new DateTimeImmutable('2026-10-10'), '9:05', null, 50, null, null);
+        $performance = Performance::create(ProductionId::generate(), new DateTimeImmutable('2026-10-10'), '09:05', null, 50, null, null);
 
         $this->assertSame('09:05:00', $performance->startTime());
         $this->assertNull($performance->endTime());

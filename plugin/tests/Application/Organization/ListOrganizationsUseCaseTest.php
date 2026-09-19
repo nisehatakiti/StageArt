@@ -14,6 +14,8 @@ use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\UserAccount\UserAccount;
+use StageArt\Tests\Support\InMemoryAccountRepository;
+use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -47,6 +49,8 @@ final class ListOrganizationsUseCaseTest extends TestCase
             $organizations,
             $people,
             $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
             new InMemoryTransactionManager()
         );
         $listOrganizations = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
@@ -86,6 +90,8 @@ final class ListOrganizationsUseCaseTest extends TestCase
             $organizations,
             $people,
             $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
             new InMemoryTransactionManager()
         );
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);

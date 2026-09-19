@@ -210,4 +210,16 @@ final class FakeOrganizationContextContract implements OrganizationContextContra
     {
         return isset($this->existing[$organizationId->toString()]);
     }
+
+    /**
+     * Backend PHPUnit環境整備 Phase: OrganizationContextContract gained
+     * isAccountingEnabled() during Phase 4 Check-in/精算/会計連携 work,
+     * after this Fake was written - neither test using this Fake
+     * exercises Accounting-enabled behavior (both are Module Bootstrap
+     * wiring/isolation tests), so a fixed `false` is sufficient here.
+     */
+    public function isAccountingEnabled(OrganizationId $organizationId): bool
+    {
+        return false;
+    }
 }
