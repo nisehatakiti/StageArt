@@ -84,7 +84,6 @@ export default function OrganizationManagementScreen() {
           <ThemedText type="title" testID="organization-management-name">
             {organization.name}
           </ThemedText>
-          <StatusPill published={!!organization.published_at} />
         </View>
         {organization.published_at && organization.slug && (
           <TouchableOpacity
@@ -160,16 +159,6 @@ export default function OrganizationManagementScreen() {
   );
 }
 
-function StatusPill({ published }: { published: boolean }) {
-  return (
-    <View style={[styles.pill, published ? styles.pillPublished : styles.pillDraft]} testID="organization-status-pill">
-      <ThemedText type="small" style={published ? styles.pillTextPublished : styles.pillTextDraft}>
-        {published ? '公開中' : '下書き'}
-      </ThemedText>
-    </View>
-  );
-}
-
 function MenuCard({
   testID,
   label,
@@ -231,11 +220,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
   },
-  pill: { alignSelf: 'flex-start', marginTop: Spacing.one, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderRadius: Radius.medium },
-  pillPublished: { backgroundColor: '#e3f3e8' },
-  pillDraft: { backgroundColor: '#f7e4de' },
-  pillTextPublished: { color: '#2f7a4a', fontWeight: '600' },
-  pillTextDraft: { color: '#a6483a', fontWeight: '600' },
   menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
   menuCard: {
     width: 220,

@@ -457,7 +457,6 @@ function HomeOrganizationCard({ organization }: { organization: Organization }) 
         <View style={styles.titleRow}>
           <ThemedText type="smallBold">{organization.name}</ThemedText>
           <RolePill role={organization.current_person_role} />
-          <StatusPill published={!!organization.published_at} />
         </View>
       </TouchableOpacity>
 
@@ -499,16 +498,6 @@ function RolePill({ role }: { role: string }) {
     <View style={[styles.pill, styles.pillRole]}>
       <ThemedText type="small" style={styles.pillTextRole}>
         {role === 'OWNER' ? 'オーナー' : 'メンバー'}
-      </ThemedText>
-    </View>
-  );
-}
-
-function StatusPill({ published }: { published: boolean }) {
-  return (
-    <View style={[styles.pill, published ? styles.pillPublished : styles.pillDraft]}>
-      <ThemedText type="small" style={published ? styles.pillTextPublished : styles.pillTextDraft}>
-        {published ? '公開中' : '下書き'}
       </ThemedText>
     </View>
   );
@@ -622,8 +611,4 @@ const styles = StyleSheet.create({
   pill: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderRadius: Radius.medium },
   pillRole: { backgroundColor: '#eef0fb' },
   pillTextRole: { color: '#3a4baf', fontWeight: '600' },
-  pillPublished: { backgroundColor: '#e3f3e8' },
-  pillDraft: { backgroundColor: '#f7e4de' },
-  pillTextPublished: { color: '#2f7a4a', fontWeight: '600' },
-  pillTextDraft: { color: '#a6483a', fontWeight: '600' },
 });

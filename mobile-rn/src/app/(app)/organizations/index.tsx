@@ -47,9 +47,6 @@ export default function OrganizationsListScreen() {
               <ThemedText type="smallBold" style={styles.colRole}>
                 役割
               </ThemedText>
-              <ThemedText type="smallBold" style={styles.colStatus}>
-                公開状態
-              </ThemedText>
               <ThemedText type="smallBold" style={styles.colAction}>
                 操作
               </ThemedText>
@@ -93,9 +90,6 @@ function OrganizationRow({ organization }: { organization: Organization }) {
       <ThemedText type="small" themeColor="textSecondary" style={styles.colRole}>
         {organization.current_person_role === 'OWNER' ? 'オーナー' : 'メンバー'}
       </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.colStatus}>
-        {organization.published_at ? '公開中' : '下書き'}
-      </ThemedText>
       <ThemedText type="small" themeColor="textSecondary" style={styles.colAction}>
         {productionsQuery.data ? `公演 ${productionsQuery.data.length}件` : ''}
       </ThemedText>
@@ -128,6 +122,5 @@ const styles = StyleSheet.create({
   },
   colName: { width: 260 },
   colRole: { width: 120 },
-  colStatus: { width: 120 },
   colAction: { width: 140 },
 });

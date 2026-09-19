@@ -24,12 +24,17 @@ jest.mock('expo-router', () => ({
 /**
  * StageArt Blueprint再構成 Phase 1c: renders the single canonical
  * HomeScreen (see web-dashboard-greeting.test.tsx's docblock for why).
- * Distinct from home-single-org.test.tsx/home-multi-org-switch.test.tsx
- * in asserting the 公開状態 pill ("下書き") specifically, which those
- * files do not check.
+ *
+ * StageArt仕様遵守 (2026-09-19): this card previously also rendered a
+ * "公開中"/"下書き" status pill derived from `organization.published_at`
+ * - removed because no Blueprint doc defines a normal "not yet public"
+ * Organization state (`03-PublicPageURLAndPublicationSchedule.md`:
+ * "Organizationの作成・団体情報の保存に、非公開状態を設けない。保存が成功
+ * したOrganizationは保存と同時に公開状態とする"), so that implementation-
+ * only pill had no basis in spec. This test no longer asserts on it.
  */
 describe('Home: 団体（参加中／管理中）', () => {
-  it('lists each Organization with its Role, 公開状態 and own Productions, and tapping navigates to its management screen', async () => {
+  it('lists each Organization with its Role and own Productions, and tapping navigates to its management screen', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne, orgTwo] },
@@ -52,7 +57,6 @@ describe('Home: 団体（参加中／管理中）', () => {
     const orgOneRow = within(screen.getByTestId('home-organization-row-org-1'));
     expect(orgOneRow.getByText('○○演劇団')).toBeVisible();
     expect(orgOneRow.getByText('オーナー')).toBeVisible();
-    expect(orgOneRow.getByText('下書き')).toBeVisible();
 
     await waitFor(() => expect(orgOneRow.getByText(/○○公演2026/)).toBeVisible());
 
