@@ -356,6 +356,43 @@ final class Production
     }
 
     /**
+     * StageArt Web Completion Audit (Production公開ページ反映問題):
+     * §20.5's five independently-publishable sections each need this
+     * exact same "not a mere null-check, a time comparison" gate
+     * isPublished() already established for the whole page - a future
+     * per-section publication date/time (set the same way as the
+     * whole-page one) must stay hidden until that moment passes, not the
+     * instant it's saved. These are the one missing piece that made the
+     * per-section `published_at` fields "write-only" - the Domain
+     * already stored them, but nothing asked "is it actually visible
+     * right now" the way isPublished() does for the page itself.
+     */
+    public function isDescriptionPublished(): bool
+    {
+        return $this->descriptionPublishedAt !== null && $this->descriptionPublishedAt <= new DateTimeImmutable();
+    }
+
+    public function isFlyerPublished(): bool
+    {
+        return $this->flyerPublishedAt !== null && $this->flyerPublishedAt <= new DateTimeImmutable();
+    }
+
+    public function isVenuePublished(): bool
+    {
+        return $this->venuePublishedAt !== null && $this->venuePublishedAt <= new DateTimeImmutable();
+    }
+
+    public function isSchedulePublished(): bool
+    {
+        return $this->schedulePublishedAt !== null && $this->schedulePublishedAt <= new DateTimeImmutable();
+    }
+
+    public function isScriptDirectionPublished(): bool
+    {
+        return $this->scriptDirectionPublishedAt !== null && $this->scriptDirectionPublishedAt <= new DateTimeImmutable();
+    }
+
+    /**
      * ProductionTitleHeadingPolicy.md: "自由入力文字列" (free-form text),
      * no length/format validation mandated - only that it is never
      * concatenated into the Title ("公演肩書は公演タイトルの一部として連結

@@ -202,4 +202,203 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
 
         $this->assertSame('Now Visible Show', $result->name);
     }
+
+    /**
+     * StageArt Web Completion Audit (Production公開ページ反映問題):
+     * priority check per the task spec - Hero (Flyer) ON must actually
+     * surface `flyer_url` in the Public API response, not just be
+     * settable in the admin screen.
+     */
+    public function test_flyer_published_section_is_visible_when_its_own_gate_is_on(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Hero Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('hero-show')
+        );
+        $production->publish();
+        $production->updateFlyer('https://example.com/flyer.jpg', new DateTimeImmutable('-1 minute'));
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('hero-show')
+        );
+
+        $this->assertSame('https://example.com/flyer.jpg', $result->flyerUrl);
+    }
+
+    /**
+     * The counterpart to the above: Hero OFF (never published, or not
+     * yet reached its scheduled date) must hide `flyer_url` even though
+     * the Production itself has a flyer URL stored.
+     */
+    public function test_flyer_is_hidden_when_its_own_gate_is_off(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('No Hero Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('no-hero-show')
+        );
+        $production->publish();
+        $production->updateFlyer('https://example.com/flyer.jpg', null);
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('no-hero-show')
+        );
+
+        $this->assertNull($result->flyerUrl);
+    }
+
+    public function test_flyer_scheduled_in_the_future_is_hidden_until_its_publish_date(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Scheduled Hero Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('scheduled-hero-show')
+        );
+        $production->publish();
+        $production->updateFlyer('https://example.com/flyer.jpg', new DateTimeImmutable('+1 day'));
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('scheduled-hero-show')
+        );
+
+        $this->assertNull($result->flyerUrl);
+    }
+
+    public function test_description_is_visible_only_when_its_own_gate_is_on(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Described Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('described-show')
+        );
+        $production->publish();
+        $production->updateDescription('A wonderful play.', new DateTimeImmutable('-1 minute'));
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('described-show')
+        );
+
+        $this->assertSame('A wonderful play.', $result->description);
+    }
+
+    public function test_venue_is_hidden_when_its_own_gate_is_off(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Venue Hidden Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('venue-hidden-show')
+        );
+        $production->publish();
+        $production->updateVenue('Grand Theatre', null);
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('venue-hidden-show')
+        );
+
+        $this->assertNull($result->venueName);
+    }
+
+    public function test_schedule_period_is_visible_when_its_own_gate_is_on(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Scheduled Period Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('scheduled-period-show')
+        );
+        $production->publish();
+        $production->updateSchedule(
+            new DateTimeImmutable('2026-11-01'),
+            new DateTimeImmutable('2026-11-10'),
+            new DateTimeImmutable('-1 minute')
+        );
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('scheduled-period-show')
+        );
+
+        $this->assertSame('2026-11-01', $result->scheduleStartDate);
+        $this->assertSame('2026-11-10', $result->scheduleEndDate);
+    }
+
+    public function test_script_and_direction_credit_are_hidden_when_their_gate_is_off(): void
+    {
+        $productions = new InMemoryProductionRepository();
+        $projects = new InMemoryProjectRepository();
+        $organizations = new InMemoryOrganizationRepository();
+
+        [, $project] = $this->givenPublishedOrganizationWithProject($organizations, $projects);
+
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Credited Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('credited-show')
+        );
+        $production->publish();
+        $production->updateScriptDirection('Writer A', 'Director B', null);
+        $productions->save($production);
+
+        $result = $this->useCase($productions, $projects, $organizations)->execute(
+            new GetPublicProductionBySlugQuery('credited-show')
+        );
+
+        $this->assertNull($result->scriptCredit);
+        $this->assertNull($result->directionCredit);
+    }
 }

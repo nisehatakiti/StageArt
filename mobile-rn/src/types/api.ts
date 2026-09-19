@@ -385,6 +385,13 @@ export type PublicProduction = {
   slug: string;
   title_heading: string | null;
   published_at: string;
+  description: string | null;
+  flyer_url: string | null;
+  venue_name: string | null;
+  schedule_start_date: string | null;
+  schedule_end_date: string | null;
+  script_credit: string | null;
+  direction_credit: string | null;
   organization: {
     id: string;
     name: string;

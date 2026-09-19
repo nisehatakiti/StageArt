@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import Head from 'expo-router/head';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
@@ -36,11 +36,16 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * shown/linked below is the Backend's own resolved parent, not
  * re-derived from the URL segment.
  *
- * Blueprint content this phase's data model does not yet support
- * (flyer/フライヤー, 会場/venue, チケット情報, 出演者, 公演回 - see
- * docs/CurrentStateAudit.md's "Public Page architecture gap") is not
- * fabricated here - the page shows only what the Production Domain
- * Model actually has (name/titleHeading/slug/parent Organization).
+ * StageArt Web Completion Audit (Production公開ページ反映問題): each of
+ * description/flyer(Hero)/venue/schedule-period/script&direction below
+ * is rendered only when the Public API actually returns a value for it
+ * - `PublicProductionResult` already resolves each one's own publish
+ * gate server-side (see its docblock), so a `null` here always means
+ * "not currently published", never "field doesn't exist". Member/
+ * participant info is not yet exposed by the Public API and so is not
+ * rendered here - see this audit's report for why. Nothing below is a
+ * new setting or new API - only display for fields the Public API
+ * already had the capacity to return.
  */
 export default function PublicProductionScreen() {
   const { productionSlug } = useLocalSearchParams<{ organizationSlug: string; productionSlug: string }>();
@@ -84,6 +89,15 @@ export default function PublicProductionScreen() {
 
         {query.data && (
           <ThemedView testID="public-production-content" style={styles.content}>
+            {query.data.flyer_url && (
+              <Image
+                testID="public-production-flyer"
+                source={{ uri: query.data.flyer_url }}
+                style={styles.flyer}
+                resizeMode="cover"
+              />
+            )}
+
             {query.data.title_heading && (
               <ThemedText testID="public-production-title-heading" themeColor="textSecondary">
                 {query.data.title_heading}
@@ -101,6 +115,28 @@ export default function PublicProductionScreen() {
                 {query.data.organization.name}
               </ThemedText>
             </TouchableOpacity>
+
+            {query.data.description && (
+              <ThemedText testID="public-production-description">{query.data.description}</ThemedText>
+            )}
+
+            {query.data.venue_name && (
+              <ThemedText testID="public-production-venue">会場: {query.data.venue_name}</ThemedText>
+            )}
+
+            {(query.data.schedule_start_date || query.data.schedule_end_date) && (
+              <ThemedText testID="public-production-schedule-period">
+                公演期間: {query.data.schedule_start_date ?? '未定'}〜{query.data.schedule_end_date ?? '未定'}
+              </ThemedText>
+            )}
+
+            {(query.data.script_credit || query.data.direction_credit) && (
+              <ThemedText testID="public-production-script-direction">
+                {query.data.script_credit && `脚本: ${query.data.script_credit}`}
+                {query.data.script_credit && query.data.direction_credit && ' / '}
+                {query.data.direction_credit && `演出: ${query.data.direction_credit}`}
+              </ThemedText>
+            )}
 
             {status === 'authenticated' && (
               <TouchableOpacity
@@ -176,7 +212,7 @@ export default function PublicProductionScreen() {
 
             {(performancesQuery.data?.length ?? 0) > 0 && (
               <ThemedView style={styles.performanceSection} testID="public-production-performances">
-                <ThemedText type="subtitle">公演回</ThemedText>
+                <ThemedText type="subtitle">公演スケジュール</ThemedText>
                 {performancesQuery.data!.map((performance) => (
                   <ThemedView key={performance.id} style={styles.performanceRow} testID={`public-performance-${performance.id}`}>
                     <ThemedText>
@@ -210,6 +246,7 @@ export default function PublicProductionScreen() {
 const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
+  flyer: { width: '100%', aspectRatio: 3 / 4, borderRadius: Radius.medium },
   participationSection: { marginTop: Spacing.three, gap: Spacing.two },
   ticketSection: { marginTop: Spacing.three, gap: Spacing.one },
   ticketRow: { paddingVertical: Spacing.one, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
