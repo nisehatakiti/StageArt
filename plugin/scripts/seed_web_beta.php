@@ -230,12 +230,17 @@ call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/complete");
 out('Rehearsal (past, completed)', $rehearsalPastId);
 
 wp_set_current_user($orgOwnerUserId);
-// A second, unpublished Production under Org A - the closest honest
-// representation of "not yet public" (see this Phase's report: a real
-// "公開予定" scheduled-future-publish is NOT implemented Backend-side -
-// publishedAt is a simple now-or-null flag, not date-compared - so this
-// script does not fake a future publishedAt, which would actually make
-// it publicly visible today, contradicting "予定".
+// A second, unpublished Production under Org A - "not yet public" is
+// represented solely by publishedAt staying null (never PUT with
+// 'published' => true), never by leaving Lifecycle Status at its
+// DRAFT default (GitHub Issue #5: Lifecycle Status and Publicity are
+// independent - DRAFT is not a public-facing "not yet released" signal,
+// only Production::create()'s own starting point for the 企画/制作
+// progression). Advanced through the same DRAFT -> PLANNING -> ACTIVE
+// transition as the published Production above, purely so this demo
+// row's Lifecycle Status reads the same "in production" way a real
+// pre-release Production's would, without that implying anything about
+// its Publicity.
 $resp = call('POST', '/stageart/v1/productions', [
     'project_id' => $projectAId,
     'name' => '[Sample] 冬の新作（準備中）',
@@ -243,7 +248,13 @@ $resp = call('POST', '/stageart/v1/productions', [
     'primary_manager_person_id' => $productionManagerPersonId,
 ]);
 $productionDraftId = $resp->get_data()['id'];
-out('Production (unpublished/draft)', $productionDraftId);
+// Lifecycle Actions are PrimaryManager-exclusive (same as the published
+// Production above) - switch from the Organization Owner (who just
+// created this Production) to its actual PrimaryManager.
+wp_set_current_user($productionManagerUserId);
+call('PATCH', "/stageart/v1/productions/{$productionDraftId}/start-planning");
+call('PATCH', "/stageart/v1/productions/{$productionDraftId}/activate");
+out('Production (unpublished, ACTIVE)', $productionDraftId);
 
 wp_set_current_user($orgOwnerUserId);
 // A third Production, published then lifecycle-completed/archived (終了済み)
