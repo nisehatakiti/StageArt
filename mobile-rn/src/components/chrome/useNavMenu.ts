@@ -59,27 +59,41 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
 ];
 
 /**
- * StageArt Organization Context Menu仕様整合 (docs/03-
- * PublicPageURLAndPublicationSchedule.md「Organization Context Menu」):
- * label/接続先をその確定仕様に合わせた上で、既存に実装済みの画面だけを
- * 接続している - 該当する既存画面がない仕様項目（公開ページ管理/ABOUT/
- * SNS/リンク、メンバー管理配下の「追加」「代理人を設定」「代表者交代」、
- * 公演管理の「過去公演を登録する」「公演を編集する」、会計管理）は今回
- * 追加していない（要確認 - 作業報告参照）。
+ * StageArt Organization Context Menu仕様整合フェーズ2
+ * (docs/03-PublicPageURLAndPublicationSchedule.md「Organization Context
+ * Menu」): 確定仕様の全項目をメニュー上に揃える。既存画面がある項目は
+ * そのまま接続し（団体情報/メンバー管理/公演一覧/公演を作る/参加申請/
+ * 招待）、画面がまだない項目（ABOUT/SNS/リンク、メンバー管理の追加/
+ * 代理人を設定/代表者交代、公演管理の過去公演を登録する/公演を編集する、
+ * 会計管理）は OrganizationPlaceholderScreen による「画面の器」
+ * （タイトル＋準備中表示）だけを新設し、業務ロジック・入力項目・API
+ * 呼び出しは一切追加していない（詳細は作業報告参照）。
  *
- * 団体情報: disabled for non-Owner (既存のまま)。参加申請/招待: 仕様の
- * 「メンバー管理」配下にどう位置付けるか確定できないため、既存の独立した
- * 項目・Owner限定ゲーティングのまま変更していない。公演一覧: 既存のまま
- * 維持（仕様の3項目のどれとも完全一致しないが、既存の実データ画面を削除
- * しない）。公演を作る: 仕様の「公演管理」配下の項目のうち、既存の
- * `/organizations/{id}/productions/create` 画面に接続可能な唯一の項目
- * として追加 - 権限ゲーティングは接続先画面自体と同じ「制限なし」のまま
- * （新しい権限ルールを追加していない）。
+ * 権限ゲーティングは仕様に明記されているものだけを適用する - 団体情報は
+ * 既存どおりOwner限定。参加申請/招待も既存どおりOwner限定（仕様の
+ * 「メンバー管理」配下にどう位置付けるか確定できないため、独立した項目の
+ * まま・ゲーティングも変更していない）。会計管理は仕様が明記する唯一の
+ * 条件「団体情報で会計機能がONの場合のみ表示する」のみを適用する。それ
+ * 以外の新設項目（ABOUT/SNS/リンク、メンバー管理の追加/代理人を設定/
+ * 代表者交代、公演管理の過去公演を登録する/公演を編集する）には、仕様に
+ * 明記されていないOwner限定等の権限ルールを推測で追加していない -
+ * 「画面を開けるかどうか」と「実際に操作できるかどうか」は別問題であり、
+ * 中身が未実装の骨格画面である今回はまだ後者の判断が発生しない。
  */
-function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuItem[] {
+function buildOrganizationContextItems(id: string, isOwner: boolean, accountingEnabled: boolean): NavMenuItem[] {
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
+    { key: 'organization-about', label: 'ABOUT', href: `/organizations/${id}/about` as Href },
+    { key: 'organization-sns', label: 'SNS', href: `/organizations/${id}/sns` as Href },
+    { key: 'organization-links', label: 'リンク', href: `/organizations/${id}/links` as Href },
     { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href },
+    { key: 'organization-members-add', label: '追加', href: `/organizations/${id}/members/add` as Href },
+    { key: 'organization-members-delegate', label: '代理人を設定', href: `/organizations/${id}/members/delegate` as Href },
+    {
+      key: 'organization-members-owner-transfer',
+      label: '代表者交代',
+      href: `/organizations/${id}/members/owner-transfer` as Href,
+    },
   ];
 
   if (isOwner) {
@@ -91,8 +105,18 @@ function buildOrganizationContextItems(id: string, isOwner: boolean): NavMenuIte
 
   items.push(
     { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href },
-    { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href }
+    { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href },
+    {
+      key: 'organization-productions-create-past',
+      label: '過去公演を登録する',
+      href: `/organizations/${id}/productions/create-past` as Href,
+    },
+    { key: 'organization-productions-edit', label: '公演を編集する', href: `/organizations/${id}/productions/edit` as Href }
   );
+
+  if (accountingEnabled) {
+    items.push({ key: 'organization-accounting', label: '会計管理', href: `/organizations/${id}/accounting` as Href });
+  }
 
   return items;
 }
@@ -167,7 +191,11 @@ export function useNavMenu() {
       fixedItems: FIXED_ITEMS,
       contextType: 'organization' as const,
       contextLabel: organization?.name ?? '団体',
-      contextItems: buildOrganizationContextItems(context.organizationId, organization?.current_person_role === 'OWNER'),
+      contextItems: buildOrganizationContextItems(
+        context.organizationId,
+        organization?.current_person_role === 'OWNER',
+        !!organization?.accounting_enabled
+      ),
     };
   }
 

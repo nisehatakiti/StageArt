@@ -81,6 +81,60 @@ describe('useNavMenu', () => {
     expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(true);
   });
 
+  /**
+   * StageArt Organization Context Menu仕様整合フェーズ2: the confirmed
+   * spec's full item set (docs/03-PublicPageURLAndPublicationSchedule.md
+   * 「Organization Context Menu」) must all be present, including the
+   * newly-added skeleton-screen items - 会計管理 excluded here since
+   * orgOne's fixture has accounting_enabled: false (see the dedicated
+   * 会計管理 test below).
+   */
+  it('includes every confirmed Organization Context Menu item (skeleton screens included)', async () => {
+    mockPathname = `/organizations/${orgOne.id}/edit`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    // Wait for contextLabel (only set once the Organization itself has
+    // loaded), not just contextType (which flips from the URL alone,
+    // before organizationsQuery.data resolves) - otherwise isOwner can
+    // still read as false from a stale/loading snapshot.
+    await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
+    expect(result.current.contextItems.map((item) => item.key)).toEqual([
+      'organization-info',
+      'organization-about',
+      'organization-sns',
+      'organization-links',
+      'organization-members',
+      'organization-members-add',
+      'organization-members-delegate',
+      'organization-members-owner-transfer',
+      'organization-requests',
+      'organization-invite',
+      'organization-productions',
+      'organization-productions-create',
+      'organization-productions-create-past',
+      'organization-productions-edit',
+    ]);
+  });
+
+  it('shows 会計管理 only when the Organization has accounting_enabled', async () => {
+    mockPathname = `/organizations/${orgOne.id}/edit`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [{ ...orgOne, accounting_enabled: true }] },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextItems.some((item) => item.key === 'organization-accounting')).toBe(true));
+  });
+
   it('hides Owner-only Organization Context items and disables 団体情報 for a MEMBER', async () => {
     mockPathname = `/organizations/${orgTwo.id}/members`;
     mockFetchRoutes([
