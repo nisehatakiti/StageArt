@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
+use DateTimeImmutable;
 use StageArt\Domain\Performance\Performance;
 use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
@@ -40,5 +41,34 @@ final class InMemoryPerformanceRepository implements PerformanceRepositoryInterf
             $this->performances,
             static fn (Performance $performance): bool => in_array($performance->id()->toString(), $wanted, true)
         ));
+    }
+
+    public function findByProductionAndDateTime(
+        ProductionId $productionId,
+        DateTimeImmutable $performanceDate,
+        string $startTime,
+        ?PerformanceId $excludeId = null
+    ): ?Performance {
+        foreach ($this->performances as $performance) {
+            if (! $performance->productionId()->equals($productionId)) {
+                continue;
+            }
+
+            if ($excludeId !== null && $performance->id()->equals($excludeId)) {
+                continue;
+            }
+
+            if ($performance->performanceDate()->format('Y-m-d') !== $performanceDate->format('Y-m-d')) {
+                continue;
+            }
+
+            if ($performance->startTime() !== $startTime) {
+                continue;
+            }
+
+            return $performance;
+        }
+
+        return null;
     }
 }

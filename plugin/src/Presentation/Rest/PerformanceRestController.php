@@ -16,6 +16,7 @@ use StageArt\Application\Performance\ListPerformancesUseCase;
 use StageArt\Application\Performance\ListPublicPerformancesQuery;
 use StageArt\Application\Performance\ListPublicPerformancesUseCase;
 use StageArt\Application\Performance\PerformanceAccessDeniedException;
+use StageArt\Application\Performance\PerformanceDuplicateDateTimeException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
 use StageArt\Application\Performance\UpdatePerformanceCommand;
 use StageArt\Application\Performance\UpdatePerformanceUseCase;
@@ -167,6 +168,8 @@ final class PerformanceRestController
             return new WP_Error('stageart_performance_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (PerformanceDuplicateDateTimeException $exception) {
+            return new WP_Error('stageart_performance_duplicate_datetime', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_performance_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -217,6 +220,8 @@ final class PerformanceRestController
             return new WP_Error('stageart_performance_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (PerformanceDuplicateDateTimeException $exception) {
+            return new WP_Error('stageart_performance_duplicate_datetime', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_performance_invalid', $exception->getMessage(), ['status' => 422]);
         }

@@ -99,6 +99,38 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    public function findByProductionAndDateTime(
+        ProductionId $productionId,
+        DateTimeImmutable $performanceDate,
+        string $startTime,
+        ?PerformanceId $excludeId = null
+    ): ?Performance {
+        if ($excludeId !== null) {
+            $row = $this->wpdb->get_row(
+                $this->wpdb->prepare(
+                    "SELECT * FROM {$this->table} WHERE production_id = %s AND performance_date = %s AND start_time = %s AND id != %s",
+                    $productionId->toString(),
+                    $performanceDate->format('Y-m-d'),
+                    $startTime,
+                    $excludeId->toString()
+                ),
+                ARRAY_A
+            );
+        } else {
+            $row = $this->wpdb->get_row(
+                $this->wpdb->prepare(
+                    "SELECT * FROM {$this->table} WHERE production_id = %s AND performance_date = %s AND start_time = %s",
+                    $productionId->toString(),
+                    $performanceDate->format('Y-m-d'),
+                    $startTime
+                ),
+                ARRAY_A
+            );
+        }
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
     /**
      * `performance_date` is a plain DATE (no timezone concern - mirrors
      * Production's own `schedule_start_date` convention exactly, see

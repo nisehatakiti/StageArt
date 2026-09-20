@@ -248,6 +248,15 @@ final class ProductionCapacityCascadeTest extends TestCase
             {
                 return $this->delegate->findByIds($ids);
             }
+
+            public function findByProductionAndDateTime(
+                \StageArt\Domain\Production\ProductionId $productionId,
+                \DateTimeImmutable $performanceDate,
+                string $startTime,
+                ?\StageArt\Domain\Performance\PerformanceId $excludeId = null
+            ): ?Performance {
+                return $this->delegate->findByProductionAndDateTime($productionId, $performanceDate, $startTime, $excludeId);
+            }
         };
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);

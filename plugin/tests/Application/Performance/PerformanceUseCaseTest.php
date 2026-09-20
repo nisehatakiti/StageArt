@@ -17,6 +17,7 @@ use StageArt\Application\Performance\GetPerformanceUseCase;
 use StageArt\Application\Performance\ListPerformancesForProductionQuery;
 use StageArt\Application\Performance\ListPerformancesUseCase;
 use StageArt\Application\Performance\PerformanceAccessDeniedException;
+use StageArt\Application\Performance\PerformanceDuplicateDateTimeException;
 use StageArt\Application\Performance\UpdatePerformanceCommand;
 use StageArt\Application\Performance\UpdatePerformanceUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -240,6 +241,69 @@ final class PerformanceUseCaseTest extends TestCase
         ));
     }
 
+    /**
+     * docs/12-FunctionalStructure.md §22.5 "Duplicate Date/Time Rule":
+     * only one Performance may exist per Production at the exact same
+     * (performance date + start time) combination.
+     */
+    public function test_create_performance_rejects_duplicate_date_and_start_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->expectException(PerformanceDuplicateDateTimeException::class);
+
+        $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+    }
+
+    public function test_create_performance_allows_same_date_with_a_different_start_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $result = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '19:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->assertSame('19:00:00', $result->startTime);
+    }
+
     public function test_update_performance_changes_fields(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1, 100);
@@ -270,6 +334,89 @@ final class PerformanceUseCaseTest extends TestCase
         $this->assertSame('2026-10-11', $updated->performanceDate);
         $this->assertSame(90, $updated->capacity);
         $this->assertSame('PUBLISHED', $updated->status);
+    }
+
+    /**
+     * docs/12-FunctionalStructure.md §22.5: updating a Performance into
+     * another existing Performance's date+time is rejected the same way
+     * creating a duplicate is.
+     */
+    public function test_update_performance_rejects_changing_into_another_performances_date_and_start_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $second = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-11',
+            '18:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->expectException(PerformanceDuplicateDateTimeException::class);
+
+        $this->updatePerformance->execute(new UpdatePerformanceCommand(
+            $second->id,
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            100,
+            null,
+            null,
+            null
+        ));
+    }
+
+    /**
+     * Self-exclusion: a no-op (or unrelated-field-only) update that keeps
+     * a Performance at its own existing date+time must not be rejected
+     * as a duplicate of itself.
+     */
+    public function test_update_performance_keeping_its_own_date_and_start_time_unchanged_succeeds(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $updated = $this->updatePerformance->execute(new UpdatePerformanceCommand(
+            $created->id,
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            120,
+            '更新後の備考',
+            null,
+            null
+        ));
+
+        $this->assertSame('2026-10-10', $updated->performanceDate);
+        $this->assertSame('13:00:00', $updated->startTime);
+        $this->assertSame(120, $updated->capacity);
     }
 
     public function test_cancel_performance_sets_cancelled_status(): void

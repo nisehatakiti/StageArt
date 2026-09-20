@@ -91,6 +91,16 @@ final class CreatePerformanceUseCase
             $command->symbol
         );
 
+        $duplicate = $this->performances->findByProductionAndDateTime(
+            $productionId,
+            $performance->performanceDate(),
+            $performance->startTime()
+        );
+
+        if ($duplicate !== null) {
+            throw new PerformanceDuplicateDateTimeException($performance->performanceDate()->format('Y-m-d'), $performance->startTime());
+        }
+
         $this->performances->save($performance);
 
         return PerformanceResult::fromDomain($performance);

@@ -2,6 +2,7 @@ import { useLocalSearchParams, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import { ApiError } from '@/api/errors';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
@@ -115,7 +116,11 @@ export default function ProductionPerformancesScreen() {
       setNewRemarks('');
       setNewSymbol('');
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      if (error instanceof ApiError && error.code === 'stageart_performance_duplicate_datetime') {
+        setErrorMessage('同じ公演日・開演時刻の公演スケジュールは登録できません。');
+      } else {
+        setErrorMessage(getErrorMessage(error));
+      }
     }
   }
 
@@ -317,7 +322,11 @@ function PerformanceEditRow({
       });
       onSaved();
     } catch (error) {
-      onError(getErrorMessage(error));
+      if (error instanceof ApiError && error.code === 'stageart_performance_duplicate_datetime') {
+        onError('同じ公演日・開演時刻の公演スケジュールは登録できません。');
+      } else {
+        onError(getErrorMessage(error));
+      }
     }
   }
 

@@ -97,6 +97,17 @@ final class UpdatePerformanceUseCase
             $command->symbol
         );
 
+        $duplicate = $this->performances->findByProductionAndDateTime(
+            $productionId,
+            $performance->performanceDate(),
+            $performance->startTime(),
+            $performance->id()
+        );
+
+        if ($duplicate !== null) {
+            throw new PerformanceDuplicateDateTimeException($performance->performanceDate()->format('Y-m-d'), $performance->startTime());
+        }
+
         if ($command->status !== null) {
             $performance->changeStatus(PerformanceStatus::fromString($command->status));
         }
