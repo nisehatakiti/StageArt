@@ -6,7 +6,10 @@ namespace StageArt\Ticket;
 
 use StageArt\Application\Ticket\ArchiveTicketUseCase;
 use StageArt\Application\Ticket\CreateTicketUseCase;
+use StageArt\Application\Ticket\GetQuotaAndTicketBackSettingsUseCase;
+use StageArt\Application\Ticket\GetTicketSalesSettingsUseCase;
 use StageArt\Application\Ticket\GetTicketUseCase;
+use StageArt\Application\Ticket\ListPerformanceTicketAvailabilityUseCase;
 use StageArt\Application\Ticket\ListPublicTicketsUseCase;
 use StageArt\Application\Ticket\ListTicketsUseCase;
 use StageArt\Application\Ticket\UpdateQuotaAndTicketBackSettingsUseCase;
@@ -16,6 +19,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Ticket\TicketRepositoryInterface;
 use StageArt\Presentation\Rest\TicketRestController;
@@ -42,6 +46,7 @@ final class TicketModuleBootstrap
     public function __construct(
         TicketRepositoryInterface $tickets,
         ProductionRepositoryInterface $productions,
+        PerformanceRepositoryInterface $performances,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
         AuthorizationContract $authorization,
@@ -55,6 +60,9 @@ final class TicketModuleBootstrap
         $listPublicTickets = new ListPublicTicketsUseCase($tickets, $productionContext);
         $updateTicketSalesSettings = new UpdateTicketSalesSettingsUseCase($productions, $identity, $authorization);
         $updateQuotaAndTicketBackSettings = new UpdateQuotaAndTicketBackSettingsUseCase($productions, $identity, $authorization);
+        $getTicketSalesSettings = new GetTicketSalesSettingsUseCase($productions, $identity, $membership);
+        $getQuotaAndTicketBackSettings = new GetQuotaAndTicketBackSettingsUseCase($productions, $identity, $membership);
+        $listPerformanceTicketAvailability = new ListPerformanceTicketAvailabilityUseCase($performances, $productionContext, $identity, $membership);
 
         $this->restControllers = [
             new TicketRestController(
@@ -65,7 +73,10 @@ final class TicketModuleBootstrap
                 $archiveTicket,
                 $listPublicTickets,
                 $updateTicketSalesSettings,
-                $updateQuotaAndTicketBackSettings
+                $updateQuotaAndTicketBackSettings,
+                $getTicketSalesSettings,
+                $getQuotaAndTicketBackSettings,
+                $listPerformanceTicketAvailability
             ),
         ];
     }

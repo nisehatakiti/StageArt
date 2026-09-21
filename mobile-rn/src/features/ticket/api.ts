@@ -1,6 +1,13 @@
 import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
-import type { PublicTicketList, QuotaAndTicketBackSettings, Ticket, TicketBackCondition, TicketSalesSettings } from '@/types/api';
+import type {
+  PerformanceTicketAvailability,
+  PublicTicketList,
+  QuotaAndTicketBackSettings,
+  Ticket,
+  TicketBackCondition,
+  TicketSalesSettings,
+} from '@/types/api';
 
 /** GET /productions/{id}/tickets - admin listing (authenticated,
  * membership-gated). Includes ARCHIVED Tickets for history. */
@@ -45,6 +52,30 @@ export function updateTicket(
  * never a physical delete. */
 export function archiveTicket(client: ApiClient, ticketId: string): Promise<Ticket> {
   return client.post<Ticket>(`/tickets/${ticketId}/archive`);
+}
+
+/** GET /productions/{id}/ticket-sales-settings - reads the Production's
+ * current publication/sales-window settings (any Production member),
+ * so the チケット設定 screen can show what is already saved instead of
+ * always starting blank. */
+export function fetchTicketSalesSettings(client: ApiClient, productionId: string): Promise<TicketSalesSettings> {
+  return client.get<TicketSalesSettings>(`/productions/${productionId}/ticket-sales-settings`);
+}
+
+/** GET /productions/{id}/quota-ticket-back-settings - reads the
+ * Production's current Quota/Ticket Back settings (any Production
+ * member). */
+export function fetchQuotaAndTicketBackSettings(client: ApiClient, productionId: string): Promise<QuotaAndTicketBackSettings> {
+  return client.get<QuotaAndTicketBackSettings>(`/productions/${productionId}/quota-ticket-back-settings`);
+}
+
+/** GET /productions/{id}/performance-ticket-availability - per-Performance
+ * "is a Ticket currently purchasable" read model, recomputed from the
+ * same publication/sales-window rules CreateReservationUseCase itself
+ * enforces (never a new business rule) - lets the チケット管理 screen show
+ * which Performances are currently open for sale. */
+export function fetchPerformanceTicketAvailability(client: ApiClient, productionId: string): Promise<PerformanceTicketAvailability[]> {
+  return client.get<PerformanceTicketAvailability[]>(`/productions/${productionId}/performance-ticket-availability`);
 }
 
 /** PUT /productions/{id}/ticket-sales-settings - Chapter 32 §3の

@@ -10,8 +10,14 @@ use StageArt\Application\Ticket\ArchiveTicketCommand;
 use StageArt\Application\Ticket\ArchiveTicketUseCase;
 use StageArt\Application\Ticket\CreateTicketCommand;
 use StageArt\Application\Ticket\CreateTicketUseCase;
+use StageArt\Application\Ticket\GetQuotaAndTicketBackSettingsQuery;
+use StageArt\Application\Ticket\GetQuotaAndTicketBackSettingsUseCase;
 use StageArt\Application\Ticket\GetTicketQuery;
+use StageArt\Application\Ticket\GetTicketSalesSettingsQuery;
+use StageArt\Application\Ticket\GetTicketSalesSettingsUseCase;
 use StageArt\Application\Ticket\GetTicketUseCase;
+use StageArt\Application\Ticket\ListPerformanceTicketAvailabilityQuery;
+use StageArt\Application\Ticket\ListPerformanceTicketAvailabilityUseCase;
 use StageArt\Application\Ticket\ListPublicTicketsQuery;
 use StageArt\Application\Ticket\ListPublicTicketsUseCase;
 use StageArt\Application\Ticket\ListTicketsForProductionQuery;
@@ -48,6 +54,9 @@ final class TicketRestController
     private ListPublicTicketsUseCase $listPublicTickets;
     private UpdateTicketSalesSettingsUseCase $updateTicketSalesSettings;
     private UpdateQuotaAndTicketBackSettingsUseCase $updateQuotaAndTicketBackSettings;
+    private GetTicketSalesSettingsUseCase $getTicketSalesSettings;
+    private GetQuotaAndTicketBackSettingsUseCase $getQuotaAndTicketBackSettings;
+    private ListPerformanceTicketAvailabilityUseCase $listPerformanceTicketAvailability;
 
     public function __construct(
         CreateTicketUseCase $createTicket,
@@ -57,7 +66,10 @@ final class TicketRestController
         ArchiveTicketUseCase $archiveTicket,
         ListPublicTicketsUseCase $listPublicTickets,
         UpdateTicketSalesSettingsUseCase $updateTicketSalesSettings,
-        UpdateQuotaAndTicketBackSettingsUseCase $updateQuotaAndTicketBackSettings
+        UpdateQuotaAndTicketBackSettingsUseCase $updateQuotaAndTicketBackSettings,
+        GetTicketSalesSettingsUseCase $getTicketSalesSettings,
+        GetQuotaAndTicketBackSettingsUseCase $getQuotaAndTicketBackSettings,
+        ListPerformanceTicketAvailabilityUseCase $listPerformanceTicketAvailability
     ) {
         $this->createTicket = $createTicket;
         $this->getTicket = $getTicket;
@@ -67,6 +79,9 @@ final class TicketRestController
         $this->listPublicTickets = $listPublicTickets;
         $this->updateTicketSalesSettings = $updateTicketSalesSettings;
         $this->updateQuotaAndTicketBackSettings = $updateQuotaAndTicketBackSettings;
+        $this->getTicketSalesSettings = $getTicketSalesSettings;
+        $this->getQuotaAndTicketBackSettings = $getQuotaAndTicketBackSettings;
+        $this->listPerformanceTicketAvailability = $listPerformanceTicketAvailability;
     }
 
     public function register_routes(): void
@@ -94,6 +109,11 @@ final class TicketRestController
 
         register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/ticket-sales-settings', [
             [
+                'methods' => 'GET',
+                'callback' => [$this, 'getSalesSettings'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+            [
                 'methods' => 'PUT',
                 'callback' => [$this, 'updateSalesSettings'],
                 'permission_callback' => [$this, 'require_login'],
@@ -102,8 +122,21 @@ final class TicketRestController
 
         register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/quota-ticket-back-settings', [
             [
+                'methods' => 'GET',
+                'callback' => [$this, 'getQuotaAndTicketBack'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+            [
                 'methods' => 'PUT',
                 'callback' => [$this, 'updateQuotaAndTicketBack'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/performance-ticket-availability', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listPerformanceAvailability'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -263,6 +296,42 @@ final class TicketRestController
     /**
      * @return WP_REST_Response|WP_Error
      */
+    public function getSalesSettings(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetTicketSalesSettingsQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->getTicketSalesSettings->execute($query)->toArray(), 200);
+        } catch (TicketAccessDeniedException $exception) {
+            return new WP_Error('stageart_ticket_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_ticket_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function getQuotaAndTicketBack(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetQuotaAndTicketBackSettingsQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->getQuotaAndTicketBackSettings->execute($query)->toArray(), 200);
+        } catch (TicketAccessDeniedException $exception) {
+            return new WP_Error('stageart_ticket_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_ticket_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
     public function updateSalesSettings(WP_REST_Request $request)
     {
         try {
@@ -306,6 +375,27 @@ final class TicketRestController
             );
 
             return new WP_REST_Response($this->updateQuotaAndTicketBackSettings->execute($command)->toArray(), 200);
+        } catch (TicketAccessDeniedException $exception) {
+            return new WP_Error('stageart_ticket_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_ticket_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listPerformanceAvailability(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListPerformanceTicketAvailabilityQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->listPerformanceTicketAvailability->execute($query)),
+                200
+            );
         } catch (TicketAccessDeniedException $exception) {
             return new WP_Error('stageart_ticket_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {

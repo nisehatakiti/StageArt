@@ -8,7 +8,10 @@ import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import {
   useArchiveTicket,
   useCreateTicket,
+  usePerformanceTicketAvailability,
+  useQuotaAndTicketBackSettings,
   useTickets,
+  useTicketSalesSettings,
   useUpdateQuotaAndTicketBackSettings,
   useUpdateTicket,
   useUpdateTicketSalesSettings,
@@ -16,6 +19,13 @@ import {
 import { useProduction } from '@/features/production/useProductions';
 import type { Ticket, TicketBackCondition } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+
+const PERFORMANCE_STATUS_LABEL: Record<string, string> = {
+  PUBLISHED: '公開中',
+  SOLD_OUT: '満席',
+  FINISHED: '終了',
+  CANCELLED: '中止',
+};
 
 /**
  * StageArt Phase 3 Ticket/Reservation基盤 §49: チケット設定
@@ -30,6 +40,9 @@ export default function ProductionTicketsScreen() {
   const productionQuery = useProduction(id);
   const production = productionQuery.data;
   const ticketsQuery = useTickets(id);
+  const salesSettingsQuery = useTicketSalesSettings(id);
+  const quotaAndTicketBackQuery = useQuotaAndTicketBackSettings(id);
+  const availabilityQuery = usePerformanceTicketAvailability(id);
   const createTicket = useCreateTicket(id);
   const archiveTicket = useArchiveTicket(id);
   const updateSalesSettings = useUpdateTicketSalesSettings(id);
@@ -48,6 +61,21 @@ export default function ProductionTicketsScreen() {
   const [salesStartAt, setSalesStartAt] = useState('');
   const [salesEndRule, setSalesEndRule] = useState<'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START'>('HOURS_BEFORE_START');
   const [salesEndParameter, setSalesEndParameter] = useState('');
+  // Seeded from the server exactly once real data arrives, matching this
+  // codebase's own established "adjust state during render, once"
+  // pattern (see e.g. production edit screens) - a background refetch
+  // must not silently discard whatever the user has already typed.
+  const [salesSettingsSeeded, setSalesSettingsSeeded] = useState(false);
+
+  if (salesSettingsQuery.data && !salesSettingsSeeded) {
+    setSalesSettingsSeeded(true);
+    setPublicationAt(salesSettingsQuery.data.ticket_publication_at ?? '');
+    setSalesStartAt(salesSettingsQuery.data.ticket_sales_start_at ?? '');
+    if (salesSettingsQuery.data.ticket_sales_end_rule === 'DAY_BEFORE_AT_TIME' || salesSettingsQuery.data.ticket_sales_end_rule === 'HOURS_BEFORE_START') {
+      setSalesEndRule(salesSettingsQuery.data.ticket_sales_end_rule);
+    }
+    setSalesEndParameter(salesSettingsQuery.data.ticket_sales_end_parameter ?? '');
+  }
 
   const [quotaEnabled, setQuotaEnabled] = useState(false);
   const [quotaCount, setQuotaCount] = useState('');
@@ -57,6 +85,22 @@ export default function ProductionTicketsScreen() {
   const [ticketBackEnabled, setTicketBackEnabled] = useState(false);
   const [ticketBackMode, setTicketBackMode] = useState<'PROGRESSIVE' | 'SEPARATED'>('PROGRESSIVE');
   const [ticketBackConditions, setTicketBackConditions] = useState<TicketBackCondition[]>([]);
+  const [quotaSettingsSeeded, setQuotaSettingsSeeded] = useState(false);
+
+  if (quotaAndTicketBackQuery.data && !quotaSettingsSeeded) {
+    setQuotaSettingsSeeded(true);
+    setQuotaEnabled(quotaAndTicketBackQuery.data.quota_enabled);
+    setQuotaCount(quotaAndTicketBackQuery.data.quota_count !== null ? String(quotaAndTicketBackQuery.data.quota_count) : '');
+    setQuotaBuybackEnabled(quotaAndTicketBackQuery.data.quota_buyback_enabled);
+    setQuotaShortfallUnitPrice(
+      quotaAndTicketBackQuery.data.quota_shortfall_unit_price !== null ? String(quotaAndTicketBackQuery.data.quota_shortfall_unit_price) : ''
+    );
+    setTicketBackEnabled(quotaAndTicketBackQuery.data.ticket_back_mode !== null);
+    if (quotaAndTicketBackQuery.data.ticket_back_mode !== null) {
+      setTicketBackMode(quotaAndTicketBackQuery.data.ticket_back_mode);
+    }
+    setTicketBackConditions(quotaAndTicketBackQuery.data.ticket_back_conditions);
+  }
 
   async function handleAddTicket() {
     setErrorMessage(null);
@@ -379,6 +423,39 @@ export default function ProductionTicketsScreen() {
       <TouchableOpacity testID="production-tickets-save-quota-ticket-back" onPress={handleSaveQuotaAndTicketBack} style={styles.button}>
         <ThemedText style={styles.buttonText}>ノルマ／チケットバック設定を更新</ThemedText>
       </TouchableOpacity>
+
+      <ThemedText type="subtitle" style={styles.sectionTitle}>
+        公演スケジュールごとの販売可能状態
+      </ThemedText>
+
+      {availabilityQuery.isLoading && <ActivityIndicator testID="production-tickets-availability-loading" />}
+
+      {!availabilityQuery.isLoading && (availabilityQuery.data ?? []).length === 0 && (
+        <ThemedText type="small" themeColor="textSecondary" testID="production-tickets-availability-empty">
+          公演スケジュールがまだ登録されていません。
+        </ThemedText>
+      )}
+
+      {(availabilityQuery.data ?? []).length > 0 && (
+        <View style={styles.list} testID="production-tickets-availability-list">
+          {availabilityQuery.data!.map((item) => (
+            <View key={item.performance_id} style={styles.row} testID={`ticket-availability-row-${item.performance_id}`}>
+              <ThemedText style={styles.colName}>
+                {item.performance_date} {item.start_time.slice(0, 5)}
+              </ThemedText>
+              <ThemedText style={styles.colPrice} themeColor="textSecondary">
+                {PERFORMANCE_STATUS_LABEL[item.performance_status] ?? item.performance_status}
+              </ThemedText>
+              <ThemedText
+                style={item.is_sales_open ? styles.availabilityOpen : styles.availabilityClosed}
+                testID={`ticket-availability-status-${item.performance_id}`}
+              >
+                {item.is_sales_open ? '販売中' : '販売不可'}
+              </ThemedText>
+            </View>
+          ))}
+        </View>
+      )}
     </>
   );
 }
@@ -493,4 +570,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   secondaryButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
+  availabilityOpen: { color: '#2f7a4a', fontWeight: '600' },
+  availabilityClosed: { color: '#a6483a', fontWeight: '600' },
 });

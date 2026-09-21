@@ -201,8 +201,8 @@ export type Production = {
 };
 
 /**
- * Phase 3 Ticket/Reservation基盤: `PUT /productions/{id}/ticket-sales-
- * settings` response (Backend's `TicketSalesSettingsResult`) - a
+ * Phase 3 Ticket/Reservation基盤: `GET`/`PUT /productions/{id}/ticket-
+ * sales-settings` response (Backend's `TicketSalesSettingsResult`) - a
  * separate, narrower read than `Production` itself (that endpoint
  * updates only Production's ticket-publication/sales-start/sales-end
  * fields, not the whole Production record - see
@@ -217,9 +217,10 @@ export type TicketSalesSettings = {
 };
 
 /**
- * Phase 3 Ticket/Reservation基盤: `PUT /productions/{id}/quota-ticket-
- * back-settings` response (Backend's `QuotaAndTicketBackSettingsResult`).
- * Internal management data only - never sent to the Public Page (§34).
+ * Phase 3 Ticket/Reservation基盤: `GET`/`PUT /productions/{id}/quota-
+ * ticket-back-settings` response (Backend's
+ * `QuotaAndTicketBackSettingsResult`). Internal management data only -
+ * never sent to the Public Page (§34).
  */
 export type TicketBackCondition = {
   priority: number;
@@ -276,6 +277,27 @@ export type PublicPerformance = {
   start_time: string;
   end_time: string | null;
   status: string;
+};
+
+/**
+ * StageArt チケット管理 (Ticket全体像整備): `GET /productions/{id}/
+ * performance-ticket-availability` response (Backend's
+ * `PerformanceTicketAvailabilityResult`) - a read-only per-Performance
+ * view of "is a Ticket currently purchasable", recomputed from the same
+ * publication/sales-window rules CreateReservationUseCase itself
+ * enforces server-side at actual reservation time. Display only; the
+ * server remains the sole authority on whether a real Reservation
+ * attempt succeeds.
+ */
+export type PerformanceTicketAvailability = {
+  performance_id: string;
+  performance_date: string;
+  start_time: string;
+  performance_status: string;
+  is_ticket_published: boolean;
+  sales_start_at: string | null;
+  sales_end_at: string | null;
+  is_sales_open: boolean;
 };
 
 /**

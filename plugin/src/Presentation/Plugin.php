@@ -577,6 +577,7 @@ final class Plugin
         $ticketModule = new TicketModuleBootstrap(
             $tickets,
             $productions,
+            $performances,
             $productionContextContract,
             $identityContract,
             $authorizationContract,

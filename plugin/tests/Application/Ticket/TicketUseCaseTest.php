@@ -14,8 +14,14 @@ use StageArt\Application\Ticket\ArchiveTicketCommand;
 use StageArt\Application\Ticket\ArchiveTicketUseCase;
 use StageArt\Application\Ticket\CreateTicketCommand;
 use StageArt\Application\Ticket\CreateTicketUseCase;
+use StageArt\Application\Ticket\GetQuotaAndTicketBackSettingsQuery;
+use StageArt\Application\Ticket\GetQuotaAndTicketBackSettingsUseCase;
 use StageArt\Application\Ticket\GetTicketQuery;
+use StageArt\Application\Ticket\GetTicketSalesSettingsQuery;
+use StageArt\Application\Ticket\GetTicketSalesSettingsUseCase;
 use StageArt\Application\Ticket\GetTicketUseCase;
+use StageArt\Application\Ticket\ListPerformanceTicketAvailabilityQuery;
+use StageArt\Application\Ticket\ListPerformanceTicketAvailabilityUseCase;
 use StageArt\Application\Ticket\ListPublicTicketsQuery;
 use StageArt\Application\Ticket\ListPublicTicketsUseCase;
 use StageArt\Application\Ticket\ListTicketsForProductionQuery;
@@ -34,6 +40,7 @@ use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Performance\Performance;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
@@ -43,6 +50,7 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
@@ -57,6 +65,7 @@ final class TicketUseCaseTest extends TestCase
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
     private InMemoryTicketRepository $tickets;
+    private InMemoryPerformanceRepository $performances;
 
     private CreateTicketUseCase $createTicket;
     private GetTicketUseCase $getTicket;
@@ -66,6 +75,9 @@ final class TicketUseCaseTest extends TestCase
     private ListPublicTicketsUseCase $listPublicTickets;
     private UpdateTicketSalesSettingsUseCase $updateSalesSettings;
     private UpdateQuotaAndTicketBackSettingsUseCase $updateQuotaAndTicketBack;
+    private GetTicketSalesSettingsUseCase $getSalesSettings;
+    private GetQuotaAndTicketBackSettingsUseCase $getQuotaAndTicketBack;
+    private ListPerformanceTicketAvailabilityUseCase $listPerformanceAvailability;
 
     protected function setUp(): void
     {
@@ -75,6 +87,7 @@ final class TicketUseCaseTest extends TestCase
         $this->productions = new InMemoryProductionRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
         $this->tickets = new InMemoryTicketRepository();
+        $this->performances = new InMemoryPerformanceRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
@@ -95,6 +108,9 @@ final class TicketUseCaseTest extends TestCase
         $this->listPublicTickets = new ListPublicTicketsUseCase($this->tickets, $productionContext);
         $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization);
         $this->updateQuotaAndTicketBack = new UpdateQuotaAndTicketBackSettingsUseCase($this->productions, $identity, $authorization);
+        $this->getSalesSettings = new GetTicketSalesSettingsUseCase($this->productions, $identity, $membership);
+        $this->getQuotaAndTicketBack = new GetQuotaAndTicketBackSettingsUseCase($this->productions, $identity, $membership);
+        $this->listPerformanceAvailability = new ListPerformanceTicketAvailabilityUseCase($this->performances, $productionContext, $identity, $membership);
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
@@ -387,5 +403,115 @@ final class TicketUseCaseTest extends TestCase
         $result = $this->listPublicTickets->execute(new ListPublicTicketsQuery($production->id()->toString()));
 
         $this->assertSame([], $result->tickets);
+    }
+
+    public function test_get_sales_settings_is_readable_by_any_production_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            '2026-09-01T00:00:00+09:00',
+            '2026-09-10T00:00:00+09:00',
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        $result = $this->getSalesSettings->execute(new GetTicketSalesSettingsQuery($production->id()->toString(), 1));
+
+        $this->assertNotNull($result->publicationAt);
+        $this->assertSame('HOURS_BEFORE_START', $result->salesEndRule);
+    }
+
+    public function test_get_sales_settings_rejects_non_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenProductionWithPrimaryManager(99);
+
+        $this->expectException(TicketAccessDeniedException::class);
+        $this->getSalesSettings->execute(new GetTicketSalesSettingsQuery($production->id()->toString(), 99));
+    }
+
+    public function test_get_quota_and_ticket_back_settings_is_readable_by_any_production_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->updateQuotaAndTicketBack->execute(new UpdateQuotaAndTicketBackSettingsCommand(
+            $production->id()->toString(),
+            1,
+            true,
+            50,
+            false,
+            null,
+            null,
+            []
+        ));
+
+        $result = $this->getQuotaAndTicketBack->execute(new GetQuotaAndTicketBackSettingsQuery($production->id()->toString(), 1));
+
+        $this->assertTrue($result->quotaEnabled);
+        $this->assertSame(50, $result->quotaCount);
+    }
+
+    private function givenPerformance(Production $production, string $date, string $startTime): Performance
+    {
+        $performance = Performance::create($production->id(), new DateTimeImmutable($date), $startTime, null, 100, null, null);
+        $this->performances->save($performance);
+
+        return $performance;
+    }
+
+    public function test_performance_ticket_availability_is_not_open_before_publication(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenPerformance($production, '2099-01-01', '18:00');
+
+        $result = $this->listPerformanceAvailability->execute(new ListPerformanceTicketAvailabilityQuery($production->id()->toString(), 1));
+
+        $this->assertCount(1, $result);
+        $this->assertFalse($result[0]->isTicketPublished);
+        $this->assertFalse($result[0]->isSalesOpen);
+    }
+
+    public function test_performance_ticket_availability_is_open_within_the_sales_window(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenPerformance($production, '2099-01-01', '18:00');
+
+        $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            (new DateTimeImmutable('-1 hour'))->format(DATE_ATOM),
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        $result = $this->listPerformanceAvailability->execute(new ListPerformanceTicketAvailabilityQuery($production->id()->toString(), 1));
+
+        $this->assertTrue($result[0]->isTicketPublished);
+        $this->assertTrue($result[0]->isSalesOpen);
+        $this->assertNotNull($result[0]->salesEndAt);
+    }
+
+    public function test_performance_ticket_availability_is_closed_after_sales_end_deadline(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        // Performance start is only 1 hour from now, but the rule requires
+        // sales to end 3 hours before start - already past that deadline.
+        $this->givenPerformance($production, (new DateTimeImmutable('+1 hour'))->format('Y-m-d'), (new DateTimeImmutable('+1 hour'))->format('H:i'));
+
+        $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        $result = $this->listPerformanceAvailability->execute(new ListPerformanceTicketAvailabilityQuery($production->id()->toString(), 1));
+
+        $this->assertTrue($result[0]->isTicketPublished);
+        $this->assertFalse($result[0]->isSalesOpen);
     }
 }

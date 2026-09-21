@@ -6,7 +6,10 @@ import type { TicketBackCondition } from '@/types/api';
 import {
   archiveTicket,
   createTicket,
+  fetchPerformanceTicketAvailability,
   fetchPublicTickets,
+  fetchQuotaAndTicketBackSettings,
+  fetchTicketSalesSettings,
   fetchTickets,
   updateQuotaAndTicketBackSettings,
   updateTicket,
@@ -28,6 +31,36 @@ export function usePublicTickets(productionId: string | undefined) {
     queryKey: ['public-tickets', productionId],
     queryFn: () => fetchPublicTickets(productionId as string),
     enabled: !!productionId,
+  });
+}
+
+export function useTicketSalesSettings(productionId: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['ticket-sales-settings', productionId],
+    queryFn: () => fetchTicketSalesSettings(apiClient, productionId as string),
+    enabled: status === 'authenticated' && !!productionId,
+  });
+}
+
+export function useQuotaAndTicketBackSettings(productionId: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['quota-ticket-back-settings', productionId],
+    queryFn: () => fetchQuotaAndTicketBackSettings(apiClient, productionId as string),
+    enabled: status === 'authenticated' && !!productionId,
+  });
+}
+
+export function usePerformanceTicketAvailability(productionId: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['performance-ticket-availability', productionId],
+    queryFn: () => fetchPerformanceTicketAvailability(apiClient, productionId as string),
+    enabled: status === 'authenticated' && !!productionId,
   });
 }
 
@@ -73,12 +106,17 @@ export function useUpdateTicketSalesSettings(productionId: string | undefined) {
       ticketSalesEndRule?: string | null;
       ticketSalesEndParameter?: string | null;
     }) => updateTicketSalesSettings(apiClient, productionId as string, fields),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['public-tickets', productionId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['public-tickets', productionId] });
+      queryClient.invalidateQueries({ queryKey: ['ticket-sales-settings', productionId] });
+      queryClient.invalidateQueries({ queryKey: ['performance-ticket-availability', productionId] });
+    },
   });
 }
 
 export function useUpdateQuotaAndTicketBackSettings(productionId: string | undefined) {
   const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (fields: {
@@ -89,5 +127,6 @@ export function useUpdateQuotaAndTicketBackSettings(productionId: string | undef
       ticketBackMode: string | null;
       ticketBackConditions: TicketBackCondition[];
     }) => updateQuotaAndTicketBackSettings(apiClient, productionId as string, fields),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['quota-ticket-back-settings', productionId] }),
   });
 }
