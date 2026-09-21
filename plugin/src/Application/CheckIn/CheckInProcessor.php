@@ -74,9 +74,29 @@ final class CheckInProcessor
         $checkIn = CheckIn::complete($reservation->id(), $reservation->performanceId(), $checkedInBy);
         $this->checkIns->save($checkIn);
 
-        $this->recognizeRevenueIfAccountingEnabled($reservation, $checkIn, $productionId, $checkedInBy);
+        $this->recognizeRevenueIfAccountingEnabled($reservation, $productionId, $checkedInBy, 'CheckInCompleted', $checkIn->id()->toString());
 
         return $checkIn;
+    }
+
+    /**
+     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+     * round): "NO_SHOWは...Check-in相当、Sales recognition...には含めます。
+     * ただし、実際の出席人数には含めません" - this scenario is a member who
+     * already collected payment hand-selling a Ticket, so unlike a genuine
+     * unpaid no-show, Revenue must still be recognized exactly as a real
+     * Check-in would (when Accounting is enabled), while never creating a
+     * `CheckIn` Fact (NO_SHOW is not an attendance event - see
+     * `Reservation::markNoShow()`'s own docblock). Keyed by the
+     * Reservation itself rather than a CheckIn id, since no CheckIn record
+     * exists for a no-show.
+     */
+    public function processNoShow(Reservation $reservation, ProductionId $productionId, PersonId $recordedBy): void
+    {
+        $reservation->markNoShow($recordedBy);
+        $this->reservations->save($reservation);
+
+        $this->recognizeRevenueIfAccountingEnabled($reservation, $productionId, $recordedBy, 'ReservationNoShow', $reservation->id()->toString());
     }
 
     /**
@@ -107,9 +127,10 @@ final class CheckInProcessor
 
     private function recognizeRevenueIfAccountingEnabled(
         Reservation $reservation,
-        CheckIn $checkIn,
         ProductionId $productionId,
-        PersonId $recordedBy
+        PersonId $recordedBy,
+        string $sourceEventType,
+        string $sourceEventId
     ): void {
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
 
@@ -117,9 +138,10 @@ final class CheckInProcessor
             return;
         }
 
-        if ($this->journalEntries->findBySourceEvent('CheckInCompleted', $checkIn->id()->toString()) !== null) {
+        if ($this->journalEntries->findBySourceEvent($sourceEventType, $sourceEventId) !== null) {
             // CheckIn.md "# Duplicate Accounting": never generate a
-            // second entry for the same CheckInCompleted Fact.
+            // second entry for the same source Fact (CheckInCompleted or,
+            // per this round's NO_SHOW instruction, ReservationNoShow).
             return;
         }
 
@@ -138,8 +160,8 @@ final class CheckInProcessor
                 JournalEntryLine::create($revenueAccount->id(), DebitCredit::credit(), $amount, 'チケット売上'),
             ],
             $recordedBy,
-            'CheckInCompleted',
-            $checkIn->id()->toString()
+            $sourceEventType,
+            $sourceEventId
         );
 
         // Unlike ConfirmExpenseUseCase's deliberately-DRAFT Expense

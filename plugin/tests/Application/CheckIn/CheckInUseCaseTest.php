@@ -146,7 +146,7 @@ final class CheckInUseCaseTest extends TestCase
             $transactions
         );
         $this->checkInByNumber = new CheckInByNumberUseCase($this->reservations, $this->checkInReservation);
-        $this->markNoShow = new MarkNoShowUseCase($this->reservations, $this->performances, $identity, $authorization, $transactions);
+        $this->markNoShow = new MarkNoShowUseCase($this->reservations, $this->performances, $identity, $authorization, $processor, $transactions);
         $this->reverseCheckIn = new ReverseCheckInUseCase(
             $this->reservations,
             $this->performances,
@@ -381,16 +381,62 @@ final class CheckInUseCaseTest extends TestCase
         $this->assertSame('CHECKED_IN', $result->reservationStatus);
     }
 
-    public function test_mark_no_show_transitions_status_without_any_journal_entry(): void
+    public function test_mark_no_show_transitions_status(): void
     {
-        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
         $reservation = $this->givenReservedReservation($performance, $ticketId);
 
         $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
         $refetched = $this->reservations->findById($reservation->id());
         $this->assertSame('NO_SHOW', $refetched->status()->toString());
+    }
+
+    public function test_mark_no_show_creates_no_journal_entry_when_accounting_is_disabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
         $this->assertCount(0, $this->journalEntries->all());
+    }
+
+    /**
+     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+     * round): "NO_SHOWは...Sales recognition...には含めます" - a member who
+     * already collected payment hand-selling a Ticket still generates
+     * Ticket Revenue when Accounting is enabled, exactly like a real
+     * Check-in would, even though no CheckIn Fact/attendance is recorded.
+     */
+    public function test_mark_no_show_generates_a_posted_journal_entry_when_accounting_is_enabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 2);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $entries = $this->journalEntries->all();
+        $this->assertCount(1, $entries);
+        $this->assertTrue($entries[0]->isPosted());
+        $this->assertSame('ReservationNoShow', $entries[0]->sourceEventType());
+
+        $lines = $entries[0]->lines();
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $this->assertSame(6000, $debitLine->amount());
+
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+    }
+
+    public function test_mark_no_show_does_not_double_post_on_a_repeat_attempt(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
     }
 
     public function test_reverse_check_in_reverts_reservation_and_generates_a_reversal_journal_entry(): void

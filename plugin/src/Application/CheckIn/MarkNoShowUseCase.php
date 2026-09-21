@@ -18,12 +18,17 @@ use StageArt\Domain\Reservation\ReservationRepositoryInterface;
  * "販売実績(CHECKED_IN + NO_SHOW)" model member declares a no-show at the
  * door after already collecting payment themselves - reception records
  * it without ever generating a CheckIn Fact (the guest never arrived,
- * per CheckIn.md's own distinction) and without any Journal Entry:
- * TicketRevenueConsistencyPolicy.md's "# No-Show" is explicit that
- * "原則としてTicket Revenueは認識しない". NO_SHOW still counts toward Ticket
- * Back/Quota sales performance (via Reservation Status alone, the same
- * soldCount input ProductionSettlementCalculator already reads) without
- * needing any Accounting side effect here.
+ * per CheckIn.md's own distinction).
+ *
+ * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+ * round, superseding TicketRevenueConsistencyPolicy.md's older blanket
+ * "原則としてTicket Revenueは認識しない" no-show rule for this specific
+ * hand-sold-ticket scenario): "NO_SHOWは...Sales recognition...には含めま
+ * す". Delegates to `CheckInProcessor::processNoShow()` - the same
+ * Revenue Recognition path `CheckInReservationUseCase` uses for a real
+ * Check-in - so Accounting-enabled Productions still post the Journal
+ * Entry, while NO_SHOW still never counts toward actual attendance
+ * (no CheckIn Fact is created either way).
  */
 final class MarkNoShowUseCase
 {
@@ -31,6 +36,7 @@ final class MarkNoShowUseCase
     private PerformanceRepositoryInterface $performances;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private CheckInProcessor $processor;
     private TransactionManagerInterface $transactions;
 
     public function __construct(
@@ -38,12 +44,14 @@ final class MarkNoShowUseCase
         PerformanceRepositoryInterface $performances,
         IdentityContract $identity,
         AuthorizationContract $authorization,
+        CheckInProcessor $processor,
         TransactionManagerInterface $transactions
     ) {
         $this->reservations = $reservations;
         $this->performances = $performances;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->processor = $processor;
         $this->transactions = $transactions;
     }
 
@@ -77,9 +85,10 @@ final class MarkNoShowUseCase
             );
         }
 
-        $this->transactions->run(function () use ($reservation, $requesterId): void {
-            $reservation->markNoShow($requesterId);
-            $this->reservations->save($reservation);
+        $productionId = $performance->productionId();
+
+        $this->transactions->run(function () use ($reservation, $productionId, $requesterId): void {
+            $this->processor->processNoShow($reservation, $productionId, $requesterId);
         });
     }
 }

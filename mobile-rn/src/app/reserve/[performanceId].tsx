@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { AppShell } from '@/components/app-shell';
 import { ThemedText } from '@/components/themed-text';
@@ -65,6 +66,12 @@ export default function ReservationCreateScreen() {
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               予約番号とメールアドレスは、予約の確認・変更・キャンセルに必要です。大切に保管してください。
+            </ThemedText>
+            <View testID="reservation-create-qr" style={styles.qrBox}>
+              <QRCode value={successNumber} size={160} />
+            </View>
+            <ThemedText type="small" themeColor="textSecondary">
+              当日はこのQRコードを受付で提示してください。スクリーンショットでの提示も可能です。
             </ThemedText>
           </View>
         ) : (
@@ -175,4 +182,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
   numberText: { fontSize: 20, fontWeight: '700', marginVertical: Spacing.two },
+  qrBox: { alignItems: 'flex-start', marginVertical: Spacing.three },
 });

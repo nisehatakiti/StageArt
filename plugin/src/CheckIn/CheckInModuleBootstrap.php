@@ -79,7 +79,7 @@ final class CheckInModuleBootstrap
             $transactions
         );
         $checkInByNumber = new CheckInByNumberUseCase($reservations, $checkInReservation);
-        $markNoShow = new MarkNoShowUseCase($reservations, $performances, $identity, $authorization, $transactions);
+        $markNoShow = new MarkNoShowUseCase($reservations, $performances, $identity, $authorization, $processor, $transactions);
         $reverseCheckIn = new ReverseCheckInUseCase(
             $reservations,
             $performances,

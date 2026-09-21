@@ -86,6 +86,8 @@ export default function RootLayout() {
                   reserved and can never collide with a real slug).
                   Deliberately stays outside (app) - viewable while
                   unauthenticated (StageArt Blueprint再構成 §26/Audience). */}
+              <Stack.Screen name="reserve/[performanceId]" options={{ headerShown: false }} />
+              <Stack.Screen name="my-reservation" options={{ headerShown: false }} />
               <Stack.Screen name="[organizationSlug]/index" options={{ headerShown: false }} />
               <Stack.Screen name="[organizationSlug]/[productionSlug]/index" options={{ headerShown: false }} />
               {/* アンケート実装指示書 §5: the public, unauthenticated

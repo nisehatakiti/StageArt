@@ -41,6 +41,7 @@ use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryReservationRepository;
 use StageArt\Tests\Support\InMemorySettlementRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
 
 /**
  * Covers the Production Lifecycle Action UseCases end to end - the
@@ -91,7 +92,10 @@ final class ProductionLifecycleUseCaseTest extends TestCase
             $this->productions,
             $productionAuthorization,
             new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
-            $this->settlements
+            $this->settlements,
+            $this->performances,
+            $this->reservations,
+            new InMemoryTransactionManager()
         );
         $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization);
         $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization);
@@ -304,5 +308,49 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $result = $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
 
         $this->assertSame('COMPLETED', $result->status);
+    }
+
+    /**
+     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+     * round): "Production終了時に残っているRESERVEDはCANCELLEDにします" -
+     * confirmed via the ACTIVE -> COMPLETED transition. A CHECKED_IN
+     * Reservation for the same Performance must be left untouched.
+     */
+    public function test_completing_a_production_cancels_remaining_reserved_reservations(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $this->productions->save($production);
+
+        $performance = \StageArt\Domain\Performance\Performance::create(
+            $production->id(),
+            new \DateTimeImmutable('-1 day'),
+            '18:00',
+            null,
+            20,
+            null,
+            null
+        );
+        $this->performances->save($performance);
+
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+
+        $stillReserved = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 2, 3000, null);
+        $this->reservations->save($stillReserved);
+
+        $alreadyCheckedIn = Reservation::create($performance->id(), $ticket->id(), 'B', 'b@example.com', 1, 3000, null);
+        $alreadyCheckedIn->checkIn(null);
+        $this->reservations->save($alreadyCheckedIn);
+
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $reloadedStillReserved = $this->reservations->findById($stillReserved->id());
+        $reloadedCheckedIn = $this->reservations->findById($alreadyCheckedIn->id());
+
+        $this->assertSame('CANCELLED', $reloadedStillReserved->status()->toString());
+        $this->assertSame('CHECKED_IN', $reloadedCheckedIn->status()->toString());
     }
 }

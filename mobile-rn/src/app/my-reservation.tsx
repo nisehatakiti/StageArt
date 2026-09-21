@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { ApiError } from '@/api/errors';
 import { AppShell } from '@/components/app-shell';
@@ -110,6 +111,15 @@ export default function MyReservationScreen() {
             <ThemedText>金額（1名あたり）：{reservation.price_snapshot}円</ThemedText>
 
             {reservation.status === 'RESERVED' && (
+              <View testID="my-reservation-qr" style={styles.qrBox}>
+                <QRCode value={reservation.reservation_number} size={160} />
+                <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+                  当日はこのQRコードを受付で提示してください。スクリーンショットでの提示も可能です。
+                </ThemedText>
+              </View>
+            )}
+
+            {reservation.status === 'RESERVED' && (
               <>
                 <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
                   人数を変更する
@@ -192,4 +202,5 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: { color: '#a6483a', fontWeight: '600' },
   hint: { marginTop: Spacing.two },
+  qrBox: { alignItems: 'flex-start', marginVertical: Spacing.two },
 });

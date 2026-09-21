@@ -465,7 +465,10 @@ final class Plugin
             $productions,
             $productionAuthorization,
             new ProductionSettlementCalculator($performances, $reservations, $tickets),
-            $settlements
+            $settlements,
+            $performances,
+            $reservations,
+            $transactions
         );
         $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization);
         $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization);
