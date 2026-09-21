@@ -173,10 +173,12 @@ $productionPublishedId = $resp->get_data()['id'];
 // PrimaryManager-exclusive - switch from the Organization Owner (who
 // created this Production) to its actual PrimaryManager.
 wp_set_current_user($productionManagerUserId);
-call('PUT', "/stageart/v1/productions/{$productionPublishedId}", ['name' => '[Sample] 夏の公演', 'published' => true]);
-// Transition DRAFT -> PLANNING -> ACTIVE to match the "ACTIVE" label
-// below (Phase 6.1 Lifecycle Actions use PATCH, not POST).
-call('PATCH', "/stageart/v1/productions/{$productionPublishedId}/start-planning");
+call('PUT', "/stageart/v1/productions/{$productionPublishedId}", ['name' => '[Sample] 夏の公演']);
+// StageArt Production Lifecycle整理 instruction: a Production already
+// starts at PLANNING (no separate "start planning" Action exists
+// anymore), and activate() (PLANNING -> ACTIVE, "公演を確定する") now also
+// publishes the Production itself - see Production::activate()'s
+// docblock - so no separate `published => true` PUT is needed here.
 call('PATCH', "/stageart/v1/productions/{$productionPublishedId}/activate");
 out('Production (published, ACTIVE)', $productionPublishedId);
 
@@ -230,17 +232,13 @@ call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/complete");
 out('Rehearsal (past, completed)', $rehearsalPastId);
 
 wp_set_current_user($orgOwnerUserId);
-// A second, unpublished Production under Org A - "not yet public" is
-// represented solely by publishedAt staying null (never PUT with
-// 'published' => true), never by leaving Lifecycle Status at its
-// DRAFT default (GitHub Issue #5: Lifecycle Status and Publicity are
-// independent - DRAFT is not a public-facing "not yet released" signal,
-// only Production::create()'s own starting point for the 企画/制作
-// progression). Advanced through the same DRAFT -> PLANNING -> ACTIVE
-// transition as the published Production above, purely so this demo
-// row's Lifecycle Status reads the same "in production" way a real
-// pre-release Production's would, without that implying anything about
-// its Publicity.
+// A second, unpublished Production under Org A. StageArt Production
+// Lifecycle整理 instruction: activate() (PLANNING -> ACTIVE) now also
+// publishes by default (see Production::activate()'s docblock), so this
+// demo row is explicitly un-published again afterward via the
+// pre-existing, Status-independent publish/unpublish toggle
+// (`PUT .../productions/{id}` with `published => false`) to keep
+// demonstrating an ACTIVE-but-not-public Production.
 $resp = call('POST', '/stageart/v1/productions', [
     'project_id' => $projectAId,
     'name' => '[Sample] 冬の新作（準備中）',
@@ -252,8 +250,8 @@ $productionDraftId = $resp->get_data()['id'];
 // Production above) - switch from the Organization Owner (who just
 // created this Production) to its actual PrimaryManager.
 wp_set_current_user($productionManagerUserId);
-call('PATCH', "/stageart/v1/productions/{$productionDraftId}/start-planning");
 call('PATCH', "/stageart/v1/productions/{$productionDraftId}/activate");
+call('PUT', "/stageart/v1/productions/{$productionDraftId}", ['name' => '[Sample] 冬の新作（準備中）', 'published' => false]);
 out('Production (unpublished, ACTIVE)', $productionDraftId);
 
 wp_set_current_user($orgOwnerUserId);
@@ -270,11 +268,11 @@ $productionEndedId = $resp->get_data()['id'];
 // the Organization Owner who just created this Production is not
 // automatically its PrimaryManager, so we switch back.
 wp_set_current_user($productionManagerUserId);
-call('PUT', "/stageart/v1/productions/{$productionEndedId}", ['name' => '[Sample] 昨年の公演', 'published' => true]);
-// Phase 6.1 Lifecycle Actions use PATCH, not POST (unlike Rehearsal's
-// own confirm/activate/complete, which are POST - see
+// Lifecycle Actions use PATCH, not POST (unlike Rehearsal's own
+// confirm/activate/complete, which are POST - see
 // ProductionRestController::register_routes()'s own registration).
-call('PATCH', "/stageart/v1/productions/{$productionEndedId}/start-planning");
+// activate() itself publishes (see Production::activate()'s docblock),
+// so no separate `published => true` PUT is needed here.
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/activate");
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/complete");
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/archive");

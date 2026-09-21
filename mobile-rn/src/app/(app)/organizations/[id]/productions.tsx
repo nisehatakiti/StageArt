@@ -8,13 +8,13 @@ import { useOrganizationProductions } from '@/features/production/useProductions
 import type { Production } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
-/** ProductionLifecycle.md's DRAFT/PLANNING/ACTIVE/COMPLETED/ARCHIVED,
- * plus CANCELLED - same label set as components/production-card.tsx's
- * own STATUS_LABEL (kept as a separate local copy rather than exporting
- * that component's internal constant, to avoid coupling this Web screen
- * to a mobile-only component's internals). */
+/** Confirmed Production Lifecycle: PLANNING/ACTIVE/COMPLETED (DRAFT is
+ * not used). ARCHIVED/CANCELLED are kept displayable as-is - same label
+ * set as components/production-card.tsx's own STATUS_LABEL (kept as a
+ * separate local copy rather than exporting that component's internal
+ * constant, to avoid coupling this Web screen to a mobile-only
+ * component's internals). */
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '下書き',
   PLANNING: '準備中',
   ACTIVE: '進行中',
   COMPLETED: '終了',

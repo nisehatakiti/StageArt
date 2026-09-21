@@ -31,7 +31,7 @@ final class FakeProductionContextContract implements ProductionContextContract
     /** @var array<string, ProductionPublicSlugs> */
     private array $publicSlugs = [];
 
-    public function register(ProductionId $id, string $name, string $status = 'DRAFT', ?OrganizationId $organizationId = null): void
+    public function register(ProductionId $id, string $name, string $status = 'PLANNING', ?OrganizationId $organizationId = null): void
     {
         $this->productions[$id->toString()] = new ProductionSummary($id, $name, $status);
 

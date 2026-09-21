@@ -122,17 +122,14 @@ export function updateProduction(
 }
 
 /**
- * Phase 5 (Production運営UI §8): the existing Lifecycle Action endpoints
- * (`PATCH /productions/{id}/{action}`, Phase 6.1) - Status can no longer
- * be changed via the generic `updateProduction()` PUT above, only
- * through these. `complete` enforces the existing Settlement-completion
- * Guard server-side (CompleteProductionUseCase) - this function does not
- * duplicate that check client-side.
+ * The Lifecycle Action endpoints (`PATCH /productions/{id}/{action}`) -
+ * Status can no longer be changed via the generic `updateProduction()`
+ * PUT above, only through these. `activate` ("公演を確定する", PLANNING ->
+ * ACTIVE) also publishes the Production server-side
+ * (Production::activate()). `complete` enforces the existing
+ * Settlement-completion Guard server-side (CompleteProductionUseCase) -
+ * this function does not duplicate that check client-side.
  */
-export function startProductionPlanning(client: ApiClient, id: string): Promise<Production> {
-  return client.patch<Production>(`/productions/${id}/start-planning`);
-}
-
 export function activateProduction(client: ApiClient, id: string): Promise<Production> {
   return client.patch<Production>(`/productions/${id}/activate`);
 }

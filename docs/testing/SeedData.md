@@ -21,10 +21,11 @@ Rules real usage does — it is not raw SQL bypassing validation.
 - 3 demo Productions under the first Organization: one published+ACTIVE
   (with a Join Key, an ACTIVE Participant, and 3 Rehearsals covering
   confirmed/unconfirmed/past-completed states), one unpublished+ACTIVE
-  (GitHub Issue #5: Lifecycle Status and Publicity are independent -
-  "not yet public" is represented by `publishedAt` staying null, not by
-  leaving the Production at its Lifecycle Status DRAFT default), one
-  published then lifecycle-completed to ARCHIVED.
+  (activate() - "公演を確定する" - now publishes by default per this
+  round's Production Lifecycle整理 instruction, so this row is explicitly
+  un-published again afterward via the pre-existing, Status-independent
+  publish/unpublish toggle to keep demonstrating an ACTIVE-but-not-public
+  Production), one published then lifecycle-completed to ARCHIVED.
 - Membership rows in all three states this phase's flow needs: ACTIVE,
   REQUESTED (pending), REJECTED.
 - One Follow (general user → Org B) and two Favorites (general user →

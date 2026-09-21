@@ -36,7 +36,7 @@ final class CoreProductionContextAdapterTest extends TestCase
         $this->assertNotNull($summary);
         $this->assertSame('Autumn Show', $summary->name);
         $this->assertTrue($summary->id->equals($production->id()));
-        $this->assertSame('DRAFT', $summary->status);
+        $this->assertSame('PLANNING', $summary->status);
     }
 
     public function test_returns_null_for_a_nonexistent_production(): void

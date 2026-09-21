@@ -83,7 +83,6 @@ use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
@@ -461,7 +460,6 @@ final class Plugin
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
         $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
-        $startProductionPlanning = new StartProductionPlanningUseCase($productions, $productionAuthorization);
         $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization);
         $completeProduction = new CompleteProductionUseCase(
             $productions,
@@ -751,7 +749,6 @@ final class Plugin
             $listProductions,
             $updateProduction,
             $changePrimaryManager,
-            $startProductionPlanning,
             $activateProduction,
             $completeProduction,
             $archiveProduction,

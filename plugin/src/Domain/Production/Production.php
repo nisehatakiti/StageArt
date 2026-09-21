@@ -218,7 +218,7 @@ final class Production
             $name,
             $slug,
             self::normalizeTitleHeading($titleHeading),
-            ProductionStatus::draft(),
+            ProductionStatus::planning(),
             null,
             $primaryManagerPersonId,
             $now,
@@ -419,23 +419,18 @@ final class Production
     }
 
     /**
-     * Phase 6.1: ProductionLifecycle.md's confirmed Business Action model
-     * ("Production Statusは、単純な設定値の直接書き換えによって任意に変更する
-     * ことを基本としない...Lifecycle Transition Action" + explicit
-     * transition table). Each public method below represents exactly one
-     * named Business Action, matching the Blueprint's own DRAFT ->
-     * PLANNING -> ACTIVE -> COMPLETED -> ARCHIVED chain plus the
-     * separate CANCELLED terminal state. There is no longer a generic
-     * "set to any Status" method - see REST/Application layer §12 for
-     * how PUT /productions/{id} was changed accordingly.
-     *
-     * The Blueprint transition table itself does not name literal Action
-     * verbs (only target Status labels and Japanese stage names: 企画/
-     * 予算策定/制作.../決算完了/Archive) - method names below are derived
-     * directly from the target Status, not invented business vocabulary.
+     * StageArt Production Lifecycle整理 instruction: the confirmed
+     * Lifecycle this round is PLANNING -> ACTIVE -> COMPLETED only. A
+     * Production starts at PLANNING (see create()), so there is no
+     * transition into PLANNING - it is never a target here. ARCHIVED and
+     * CANCELLED are kept reachable exactly as before (their
+     * retention/removal was not decided this round - see this round's
+     * report); this table only drops the now-nonexistent DRAFT entry
+     * point. There is no generic "set to any Status" method - see
+     * REST/Application layer for how PUT /productions/{id} rejects a
+     * `status` field.
      */
     private const ALLOWED_TRANSITIONS = [
-        ProductionStatus::DRAFT => [ProductionStatus::PLANNING, ProductionStatus::CANCELLED],
         ProductionStatus::PLANNING => [ProductionStatus::ACTIVE, ProductionStatus::CANCELLED],
         ProductionStatus::ACTIVE => [ProductionStatus::COMPLETED, ProductionStatus::CANCELLED],
         ProductionStatus::COMPLETED => [ProductionStatus::ARCHIVED],
@@ -444,38 +439,28 @@ final class Production
     ];
 
     /**
-     * DRAFT -> PLANNING ("企画" -> "予算策定").
-     */
-    public function startPlanning(): void
-    {
-        $this->transitionTo(ProductionStatus::PLANNING);
-    }
-
-    /**
-     * PLANNING -> ACTIVE ("予算策定" -> "制作"). ACTIVE itself covers
-     * 制作/稽古・広報・販売/公演/精算 as one Status per
-     * ProductionLifecycle.md's "ACTIVE Scope" - none of those sub-phases
-     * are separate Statuses.
+     * PLANNING -> ACTIVE ("公演を確定する"). This round's confirmed
+     * instruction: PLANNING is not public, ACTIVE is public, and this
+     * exact transition is what makes a Production public - so this
+     * Action also publishes the Production (`publish()`, defaulting to
+     * "now"), connecting this round's Lifecycle instruction to the
+     * pre-existing, otherwise Status-independent publish/unpublish
+     * mechanism (see publish()'s own docblock). Whether a pre-existing
+     * scheduled `publishedAt` (set independently before this Action runs)
+     * should be preserved instead of being overwritten to "now" is not
+     * determined by this round's instruction - see this round's report.
      */
     public function activate(): void
     {
         $this->transitionTo(ProductionStatus::ACTIVE);
+        $this->publish();
     }
 
     /**
-     * ACTIVE -> COMPLETED ("精算" -> "決算完了"). ProductionLifecycle.md's
-     * "Completion Rule" requires 決算完了 (Accounting settlement
-     * completion) before this transition, but defers the concrete
-     * completion condition to Accounting Domain ("具体的な決算完了条件
-     * ...はAccounting Domainで定義する") - Accounting Domain does not yet
-     * define a computable Settlement-completion check (Production
-     * Settlement is unimplemented; see this Phase's Open Items). No
-     * automated settlement verification is enforced here; per
-     * ProductionLifecycle.md's own "GO" model ("管理者がProductionの状況を
-     * 確認し、次の段階へ進めることを明示的に承認した時点で実行する"), calling
-     * this Action itself is the PrimaryManager's explicit judgment that
-     * settlement is complete - a real computed Guard should replace this
-     * once Production Settlement exists.
+     * ACTIVE -> COMPLETED. What COMPLETED means beyond the Status value
+     * itself (publish/edit behavior, any settlement precondition) is not
+     * confirmed this round - this method intentionally does not add any
+     * new precondition or side effect. Left exactly as before.
      */
     public function complete(): void
     {
@@ -483,18 +468,8 @@ final class Production
     }
 
     /**
-     * COMPLETED -> ARCHIVED ("決算完了" -> "Archive"). Blueprint's
-     * Completion Rule places its settlement gate on the ACTIVE ->
-     * COMPLETED transition (see complete() above), not here -
-     * ProductionLifecycle.md's "Archive Rule" only requires "必要な参照
-     * 期間を経て" (an appropriate reference/retention period), which is an
-     * organizational judgment, not a system-computable precondition.
-     * Phase 1-era code guarded this specific transition against a
-     * missing Production Settlement instead; re-reading
-     * ProductionLifecycle.md's now-confirmed wording, that guard was
-     * attached to the wrong transition. This method intentionally does
-     * not carry it forward - see this Phase's report for the discovered
-     * mismatch and the reasoning above.
+     * COMPLETED -> ARCHIVED. ARCHIVED's retention/removal was not decided
+     * this round (see this round's report) - left exactly as before.
      */
     public function archive(): void
     {
@@ -502,15 +477,10 @@ final class Production
     }
 
     /**
-     * CANCELLED is reachable from DRAFT/PLANNING/ACTIVE only (not from
+     * CANCELLED is reachable from PLANNING/ACTIVE only (not from
      * COMPLETED/ARCHIVED, which represent a finished Production).
-     * ProductionLifecycle.md does not name who may invoke Cancel
-     * specifically - Application layer authorization mirrors the other
-     * four Lifecycle Actions (PrimaryManager-only), since
-     * ProductionDelegatePolicy.md's Lifecycle Relationship table already
-     * places every other Lifecycle transition there and Cancel is
-     * presented as part of the same Lifecycle concept, not a separate
-     * one.
+     * Left exactly as before - CANCELLED was not part of this round's
+     * confirmed scope.
      */
     public function cancel(): void
     {

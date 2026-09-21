@@ -8,11 +8,9 @@ use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
- * {DRAFT,PLANNING,ACTIVE} -> CANCELLED. PrimaryManager-exclusive,
- * following this class's sibling Lifecycle Action UseCases - see
- * Production::cancel()'s docblock for why (ProductionLifecycle.md/
- * ProductionDelegatePolicy.md do not name Cancel's authorization owner
- * separately from the rest of the Lifecycle).
+ * {PLANNING,ACTIVE} -> CANCELLED. PrimaryManager-exclusive, following
+ * this class's sibling Lifecycle Action UseCases - see
+ * Production::cancel()'s docblock.
  */
 final class CancelProductionUseCase
 {

@@ -16,7 +16,7 @@ use StageArt\Domain\Project\ProjectId;
 
 final class ProductionTest extends TestCase
 {
-    public function test_create_starts_in_draft_with_the_given_primary_manager(): void
+    public function test_create_starts_in_planning_with_the_given_primary_manager(): void
     {
         $projectId = ProjectId::generate();
         $primaryManagerId = PersonId::generate();
@@ -25,8 +25,26 @@ final class ProductionTest extends TestCase
 
         $this->assertTrue($production->projectId()->equals($projectId));
         $this->assertSame('Autumn Play', $production->name()->toString());
-        $this->assertSame(ProductionStatus::DRAFT, $production->status()->toString());
+        $this->assertSame(ProductionStatus::PLANNING, $production->status()->toString());
         $this->assertTrue($production->primaryManagerPersonId()->equals($primaryManagerId));
+    }
+
+    /**
+     * StageArt Production Lifecycle整理 instruction: "「公演を作る」を押した
+     * 直後はPLANNING" and "PLANNINGが非公開" - a newly created Production is
+     * never published, regardless of slug.
+     */
+    public function test_a_newly_created_production_is_not_published(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('fresh-show')
+        );
+
+        $this->assertFalse($production->isPublished());
     }
 
     public function test_rename_updates_the_name(): void
@@ -90,11 +108,23 @@ final class ProductionTest extends TestCase
         $this->assertNull($production->titleHeading());
     }
 
+    /**
+     * StageArt Production Lifecycle整理 instruction: the confirmed chain
+     * this round is PLANNING -> ACTIVE -> COMPLETED. A Production already
+     * starts at PLANNING (create() no longer produces DRAFT), so
+     * activate() is the very next Action - no separate "start planning"
+     * step exists anymore. ARCHIVED is kept reachable exactly as before
+     * (its retention was not decided this round).
+     */
     public function test_status_can_progress_through_the_basic_lifecycle_via_named_actions(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('lifecycle-show')
+        );
         $this->assertSame(ProductionStatus::PLANNING, $production->status()->toString());
 
         $production->activate();
@@ -107,38 +137,64 @@ final class ProductionTest extends TestCase
         $this->assertSame(ProductionStatus::ARCHIVED, $production->status()->toString());
     }
 
-    public function test_cancel_is_allowed_from_draft_planning_and_active(): void
+    /**
+     * "この処理（公演を確定する）によって、公開状態になります" - activate()
+     * (PLANNING -> ACTIVE) also publishes the Production.
+     */
+    public function test_activating_publishes_the_production(): void
     {
-        $draft = Production::create(ProjectId::generate(), new ProductionName('Show A'), PersonId::generate());
-        $draft->cancel();
-        $this->assertSame(ProductionStatus::CANCELLED, $draft->status()->toString());
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('activate-publishes')
+        );
+        $this->assertFalse($production->isPublished());
 
-        $planning = Production::create(ProjectId::generate(), new ProductionName('Show B'), PersonId::generate());
-        $planning->startPlanning();
+        $production->activate();
+
+        $this->assertTrue($production->isPublished());
+        $this->assertNotNull($production->publishedAt());
+    }
+
+    public function test_cancel_is_allowed_from_planning_and_active(): void
+    {
+        $planning = Production::create(ProjectId::generate(), new ProductionName('Show A'), PersonId::generate());
         $planning->cancel();
         $this->assertSame(ProductionStatus::CANCELLED, $planning->status()->toString());
 
-        $active = Production::create(ProjectId::generate(), new ProductionName('Show C'), PersonId::generate());
-        $active->startPlanning();
+        $active = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show B'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('cancel-from-active')
+        );
         $active->activate();
         $active->cancel();
         $this->assertSame(ProductionStatus::CANCELLED, $active->status()->toString());
     }
 
-    public function test_skipping_a_lifecycle_stage_is_rejected(): void
+    public function test_activating_an_already_active_production_is_rejected(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('already-active')
+        );
+        $production->activate();
 
         $this->expectException(InvalidArgumentException::class);
 
-        // DRAFT -> ACTIVE directly (skipping PLANNING) is not an allowed transition.
         $production->activate();
     }
 
     public function test_completing_before_active_is_rejected(): void
     {
         $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
 
         $this->expectException(InvalidArgumentException::class);
 
@@ -147,8 +203,13 @@ final class ProductionTest extends TestCase
 
     public function test_cancelling_a_completed_production_is_rejected(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('cancel-completed')
+        );
         $production->activate();
         $production->complete();
 
@@ -159,8 +220,13 @@ final class ProductionTest extends TestCase
 
     public function test_archived_production_accepts_no_further_transitions(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('archived-no-further')
+        );
         $production->activate();
         $production->complete();
         $production->archive();
@@ -172,13 +238,13 @@ final class ProductionTest extends TestCase
 
     public function test_completed_to_archived_transition_is_allowed(): void
     {
-        // Phase 6.1: re-reading ProductionLifecycle.md's Completion Rule
-        // confirmed the Accounting-settlement gate belongs on ACTIVE ->
-        // COMPLETED (complete()), not COMPLETED -> ARCHIVED - see
-        // Production::archive()'s docblock for the full reasoning behind
-        // this Phase's discovered mismatch and its resolution.
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('completed-to-archived')
+        );
         $production->activate();
         $production->complete();
 

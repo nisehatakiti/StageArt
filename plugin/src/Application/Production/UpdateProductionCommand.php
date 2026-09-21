@@ -9,9 +9,9 @@ namespace StageArt\Application\Production;
  * confirmed Action-based model ("Production Statusは、単純な設定値の直接
  * 書き換えによって任意に変更することを基本としない") means basic-info Update
  * and Lifecycle progression are different operations - see the dedicated
- * StartProductionPlanningUseCase/ActivateProductionUseCase/
- * CompleteProductionUseCase/ArchiveProductionUseCase/CancelProductionUseCase
- * for Status changes instead.
+ * ActivateProductionUseCase/CompleteProductionUseCase/
+ * ArchiveProductionUseCase/CancelProductionUseCase for Status changes
+ * instead.
  *
  * StageArt Phase 1 (docs/12-FunctionalStructure.md §20): every Production
  * Information field is optional/trailing here - `null` means "leave the

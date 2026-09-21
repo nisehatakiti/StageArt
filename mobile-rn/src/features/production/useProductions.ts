@@ -4,15 +4,7 @@ import { useMemo } from 'react';
 import { useAuth } from '@/auth/AuthContext';
 import { fetchProjects } from '@/features/organization/api';
 
-import {
-  activateProduction,
-  archiveProduction,
-  cancelProduction,
-  completeProduction,
-  fetchProduction,
-  fetchProductions,
-  startProductionPlanning,
-} from './api';
+import { activateProduction, archiveProduction, cancelProduction, completeProduction, fetchProduction, fetchProductions } from './api';
 
 /**
  * Organization-scoped Production list.
@@ -99,9 +91,9 @@ export function useProduction(id: string | undefined) {
   });
 }
 
-/** Phase 5 §8: one shared shape for all 5 existing Lifecycle Actions -
- * each just PATCHes and invalidates the same two caches, differing only
- * in which endpoint they call. */
+/** One shared shape for the existing Lifecycle Actions - each just
+ * PATCHes and invalidates the same two caches, differing only in which
+ * endpoint they call. */
 function useProductionLifecycleAction(id: string | undefined, action: (client: ReturnType<typeof useAuth>['apiClient'], id: string) => Promise<unknown>) {
   const { apiClient } = useAuth();
   const queryClient = useQueryClient();
@@ -113,10 +105,6 @@ function useProductionLifecycleAction(id: string | undefined, action: (client: R
       queryClient.invalidateQueries({ queryKey: ['productions'] });
     },
   });
-}
-
-export function useStartProductionPlanning(id: string | undefined) {
-  return useProductionLifecycleAction(id, startProductionPlanning);
 }
 
 export function useActivateProduction(id: string | undefined) {

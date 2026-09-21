@@ -120,7 +120,7 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
         $this->accountId = $account->id();
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($this->productionId, 'Show', 'DRAFT', $this->organizationId);
+        $productionContext->register($this->productionId, 'Show', 'PLANNING', $this->organizationId);
 
         $organizationContext = new FakeOrganizationContextContract([$this->organizationId->toString()]);
 
@@ -159,7 +159,7 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
         $this->accountId = $account->id();
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($this->productionId, 'Show', 'DRAFT', $this->organizationId);
+        $productionContext->register($this->productionId, 'Show', 'PLANNING', $this->organizationId);
 
         $organizationContext = new FakeOrganizationContextContract([$this->organizationId->toString()]);
 

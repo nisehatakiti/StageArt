@@ -226,7 +226,7 @@ final class Installer
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(64) NULL,
             title_heading VARCHAR(255) NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+            status VARCHAR(20) NOT NULL DEFAULT 'PLANNING',
             published_at DATETIME NULL,
             primary_manager_person_id CHAR(36) NOT NULL,
             description TEXT NULL,

@@ -226,7 +226,7 @@ final class PerformanceUseCaseTest extends TestCase
     public function test_cannot_create_performance_for_completed_production(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1, 100);
-        $production->startPlanning();
+        $production->changeSlug(new \StageArt\Domain\Production\ProductionSlug('completed-production-test'));
         $production->activate();
         $production->complete();
         $this->productions->save($production);

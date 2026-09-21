@@ -11,17 +11,19 @@ import {
   useCancelProduction,
   useCompleteProduction,
   useProduction,
-  useStartProductionPlanning,
 } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 
-/** ProductionLifecycle.md's DRAFT/PLANNING/ACTIVE/COMPLETED/ARCHIVED,
- * plus CANCELLED - same label set already used elsewhere
- * (components/production-card.tsx, organizations/[id]/productions.tsx). */
+/**
+ * StageArt Production Lifecycle整理 instruction: the confirmed Production
+ * Lifecycle this round is PLANNING/ACTIVE/COMPLETED. DRAFT is not used.
+ * ARCHIVED/CANCELLED are kept displayable as-is (their retention/removal
+ * was not decided this round) - same label set used elsewhere
+ * (components/production-card.tsx, organizations/[id]/productions.tsx).
+ */
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '下書き',
   PLANNING: '準備中',
   ACTIVE: '進行中',
   COMPLETED: '終了',
@@ -63,12 +65,11 @@ export default function ProductionManagementScreen() {
   const canManageQuestionnaire = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
 
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
-  const startPlanning = useStartProductionPlanning(id);
   const activate = useActivateProduction(id);
   const complete = useCompleteProduction(id);
   const archive = useArchiveProduction(id);
   const cancel = useCancelProduction(id);
-  const lifecycleBusy = startPlanning.isPending || activate.isPending || complete.isPending || archive.isPending || cancel.isPending;
+  const lifecycleBusy = activate.isPending || complete.isPending || archive.isPending || cancel.isPending;
 
   async function runLifecycleAction(mutation: { mutateAsync: () => Promise<unknown> }) {
     setLifecycleError(null);
@@ -168,31 +169,21 @@ export default function ProductionManagementScreen() {
         )}
       </View>
 
-      {isPrimaryManager && (production.status === 'DRAFT' || production.status === 'PLANNING' || production.status === 'ACTIVE' || production.status === 'COMPLETED') && (
+      {isPrimaryManager && (production.status === 'PLANNING' || production.status === 'ACTIVE' || production.status === 'COMPLETED') && (
         <View style={styles.lifecycleRow} testID="production-management-lifecycle-actions">
           {lifecycleError && (
             <ThemedText testID="production-management-lifecycle-error" style={styles.lifecycleError}>
               {lifecycleError}
             </ThemedText>
           )}
-          {production.status === 'DRAFT' && (
-            <TouchableOpacity
-              testID="production-management-start-planning"
-              onPress={() => runLifecycleAction(startPlanning)}
-              disabled={lifecycleBusy}
-              style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
-            >
-              <ThemedText type="linkPrimary">企画を開始する</ThemedText>
-            </TouchableOpacity>
-          )}
           {production.status === 'PLANNING' && (
             <TouchableOpacity
               testID="production-management-activate"
-              onPress={() => runLifecycleAction(activate)}
+              onPress={() => confirmAndRun('公演を確定', 'この公演を確定します。公演ページが公開されます。よろしいですか？', activate)}
               disabled={lifecycleBusy}
               style={[styles.secondaryButton, lifecycleBusy && styles.menuCardDisabled]}
             >
-              <ThemedText type="linkPrimary">制作を開始する</ThemedText>
+              <ThemedText type="linkPrimary">公演を確定する</ThemedText>
             </TouchableOpacity>
           )}
           {production.status === 'ACTIVE' && (
@@ -221,7 +212,7 @@ export default function ProductionManagementScreen() {
               <ThemedText type="linkPrimary">アーカイブする</ThemedText>
             </TouchableOpacity>
           )}
-          {(production.status === 'DRAFT' || production.status === 'PLANNING' || production.status === 'ACTIVE') && (
+          {(production.status === 'PLANNING' || production.status === 'ACTIVE') && (
             <TouchableOpacity
               testID="production-management-cancel"
               onPress={() => confirmAndRun('公演の中止', 'この公演を中止します。この操作は取り消せません。よろしいですか？', cancel)}

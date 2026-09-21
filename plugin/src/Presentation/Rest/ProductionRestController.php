@@ -30,8 +30,6 @@ use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionSlugAlreadyTakenException;
 use StageArt\Application\Production\SearchProductionsQuery;
 use StageArt\Application\Production\SearchProductionsUseCase;
-use StageArt\Application\Production\StartProductionPlanningCommand;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\Project\ProjectNotFoundException;
@@ -55,7 +53,6 @@ final class ProductionRestController
     private ListProductionsUseCase $listProductions;
     private UpdateProductionUseCase $updateProduction;
     private ChangePrimaryManagerUseCase $changePrimaryManager;
-    private StartProductionPlanningUseCase $startPlanning;
     private ActivateProductionUseCase $activateProduction;
     private CompleteProductionUseCase $completeProduction;
     private ArchiveProductionUseCase $archiveProduction;
@@ -69,7 +66,6 @@ final class ProductionRestController
         ListProductionsUseCase $listProductions,
         UpdateProductionUseCase $updateProduction,
         ChangePrimaryManagerUseCase $changePrimaryManager,
-        StartProductionPlanningUseCase $startPlanning,
         ActivateProductionUseCase $activateProduction,
         CompleteProductionUseCase $completeProduction,
         ArchiveProductionUseCase $archiveProduction,
@@ -82,7 +78,6 @@ final class ProductionRestController
         $this->listProductions = $listProductions;
         $this->updateProduction = $updateProduction;
         $this->changePrimaryManager = $changePrimaryManager;
-        $this->startPlanning = $startPlanning;
         $this->activateProduction = $activateProduction;
         $this->completeProduction = $completeProduction;
         $this->archiveProduction = $archiveProduction;
@@ -142,18 +137,8 @@ final class ProductionRestController
             ],
         ]);
 
-        // Phase 6.1 Lifecycle Actions - see ProductionLifecycle.md's
-        // Action/GO model. Action names are derived from each transition's
-        // target Status (Blueprint names target Status labels, not literal
-        // Action verbs - see Production::startPlanning()'s docblock).
-        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/start-planning', [
-            [
-                'methods' => 'PATCH',
-                'callback' => [$this, 'startPlanning'],
-                'permission_callback' => [$this, 'require_login'],
-            ],
-        ]);
-
+        // Production Lifecycle Actions - target Status-derived Action
+        // names (see Production::activate()'s docblock).
         register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/activate', [
             [
                 'methods' => 'PATCH',
@@ -294,7 +279,7 @@ final class ProductionRestController
             return new WP_Error(
                 'stageart_production_status_not_updatable_via_put',
                 'Production Status can no longer be changed via PUT. Use the Lifecycle Action endpoints '
-                    . '(/start-planning, /activate, /complete, /archive, /cancel) instead.',
+                    . '(/activate, /complete, /archive, /cancel) instead.',
                 ['status' => 422]
             );
         }
@@ -337,24 +322,6 @@ final class ProductionRestController
             return new WP_Error('stageart_production_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
-        }
-    }
-
-    /**
-     * @return WP_REST_Response|WP_Error
-     */
-    public function startPlanning(WP_REST_Request $request)
-    {
-        try {
-            $command = new StartProductionPlanningCommand((string) $request->get_param('id'), get_current_user_id());
-
-            return new WP_REST_Response($this->startPlanning->execute($command)->toArray(), 200);
-        } catch (ProductionAccessDeniedException $exception) {
-            return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
-        } catch (ProductionNotFoundException $exception) {
-            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (InvalidArgumentException $exception) {
-            return new WP_Error('stageart_production_invalid_transition', $exception->getMessage(), ['status' => 422]);
         }
     }
 

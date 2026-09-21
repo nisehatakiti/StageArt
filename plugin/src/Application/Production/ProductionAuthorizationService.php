@@ -65,14 +65,12 @@ use StageArt\Domain\Role\RolePermissions;
  * `hasProductionCapability()`'s generic Capability check below -
  * see the Core/Module Architecture phase's report.)
  *
- * Phase 6.1: Production Lifecycle Action authorization
- * (canManageProduction()) is unchanged by the Role/Permission
- * unification - ProductionDelegatePolicy.md's "Lifecycle Relationship"
- * section is explicit that every Lifecycle transition ("DRAFT →
- * PLANNING" through "COMPLETED → ARCHIVED") is PrimaryManager-only
- * regardless of any ProductionDelegate Role, so the existing
- * PrimaryManager-exclusive canManageProduction() is reused as-is by the
- * new Lifecycle Action UseCases rather than adding a redundant method.
+ * Production Lifecycle Action authorization (canManageProduction()) is
+ * PrimaryManager-only for every Lifecycle transition
+ * ("PLANNING → ACTIVE" through "COMPLETED → ARCHIVED"), regardless of
+ * any ProductionDelegate Role - the existing PrimaryManager-exclusive
+ * canManageProduction() is reused as-is by every Lifecycle Action
+ * UseCase rather than adding a redundant method.
  */
 final class ProductionAuthorizationService
 {

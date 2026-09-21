@@ -18,8 +18,6 @@ use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionSettlementIncompleteException;
-use StageArt\Application\Production\StartProductionPlanningCommand;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
@@ -27,6 +25,7 @@ use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Ticket\TicketBackCondition;
@@ -44,12 +43,14 @@ use StageArt\Tests\Support\InMemorySettlementRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
 
 /**
- * Phase 6.1: covers the Production Lifecycle Action UseCases end to end -
- * the full DRAFT -> PLANNING -> ACTIVE -> COMPLETED -> ARCHIVED chain,
- * Cancel from a mid-chain state, invalid-transition rejection at the
- * Application layer (surfaced from the Domain Guard), unauthorized
- * rejection, and Production Scope isolation (PrimaryManager of a
- * different Production cannot act).
+ * Covers the Production Lifecycle Action UseCases end to end - the
+ * confirmed PLANNING -> ACTIVE -> COMPLETED -> ARCHIVED chain (a
+ * Production starts at PLANNING directly, per this round's Production
+ * Lifecycle整理 instruction; there is no longer a separate "start
+ * planning" Action), Cancel from a mid-chain state, invalid-transition
+ * rejection at the Application layer (surfaced from the Domain Guard),
+ * unauthorized rejection, and Production Scope isolation (PrimaryManager
+ * of a different Production cannot act).
  */
 final class ProductionLifecycleUseCaseTest extends TestCase
 {
@@ -62,7 +63,6 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
 
-    private StartProductionPlanningUseCase $startPlanning;
     private ActivateProductionUseCase $activate;
     private CompleteProductionUseCase $complete;
     private ArchiveProductionUseCase $archive;
@@ -86,7 +86,6 @@ final class ProductionLifecycleUseCaseTest extends TestCase
             new InMemoryParticipantRepository()
         );
 
-        $this->startPlanning = new StartProductionPlanningUseCase($this->productions, $productionAuthorization);
         $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization);
         $this->complete = new CompleteProductionUseCase(
             $this->productions,
@@ -100,9 +99,16 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
     /**
      * @return array{0: Production, 1: Person} Production, PrimaryManager
+     *
+     * Every call gets its own fresh, random slug (needed for any test
+     * that reaches ACTIVE - activate() now publishes, and publish()
+     * requires a slug) so two Productions from the same test (e.g.
+     * isolation tests) never collide.
      */
     private function givenProduction(int $primaryManagerWordPressUserId): array
     {
+        $slug = 'lifecycle-test-production-' . bin2hex(random_bytes(4));
+
         $organization = Organization::create(new OrganizationName('Theatre Co'));
         $this->organizations->save($organization);
 
@@ -112,18 +118,40 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $project = Project::create($organization->id(), 'Season');
 
-        $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Show'),
+            $primaryManager->id(),
+            null,
+            new ProductionSlug($slug)
+        );
         $this->productions->save($production);
 
         return [$production, $primaryManager];
     }
 
-    public function test_primary_manager_can_advance_through_the_full_lifecycle(): void
+    /**
+     * StageArt Production Lifecycle整理 instruction: "「公演を作る」を押した
+     * 直後はPLANNING" - the created Production is already PLANNING with no
+     * separate "start planning" Action needed.
+     */
+    public function test_new_production_starts_in_planning(): void
     {
         [$production] = $this->givenProduction(1);
 
-        $result = $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
-        $this->assertSame('PLANNING', $result->status);
+        $this->assertSame('PLANNING', $production->status()->toString());
+    }
+
+    public function test_new_production_is_not_published(): void
+    {
+        [$production] = $this->givenProduction(1);
+
+        $this->assertFalse($production->isPublished());
+    }
+
+    public function test_primary_manager_can_advance_through_the_full_lifecycle(): void
+    {
+        [$production] = $this->givenProduction(1);
 
         $result = $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
         $this->assertSame('ACTIVE', $result->status);
@@ -135,27 +163,42 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->assertSame('ARCHIVED', $result->status);
     }
 
+    /**
+     * "公演を確定する" (PLANNING -> ACTIVE) also makes the Production public -
+     * see Production::activate()'s docblock.
+     */
+    public function test_confirming_the_production_activates_and_publishes_it(): void
+    {
+        [$production] = $this->givenProduction(1);
+
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $reloaded = $this->productions->findById($production->id());
+        $this->assertSame('ACTIVE', $reloaded->status()->toString());
+        $this->assertTrue($reloaded->isPublished());
+    }
+
     public function test_primary_manager_can_cancel_from_active(): void
     {
         [$production] = $this->givenProduction(1);
 
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
         $result = $this->cancel->execute(new CancelProductionCommand($production->id()->toString(), 1));
 
         $this->assertSame('CANCELLED', $result->status);
     }
 
-    public function test_skipping_planning_to_activate_is_rejected(): void
+    public function test_activating_an_already_active_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
 
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
     }
 
-    public function test_completing_a_draft_production_is_rejected(): void
+    public function test_completing_a_planning_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
 
@@ -167,7 +210,6 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     public function test_archiving_a_non_completed_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
 
@@ -183,7 +225,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->expectException(ProductionAccessDeniedException::class);
 
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 2));
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 2));
     }
 
     public function test_primary_manager_of_a_different_production_cannot_advance_this_one(): void
@@ -195,7 +237,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         // WordPress user 2 (PrimaryManager of Production B only) attempts
         // to advance Production A's Lifecycle.
-        $this->startPlanning->execute(new StartProductionPlanningCommand($productionA->id()->toString(), 2));
+        $this->activate->execute(new ActivateProductionCommand($productionA->id()->toString(), 2));
     }
 
     // --- Phase 4 (Check-in/精算/会計連携): the settlement Guard fills in
@@ -232,7 +274,6 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $reservation->checkIn(null);
         $this->reservations->save($reservation);
 
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
 
         return $production;
