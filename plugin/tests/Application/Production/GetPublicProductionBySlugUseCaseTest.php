@@ -70,6 +70,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('autumn-play')
         );
+        $production->activate();
         $production->publish();
         $productions->save($production);
 
@@ -99,6 +100,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('autumn-play')
         );
+        $production->activate();
         $production->publish();
         $productions->save($production);
 
@@ -168,6 +170,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('scheduled-show')
         );
+        $production->activate();
         $production->publish(new DateTimeImmutable('+1 day'));
         $productions->save($production);
 
@@ -193,6 +196,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('now-visible-show')
         );
+        $production->activate();
         $production->publish(new DateTimeImmutable('-1 minute'));
         $productions->save($production);
 
@@ -224,6 +228,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('hero-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateFlyer('https://example.com/flyer.jpg', new DateTimeImmutable('-1 minute'));
         $productions->save($production);
@@ -255,6 +260,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('no-hero-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateFlyer('https://example.com/flyer.jpg', null);
         $productions->save($production);
@@ -281,6 +287,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('scheduled-hero-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateFlyer('https://example.com/flyer.jpg', new DateTimeImmutable('+1 day'));
         $productions->save($production);
@@ -307,6 +314,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('described-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateDescription('A wonderful play.', new DateTimeImmutable('-1 minute'));
         $productions->save($production);
@@ -333,6 +341,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('venue-hidden-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateVenue('Grand Theatre', null);
         $productions->save($production);
@@ -359,6 +368,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('scheduled-period-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateSchedule(
             new DateTimeImmutable('2026-11-01'),
@@ -390,6 +400,7 @@ final class GetPublicProductionBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('credited-show')
         );
+        $production->activate();
         $production->publish();
         $production->updateScriptDirection('Writer A', 'Director B', null);
         $productions->save($production);

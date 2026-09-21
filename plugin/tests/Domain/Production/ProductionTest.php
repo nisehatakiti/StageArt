@@ -281,6 +281,15 @@ final class ProductionTest extends TestCase
         $production->publish();
     }
 
+    /**
+     * StageArt Production Lifecycle整理 instruction (this round): a
+     * still-PLANNING Production can no longer be published directly -
+     * activate() first (PLANNING -> ACTIVE, "公演を確定する") so publish()'s
+     * own PLANNING Guard (see its docblock) does not reject the call.
+     * activate() itself already publishes once; the tests below still
+     * exercise publish()/unpublish()'s own standalone mechanics by
+     * calling them again afterward, which is allowed once ACTIVE.
+     */
     public function test_publish_sets_published_at_when_a_slug_is_present(): void
     {
         $production = Production::create(
@@ -290,6 +299,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('ready-to-publish')
         );
+        $production->activate();
 
         $production->publish();
 
@@ -306,6 +316,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('ready-to-publish')
         );
+        $production->activate();
         $production->publish();
 
         $production->unpublish();
@@ -328,6 +339,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('scheduled-show')
         );
+        $production->activate();
 
         $production->publish(new DateTimeImmutable('+1 day'));
 
@@ -344,10 +356,32 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('past-scheduled-show')
         );
+        $production->activate();
 
         $production->publish(new DateTimeImmutable('-1 day'));
 
         $this->assertTrue($production->isPublished());
+    }
+
+    /**
+     * This round's confirmed instruction: "PLANNING中に...公開できないよう
+     * にし...「公演を確定する」ことが公開開始の明確な処理になるようにしてくだ
+     * さい" - publishing a still-PLANNING Production directly (bypassing
+     * activate()) is rejected, even when a slug is present.
+     */
+    public function test_publishing_a_planning_production_directly_is_rejected(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('still-planning')
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $production->publish();
     }
 
     public function test_change_slug_updates_the_slug(): void

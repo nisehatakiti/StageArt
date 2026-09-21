@@ -315,10 +315,20 @@ final class Production
     }
 
     /**
-     * StageArt Web First Phase 2: separate from `status` (the strict
-     * Lifecycle Action transition chain below) - this is specifically
-     * public-page visibility, an orthogonal concern. A slug is required
-     * to publish.
+     * StageArt Web First Phase 2: mostly separate from `status` (the
+     * strict Lifecycle Action transition chain below) - this is
+     * specifically public-page visibility. A slug is required to
+     * publish.
+     *
+     * StageArt Production Lifecycle整理 instruction (this round): this
+     * round's confirmed spec is "PLANNINGが非公開、ACTIVEが公開" and
+     * "「公演を確定する」ことでPLANNING → ACTIVEとなり、公開される" - a
+     * still-PLANNING Production can no longer be published directly
+     * through this method (e.g. via the generic `published` toggle on
+     * `UpdateProductionUseCase`), so "公演を確定する" (activate()) is the
+     * one clear way to make a Production public. activate() itself calls
+     * this method after already transitioning to ACTIVE (see its own
+     * docblock), so this guard does not affect that call.
      */
     /**
      * StageArt Publication State Model
@@ -333,6 +343,12 @@ final class Production
     {
         if ($this->slug === null) {
             throw new InvalidArgumentException('A Production must have a slug before it can be published.');
+        }
+
+        if ($this->status->equals(ProductionStatus::fromString(ProductionStatus::PLANNING))) {
+            throw new InvalidArgumentException(
+                'A PLANNING Production cannot be published directly - confirm it ("公演を確定する") to become ACTIVE and public.'
+            );
         }
 
         $this->publishedAt = $at ?? new DateTimeImmutable();

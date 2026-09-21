@@ -500,6 +500,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
             null,
             new \StageArt\Domain\Production\ProductionSlug('new-show')
         );
+        $production->activate();
         $production->publish();
         $this->productions->save($production);
 
@@ -555,6 +556,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
             null,
             new \StageArt\Domain\Production\ProductionSlug('new-show-2')
         );
+        $production->activate();
         $production->publish();
         $this->productions->save($production);
 

@@ -21,11 +21,15 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * Re-investigated from scratch for this Phase (Backend API / Frontend
  * state / TanStack Query cache / URL params / reload / public page):
  *
- * - Backend: `PUT /productions/{id}` with `published: true` works
- *   correctly and always has - ProductionRestController::update() ->
- *   UpdateProductionUseCase::execute() -> Production::publish() is a
- *   plain, unconditional state change with no defect (confirmed by
- *   reading all three this Phase).
+ * - Backend: `PUT /productions/{id}` with `published: true` works for an
+ *   ACTIVE Production - ProductionRestController::update() ->
+ *   UpdateProductionUseCase::execute() -> Production::publish() (confirmed
+ *   by reading all three this Phase). StageArt Production Lifecycle整理
+ *   instruction (a later round): Production::publish() now rejects a
+ *   still-PLANNING Production ("PLANNINGが非公開、ACTIVEが公開" - "公演を
+ *   確定する" is the one clear way to make a Production public), so this
+ *   screen hides the `published: true` button while PLANNING instead of
+ *   sending a request that would now always fail.
  * - Frontend: the actual bug was entirely local to
  *   organizations/[id]/productions/create.tsx's own post-create screen -
  *   its "created" confirmation view lived only in a `useState` never
@@ -162,7 +166,11 @@ export default function ProductionPublishScreen() {
           </ThemedText>
         )}
 
-        {!published ? (
+        {!published && production.status === 'PLANNING' ? (
+          <ThemedText type="small" themeColor="textSecondary" testID="production-publish-requires-confirmation">
+            この公演はまだ準備中（PLANNING）のため、ここから直接公開することはできません。公演管理トップの「公演を確定する」を実行すると、公演がACTIVEになり公開されます。
+          </ThemedText>
+        ) : !published ? (
           <TouchableOpacity
             testID="production-publish-button"
             onPress={() => setPublished(true)}

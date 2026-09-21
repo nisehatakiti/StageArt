@@ -132,6 +132,7 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
             null,
             new ProductionSlug('summer-show')
         );
+        $published->activate();
         $published->publish();
         $productions->save($published);
 

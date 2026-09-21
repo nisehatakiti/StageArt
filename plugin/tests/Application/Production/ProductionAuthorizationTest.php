@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\Production;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\GetProductionQuery;
@@ -18,6 +19,7 @@ use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
@@ -72,7 +74,7 @@ final class ProductionAuthorizationTest extends TestCase
         );
     }
 
-    private function givenProduction(int $primaryManagerWordPressUserId): Production
+    private function givenProduction(int $primaryManagerWordPressUserId, ?string $slug = null): Production
     {
         $organization = Organization::create(new OrganizationName('Theatre Co'));
         $this->organizations->save($organization);
@@ -83,7 +85,13 @@ final class ProductionAuthorizationTest extends TestCase
 
         $project = Project::create($organization->id(), 'Season');
 
-        $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Show'),
+            $primaryManager->id(),
+            null,
+            $slug !== null ? new ProductionSlug($slug) : null
+        );
         $this->productions->save($production);
 
         return $production;
@@ -140,6 +148,51 @@ final class ProductionAuthorizationTest extends TestCase
         $this->assertSame('山田太郎', $updated->scriptCredit);
         $this->assertSame('鈴木花子', $updated->directionCredit);
         $this->assertNotNull($updated->scriptDirectionPublishedAt);
+    }
+
+    /**
+     * StageArt Production Lifecycle整理 instruction (this round): the
+     * generic `published` toggle on PUT /productions/{id}
+     * (UpdateProductionCommand) can no longer publish a still-PLANNING
+     * Production - "「公演を確定する」ことが公開開始の明確な処理になるように"
+     * (see Production::publish()'s own PLANNING Guard).
+     */
+    public function test_publishing_a_planning_production_via_the_update_command_is_rejected(): void
+    {
+        $production = $this->givenProduction(1, 'still-planning-show');
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->updateProduction->execute(new UpdateProductionCommand(
+            $production->id()->toString(),
+            1,
+            'Show',
+            null,
+            null,
+            true
+        ));
+    }
+
+    /**
+     * The same `published` toggle still works normally once the
+     * Production is ACTIVE - only the PLANNING case is newly blocked.
+     */
+    public function test_publishing_an_active_production_via_the_update_command_still_works(): void
+    {
+        $production = $this->givenProduction(1, 'active-show');
+        $production->activate();
+        $this->productions->save($production);
+
+        $updated = $this->updateProduction->execute(new UpdateProductionCommand(
+            $production->id()->toString(),
+            1,
+            'Show',
+            null,
+            null,
+            true
+        ));
+
+        $this->assertNotNull($updated->publishedAt);
     }
 
     public function test_organization_owner_without_primary_manager_or_delegate_status_cannot_read_production(): void
