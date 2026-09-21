@@ -49,7 +49,7 @@ const createdPerformance = {
   capacity: 100,
   remarks: null,
   symbol: null,
-  status: 'DRAFT',
+  status: 'PUBLISHED',
   created_at: '',
   updated_at: '',
 };

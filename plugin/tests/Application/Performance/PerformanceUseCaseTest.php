@@ -16,6 +16,8 @@ use StageArt\Application\Performance\GetPerformanceQuery;
 use StageArt\Application\Performance\GetPerformanceUseCase;
 use StageArt\Application\Performance\ListPerformancesForProductionQuery;
 use StageArt\Application\Performance\ListPerformancesUseCase;
+use StageArt\Application\Performance\ListPublicPerformancesQuery;
+use StageArt\Application\Performance\ListPublicPerformancesUseCase;
 use StageArt\Application\Performance\PerformanceAccessDeniedException;
 use StageArt\Application\Performance\PerformanceDuplicateDateTimeException;
 use StageArt\Application\Performance\UpdatePerformanceCommand;
@@ -61,6 +63,7 @@ final class PerformanceUseCaseTest extends TestCase
     private ListPerformancesUseCase $listPerformances;
     private UpdatePerformanceUseCase $updatePerformance;
     private CancelPerformanceUseCase $cancelPerformance;
+    private ListPublicPerformancesUseCase $listPublicPerformances;
 
     protected function setUp(): void
     {
@@ -88,6 +91,7 @@ final class PerformanceUseCaseTest extends TestCase
         $this->listPerformances = new ListPerformancesUseCase($this->performances, $productionContext, $identity, $membership);
         $this->updatePerformance = new UpdatePerformanceUseCase($this->performances, $productionContext, $identity, $authorization);
         $this->cancelPerformance = new CancelPerformanceUseCase($this->performances, $productionContext, $identity, $authorization);
+        $this->listPublicPerformances = new ListPublicPerformancesUseCase($this->performances, $productionContext);
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId, ?int $capacity = 100): Production
@@ -139,7 +143,7 @@ final class PerformanceUseCaseTest extends TestCase
             null
         ));
 
-        $this->assertSame('DRAFT', $result->status);
+        $this->assertSame('PUBLISHED', $result->status);
         $this->assertSame(100, $result->capacity);
         $this->assertSame('2026-10-10', $result->performanceDate);
     }
@@ -564,5 +568,38 @@ final class PerformanceUseCaseTest extends TestCase
         $result = $updatePerformanceWithListener->execute(new UpdatePerformanceCommand($created->id, 1, '2026-10-10', '13:00', null, 100, null, null, 'FINISHED'));
 
         $this->assertSame('FINISHED', $result->status);
+    }
+
+    /**
+     * StageArt全体DRAFT廃止 instruction: a newly-created Performance has no
+     * DRAFT status to hide it behind, so it is included in the public
+     * listing immediately - only CANCELLED is excluded.
+     */
+    public function test_public_performance_listing_includes_a_newly_created_performance(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(), 1, '2026-10-10', '13:00', null, null, null, null
+        ));
+
+        $result = $this->listPublicPerformances->execute(new ListPublicPerformancesQuery($production->id()->toString()));
+
+        $this->assertCount(1, $result);
+        $this->assertSame($created->id, $result[0]->id);
+    }
+
+    public function test_public_performance_listing_excludes_cancelled_performances(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(), 1, '2026-10-10', '13:00', null, null, null, null
+        ));
+        $this->cancelPerformance->execute(new CancelPerformanceCommand($created->id, 1));
+
+        $result = $this->listPublicPerformances->execute(new ListPublicPerformancesQuery($production->id()->toString()));
+
+        $this->assertSame([], $result);
     }
 }

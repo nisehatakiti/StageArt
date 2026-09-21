@@ -95,7 +95,7 @@ final class Performance
             self::validateCapacity($capacity),
             self::normalizeNullableString($remarks),
             self::normalizeNullableString($symbol),
-            PerformanceStatus::draft(),
+            PerformanceStatus::published(),
             $now,
             $now
         );
@@ -173,7 +173,7 @@ final class Performance
 
     /**
      * §15 "Status（権限・業務ルールに応じた変更）": no strict transition
-     * graph is mandated among DRAFT/PUBLISHED/SOLD_OUT/FINISHED - only
+     * graph is mandated among PUBLISHED/SOLD_OUT/FINISHED - only
      * that CANCELLED is terminal (§27 flags "Performance Statusの追加・
      * 削除" as a judgment-pending case, not the transitions among the
      * five confirmed values). `cancel()` is the dedicated, idempotency-

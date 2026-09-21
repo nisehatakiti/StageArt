@@ -15,8 +15,18 @@ use StageArt\Domain\Production\ProductionId;
  * Phase 3 Ticket/Reservation基盤 §33: unauthenticated - the minimum
  * addition needed for a public visitor to choose a Performance before
  * reserving a Ticket (Production -> Performance -> Ticket ->
- * Reservation). DRAFT (not yet announced) and CANCELLED Performances are
- * excluded from the public list; every other Status is shown.
+ * Reservation). CANCELLED Performances are excluded from the public
+ * list; every other Status is shown.
+ *
+ * StageArt全体DRAFT廃止 instruction: this previously also excluded DRAFT
+ * (Performance's "not yet announced" stand-in). DRAFT is now removed
+ * from PerformanceStatus entirely, so a Performance is included here as
+ * soon as it exists (matching the new "no DRAFT" Status set - see
+ * PerformanceStatus::class). Whether this list should additionally be
+ * gated by a Production-level publication date/time (mirroring
+ * ListPublicTicketsUseCase's `ticketPublicationAt` check) is not
+ * determinable from existing spec and is intentionally left unimplemented
+ * here - see this round's DRAFT-removal report.
  */
 final class ListPublicPerformancesUseCase
 {
@@ -43,10 +53,8 @@ final class ListPublicPerformancesUseCase
 
         $visible = array_filter(
             $this->performances->findByProductionId($productionId),
-            static fn (Performance $performance): bool => ! in_array(
-                $performance->status()->toString(),
-                [PerformanceStatus::DRAFT, PerformanceStatus::CANCELLED],
-                true
+            static fn (Performance $performance): bool => ! $performance->status()->equals(
+                PerformanceStatus::fromString(PerformanceStatus::CANCELLED)
             )
         );
 

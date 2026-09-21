@@ -13,7 +13,7 @@ use StageArt\Domain\Production\ProductionId;
 
 final class PerformanceTest extends TestCase
 {
-    public function test_create_starts_in_draft(): void
+    public function test_create_starts_in_published(): void
     {
         $performance = Performance::create(
             ProductionId::generate(),
@@ -25,7 +25,7 @@ final class PerformanceTest extends TestCase
             null
         );
 
-        $this->assertSame(PerformanceStatus::DRAFT, $performance->status()->toString());
+        $this->assertSame(PerformanceStatus::PUBLISHED, $performance->status()->toString());
         $this->assertSame('13:00:00', $performance->startTime());
         $this->assertSame('15:30:00', $performance->endTime());
         $this->assertSame(100, $performance->capacity());

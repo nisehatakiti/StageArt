@@ -2,7 +2,26 @@
 
 # Domain Model : Performance
 
-Version : 4.1
+Version : 4.2
+
+---
+
+# Update (Version 4.2)
+
+StageArt全体DRAFT廃止の確認事項として、PerformanceのStatusからDRAFTを廃止
+した。StageArtでは公開/非公開をDRAFT状態ではなく、各機能で定義された公
+開条件・公開日時等によって判定する
+（`PublicationStateModel.md`参照）。Performanceは作成直後からPUBLISHED
+として扱う。
+
+このため、以下の「Status」節（旧「DRAFT」節を統合）と「Lifecycle」節
+は、旧仕様（Version 4.1）からVersion 4.2で更新されている。Performance
+単位の公開日時（例え
+ば個別のPerformanceだけを非公開にする仕組み）は既存仕様上定義されてお
+らず、今回新設していない - Performanceの公開状態はProductionの公開状態
+と整合させるという「Visibility」節の既存ルールのみが根拠であり、
+`ListPublicPerformancesUseCase`が個別にProductionの公開日時を参照する
+かどうかは未確認事項として残っている。
 
 ---
 
@@ -133,9 +152,8 @@ Reservationを正本として扱う。
 
 # Status
 
-Performanceは以下の状態を持つ。
+Performanceは以下の状態を持つ（Version 4.2でDRAFTを廃止）。
 
-- DRAFT
 - PUBLISHED
 - SOLD_OUT
 - FINISHED
@@ -144,15 +162,9 @@ Performanceは以下の状態を持つ。
 Statusは、
 Performance自身のLifecycleを表す。
 
----
-
-# DRAFT
-
-Performanceが作成されたが、
-まだ一般公開されていない状態。
-
-この状態では、
-公演日時や会場などの情報を準備できる。
+DRAFTは持たない。
+公開/非公開はStatusではなく、各機能で定義された公開条件・公開日時等に
+よって判定する。
 
 ---
 
@@ -216,10 +228,8 @@ Performance Cancellationに伴うBusiness Processとして処理する。
 
 # Lifecycle
 
-基本的なLifecycle：
+基本的なLifecycle（Version 4.2でDRAFTを廃止、PUBLISHEDから開始）：
 
-DRAFT
-  ↓
 PUBLISHED
   ↓
 SOLD_OUT
@@ -233,10 +243,6 @@ PUBLISHED
 FINISHED
 
 中止の場合：
-
-DRAFT
-  ↓
-CANCELLED
 
 PUBLISHED
   ↓

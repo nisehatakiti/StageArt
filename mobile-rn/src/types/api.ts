@@ -529,7 +529,7 @@ export type Rehearsal = {
  * Production's own DATE-only `schedule_start_date` convention rather
  * than Rehearsal's per-row timezone column - see
  * `plugin/src/Domain/Performance/Performance.php`'s own docblock).
- * `status` is one of DRAFT/PUBLISHED/SOLD_OUT/FINISHED/CANCELLED.
+ * `status` is one of PUBLISHED/SOLD_OUT/FINISHED/CANCELLED.
  */
 export type Performance = {
   id: string;

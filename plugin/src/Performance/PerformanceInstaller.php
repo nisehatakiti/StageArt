@@ -29,7 +29,7 @@ final class PerformanceInstaller
             capacity INT NOT NULL,
             remarks TEXT NULL,
             symbol VARCHAR(50) NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+            status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED',
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),

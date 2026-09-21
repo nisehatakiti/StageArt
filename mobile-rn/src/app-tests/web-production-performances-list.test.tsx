@@ -49,7 +49,7 @@ const performanceA = {
   capacity: 100,
   remarks: null,
   symbol: null,
-  status: 'DRAFT',
+  status: 'PUBLISHED',
   created_at: '',
   updated_at: '',
 };
@@ -82,6 +82,6 @@ describe('Web 公演回管理: 一覧表示', () => {
     expect(screen.getByText('13:00')).toBeVisible();
     expect(screen.getByText('15:00')).toBeVisible();
     expect(screen.getByText('100')).toBeVisible();
-    expect(screen.getByText('下書き')).toBeVisible();
+    expect(screen.getByText('公開中')).toBeVisible();
   });
 });

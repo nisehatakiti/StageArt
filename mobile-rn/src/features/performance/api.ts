@@ -9,7 +9,7 @@ export function fetchPerformances(client: ApiClient, productionId: string): Prom
 
 /** GET /productions/{id}/public-performances - Phase 3 Ticket/Reservation
  * 基盤 §33: unauthenticated, the Public Page's own Performance listing a
- * visitor picks from before reserving a Ticket. Excludes DRAFT/CANCELLED
+ * visitor picks from before reserving a Ticket. Excludes CANCELLED
  * Performances and never carries `capacity` (§34). */
 export function fetchPublicPerformances(productionId: string): Promise<PublicPerformance[]> {
   return publicGet<PublicPerformance[]>(`/productions/${productionId}/public-performances`);
@@ -22,7 +22,8 @@ export function fetchPerformance(client: ApiClient, performanceId: string): Prom
 
 /**
  * POST /productions/{id}/performances - creates a Performance (starts at
- * DRAFT). Omitting `capacity` inherits the parent Production's own
+ * PUBLISHED - StageArt does not use DRAFT to gate public/private
+ * visibility). Omitting `capacity` inherits the parent Production's own
  * capacity server-side (CreatePerformanceUseCase.php §10) - this Client
  * never resolves that default itself.
  */

@@ -59,7 +59,7 @@ const existingPerformance = {
  * StageArt Phase 6: UpdatePerformanceUseCase already accepts a direct
  * Status edit (§15 - "Status（権限・業務ルールに応じた変更）"), and
  * Performance::changeStatus() enforces no transition graph among
- * DRAFT/PUBLISHED/SOLD_OUT/FINISHED (only that CANCELLED is terminal) -
+ * PUBLISHED/SOLD_OUT/FINISHED (only that CANCELLED is terminal) -
  * this was simply never sent by the 公演回管理 edit row before. Confirms
  * (a) opening the edit row pre-selects the Performance's CURRENT Status,
  * and (b) saving includes that Status in the PUT payload (it is no
@@ -96,7 +96,7 @@ describe('Web 公演回管理: Status変更', () => {
 
     await waitFor(() => expect(screen.getByTestId('performance-edit-row-perf-1')).toBeVisible());
     expect(screen.getByTestId('performance-edit-status-PUBLISHED-perf-1').props.accessibilityState?.selected).toBe(true);
-    expect(screen.getByTestId('performance-edit-status-DRAFT-perf-1').props.accessibilityState?.selected).toBe(false);
+    expect(screen.getByTestId('performance-edit-status-SOLD_OUT-perf-1').props.accessibilityState?.selected).toBe(false);
 
     (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
       ok: true,

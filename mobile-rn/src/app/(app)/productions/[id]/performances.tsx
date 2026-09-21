@@ -13,7 +13,6 @@ import type { Performance } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '下書き',
   PUBLISHED: '公開中',
   SOLD_OUT: '満席',
   FINISHED: '終了',
@@ -27,9 +26,13 @@ const STATUS_LABEL: Record<string, string> = {
  * would let a manager bypass that guard without gaining anything.
  * Performance::changeStatus() itself enforces no transition graph beyond
  * "not from CANCELLED" (see its own docblock: "no strict transition
- * graph is mandated among DRAFT/PUBLISHED/SOLD_OUT/FINISHED"), so any of
- * these four may be selected from any of the other three. */
-const EDITABLE_STATUS_OPTIONS = ['DRAFT', 'PUBLISHED', 'SOLD_OUT', 'FINISHED'] as const;
+ * graph is mandated among PUBLISHED/SOLD_OUT/FINISHED"), so any of
+ * these three may be selected from any of the other two.
+ *
+ * StageArt全体DRAFT廃止 instruction: DRAFT removed from this list -
+ * StageArt does not use DRAFT to gate public/private visibility, and a
+ * Performance now starts PUBLISHED (see Performance::create()). */
+const EDITABLE_STATUS_OPTIONS = ['PUBLISHED', 'SOLD_OUT', 'FINISHED'] as const;
 
 type EditState = {
   performanceDate: string;
