@@ -3,7 +3,7 @@ import { usePathname, type Href } from 'expo-router';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useProduction } from '@/features/production/useProductions';
 
-export type NavMenuItem = { key: string; label: string; href: Href; disabled?: boolean };
+export type NavMenuItem = { key: string; label: string; href: Href; disabled?: boolean; groupLabel?: string };
 
 export type ContextAreaType = 'home' | 'organization' | 'production';
 
@@ -142,6 +142,21 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  * Manager or a CHECKIN_MANAGER Delegate; 公演終了・精算処理 (精算) stays
  * PrimaryManager-only, mirroring SettlementCapability::MANAGE's own
  * backend default (no Delegate Role currently grants it).
+ *
+ * StageArt 小屋入り～本番接続 instruction (docs/04-CommonNavigationDesign.md
+ * §20.6 確定事項): "「小屋入り～本番」の配下には「タイムテーブル」「受付」を
+ * 配置する" - previously this was a single flat item pointing straight at
+ * Check-in, which silently skipped タイムテーブル entirely. Split into two
+ * items sharing the same 小屋入り～本番 groupLabel (rendered once, above
+ * the first child - see WebSidebarNav/NativeDrawerMenu). Gating is left
+ * unchanged (both children keep the existing single CHECKIN_MANAGER
+ * check the old flat item used) - the confirmed spec only addresses menu
+ * shape, not a new/split permission model, so none is invented here.
+ * タイムテーブル points at the existing Production Schedule screen
+ * (`/production/{id}/schedule`, already the タイムテーブル
+ * authoring/print/viewing surface - see that screen's own docblock and
+ * this Phase's report) rather than a new screen; 受付 keeps its existing
+ * destination and key unchanged.
  */
 function buildProductionContextItems(
   id: string,
@@ -159,7 +174,14 @@ function buildProductionContextItems(
     { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
     { key: 'production-performances', label: '公演回管理', href: `/productions/${id}/performances` as Href, disabled: !canManagePerformances },
     { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
-    { key: 'production-reception', label: '小屋入り～本番', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
+    {
+      key: 'production-timetable',
+      label: 'タイムテーブル',
+      href: `/production/${id}/schedule` as Href,
+      disabled: !canManageCheckIn,
+      groupLabel: '小屋入り～本番',
+    },
+    { key: 'production-reception', label: '受付', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
     { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !isPrimaryManager },
     { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, disabled: !canManageQuestionnaire },
   ];

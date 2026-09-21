@@ -19,6 +19,18 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * Version only, no Role-based filtering anywhere in this screen. §9's
  * "当日+翌日" is the default; §10's Full Range toggle switches to the
  * entire Production period by omitting from/to entirely.
+ *
+ * StageArt 小屋入り～本番接続 instruction
+ * (docs/04-CommonNavigationDesign.md §20.3): this is also the destination
+ * for the Production Context sidebar's 小屋入り～本番 → タイムテーブル
+ * item (see useNavMenu.ts), so it must expose the two confirmed actions
+ * "＋ タイムテーブルを作成" and "🖨 タイムテーブルを印刷" verbatim.
+ * "作成" routes to the existing Rehearsal list (出欠) - TimetableItem
+ * authoring is a per-Rehearsal operation (Timetable.md: "Timetableの
+ * 基本的な親DomainはRehearsalである", unchanged this round), already
+ * implemented on that Rehearsal's own detail screen
+ * (schedule/attendance/[rehearsalId]/index.tsx's RehearsalManagementPanel)
+ * - no new creation screen/endpoint was invented for this.
  */
 export default function ScheduleListScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
@@ -54,12 +66,20 @@ export default function ScheduleListScreen() {
           <ThemedText type="link">{fullRange ? '当日＋翌日のみ表示' : '全期間を表示'}</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
+          onPress={() => router.push(`/production/${productionId}/schedule/attendance`)}
+          testID="schedule-create-link"
+          accessibilityRole="button"
+          accessibilityLabel="タイムテーブルを作成"
+        >
+          <ThemedText type="link">＋ タイムテーブルを作成</ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => router.push(`/production/${productionId}/schedule/print`)}
           testID="schedule-print-link"
           accessibilityRole="button"
-          accessibilityLabel="印刷"
+          accessibilityLabel="タイムテーブルを印刷"
         >
-          <ThemedText type="link">印刷</ThemedText>
+          <ThemedText type="link">🖨 タイムテーブルを印刷</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.push(`/production/${productionId}/schedule/attendance`)}

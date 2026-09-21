@@ -203,8 +203,35 @@ describe('useNavMenu', () => {
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
     await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
+    expect(result.current.contextItems.find((item) => item.key === 'production-timetable')?.disabled).toBe(false);
     expect(result.current.contextItems.find((item) => item.key === 'production-reception')?.disabled).toBe(false);
     expect(result.current.contextItems.find((item) => item.key === 'production-settlement')?.disabled).toBe(false);
+  });
+
+  /**
+   * StageArt 小屋入り～本番接続 instruction
+   * (docs/04-CommonNavigationDesign.md §20.6): 小屋入り～本番 must expose
+   * exactly two children - タイムテーブル and 受付 - sharing one group
+   * heading, not a single flat item.
+   */
+  it('groups タイムテーブル and 受付 under one 小屋入り～本番 heading', async () => {
+    mockPathname = `/productions/${productionOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
+    const timetable = result.current.contextItems.find((item) => item.key === 'production-timetable');
+    const reception = result.current.contextItems.find((item) => item.key === 'production-reception');
+    expect(timetable?.groupLabel).toBe('小屋入り～本番');
+    expect(timetable?.label).toBe('タイムテーブル');
+    expect(reception?.label).toBe('受付');
+    expect(reception?.groupLabel).toBeUndefined();
   });
 
   it('enables チケット管理 for a Primary Manager but disables it for a non-TICKET_MANAGER delegate', async () => {

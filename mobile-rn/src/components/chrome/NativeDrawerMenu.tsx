@@ -65,7 +65,14 @@ export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClo
           )}
 
           {contextItems.map((item) => (
-            <DrawerLink key={item.key} item={item} onPress={() => navigateTo(item.href)} />
+            <View key={item.key}>
+              {item.groupLabel && (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.groupLabel} testID={`native-drawer-group-${item.key}`}>
+                  {item.groupLabel}
+                </ThemedText>
+              )}
+              <DrawerLink item={item} onPress={() => navigateTo(item.href)} />
+            </View>
           ))}
 
           <View style={styles.divider} />
@@ -112,5 +119,6 @@ const styles = StyleSheet.create({
   },
   linkRow: { paddingVertical: Spacing.three },
   contextLabel: { paddingVertical: Spacing.one, textTransform: 'uppercase' },
+  groupLabel: { paddingTop: Spacing.one },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e1dee6', marginVertical: Spacing.two },
 });

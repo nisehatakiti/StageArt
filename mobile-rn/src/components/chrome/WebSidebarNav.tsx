@@ -71,7 +71,14 @@ export function WebSidebarNav({ children }: PropsWithChildren) {
           )}
 
           {contextItems.map((item) => (
-            <SidebarLink key={item.key} item={item} />
+            <View key={item.key}>
+              {item.groupLabel && (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.groupLabel} testID={`web-chrome-group-${item.key}`}>
+                  {item.groupLabel}
+                </ThemedText>
+              )}
+              <SidebarLink item={item} />
+            </View>
           ))}
 
           <View style={styles.divider} />
@@ -130,6 +137,7 @@ const styles = StyleSheet.create({
   },
   navItem: { paddingHorizontal: Spacing.four, paddingVertical: Spacing.two },
   contextLabel: { paddingHorizontal: Spacing.four, paddingBottom: Spacing.one, textTransform: 'uppercase' },
+  groupLabel: { paddingHorizontal: Spacing.four, paddingTop: Spacing.one },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e1dee6', marginVertical: Spacing.two },
   main: { flex: 1 },
 });
