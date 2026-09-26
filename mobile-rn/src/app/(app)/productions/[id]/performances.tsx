@@ -1,10 +1,10 @@
 import { useLocalSearchParams, type Href } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedTextInput } from '@/components/themed-text-input';
+import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useCancelPerformance, useCreatePerformance, usePerformances, useUpdatePerformance } from '@/features/performance/usePerformances';
 import { useProduction } from '@/features/production/useProductions';
@@ -228,50 +228,52 @@ export default function ProductionPerformancesScreen() {
       <ThemedText type="small" themeColor="textSecondary">
         公演日
       </ThemedText>
-      <ThemedTextInput testID="production-performances-new-date" value={newDate} onChangeText={setNewDate} placeholder="2026-10-10" style={styles.input} />
+      <FormInput kind="date" testID="production-performances-new-date" value={newDate} onChangeText={setNewDate} style={[styles.input, styles.inputDate]} />
 
       <ThemedText type="small" themeColor="textSecondary">
         開演時刻
       </ThemedText>
-      <ThemedTextInput
+      <FormInput
+        kind="time"
         testID="production-performances-new-start-time"
         value={newStartTime}
         onChangeText={setNewStartTime}
         placeholder="13:00"
-        style={styles.input}
+        style={[styles.input, styles.inputTime]}
       />
 
       <ThemedText type="small" themeColor="textSecondary">
         終演予定時刻（任意）
       </ThemedText>
-      <ThemedTextInput
+      <FormInput
+        kind="time"
         testID="production-performances-new-end-time"
         value={newEndTime}
         onChangeText={setNewEndTime}
         placeholder="15:00"
-        style={styles.input}
+        style={[styles.input, styles.inputTime]}
       />
 
       <ThemedText type="small" themeColor="textSecondary">
         定員
       </ThemedText>
-      <ThemedTextInput
+      <FormInput
         testID="production-performances-new-capacity"
         value={newCapacity}
         onChangeText={setNewCapacity}
         keyboardType="number-pad"
-        style={styles.input}
+        style={[styles.input, styles.inputNumber]}
       />
 
       <ThemedText type="small" themeColor="textSecondary">
         記号（任意）
       </ThemedText>
-      <ThemedTextInput testID="production-performances-new-symbol" value={newSymbol} onChangeText={setNewSymbol} style={styles.input} />
+      <FormInput testID="production-performances-new-symbol" value={newSymbol} onChangeText={setNewSymbol} style={styles.input} />
 
       <ThemedText type="small" themeColor="textSecondary">
         備考（任意）
       </ThemedText>
-      <ThemedTextInput testID="production-performances-new-remarks" value={newRemarks} onChangeText={setNewRemarks} style={styles.input} />
+      <FormInput kind="textarea" testID="production-performances-new-remarks" value={newRemarks} onChangeText={setNewRemarks} style={[styles.input, styles.inputLong]} />
 
       {errorMessage && (
         <ThemedText testID="production-performances-error" style={styles.error}>
@@ -337,25 +339,26 @@ function PerformanceEditRow({
 
   return (
     <View style={styles.editRow} testID={`performance-edit-row-${performanceId}`}>
-      <ThemedTextInput
+      <FormInput
+        kind="date"
         testID={`performance-edit-date-${performanceId}`}
         value={edit.performanceDate}
         onChangeText={(value) => setEdit({ ...edit, performanceDate: value })}
         style={styles.editInput}
       />
-      <ThemedTextInput
+      <FormInput
         testID={`performance-edit-start-time-${performanceId}`}
         value={edit.startTime}
         onChangeText={(value) => setEdit({ ...edit, startTime: value })}
         style={styles.editInput}
       />
-      <ThemedTextInput
+      <FormInput
         testID={`performance-edit-end-time-${performanceId}`}
         value={edit.endTime}
         onChangeText={(value) => setEdit({ ...edit, endTime: value })}
         style={styles.editInput}
       />
-      <ThemedTextInput
+      <FormInput
         testID={`performance-edit-capacity-${performanceId}`}
         value={edit.capacity}
         onChangeText={(value) => setEdit({ ...edit, capacity: value })}
@@ -388,9 +391,10 @@ function PerformanceEditRow({
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { marginBottom: Spacing.two },
-  sectionTitle: { marginTop: Spacing.three, marginBottom: Spacing.one },
-  list: { gap: Spacing.one },
+  pageContainer: { padding: Spacing.five, paddingBottom: Spacing.six },
+  pageTitle: { marginBottom: Spacing.four, fontSize: 32, lineHeight: 40 },
+  sectionTitle: { marginTop: Spacing.five, marginBottom: Spacing.two },
+  list: { gap: Spacing.one, width: '100%', maxWidth: 1100 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
