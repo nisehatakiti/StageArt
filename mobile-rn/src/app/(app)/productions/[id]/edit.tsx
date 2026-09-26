@@ -191,13 +191,13 @@ export default function ProductionEditScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           Slug（公開URLに使用）
         </ThemedText>
-        <ThemedTextInput
+        <FormInput
           testID="production-edit-slug"
           value={slug}
           onChangeText={setSlug}
           autoCapitalize="none"
           autoCorrect={false}
-          style={styles.input}
+          style={[styles.input, styles.inputSlug]}
         />
         {!slugValid && slug.length > 0 && (
           <ThemedText type="small" style={styles.error}>
@@ -208,12 +208,13 @@ export default function ProductionEditScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           公演説明（任意）
         </ThemedText>
-        <ThemedTextInput
+        <FormInput
+          kind="textarea"
           testID="production-edit-description"
           value={description}
           onChangeText={setDescription}
           multiline
-          style={[styles.input, styles.multilineInput]}
+          style={[styles.input, styles.multilineInput, styles.inputLong]}
         />
 
         <ThemedText type="small" themeColor="textSecondary">
@@ -225,20 +226,22 @@ export default function ProductionEditScreen() {
           日程（開始日 〜 終了日、任意・YYYY-MM-DD）
         </ThemedText>
         <View style={styles.row}>
-          <ThemedTextInput
+          <FormInput
+            kind="date"
             testID="production-edit-schedule-start"
             value={scheduleStartDate}
             onChangeText={setScheduleStartDate}
             placeholder="YYYY-MM-DD"
-            style={[styles.input, styles.rowInput]}
+            style={[styles.input, styles.rowInput, styles.inputDate]}
           />
           <ThemedText>〜</ThemedText>
-          <ThemedTextInput
+          <FormInput
+            kind="date"
             testID="production-edit-schedule-end"
             value={scheduleEndDate}
             onChangeText={setScheduleEndDate}
             placeholder="YYYY-MM-DD"
-            style={[styles.input, styles.rowInput]}
+            style={[styles.input, styles.rowInput, styles.inputDate]}
           />
         </View>
 
@@ -246,31 +249,31 @@ export default function ProductionEditScreen() {
           脚本 / 演出（任意）
         </ThemedText>
         <View style={styles.row}>
-          <ThemedTextInput
+          <FormInput
             testID="production-edit-script-credit"
             value={scriptCredit}
             onChangeText={setScriptCredit}
             placeholder="脚本"
-            style={[styles.input, styles.rowInput]}
+            style={[styles.input, styles.rowInput, styles.inputPerson]}
           />
-          <ThemedTextInput
+          <FormInput
             testID="production-edit-direction-credit"
             value={directionCredit}
             onChangeText={setDirectionCredit}
             placeholder="演出"
-            style={[styles.input, styles.rowInput]}
+            style={[styles.input, styles.rowInput, styles.inputPerson]}
           />
         </View>
 
         <ThemedText type="small" themeColor="textSecondary">
           収容人数（任意・非公開）
         </ThemedText>
-        <ThemedTextInput
+        <FormInput
           testID="production-edit-capacity"
           value={capacity}
           onChangeText={setCapacity}
           keyboardType="number-pad"
-          style={styles.input}
+          style={[styles.input, styles.inputNumber]}
         />
         <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
           変更すると、この公演のすべての公演スケジュールの収容人数が一括で上書きされます（個別に変更済みの公演スケジュールも含む）。
@@ -284,12 +287,13 @@ export default function ProductionEditScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           公演スケジュール共通備考（任意）
         </ThemedText>
-        <ThemedTextInput
+        <FormInput
+          kind="textarea"
           testID="production-edit-performance-common-remarks"
           value={performanceCommonRemarks}
           onChangeText={setPerformanceCommonRemarks}
           multiline
-          style={[styles.input, styles.multilineInput]}
+          style={[styles.input, styles.multilineInput, styles.inputLong]}
         />
 
         {errorMessage && (
@@ -312,22 +316,24 @@ export default function ProductionEditScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      </ScrollView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { marginBottom: Spacing.four },
-  form: { gap: Spacing.one, maxWidth: 480 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-    marginBottom: Spacing.two,
-  },
+  pageContainer: { padding: Spacing.five, paddingBottom: Spacing.six },
+  pageTitle: { marginBottom: Spacing.four, fontSize: 32, lineHeight: 40 },
+  form: { gap: Spacing.one, width: '100%', maxWidth: 960 },
+  input: { marginBottom: Spacing.two, maxWidth: '100%' },
+  inputTitle: { width: 360 },
+  inputName: { width: 520 },
+  inputSlug: { width: 360 },
+  inputVenue: { width: 360 },
+  inputDate: { width: 180 },
+  inputPerson: { width: 320 },
+  inputNumber: { width: 160 },
+  inputLong: { width: '100%', maxWidth: 760 },
   error: { color: '#a6483a', marginBottom: Spacing.two },
   caption: { marginBottom: Spacing.two },
   multilineInput: { minHeight: 120, textAlignVertical: 'top' },
