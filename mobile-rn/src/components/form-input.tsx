@@ -19,7 +19,7 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
   const domProps = rest as Record<string, unknown>;
 
   if (Platform.OS === 'web' && kind !== 'text') {
-    const flatStyle = (Array.isArray(style) ? Object.assign({}, ...style) : style) as CSSProperties | undefined;
+    const flatStyle = (Array.isArray(style) ? Object.assign({}, ...style) : style) as Record<string, unknown> | undefined;
     const baseStyle: CSSProperties = {
       boxSizing: 'border-box',
       width: '100%',
@@ -33,7 +33,12 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
       backgroundColor: '#fff',
       fontFamily: 'inherit',
       outline: 'none',
-      ...(flatStyle ?? {}),
+      ...(typeof flatStyle?.width === 'number' || typeof flatStyle?.width === 'string' ? { width: flatStyle.width } : {}),
+      ...(typeof flatStyle?.maxWidth === 'number' || typeof flatStyle?.maxWidth === 'string' ? { maxWidth: flatStyle.maxWidth } : {}),
+      ...(typeof flatStyle?.minHeight === 'number' || typeof flatStyle?.minHeight === 'string' ? { minHeight: flatStyle.minHeight } : {}),
+      ...(typeof flatStyle?.marginBottom === 'number' || typeof flatStyle?.marginBottom === 'string' ? { marginBottom: flatStyle.marginBottom } : {}),
+      ...(typeof flatStyle?.fontSize === 'number' || typeof flatStyle?.fontSize === 'string' ? { fontSize: flatStyle.fontSize } : {}),
+      ...(typeof flatStyle?.lineHeight === 'number' || typeof flatStyle?.lineHeight === 'string' ? { lineHeight: flatStyle.lineHeight } : {}),
     };
 
     if (kind === 'textarea') {
