@@ -1,12 +1,12 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedTextInput } from '@/components/themed-text-input';
+import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
 import { useProduction } from '@/features/production/useProductions';
@@ -172,20 +172,21 @@ export default function ProductionEditScreen() {
 
   return (
     <>
+      <ScrollView contentContainerStyle={styles.pageContainer}>
       <ThemedText type="title" style={styles.pageTitle}>
         公演情報編集
       </ThemedText>
 
       <View style={styles.form}>
         <ThemedText type="small" themeColor="textSecondary">
-          公演肩書（任意）
+          公演冠（任意）
         </ThemedText>
-        <ThemedTextInput testID="production-edit-title-heading" value={titleHeading} onChangeText={setTitleHeading} style={styles.input} />
+        <FormInput testID="production-edit-title-heading" value={titleHeading} onChangeText={setTitleHeading} style={[styles.input, styles.inputTitle]} />
 
         <ThemedText type="small" themeColor="textSecondary">
           公演名
         </ThemedText>
-        <ThemedTextInput testID="production-edit-name" value={name} onChangeText={setName} style={styles.input} />
+        <FormInput testID="production-edit-name" value={name} onChangeText={setName} style={[styles.input, styles.inputName]} />
 
         <ThemedText type="small" themeColor="textSecondary">
           Slug（公開URLに使用）
@@ -218,7 +219,7 @@ export default function ProductionEditScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           会場名（任意）
         </ThemedText>
-        <ThemedTextInput testID="production-edit-venue" value={venueName} onChangeText={setVenueName} style={styles.input} />
+        <FormInput testID="production-edit-venue" value={venueName} onChangeText={setVenueName} style={[styles.input, styles.inputVenue]} />
 
         <ThemedText type="small" themeColor="textSecondary">
           日程（開始日 〜 終了日、任意・YYYY-MM-DD）
@@ -329,8 +330,8 @@ const styles = StyleSheet.create({
   },
   error: { color: '#a6483a', marginBottom: Spacing.two },
   caption: { marginBottom: Spacing.two },
-  multilineInput: { minHeight: 96, textAlignVertical: 'top' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  multilineInput: { minHeight: 120, textAlignVertical: 'top' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexWrap: 'wrap' },
   rowInput: { flex: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.four, marginTop: Spacing.two },
   button: {
