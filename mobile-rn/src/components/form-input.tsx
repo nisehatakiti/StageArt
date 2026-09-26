@@ -16,6 +16,7 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
   ref
 ) {
   const theme = useTheme();
+  const domProps = rest as Record<string, unknown>;
 
   if (Platform.OS === 'web' && kind !== 'text') {
     const flatStyle = (Array.isArray(style) ? Object.assign({}, ...style) : style) as CSSProperties | undefined;
@@ -37,7 +38,7 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
 
     if (kind === 'textarea') {
       return createElement('textarea', {
-        ...rest,
+        ...domProps,
         ref: ref as never,
         value: rest.value ?? '',
         placeholder: rest.placeholder,
@@ -48,7 +49,7 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
     }
 
     return createElement('input', {
-      ...rest,
+      ...domProps,
       ref: ref as never,
       type: kind,
       value: rest.value ?? '',
