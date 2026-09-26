@@ -166,6 +166,7 @@ export default function ProductionPerformancesScreen() {
 
   return (
     <>
+      <ScrollView contentContainerStyle={styles.pageContainer}>
       <ThemedText type="title" style={styles.pageTitle}>
         公演スケジュール管理
       </ThemedText>
@@ -268,7 +269,7 @@ export default function ProductionPerformancesScreen() {
       <ThemedText type="small" themeColor="textSecondary">
         記号（任意）
       </ThemedText>
-      <FormInput testID="production-performances-new-symbol" value={newSymbol} onChangeText={setNewSymbol} style={styles.input} />
+      <FormInput testID="production-performances-new-symbol" value={newSymbol} onChangeText={setNewSymbol} style={[styles.input, styles.inputSymbol]} />
 
       <ThemedText type="small" themeColor="textSecondary">
         備考（任意）
@@ -289,6 +290,7 @@ export default function ProductionPerformancesScreen() {
       >
         {createPerformance.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ 公演スケジュールを追加</ThemedText>}
       </TouchableOpacity>
+      </ScrollView>
     </>
   );
 }
@@ -347,23 +349,25 @@ function PerformanceEditRow({
         style={styles.editInput}
       />
       <FormInput
+        kind="time"
         testID={`performance-edit-start-time-${performanceId}`}
         value={edit.startTime}
         onChangeText={(value) => setEdit({ ...edit, startTime: value })}
         style={styles.editInput}
       />
       <FormInput
+        kind="time"
         testID={`performance-edit-end-time-${performanceId}`}
         value={edit.endTime}
         onChangeText={(value) => setEdit({ ...edit, endTime: value })}
-        style={styles.editInput}
+        style={[styles.editInput, styles.inputTime]}
       />
       <FormInput
         testID={`performance-edit-capacity-${performanceId}`}
         value={edit.capacity}
         onChangeText={(value) => setEdit({ ...edit, capacity: value })}
         keyboardType="number-pad"
-        style={styles.editInput}
+        style={[styles.editInput, styles.inputNumber]}
       />
       <View style={styles.statusOptions}>
         {EDITABLE_STATUS_OPTIONS.map((option) => (
@@ -425,23 +429,13 @@ const styles = StyleSheet.create({
   },
   statusOptionSelected: { borderColor: BrandColors.warmAmber, backgroundColor: BrandColors.warmAmber + '22' },
   actionButtons: { flexDirection: 'row', gap: Spacing.two },
-  editInput: {
-    width: 90,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-    marginBottom: Spacing.two,
-  },
+  editInput: { width: 110, marginBottom: Spacing.one },
+  input: { marginBottom: Spacing.two, maxWidth: '100%' },
+  inputDate: { width: 180 },
+  inputTime: { width: 120 },
+  inputNumber: { width: 160 },
+  inputSymbol: { width: 220 },
+  inputLong: { width: '100%', maxWidth: 760 },
   error: { color: '#a6483a', marginTop: Spacing.two },
   button: {
     backgroundColor: BrandColors.warmAmber,
