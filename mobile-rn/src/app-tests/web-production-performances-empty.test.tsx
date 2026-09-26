@@ -43,7 +43,7 @@ const baseProduction = {
 /** StageArt Phase 2 Performance基盤 §22 - empty state, split into its own
  * file for the same RTL-singleton-corruption reason as the sibling
  * -list/-forbidden test files. */
-describe('Web 公演回管理: 空状態', () => {
+describe('Web 公演スケジュール管理: 空状態', () => {
   it('shows an empty state when the Production has no Performances yet', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: baseProduction },

@@ -32,7 +32,7 @@ import { useNavMenu, type NavMenuItem } from './useNavMenu';
 export function WebSidebarNav({ children }: PropsWithChildren) {
   const router = useRouter();
   const logout = useLogout();
-  const { fixedItems, contextType, contextLabel, contextItems } = useNavMenu();
+  const { fixedItems, contextType, contextLabel, contextItems, backTo } = useNavMenu();
 
   const homeItem = fixedItems.find((item) => item.key === 'home')!;
   const bottomFixedItems = fixedItems.filter((item) => item.key !== 'home');
@@ -68,6 +68,14 @@ export function WebSidebarNav({ children }: PropsWithChildren) {
             <ThemedText type="small" themeColor="textSecondary" style={styles.contextLabel} testID="web-chrome-context-label">
               {contextLabel}
             </ThemedText>
+          )}
+
+          {backTo && (
+            <TouchableOpacity testID="web-chrome-back-to" onPress={() => router.push(backTo.href)} style={styles.navItem}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {backTo.label}
+              </ThemedText>
+            </TouchableOpacity>
           )}
 
           {contextItems.map((item) => (

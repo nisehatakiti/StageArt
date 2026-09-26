@@ -60,7 +60,7 @@ const existingPerformance = {
  * Status edit (§15 - "Status（権限・業務ルールに応じた変更）"), and
  * Performance::changeStatus() enforces no transition graph among
  * PUBLISHED/SOLD_OUT/FINISHED (only that CANCELLED is terminal) -
- * this was simply never sent by the 公演回管理 edit row before. Confirms
+ * this was simply never sent by the 公演スケジュール管理 edit row before. Confirms
  * (a) opening the edit row pre-selects the Performance's CURRENT Status,
  * and (b) saving includes that Status in the PUT payload (it is no
  * longer silently omitted, which previously left it server-side
@@ -80,7 +80,7 @@ const existingPerformance = {
  * still exercise the real Phase 6 change (Status was never sent to the
  * server at all before) without depending on that flaky interaction.
  */
-describe('Web 公演回管理: Status変更', () => {
+describe('Web 公演スケジュール管理: Status変更', () => {
   it('pre-selects the current Status and includes it, unchanged, in the save payload', async () => {
     const user = userEvent.setup();
 

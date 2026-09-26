@@ -30,6 +30,7 @@ describe('Web 団体管理トップ: Owner', () => {
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [] },
       { test: (u) => u.endsWith('/productions'), status: 200, body: [] },
+      { test: (u) => u.endsWith('/organizations/org-1/membership-requests'), status: 200, body: [] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 

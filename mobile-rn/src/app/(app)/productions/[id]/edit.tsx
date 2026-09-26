@@ -272,7 +272,7 @@ export default function ProductionEditScreen() {
           style={styles.input}
         />
         <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
-          変更すると、この公演のすべての公演回の収容人数が一括で上書きされます（個別に変更済みの公演回も含む）。
+          変更すると、この公演のすべての公演スケジュールの収容人数が一括で上書きされます（個別に変更済みの公演スケジュールも含む）。
         </ThemedText>
         {!capacityValid && (
           <ThemedText type="small" style={styles.error}>
@@ -281,7 +281,7 @@ export default function ProductionEditScreen() {
         )}
 
         <ThemedText type="small" themeColor="textSecondary">
-          公演回共通備考（任意）
+          公演スケジュール共通備考（任意）
         </ThemedText>
         <ThemedTextInput
           testID="production-edit-performance-common-remarks"

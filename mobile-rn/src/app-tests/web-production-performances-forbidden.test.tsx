@@ -43,7 +43,7 @@ const baseProduction = {
 /** StageArt Phase 2 Performance基盤 §17 - access denial for a non-manager,
  * split into its own file for the same RTL-singleton-corruption reason
  * as the sibling -list/-empty test files. */
-describe('Web 公演回管理: 権限なし', () => {
+describe('Web 公演スケジュール管理: 権限なし', () => {
   it('shows a forbidden message for a non-manager', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: baseProduction },

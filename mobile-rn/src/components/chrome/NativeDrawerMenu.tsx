@@ -18,7 +18,7 @@ import { useNavMenu, type NavMenuItem } from './useNavMenu';
  */
 export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const router = useRouter();
-  const { fixedItems, contextType, contextLabel, contextItems } = useNavMenu();
+  const { fixedItems, contextType, contextLabel, contextItems, backTo } = useNavMenu();
   const logout = useLogout();
 
   const homeItem = fixedItems.find((item) => item.key === 'home')!;
@@ -62,6 +62,14 @@ export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClo
             <ThemedText type="small" themeColor="textSecondary" style={styles.contextLabel} testID="native-drawer-context-label">
               {contextLabel}
             </ThemedText>
+          )}
+
+          {backTo && (
+            <TouchableOpacity testID="native-drawer-back-to" onPress={() => navigateTo(backTo.href)} style={styles.linkRow}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {backTo.label}
+              </ThemedText>
+            </TouchableOpacity>
           )}
 
           {contextItems.map((item) => (

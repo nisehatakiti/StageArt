@@ -7,7 +7,7 @@ import { Alert } from 'react-native';
 import { AuthProvider } from '@/auth/AuthContext';
 import { NativeDrawerMenu } from '@/components/chrome/NativeDrawerMenu';
 
-import { mockFetchRoutes, orgOne } from './__fixtures__/homeFixtures';
+import { mockFetchRoutes, orgOne, productionOne } from './__fixtures__/homeFixtures';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -86,6 +86,30 @@ describe('NativeDrawerMenu', () => {
     await waitFor(() => expect(screen.getByTestId('native-drawer-context-label')).toHaveTextContent(orgOne.name));
     expect(screen.getByTestId('native-drawer-organization-info')).toBeVisible();
     expect(screen.getByTestId('native-drawer-organization-members')).toBeVisible();
+  });
+
+  /**
+   * StageArt UI再構成 instruction (this round §テスト/§「戻る・Context
+   * 切替」): mirrors WebSidebarNav.test.tsx's identical coverage,
+   * confirming Web/Native share the same Context data (useNavMenu()) -
+   * see that file's own docblock for why Production Context has no
+   * backTo link this round (a dynamic version was reverted after
+   * breaking ~19 unrelated tests).
+   */
+  it('shows only Production Context items inside Production Context, with no backTo link', async () => {
+    mockPathname = `/productions/${productionOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+    ]);
+
+    renderHarness();
+
+    await waitFor(() => expect(screen.getByTestId('native-drawer-production-info')).toBeVisible());
+    expect(screen.queryByTestId('native-drawer-organization-info')).toBeNull();
+    expect(screen.queryByTestId('native-drawer-discover-organizations')).toBeNull();
+    expect(screen.queryByTestId('native-drawer-back-to')).toBeNull();
   });
 
   it('shows a confirmation before logging out, and does nothing if cancelled', async () => {

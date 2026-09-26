@@ -57,7 +57,9 @@ function toEditState(performance: Performance): EditState {
 }
 
 /**
- * StageArt Phase 2 Performance基盤 §22/§23/§24: 公演回管理 - Performance
+ * StageArt Phase 2 Performance基盤 §22/§23/§24 + StageArt UI再構成
+ * instruction (this round, ユーザー向け表記統一「公演回」→「公演スケジュール」):
+ * 公演スケジュール管理 - Performance
  * list (公演日/開演時刻/終演予定時刻/定員/Status, plus 記号/備考), create
  * form (定員 pre-filled from Production.capacity, per §23), and inline
  * edit. "中止" (Status -> CANCELLED) is the one delete-like, dedicated,
@@ -99,7 +101,7 @@ export default function ProductionPerformancesScreen() {
     ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
     ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
     { label: production?.name ?? '...', href: `/productions/${id}` as Href },
-    { label: '公演回管理' },
+    { label: '公演スケジュール管理' },
   ];
 
   async function handleCreate() {
@@ -156,7 +158,7 @@ export default function ProductionPerformancesScreen() {
     return (
       <>
         <ThemedText testID="production-performances-forbidden">
-          公演回管理はPrimaryManagerまたは公演回管理の権限を持つ担当者のみ利用できます。
+          公演スケジュール管理はPrimaryManagerまたは公演スケジュール管理の権限を持つ担当者のみ利用できます。
         </ThemedText>
       </>
     );
@@ -165,7 +167,7 @@ export default function ProductionPerformancesScreen() {
   return (
     <>
       <ThemedText type="title" style={styles.pageTitle}>
-        公演回管理
+        公演スケジュール管理
       </ThemedText>
 
       {performancesQuery.isLoading && <ActivityIndicator testID="production-performances-list-loading" />}
@@ -174,7 +176,7 @@ export default function ProductionPerformancesScreen() {
       )}
       {!performancesQuery.isLoading && !performancesQuery.isError && performances.length === 0 && (
         <ThemedText testID="production-performances-empty" themeColor="textSecondary">
-          まだ公演回がありません。
+          まだ公演スケジュールがありません。
         </ThemedText>
       )}
 
@@ -220,7 +222,7 @@ export default function ProductionPerformancesScreen() {
       )}
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>
-        公演回を追加
+        公演スケジュールを追加
       </ThemedText>
 
       <ThemedText type="small" themeColor="textSecondary">
@@ -283,7 +285,7 @@ export default function ProductionPerformancesScreen() {
         disabled={createPerformance.isPending || !newDate.trim() || !newStartTime.trim()}
         style={[styles.button, createPerformance.isPending && styles.buttonDisabled]}
       >
-        {createPerformance.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ 公演回を追加</ThemedText>}
+        {createPerformance.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ 公演スケジュールを追加</ThemedText>}
       </TouchableOpacity>
     </>
   );

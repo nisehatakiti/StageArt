@@ -14,10 +14,17 @@ jest.mock('expo-secure-store', () => ({
  * StageArt Web版 公演管理 Phase: 公演管理トップ (`/productions/[id]`) - the
  * route WebLayout's own submenu already pointed to. `productionOne` here
  * is `is_primary_manager: true` (its own fixture default), so every
- * management card should be enabled.
+ * remaining management card should be enabled.
+ *
+ * StageArt UI再構成 instruction (this round): this screen no longer
+ * duplicates items already reachable from the Production Context sidebar
+ * (公演情報/メンバー管理/稽古管理/etc. - see useNavMenu.ts) - it now only
+ * keeps the 4 items with no sidebar entry at all (公開設定/メンバー実績
+ * サマリー/会計/通知), plus a Dashboard-style 概要 section built from
+ * fields already on the fetched Production.
  */
 describe('Web 公演管理トップ', () => {
-  it('shows the Production name/status and every management card enabled for its PrimaryManager', async () => {
+  it('shows the Production name/status/概要 and the non-sidebar-duplicate cards enabled for its PrimaryManager', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
@@ -28,18 +35,18 @@ describe('Web 公演管理トップ', () => {
     renderRouter('src/app', { initialUrl: '/productions/prod-1' });
 
     await waitFor(() => expect(screen.getByTestId('production-management-name')).toBeVisible());
-    // WebLayout's own sidebar submenu heading also shows the Production
-    // name (see WebLayout.tsx's productionName prop) - scope to the page
-    // title itself to avoid an ambiguous match.
     expect(screen.getByTestId('production-management-name').props.children).toBe('○○公演2026');
-    // 公開状態Pillと「公開設定」MenuCardの説明文が、GitHub Issue #5以降どちらも
-    // 同一の「未公開」を表示するため、Pillの方はtestIDで一意に絞り込む。
     expect(within(screen.getByTestId('production-status-pill')).getByText('未公開')).toBeVisible();
 
-    expect(screen.getByTestId('production-management-menu-edit').props.accessibilityState?.disabled).toBeFalsy();
-    expect(screen.getByTestId('production-management-menu-participants').props.accessibilityState?.disabled).toBeFalsy();
+    // The 9 items already reachable from the Production Context sidebar
+    // are no longer duplicated as cards on this screen.
+    expect(screen.queryByTestId('production-management-menu-edit')).toBeNull();
+    expect(screen.queryByTestId('production-management-menu-participants')).toBeNull();
+    expect(screen.queryByTestId('production-management-menu-schedule')).toBeNull();
+
+    // The 4 items with no sidebar entry remain here.
     expect(screen.getByTestId('production-management-menu-publish').props.accessibilityState?.disabled).toBeFalsy();
-    expect(screen.getByTestId('production-management-menu-schedule')).toBeVisible();
+    expect(screen.getByTestId('production-management-menu-member-performance-summary')).toBeVisible();
     expect(screen.getByTestId('production-management-menu-accounting')).toBeVisible();
     expect(screen.getByTestId('production-management-menu-notifications')).toBeVisible();
 

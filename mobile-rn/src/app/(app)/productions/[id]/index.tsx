@@ -49,6 +49,23 @@ const STATUS_LABEL: Record<string, string> = {
  * canManageParticipants()) drive which management cards this screen
  * offers; the server remains the actual authority on every action
  * behind them.
+ *
+ * StageArt UI再構成 instruction (this round §「右コンテンツ」): "左
+ * Navigationの項目と同じものを右側に大量のカードとして並べることを基本
+ * 設計にしない" - this screen previously duplicated 9 of its 13 menu
+ * cards with items the Production Context sidebar (useNavMenu.ts) already
+ * provides (公演情報/担当者/出演者・参加者(=メンバー管理)/稽古・出欠(=稽古
+ * 管理)/公演回管理(=公演スケジュール管理)/チケット管理/受付/精算/アンケート).
+ * Those 9 are removed here - they remain reachable from the sidebar,
+ * unchanged. The remaining 4 (公開設定/メンバー実績サマリー/会計/通知) have
+ * no sidebar entry at all (they are not part of the confirmed Production
+ * Context menu structure this round), so removing them here would make
+ * them unreachable - they are kept as a compact "その他" section, not a
+ * duplicate of the sidebar. A short "概要" section using only fields
+ * already present on the fetched Production (description/venue_name/
+ * schedule_start_date/schedule_end_date) was added, matching this round's
+ * "公演概要...など、既存仕様・既存データから表示可能な情報" instruction -
+ * no new API call was added for this.
  */
 export default function ProductionManagementScreen() {
   const { id, saved } = useLocalSearchParams<{ id: string; saved?: string }>();
@@ -58,11 +75,6 @@ export default function ProductionManagementScreen() {
   const { organization } = useProductionOrganization(production);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
-  const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
-  const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
-  const canManageCheckIn = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
-  const canManageQuestionnaire = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
 
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const activate = useActivateProduction(id);
@@ -225,78 +237,39 @@ export default function ProductionManagementScreen() {
         </View>
       )}
 
+      {(production.description || production.venue_name || production.schedule_start_date) && (
+        <View style={styles.overviewCard} testID="production-management-overview">
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            概要
+          </ThemedText>
+          {production.venue_name && (
+            <ThemedText type="small" testID="production-management-venue">
+              会場：{production.venue_name}
+            </ThemedText>
+          )}
+          {(production.schedule_start_date || production.schedule_end_date) && (
+            <ThemedText type="small" testID="production-management-schedule-period">
+              公演期間：{production.schedule_start_date ?? '未定'} 〜 {production.schedule_end_date ?? '未定'}
+            </ThemedText>
+          )}
+          {production.description && (
+            <ThemedText type="small" themeColor="textSecondary" testID="production-management-description">
+              {production.description}
+            </ThemedText>
+          )}
+        </View>
+      )}
+
       <ThemedText type="subtitle" style={styles.sectionTitle}>
-        公演管理
+        その他
       </ThemedText>
 
       <View style={styles.menuGrid} testID="production-management-menu">
-        <MenuCard
-          testID="production-management-menu-edit"
-          label="公演情報"
-          description="名前・肩書・Slugを編集"
-          onPress={() => router.push(`/productions/${id}/edit` as Href)}
-          disabled={!isPrimaryManager}
-        />
-        <MenuCard
-          testID="production-management-menu-delegates"
-          label="担当者"
-          description="仕事を任せる担当者と役割を管理"
-          onPress={() => router.push(`/productions/${id}/delegates` as Href)}
-          disabled={!isPrimaryManager}
-        />
-        <MenuCard
-          testID="production-management-menu-participants"
-          label="出演者・参加者"
-          description="参加者の確認・参加申請の承認"
-          onPress={() => router.push(`/productions/${id}/participants` as Href)}
-          disabled={!canManageParticipants}
-        />
         <MenuCard
           testID="production-management-menu-publish"
           label="公開設定"
           description={published ? '公開中' : '未公開'}
           onPress={() => router.push(`/productions/${id}/publish` as Href)}
-          disabled={!isPrimaryManager}
-        />
-      </View>
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        稽古・会計・通知
-      </ThemedText>
-
-      <View style={styles.menuGrid} testID="production-management-operations-menu">
-        <MenuCard
-          testID="production-management-menu-schedule"
-          label="稽古・出欠"
-          description="稽古日程と出欠"
-          onPress={() => router.push(`/production/${id}/schedule` as Href)}
-        />
-        <MenuCard
-          testID="production-management-menu-performances"
-          label="公演回管理"
-          description="公演回の一覧・作成・編集"
-          onPress={() => router.push(`/productions/${id}/performances` as Href)}
-          disabled={!canManagePerformances}
-        />
-        <MenuCard
-          testID="production-management-menu-tickets"
-          label="チケット管理"
-          description="チケット設定・ノルマ・チケットバック"
-          onPress={() => router.push(`/productions/${id}/tickets` as Href)}
-          disabled={!canManageTickets}
-        />
-        <MenuCard
-          testID="production-management-menu-checkin"
-          label="受付（Check-in）"
-          description="来場受付・当日券"
-          onPress={() => router.push(`/productions/${id}/checkin` as Href)}
-          disabled={!canManageCheckIn}
-        />
-        <MenuCard
-          testID="production-management-menu-settlement"
-          label="精算"
-          description="チケットバックの精算"
-          onPress={() => router.push(`/productions/${id}/settlement` as Href)}
           disabled={!isPrimaryManager}
         />
         <MenuCard
@@ -305,13 +278,6 @@ export default function ProductionManagementScreen() {
           description="稽古出欠・チケット販売実績"
           onPress={() => router.push(`/productions/${id}/member-performance-summary` as Href)}
           disabled={!isPrimaryManager}
-        />
-        <MenuCard
-          testID="production-management-menu-questionnaire"
-          label="アンケート"
-          description="公演後アンケートの作成・結果確認"
-          onPress={() => router.push(`/productions/${id}/questionnaire` as Href)}
-          disabled={!canManageQuestionnaire}
         />
         <MenuCard
           testID="production-management-menu-accounting"
@@ -395,6 +361,14 @@ const styles = StyleSheet.create({
   lifecycleError: { color: '#a6483a', width: '100%' },
   destructiveText: { color: '#a6483a', fontWeight: '600' },
   sectionTitle: { marginTop: Spacing.two, marginBottom: Spacing.one },
+  overviewCard: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.half,
+    marginBottom: Spacing.three,
+  },
   menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },
   menuCard: {
     width: 220,

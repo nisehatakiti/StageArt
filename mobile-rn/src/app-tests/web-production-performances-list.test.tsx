@@ -56,7 +56,7 @@ const performanceA = {
 
 /**
  * StageArt Phase 2 Performance基盤 (Performance基盤 実装指示書 §22): the
- * 公演回管理 screen - confirms the Performance list renders from
+ * 公演スケジュール管理 screen - confirms the Performance list renders from
  * GET /productions/{id}/performances with 公演日/開演時刻/終演予定時刻/定員/
  * Status all visible. Kept as a single-test file (not combined with the
  * empty/forbidden-state cases) matching this codebase's established
@@ -65,7 +65,7 @@ const performanceA = {
  * (see web-production-participants-bulk-update.test.tsx's sibling
  * -toggle/-submit-on/-submit-off split for the same reasoning).
  */
-describe('Web 公演回管理: 一覧表示', () => {
+describe('Web 公演スケジュール管理: 一覧表示', () => {
   it('shows the Performance list for a Primary Manager', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: baseProduction },

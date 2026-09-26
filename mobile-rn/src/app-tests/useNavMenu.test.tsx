@@ -5,7 +5,7 @@ import type { PropsWithChildren } from 'react';
 import { AuthProvider } from '@/auth/AuthContext';
 import { useNavMenu } from '@/components/chrome/useNavMenu';
 
-import { mockFetchRoutes, orgOne, orgTwo, productionOne, productionTwo } from './__fixtures__/homeFixtures';
+import { mockFetchRoutes, orgOne, orgTwo, productionOne, productionTwo, projectOne } from './__fixtures__/homeFixtures';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -29,6 +29,7 @@ function wrapper({ children }: PropsWithChildren) {
     </QueryClientProvider>
   );
 }
+
 
 /**
  * StageArt Phase 1: useNavMenu() now derives its Context (home /
@@ -175,7 +176,7 @@ describe('useNavMenu', () => {
     expect(performances?.disabled).toBe(true);
   });
 
-  it('enables 公演回管理 for a Primary Manager', async () => {
+  it('enables 公演スケジュール管理 for a Primary Manager, labeled 公演スケジュール管理 (not 公演回管理)', async () => {
     mockPathname = `/productions/${productionOne.id}`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
@@ -189,6 +190,7 @@ describe('useNavMenu', () => {
     await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
     const performances = result.current.contextItems.find((item) => item.key === 'production-performances');
     expect(performances?.disabled).toBe(false);
+    expect(performances?.label).toBe('公演スケジュール管理');
   });
 
   it('enables 小屋入り～本番／公演終了・精算処理 for a Primary Manager (Phase 4 Check-in/精算/会計連携)', async () => {
@@ -262,5 +264,113 @@ describe('useNavMenu', () => {
 
     await waitFor(() => expect(result.current.contextType).toBe('production'));
     expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(true);
+  });
+
+  /**
+   * StageArt UI再構成 instruction (this round §「戻る・Context切替」):
+   * Organization Context gets a static "← 所属団体一覧へ戻る" link (no
+   * extra data fetch required). A dynamic Production -> Organization
+   * link was attempted this round but reverted after it was found to
+   * break ~19 unrelated Production Context tests (adding a new async
+   * operation to the globally-shared useNavMenu() interfered with those
+   * tests' own fireEvent-driven state) - see useNavMenu.ts's own
+   * ORGANIZATION_BACK_TO docblock and this round's report. Production
+   * Context's `backTo` therefore stays `null` for now, and no '/projects'
+   * fetch should ever be attempted by useNavMenu() itself.
+   */
+  it('shows the static Organization -> 所属団体一覧 backTo link with no extra data dependency', async () => {
+    mockPathname = `/organizations/${orgOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
+    expect(result.current.backTo?.href).toBe('/organizations');
+    expect(result.current.backTo?.label).toContain('所属団体一覧');
+  });
+
+  it('has no backTo link in Production Context, and never attempts to fetch /projects', async () => {
+    mockPathname = `/productions/${productionOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
+    expect(result.current.backTo).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls.some(([url]: [string]) => String(url).endsWith('/projects'))).toBe(false);
+  });
+
+  it('has no backTo link in Home Context', async () => {
+    mockPathname = '/home';
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextType).toBe('home'));
+    expect(result.current.backTo).toBeNull();
+  });
+
+  /**
+   * StageArt UI再構成 instruction (this round §「Organization Context」):
+   * 団体情報(flat) / 公開ページ管理(ABOUT・SNS・リンク) / メンバー管理 /
+   * 公演管理 という2階層構造 - 前回の小屋入り～本番と同じgroupLabelパターン。
+   */
+  it('groups ABOUT/SNS/リンク under 公開ページ管理, and メンバー管理/公演管理 items under their own headings', async () => {
+    mockPathname = `/organizations/${orgOne.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
+    const about = result.current.contextItems.find((item) => item.key === 'organization-about');
+    const membersGroupStart = result.current.contextItems.find((item) => item.key === 'organization-members');
+    const productionsGroupStart = result.current.contextItems.find((item) => item.key === 'organization-productions');
+    expect(about?.groupLabel).toBe('公開ページ管理');
+    expect(membersGroupStart?.groupLabel).toBe('メンバー管理');
+    expect(productionsGroupStart?.groupLabel).toBe('公演管理');
+    // 団体情報 itself is not grouped - it is the Organization's own flat top item.
+    expect(result.current.contextItems.find((item) => item.key === 'organization-info')?.groupLabel).toBeUndefined();
+  });
+
+  it('switches contextItems correctly when navigating from Organization to Production and back to Home (context isolation)', async () => {
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (url) => url.endsWith(`/productions/${productionOne.id}`), status: 200, body: productionOne },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [projectOne] },
+    ]);
+
+    mockPathname = `/organizations/${orgOne.id}`;
+    const { result, rerender } = await renderHook(() => useNavMenu(), { wrapper });
+    await waitFor(() => expect(result.current.contextType).toBe('organization'));
+    expect(result.current.contextItems.some((item) => item.key === 'production-rehearsal')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-info')).toBe(true);
+
+    mockPathname = `/productions/${productionOne.id}`;
+    rerender(undefined);
+    await waitFor(() => expect(result.current.contextType).toBe('production'));
+    expect(result.current.contextItems.some((item) => item.key === 'organization-info')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'production-rehearsal')).toBe(true);
+
+    mockPathname = '/home';
+    rerender(undefined);
+    await waitFor(() => expect(result.current.contextType).toBe('home'));
+    expect(result.current.contextItems.some((item) => item.key === 'production-rehearsal')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-info')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'discover-organizations')).toBe(true);
   });
 });

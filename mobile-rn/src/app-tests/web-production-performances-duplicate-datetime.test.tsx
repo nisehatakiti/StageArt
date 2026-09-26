@@ -43,13 +43,13 @@ const baseProduction = {
 /**
  * docs/12-FunctionalStructure.md §22.5: creating a Performance whose
  * production_id + performance_date + start_time duplicates an existing
- * Performance must be rejected. This confirms the 公演回管理 screen shows
+ * Performance must be rejected. This confirms the 公演スケジュール管理 screen shows
  * a message the user can understand as "同じ公演日・開演時刻の公演スケ
  * ジュールは登録できない" when the Backend returns
  * stageart_performance_duplicate_datetime (422), rather than falling back
  * to a generic error message.
  */
-describe('Web 公演回管理: 重複日時エラー', () => {
+describe('Web 公演スケジュール管理: 重複日時エラー', () => {
   it('shows a duplicate-date-time specific message when the Backend rejects a duplicate Performance', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: baseProduction },

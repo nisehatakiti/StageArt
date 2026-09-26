@@ -240,7 +240,7 @@ export default function ProductionCheckInScreen() {
       )}
 
       <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        対象公演回
+        対象公演スケジュール
       </ThemedText>
       <View style={styles.performanceRow} testID="production-checkin-performance-list">
         {performances.map((performance) => (
@@ -260,7 +260,7 @@ export default function ProductionCheckInScreen() {
 
       {!activePerformanceId && (
         <ThemedText testID="production-checkin-no-performance" themeColor="textSecondary">
-          先に公演回管理で公演回を登録してください。
+          先に公演スケジュール管理で公演スケジュールを登録してください。
         </ThemedText>
       )}
 

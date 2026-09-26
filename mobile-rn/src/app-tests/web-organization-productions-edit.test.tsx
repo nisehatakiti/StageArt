@@ -11,21 +11,23 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt Organization Context Menu仕様整合フェーズ2: 公演管理 >
- * 公演を編集する (docs/03-PublicPageURLAndPublicationSchedule.md
- * 「Organization Context Menu」) - confirms the route is reachable and
- * renders its title + 準備中 placeholder via OrganizationPlaceholderScreen.
+ * StageArt UI再構成 instruction (this round): 公演管理 > 公演を編集する
+ * (docs/03-PublicPageURLAndPublicationSchedule.md「Organization Context
+ * Menu」) had no confirmed "pick a Production then edit" flow, so rather
+ * than stay a dead-end 準備中 placeholder, it now redirects to the real,
+ * already-implemented 公演一覧 screen - the exact destination its own
+ * former placeholder text already promised.
  */
 describe('Web 団体管理: 公演管理 > 公演を編集する', () => {
-  it('renders the 公演を編集する screen skeleton', async () => {
+  it('redirects to the real 公演一覧 screen', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
+      { test: (u) => u.endsWith('/productions'), status: 200, body: [] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
     renderRouter('src/app', { initialUrl: `/organizations/${orgOne.id}/productions/edit` });
 
-    await waitFor(() => expect(screen.getByTestId('organization-productions-edit-title')).toBeVisible());
-    expect(screen.getByTestId('organization-productions-edit-placeholder')).toBeVisible();
+    await waitFor(() => expect(screen.getByTestId('organization-productions-create-link')).toBeVisible());
   });
 });

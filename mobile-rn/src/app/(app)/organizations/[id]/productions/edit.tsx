@@ -1,26 +1,21 @@
-import { useLocalSearchParams } from 'expo-router';
-
-import { OrganizationPlaceholderScreen } from '@/components/organization-placeholder-screen';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 
 /**
- * StageArt Organization Context Menu仕様整合: 公演管理 > 公演を編集する
+ * StageArt Organization Context Menu仕様整合 + UI再構成 instruction (this
+ * round): 公演管理 > 公演を編集する
  * (docs/03-PublicPageURLAndPublicationSchedule.md「Organization Context
- * Menu」) - Organization Contextから対象公演を選んで編集する画面。既存の
- * Production Context側には`/productions/{id}/edit`が既に存在するが、
- * Organization Context側から「どの公演を編集するか」選ぶ導線・業務フロー
- * は仕様確認できていないため、今回は勝手に組み立てず骨格のみ用意する
- * （see OrganizationPlaceholderScreen's own docblock）。既存の
- * ../productions.tsx（公演一覧）は削除せずそのまま維持している。
+ * Menu」) - no confirmed spec exists for a distinct "pick which Production
+ * to edit" flow at this route (see the previous round's own placeholder
+ * text here, which already told users "個別の公演の編集は「公演一覧」から
+ * 行えます"), so rather than leave this a dead-end "準備中" screen, it
+ * redirects to the real, already-implemented 公演一覧 screen
+ * (`../productions.tsx`) that placeholder text already pointed users to -
+ * not a new business flow, just making the promised destination real.
+ * Individual editing itself still happens via that list's existing
+ * "管理する" link into the Production Context, unchanged.
  */
 export default function OrganizationProductionsEditScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  return (
-    <OrganizationPlaceholderScreen
-      id={id}
-      testIdPrefix="organization-productions-edit"
-      title="公演を編集する"
-      description="ここから公演を選んで編集する機能は準備中です。個別の公演の編集は「公演一覧」から行えます。"
-    />
-  );
+  return <Redirect href={`/organizations/${id}/productions`} />;
 }

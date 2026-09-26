@@ -56,10 +56,10 @@ const createdPerformance = {
 
 /**
  * StageArt Phase 2 Performance基盤 §23: creating a Performance from the
- * 公演回管理 screen sends POST /productions/{id}/performances with the
+ * 公演スケジュール管理 screen sends POST /productions/{id}/performances with the
  * entered 公演日/開演時刻.
  */
-describe('Web 公演回管理: 公演回の作成', () => {
+describe('Web 公演スケジュール管理: 公演スケジュールの作成', () => {
   it('submits a new Performance via POST /productions/{id}/performances', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: baseProduction },

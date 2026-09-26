@@ -20,7 +20,7 @@ import { getErrorMessage } from '@/utils/errorMessage';
 const ROLE_LABEL: Record<string, string> = {
   PARTICIPANT_MANAGER: '参加者管理',
   REHEARSAL_MANAGER: '稽古管理',
-  PERFORMANCE_MANAGER: '公演回管理',
+  PERFORMANCE_MANAGER: '公演スケジュール管理',
   TICKET_MANAGER: 'チケット管理',
   RESERVATION_MANAGER: '予約管理',
   CHECKIN_MANAGER: '受付・チェックイン管理',

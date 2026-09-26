@@ -59,34 +59,35 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
 ];
 
 /**
- * StageArt Organization Context Menu仕様整合フェーズ2
- * (docs/03-PublicPageURLAndPublicationSchedule.md「Organization Context
- * Menu」): 確定仕様の全項目をメニュー上に揃える。既存画面がある項目は
- * そのまま接続し（団体情報/メンバー管理/公演一覧/公演を作る/参加申請/
- * 招待）、画面がまだない項目（ABOUT/SNS/リンク、メンバー管理の追加/
- * 代理人を設定/代表者交代、公演管理の過去公演を登録する/公演を編集する、
- * 会計管理）は OrganizationPlaceholderScreen による「画面の器」
- * （タイトル＋準備中表示）だけを新設し、業務ロジック・入力項目・API
- * 呼び出しは一切追加していない（詳細は作業報告参照）。
+ * StageArt UI再構成 instruction (this round §「Organization Context」):
+ * 団体情報(flat) / 公開ページ管理(ABOUT・SNS・リンク) / メンバー管理(メンバー
+ * 管理・追加・代理人を設定・代表者交代) / 公演管理(公演を作る・過去公演を
+ * 登録する・公演を編集する) / 会計管理(ON時のみ) という2階層構造を、前回の
+ * 小屋入り～本番と同じ groupLabel パターンで表現する。
  *
- * 権限ゲーティングは仕様に明記されているものだけを適用する - 団体情報は
- * 既存どおりOwner限定。参加申請/招待も既存どおりOwner限定（仕様の
- * 「メンバー管理」配下にどう位置付けるか確定できないため、独立した項目の
- * まま・ゲーティングも変更していない）。会計管理は仕様が明記する唯一の
- * 条件「団体情報で会計機能がONの場合のみ表示する」のみを適用する。それ
- * 以外の新設項目（ABOUT/SNS/リンク、メンバー管理の追加/代理人を設定/
- * 代表者交代、公演管理の過去公演を登録する/公演を編集する）には、仕様に
- * 明記されていないOwner限定等の権限ルールを推測で追加していない -
- * 「画面を開けるかどうか」と「実際に操作できるかどうか」は別問題であり、
- * 中身が未実装の骨格画面である今回はまだ後者の判断が発生しない。
+ * この構造は docs/03-PublicPageURLAndPublicationSchedule.md の
+ * 「団体管理メニュー構成」「Organization Context Menu」と一致する一方、
+ * docs/04-CommonNavigationDesign.md 内の§2.5/§6/§15にはこれと異なる
+ * 簡略版が3種類存在し、相互にも矛盾している（要確認・今回の作業報告参照）。
+ * 今回はユーザー自身がこのラウンドの指示で明示した候補構造を正本として
+ * 採用し、04-CommonNavigationDesign.md側の矛盾は解消せず「要確認」のまま
+ * 報告する。
+ *
+ * 「公演一覧」（organization-productions）は候補リストに明記されていないが、
+ * 既存の実装済み・動作する画面であり削除する仕様もないため、公演管理グル
+ * ープの先頭に残す（要確認）。「参加申請」「招待」も同様に候補リストにない
+ * ため、いずれのグループにも属させず既存のフラット項目のまま維持する
+ * （要確認）。会計管理の6子項目（会計入力/仕訳一覧/貸借対照表/損益計算書/
+ * 予算作成/会計締め処理）はBackend/UI共に画面が存在しない（今回のバック
+ * エンド調査で確認）ため、既存どおり単一のPlaceholder遷移先のままとする。
  */
 function buildOrganizationContextItems(id: string, isOwner: boolean, accountingEnabled: boolean): NavMenuItem[] {
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
-    { key: 'organization-about', label: 'ABOUT', href: `/organizations/${id}/about` as Href },
+    { key: 'organization-about', label: 'ABOUT', href: `/organizations/${id}/about` as Href, groupLabel: '公開ページ管理' },
     { key: 'organization-sns', label: 'SNS', href: `/organizations/${id}/sns` as Href },
     { key: 'organization-links', label: 'リンク', href: `/organizations/${id}/links` as Href },
-    { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href },
+    { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href, groupLabel: 'メンバー管理' },
     { key: 'organization-members-add', label: '追加', href: `/organizations/${id}/members/add` as Href },
     { key: 'organization-members-delegate', label: '代理人を設定', href: `/organizations/${id}/members/delegate` as Href },
     {
@@ -104,7 +105,7 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
   }
 
   items.push(
-    { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href },
+    { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演管理' },
     { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href },
     {
       key: 'organization-productions-create-past',
@@ -132,10 +133,10 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  * Mirrors productions/[id]/index.tsx's own menuGrid gating exactly
  * (公演情報: disabled for non-Primary-Manager; メンバー管理: disabled
  * unless Primary Manager or a PARTICIPANT_MANAGER Delegate; 稽古管理:
- * always available; 公演回管理 - added by Phase 2 Performance基盤 - disabled
- * unless Primary Manager or a PERFORMANCE_MANAGER Delegate; チケット管理 -
- * enabled by Phase 3 Ticket/Reservation基盤, previously a permanent
- * disabled placeholder - disabled unless Primary Manager or a
+ * always available; 公演スケジュール管理 - added by Phase 2 Performance基盤 -
+ * disabled unless Primary Manager or a PERFORMANCE_MANAGER Delegate;
+ * チケット管理 - enabled by Phase 3 Ticket/Reservation基盤, previously a
+ * permanent disabled placeholder - disabled unless Primary Manager or a
  * TICKET_MANAGER Delegate, per instruction §23/§24). 小屋入り～本番／
  * 公演終了・精算処理 - enabled by Phase 4 Check-in/精算/会計連携 (previously
  * permanent disabled placeholders): 小屋入り～本番 disabled unless Primary
@@ -145,18 +146,20 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  *
  * StageArt 小屋入り～本番接続 instruction (docs/04-CommonNavigationDesign.md
  * §20.6 確定事項): "「小屋入り～本番」の配下には「タイムテーブル」「受付」を
- * 配置する" - previously this was a single flat item pointing straight at
- * Check-in, which silently skipped タイムテーブル entirely. Split into two
- * items sharing the same 小屋入り～本番 groupLabel (rendered once, above
- * the first child - see WebSidebarNav/NativeDrawerMenu). Gating is left
- * unchanged (both children keep the existing single CHECKIN_MANAGER
- * check the old flat item used) - the confirmed spec only addresses menu
- * shape, not a new/split permission model, so none is invented here.
- * タイムテーブル points at the existing Production Schedule screen
- * (`/production/{id}/schedule`, already the タイムテーブル
- * authoring/print/viewing surface - see that screen's own docblock and
- * this Phase's report) rather than a new screen; 受付 keeps its existing
- * destination and key unchanged.
+ * 配置する" - split into two items sharing the same 小屋入り～本番
+ * groupLabel (rendered once, above the first child - see
+ * WebSidebarNav/NativeDrawerMenu). タイムテーブル points at the existing
+ * Production Schedule screen (`/production/{id}/schedule`); 受付 keeps
+ * its existing destination and key unchanged.
+ *
+ * StageArt UI再構成 instruction (this round §「Production Context」):
+ * ユーザー向け表記を「公演回」から「公演スケジュール」へ統一（内部route/
+ * ドメインコードのPerformance等は無変更）- label changed from 公演回管理
+ * to 公演スケジュール管理; destination (`/productions/{id}/performances`)
+ * unchanged, since this round's own指示 confirmed "公演スケジュール管理:
+ * Performance管理を利用"（a label change, not a new/separate screen）。
+ * 「担当者」「アンケート」は今回の確定リストに明記されていないが、削除する
+ * 仕様も見当たらないため既存のまま維持する（要確認）。
  */
 function buildProductionContextItems(
   id: string,
@@ -172,7 +175,12 @@ function buildProductionContextItems(
     { key: 'production-delegates', label: '担当者', href: `/productions/${id}/delegates` as Href, disabled: !isPrimaryManager },
     { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
     { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
-    { key: 'production-performances', label: '公演回管理', href: `/productions/${id}/performances` as Href, disabled: !canManagePerformances },
+    {
+      key: 'production-performances',
+      label: '公演スケジュール管理',
+      href: `/productions/${id}/performances` as Href,
+      disabled: !canManagePerformances,
+    },
     { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
     {
       key: 'production-timetable',
@@ -202,6 +210,24 @@ const FIXED_ITEMS: NavMenuItem[] = [
   { key: 'settings', label: '設定', href: '/account' as Href },
 ];
 
+/**
+ * StageArt UI再構成 instruction (this round §「戻る・Context切替」):
+ * Organization Contextの「戻る」は静的な固定リンク（追加のデータ取得
+ * 不要）なのでこのまま提供する。
+ *
+ * Production -> Organization の動的な「戻る」（Production自身に
+ * organization_idが無く、Project経由の解決が必要 - useProductionOrganization
+ * 参照）は、このラウンドで実装を試みたが、Production Context配下の
+ * 既存テスト19件で無関係な副作用（fireEvent操作時の入力値がstateへ反映
+ * されなくなる、Jest/RTLのこのハーネス固有の既知の脆弱性クラス）を起こす
+ * ことが判明したため、安全のため今回は見送った。グローバルなuseNavMenu()
+ * へ新しい非同期処理を追加したこと自体が原因と考えられるが、正確な機序は
+ * 特定できていない。次回、Production側にorganization_idを直接持たせる等
+ * バックエンド変更を伴う解決策を検討する必要がある（要確認・今回の作業
+ * 報告参照）。
+ */
+const ORGANIZATION_BACK_TO: NavMenuItem = { key: 'back-to-organizations', label: '← 所属団体一覧へ戻る', href: '/organizations' as Href };
+
 export function useNavMenu() {
   const context = useCurrentContext();
   const organizationsQuery = useOrganizations();
@@ -218,6 +244,7 @@ export function useNavMenu() {
         organization?.current_person_role === 'OWNER',
         !!organization?.accounting_enabled
       ),
+      backTo: ORGANIZATION_BACK_TO,
     };
   }
 
@@ -242,6 +269,9 @@ export function useNavMenu() {
         canManageCheckIn,
         canManageQuestionnaire
       ),
+      // See ORGANIZATION_BACK_TO's own docblock for why this is not yet
+      // implemented for Production Context.
+      backTo: null,
     };
   }
 
@@ -250,5 +280,6 @@ export function useNavMenu() {
     contextType: 'home' as const,
     contextLabel: 'ホーム',
     contextItems: HOME_CONTEXT_ITEMS,
+    backTo: null,
   };
 }
