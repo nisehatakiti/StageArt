@@ -346,14 +346,14 @@ function PerformanceEditRow({
         testID={`performance-edit-date-${performanceId}`}
         value={edit.performanceDate}
         onChangeText={(value) => setEdit({ ...edit, performanceDate: value })}
-        style={styles.editInput}
+        style={[styles.editInput, styles.inputDate]}
       />
       <FormInput
         kind="time"
         testID={`performance-edit-start-time-${performanceId}`}
         value={edit.startTime}
         onChangeText={(value) => setEdit({ ...edit, startTime: value })}
-        style={styles.editInput}
+        style={[styles.editInput, styles.inputTime]}
       />
       <FormInput
         kind="time"
@@ -402,6 +402,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
@@ -410,6 +411,7 @@ const styles = StyleSheet.create({
   editRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
