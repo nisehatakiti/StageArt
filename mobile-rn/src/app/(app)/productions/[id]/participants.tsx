@@ -17,12 +17,30 @@ import { updateProduction } from '@/features/production/api';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { useAuth } from '@/auth/AuthContext';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Participant } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+import {
+  createProductionDelegate,
+  deleteProductionDelegate,
+  fetchProductionDelegates,
+  updateProductionDelegate,
+} from '@/features/productionDelegate/api';
+import type { ProductionDelegate } from '@/types/api';
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
 const PARTICIPANT_TYPES = ['CAST', 'STAFF'] as const;
+
+const DELEGATE_ROLE_LABEL: Record<string, string> = {
+  PARTICIPANT_MANAGER: '参加者管理',
+  REHEARSAL_MANAGER: '稽古管理',
+  PERFORMANCE_MANAGER: '公演スケジュール管理',
+  TICKET_MANAGER: 'チケット管理',
+  RESERVATION_MANAGER: '予約管理',
+  CHECKIN_MANAGER: '受付・チェックイン管理',
+  QUESTIONNAIRE_MANAGER: 'アンケート管理',
+};
+const DELEGATE_ROLES = Object.keys(DELEGATE_ROLE_LABEL);
 
 type RowEdit = { participantType: string; remarks: string; delete: boolean };
 
@@ -55,6 +73,25 @@ export default function ProductionParticipantsScreen() {
   const participantsQuery = useParticipants(id);
   const createNameOnly = useCreateNameOnlyParticipant(id);
   const updateParticipant = useUpdateParticipant(id);
+  const isPrimaryManager = !!production?.is_primary_manager;
+  const delegatesQuery = useQuery({
+    queryKey: ['production-delegates', id],
+    queryFn: () => fetchProductionDelegates(apiClient, id as string),
+    enabled: isPrimaryManager && !!id,
+  });
+  const createDelegate = useMutation({
+    mutationFn: (fields: { personId: string; role: string }) => createProductionDelegate(apiClient, id as string, fields),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
+  });
+  const updateDelegate = useMutation({
+    mutationFn: ({ delegateId, role, status }: { delegateId: string; role: string; status: string }) =>
+      updateProductionDelegate(apiClient, delegateId, { role, status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
+  });
+  const deleteDelegate = useMutation({
+    mutationFn: (delegateId: string) => deleteProductionDelegate(apiClient, delegateId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
+  });
 
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
@@ -269,6 +306,37 @@ export default function ProductionParticipantsScreen() {
               isSelf={participant.subject_type === 'PERSON' && participant.subject_id === currentPersonQuery.data?.id}
               edit={edits[participant.id] ?? { participantType: participant.participant_type, remarks: participant.remarks ?? '', delete: false }}
               onChange={(edit) => setEdits((current) => ({ ...current, [participant.id]: edit }))}
+              delegateRoles={delegatesQuery.data ?? []}
+              canManageDelegateRoles={isPrimaryManager}
+              delegateBusy={createDelegate.isPending || updateDelegate.isPending || deleteDelegate.isPending}
+              onAddDelegateRole={async (personId, role) => {
+                try {
+                  setErrorMessage(null);
+                  await createDelegate.mutateAsync({ personId, role });
+                } catch (error) {
+                  setErrorMessage(getErrorMessage(error));
+                }
+              }}
+              onToggleDelegateRole={async (delegate) => {
+                try {
+                  setErrorMessage(null);
+                  await updateDelegate.mutateAsync({
+                    delegateId: delegate.id,
+                    role: delegate.role,
+                    status: delegate.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+                  });
+                } catch (error) {
+                  setErrorMessage(getErrorMessage(error));
+                }
+              }}
+              onDeleteDelegateRole={async (delegate) => {
+                try {
+                  setErrorMessage(null);
+                  await deleteDelegate.mutateAsync(delegate.id);
+                } catch (error) {
+                  setErrorMessage(getErrorMessage(error));
+                }
+              }}
             />
           ))}
         </View>
@@ -361,11 +429,23 @@ function ParticipantEditRow({
   isSelf,
   edit,
   onChange,
+  delegateRoles,
+  canManageDelegateRoles,
+  delegateBusy,
+  onAddDelegateRole,
+  onToggleDelegateRole,
+  onDeleteDelegateRole,
 }: {
   participant: Participant;
   isSelf: boolean;
   edit: RowEdit;
   onChange: (edit: RowEdit) => void;
+  delegateRoles: ProductionDelegate[];
+  canManageDelegateRoles: boolean;
+  delegateBusy: boolean;
+  onAddDelegateRole: (personId: string, role: string) => Promise<void>;
+  onToggleDelegateRole: (delegate: ProductionDelegate) => Promise<void>;
+  onDeleteDelegateRole: (delegate: ProductionDelegate) => Promise<void>;
 }) {
   const displayLabel =
     participant.subject_type === 'NAME_ONLY'
@@ -406,6 +486,43 @@ function ParticipantEditRow({
         onChangeText={(remarks) => onChange({ ...edit, remarks })}
         style={styles.remarksInput}
       />
+      {participant.subject_type === 'PERSON' && (
+        <View style={styles.delegateCell} testID={`participant-delegate-roles-${participant.id}`}>
+          <ThemedText type="small" themeColor="textSecondary">担当者権限</ThemedText>
+          {delegateRoles.filter((delegate) => delegate.person_id === participant.subject_id).map((delegate) => (
+            <View key={delegate.id} style={styles.delegateRoleRow}>
+              <ThemedText type="small" style={delegate.status !== 'ACTIVE' ? styles.inactiveRole : undefined}>
+                {DELEGATE_ROLE_LABEL[delegate.role] ?? delegate.role}
+                {delegate.status !== 'ACTIVE' ? '（無効）' : ''}
+              </ThemedText>
+              {canManageDelegateRoles && (
+                <View style={styles.delegateRoleActions}>
+                  <TouchableOpacity disabled={delegateBusy} onPress={() => onToggleDelegateRole(delegate)}>
+                    <ThemedText type="link">{delegate.status === 'ACTIVE' ? '無効' : '有効'}</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={delegateBusy} onPress={() => onDeleteDelegateRole(delegate)}>
+                    <ThemedText type="link">解除</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          ))}
+          {canManageDelegateRoles && (
+            <View style={styles.delegateAddList}>
+              {DELEGATE_ROLES.filter((role) => !delegateRoles.some((delegate) => delegate.person_id === participant.subject_id && delegate.role === role)).map((role) => (
+                <TouchableOpacity
+                  key={role}
+                  disabled={delegateBusy}
+                  onPress={() => onAddDelegateRole(participant.subject_id, role)}
+                  style={styles.delegateAddButton}
+                >
+                  <ThemedText type="small">＋ {DELEGATE_ROLE_LABEL[role]}</ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -454,6 +571,24 @@ const styles = StyleSheet.create({
   },
   typeButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
   typeButtonTextActive: { color: '#fff' },
+  delegateCell: { width: 360, minWidth: 260 },
+  delegateRoleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.one,
+    paddingVertical: 4,
+  },
+  delegateRoleActions: { flexDirection: 'row', gap: Spacing.two },
+  delegateAddList: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, marginTop: Spacing.one },
+  delegateAddButton: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: Radius.medium,
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.one,
+  },
+  inactiveRole: { opacity: 0.5 },
   remarksInput: {
     flex: 1,
     borderWidth: 1,
