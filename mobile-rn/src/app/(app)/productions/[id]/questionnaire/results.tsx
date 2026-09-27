@@ -24,7 +24,7 @@ export default function ProductionQuestionnaireResultsScreen() {
   const resultsQuery = useQuestionnaireResults(id, questionnaireExists);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('QUESTIONNAIRE_MANAGER');
 
   if (productionQuery.isLoading || questionnaireQuery.isLoading) {
     return (

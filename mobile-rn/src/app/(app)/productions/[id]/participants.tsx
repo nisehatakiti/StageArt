@@ -58,7 +58,7 @@ export default function ProductionParticipantsScreen() {
 
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
-  const canManage = !!production?.is_primary_manager || production?.delegate_role === 'PARTICIPANT_MANAGER';
+  const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});

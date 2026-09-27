@@ -176,6 +176,7 @@ export type Production = {
   updated_at: string;
   is_primary_manager: boolean;
   delegate_role: string | null;
+  delegate_roles: string[];
   description: string | null;
   description_published_at: string | null;
   flyer_url: string | null;

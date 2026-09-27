@@ -102,7 +102,8 @@ final class CompleteProductionUseCase
         return ProductionResult::fromDomain(
             $production,
             true,
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production)
         );
     }
 

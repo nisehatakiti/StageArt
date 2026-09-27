@@ -7,12 +7,15 @@ namespace StageArt\Tests\Application\Production;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\Performance\PerformanceCapability;
 use StageArt\Application\Production\GetProductionQuery;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
+use StageArt\Application\Rehearsal\RehearsalCapability;
+use StageArt\Application\Ticket\TicketCapability;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
@@ -47,6 +50,7 @@ final class ProductionAuthorizationTest extends TestCase
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
+    private ProductionAuthorizationService $authorization;
     private GetProductionUseCase $getProduction;
     private UpdateProductionUseCase $updateProduction;
 
@@ -59,16 +63,16 @@ final class ProductionAuthorizationTest extends TestCase
         $this->delegates = new InMemoryProductionDelegateRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
-        $productionAuthorization = new ProductionAuthorizationService(
+        $this->authorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
             new InMemoryParticipantRepository()
         );
 
-        $this->getProduction = new GetProductionUseCase($this->productions, $productionAuthorization);
+        $this->getProduction = new GetProductionUseCase($this->productions, $this->authorization);
         $this->updateProduction = new UpdateProductionUseCase(
             $this->productions,
-            $productionAuthorization,
+            $this->authorization,
             new InMemoryPerformanceRepository(),
             new InMemoryTransactionManager()
         );
@@ -278,5 +282,134 @@ final class ProductionAuthorizationTest extends TestCase
 
         // WordPress user 999 has never touched StageArt: no Person at all.
         $this->getProduction->execute(new GetProductionQuery($production->id()->toString(), 999));
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合・複数Role対応 §6: a Person holding two
+     * simultaneously-ACTIVE ProductionDelegate Roles must pass the
+     * Permission check for either Role's own Permission Set - not just
+     * whichever ProductionDelegate row happens to be found first.
+     */
+    public function test_a_person_with_two_active_roles_has_both_roles_permissions(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        ));
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::performanceManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, TicketCapability::MANAGE));
+
+        // Adding a third Role grants that Role's Permission too, without
+        // disturbing the first two.
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::ticketManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, TicketCapability::MANAGE));
+    }
+
+    /**
+     * §6 無効Role: an INACTIVE delegate Role grants none of its
+     * Permissions, even while a sibling ACTIVE Role on the same Person
+     * keeps granting its own.
+     */
+    public function test_an_inactive_role_grants_no_permission_while_an_active_sibling_role_still_does(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        ));
+        $inactivePerformance = ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::performanceManager(),
+            $production->primaryManagerPersonId()
+        );
+        $inactivePerformance->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($inactivePerformance);
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
+    }
+
+    /**
+     * §6 他Productionへの漏洩防止: a Role granted on Production A must not
+     * leak into Production B for the same Person.
+     */
+    public function test_a_role_granted_on_one_production_does_not_leak_into_another(): void
+    {
+        $productionA = $this->givenProduction(1);
+        $productionB = $this->givenProduction(2);
+
+        $person = Person::create(3);
+        $this->people->save($person);
+        $this->delegates->save(ProductionDelegate::create(
+            $productionA->id(),
+            $person->id(),
+            RoleKey::rehearsalManager(),
+            $productionA->primaryManagerPersonId()
+        ));
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $productionA, RehearsalCapability::MANAGE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $productionB, RehearsalCapability::MANAGE));
+    }
+
+    /**
+     * §6 Role独立性: deactivating one Role does not affect a sibling
+     * Role's Permission on the same Person/Production.
+     */
+    public function test_deactivating_one_role_does_not_affect_a_sibling_roles_permission(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $rehearsal = ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        );
+        $this->delegates->save($rehearsal);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::performanceManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
+
+        $rehearsal->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($rehearsal);
+
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
     }
 }

@@ -51,7 +51,7 @@ export default function ProductionQuestionnaireScreen() {
   const notFound = questionnaireQuery.isError && questionnaireQuery.error instanceof ApiError && questionnaireQuery.error.statusCode === 404;
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('QUESTIONNAIRE_MANAGER');
 
   const createQuestionnaire = useCreateQuestionnaire(id);
   const updateQuestionnaire = useUpdateQuestionnaire(id);

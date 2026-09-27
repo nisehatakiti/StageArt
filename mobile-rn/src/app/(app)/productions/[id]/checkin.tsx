@@ -61,7 +61,7 @@ export default function ProductionCheckInScreen() {
   const participantsQuery = useParticipants(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('CHECKIN_MANAGER');
 
   const performances = performancesQuery.data ?? [];
   const [selectedPerformanceId, setSelectedPerformanceId] = useState<string | null>(null);

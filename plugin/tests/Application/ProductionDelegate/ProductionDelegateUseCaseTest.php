@@ -6,6 +6,8 @@ namespace StageArt\Tests\Application\ProductionDelegate;
 
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\Production\GetProductionQuery;
+use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateCommand;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
@@ -45,6 +47,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
     private ListProductionDelegatesUseCase $listDelegates;
     private UpdateProductionDelegateUseCase $updateDelegate;
     private DeleteProductionDelegateUseCase $deleteDelegate;
+    private GetProductionUseCase $getProduction;
 
     protected function setUp(): void
     {
@@ -71,6 +74,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $this->listDelegates = new ListProductionDelegatesUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
         $this->updateDelegate = new UpdateProductionDelegateUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
         $this->deleteDelegate = new DeleteProductionDelegateUseCase($this->delegates, $this->productions, $productionAuthorization);
+        $this->getProduction = new GetProductionUseCase($this->productions, $productionAuthorization);
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
@@ -291,5 +295,44 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $this->assertSame('鈴木', $updated->personFamilyName);
         $this->assertSame('花子', $updated->personGivenName);
         $this->assertSame('REHEARSAL_MANAGER', $updated->role);
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合・複数Role対応 §4/§6: POST adds a new Role
+     * without touching an existing one, GET /productions/{id}/delegates
+     * lists every row (the same Person appears once per Role), and
+     * GET /productions/{id}'s new delegate_roles carries every ACTIVE
+     * Role for the requesting Person.
+     */
+    public function test_adding_a_second_role_keeps_the_first_and_both_appear_in_delegate_roles(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $target = Person::create(2);
+        $this->people->save($target);
+
+        $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'REHEARSAL_MANAGER'
+        ));
+        $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'PERFORMANCE_MANAGER'
+        ));
+
+        $listed = $this->listDelegates->execute(new ListProductionDelegatesQuery($production->id()->toString(), 1));
+        $this->assertCount(2, $listed);
+        $roles = array_map(static fn ($result) => $result->role, $listed);
+        sort($roles);
+        $this->assertSame(['PERFORMANCE_MANAGER', 'REHEARSAL_MANAGER'], $roles);
+
+        $result = $this->getProduction->execute(new GetProductionQuery($production->id()->toString(), 2));
+        $delegateRoles = $result->delegateRoles;
+        sort($delegateRoles);
+        $this->assertSame(['PERFORMANCE_MANAGER', 'REHEARSAL_MANAGER'], $delegateRoles);
     }
 }

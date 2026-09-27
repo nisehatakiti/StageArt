@@ -81,7 +81,7 @@ export default function ProductionPerformancesScreen() {
   const cancelPerformance = useCancelPerformance(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('PERFORMANCE_MANAGER');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

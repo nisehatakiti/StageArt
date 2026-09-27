@@ -52,6 +52,7 @@ export const productionOne: Production = {
   updated_at: '',
   is_primary_manager: true,
   delegate_role: null,
+  delegate_roles: [],
   description: null,
   description_published_at: null,
   flyer_url: null,
@@ -78,6 +79,7 @@ export const productionTwo: Production = {
   primary_manager_person_id: 'person-2',
   is_primary_manager: false,
   delegate_role: 'REHEARSAL_MANAGER',
+  delegate_roles: ['REHEARSAL_MANAGER'],
 };
 
 export const myDashboardEmpty: MyDashboard = {

@@ -47,7 +47,7 @@ export default function ProductionQuestionEditScreen() {
   const updateQuestion = useUpdateQuestion(id, questionId);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('QUESTIONNAIRE_MANAGER');
 
   const [text, setText] = useState('');
   const [type, setType] = useState<Question['type']>('SINGLE_CHOICE');

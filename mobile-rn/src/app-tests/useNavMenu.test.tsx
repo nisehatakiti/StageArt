@@ -267,6 +267,35 @@ describe('useNavMenu', () => {
   });
 
   /**
+   * 担当者権限をメンバー管理へ統合・複数Role対応 §5: a delegate holding two
+   * simultaneously-ACTIVE Roles must have both Roles' menu items enabled -
+   * `delegate_roles` (array), not the legacy single-value `delegate_role`,
+   * is what useNavMenu() now reads for this gating.
+   */
+  it('enables both メンバー管理 and チケット管理 for a delegate with two simultaneously-active Roles', async () => {
+    const multiRoleProduction = {
+      ...productionTwo,
+      delegate_role: 'PARTICIPANT_MANAGER',
+      delegate_roles: ['PARTICIPANT_MANAGER', 'TICKET_MANAGER'],
+    };
+    mockPathname = `/productions/${multiRoleProduction.id}`;
+    mockFetchRoutes([
+      { test: (url) => url.endsWith('/organizations'), status: 200, body: [] },
+      { test: (url) => url.endsWith(`/productions/${multiRoleProduction.id}`), status: 200, body: multiRoleProduction },
+      { test: (url) => url.endsWith('/productions'), status: 200, body: [] },
+      { test: (url) => url.endsWith('/projects'), status: 200, body: [] },
+    ]);
+
+    const { result } = await renderHook(() => useNavMenu(), { wrapper });
+
+    await waitFor(() => expect(result.current.contextLabel).toBe(multiRoleProduction.name));
+    expect(result.current.contextItems.find((item) => item.key === 'production-members')?.disabled).toBe(false);
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(false);
+    // A Role not in delegate_roles still stays disabled.
+    expect(result.current.contextItems.find((item) => item.key === 'production-performances')?.disabled).toBe(true);
+  });
+
+  /**
    * StageArt UI再構成 instruction (this round §「戻る・Context切替」):
    * Organization Context gets a static "← 所属団体一覧へ戻る" link (no
    * extra data fetch required). A dynamic Production -> Organization

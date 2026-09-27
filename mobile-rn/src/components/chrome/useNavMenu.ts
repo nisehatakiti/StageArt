@@ -251,11 +251,12 @@ export function useNavMenu() {
   if (context.type === 'production' && context.productionId) {
     const production = productionQuery.data;
     const isPrimaryManager = !!production?.is_primary_manager;
-    const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
-    const canManagePerformances = isPrimaryManager || production?.delegate_role === 'PERFORMANCE_MANAGER';
-    const canManageTickets = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
-    const canManageCheckIn = isPrimaryManager || production?.delegate_role === 'CHECKIN_MANAGER';
-    const canManageQuestionnaire = isPrimaryManager || production?.delegate_role === 'QUESTIONNAIRE_MANAGER';
+    const delegateRoles = production?.delegate_roles ?? [];
+    const canManageParticipants = isPrimaryManager || delegateRoles.includes('PARTICIPANT_MANAGER');
+    const canManagePerformances = isPrimaryManager || delegateRoles.includes('PERFORMANCE_MANAGER');
+    const canManageTickets = isPrimaryManager || delegateRoles.includes('TICKET_MANAGER');
+    const canManageCheckIn = isPrimaryManager || delegateRoles.includes('CHECKIN_MANAGER');
+    const canManageQuestionnaire = isPrimaryManager || delegateRoles.includes('QUESTIONNAIRE_MANAGER');
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,

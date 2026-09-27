@@ -17,6 +17,7 @@ const baseProduction: Production = {
   updated_at: '',
   is_primary_manager: true,
   delegate_role: null,
+  delegate_roles: [],
   description: null,
   description_published_at: null,
   flyer_url: null,

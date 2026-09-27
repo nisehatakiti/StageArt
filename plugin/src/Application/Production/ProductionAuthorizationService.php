@@ -125,31 +125,62 @@ final class ProductionAuthorizationService
         return null;
     }
 
+    /**
+     * StageArt 担当者権限をメンバー管理へ統合・複数Role対応: a Person can hold
+     * several ACTIVE ProductionDelegate rows on the same Production
+     * (Production+Person+Role is the unique key - see the
+     * stageart_production_delegates schema). Every actual Permission
+     * decision (hasProductionPermission/hasProductionCapability/
+     * hasActiveDelegateRole below) must consider all of them, not just
+     * the first one found - `activeDelegateFor()` above is intentionally
+     * left as-is (a single, first-match delegate) because it still backs
+     * ProductionResult's legacy `delegate_role` display field, which this
+     * round's instruction explicitly says to keep at its current,
+     * unchanged meaning rather than redefine for the multi-Role case.
+     *
+     * @return ProductionDelegate[]
+     */
+    public function activeDelegatesFor(Person $person, Production $production): array
+    {
+        return array_values(array_filter(
+            $this->delegates->findByProductionId($production->id()),
+            static fn (ProductionDelegate $delegate): bool =>
+                $delegate->personId()->equals($person->id()) && $delegate->isActive()
+        ));
+    }
+
     public function hasActiveDelegateRole(Person $person, Production $production, RoleKey $role): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if ($delegate->role()->equals($role)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && $delegate->role()->equals($role);
+        return false;
     }
 
     /**
      * Phase 6.1: routes Production-Scope Role checks through the shared
      * Role -> Permission Set -> Permission structure (RolePermissions)
      * instead of comparing the active delegate's Role for exact identity
-     * against one hardcoded RoleKey. Behaviorally equivalent today (only
-     * PARTICIPANT_MANAGER's Permission Set contains Participant.x, only
-     * REHEARSAL_MANAGER's contains Rehearsal.x / Schedule.Read, so the
-     * result is identical to the old direct-equality checks) - the
-     * difference is that a future Role whose Permission Set also grants
-     * this Permission would be recognized here without editing this
-     * class again, matching Role.md's "同じRole Definitionを...共通して
-     * 利用できる" intent.
+     * against one hardcoded RoleKey.
+     *
+     * 担当者権限をメンバー管理へ統合・複数Role対応: checks the union across
+     * every ACTIVE delegate Role the Person holds on this Production, not
+     * just one - a Person with REHEARSAL_MANAGER + TICKET_MANAGER both
+     * ACTIVE must pass this check for a Permission either Role's
+     * Permission Set grants.
      */
     private function hasProductionPermission(Person $person, Production $production, Permission $permission): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if (RolePermissions::hasPermission($delegate->role(), $permission)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && RolePermissions::hasPermission($delegate->role(), $permission);
+        return false;
     }
 
     /**

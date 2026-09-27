@@ -49,7 +49,7 @@ export default function ProductionTicketsScreen() {
   const updateQuotaAndTicketBack = useUpdateQuotaAndTicketBackSettings(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
-  const canManage = isPrimaryManager || production?.delegate_role === 'TICKET_MANAGER';
+  const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('TICKET_MANAGER');
 
   const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');

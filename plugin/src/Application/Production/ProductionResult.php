@@ -21,6 +21,8 @@ final class ProductionResult
     public string $updatedAt;
     public bool $isPrimaryManager;
     public ?string $delegateRole;
+    /** @var string[] */
+    public array $delegateRoles;
     public ?string $description;
     public ?string $descriptionPublishedAt;
     public ?string $flyerUrl;
@@ -50,6 +52,7 @@ final class ProductionResult
         string $updatedAt,
         bool $isPrimaryManager,
         ?string $delegateRole,
+        array $delegateRoles,
         ?string $description,
         ?string $descriptionPublishedAt,
         ?string $flyerUrl,
@@ -78,6 +81,7 @@ final class ProductionResult
         $this->updatedAt = $updatedAt;
         $this->isPrimaryManager = $isPrimaryManager;
         $this->delegateRole = $delegateRole;
+        $this->delegateRoles = $delegateRoles;
         $this->description = $description;
         $this->descriptionPublishedAt = $descriptionPublishedAt;
         $this->flyerUrl = $flyerUrl;
@@ -95,10 +99,17 @@ final class ProductionResult
         $this->performanceCommonRemarks = $performanceCommonRemarks;
     }
 
+    /**
+     * @param ProductionDelegate[] $activeDelegates every ACTIVE ProductionDelegate the
+     *        requesting Person holds on this Production (§4 複数Role対応) - used for
+     *        delegateRoles only. $activeDelegate (singular) keeps its pre-existing,
+     *        unchanged first-match meaning for the legacy delegateRole field.
+     */
     public static function fromDomain(
         Production $production,
         bool $isPrimaryManager,
-        ?ProductionDelegate $activeDelegate
+        ?ProductionDelegate $activeDelegate,
+        array $activeDelegates = []
     ): self {
         return new self(
             $production->id()->toString(),
@@ -113,6 +124,10 @@ final class ProductionResult
             $production->updatedAt()->format(DATE_ATOM),
             $isPrimaryManager,
             $activeDelegate !== null ? $activeDelegate->role()->toString() : null,
+            array_map(
+                static fn (ProductionDelegate $delegate): string => $delegate->role()->toString(),
+                $activeDelegates
+            ),
             $production->description(),
             $production->descriptionPublishedAt()?->format(DATE_ATOM),
             $production->flyerUrl(),
@@ -149,6 +164,7 @@ final class ProductionResult
             'updated_at' => $this->updatedAt,
             'is_primary_manager' => $this->isPrimaryManager,
             'delegate_role' => $this->delegateRole,
+            'delegate_roles' => $this->delegateRoles,
             'description' => $this->description,
             'description_published_at' => $this->descriptionPublishedAt,
             'flyer_url' => $this->flyerUrl,
