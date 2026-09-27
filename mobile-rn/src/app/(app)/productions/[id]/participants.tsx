@@ -73,6 +73,7 @@ export default function ProductionParticipantsScreen() {
   const participantsQuery = useParticipants(id);
   const createNameOnly = useCreateNameOnlyParticipant(id);
   const updateParticipant = useUpdateParticipant(id);
+  const production = productionQuery.data;
   const isPrimaryManager = !!production?.is_primary_manager;
   const delegatesQuery = useQuery({
     queryKey: ['production-delegates', id],
@@ -93,7 +94,6 @@ export default function ProductionParticipantsScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
   });
 
-  const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
   const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
