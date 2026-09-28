@@ -270,7 +270,7 @@ export default function ProductionParticipantsScreen() {
           {pendingQuery.data?.map((request) => (
             <View key={request.id} style={styles.row} testID={`participation-request-row-${request.id}`}>
               <ThemedText style={styles.requestName}>{[request.person_family_name, request.person_given_name].filter(Boolean).join(' ') || '（氏名未設定）'}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={undefined}>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.requestType}>
                 {PARTICIPANT_TYPE_LABEL[request.participant_type] ?? request.participant_type}
               </ThemedText>
               <View style={[styles.colAction, styles.actionButtons]}>
@@ -429,9 +429,9 @@ export default function ProductionParticipantsScreen() {
       {pendingNewMembers.length > 0 && (
         <View style={styles.list} testID="production-participants-pending-list">
           {pendingNewMembers.map((pending, index) => (
-            <View key={`${pending.displayName}-${index}`} style={styles.row} testID={`production-participants-pending-${index}`}>
-              <ThemedText style={styles.colName}>{pending.displayName}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.colType}>
+            <View key={`${pending.displayName}-${index}`} style={styles.pendingMemberRow} testID={`production-participants-pending-${index}`}>
+              <ThemedText style={styles.pendingMemberName}>{pending.displayName}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
                 {PARTICIPANT_TYPE_LABEL[pending.participantType]}
               </ThemedText>
               <TouchableOpacity testID={`production-participants-pending-remove-${index}`} onPress={() => removePendingMember(index)}>
@@ -599,6 +599,7 @@ const styles = StyleSheet.create({
   },
   requestRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   requestName: { width: 220, fontWeight: '600' },
+  requestType: { minWidth: 100 },
   pendingMemberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
   pendingMemberName: { fontWeight: '600' },
   input: {
