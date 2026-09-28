@@ -1,6 +1,6 @@
 import { useLocalSearchParams, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FormInput } from '@/components/form-input';
 
 import { ApiError } from '@/api/errors';
@@ -310,36 +310,49 @@ export default function ProductionParticipantsScreen() {
         </ThemedText>
       )}
       {activeParticipants.length > 0 && (
-        <View style={styles.list} testID="production-participants-list">
-          {activeParticipants.map((participant) => (
-            <ParticipantEditRow
-              key={participant.id}
-              participant={participant}
-              isSelf={participant.subject_type === 'PERSON' && participant.subject_id === currentPersonQuery.data?.id}
-              edit={edits[participant.id] ?? { participantType: participant.participant_type, remarks: participant.remarks ?? '', delete: false }}
-              onChange={(edit) => setEdits((current) => ({ ...current, [participant.id]: edit }))}
-              delegateRoles={delegatesQuery.data ?? []}
-              canManageDelegateRoles={isPrimaryManager}
-              delegateBusy={createDelegate.isPending || updateDelegate.isPending || deleteDelegate.isPending}
-              onToggleDelegateRole={async (delegate, personId, role, checked) => {
-                try {
-                  setErrorMessage(null);
-                  if (checked) {
-                    if (delegate) {
-                      await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'ACTIVE' });
-                    } else {
-                      await createDelegate.mutateAsync({ personId, role });
+        <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participants-table-scroll">
+          <View style={styles.memberTable} testID="production-participants-list">
+            <View style={styles.memberTableHeader}>
+              <View style={styles.memberDeleteHeader} />
+              <ThemedText style={styles.memberNameHeader}>名前</ThemedText>
+              <ThemedText style={styles.memberRoleHeader}>役割</ThemedText>
+              <ThemedText style={styles.memberRemarksHeader}>備考</ThemedText>
+              {DELEGATE_ROLES.map((role) => (
+                <ThemedText key={role} style={styles.permissionHeader}>
+                  {DELEGATE_ROLE_LABEL[role]}
+                </ThemedText>
+              ))}
+            </View>
+            {activeParticipants.map((participant) => (
+              <ParticipantEditRow
+                key={participant.id}
+                participant={participant}
+                isSelf={participant.subject_type === 'PERSON' && participant.subject_id === currentPersonQuery.data?.id}
+                edit={edits[participant.id] ?? { participantType: participant.participant_type, remarks: participant.remarks ?? '', delete: false }}
+                onChange={(edit) => setEdits((current) => ({ ...current, [participant.id]: edit }))}
+                delegateRoles={delegatesQuery.data ?? []}
+                canManageDelegateRoles={isPrimaryManager}
+                delegateBusy={createDelegate.isPending || updateDelegate.isPending}
+                onToggleDelegateRole={async (delegate, personId, role, checked) => {
+                  try {
+                    setErrorMessage(null);
+                    if (checked) {
+                      if (delegate) {
+                        await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'ACTIVE' });
+                      } else {
+                        await createDelegate.mutateAsync({ personId, role });
+                      }
+                    } else if (delegate) {
+                      await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'INACTIVE' });
                     }
-                  } else if (delegate) {
-                    await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'INACTIVE' });
+                  } catch (error) {
+                    setErrorMessage(getErrorMessage(error));
                   }
-                } catch (error) {
-                  setErrorMessage(getErrorMessage(error));
-                }
-              }}
-            />
-          ))}
-        </View>
+                }}
+              />
+            ))}
+          </View>
+        </ScrollView>
       )}
 
       <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
@@ -481,50 +494,63 @@ function ParticipantEditRow({
     : [];
 
   return (
-    <View style={[styles.memberCard, edit.delete && styles.memberCardDeleted]} testID={`participant-row-${participant.id}`}>
-      <View style={styles.memberHeader}>
-        <TouchableOpacity testID={`participant-delete-checkbox-${participant.id}`} onPress={() => onChange({ ...edit, delete: !edit.delete })} style={styles.checkbox}>
-          <ThemedText>{edit.delete ? '☑' : '☐'}</ThemedText>
+    <View style={[styles.memberTableRow, edit.delete && styles.memberTableRowDeleted]} testID={`participant-row-${participant.id}`}>
+      <View style={styles.memberDeleteCell}>
+        <TouchableOpacity
+          testID={`participant-delete-checkbox-${participant.id}`}
+          onPress={() => onChange({ ...edit, delete: !edit.delete })}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: edit.delete }}
+        >
+          <ThemedText style={styles.tableCheckbox}>{edit.delete ? '☑' : '□'}</ThemedText>
         </TouchableOpacity>
-        <ThemedText style={[styles.memberName, edit.delete && styles.strikethrough]}>{displayLabel}</ThemedText>
       </View>
-      <View style={styles.memberFields}>
-        <View style={styles.memberField}>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>役割</ThemedText>
-          <View style={styles.typeToggle}>
-            {PARTICIPANT_TYPES.map((type) => (
-              <TouchableOpacity key={type} testID={`participant-type-${participant.id}-${type}`} onPress={() => onChange({ ...edit, participantType: type })} style={[styles.typeButtonSmall, edit.participantType === type && styles.typeButtonActive]}>
-                <ThemedText type="small" style={edit.participantType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-        <View style={styles.memberFieldRemarks}>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>備考</ThemedText>
-          <ThemedTextInput testID={`participant-remarks-${participant.id}`} value={edit.remarks} onChangeText={(remarks) => onChange({ ...edit, remarks })} placeholder="メンバーに関する備考" style={styles.remarksInput} />
-        </View>
+      <ThemedText style={[styles.memberNameCell, edit.delete && styles.strikethrough]}>{displayLabel}</ThemedText>
+      <View style={styles.memberRoleCell}>
+        {PARTICIPANT_TYPES.map((type) => (
+          <TouchableOpacity
+            key={type}
+            testID={`participant-type-${participant.id}-${type}`}
+            onPress={() => onChange({ ...edit, participantType: type })}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: edit.participantType === type }}
+            style={[styles.roleButton, edit.participantType === type && styles.roleButtonActive]}
+          >
+            <ThemedText type="small" style={edit.participantType === type ? styles.roleButtonTextActive : undefined}>
+              {PARTICIPANT_TYPE_LABEL[type]}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
       </View>
-      {participant.subject_type === 'PERSON' && (
-        <View style={styles.permissionSection} testID={`participant-delegate-roles-${participant.id}`}>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.permissionTitle}>担当者権限</ThemedText>
-          <View style={styles.permissionGrid}>
-            {DELEGATE_ROLES.map((role) => {
-              const delegate = personDelegates.find((item) => item.role === role) ?? null;
-              const checked = delegate?.status === 'ACTIVE';
-              return (
-                <TouchableOpacity key={role} testID={`participant-delegate-role-${participant.id}-${role}`} disabled={!canManageDelegateRoles || delegateBusy} onPress={() => onToggleDelegateRole(delegate, participant.subject_id, role, !checked)} style={[styles.permissionItem, !canManageDelegateRoles && styles.permissionItemDisabled]}>
-                  <ThemedText style={styles.permissionCheckbox}>{checked ? '☑' : '☐'}</ThemedText>
-                  <ThemedText type="small">{DELEGATE_ROLE_LABEL[role]}</ThemedText>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {!canManageDelegateRoles && <ThemedText type="small" themeColor="textSecondary" style={styles.permissionHint}>担当者権限の変更はPrimaryManagerのみ行えます。</ThemedText>}
-        </View>
-      )}
+      <ThemedTextInput
+        testID={`participant-remarks-${participant.id}`}
+        value={edit.remarks}
+        onChangeText={(remarks) => onChange({ ...edit, remarks })}
+        placeholder="備考"
+        style={styles.memberRemarksCell}
+      />
+      {DELEGATE_ROLES.map((role) => {
+        const delegate = personDelegates.find((item) => item.role === role) ?? null;
+        const checked = delegate?.status === 'ACTIVE';
+        const editable = participant.subject_type === 'PERSON' && canManageDelegateRoles && !delegateBusy;
+        return (
+          <TouchableOpacity
+            key={role}
+            testID={`participant-delegate-role-${participant.id}-${role}`}
+            disabled={!editable}
+            onPress={() => onToggleDelegateRole(delegate, participant.subject_id, role, !checked)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked, disabled: !editable }}
+            style={[styles.permissionCell, !editable && styles.permissionCellDisabled]}
+          >
+            <ThemedText style={styles.tableCheckbox}>{checked ? '☑' : '□'}</ThemedText>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
+
 /** Cancel is applied inline within the batched save loop, matching the
  * same ApiClient the other mutations here use (no separate hook needed
  * for a call this narrow). */
@@ -543,22 +569,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
   },
-  memberCard: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
+  memberTable: {
+    minWidth: 1500,
     borderWidth: 1,
-    borderColor: '#e2ded7',
-    borderRadius: Radius.medium,
-    marginBottom: Spacing.one,
+    borderColor: '#ddd',
     backgroundColor: '#fff',
   },
-  memberCardDeleted: { opacity: 0.55 },
-  memberHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, marginBottom: Spacing.two },
-  checkbox: { width: 28, alignItems: 'center' },
-  memberName: { fontWeight: '600', fontSize: 16 },
-  memberFields: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, alignItems: 'flex-start' },
-  memberField: { width: 180, minWidth: 160 },
-  memberFieldRemarks: { flex: 1, minWidth: 280 },
+  memberTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#f5f3ef',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  memberTableRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 58,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e5e5',
+  },
+  memberTableRowDeleted: { opacity: 0.5 },
+  memberDeleteHeader: { width: 42 },
+  memberDeleteCell: { width: 42, justifyContent: 'center', alignItems: 'center' },
+  memberNameHeader: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberNameCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlignVertical: 'center' },
+  memberRoleHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.one },
+  roleButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: 4, paddingHorizontal: 8 },
+  roleButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
+  roleButtonTextActive: { color: '#fff' },
+  memberRemarksHeader: { width: 300, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberRemarksCell: { width: 300, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
+  permissionHeader: { width: 150, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
+  permissionCell: { width: 150, justifyContent: 'center', alignItems: 'center', borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#e5e5e5' },
+  permissionCellDisabled: { opacity: 0.55 },
+  tableCheckbox: { fontSize: 20 },
   strikethrough: { textDecorationLine: 'line-through', opacity: 0.5 },
   actionButtons: { flexDirection: 'row', gap: Spacing.two },
   typeToggle: { flexDirection: 'row', gap: Spacing.one, marginBottom: Spacing.one },
@@ -578,13 +624,6 @@ const styles = StyleSheet.create({
   },
   typeButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
   typeButtonTextActive: { color: '#fff' },
-  permissionSection: { marginTop: Spacing.two, paddingTop: Spacing.two, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2ded7' },
-  permissionTitle: { marginBottom: Spacing.one, fontWeight: '600' },
-  permissionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
-  permissionItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingVertical: 5, paddingHorizontal: Spacing.one, borderWidth: 1, borderColor: '#ddd', borderRadius: Radius.medium, minWidth: 180 },
-  permissionItemDisabled: { opacity: 0.65 },
-  permissionCheckbox: { fontSize: 18 },
-  permissionHint: { marginTop: Spacing.one },
   datetimeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: Spacing.two, marginBottom: Spacing.one },
   datetimeField: { width: 220, minWidth: 180 },
   datetimeInput: { marginTop: 4 },
