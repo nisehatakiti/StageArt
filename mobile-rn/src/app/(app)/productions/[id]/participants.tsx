@@ -253,8 +253,8 @@ export default function ProductionParticipantsScreen() {
         <View style={styles.list} testID="production-participation-requests-list">
           {pendingQuery.data?.map((request) => (
             <View key={request.id} style={styles.row} testID={`participation-request-row-${request.id}`}>
-              <ThemedText style={styles.colName}>{[request.person_family_name, request.person_given_name].filter(Boolean).join(' ') || '（氏名未設定）'}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.colType}>
+              <ThemedText style={styles.requestName}>{[request.person_family_name, request.person_given_name].filter(Boolean).join(' ') || '（氏名未設定）'}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={undefined}>
                 {PARTICIPANT_TYPE_LABEL[request.participant_type] ?? request.participant_type}
               </ThemedText>
               <View style={[styles.colAction, styles.actionButtons]}>
@@ -305,14 +305,6 @@ export default function ProductionParticipantsScreen() {
               delegateRoles={delegatesQuery.data ?? []}
               canManageDelegateRoles={isPrimaryManager}
               delegateBusy={createDelegate.isPending || updateDelegate.isPending || deleteDelegate.isPending}
-              onAddDelegateRole={async (personId, role) => {
-                try {
-                  setErrorMessage(null);
-                  await createDelegate.mutateAsync({ personId, role });
-                } catch (error) {
-                  setErrorMessage(getErrorMessage(error));
-                }
-              }}
               onToggleDelegateRole={async (delegate, personId, role, checked) => {
                 try {
                   setErrorMessage(null);
@@ -589,6 +581,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
   },
+  requestRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  requestName: { width: 220, fontWeight: '600' },
   pendingMemberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
   pendingMemberName: { fontWeight: '600' },
   input: {
