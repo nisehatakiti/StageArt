@@ -607,6 +607,7 @@ const styles = StyleSheet.create({
   tableCheckbox: { fontSize: 20 },
   strikethrough: { textDecorationLine: 'line-through', opacity: 0.5 },
   actionButtons: { flexDirection: 'row', gap: Spacing.two },
+  colAction: { marginLeft: 'auto' },
   typeToggle: { flexDirection: 'row', gap: Spacing.one, marginBottom: Spacing.one },
   typeButton: {
     borderWidth: 1,
