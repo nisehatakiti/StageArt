@@ -6,6 +6,7 @@ namespace StageArt\Tests\Application\Production;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Performance\PerformanceCapability;
 use StageArt\Application\Production\GetProductionQuery;
@@ -15,6 +16,7 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\Rehearsal\RehearsalCapability;
+use StageArt\Application\Settlement\SettlementCapability;
 use StageArt\Application\Ticket\TicketCapability;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
@@ -411,5 +413,29 @@ final class ProductionAuthorizationTest extends TestCase
 
         $this->assertFalse($this->authorization->hasProductionCapability($person, $production, RehearsalCapability::MANAGE));
         $this->assertTrue($this->authorization->hasProductionCapability($person, $production, PerformanceCapability::UPDATE));
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合 instruction §2 会計担当: ACCOUNTING_MANAGER
+     * grants Accounting.Update (Budget/Expense/JournalEntry) but not
+     * Settlement.Manage (real money payouts to members), which stays
+     * PrimaryManager-exclusive per this instruction's explicit
+     * confirmation.
+     */
+    public function test_accounting_manager_delegate_can_manage_accounting_but_not_settlement(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::accountingManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, AccountingCapability::MANAGE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, SettlementCapability::MANAGE));
     }
 }

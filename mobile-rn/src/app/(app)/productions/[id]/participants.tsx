@@ -31,16 +31,23 @@ import type { ProductionDelegate } from '@/types/api';
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
 const PARTICIPANT_TYPES = ['CAST', 'STAFF'] as const;
 
-const DELEGATE_ROLE_LABEL: Record<string, string> = {
-  PARTICIPANT_MANAGER: '参加者管理',
-  REHEARSAL_MANAGER: '稽古管理',
-  PERFORMANCE_MANAGER: '公演スケジュール管理',
-  TICKET_MANAGER: 'チケット管理',
-  RESERVATION_MANAGER: '予約管理',
-  CHECKIN_MANAGER: '受付・チェックイン管理',
-  QUESTIONNAIRE_MANAGER: 'アンケート管理',
-};
-const DELEGATE_ROLES = Object.keys(DELEGATE_ROLE_LABEL);
+/**
+ * StageArt 担当者権限をメンバー管理へ統合・整理 instruction §1/§2/§3: exactly
+ * these 3 checkboxes are offered to general members, in this exact order.
+ * 代理人 deliberately bundles two existing, independent RoleKeys
+ * (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) behind one checkbox per the
+ * instruction's explicit confirmation - it does not collapse them into a
+ * single new RoleKey, so toggling always resolves both underlying
+ * ProductionDelegate rows individually. TICKET_MANAGER/PERFORMANCE_MANAGER/
+ * QUESTIONNAIRE_MANAGER/RESERVATION_MANAGER are deliberately absent here
+ * (§3's "だけ" - PrimaryManager-side concern, still reachable via the
+ * existing 担当者 screen for now, per §5's "いきなり削除しない").
+ */
+const DELEGATE_CHECKBOXES = [
+  { key: 'proxy', label: '代理人', roles: ['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER'] },
+  { key: 'accounting', label: '会計担当', roles: ['ACCOUNTING_MANAGER'] },
+  { key: 'checkin', label: '受付担当', roles: ['CHECKIN_MANAGER'] },
+] as const;
 
 type RowEdit = { participantType: string; remarks: string; delete: boolean };
 
@@ -317,11 +324,12 @@ export default function ProductionParticipantsScreen() {
               <ThemedText style={styles.memberNameHeader}>名前</ThemedText>
               <ThemedText style={styles.memberRoleHeader}>役割</ThemedText>
               <ThemedText style={styles.memberRemarksHeader}>備考</ThemedText>
-              {DELEGATE_ROLES.map((role) => (
-                <ThemedText key={role} style={styles.permissionHeader}>
-                  {DELEGATE_ROLE_LABEL[role]}
-                </ThemedText>
-              ))}
+              {isPrimaryManager &&
+                DELEGATE_CHECKBOXES.map((checkbox) => (
+                  <ThemedText key={checkbox.key} style={styles.permissionHeader}>
+                    {checkbox.label}
+                  </ThemedText>
+                ))}
             </View>
             {activeParticipants.map((participant) => (
               <ParticipantEditRow
@@ -333,17 +341,21 @@ export default function ProductionParticipantsScreen() {
                 delegateRoles={delegatesQuery.data ?? []}
                 canManageDelegateRoles={isPrimaryManager}
                 delegateBusy={createDelegate.isPending || updateDelegate.isPending}
-                onToggleDelegateRole={async (delegate, personId, role, checked) => {
+                onToggleDelegateCheckbox={async (personId, roles, checked) => {
+                  const delegates = delegatesQuery.data ?? [];
+                  setErrorMessage(null);
                   try {
-                    setErrorMessage(null);
-                    if (checked) {
-                      if (delegate) {
-                        await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'ACTIVE' });
-                      } else {
-                        await createDelegate.mutateAsync({ personId, role });
+                    for (const role of roles) {
+                      const existing = delegates.find((delegate) => delegate.person_id === personId && delegate.role === role);
+                      if (checked) {
+                        if (!existing) {
+                          await createDelegate.mutateAsync({ personId, role });
+                        } else if (existing.status !== 'ACTIVE') {
+                          await updateDelegate.mutateAsync({ delegateId: existing.id, role, status: 'ACTIVE' });
+                        }
+                      } else if (existing && existing.status === 'ACTIVE') {
+                        await updateDelegate.mutateAsync({ delegateId: existing.id, role, status: 'INACTIVE' });
                       }
-                    } else if (delegate) {
-                      await updateDelegate.mutateAsync({ delegateId: delegate.id, role: delegate.role, status: 'INACTIVE' });
                     }
                   } catch (error) {
                     setErrorMessage(getErrorMessage(error));
@@ -474,7 +486,7 @@ export default function ProductionParticipantsScreen() {
 }
 
 function ParticipantEditRow({
-  participant, isSelf, edit, onChange, delegateRoles, canManageDelegateRoles, delegateBusy, onToggleDelegateRole,
+  participant, isSelf, edit, onChange, delegateRoles, canManageDelegateRoles, delegateBusy, onToggleDelegateCheckbox,
 }: {
   participant: Participant;
   isSelf: boolean;
@@ -483,7 +495,7 @@ function ParticipantEditRow({
   delegateRoles: ProductionDelegate[];
   canManageDelegateRoles: boolean;
   delegateBusy: boolean;
-  onToggleDelegateRole: (delegate: ProductionDelegate | null, personId: string, role: string, checked: boolean) => Promise<void>;
+  onToggleDelegateCheckbox: (personId: string, roles: string[], checked: boolean) => Promise<void>;
 }) {
   const displayLabel =
     participant.subject_type === 'NAME_ONLY' ? participant.display_name ?? '（氏名未設定）' :
@@ -529,24 +541,26 @@ function ParticipantEditRow({
         placeholder="備考"
         style={styles.memberRemarksCell}
       />
-      {DELEGATE_ROLES.map((role) => {
-        const delegate = personDelegates.find((item) => item.role === role) ?? null;
-        const checked = delegate?.status === 'ACTIVE';
-        const editable = participant.subject_type === 'PERSON' && canManageDelegateRoles && !delegateBusy;
-        return (
-          <TouchableOpacity
-            key={role}
-            testID={`participant-delegate-role-${participant.id}-${role}`}
-            disabled={!editable}
-            onPress={() => onToggleDelegateRole(delegate, participant.subject_id, role, !checked)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked, disabled: !editable }}
-            style={[styles.permissionCell, !editable && styles.permissionCellDisabled]}
-          >
-            <ThemedText style={styles.tableCheckbox}>{checked ? '☑' : '□'}</ThemedText>
-          </TouchableOpacity>
-        );
-      })}
+      {canManageDelegateRoles &&
+        DELEGATE_CHECKBOXES.map((checkbox) => {
+          const checked = checkbox.roles.every((role) =>
+            personDelegates.some((delegate) => delegate.role === role && delegate.status === 'ACTIVE')
+          );
+          const editable = participant.subject_type === 'PERSON' && !delegateBusy;
+          return (
+            <TouchableOpacity
+              key={checkbox.key}
+              testID={`participant-delegate-${checkbox.key}-${participant.id}`}
+              disabled={!editable}
+              onPress={() => onToggleDelegateCheckbox(participant.subject_id, [...checkbox.roles], !checked)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked, disabled: !editable }}
+              style={[styles.permissionCell, !editable && styles.permissionCellDisabled]}
+            >
+              <ThemedText style={styles.tableCheckbox}>{checked ? '☑' : '□'}</ThemedText>
+            </TouchableOpacity>
+          );
+        })}
     </View>
   );
 }

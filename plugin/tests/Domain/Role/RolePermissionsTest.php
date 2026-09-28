@@ -91,6 +91,25 @@ final class RolePermissionsTest extends TestCase
         $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('CheckIn.Manage')));
     }
 
+    public function test_accounting_manager_has_accounting_update_permission(): void
+    {
+        $role = RoleKey::accountingManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Accounting.Update')));
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合 instruction §2 会計担当: deliberately
+     * excludes Settlement.Manage (real money payouts to members) -
+     * confirmed to stay PrimaryManager-exclusive.
+     */
+    public function test_accounting_manager_does_not_have_settlement_permission(): void
+    {
+        $role = RoleKey::accountingManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Settlement.Manage')));
+    }
+
     public function test_owner_and_member_have_no_entries_in_the_permission_set_registry(): void
     {
         // Organization Scope authorization (OrganizationAuthorizationService::hasRole())

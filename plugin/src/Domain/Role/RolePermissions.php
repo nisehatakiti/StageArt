@@ -56,8 +56,14 @@ namespace StageArt\Domain\Role;
  * Settlement check), so CHECKIN_MANAGER's own Permission Set is scoped
  * narrowly to `CheckIn.Manage` alone.
  *
- * ACCOUNTING_MANAGER is not added as a RoleKey value at all this Phase -
- * see the relevant Phase's report's "Accounting" section for why.
+ * ACCOUNTING_MANAGER (担当者権限をメンバー管理へ統合 instruction §2 会計担当):
+ * grants Budget/Expense/JournalEntry management (`Accounting.Update`,
+ * the same Capability Budget/Expense/JournalEntry Use Cases already
+ * gate on) only. Deliberately excludes `Settlement.Manage` - Settlement
+ * pays real money out to individual members and stays PrimaryManager-
+ * exclusive, per this instruction's explicit confirmation and
+ * SettlementCapability's own long-standing "same sensitivity class as
+ * Accounting.Update" docblock.
  */
 final class RolePermissions
 {
@@ -93,6 +99,9 @@ final class RolePermissions
         ],
         RoleKey::QUESTIONNAIRE_MANAGER => [
             'Questionnaire.Manage',
+        ],
+        RoleKey::ACCOUNTING_MANAGER => [
+            'Accounting.Update',
         ],
     ];
 
