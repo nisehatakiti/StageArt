@@ -44,6 +44,22 @@ const DELEGATE_ROLES = Object.keys(DELEGATE_ROLE_LABEL);
 
 type RowEdit = { participantType: string; remarks: string; delete: boolean };
 
+function localDatePart(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString('sv-SE');
+}
+
+function localTimePart(value: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(11, 16) : date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function composePublishedAt(datePart: string, timePart: string): string {
+  return new Date(datePart + 'T' + (timePart || '00:00') + ':00').toISOString();
+}
+
 /**
  * StageArt Phase 1 (docs/21-MemberManagementScreen.md): rebuilt around
  * the Blueprint's single-list, single-[更新]-button model. Role/remarks
@@ -335,14 +351,14 @@ export default function ProductionParticipantsScreen() {
           <FormInput
             testID="production-participants-published-date"
             kind="date"
-            value={memberInfoPublishedAt ? memberInfoPublishedAt.slice(0, 10) : ''}
+            value={localDatePart(memberInfoPublishedAt)}
             onChangeText={(date) => {
               if (!date) {
                 setMemberInfoPublishedAt('');
                 return;
               }
-              const time = memberInfoPublishedAt.length >= 16 ? memberInfoPublishedAt.slice(11, 16) : '00:00';
-              setMemberInfoPublishedAt(date + 'T' + time + ':00Z');
+              const time = localTimePart(memberInfoPublishedAt) || '00:00';
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
             }}
             style={styles.datetimeInput}
           />
@@ -352,14 +368,14 @@ export default function ProductionParticipantsScreen() {
           <FormInput
             testID="production-participants-published-time"
             kind="time"
-            value={memberInfoPublishedAt.length >= 16 ? memberInfoPublishedAt.slice(11, 16) : ''}
+            value={localTimePart(memberInfoPublishedAt)}
             onChangeText={(time) => {
               if (!time) {
                 setMemberInfoPublishedAt('');
                 return;
               }
-              const date = memberInfoPublishedAt ? memberInfoPublishedAt.slice(0, 10) : new Date().toISOString().slice(0, 10);
-              setMemberInfoPublishedAt(date + 'T' + time + ':00Z');
+              const date = localDatePart(memberInfoPublishedAt) || new Date().toLocaleDateString('sv-SE');
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
             }}
             style={styles.datetimeInput}
           />
