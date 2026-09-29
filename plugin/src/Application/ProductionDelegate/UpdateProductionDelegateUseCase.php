@@ -52,11 +52,23 @@ final class UpdateProductionDelegateUseCase
             throw new ProductionNotFoundException($delegate->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageProductionDelegates($requester, $production)) {
-            throw new ProductionDelegateAccessDeniedException('Only the PrimaryManager can manage ProductionDelegates.');
+        $newRole = RoleKey::fromString($command->role);
+
+        // Both the delegate row's CURRENT Role and the Role being set must
+        // be within what this requester may manage - a 代理人 must not be
+        // able to touch an existing TICKET_MANAGER/etc. row (even to
+        // "change" it), nor use this endpoint to grant a Role outside
+        // their own permitted set by switching an allowed row's Role to a
+        // disallowed one.
+        if (! $this->authorization->canManageProductionDelegateRole($requester, $production, $delegate->role())
+            || ! $this->authorization->canManageProductionDelegateRole($requester, $production, $newRole)
+        ) {
+            throw new ProductionDelegateAccessDeniedException(
+                'Only the PrimaryManager, or a 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) managing 代理人/会計担当/受付担当, can change this Role.'
+            );
         }
 
-        $delegate->changeRole(RoleKey::fromString($command->role), $requester->id());
+        $delegate->changeRole($newRole, $requester->id());
 
         if ($command->status === ProductionDelegate::STATUS_INACTIVE) {
             $delegate->deactivate($requester->id());

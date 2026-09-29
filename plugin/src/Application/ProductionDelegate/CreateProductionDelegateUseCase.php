@@ -51,8 +51,12 @@ final class CreateProductionDelegateUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProductionDelegates($requester, $production)) {
-            throw new ProductionDelegateAccessDeniedException('Only the PrimaryManager can manage ProductionDelegates.');
+        $role = RoleKey::fromString($command->role);
+
+        if (! $this->authorization->canManageProductionDelegateRole($requester, $production, $role)) {
+            throw new ProductionDelegateAccessDeniedException(
+                'Only the PrimaryManager, or a 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) managing 代理人/会計担当/受付担当, can assign this Role.'
+            );
         }
 
         $targetPersonId = PersonId::fromString($command->personId);
@@ -61,8 +65,6 @@ final class CreateProductionDelegateUseCase
         if (! $targetPerson) {
             throw new ProductionDelegateTargetNotEligibleException('The target Person does not exist.');
         }
-
-        $role = RoleKey::fromString($command->role);
 
         if ($this->delegates->findByProductionAndPersonAndRole($production->id(), $targetPersonId, $role)) {
             throw new ProductionDelegateAlreadyExistsException(

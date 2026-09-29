@@ -8,21 +8,27 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\ParticipantId;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 final class GetParticipantUseCase
 {
     private ParticipantRepositoryInterface $participants;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
+        PersonRepositoryInterface $people,
         ProductionAuthorizationService $authorization
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
     }
 
@@ -52,6 +58,10 @@ final class GetParticipantUseCase
             );
         }
 
-        return ParticipantResult::fromDomain($participant);
+        $person = $participant->subjectType()->equals(ParticipantSubjectType::person())
+            ? $this->people->findById(PersonId::fromString($participant->subjectId()))
+            : null;
+
+        return ParticipantResult::fromDomain($participant, $person);
     }
 }

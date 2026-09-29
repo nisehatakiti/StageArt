@@ -99,6 +99,7 @@ use StageArt\Application\Notification\ListNotificationsForProductionUseCase;
 use StageArt\Application\Notification\MarkNotificationReadUseCase;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
+use StageArt\Application\Person\GetPersonByIdUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
@@ -174,6 +175,7 @@ use StageArt\Presentation\Rest\DashboardRestController;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\MeRestController;
+use StageArt\Presentation\Rest\PersonRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
@@ -500,9 +502,9 @@ final class Plugin
             $productionAuthorization,
             $transactions
         );
-        $getParticipant = new GetParticipantUseCase($participants, $productions, $productionAuthorization);
-        $listParticipants = new ListParticipantsUseCase($participants, $productions, $productionAuthorization);
-        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $productionAuthorization);
+        $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization);
+        $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization);
+        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization);
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
@@ -633,6 +635,7 @@ final class Plugin
         $updatePushPreference = new UpdatePushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
         $updatePersonName = new UpdatePersonNameUseCase($people);
+        $getPersonById = new GetPersonByIdUseCase($authorization, $people);
 
         // StageArt Core/Module Architecture Phase 3 (continued):
         // Accounting Module's entire own wiring (UseCase construction +
@@ -804,6 +807,8 @@ final class Plugin
 
         $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
 
+        $personRestController = new PersonRestController($getPersonById);
+
         $joinKeyRestController = new JoinKeyRestController(
             $issueOrganizationJoinKey,
             $issueProductionJoinKey,
@@ -873,6 +878,7 @@ final class Plugin
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
         add_action('rest_api_init', [$notificationEmailRestController, 'register_routes']);
         add_action('rest_api_init', [$meRestController, 'register_routes']);
+        add_action('rest_api_init', [$personRestController, 'register_routes']);
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
         add_action('rest_api_init', [$favoriteRestController, 'register_routes']);

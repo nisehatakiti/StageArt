@@ -5,7 +5,17 @@ declare(strict_types=1);
 namespace StageArt\Application\Participant;
 
 use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Person\Person;
 
+/**
+ * StageArt メンバー管理 instruction (担当者権限をメンバー管理へ統合・整理 §1):
+ * `personFamilyName`/`personGivenName` are resolved the same way
+ * ProductionDelegateResult already resolves its own target Person's name
+ * (both nullable, matching Person::familyName()/givenName()'s own
+ * nullability - a Person who has not completed set-name.tsx yet). Only
+ * meaningful when subjectType is PERSON; null for NAME_ONLY/ORGANIZATION
+ * subjects (NAME_ONLY already has its own displayName field instead).
+ */
 final class ParticipantResult
 {
     public string $id;
@@ -18,6 +28,8 @@ final class ParticipantResult
     public string $updatedAt;
     public ?string $remarks;
     public ?string $displayName;
+    public ?string $personFamilyName;
+    public ?string $personGivenName;
 
     private function __construct(
         string $id,
@@ -29,7 +41,9 @@ final class ParticipantResult
         string $createdAt,
         string $updatedAt,
         ?string $remarks,
-        ?string $displayName
+        ?string $displayName,
+        ?string $personFamilyName,
+        ?string $personGivenName
     ) {
         $this->id = $id;
         $this->productionId = $productionId;
@@ -41,9 +55,11 @@ final class ParticipantResult
         $this->updatedAt = $updatedAt;
         $this->remarks = $remarks;
         $this->displayName = $displayName;
+        $this->personFamilyName = $personFamilyName;
+        $this->personGivenName = $personGivenName;
     }
 
-    public static function fromDomain(Participant $participant): self
+    public static function fromDomain(Participant $participant, ?Person $person = null): self
     {
         return new self(
             $participant->id()->toString(),
@@ -55,7 +71,9 @@ final class ParticipantResult
             $participant->createdAt()->format(DATE_ATOM),
             $participant->updatedAt()->format(DATE_ATOM),
             $participant->remarks(),
-            $participant->displayName()
+            $participant->displayName(),
+            $person?->familyName(),
+            $person?->givenName()
         );
     }
 
@@ -75,6 +93,8 @@ final class ParticipantResult
             'updated_at' => $this->updatedAt,
             'remarks' => $this->remarks,
             'display_name' => $this->displayName,
+            'person_family_name' => $this->personFamilyName,
+            'person_given_name' => $this->personGivenName,
         ];
     }
 }

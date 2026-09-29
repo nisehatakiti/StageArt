@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { cancelParticipant, createNameOnlyParticipant, fetchParticipants, updateParticipant } from './api';
+import { cancelParticipant, createNameOnlyParticipant, createPersonParticipant, fetchParticipants, updateParticipant } from './api';
 
 export function useParticipants(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -31,6 +31,17 @@ export function useCreateNameOnlyParticipant(productionId: string | undefined) {
   return useMutation({
     mutationFn: (fields: { displayName: string; participantType: string; remarks?: string | null }) =>
       createNameOnlyParticipant(apiClient, productionId as string, fields),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['participants', productionId] }),
+  });
+}
+
+export function useCreatePersonParticipant(productionId: string | undefined) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (fields: { personId: string; participantType: string; remarks?: string | null }) =>
+      createPersonParticipant(apiClient, productionId as string, fields),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['participants', productionId] }),
   });
 }

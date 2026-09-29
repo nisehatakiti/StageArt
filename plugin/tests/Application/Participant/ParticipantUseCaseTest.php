@@ -76,9 +76,9 @@ final class ParticipantUseCaseTest extends TestCase
             $productionAuthorization,
             new InMemoryTransactionManager()
         );
-        $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
-        $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $productionAuthorization);
-        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
+        $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
         $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
     }
 
@@ -291,6 +291,67 @@ final class ParticipantUseCaseTest extends TestCase
         // still retrievable, per Participant.md's "原則として物理削除しない".
         $cancelled = $this->getParticipant->execute(new GetParticipantQuery($created->id, 1));
         $this->assertSame('CANCELLED', $cancelled->status);
+    }
+
+    /**
+     * StageArt メンバー管理 instruction (担当者権限をメンバー管理へ統合・整理
+     * §1): a PERSON-subject Participant's real name is resolved on
+     * create/get/list/update, mirroring ProductionDelegateResult's own
+     * precedent - the Frontend no longer has to fall back to showing a
+     * raw Person ID.
+     */
+    public function test_person_participants_resolve_the_real_name_on_create_get_list_and_update(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $person = Person::create(2);
+        $person->setName('山田', '太郎');
+        $this->people->save($person);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST'
+        ));
+        $this->assertSame('山田', $created->personFamilyName);
+        $this->assertSame('太郎', $created->personGivenName);
+
+        $fetched = $this->getParticipant->execute(new GetParticipantQuery($created->id, 1));
+        $this->assertSame('山田', $fetched->personFamilyName);
+        $this->assertSame('太郎', $fetched->personGivenName);
+
+        $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 1));
+        $this->assertSame('山田', $listed[0]->personFamilyName);
+        $this->assertSame('太郎', $listed[0]->personGivenName);
+
+        $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 1, 'STAFF', 'ACTIVE'));
+        $this->assertSame('山田', $updated->personFamilyName);
+        $this->assertSame('太郎', $updated->personGivenName);
+    }
+
+    /**
+     * A NAME_ONLY Participant has no Person to resolve at all - its own
+     * displayName remains the only name field, and person_family_name/
+     * person_given_name stay null (not a fabricated fallback).
+     */
+    public function test_name_only_participants_have_null_person_name_fields(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'NAME_ONLY',
+            null,
+            'CAST',
+            '鈴木花子'
+        ));
+
+        $this->assertNull($created->personFamilyName);
+        $this->assertNull($created->personGivenName);
+        $this->assertSame('鈴木花子', $created->displayName);
     }
 
     public function test_participant_of_production_a_is_not_accessible_from_production_b(): void

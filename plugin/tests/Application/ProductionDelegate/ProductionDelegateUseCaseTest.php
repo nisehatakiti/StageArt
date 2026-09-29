@@ -335,4 +335,189 @@ final class ProductionDelegateUseCaseTest extends TestCase
         sort($delegateRoles);
         $this->assertSame(['PERFORMANCE_MANAGER', 'REHEARSAL_MANAGER'], $delegateRoles);
     }
+
+    /**
+     * StageArt メンバー管理 instruction (担当者権限をメンバー管理へ統合・整理
+     * §3/§4): a 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER, both
+     * ACTIVE) may create/update/delete ProductionDelegate rows for the 3
+     * general-member Roles (代理人 itself, 会計担当, 受付担当) on behalf of
+     * another member - not just PrimaryManager.
+     */
+    private function givenProxyManager(Production $production, int $proxyWordPressUserId): Person
+    {
+        $proxy = Person::create($proxyWordPressUserId);
+        $this->people->save($proxy);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $proxy->id(),
+            RoleKey::participantManager(),
+            $production->primaryManagerPersonId()
+        ));
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $proxy->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        return $proxy;
+    }
+
+    public function test_a_proxy_manager_can_create_the_3_general_member_roles_for_another_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenProxyManager($production, 2);
+
+        $target = Person::create(3);
+        $this->people->save($target);
+
+        foreach (['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER', 'ACCOUNTING_MANAGER', 'CHECKIN_MANAGER'] as $role) {
+            $result = $this->createDelegate->execute(new CreateProductionDelegateCommand(
+                $production->id()->toString(),
+                2,
+                $target->id()->toString(),
+                $role
+            ));
+            $this->assertSame($role, $result->role);
+        }
+    }
+
+    public function test_a_proxy_manager_cannot_create_a_primary_manager_only_role(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenProxyManager($production, 2);
+
+        $target = Person::create(3);
+        $this->people->save($target);
+
+        foreach (['TICKET_MANAGER', 'PERFORMANCE_MANAGER', 'RESERVATION_MANAGER', 'QUESTIONNAIRE_MANAGER'] as $role) {
+            try {
+                $this->createDelegate->execute(new CreateProductionDelegateCommand(
+                    $production->id()->toString(),
+                    2,
+                    $target->id()->toString(),
+                    $role
+                ));
+                $this->fail("Expected ProductionDelegateAccessDeniedException for role {$role}");
+            } catch (ProductionDelegateAccessDeniedException $exception) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
+    public function test_a_proxy_manager_can_delete_and_update_the_3_general_member_roles(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenProxyManager($production, 2);
+
+        $target = Person::create(3);
+        $this->people->save($target);
+
+        $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            2,
+            $target->id()->toString(),
+            'ACCOUNTING_MANAGER'
+        ));
+
+        $updated = $this->updateDelegate->execute(new UpdateProductionDelegateCommand(
+            $created->id,
+            2,
+            'ACCOUNTING_MANAGER',
+            ProductionDelegate::STATUS_INACTIVE
+        ));
+        $this->assertSame('INACTIVE', $updated->status);
+
+        $this->deleteDelegate->execute(new DeleteProductionDelegateCommand($created->id, 2));
+        // 2 rows remain: the 代理人's own PARTICIPANT_MANAGER + REHEARSAL_MANAGER
+        // (set up by givenProxyManager()) - only the target's ACCOUNTING_MANAGER
+        // row was removed.
+        $remaining = $this->listDelegates->execute(new ListProductionDelegatesQuery($production->id()->toString(), 1));
+        $this->assertCount(2, $remaining);
+        foreach ($remaining as $delegate) {
+            $this->assertNotSame($target->id()->toString(), $delegate->personId);
+        }
+    }
+
+    /**
+     * A delegate with only PARTICIPANT_MANAGER (not also REHEARSAL_MANAGER)
+     * is not a 代理人 yet - they must not gain delegate-management
+     * authority from a single Role alone.
+     */
+    public function test_a_delegate_with_only_participant_manager_cannot_manage_other_delegates(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $halfProxy = Person::create(2);
+        $this->people->save($halfProxy);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $halfProxy->id(),
+            RoleKey::participantManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $target = Person::create(3);
+        $this->people->save($target);
+
+        $this->expectException(ProductionDelegateAccessDeniedException::class);
+        $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            2,
+            $target->id()->toString(),
+            'CHECKIN_MANAGER'
+        ));
+    }
+
+    /**
+     * An ordinary member (no ProductionDelegate row at all) cannot manage
+     * any delegate Role - the baseline "通常メンバーは担当権限を設定できない"
+     * requirement.
+     */
+    public function test_an_ordinary_member_cannot_manage_any_delegate_role(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $ordinaryMember = Person::create(2);
+        $this->people->save($ordinaryMember);
+        $target = Person::create(3);
+        $this->people->save($target);
+
+        $this->expectException(ProductionDelegateAccessDeniedException::class);
+        $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            2,
+            $target->id()->toString(),
+            'CHECKIN_MANAGER'
+        ));
+    }
+
+    /**
+     * A 代理人 must not be able to use PUT to "change" an existing
+     * PrimaryManager-only-assigned Role (e.g. TICKET_MANAGER) - neither
+     * its current nor its requested Role may fall outside the 3 general-
+     * member Roles for a non-PrimaryManager requester.
+     */
+    public function test_a_proxy_manager_cannot_update_an_existing_primary_manager_only_role(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenProxyManager($production, 2);
+
+        $target = Person::create(3);
+        $this->people->save($target);
+        $ticketDelegate = $this->createDelegate->execute(new CreateProductionDelegateCommand(
+            $production->id()->toString(),
+            1,
+            $target->id()->toString(),
+            'TICKET_MANAGER'
+        ));
+
+        $this->expectException(ProductionDelegateAccessDeniedException::class);
+        $this->updateDelegate->execute(new UpdateProductionDelegateCommand(
+            $ticketDelegate->id,
+            2,
+            'TICKET_MANAGER',
+            ProductionDelegate::STATUS_INACTIVE
+        ));
+    }
 }

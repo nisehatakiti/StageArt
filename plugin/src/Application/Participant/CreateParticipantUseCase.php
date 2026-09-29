@@ -115,7 +115,11 @@ final class CreateParticipantUseCase
             }
         );
 
-        return ParticipantResult::fromDomain($participant);
+        $person = $subjectType->equals(ParticipantSubjectType::person())
+            ? $this->people->findById(PersonId::fromString($command->subjectId))
+            : null;
+
+        return ParticipantResult::fromDomain($participant, $person);
     }
 
     private function assertSubjectExists(ParticipantSubjectType $subjectType, string $subjectId): void

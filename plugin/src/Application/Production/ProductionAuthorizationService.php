@@ -217,9 +217,74 @@ final class ProductionAuthorizationService
         return $this->isPrimaryManager($person, $production);
     }
 
+    /**
+     * StageArt メンバー管理 instruction (担当者権限をメンバー管理へ統合・整理
+     * §3/§4): viewing the ProductionDelegate roster (GET .../delegates) -
+     * PrimaryManager or 代理人 (an ACTIVE delegate holding BOTH
+     * PARTICIPANT_MANAGER and REHEARSAL_MANAGER simultaneously). This is a
+     * *different*, broader Authorization question than "which specific
+     * Role may this requester assign" (see canManageProductionDelegateRole()
+     * below) - per this instruction's own explicit "代理人がメンバー管理画面を
+     * 開けることと...ProductionDelegateを変更できることは別のAuthorization".
+     */
     public function canManageProductionDelegates(Person $person, Production $production): bool
     {
-        return $this->isPrimaryManager($person, $production);
+        return $this->isPrimaryManager($person, $production) || $this->isProxyManager($person, $production);
+    }
+
+    /**
+     * "代理人" per this instruction's §3 definition: an ACTIVE delegate
+     * holding BOTH PARTICIPANT_MANAGER and REHEARSAL_MANAGER Roles at
+     * once - not just one of the two, and not a new bundled RoleKey (the
+     * instruction explicitly forbids collapsing them into one Role).
+     */
+    private function isProxyManager(Person $person, Production $production): bool
+    {
+        return $this->hasActiveDelegateRole($person, $production, RoleKey::participantManager())
+            && $this->hasActiveDelegateRole($person, $production, RoleKey::rehearsalManager());
+    }
+
+    /**
+     * The 3 general-member checkboxes' underlying Roles a 代理人 (not
+     * PrimaryManager) may create/change/remove for another member -
+     * exactly 代理人 itself (both Roles), 会計担当, 受付担当. Deliberately
+     * excludes TICKET_MANAGER/PERFORMANCE_MANAGER/RESERVATION_MANAGER/
+     * QUESTIONNAIRE_MANAGER, which remain reachable only via the existing
+     * 担当者 screen (PrimaryManager-exclusive, unchanged by this
+     * instruction - see canManageProductionDelegateRole() below).
+     *
+     * @var string[]
+     */
+    private const PROXY_MANAGEABLE_ROLES = [
+        RoleKey::PARTICIPANT_MANAGER,
+        RoleKey::REHEARSAL_MANAGER,
+        RoleKey::ACCOUNTING_MANAGER,
+        RoleKey::CHECKIN_MANAGER,
+    ];
+
+    /**
+     * StageArt メンバー管理 instruction §3/§4: creating, changing the Role/
+     * Status of, or removing a SPECIFIC ProductionDelegate row (POST/PUT/
+     * DELETE .../delegates). PrimaryManager may manage any Role, exactly
+     * as before. 代理人 may manage only $targetRole values in
+     * PROXY_MANAGEABLE_ROLES - "代理人だから何でもできる」とはしない per this
+     * instruction's own explicit boundary; assigning
+     * TICKET_MANAGER/PERFORMANCE_MANAGER/RESERVATION_MANAGER/
+     * QUESTIONNAIRE_MANAGER, or any other PrimaryManager-only Production
+     * management action, is never granted by this method regardless of
+     * caller.
+     */
+    public function canManageProductionDelegateRole(Person $person, Production $production, RoleKey $targetRole): bool
+    {
+        if ($this->isPrimaryManager($person, $production)) {
+            return true;
+        }
+
+        if (! $this->isProxyManager($person, $production)) {
+            return false;
+        }
+
+        return in_array($targetRole->toString(), self::PROXY_MANAGEABLE_ROLES, true);
     }
 
     public function canManageParticipants(Person $person, Production $production): bool

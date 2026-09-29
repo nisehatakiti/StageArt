@@ -433,6 +433,21 @@ export type Participant = {
   updated_at: string;
   remarks: string | null;
   display_name: string | null;
+  person_family_name: string | null;
+  person_given_name: string | null;
+};
+
+/**
+ * StageArt メンバー管理: Person ID検索 (担当者権限をメンバー管理へ統合・整理
+ * §1/§2-A instruction) - the minimal GET /people/{id} response, just
+ * enough to confirm "is this the right person?" before adding them as a
+ * Participant. Never carries word_press_user_id/email - see
+ * PersonSummaryResult.php's own docblock for why.
+ */
+export type PersonSummary = {
+  id: string;
+  family_name: string | null;
+  given_name: string | null;
 };
 
 /**

@@ -32,6 +32,8 @@ describe('deriveMyParticipantTypes', () => {
       updated_at: '',
       remarks: null,
       display_name: null,
+      person_family_name: null,
+      person_given_name: null,
     },
     {
       id: 'p2',
@@ -44,6 +46,8 @@ describe('deriveMyParticipantTypes', () => {
       updated_at: '',
       remarks: null,
       display_name: null,
+      person_family_name: null,
+      person_given_name: null,
     },
     {
       id: 'p3',
@@ -56,6 +60,8 @@ describe('deriveMyParticipantTypes', () => {
       updated_at: '',
       remarks: null,
       display_name: null,
+      person_family_name: null,
+      person_given_name: null,
     },
   ];
 

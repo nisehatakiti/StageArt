@@ -8,6 +8,10 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
@@ -15,15 +19,18 @@ final class ListParticipantsUseCase
 {
     private ParticipantRepositoryInterface $participants;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
+        PersonRepositoryInterface $people,
         ProductionAuthorizationService $authorization
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
     }
 
@@ -50,9 +57,28 @@ final class ListParticipantsUseCase
             );
         }
 
+        $participants = $this->participants->findByProductionId($production->id());
+
+        $personIds = array_values(array_unique(array_map(
+            static fn (Participant $participant): string => $participant->subjectId(),
+            array_filter($participants, static fn (Participant $participant): bool => $participant->subjectType()->equals(ParticipantSubjectType::person()))
+        )));
+
+        /** @var array<string, Person> $peopleById */
+        $peopleById = [];
+        foreach ($personIds as $personId) {
+            $person = $this->people->findById(PersonId::fromString($personId));
+            if ($person) {
+                $peopleById[$personId] = $person;
+            }
+        }
+
         return array_map(
-            static fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain($participant),
-            $this->participants->findByProductionId($production->id())
+            fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain(
+                $participant,
+                $peopleById[$participant->subjectId()] ?? null
+            ),
+            $participants
         );
     }
 }

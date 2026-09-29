@@ -9,17 +9,19 @@ import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import {
   useCreateNameOnlyParticipant,
+  useCreatePersonParticipant,
   useParticipants,
   useUpdateParticipant,
 } from '@/features/participant/useParticipant';
 import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { fetchPersonById } from '@/features/person/api';
 import { updateProduction } from '@/features/production/api';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Participant } from '@/types/api';
+import type { Participant, PersonSummary } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 import {
   createProductionDelegate,
@@ -95,13 +97,27 @@ export default function ProductionParticipantsScreen() {
   const { approve, reject } = useParticipationRequestDecision(id);
   const participantsQuery = useParticipants(id);
   const createNameOnly = useCreateNameOnlyParticipant(id);
+  const createPersonParticipant = useCreatePersonParticipant(id);
   const updateParticipant = useUpdateParticipant(id);
   const production = productionQuery.data;
   const isPrimaryManager = !!production?.is_primary_manager;
+  /**
+   * 代理人 (PROXY manager): a member holding BOTH PARTICIPANT_MANAGER and
+   * REHEARSAL_MANAGER simultaneously - mirrors
+   * ProductionAuthorizationService::isProxyManager() Backend-side. This is
+   * deliberately a DIFFERENT (broader) check than `canManage` below: opening
+   * this screen only requires PARTICIPANT_MANAGER alone, while setting
+   * delegate roles (canManageDelegateRoles) requires the full 代理人 bundle -
+   * per the instruction's explicit "別のAuthorization" framing.
+   */
+  const isProxyManager =
+    !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER') &&
+    !!production?.delegate_roles?.includes('REHEARSAL_MANAGER');
+  const canManageDelegateRoles = isPrimaryManager || isProxyManager;
   const delegatesQuery = useQuery({
     queryKey: ['production-delegates', id],
     queryFn: () => fetchProductionDelegates(apiClient, id as string),
-    enabled: isPrimaryManager && !!id,
+    enabled: canManageDelegateRoles && !!id,
   });
   const createDelegate = useMutation({
     mutationFn: (fields: { personId: string; role: string }) => createProductionDelegate(apiClient, id as string, fields),
@@ -126,6 +142,14 @@ export default function ProductionParticipantsScreen() {
   const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // メンバー追加§2-A: Person ID検索 → プレビュー → 既存Personとして追加。
+  const [personIdInput, setPersonIdInput] = useState('');
+  const [personSearchResult, setPersonSearchResult] = useState<PersonSummary | null>(null);
+  const [personSearchError, setPersonSearchError] = useState<string | null>(null);
+  const [personSearching, setPersonSearching] = useState(false);
+  const [personAddType, setPersonAddType] = useState<string>('CAST');
+  const [personAddRemarks, setPersonAddRemarks] = useState('');
 
   useEffect(() => {
     if (activeParticipants.length > 0) {
@@ -164,6 +188,47 @@ export default function ProductionParticipantsScreen() {
 
   function removePendingMember(index: number) {
     setPendingNewMembers((current) => current.filter((_, i) => i !== index));
+  }
+
+  async function handleSearchPerson() {
+    const personId = personIdInput.trim();
+    if (!personId) {
+      return;
+    }
+    setPersonSearching(true);
+    setPersonSearchError(null);
+    setPersonSearchResult(null);
+    try {
+      const person = await fetchPersonById(apiClient, personId);
+      setPersonSearchResult(person);
+    } catch (error) {
+      setPersonSearchError(
+        error instanceof ApiError && error.statusCode === 404
+          ? 'このPerson IDのメンバーが見つかりません。IDをご確認ください。'
+          : getErrorMessage(error)
+      );
+    } finally {
+      setPersonSearching(false);
+    }
+  }
+
+  async function handleAddFoundPerson() {
+    if (!personSearchResult) {
+      return;
+    }
+    setErrorMessage(null);
+    try {
+      await createPersonParticipant.mutateAsync({
+        personId: personSearchResult.id,
+        participantType: personAddType,
+        remarks: personAddRemarks.trim() || null,
+      });
+      setPersonIdInput('');
+      setPersonSearchResult(null);
+      setPersonAddRemarks('');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
   }
 
   async function handleSave() {
@@ -324,7 +389,7 @@ export default function ProductionParticipantsScreen() {
               <ThemedText style={styles.memberNameHeader}>名前</ThemedText>
               <ThemedText style={styles.memberRoleHeader}>役割</ThemedText>
               <ThemedText style={styles.memberRemarksHeader}>備考</ThemedText>
-              {isPrimaryManager &&
+              {canManageDelegateRoles &&
                 DELEGATE_CHECKBOXES.map((checkbox) => (
                   <ThemedText key={checkbox.key} style={styles.permissionHeader}>
                     {checkbox.label}
@@ -339,7 +404,7 @@ export default function ProductionParticipantsScreen() {
                 edit={edits[participant.id] ?? { participantType: participant.participant_type, remarks: participant.remarks ?? '', delete: false }}
                 onChange={(edit) => setEdits((current) => ({ ...current, [participant.id]: edit }))}
                 delegateRoles={delegatesQuery.data ?? []}
-                canManageDelegateRoles={isPrimaryManager}
+                canManageDelegateRoles={canManageDelegateRoles}
                 delegateBusy={createDelegate.isPending || updateDelegate.isPending}
                 onToggleDelegateCheckbox={async (personId, roles, checked) => {
                   const delegates = delegatesQuery.data ?? [];
@@ -421,6 +486,77 @@ export default function ProductionParticipantsScreen() {
         メンバーを追加
       </ThemedText>
 
+      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+        既存メンバーをPerson IDで検索して追加
+      </ThemedText>
+      <View style={styles.personSearchRow}>
+        <ThemedTextInput
+          testID="production-participants-person-id-input"
+          value={personIdInput}
+          onChangeText={(value) => {
+            setPersonIdInput(value);
+            setPersonSearchResult(null);
+            setPersonSearchError(null);
+          }}
+          placeholder="Person ID"
+          style={styles.personSearchInput}
+        />
+        <TouchableOpacity
+          testID="production-participants-person-search"
+          onPress={handleSearchPerson}
+          disabled={!personIdInput.trim() || personSearching}
+          style={[styles.addButton, styles.personSearchButton]}
+        >
+          {personSearching ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.addButtonText}>検索</ThemedText>}
+        </TouchableOpacity>
+      </View>
+      {personSearchError && (
+        <ThemedText testID="production-participants-person-search-error" style={styles.error}>
+          {personSearchError}
+        </ThemedText>
+      )}
+      {personSearchResult && (
+        <View style={styles.personPreview} testID="production-participants-person-preview">
+          <ThemedText style={styles.pendingMemberName}>
+            {[personSearchResult.family_name, personSearchResult.given_name].filter(Boolean).join(' ') || '（氏名未設定）'}
+          </ThemedText>
+          <View style={styles.typeToggle}>
+            {PARTICIPANT_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                testID={`production-participants-person-add-type-${type}`}
+                onPress={() => setPersonAddType(type)}
+                style={[styles.typeButton, personAddType === type && styles.typeButtonActive]}
+              >
+                <ThemedText style={personAddType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ThemedTextInput
+            testID="production-participants-person-add-remarks"
+            value={personAddRemarks}
+            onChangeText={setPersonAddRemarks}
+            placeholder="備考"
+            style={styles.input}
+          />
+          <TouchableOpacity
+            testID="production-participants-person-add-confirm"
+            onPress={handleAddFoundPerson}
+            disabled={createPersonParticipant.isPending}
+            style={styles.addButton}
+          >
+            {createPersonParticipant.isPending ? (
+              <ActivityIndicator color={BrandColors.warmAmber} />
+            ) : (
+              <ThemedText style={styles.addButtonText}>このメンバーを追加</ThemedText>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+        Person IDが分からない場合は、氏名のみで登録
+      </ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
         氏名
       </ThemedText>
@@ -497,9 +633,10 @@ function ParticipantEditRow({
   delegateBusy: boolean;
   onToggleDelegateCheckbox: (personId: string, roles: string[], checked: boolean) => Promise<void>;
 }) {
+  const personFullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
   const displayLabel =
     participant.subject_type === 'NAME_ONLY' ? participant.display_name ?? '（氏名未設定）' :
-    participant.subject_type === 'PERSON' ? (isSelf ? 'あなた' : `Person ID: ${participant.subject_id}`) :
+    participant.subject_type === 'PERSON' ? (isSelf ? 'あなた' : personFullName || '（氏名未設定）') :
     `Organization ID: ${participant.subject_id}`;
   const personDelegates = participant.subject_type === 'PERSON'
     ? delegateRoles.filter((delegate) => delegate.person_id === participant.subject_id)
@@ -674,6 +811,26 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
   },
   addButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
+  personSearchRow: { flexDirection: 'row', gap: Spacing.two, alignItems: 'center', marginBottom: Spacing.two },
+  personSearchInput: {
+    flex: 1,
+    minWidth: 160,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 16,
+  },
+  personSearchButton: { marginTop: 0, paddingHorizontal: Spacing.three },
+  personPreview: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: Radius.medium,
+    padding: Spacing.two,
+    marginBottom: Spacing.two,
+    gap: Spacing.one,
+  },
   error: { color: '#a6483a', marginTop: Spacing.two },
   button: {
     backgroundColor: BrandColors.warmAmber,
