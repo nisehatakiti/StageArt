@@ -79,6 +79,7 @@ final class Installer
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
+        $participantInvitations = $wpdb->prefix . 'stageart_participant_invitations';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -293,6 +294,37 @@ final class Installer
             KEY production_id (production_id),
             KEY subject (subject_type, subject_id),
             UNIQUE KEY production_subject_type (production_id, subject_type, subject_id, participant_type)
+        ) {$charsetCollate};");
+
+        // StageArt メール招待によるProductionParticipant追加機能: no
+        // FOREIGN KEY constraints, matching this schema's established
+        // approach everywhere else (dbDelta/WordPress compatibility) -
+        // production_id/invited_by_person_id are plain indexed
+        // references, not enforced at the DB level. No UNIQUE KEY on
+        // (production_id, email, participant_type): duplicate-invitation
+        // prevention is an Application-layer concern
+        // (CreateParticipantInvitationUseCase resends an existing usable
+        // PENDING row instead of inserting a second one), and historical
+        // CANCELLED/CONSUMED/expired-but-still-PENDING rows are expected
+        // to accumulate for the same tuple over time - see
+        // ParticipantInvitationRepositoryInterface::findByProductionEmailAndType()'s
+        // own docblock. stageart_participants itself is unchanged.
+        dbDelta("CREATE TABLE {$participantInvitations} (
+            id CHAR(36) NOT NULL,
+            production_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            invited_by_person_id CHAR(36) NOT NULL,
+            participant_type VARCHAR(20) NOT NULL,
+            remarks TEXT NULL,
+            token_hash CHAR(64) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            created_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY token_hash (token_hash),
+            KEY production_id (production_id),
+            KEY email (email)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's

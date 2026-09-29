@@ -36,6 +36,7 @@ use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 /**
  * The explicit Google x Email+Password authentication matrix requested
@@ -83,6 +84,8 @@ final class AuthenticationMatrixTest extends TestCase
             $this->emailCredentials
         );
 
+        $resolveParticipantInvitation = NullResolveParticipantInvitationUseCaseFactory::create($this->people);
+
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
             $this->people,
@@ -92,7 +95,8 @@ final class AuthenticationMatrixTest extends TestCase
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
             new InMemoryTransactionManager(),
-            $this->mailer
+            $this->mailer,
+            $resolveParticipantInvitation
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,
@@ -111,7 +115,8 @@ final class AuthenticationMatrixTest extends TestCase
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
             new InMemoryTransactionManager(),
-            $notificationEmailSeeder
+            $notificationEmailSeeder,
+            $resolveParticipantInvitation
         );
         $this->linkGoogleIdentity = new LinkGoogleIdentityUseCase(
             $this->googleVerifier,

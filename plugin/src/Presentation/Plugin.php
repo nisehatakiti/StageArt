@@ -98,9 +98,17 @@ use StageArt\Application\Dashboard\GetMyDashboardUseCase;
 use StageArt\Application\Notification\ListNotificationsForProductionUseCase;
 use StageArt\Application\Notification\MarkNotificationReadUseCase;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
+use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
 use StageArt\Application\Person\GetPersonByIdUseCase;
+use StageArt\Application\Person\SearchPersonByEmailUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
+use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenUseCase;
+use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\LinkGoogleIdentityUseCase;
@@ -123,7 +131,9 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialReposi
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExpenseRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJournalEntryRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPasswordResetTokenRepository;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressParticipantInvitationMailer;
 use StageArt\Infrastructure\Authentication\GoogleIdTokenVerifier;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenIssuer;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenVerifier;
@@ -179,6 +189,7 @@ use StageArt\Presentation\Rest\PersonRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
+use StageArt\Presentation\Rest\ParticipantInvitationRestController;
 use StageArt\Presentation\Rest\ParticipantRestController;
 use StageArt\Presentation\Rest\ParticipationRequestRestController;
 use StageArt\Presentation\Rest\ProductionDelegateRestController;
@@ -218,6 +229,7 @@ final class Plugin
         $productions         = new WordPressProductionRepository($wpdb);
         $productionDelegates = new WordPressProductionDelegateRepository($wpdb);
         $participants        = new WordPressParticipantRepository($wpdb);
+        $participantInvitations = new WordPressParticipantInvitationRepository($wpdb);
         $rehearsals           = new WordPressRehearsalRepository($wpdb);
         $performances         = new WordPressPerformanceRepository($wpdb);
         $tickets              = new WordPressTicketRepository($wpdb);
@@ -287,6 +299,31 @@ final class Plugin
             $transactions
         );
 
+        // StageArt メール招待によるProductionParticipant追加機能:
+        // $createParticipant is constructed here (earlier than its
+        // sibling Participant UseCases below) because
+        // ResolveParticipantInvitationUseCase - needed by both
+        // $authenticateWithGoogle and $registerWithEmail just below -
+        // depends on it. See ResolveParticipantInvitationUseCase's own
+        // docblock for why it re-invokes this exact, unchanged Use Case
+        // (using the inviting manager as requester) instead of creating
+        // a Participant directly.
+        $findPersonByEmail = new FindPersonByEmailUseCase($emailCredentials, $userAccounts, $notificationEmails, $people);
+        $createParticipant = new CreateParticipantUseCase(
+            $productions,
+            $participants,
+            $people,
+            $organizations,
+            $productionAuthorization,
+            $transactions
+        );
+        $resolveParticipantInvitation = new ResolveParticipantInvitationUseCase(
+            $participantInvitations,
+            $participants,
+            $people,
+            $createParticipant
+        );
+
         // Phase 2 (StageArt Authentication): both secrets are read from
         // wp-config.php constants, never committed to source control
         // (see this Phase's Google Cloud Console setup guide). An unset
@@ -320,7 +357,8 @@ final class Plugin
             $accessTokenIssuer,
             $wordPressUserProvisioner,
             $transactions,
-            $notificationEmailSeeder
+            $notificationEmailSeeder,
+            $resolveParticipantInvitation
         );
         $registerWithEmail = new RegisterWithEmailUseCase(
             $emailCredentials,
@@ -331,7 +369,8 @@ final class Plugin
             $accessTokenIssuer,
             $wordPressUserProvisioner,
             $transactions,
-            $authMailer
+            $authMailer,
+            $resolveParticipantInvitation
         );
         $authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $emailCredentials,
@@ -494,18 +533,34 @@ final class Plugin
         $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $people, $productionAuthorization);
         $deleteProductionDelegate = new DeleteProductionDelegateUseCase($productionDelegates, $productions, $productionAuthorization);
 
-        $createParticipant = new CreateParticipantUseCase(
-            $productions,
-            $participants,
-            $people,
-            $organizations,
-            $productionAuthorization,
-            $transactions
-        );
+        // $createParticipant itself was moved earlier in this method -
+        // see the comment above ResolveParticipantInvitationUseCase's
+        // construction for why.
         $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization);
         $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization);
         $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization);
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
+
+        $searchPersonByEmail = new SearchPersonByEmailUseCase($productions, $productionAuthorization, $findPersonByEmail);
+        $participantInvitationMailer = new WordPressParticipantInvitationMailer($emailVerificationBaseUrl);
+        $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
+            $participantInvitations,
+            $productions,
+            $productionAuthorization,
+            $participantInvitationMailer
+        );
+        $createParticipantInvitation = new CreateParticipantInvitationUseCase(
+            $productions,
+            $productionAuthorization,
+            $findPersonByEmail,
+            $createParticipant,
+            $participantInvitations,
+            $resendParticipantInvitation,
+            $participantInvitationMailer
+        );
+        $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
+        $getParticipantInvitationByToken = new GetParticipantInvitationByTokenUseCase($participantInvitations, $productions);
+        $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization);
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
         // entire own wiring (UseCase construction + REST Controller
@@ -807,7 +862,15 @@ final class Plugin
 
         $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
 
-        $personRestController = new PersonRestController($getPersonById);
+        $personRestController = new PersonRestController($getPersonById, $searchPersonByEmail);
+
+        $participantInvitationRestController = new ParticipantInvitationRestController(
+            $createParticipantInvitation,
+            $listParticipantInvitations,
+            $getParticipantInvitationByToken,
+            $resendParticipantInvitation,
+            $cancelParticipantInvitation
+        );
 
         $joinKeyRestController = new JoinKeyRestController(
             $issueOrganizationJoinKey,
@@ -834,6 +897,7 @@ final class Plugin
         add_action('rest_api_init', [$productionRestController, 'register_routes']);
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);
+        add_action('rest_api_init', [$participantInvitationRestController, 'register_routes']);
         add_action('rest_api_init', [$participationRequestRestController, 'register_routes']);
 
         // StageArt Core/Module Architecture Phase 3: every Rehearsal

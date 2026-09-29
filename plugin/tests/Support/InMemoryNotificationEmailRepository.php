@@ -28,4 +28,13 @@ final class InMemoryNotificationEmailRepository implements NotificationEmailRepo
 
         return null;
     }
+
+    public function findVerifiedByEmail(string $email): array
+    {
+        return array_values(array_filter(
+            $this->notificationEmails,
+            static fn (NotificationEmail $notificationEmail): bool =>
+                $notificationEmail->verified() && $notificationEmail->email() === $email
+        ));
+    }
 }

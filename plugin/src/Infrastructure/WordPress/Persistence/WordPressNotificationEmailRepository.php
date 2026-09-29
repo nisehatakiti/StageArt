@@ -64,10 +64,21 @@ final class WordPressNotificationEmailRepository implements NotificationEmailRep
             ARRAY_A
         );
 
-        if (! $row) {
-            return null;
-        }
+        return $row ? $this->hydrate($row) : null;
+    }
 
+    public function findVerifiedByEmail(string $email): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE email = %s AND verified = 1", $email),
+            ARRAY_A
+        );
+
+        return array_map(fn (array $row): NotificationEmail => $this->hydrate($row), $rows ?: []);
+    }
+
+    private function hydrate(array $row): NotificationEmail
+    {
         return NotificationEmail::reconstitute(
             NotificationEmailId::fromString($row['id']),
             PersonId::fromString($row['person_id']),

@@ -33,6 +33,7 @@ use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 /**
  * StageArt Admin Console V1: covers the Account Management screen's own
@@ -76,6 +77,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $this->emailCredentials
         );
 
+        $resolveParticipantInvitation = NullResolveParticipantInvitationUseCaseFactory::create($this->people);
+
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
             $this->people,
@@ -85,7 +88,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $accessTokenIssuer,
             $wordPressUserProvisioner,
             $transactions,
-            new FakeAuthMailer()
+            new FakeAuthMailer(),
+            $resolveParticipantInvitation
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,
@@ -104,7 +108,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $accessTokenIssuer,
             $wordPressUserProvisioner,
             $transactions,
-            $notificationEmailSeeder
+            $notificationEmailSeeder,
+            $resolveParticipantInvitation
         );
         $this->listAllUserAccounts = new ListAllUserAccountsUseCase(
             $this->userAccounts,

@@ -7,6 +7,7 @@ namespace StageArt\Application\Authentication;
 use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use StageArt\Domain\Authentication\EmailVerificationToken;
@@ -14,11 +15,13 @@ use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\UserAccount\EmailCredential;
 use StageArt\Domain\UserAccount\EmailCredentialRepositoryInterface;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
+use Throwable;
 
 /**
  * The Email+Password mirror of AuthenticateWithGoogleUseCase's new-user
@@ -49,6 +52,17 @@ use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
  * in 3 places, PasswordResetToken, EmailVerificationToken), so a new
  * shared abstraction here would be inconsistent with the existing
  * design, not a fix for genuine duplication.
+ *
+ * StageArt メール招待によるProductionParticipant追加機能: after a
+ * successful registration, resolves any outstanding
+ * ParticipantInvitation for this email via ResolveParticipantInvitationUseCase
+ * - a single delegated call, not inline Participant business logic (see
+ * that Use Case's own docblock for how it re-authorizes Participant
+ * creation through the invitation's own inviter, never bypassing
+ * CreateParticipantUseCase's Authorization check). Wrapped in its own
+ * try/catch so an invitation-resolution failure can never turn a
+ * successful registration into a failed response - this method's
+ * existing return contract (AuthenticationResult) is unchanged.
  */
 final class RegisterWithEmailUseCase
 {
@@ -65,6 +79,7 @@ final class RegisterWithEmailUseCase
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
     private AuthMailerInterface $mailer;
+    private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
 
     public function __construct(
         EmailCredentialRepositoryInterface $emailCredentials,
@@ -75,7 +90,8 @@ final class RegisterWithEmailUseCase
         AccessTokenIssuerInterface $accessTokenIssuer,
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
-        AuthMailerInterface $mailer
+        AuthMailerInterface $mailer,
+        ResolveParticipantInvitationUseCase $resolveParticipantInvitation
     ) {
         $this->emailCredentials = $emailCredentials;
         $this->people = $people;
@@ -86,6 +102,7 @@ final class RegisterWithEmailUseCase
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
         $this->mailer = $mailer;
+        $this->resolveParticipantInvitation = $resolveParticipantInvitation;
     }
 
     public function execute(RegisterWithEmailCommand $command): AuthenticationResult
@@ -152,6 +169,16 @@ final class RegisterWithEmailUseCase
         });
 
         $this->mailer->sendEmailVerificationEmail($command->email, (string) $emailVerificationTokenValue);
+
+        try {
+            $this->resolveParticipantInvitation->execute(PersonId::fromString($result->personId), $command->email);
+        } catch (Throwable $exception) {
+            error_log(sprintf(
+                '[StageArt ParticipantInvitation] resolution failed after email registration for person=%s: %s',
+                $result->personId,
+                $exception->getMessage()
+            ));
+        }
 
         return $result;
     }

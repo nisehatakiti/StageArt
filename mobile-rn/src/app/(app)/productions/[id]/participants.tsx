@@ -15,7 +15,13 @@ import {
 } from '@/features/participant/useParticipant';
 import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { fetchPersonById } from '@/features/person/api';
+import { fetchPersonById, searchPersonByEmail } from '@/features/person/api';
+import {
+  useCancelParticipantInvitation,
+  useCreateParticipantInvitation,
+  useParticipantInvitations,
+  useResendParticipantInvitation,
+} from '@/features/participantInvitation/useParticipantInvitation';
 import { updateProduction } from '@/features/production/api';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
@@ -133,6 +139,12 @@ export default function ProductionParticipantsScreen() {
   const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
+  const invitationsQuery = useParticipantInvitations(id, canManage);
+  const pendingInvitations = (invitationsQuery.data ?? []).filter((invitation) => invitation.status === 'PENDING');
+  const createInvitation = useCreateParticipantInvitation(id);
+  const resendInvitation = useResendParticipantInvitation(id);
+  const cancelInvitation = useCancelParticipantInvitation(id);
+
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [memberInfoPublishedAt, setMemberInfoPublishedAt] = useState('');
   const [newName, setNewName] = useState('');
@@ -150,6 +162,17 @@ export default function ProductionParticipantsScreen() {
   const [personSearching, setPersonSearching] = useState(false);
   const [personAddType, setPersonAddType] = useState<string>('CAST');
   const [personAddRemarks, setPersonAddRemarks] = useState('');
+
+  // メール招待によるProductionParticipant追加機能 §22: emailによる検索 →
+  // 既存Personが見つかれば追加、見つからなければ招待メール送信。
+  const [emailInput, setEmailInput] = useState('');
+  const [emailSearchResult, setEmailSearchResult] = useState<PersonSummary | null>(null);
+  const [emailSearchNotFound, setEmailSearchNotFound] = useState(false);
+  const [emailSearchError, setEmailSearchError] = useState<string | null>(null);
+  const [emailSearching, setEmailSearching] = useState(false);
+  const [emailAddType, setEmailAddType] = useState<string>('CAST');
+  const [emailAddRemarks, setEmailAddRemarks] = useState('');
+  const [invitationMessage, setInvitationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeParticipants.length > 0) {
@@ -226,6 +249,75 @@ export default function ProductionParticipantsScreen() {
       setPersonIdInput('');
       setPersonSearchResult(null);
       setPersonAddRemarks('');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleSearchEmail() {
+    const email = emailInput.trim();
+    if (!email) {
+      return;
+    }
+    setEmailSearching(true);
+    setEmailSearchError(null);
+    setEmailSearchResult(null);
+    setEmailSearchNotFound(false);
+    try {
+      const person = await searchPersonByEmail(apiClient, email, id as string);
+      setEmailSearchResult(person);
+    } catch (error) {
+      if (error instanceof ApiError && error.statusCode === 404) {
+        setEmailSearchNotFound(true);
+      } else {
+        setEmailSearchError(getErrorMessage(error));
+      }
+    } finally {
+      setEmailSearching(false);
+    }
+  }
+
+  async function handleAddFoundPersonByEmail() {
+    if (!emailSearchResult) {
+      return;
+    }
+    setErrorMessage(null);
+    setInvitationMessage(null);
+    try {
+      await createPersonParticipant.mutateAsync({
+        personId: emailSearchResult.id,
+        participantType: emailAddType,
+        remarks: emailAddRemarks.trim() || null,
+      });
+      setEmailInput('');
+      setEmailSearchResult(null);
+      setEmailAddRemarks('');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleSendInvitation() {
+    const email = emailInput.trim();
+    if (!email) {
+      return;
+    }
+    setErrorMessage(null);
+    setInvitationMessage(null);
+    try {
+      const result = await createInvitation.mutateAsync({
+        email,
+        participantType: emailAddType,
+        remarks: emailAddRemarks.trim() || null,
+      });
+      setInvitationMessage(
+        result.outcome === 'INVITATION_RESENT'
+          ? '既に招待済みのため、招待メールを再送しました。'
+          : '招待メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。'
+      );
+      setEmailInput('');
+      setEmailSearchNotFound(false);
+      setEmailAddRemarks('');
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -432,6 +524,53 @@ export default function ProductionParticipantsScreen() {
         </ScrollView>
       )}
 
+      {pendingInvitations.length > 0 && (
+        <>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            招待中のメンバー
+          </ThemedText>
+          <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participant-invitations-table-scroll">
+            <View style={styles.invitationTable} testID="production-participant-invitations-list">
+              <View style={styles.memberTableHeader}>
+                <ThemedText style={styles.invitationEmailHeader}>メールアドレス</ThemedText>
+                <ThemedText style={styles.invitationTypeHeader}>役割</ThemedText>
+                <ThemedText style={styles.invitationStatusHeader}>状態</ThemedText>
+                <ThemedText style={styles.invitationExpiresHeader}>有効期限</ThemedText>
+                <View style={styles.invitationActionsHeader} />
+              </View>
+              {pendingInvitations.map((invitation) => (
+                <View key={invitation.id} style={styles.memberTableRow} testID={`participant-invitation-row-${invitation.id}`}>
+                  <ThemedText style={styles.invitationEmailCell}>{invitation.email}</ThemedText>
+                  <ThemedText style={styles.invitationTypeCell}>{PARTICIPANT_TYPE_LABEL[invitation.participant_type] ?? invitation.participant_type}</ThemedText>
+                  <ThemedText style={styles.invitationStatusCell}>{invitation.is_expired ? '期限切れ' : '招待中'}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.invitationExpiresCell}>
+                    {new Date(invitation.expires_at).toLocaleString('ja-JP')}
+                  </ThemedText>
+                  <View style={styles.invitationActionsCell}>
+                    <TouchableOpacity
+                      testID={`participant-invitation-resend-${invitation.id}`}
+                      onPress={() => resendInvitation.mutate(invitation.id)}
+                      disabled={resendInvitation.isPending || cancelInvitation.isPending}
+                      style={styles.invitationActionButton}
+                    >
+                      <ThemedText type="small">再送</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID={`participant-invitation-cancel-${invitation.id}`}
+                      onPress={() => cancelInvitation.mutate(invitation.id)}
+                      disabled={resendInvitation.isPending || cancelInvitation.isPending}
+                      style={styles.invitationActionButton}
+                    >
+                      <ThemedText type="small">取消</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </>
+      )}
+
       <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
         メンバー情報公開日時（任意）
       </ThemedText>
@@ -551,6 +690,105 @@ export default function ProductionParticipantsScreen() {
               <ThemedText style={styles.addButtonText}>このメンバーを追加</ThemedText>
             )}
           </TouchableOpacity>
+        </View>
+      )}
+
+      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+        メールアドレスで検索・招待
+      </ThemedText>
+      <View style={styles.personSearchRow}>
+        <ThemedTextInput
+          testID="production-participants-email-input"
+          value={emailInput}
+          onChangeText={(value) => {
+            setEmailInput(value);
+            setEmailSearchResult(null);
+            setEmailSearchNotFound(false);
+            setEmailSearchError(null);
+            setInvitationMessage(null);
+          }}
+          placeholder="メールアドレス"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          style={styles.personSearchInput}
+        />
+        <TouchableOpacity
+          testID="production-participants-email-search"
+          onPress={handleSearchEmail}
+          disabled={!emailInput.trim() || emailSearching}
+          style={[styles.addButton, styles.personSearchButton]}
+        >
+          {emailSearching ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.addButtonText}>検索</ThemedText>}
+        </TouchableOpacity>
+      </View>
+      {emailSearchError && (
+        <ThemedText testID="production-participants-email-search-error" style={styles.error}>
+          {emailSearchError}
+        </ThemedText>
+      )}
+      {invitationMessage && (
+        <ThemedText testID="production-participants-invitation-message" style={styles.invitationMessage}>
+          {invitationMessage}
+        </ThemedText>
+      )}
+      {(emailSearchResult || emailSearchNotFound) && (
+        <View style={styles.personPreview} testID="production-participants-email-preview">
+          {emailSearchResult ? (
+            <ThemedText style={styles.pendingMemberName}>
+              {[emailSearchResult.family_name, emailSearchResult.given_name].filter(Boolean).join(' ') || '（氏名未設定）'}
+            </ThemedText>
+          ) : (
+            <ThemedText testID="production-participants-email-not-found" type="small" themeColor="textSecondary">
+              このメールアドレスのStageArtメンバーは見つかりませんでした。招待メールを送信できます。
+            </ThemedText>
+          )}
+          <View style={styles.typeToggle}>
+            {PARTICIPANT_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                testID={`production-participants-email-add-type-${type}`}
+                onPress={() => setEmailAddType(type)}
+                style={[styles.typeButton, emailAddType === type && styles.typeButtonActive]}
+              >
+                <ThemedText style={emailAddType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ThemedTextInput
+            testID="production-participants-email-add-remarks"
+            value={emailAddRemarks}
+            onChangeText={setEmailAddRemarks}
+            placeholder="備考"
+            style={styles.input}
+          />
+          {emailSearchResult ? (
+            <TouchableOpacity
+              testID="production-participants-email-add-confirm"
+              onPress={handleAddFoundPersonByEmail}
+              disabled={createPersonParticipant.isPending}
+              style={styles.addButton}
+            >
+              {createPersonParticipant.isPending ? (
+                <ActivityIndicator color={BrandColors.warmAmber} />
+              ) : (
+                <ThemedText style={styles.addButtonText}>このメンバーを追加</ThemedText>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              testID="production-participants-email-invite-confirm"
+              onPress={handleSendInvitation}
+              disabled={createInvitation.isPending}
+              style={styles.addButton}
+            >
+              {createInvitation.isPending ? (
+                <ActivityIndicator color={BrandColors.warmAmber} />
+              ) : (
+                <ThemedText style={styles.addButtonText}>招待メールを送信</ThemedText>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -832,6 +1070,24 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   error: { color: '#a6483a', marginTop: Spacing.two },
+  invitationMessage: { color: BrandColors.warmAmber, marginTop: Spacing.one, marginBottom: Spacing.one },
+  invitationTable: {
+    minWidth: 900,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  invitationEmailHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  invitationTypeHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationTypeCell: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  invitationStatusHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationStatusCell: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  invitationExpiresHeader: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationExpiresCell: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  invitationActionsHeader: { width: 140 },
+  invitationActionsCell: { width: 140, flexDirection: 'row', gap: Spacing.two, alignItems: 'center', paddingHorizontal: Spacing.two },
+  invitationActionButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: 4, paddingHorizontal: 8 },
   button: {
     backgroundColor: BrandColors.warmAmber,
     borderRadius: Radius.medium,

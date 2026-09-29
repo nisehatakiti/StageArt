@@ -19,4 +19,20 @@ interface NotificationEmailRepositoryInterface
      * `PushPreference` row is absent.
      */
     public function findByPersonId(PersonId $personId): ?NotificationEmail;
+
+    /**
+     * StageArt メール招待によるProductionParticipant追加機能: only rows
+     * with `verified = true` are ever returned - an unverified
+     * NotificationEmail (e.g. Google gave email_verified=false) must
+     * never be treated as confirming who owns that address, so it must
+     * never be usable to find an existing Person by email (see
+     * FindPersonByEmailUseCase). Returns an array, not a single nullable
+     * result, because this table has no uniqueness constraint on `email`
+     * itself (only on `person_id`) - two different Persons could in
+     * principle hold the same verified email, and the caller must treat
+     * that as an ambiguous result rather than silently picking one.
+     *
+     * @return NotificationEmail[]
+     */
+    public function findVerifiedByEmail(string $email): array;
 }

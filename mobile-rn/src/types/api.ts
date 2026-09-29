@@ -475,6 +475,48 @@ export type ProductionDelegate = {
   updated_at: string;
 };
 
+/**
+ * StageArt メール招待によるProductionParticipant追加機能: never carries
+ * the raw token or its hash (ParticipantInvitationResult.php's own
+ * docblock) - only enough to render the 招待一覧 row (email/role/status/
+ * expiry) and drive resend/cancel.
+ */
+export type ParticipantInvitation = {
+  id: string;
+  production_id: string;
+  email: string;
+  invited_by_person_id: string;
+  participant_type: string;
+  remarks: string | null;
+  status: 'PENDING' | 'CONSUMED' | 'CANCELLED';
+  created_at: string;
+  expires_at: string;
+  consumed_at: string | null;
+  is_expired: boolean;
+};
+
+/**
+ * The result of POST /productions/{id}/participant-invitations - the
+ * same call can end in one of three ways depending on whether the email
+ * already belongs to an existing Person (see
+ * CreateParticipantInvitationResult.php's own docblock).
+ */
+export type CreateParticipantInvitationResult = {
+  outcome: 'PARTICIPANT_ADDED' | 'INVITATION_CREATED' | 'INVITATION_RESENT';
+  participant: Participant | null;
+  invitation: ParticipantInvitation | null;
+};
+
+/** GET /participant-invitations/resolve?token=... - the unauthenticated,
+ * token-based preview shown on the registration screen. Never includes
+ * the token itself. */
+export type ParticipantInvitationPreview = {
+  production_name: string;
+  email: string;
+  participant_type: string;
+  status: string;
+};
+
 export type TimetableItem = {
   id: string;
   timetable_id: string;

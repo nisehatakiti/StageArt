@@ -32,6 +32,7 @@ use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 final class EmailAuthenticationUseCaseTest extends TestCase
 {
@@ -72,7 +73,8 @@ final class EmailAuthenticationUseCaseTest extends TestCase
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
             new InMemoryTransactionManager(),
-            $this->mailer
+            $this->mailer,
+            NullResolveParticipantInvitationUseCaseFactory::create($this->people)
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,
