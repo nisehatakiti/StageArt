@@ -29,7 +29,9 @@ use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Ticket\Ticket;
 use StageArt\Domain\Ticket\TicketBackMode;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
@@ -54,6 +56,7 @@ final class SettlementUseCaseTest extends TestCase
     private InMemoryReservationRepository $reservations;
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
+    private InMemoryProductionDelegateRepository $delegates;
 
     private GetProductionSettlementSummaryUseCase $getSummary;
     private SettleProductionMemberUseCase $settleMember;
@@ -71,9 +74,9 @@ final class SettlementUseCaseTest extends TestCase
         $this->settlements = new InMemorySettlementRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
-        $delegates = new InMemoryProductionDelegateRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
         $participants = new InMemoryParticipantRepository();
-        $productionAuthorization = new ProductionAuthorizationService($organizationAuthorization, $delegates, $participants);
+        $productionAuthorization = new ProductionAuthorizationService($organizationAuthorization, $this->delegates, $participants);
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter($participants, $this->productions, $this->people, $productionAuthorization);
@@ -245,5 +248,64 @@ final class SettlementUseCaseTest extends TestCase
 
         $this->expectException(SettlementAccessDeniedException::class);
         $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 99));
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合・整理 instruction §会計担当仕様訂正: 会計担当
+     * (ACCOUNTING_MANAGER) covers Settlement too, not just Budget/Expense/
+     * JournalEntry - an ACCOUNTING_MANAGER delegate (not the
+     * PrimaryManager) can view the summary, settle a member, and cancel
+     * that settlement, exactly like a PrimaryManager can.
+     */
+    public function test_accounting_manager_delegate_can_view_settle_and_cancel_settlement(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+
+        $accountingDelegate = Person::create(50);
+        $this->people->save($accountingDelegate);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $accountingDelegate->id(),
+            RoleKey::accountingManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $summary = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 50));
+        $this->assertSame(300, $summary->members[0]->outstandingAmount);
+
+        $this->settleMember->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 50));
+
+        $afterSettle = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 50));
+        $this->assertSame(300, $afterSettle->members[0]->alreadySettledAmount);
+        $this->assertSame(0, $afterSettle->members[0]->outstandingAmount);
+
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 50));
+
+        $afterCancel = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 50));
+        $this->assertSame(0, $afterCancel->members[0]->alreadySettledAmount);
+        $this->assertSame(300, $afterCancel->members[0]->outstandingAmount);
+    }
+
+    /**
+     * A Role with no Settlement.Manage in its Permission Set (e.g.
+     * CHECKIN_MANAGER - reception staff) must still be denied Settlement
+     * access, confirming the grant is specific to ACCOUNTING_MANAGER, not
+     * accidentally opened up to every delegate Role.
+     */
+    public function test_a_delegate_without_accounting_manager_still_cannot_view_the_settlement_summary(): void
+    {
+        [$production] = $this->givenProductionWithOneMemberSale();
+
+        $checkInDelegate = Person::create(51);
+        $this->people->save($checkInDelegate);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $checkInDelegate->id(),
+            RoleKey::checkInManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->expectException(SettlementAccessDeniedException::class);
+        $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 51));
     }
 }

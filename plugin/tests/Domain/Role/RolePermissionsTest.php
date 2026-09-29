@@ -99,15 +99,16 @@ final class RolePermissionsTest extends TestCase
     }
 
     /**
-     * 担当者権限をメンバー管理へ統合 instruction §2 会計担当: deliberately
-     * excludes Settlement.Manage (real money payouts to members) -
-     * confirmed to stay PrimaryManager-exclusive.
+     * 担当者権限をメンバー管理へ統合・整理 instruction §会計担当仕様訂正: 会計担当
+     * covers the Production's accounting処理全般 (予算/支出/仕訳/メンバーへの
+     * 精算), so Settlement.Manage is included alongside Accounting.Update -
+     * corrects an earlier instruction in this same series that excluded it.
      */
-    public function test_accounting_manager_does_not_have_settlement_permission(): void
+    public function test_accounting_manager_has_settlement_permission(): void
     {
         $role = RoleKey::accountingManager();
 
-        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Settlement.Manage')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Settlement.Manage')));
     }
 
     public function test_owner_and_member_have_no_entries_in_the_permission_set_registry(): void

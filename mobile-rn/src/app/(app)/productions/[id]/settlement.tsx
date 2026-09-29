@@ -55,6 +55,7 @@ export default function ProductionSettlementScreen() {
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   const isPrimaryManager = !!production?.is_primary_manager;
+  const canManageSettlement = isPrimaryManager || !!production?.delegate_roles?.includes('ACCOUNTING_MANAGER');
 
   async function handleSettle(personId: string) {
     setErrorMessage(null);
@@ -104,8 +105,12 @@ export default function ProductionSettlementScreen() {
     return <ThemedText testID="production-settlement-not-found">この公演が見つかりません。</ThemedText>;
   }
 
-  if (!isPrimaryManager) {
-    return <ThemedText testID="production-settlement-forbidden">精算はPrimaryManagerのみ利用できます。</ThemedText>;
+  if (!canManageSettlement) {
+    return (
+      <ThemedText testID="production-settlement-forbidden">
+        精算はPrimaryManagerまたは会計担当の権限を持つ担当者のみ利用できます。
+      </ThemedText>
+    );
   }
 
   const summary = summaryQuery.data;
@@ -125,7 +130,11 @@ export default function ProductionSettlementScreen() {
             {lifecycleError}
           </ThemedText>
         )}
-        {production.status === 'ACTIVE' && (
+        {/* 公演終了（決算完了）はProduction Lifecycle Actionそのもので、
+            会計担当を含むどのDelegate Roleにも委譲されない
+            PrimaryManager専用操作（canManageProduction()）のまま - Settlement
+            を会計担当へ開放しても、この操作の権限範囲は変更しない。 */}
+        {isPrimaryManager && production.status === 'ACTIVE' && (
           <TouchableOpacity
             testID="production-settlement-complete"
             onPress={confirmCompleteProduction}

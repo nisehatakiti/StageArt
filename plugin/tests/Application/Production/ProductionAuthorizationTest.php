@@ -416,13 +416,13 @@ final class ProductionAuthorizationTest extends TestCase
     }
 
     /**
-     * 担当者権限をメンバー管理へ統合 instruction §2 会計担当: ACCOUNTING_MANAGER
-     * grants Accounting.Update (Budget/Expense/JournalEntry) but not
-     * Settlement.Manage (real money payouts to members), which stays
-     * PrimaryManager-exclusive per this instruction's explicit
-     * confirmation.
+     * 担当者権限をメンバー管理へ統合・整理 instruction §会計担当仕様訂正:
+     * ACCOUNTING_MANAGER covers the Production's accounting処理全般 -
+     * Accounting.Update (Budget/Expense/JournalEntry) AND Settlement.Manage
+     * (メンバーへの精算) both. Corrects an earlier instruction in this same
+     * series that excluded Settlement.Manage.
      */
-    public function test_accounting_manager_delegate_can_manage_accounting_but_not_settlement(): void
+    public function test_accounting_manager_delegate_can_manage_accounting_and_settlement(): void
     {
         $production = $this->givenProduction(1);
 
@@ -436,6 +436,31 @@ final class ProductionAuthorizationTest extends TestCase
         ));
 
         $this->assertTrue($this->authorization->hasProductionCapability($person, $production, AccountingCapability::MANAGE));
-        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, SettlementCapability::MANAGE));
+        $this->assertTrue($this->authorization->hasProductionCapability($person, $production, SettlementCapability::MANAGE));
+    }
+
+    /**
+     * §会計担当仕様訂正's own explicit boundary: granting Settlement.Manage
+     * to ACCOUNTING_MANAGER must not leak into any other PrimaryManager-
+     * exclusive authority (Production Lifecycle transitions, managing
+     * ProductionDelegates themselves) - those still require PrimaryManager
+     * specifically, per canManageProduction()/canManageProductionDelegates()'s
+     * own isPrimaryManager()-only implementation, unchanged by this round.
+     */
+    public function test_accounting_manager_delegate_does_not_gain_other_primary_manager_only_authority(): void
+    {
+        $production = $this->givenProduction(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $person->id(),
+            RoleKey::accountingManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $this->assertFalse($this->authorization->canManageProduction($person, $production));
+        $this->assertFalse($this->authorization->canManageProductionDelegates($person, $production));
     }
 }

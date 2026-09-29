@@ -52,18 +52,20 @@ namespace StageArt\Domain\Role;
  * same generic path via `CheckInCapability::MANAGE` - reception staff
  * need Check-in/Reservation-search/walk-up capability but explicitly do
  * NOT need Settlement or Accounting-close authority, which stay
- * PrimaryManager-only (via `AccountingCapability::MANAGE`/a dedicated
- * Settlement check), so CHECKIN_MANAGER's own Permission Set is scoped
- * narrowly to `CheckIn.Manage` alone.
+ * PrimaryManager/ACCOUNTING_MANAGER-only, so CHECKIN_MANAGER's own
+ * Permission Set is scoped narrowly to `CheckIn.Manage` alone.
  *
- * ACCOUNTING_MANAGER (担当者権限をメンバー管理へ統合 instruction §2 会計担当):
- * grants Budget/Expense/JournalEntry management (`Accounting.Update`,
- * the same Capability Budget/Expense/JournalEntry Use Cases already
- * gate on) only. Deliberately excludes `Settlement.Manage` - Settlement
- * pays real money out to individual members and stays PrimaryManager-
- * exclusive, per this instruction's explicit confirmation and
- * SettlementCapability's own long-standing "same sensitivity class as
- * Accounting.Update" docblock.
+ * ACCOUNTING_MANAGER (担当者権限をメンバー管理へ統合・整理 instruction §会計担当
+ * 仕様訂正): grants the Production's accounting処理全般 - Budget/Expense/
+ * JournalEntry management (`Accounting.Update`) AND Settlement
+ * (`Settlement.Manage` - settling/cancelling a member's Ticket Back
+ * payout). This round's explicit correction of an earlier instruction
+ * in this same series that excluded Settlement.Manage as "too sensitive
+ * to delegate" - re-confirmed here as in-scope: 会計担当 covers the whole
+ * post-Production accounting flow (予算/支出/仕訳/メンバーへの精算), not
+ * bookkeeping alone. PrimaryManager's own authority is unchanged either
+ * way (`hasProductionCapability()` already OR's PrimaryManager in
+ * regardless of any Role's Permission Set).
  */
 final class RolePermissions
 {
@@ -102,6 +104,7 @@ final class RolePermissions
         ],
         RoleKey::ACCOUNTING_MANAGER => [
             'Accounting.Update',
+            'Settlement.Manage',
         ],
     ];
 

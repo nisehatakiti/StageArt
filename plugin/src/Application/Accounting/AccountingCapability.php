@@ -14,14 +14,10 @@ namespace StageArt\Application\Accounting;
  * requested from `StageArt\Core\Contract\AuthorizationContract::
  * canForProduction()`.
  *
- * `Accounting.Update` is a new Permission string - no Role's Permission
- * Set currently grants it (`RolePermissions::MAP` has no
- * ACCOUNTING_MANAGER entry, same as before this refactor - see the
- * removed `ProductionAuthorizationService::canManageAccounting()`'s own
- * prior docblock), so `canForProduction()` evaluates this capability to
- * PrimaryManager-only today, identical to the pre-refactor behavior.
- * Extending it to a real ACCOUNTING_MANAGER Role/Permission Set is real
- * Accounting Domain design work, explicitly out of this phase's scope.
+ * `Accounting.Update` is granted to RoleKey::ACCOUNTING_MANAGER via
+ * `RolePermissions::MAP` (担当者権限をメンバー管理へ統合 instruction §会計担当),
+ * in addition to PrimaryManager (`canForProduction()`'s own
+ * PrimaryManager-always-succeeds rule).
  */
 final class AccountingCapability
 {
