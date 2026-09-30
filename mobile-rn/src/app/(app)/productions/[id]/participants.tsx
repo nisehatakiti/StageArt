@@ -980,7 +980,7 @@ const styles = StyleSheet.create({
   },
   webTableScroll: {
     width: '100%',
-    overflow: 'auto',
+    overflow: 'scroll',
     maxWidth: '100%',
     marginBottom: Spacing.two,
   },
