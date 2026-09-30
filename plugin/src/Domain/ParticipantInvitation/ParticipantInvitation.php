@@ -51,6 +51,7 @@ final class ParticipantInvitation
     private ParticipantInvitationId $id;
     private ProductionId $productionId;
     private string $email;
+    private string $invitedName;
     private PersonId $invitedByPersonId;
     private ParticipantType $participantType;
     private ?string $remarks;
@@ -64,6 +65,7 @@ final class ParticipantInvitation
         ParticipantInvitationId $id,
         ProductionId $productionId,
         string $email,
+        string $invitedName,
         PersonId $invitedByPersonId,
         ParticipantType $participantType,
         ?string $remarks,
@@ -76,6 +78,7 @@ final class ParticipantInvitation
         $this->id = $id;
         $this->productionId = $productionId;
         $this->email = $email;
+        $this->invitedName = $invitedName;
         $this->invitedByPersonId = $invitedByPersonId;
         $this->participantType = $participantType;
         $this->remarks = $remarks;
@@ -86,9 +89,19 @@ final class ParticipantInvitation
         $this->consumedAt = $consumedAt;
     }
 
+    /**
+     * StageArt Production メンバー追加(氏名＋メールアドレス統一)ラウンド
+     * §3: `invitedName` is required (not nullable) - this Entity only
+     * ever gets created from the admin's "氏名＋メールアドレス" member-add
+     * form (§1/§2), which collects a name unconditionally, unlike
+     * `remarks` which stays optional. Used as the registration screen's
+     * initial name value (§3's "登録画面では...初期値として利用できるように
+     * する") - never written back to the eventual real Person.
+     */
     public static function create(
         ProductionId $productionId,
         string $email,
+        string $invitedName,
         PersonId $invitedByPersonId,
         ParticipantType $participantType,
         ?string $remarks,
@@ -101,12 +114,19 @@ final class ParticipantInvitation
             throw new InvalidArgumentException("Invalid email address: {$email}");
         }
 
+        $trimmedName = trim($invitedName);
+
+        if ($trimmedName === '') {
+            throw new InvalidArgumentException('invitedName must not be empty.');
+        }
+
         $trimmedRemarks = $remarks !== null ? trim($remarks) : null;
 
         return new self(
             ParticipantInvitationId::generate(),
             $productionId,
             $trimmedEmail,
+            $trimmedName,
             $invitedByPersonId,
             $participantType,
             $trimmedRemarks === null || $trimmedRemarks === '' ? null : $trimmedRemarks,
@@ -122,6 +142,7 @@ final class ParticipantInvitation
         ParticipantInvitationId $id,
         ProductionId $productionId,
         string $email,
+        string $invitedName,
         PersonId $invitedByPersonId,
         ParticipantType $participantType,
         ?string $remarks,
@@ -135,6 +156,7 @@ final class ParticipantInvitation
             $id,
             $productionId,
             $email,
+            $invitedName,
             $invitedByPersonId,
             $participantType,
             $remarks,
@@ -223,6 +245,11 @@ final class ParticipantInvitation
     public function email(): string
     {
         return $this->email;
+    }
+
+    public function invitedName(): string
+    {
+        return $this->invitedName;
     }
 
     public function invitedByPersonId(): PersonId

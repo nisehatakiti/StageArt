@@ -111,6 +111,7 @@ final class ParticipantInvitationRestController
             $command = new CreateParticipantInvitationCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
+                (string) $request->get_param('name'),
                 (string) $request->get_param('email'),
                 (string) $request->get_param('participant_type'),
                 $this->stringOrNull($request->get_param('remarks'))

@@ -485,6 +485,7 @@ export type ParticipantInvitation = {
   id: string;
   production_id: string;
   email: string;
+  name: string;
   invited_by_person_id: string;
   participant_type: string;
   remarks: string | null;
@@ -513,6 +514,7 @@ export type CreateParticipantInvitationResult = {
 export type ParticipantInvitationPreview = {
   production_name: string;
   email: string;
+  name: string;
   participant_type: string;
   status: string;
 };

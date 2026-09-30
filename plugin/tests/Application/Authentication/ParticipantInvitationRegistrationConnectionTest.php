@@ -170,6 +170,7 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'newmember@example.com',
             'CAST'
         ));
@@ -199,6 +200,7 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'googleuser@example.com',
             'STAFF'
         ));
@@ -222,6 +224,7 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'unverified@example.com',
             'CAST'
         ));
@@ -243,6 +246,7 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invited@example.com',
             'CAST'
         ));

@@ -11,34 +11,28 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt メール招待によるProductionParticipant追加機能 §16/§22: メール
- * アドレス検索でStageArt未登録と分かった場合、
- * POST /productions/{id}/participant-invitations で招待メールを送信する。
+ * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §2-B/§19:
+ * submitting 氏名＋メールアドレス for an email with no existing StageArt
+ * Person creates a ParticipantInvitation carrying the entered name and
+ * sends registration guidance - never a NAME_ONLY Participant.
  */
-describe('Web メンバー管理: 未登録メールアドレスへの招待送信', () => {
-  it('shows a not-found preview and sends an invitation when the email has no existing Person', async () => {
+describe('Web メンバー管理: 未登録メールアドレスへの登録案内送信', () => {
+  it('sends a registration-guidance invitation when the email has no existing Person', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/productions/prod-1/participants'), status: 200, body: [] },
       { test: (u) => u.endsWith('/productions/prod-1/participation-requests'), status: 200, body: [] },
       { test: (u) => u.endsWith('/productions/prod-1/participant-invitations'), status: 200, body: [] },
-      {
-        test: (u) => u.includes('/people?') && u.includes('email=unknown%40example.com'),
-        status: 404,
-        body: { code: 'stageart_person_not_found', message: 'not found' },
-      },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
     renderRouter('src/app', { initialUrl: '/productions/prod-1/participants' });
 
-    await waitFor(() => expect(screen.getByTestId('production-participants-email-input')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('production-participants-new-member-name')).toBeVisible());
 
-    fireEvent.changeText(screen.getByTestId('production-participants-email-input'), 'unknown@example.com');
-    await waitFor(() => expect(screen.getByTestId('production-participants-email-input').props.value).toBe('unknown@example.com'));
-    fireEvent.press(screen.getByTestId('production-participants-email-search'));
-
-    await waitFor(() => expect(screen.getByTestId('production-participants-email-not-found')).toBeVisible(), { timeout: 3000 });
+    fireEvent.changeText(screen.getByTestId('production-participants-new-member-name'), '山田 花子');
+    fireEvent.changeText(screen.getByTestId('production-participants-new-member-email'), 'unknown@example.com');
+    await waitFor(() => expect(screen.getByTestId('production-participants-new-member-email').props.value).toBe('unknown@example.com'));
 
     (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
       ok: true,
@@ -51,6 +45,7 @@ describe('Web メンバー管理: 未登録メールアドレスへの招待送�
             id: 'invitation-1',
             production_id: 'prod-1',
             email: 'unknown@example.com',
+            name: '山田 花子',
             invited_by_person_id: 'person-1',
             participant_type: 'CAST',
             remarks: null,
@@ -64,7 +59,7 @@ describe('Web メンバー管理: 未登録メールアドレスへの招待送�
       json: async () => ({}),
     }));
 
-    fireEvent.press(screen.getByTestId('production-participants-email-invite-confirm'));
+    fireEvent.press(screen.getByTestId('production-participants-add-member'));
 
     await waitFor(() => {
       const call = (global.fetch as jest.Mock).mock.calls.find(
@@ -72,10 +67,12 @@ describe('Web メンバー管理: 未登録メールアドレスへの招待送�
       );
       expect(call).toBeDefined();
       const body = JSON.parse(call![1].body as string);
+      expect(body.name).toBe('山田 花子');
       expect(body.email).toBe('unknown@example.com');
-      expect(body.participant_type).toBe('CAST');
     });
 
-    await waitFor(() => expect(screen.getByTestId('production-participants-invitation-message')).toBeVisible());
+    await waitFor(() =>
+      expect(screen.getByText('登録案内メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。')).toBeVisible()
+    );
   });
 });

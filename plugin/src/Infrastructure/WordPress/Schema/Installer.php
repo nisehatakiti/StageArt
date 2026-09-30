@@ -309,10 +309,21 @@ final class Installer
         // to accumulate for the same tuple over time - see
         // ParticipantInvitationRepositoryInterface::findByProductionEmailAndType()'s
         // own docblock. stageart_participants itself is unchanged.
+        //
+        // StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド:
+        // invited_name added via dbDelta's own ALTER-TABLE-diffing against
+        // this same CREATE TABLE statement (see SchemaUpgrader's own
+        // docblock for why re-running Installer::install() is always
+        // safe). `DEFAULT ''` (not NULL) so dbDelta can ADD this NOT NULL
+        // column on an already-deployed table with existing rows without
+        // failing under MySQL strict mode; the Domain layer's own
+        // ParticipantInvitation::create() still enforces a real,
+        // non-empty name for every row created going forward.
         dbDelta("CREATE TABLE {$participantInvitations} (
             id CHAR(36) NOT NULL,
             production_id CHAR(36) NOT NULL,
             email VARCHAR(255) NOT NULL,
+            invited_name VARCHAR(255) NOT NULL DEFAULT '',
             invited_by_person_id CHAR(36) NOT NULL,
             participant_type VARCHAR(20) NOT NULL,
             remarks TEXT NULL,

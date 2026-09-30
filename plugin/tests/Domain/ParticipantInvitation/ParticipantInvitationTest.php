@@ -22,6 +22,7 @@ final class ParticipantInvitationTest extends TestCase
         return ParticipantInvitation::create(
             ProductionId::generate(),
             'invitee@example.com',
+            '山田 太郎',
             PersonId::generate(),
             ParticipantType::cast(),
             'some remarks',
@@ -40,6 +41,45 @@ final class ParticipantInvitationTest extends TestCase
         $this->assertTrue($invitation->isUsable());
     }
 
+    public function test_create_stores_the_invited_name(): void
+    {
+        $invitation = $this->givenPendingInvitation();
+
+        $this->assertSame('山田 太郎', $invitation->invitedName());
+    }
+
+    public function test_create_trims_the_invited_name(): void
+    {
+        $invitation = ParticipantInvitation::create(
+            ProductionId::generate(),
+            'invitee@example.com',
+            '  山田 太郎  ',
+            PersonId::generate(),
+            ParticipantType::cast(),
+            null,
+            hash('sha256', 'x'),
+            (new DateTimeImmutable())->add(new DateInterval('PT24H'))
+        );
+
+        $this->assertSame('山田 太郎', $invitation->invitedName());
+    }
+
+    public function test_create_rejects_an_empty_invited_name(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        ParticipantInvitation::create(
+            ProductionId::generate(),
+            'invitee@example.com',
+            '   ',
+            PersonId::generate(),
+            ParticipantType::cast(),
+            null,
+            hash('sha256', 'x'),
+            (new DateTimeImmutable())->add(new DateInterval('PT24H'))
+        );
+    }
+
     public function test_create_rejects_an_invalid_email(): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -47,6 +87,7 @@ final class ParticipantInvitationTest extends TestCase
         ParticipantInvitation::create(
             ProductionId::generate(),
             'not-an-email',
+            '山田 太郎',
             PersonId::generate(),
             ParticipantType::cast(),
             null,
@@ -152,6 +193,7 @@ final class ParticipantInvitationTest extends TestCase
             $id,
             $productionId,
             'someone@example.com',
+            '鈴木 花子',
             $invitedBy,
             ParticipantType::staff(),
             'remarks here',
@@ -165,6 +207,7 @@ final class ParticipantInvitationTest extends TestCase
         $this->assertTrue($invitation->id()->equals($id));
         $this->assertTrue($invitation->productionId()->equals($productionId));
         $this->assertSame('someone@example.com', $invitation->email());
+        $this->assertSame('鈴木 花子', $invitation->invitedName());
         $this->assertTrue($invitation->invitedByPersonId()->equals($invitedBy));
         $this->assertSame('STAFF', $invitation->participantType()->toString());
         $this->assertSame('remarks here', $invitation->remarks());

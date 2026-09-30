@@ -7,15 +7,9 @@ import { ApiError } from '@/api/errors';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
-import {
-  useCreateNameOnlyParticipant,
-  useCreatePersonParticipant,
-  useParticipants,
-  useUpdateParticipant,
-} from '@/features/participant/useParticipant';
+import { useParticipants, useUpdateParticipant } from '@/features/participant/useParticipant';
 import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { fetchPersonById, searchPersonByEmail } from '@/features/person/api';
 import {
   useCancelParticipantInvitation,
   useCreateParticipantInvitation,
@@ -27,7 +21,7 @@ import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Participant, PersonSummary } from '@/types/api';
+import type { Participant } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 import {
   createProductionDelegate,
@@ -102,8 +96,6 @@ export default function ProductionParticipantsScreen() {
   const pendingQuery = usePendingParticipationRequests(id);
   const { approve, reject } = useParticipationRequestDecision(id);
   const participantsQuery = useParticipants(id);
-  const createNameOnly = useCreateNameOnlyParticipant(id);
-  const createPersonParticipant = useCreatePersonParticipant(id);
   const updateParticipant = useUpdateParticipant(id);
   const production = productionQuery.data;
   const isPrimaryManager = !!production?.is_primary_manager;
@@ -147,32 +139,25 @@ export default function ProductionParticipantsScreen() {
 
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [memberInfoPublishedAt, setMemberInfoPublishedAt] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<string>('CAST');
-  const [newRemarks, setNewRemarks] = useState('');
-  const [pendingNewMembers, setPendingNewMembers] = useState<{ displayName: string; participantType: string; remarks: string }[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // メンバー追加§2-A: Person ID検索 → プレビュー → 既存Personとして追加。
-  const [personIdInput, setPersonIdInput] = useState('');
-  const [personSearchResult, setPersonSearchResult] = useState<PersonSummary | null>(null);
-  const [personSearchError, setPersonSearchError] = useState<string | null>(null);
-  const [personSearching, setPersonSearching] = useState(false);
-  const [personAddType, setPersonAddType] = useState<string>('CAST');
-  const [personAddRemarks, setPersonAddRemarks] = useState('');
-
-  // メール招待によるProductionParticipant追加機能 §22: emailによる検索 →
-  // 既存Personが見つかれば追加、見つからなければ招待メール送信。
-  const [emailInput, setEmailInput] = useState('');
-  const [emailSearchResult, setEmailSearchResult] = useState<PersonSummary | null>(null);
-  const [emailSearchNotFound, setEmailSearchNotFound] = useState(false);
-  const [emailSearchError, setEmailSearchError] = useState<string | null>(null);
-  const [emailSearching, setEmailSearching] = useState(false);
-  const [emailAddType, setEmailAddType] = useState<string>('CAST');
-  const [emailAddRemarks, setEmailAddRemarks] = useState('');
-  const [invitationMessage, setInvitationMessage] = useState<string | null>(null);
+  /**
+   * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §1/§2:
+   * the one, unified "メンバーを追加" form - 氏名＋メールアドレス＋役割＋備考
+   * submitted together via POST /productions/{id}/participant-invitations,
+   * which itself decides (by email) whether this becomes an existing-
+   * Person Participant, a new invitation, or a resend - see
+   * CreateParticipantInvitationUseCase's own docblock. No Person ID
+   * input, no standalone "search by email" step, and no NAME_ONLY-only
+   * add path remain in this UI (§0/§1/§11/§12).
+   */
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberType, setNewMemberType] = useState<string>('CAST');
+  const [newMemberRemarks, setNewMemberRemarks] = useState('');
+  const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeParticipants.length > 0) {
@@ -200,124 +185,36 @@ export default function ProductionParticipantsScreen() {
     }
   }, [production, initialized]);
 
-  function addPendingMember() {
-    if (!newName.trim()) {
-      return;
-    }
-    setPendingNewMembers((current) => [...current, { displayName: newName.trim(), participantType: newType, remarks: newRemarks.trim() }]);
-    setNewName('');
-    setNewRemarks('');
-  }
-
-  function removePendingMember(index: number) {
-    setPendingNewMembers((current) => current.filter((_, i) => i !== index));
-  }
-
-  async function handleSearchPerson() {
-    const personId = personIdInput.trim();
-    if (!personId) {
-      return;
-    }
-    setPersonSearching(true);
-    setPersonSearchError(null);
-    setPersonSearchResult(null);
-    try {
-      const person = await fetchPersonById(apiClient, personId);
-      setPersonSearchResult(person);
-    } catch (error) {
-      setPersonSearchError(
-        error instanceof ApiError && error.statusCode === 404
-          ? 'このPerson IDのメンバーが見つかりません。IDをご確認ください。'
-          : getErrorMessage(error)
-      );
-    } finally {
-      setPersonSearching(false);
-    }
-  }
-
-  async function handleAddFoundPerson() {
-    if (!personSearchResult) {
+  /**
+   * §2: one action, 氏名＋メールアドレス＋役割＋備考 submitted together.
+   * The Backend decides (by email) which of the three outcomes applies -
+   * this handler only needs to surface which one happened.
+   */
+  async function handleAddMember() {
+    const name = newMemberName.trim();
+    const email = newMemberEmail.trim();
+    if (!name || !email) {
       return;
     }
     setErrorMessage(null);
-    try {
-      await createPersonParticipant.mutateAsync({
-        personId: personSearchResult.id,
-        participantType: personAddType,
-        remarks: personAddRemarks.trim() || null,
-      });
-      setPersonIdInput('');
-      setPersonSearchResult(null);
-      setPersonAddRemarks('');
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }
-
-  async function handleSearchEmail() {
-    const email = emailInput.trim();
-    if (!email) {
-      return;
-    }
-    setEmailSearching(true);
-    setEmailSearchError(null);
-    setEmailSearchResult(null);
-    setEmailSearchNotFound(false);
-    try {
-      const person = await searchPersonByEmail(apiClient, email, id as string);
-      setEmailSearchResult(person);
-    } catch (error) {
-      if (error instanceof ApiError && error.statusCode === 404) {
-        setEmailSearchNotFound(true);
-      } else {
-        setEmailSearchError(getErrorMessage(error));
-      }
-    } finally {
-      setEmailSearching(false);
-    }
-  }
-
-  async function handleAddFoundPersonByEmail() {
-    if (!emailSearchResult) {
-      return;
-    }
-    setErrorMessage(null);
-    setInvitationMessage(null);
-    try {
-      await createPersonParticipant.mutateAsync({
-        personId: emailSearchResult.id,
-        participantType: emailAddType,
-        remarks: emailAddRemarks.trim() || null,
-      });
-      setEmailInput('');
-      setEmailSearchResult(null);
-      setEmailAddRemarks('');
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }
-
-  async function handleSendInvitation() {
-    const email = emailInput.trim();
-    if (!email) {
-      return;
-    }
-    setErrorMessage(null);
-    setInvitationMessage(null);
+    setAddMemberMessage(null);
     try {
       const result = await createInvitation.mutateAsync({
+        name,
         email,
-        participantType: emailAddType,
-        remarks: emailAddRemarks.trim() || null,
+        participantType: newMemberType,
+        remarks: newMemberRemarks.trim() || null,
       });
-      setInvitationMessage(
-        result.outcome === 'INVITATION_RESENT'
-          ? '既に招待済みのため、招待メールを再送しました。'
-          : '招待メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。'
+      setAddMemberMessage(
+        result.outcome === 'PARTICIPANT_ADDED'
+          ? 'メンバーを追加しました。'
+          : result.outcome === 'INVITATION_RESENT'
+            ? '既に招待済みのため、登録案内メールを再送しました。'
+            : '登録案内メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。'
       );
-      setEmailInput('');
-      setEmailSearchNotFound(false);
-      setEmailAddRemarks('');
+      setNewMemberName('');
+      setNewMemberEmail('');
+      setNewMemberRemarks('');
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -333,10 +230,13 @@ export default function ProductionParticipantsScreen() {
 
     try {
       const now = new Date().toISOString();
-      const hasAnyMember = activeParticipants.some((p) => !edits[p.id]?.delete) || pendingNewMembers.length > 0;
+      const hasAnyMember = activeParticipants.some((p) => !edits[p.id]?.delete);
 
-      // §21.9 Update Behavior: additions, deletions, role/remarks changes,
-      // and the publication date/time are all applied together here.
+      // §21.9 Update Behavior: existing-member deletions, role/remarks
+      // changes, and the publication date/time are applied together
+      // here. New-member addition is its own immediate action
+      // (handleAddMember, via POST .../participant-invitations) - not
+      // part of this batch (§2's "実行したら...処理する").
       for (const participant of activeParticipants) {
         const edit = edits[participant.id];
         if (!edit) continue;
@@ -351,10 +251,6 @@ export default function ProductionParticipantsScreen() {
         }
       }
 
-      for (const pending of pendingNewMembers) {
-        await createNameOnly.mutateAsync({ displayName: pending.displayName, participantType: pending.participantType, remarks: pending.remarks || null });
-      }
-
       await updateProduction(apiClient, production.id, {
         name: production.name,
         titleHeading: production.title_heading,
@@ -363,7 +259,6 @@ export default function ProductionParticipantsScreen() {
 
       await queryClient.invalidateQueries({ queryKey: ['participants', id] });
       await queryClient.invalidateQueries({ queryKey: ['production', id] });
-      setPendingNewMembers([]);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -458,6 +353,7 @@ export default function ProductionParticipantsScreen() {
   const invitationTable = (
     <View style={styles.invitationTable} testID="production-participant-invitations-list">
       <View style={styles.memberTableHeader}>
+        <ThemedText style={styles.invitationNameHeader}>氏名</ThemedText>
         <ThemedText style={styles.invitationEmailHeader}>メールアドレス</ThemedText>
         <ThemedText style={styles.invitationTypeHeader}>役割</ThemedText>
         <ThemedText style={styles.invitationStatusHeader}>状態</ThemedText>
@@ -466,6 +362,7 @@ export default function ProductionParticipantsScreen() {
       </View>
       {pendingInvitations.map((invitation) => (
         <View key={invitation.id} style={styles.memberTableRow} testID={`participant-invitation-row-${invitation.id}`}>
+          <ThemedText style={styles.invitationNameCell}>{invitation.name}</ThemedText>
           <ThemedText style={styles.invitationEmailCell}>{invitation.email}</ThemedText>
           <ThemedText style={styles.invitationTypeCell}>{PARTICIPANT_TYPE_LABEL[invitation.participant_type] ?? invitation.participant_type}</ThemedText>
           <ThemedText style={styles.invitationStatusCell}>{invitation.is_expired ? '期限切れ' : '招待中'}</ThemedText>
@@ -497,6 +394,23 @@ export default function ProductionParticipantsScreen() {
 
   return (
     <>
+      {/*
+       * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド
+       * §13: the whole screen's content lives inside ONE vertical
+       * ScrollView (the same `<ScrollView contentContainerStyle={...}>`
+       * pattern production/[id]/edit.tsx already uses) - AppChrome's own
+       * web shell (WebSidebarNav) bounds `{children}` to the viewport
+       * height via its own flex:1 chain with no scroll affordance of its
+       * own, so a screen that returns a bare Fragment (as this one did
+       * before) has its overflow silently clipped on web instead of
+       * scrolling - this is what made the 更新 button unreachable.
+       * Nesting the horizontal member/invitation tables' own
+       * Platform.OS==='web' View (overflow:'scroll', see previous
+       * round) INSIDE this outer vertical ScrollView is a standard
+       * nested-scroll layout and does not reintroduce that bug - the
+       * horizontal View still only scrolls its own axis.
+       */}
+      <ScrollView contentContainerStyle={styles.pageContainer}>
       <ThemedText type="title" style={styles.pageTitle}>
         メンバー管理
       </ThemedText>
@@ -645,180 +559,37 @@ export default function ProductionParticipantsScreen() {
         メンバーを追加
       </ThemedText>
 
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        既存メンバーをPerson IDで検索して追加
-      </ThemedText>
-      <View style={styles.personSearchRow}>
-        <ThemedTextInput
-          testID="production-participants-person-id-input"
-          value={personIdInput}
-          onChangeText={(value) => {
-            setPersonIdInput(value);
-            setPersonSearchResult(null);
-            setPersonSearchError(null);
-          }}
-          placeholder="Person ID"
-          style={styles.personSearchInput}
-        />
-        <TouchableOpacity
-          testID="production-participants-person-search"
-          onPress={handleSearchPerson}
-          disabled={!personIdInput.trim() || personSearching}
-          style={[styles.addButton, styles.personSearchButton]}
-        >
-          {personSearching ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.addButtonText}>検索</ThemedText>}
-        </TouchableOpacity>
-      </View>
-      {personSearchError && (
-        <ThemedText testID="production-participants-person-search-error" style={styles.error}>
-          {personSearchError}
-        </ThemedText>
-      )}
-      {personSearchResult && (
-        <View style={styles.personPreview} testID="production-participants-person-preview">
-          <ThemedText style={styles.pendingMemberName}>
-            {[personSearchResult.family_name, personSearchResult.given_name].filter(Boolean).join(' ') || '（氏名未設定）'}
-          </ThemedText>
-          <View style={styles.typeToggle}>
-            {PARTICIPANT_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type}
-                testID={`production-participants-person-add-type-${type}`}
-                onPress={() => setPersonAddType(type)}
-                style={[styles.typeButton, personAddType === type && styles.typeButtonActive]}
-              >
-                <ThemedText style={personAddType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <ThemedTextInput
-            testID="production-participants-person-add-remarks"
-            value={personAddRemarks}
-            onChangeText={setPersonAddRemarks}
-            placeholder="備考"
-            style={styles.input}
-          />
-          <TouchableOpacity
-            testID="production-participants-person-add-confirm"
-            onPress={handleAddFoundPerson}
-            disabled={createPersonParticipant.isPending}
-            style={styles.addButton}
-          >
-            {createPersonParticipant.isPending ? (
-              <ActivityIndicator color={BrandColors.warmAmber} />
-            ) : (
-              <ThemedText style={styles.addButtonText}>このメンバーを追加</ThemedText>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        メールアドレスで検索・招待
-      </ThemedText>
-      <View style={styles.personSearchRow}>
-        <ThemedTextInput
-          testID="production-participants-email-input"
-          value={emailInput}
-          onChangeText={(value) => {
-            setEmailInput(value);
-            setEmailSearchResult(null);
-            setEmailSearchNotFound(false);
-            setEmailSearchError(null);
-            setInvitationMessage(null);
-          }}
-          placeholder="メールアドレス"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          style={styles.personSearchInput}
-        />
-        <TouchableOpacity
-          testID="production-participants-email-search"
-          onPress={handleSearchEmail}
-          disabled={!emailInput.trim() || emailSearching}
-          style={[styles.addButton, styles.personSearchButton]}
-        >
-          {emailSearching ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.addButtonText}>検索</ThemedText>}
-        </TouchableOpacity>
-      </View>
-      {emailSearchError && (
-        <ThemedText testID="production-participants-email-search-error" style={styles.error}>
-          {emailSearchError}
-        </ThemedText>
-      )}
-      {invitationMessage && (
-        <ThemedText testID="production-participants-invitation-message" style={styles.invitationMessage}>
-          {invitationMessage}
-        </ThemedText>
-      )}
-      {(emailSearchResult || emailSearchNotFound) && (
-        <View style={styles.personPreview} testID="production-participants-email-preview">
-          {emailSearchResult ? (
-            <ThemedText style={styles.pendingMemberName}>
-              {[emailSearchResult.family_name, emailSearchResult.given_name].filter(Boolean).join(' ') || '（氏名未設定）'}
-            </ThemedText>
-          ) : (
-            <ThemedText testID="production-participants-email-not-found" type="small" themeColor="textSecondary">
-              このメールアドレスのStageArtメンバーは見つかりませんでした。招待メールを送信できます。
-            </ThemedText>
-          )}
-          <View style={styles.typeToggle}>
-            {PARTICIPANT_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type}
-                testID={`production-participants-email-add-type-${type}`}
-                onPress={() => setEmailAddType(type)}
-                style={[styles.typeButton, emailAddType === type && styles.typeButtonActive]}
-              >
-                <ThemedText style={emailAddType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <ThemedTextInput
-            testID="production-participants-email-add-remarks"
-            value={emailAddRemarks}
-            onChangeText={setEmailAddRemarks}
-            placeholder="備考"
-            style={styles.input}
-          />
-          {emailSearchResult ? (
-            <TouchableOpacity
-              testID="production-participants-email-add-confirm"
-              onPress={handleAddFoundPersonByEmail}
-              disabled={createPersonParticipant.isPending}
-              style={styles.addButton}
-            >
-              {createPersonParticipant.isPending ? (
-                <ActivityIndicator color={BrandColors.warmAmber} />
-              ) : (
-                <ThemedText style={styles.addButtonText}>このメンバーを追加</ThemedText>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              testID="production-participants-email-invite-confirm"
-              onPress={handleSendInvitation}
-              disabled={createInvitation.isPending}
-              style={styles.addButton}
-            >
-              {createInvitation.isPending ? (
-                <ActivityIndicator color={BrandColors.warmAmber} />
-              ) : (
-                <ThemedText style={styles.addButtonText}>招待メールを送信</ThemedText>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        Person IDが分からない場合は、氏名のみで登録
-      </ThemedText>
+      {/*
+       * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド
+       * §1/§12: the one, unified add form - no Person ID input, no
+       * standalone "search by email" step, no NAME_ONLY-only path.
+       * Submitting calls POST /productions/{id}/participant-invitations
+       * once with 氏名＋メールアドレス＋役割＋備考 together; the Backend
+       * decides internally whether that becomes an existing-Person
+       * Participant or a new/resent invitation (§2).
+       */}
       <ThemedText type="small" themeColor="textSecondary">
         氏名
       </ThemedText>
-      <ThemedTextInput testID="production-participants-new-name" value={newName} onChangeText={setNewName} style={styles.input} />
+      <ThemedTextInput
+        testID="production-participants-new-member-name"
+        value={newMemberName}
+        onChangeText={setNewMemberName}
+        style={styles.input}
+      />
+
+      <ThemedText type="small" themeColor="textSecondary">
+        メールアドレス
+      </ThemedText>
+      <ThemedTextInput
+        testID="production-participants-new-member-email"
+        value={newMemberEmail}
+        onChangeText={setNewMemberEmail}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        style={styles.input}
+      />
 
       <ThemedText type="small" themeColor="textSecondary">
         役割
@@ -827,11 +598,11 @@ export default function ProductionParticipantsScreen() {
         {PARTICIPANT_TYPES.map((type) => (
           <TouchableOpacity
             key={type}
-            testID={`production-participants-new-type-${type}`}
-            onPress={() => setNewType(type)}
-            style={[styles.typeButton, newType === type && styles.typeButtonActive]}
+            testID={`production-participants-new-member-type-${type}`}
+            onPress={() => setNewMemberType(type)}
+            style={[styles.typeButton, newMemberType === type && styles.typeButtonActive]}
           >
-            <ThemedText style={newType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
+            <ThemedText style={newMemberType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
           </TouchableOpacity>
         ))}
       </View>
@@ -839,27 +610,31 @@ export default function ProductionParticipantsScreen() {
       <ThemedText type="small" themeColor="textSecondary">
         備考
       </ThemedText>
-      <ThemedTextInput testID="production-participants-new-remarks" value={newRemarks} onChangeText={setNewRemarks} style={styles.input} />
+      <ThemedTextInput
+        testID="production-participants-new-member-remarks"
+        value={newMemberRemarks}
+        onChangeText={setNewMemberRemarks}
+        style={styles.input}
+      />
 
-      <TouchableOpacity testID="production-participants-add" onPress={addPendingMember} disabled={!newName.trim()} style={styles.addButton}>
-        <ThemedText style={styles.addButtonText}>＋ 追加</ThemedText>
-      </TouchableOpacity>
-
-      {pendingNewMembers.length > 0 && (
-        <View style={styles.list} testID="production-participants-pending-list">
-          {pendingNewMembers.map((pending, index) => (
-            <View key={`${pending.displayName}-${index}`} style={styles.pendingMemberRow} testID={`production-participants-pending-${index}`}>
-              <ThemedText style={styles.pendingMemberName}>{pending.displayName}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {PARTICIPANT_TYPE_LABEL[pending.participantType]}
-              </ThemedText>
-              <TouchableOpacity testID={`production-participants-pending-remove-${index}`} onPress={() => removePendingMember(index)}>
-                <ThemedText type="link">取り消し</ThemedText>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
+      {addMemberMessage && (
+        <ThemedText testID="production-participants-add-member-message" style={styles.invitationMessage}>
+          {addMemberMessage}
+        </ThemedText>
       )}
+
+      <TouchableOpacity
+        testID="production-participants-add-member"
+        onPress={handleAddMember}
+        disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
+        style={styles.addButton}
+      >
+        {createInvitation.isPending ? (
+          <ActivityIndicator color={BrandColors.warmAmber} />
+        ) : (
+          <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
+        )}
+      </TouchableOpacity>
 
       {errorMessage && (
         <ThemedText testID="production-participants-error" style={styles.error}>
@@ -875,6 +650,7 @@ export default function ProductionParticipantsScreen() {
       >
         {saving ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>更新</ThemedText>}
       </TouchableOpacity>
+      </ScrollView>
     </>
   );
 }
@@ -968,6 +744,11 @@ async function useCancelParticipantDirect(apiClient: ReturnType<typeof useAuth>[
 }
 
 const styles = StyleSheet.create({
+  /** §13: contentContainerStyle for the whole-screen vertical
+   * ScrollView - same shape as production/[id]/edit.tsx's own
+   * pageContainer (padding only, no flex tricks needed for a plain
+   * vertical ScrollView). */
+  pageContainer: { padding: Spacing.five, paddingBottom: Spacing.six },
   pageTitle: { marginBottom: Spacing.two },
   sectionTitle: { marginTop: Spacing.three, marginBottom: Spacing.one },
   fieldLabel: { marginTop: Spacing.one },
@@ -1031,32 +812,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
   },
-  typeButtonSmall: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: Radius.medium,
-    paddingVertical: 4,
-    paddingHorizontal: Spacing.two,
-  },
   typeButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
   typeButtonTextActive: { color: '#fff' },
   datetimeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: Spacing.two, marginBottom: Spacing.one },
   datetimeField: { width: 220, minWidth: 180 },
   datetimeInput: { marginTop: 4 },
   clearDateButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: Spacing.one, paddingHorizontal: Spacing.two },
-  remarksInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
   requestRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   requestName: { width: 220, fontWeight: '600' },
   requestType: { minWidth: 100 },
-  pendingMemberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
-  pendingMemberName: { fontWeight: '600' },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -1075,34 +839,16 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
   },
   addButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
-  personSearchRow: { flexDirection: 'row', gap: Spacing.two, alignItems: 'center', marginBottom: Spacing.two },
-  personSearchInput: {
-    flex: 1,
-    minWidth: 160,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  personSearchButton: { marginTop: 0, paddingHorizontal: Spacing.three },
-  personPreview: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: Radius.medium,
-    padding: Spacing.two,
-    marginBottom: Spacing.two,
-    gap: Spacing.one,
-  },
   error: { color: '#a6483a', marginTop: Spacing.two },
   invitationMessage: { color: BrandColors.warmAmber, marginTop: Spacing.one, marginBottom: Spacing.one },
   invitationTable: {
-    minWidth: 900,
+    minWidth: 1060,
     borderWidth: 1,
     borderColor: '#ddd',
     backgroundColor: '#fff',
   },
+  invitationNameHeader: { width: 160, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationNameCell: { width: 160, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   invitationEmailHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   invitationEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   invitationTypeHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },

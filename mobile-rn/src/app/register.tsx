@@ -28,25 +28,38 @@ export default function RegisterScreen() {
   const { token: invitationToken } = useLocalSearchParams<{ token?: string }>();
 
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [invitationProductionName, setInvitationProductionName] = useState<string | null>(null);
 
   /**
-   * StageArt メール招待によるProductionParticipant追加機能 §23: arriving
-   * via an invitation link (register.tsx?token=...) pre-fills the
-   * invited email address as a courtesy - the actual auto-linking on
-   * the Backend matches by the email the invitee actually registers
+   * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §3/§23:
+   * arriving via an invitation link (register.tsx?token=...) pre-fills
+   * the invited email AND name as a courtesy - the actual auto-linking
+   * on the Backend matches by the email the invitee actually registers
    * with (RegisterWithEmailUseCase -> ResolveParticipantInvitationUseCase),
    * never by this token, so this fetch is display-only and never
-   * blocks or alters the normal registration flow below. The email
-   * field deliberately stays editable (matching every other field on
-   * this screen) - if changed, §14's "different email never auto-
-   * links" rule simply means this particular invitation will not
-   * resolve, which is the same, already-decided behavior as a Google
-   * sign-up using a different email. A note next to the field makes
-   * that consequence visible rather than silent.
+   * blocks or alters the normal registration flow below. Both fields
+   * deliberately stay editable (§3: "本人が登録時に氏名を変更できることを
+   * 妨げない") - if the email is changed, §14's "different email never
+   * auto-links" rule simply means this particular invitation will not
+   * resolve, the same already-decided behavior as a Google sign-up
+   * using a different email. A note next to the field makes that
+   * consequence visible rather than silent.
+   *
+   * IMPORTANT (disclosed limitation, not silently decided): `name`
+   * here is UI-only. POST /auth/email/register (RegisterWithEmailUseCase)
+   * has no name parameter - Person.familyName/givenName are only ever
+   * set later via the existing, separate UpdatePersonNameUseCase
+   * (set-name.tsx), which requires an authenticated session this screen
+   * does not have yet (registration does not log the user in until
+   * their email is verified - see AuthContext's own docblock). Wiring
+   * this pre-filled name through to the real Person would mean
+   * extending either RegisterWithEmailUseCase or set-name.tsx, both
+   * outside this round's authorized change scope (§17) - see this
+   * round's final report for this open item.
    */
   useEffect(() => {
     if (!invitationToken) {
@@ -59,12 +72,13 @@ export default function RegisterScreen() {
       .then((preview) => {
         if (cancelled) return;
         setEmail(preview.email);
+        setName(preview.name);
         setInvitationProductionName(preview.production_name);
       })
       .catch(() => {
         // An invalid/expired/consumed token must never block normal
         // registration - silently fall back to the blank, editable
-        // email field a direct /register visit already has.
+        // email/name fields a direct /register visit already has.
       });
 
     return () => {
@@ -101,6 +115,16 @@ export default function RegisterScreen() {
         <ThemedText testID="register-invitation-notice" type="small" style={authStyles.description}>
           「{invitationProductionName}」への招待です。招待されたメールアドレスで登録すると、自動的にメンバーへ追加されます。異なるメールアドレスで登録した場合、自動追加は行われません。
         </ThemedText>
+      )}
+
+      {invitationProductionName && (
+        <ThemedTextInput
+          testID="register-invitation-name"
+          placeholder="氏名"
+          value={name}
+          onChangeText={setName}
+          style={authStyles.input}
+        />
       )}
 
       <ThemedTextInput

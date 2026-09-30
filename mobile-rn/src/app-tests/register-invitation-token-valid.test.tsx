@@ -24,6 +24,7 @@ describe('register screen: valid invitation token', () => {
         body: {
           production_name: '踊れチュパカブラ',
           email: 'invitee@example.com',
+          name: '山田 花子',
           participant_type: 'CAST',
           status: 'PENDING',
         },
@@ -35,5 +36,6 @@ describe('register screen: valid invitation token', () => {
     await waitFor(() => expect(screen.getByTestId('register-invitation-notice')).toBeVisible());
     expect(screen.getByText(/踊れチュパカブラ/)).toBeVisible();
     await waitFor(() => expect(screen.getByTestId('register-email').props.value).toBe('invitee@example.com'));
+    await waitFor(() => expect(screen.getByTestId('register-invitation-name').props.value).toBe('山田 花子'));
   });
 });

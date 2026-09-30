@@ -24,7 +24,7 @@ export function useCreateParticipantInvitation(productionId: string | undefined)
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (fields: { email: string; participantType: string; remarks?: string | null }) =>
+    mutationFn: (fields: { name: string; email: string; participantType: string; remarks?: string | null }) =>
       createParticipantInvitation(apiClient, productionId as string, fields),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['participants', productionId] });

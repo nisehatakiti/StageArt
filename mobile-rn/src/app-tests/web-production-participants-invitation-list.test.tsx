@@ -14,6 +14,7 @@ const pendingInvitation = {
   id: 'invitation-1',
   production_id: 'prod-1',
   email: 'invitee@example.com',
+  name: '山田 花子',
   invited_by_person_id: 'person-1',
   participant_type: 'CAST',
   remarks: null,
@@ -42,6 +43,7 @@ describe('Web メンバー管理: 招待一覧・再送・取消', () => {
 
     await waitFor(() => expect(screen.getByTestId('participant-invitation-row-invitation-1')).toBeVisible());
     expect(screen.getByText('invitee@example.com')).toBeVisible();
+    expect(screen.getByText('山田 花子')).toBeVisible();
 
     (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
       ok: true,

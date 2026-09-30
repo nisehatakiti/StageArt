@@ -188,6 +188,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST',
             'a remark'
@@ -196,6 +197,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_CREATED, $result->outcome);
         $this->assertNotNull($result->invitation);
         $this->assertSame('invitee@example.com', $result->invitation->email);
+        $this->assertSame('山田 花子', $result->invitation->invitedName);
         $this->assertSame('PENDING', $result->invitation->status);
         $this->assertCount(1, $this->mailer->invitationEmails);
         $this->assertSame('invitee@example.com', $this->mailer->invitationEmails[0]['to']);
@@ -210,6 +212,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             2,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -227,6 +230,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             3,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -245,15 +249,29 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 太郎',
             'already-registered@example.com',
-            'CAST'
+            'CAST',
+            'a remark'
         ));
 
         $this->assertSame(CreateParticipantInvitationResult::OUTCOME_PARTICIPANT_ADDED, $result->outcome);
         $this->assertNotNull($result->participant);
         $this->assertSame($existingPerson->id()->toString(), $result->participant->subjectId);
+        $this->assertSame('CAST', $result->participant->participantType);
+        $this->assertSame('a remark', $result->participant->remarks);
         $this->assertCount(0, $this->mailer->invitationEmails);
         $this->assertCount(0, $this->invitations->findByProductionId($production->id()));
+
+        // §2-A: an existing Person is looked up and linked directly - no
+        // NAME_ONLY Participant is ever created for this path.
+        $participant = $this->participants->findByProductionAndSubject(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $existingPerson->id()->toString(),
+            ParticipantType::cast()
+        );
+        $this->assertNotNull($participant);
     }
 
     public function test_inviting_the_same_email_and_type_twice_resends_instead_of_duplicating(): void
@@ -263,6 +281,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $first = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -270,6 +289,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $second = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -295,6 +315,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $first = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -304,6 +325,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $second = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -327,6 +349,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -344,6 +367,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -356,6 +380,40 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->resendParticipantInvitation->execute(new ResendParticipantInvitationCommand($created->invitation->id, 1));
     }
 
+    /** §9: resending an existing PENDING invitation reuses the same row -
+     * only the token hash and expiry change, the originally submitted
+     * invitedName/remarks are preserved as-is (see this round's final
+     * report for the 要確認 item: ResendParticipantInvitationUseCase has
+     * no name/remarks parameters, so a differing name/remarks entered on
+     * a resend attempt is silently ignored rather than overwriting the
+     * stored invitation - left unresolved rather than decided here). */
+    public function test_resending_the_same_invitation_updates_token_and_expiry_but_preserves_the_invited_name(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $first = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '山田 花子',
+            'invitee@example.com',
+            'CAST',
+            'original remark'
+        ));
+
+        $second = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '山田 花子',
+            'invitee@example.com',
+            'CAST',
+            'original remark'
+        ));
+
+        $this->assertSame($first->invitation->id, $second->invitation->id);
+        $this->assertSame('山田 花子', $second->invitation->invitedName);
+        $this->assertCount(2, $this->mailer->invitationEmails);
+        $this->assertNotSame($this->mailer->invitationEmails[0]['token'], $this->mailer->invitationEmails[1]['token']);
+    }
+
     // --- CancelParticipantInvitationUseCase ------------------------------
 
     public function test_cancel_transitions_status_and_prevents_further_resend(): void
@@ -364,6 +422,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -381,6 +440,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -400,6 +460,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -409,6 +470,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
 
         $this->assertSame('Show', $preview->productionName);
         $this->assertSame('invitee@example.com', $preview->email);
+        $this->assertSame('山田 花子', $preview->name);
         $this->assertSame('CAST', $preview->participantType);
         $this->assertSame('PENDING', $preview->status);
     }
@@ -428,6 +490,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $invitation = ParticipantInvitation::create(
             $production->id(),
             'invitee@example.com',
+            '山田 花子',
             $primaryManager->id(),
             ParticipantType::cast(),
             null,
@@ -446,6 +509,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -464,6 +528,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST',
             'remark text'
@@ -482,6 +547,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         );
         $this->assertNotNull($participant);
         $this->assertSame('remark text', $participant->remarks());
+        $this->assertSame('CAST', $participant->participantType()->toString());
 
         $resolved = array_values(array_filter(
             $this->invitations->findByProductionId($production->id()),
@@ -491,12 +557,39 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertNotNull($resolved->consumedAt());
     }
 
+    /** §19: an unregistered invitee's Participant is never created as
+     * NAME_ONLY - it is always PERSON, keyed by the Person ID they get
+     * once they actually register, and only once they register. */
+    public function test_an_unregistered_invitee_is_not_provisionally_registered_as_name_only(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '山田 花子',
+            'invitee@example.com',
+            'CAST'
+        ));
+
+        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
+
+        $invitedPerson = Person::create(35);
+        $this->people->save($invitedPerson);
+        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
+
+        $created = $this->participants->findByProductionId($production->id());
+        $this->assertCount(1, $created);
+        $this->assertSame('PERSON', $created[0]->subjectType()->toString());
+        $this->assertSame($invitedPerson->id()->toString(), $created[0]->subjectId());
+    }
+
     public function test_resolve_does_not_duplicate_when_a_manager_already_added_the_same_person_directly(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -536,6 +629,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $invitation = ParticipantInvitation::create(
             $production->id(),
             'invitee@example.com',
+            '山田 花子',
             $primaryManager->id(),
             ParticipantType::cast(),
             null,
@@ -576,6 +670,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             2,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -608,6 +703,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -629,6 +725,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
+            '山田 花子',
             'invitee@example.com',
             'CAST'
         ));
@@ -637,6 +734,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
 
         $this->assertCount(1, $results);
         $this->assertSame('invitee@example.com', $results[0]->email);
+        $this->assertSame('山田 花子', $results[0]->invitedName);
     }
 
     public function test_list_by_someone_without_permission_is_denied(): void

@@ -46,6 +46,7 @@ final class GetParticipantInvitationByTokenUseCase
         return new ParticipantInvitationPreviewResult(
             $production->name()->toString(),
             $invitation->email(),
+            $invitation->invitedName(),
             $invitation->participantType()->toString(),
             $invitation->status()->toString()
         );

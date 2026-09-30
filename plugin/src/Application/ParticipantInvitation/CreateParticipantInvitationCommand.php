@@ -8,6 +8,7 @@ final class CreateParticipantInvitationCommand
 {
     public string $productionId;
     public int $requestedByWordPressUserId;
+    public string $name;
     public string $email;
     public string $participantType;
     public ?string $remarks;
@@ -15,12 +16,14 @@ final class CreateParticipantInvitationCommand
     public function __construct(
         string $productionId,
         int $requestedByWordPressUserId,
+        string $name,
         string $email,
         string $participantType,
         ?string $remarks = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
+        $this->name = $name;
         $this->email = $email;
         $this->participantType = $participantType;
         $this->remarks = $remarks;

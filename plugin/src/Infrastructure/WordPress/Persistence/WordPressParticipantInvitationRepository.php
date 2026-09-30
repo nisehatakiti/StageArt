@@ -31,6 +31,7 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
         $row = [
             'production_id' => $invitation->productionId()->toString(),
             'email' => $invitation->email(),
+            'invited_name' => $invitation->invitedName(),
             'invited_by_person_id' => $invitation->invitedByPersonId()->toString(),
             'participant_type' => $invitation->participantType()->toString(),
             'remarks' => $invitation->remarks(),
@@ -128,6 +129,7 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             ParticipantInvitationId::fromString($row['id']),
             ProductionId::fromString($row['production_id']),
             $row['email'],
+            $row['invited_name'],
             PersonId::fromString($row['invited_by_person_id']),
             ParticipantType::fromString($row['participant_type']),
             $row['remarks'],

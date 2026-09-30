@@ -21,22 +21,38 @@ use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
- * §16/§17: the single entry point behind `POST /productions/{id}/
- * participant-invitations`. Despite the URL's name, this does not
- * always create an invitation - per this round's explicit instruction,
- * an email that already belongs to an existing StageArt Person is added
- * directly as a Participant via the existing, unchanged
- * CreateParticipantUseCase (§17: "既存CreateParticipantUseCaseを利用でき
- * る場合は必ず利用してください"), and Authorization for that path is
- * exactly CreateParticipantUseCase's own, untouched - this Use Case adds
- * no second gate around it.
+ * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド: the
+ * single entry point behind `POST /productions/{id}/participant-
+ * invitations`, now the ONLY member-add path this round's confirmed
+ * spec allows (§0/§1 - no separate Person ID input, no standalone
+ * "search by email" step, no NAME_ONLY-only add). An admin always
+ * submits 氏名＋メールアドレス＋役割＋備考 in one call; this Use Case decides
+ * internally, by email, whether that becomes:
  *
- * §11's duplicate-invitation rule (an existing usable PENDING invitation
- * for the same Production+email+ParticipantType is resent, not
- * duplicated) is delegated to ResendParticipantInvitationUseCase, so the
- * "rotate token, send mail" logic lives in exactly one place whether it
- * runs from this path or from the explicit `POST .../resend` REST
- * action.
+ * - an existing Person added directly as a Participant (§2-A), via the
+ *   existing, unchanged CreateParticipantUseCase (§17: "既存
+ *   CreateParticipantUseCaseを利用できる場合は必ず利用してください") -
+ *   Authorization for that path is exactly CreateParticipantUseCase's
+ *   own, untouched; this Use Case adds no second gate around it, and
+ *   the submitted `name` is never used/stored in this branch (the
+ *   existing Person's own real name is what StageArt already displays -
+ *   see ParticipantResult's person_family_name/person_given_name
+ *   resolution);
+ * - a resend of an existing usable PENDING ParticipantInvitation for the
+ *   same (production, email, participantType) tuple (§9/§11's
+ *   duplicate-invitation rule), delegated to
+ *   ResendParticipantInvitationUseCase so "rotate token, send mail"
+ *   lives in exactly one place. §9's open question - whether a resend
+ *   should also overwrite the stored invitedName/remarks with this
+ *   call's newly-submitted values - is deliberately NOT resolved here;
+ *   ResendParticipantInvitationUseCase's own signature is unchanged
+ *   (no name/remarks parameters), so a resend always keeps the
+ *   ORIGINAL invitedName/remarks from when the invitation was first
+ *   created. See this round's final report for why this was flagged
+ *   rather than decided;
+ * - a brand-new ParticipantInvitation (§2-B), carrying the submitted
+ *   `name` as `invitedName` (§3) for the eventual registration screen's
+ *   initial value.
  */
 final class CreateParticipantInvitationUseCase
 {
@@ -92,6 +108,12 @@ final class CreateParticipantInvitationUseCase
             throw new InvalidArgumentException("Invalid email address: {$command->email}");
         }
 
+        $name = trim($command->name);
+
+        if ($name === '') {
+            throw new InvalidArgumentException('name must not be empty.');
+        }
+
         $participantType = ParticipantType::fromString($command->participantType);
 
         $existingPerson = $this->findPersonByEmail->execute($email);
@@ -128,6 +150,7 @@ final class CreateParticipantInvitationUseCase
         $invitation = ParticipantInvitation::create(
             $production->id(),
             $email,
+            $name,
             $requester->id(),
             $participantType,
             $command->remarks,
