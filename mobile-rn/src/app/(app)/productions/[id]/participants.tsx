@@ -1,6 +1,6 @@
 import { useLocalSearchParams, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FormInput } from '@/components/form-input';
 
 import { ApiError } from '@/api/errors';
@@ -474,8 +474,9 @@ export default function ProductionParticipantsScreen() {
         </ThemedText>
       )}
       {activeParticipants.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participants-table-scroll">
-          <View style={styles.memberTable} testID="production-participants-list">
+        Platform.OS === 'web' ? (
+          <View style={styles.webTableScroll} testID="production-participants-table-scroll">
+            <View style={styles.memberTable} testID="production-participants-list">
             <View style={styles.memberTableHeader}>
               <View style={styles.memberDeleteHeader} />
               <ThemedText style={styles.memberNameHeader}>名前</ThemedText>
@@ -520,8 +521,46 @@ export default function ProductionParticipantsScreen() {
                 }}
               />
             ))}
+            </View>
           </View>
-        </ScrollView>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participants-table-scroll">
+            <View style={styles.memberTable} testID="production-participants-list">
+              {activeParticipants.map((participant) => (
+                <ParticipantEditRow
+                  key={participant.id}
+                  participant={participant}
+                  isSelf={participant.subject_type === 'PERSON' && participant.subject_id === currentPersonQuery.data?.id}
+                  edit={edits[participant.id] ?? { participantType: participant.participant_type, remarks: participant.remarks ?? '', delete: false }}
+                  onChange={(edit) => setEdits((current) => ({ ...current, [participant.id]: edit }))}
+                  delegateRoles={delegatesQuery.data ?? []}
+                  canManageDelegateRoles={canManageDelegateRoles}
+                  delegateBusy={createDelegate.isPending || updateDelegate.isPending}
+                  onToggleDelegateCheckbox={async (personId, roles, checked) => {
+                    const delegates = delegatesQuery.data ?? [];
+                    setErrorMessage(null);
+                    try {
+                      for (const role of roles) {
+                        const existing = delegates.find((delegate) => delegate.person_id === personId && delegate.role === role);
+                        if (checked) {
+                          if (!existing) {
+                            await createDelegate.mutateAsync({ personId, role });
+                          } else if (existing.status !== 'ACTIVE') {
+                            await updateDelegate.mutateAsync({ delegateId: existing.id, role, status: 'ACTIVE' });
+                          }
+                        } else if (existing && existing.status === 'ACTIVE') {
+                          await updateDelegate.mutateAsync({ delegateId: existing.id, role, status: 'INACTIVE' });
+                        }
+                      }
+                    } catch (error) {
+                      setErrorMessage(getErrorMessage(error));
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        )
       )}
 
       {pendingInvitations.length > 0 && (
@@ -529,8 +568,9 @@ export default function ProductionParticipantsScreen() {
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             招待中のメンバー
           </ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participant-invitations-table-scroll">
-            <View style={styles.invitationTable} testID="production-participant-invitations-list">
+          {Platform.OS === 'web' ? (
+            <View style={styles.webTableScroll} testID="production-participant-invitations-table-scroll">
+              <View style={styles.invitationTable} testID="production-participant-invitations-list">
               <View style={styles.memberTableHeader}>
                 <ThemedText style={styles.invitationEmailHeader}>メールアドレス</ThemedText>
                 <ThemedText style={styles.invitationTypeHeader}>役割</ThemedText>
@@ -566,8 +606,42 @@ export default function ProductionParticipantsScreen() {
                   </View>
                 </View>
               ))}
+              </View>
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participant-invitations-table-scroll">
+              <View style={styles.invitationTable} testID="production-participant-invitations-list">
+                {pendingInvitations.map((invitation) => (
+                  <View key={invitation.id} style={styles.memberTableRow} testID={`participant-invitation-row-${invitation.id}`}>
+                    <ThemedText style={styles.invitationEmailCell}>{invitation.email}</ThemedText>
+                    <ThemedText style={styles.invitationTypeCell}>{PARTICIPANT_TYPE_LABEL[invitation.participant_type] ?? invitation.participant_type}</ThemedText>
+                    <ThemedText style={styles.invitationStatusCell}>{invitation.is_expired ? '期限切れ' : '招待中'}</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.invitationExpiresCell}>
+                      {new Date(invitation.expires_at).toLocaleString('ja-JP')}
+                    </ThemedText>
+                    <View style={styles.invitationActionsCell}>
+                      <TouchableOpacity
+                        testID={`participant-invitation-resend-${invitation.id}`}
+                        onPress={() => resendInvitation.mutate(invitation.id)}
+                        disabled={resendInvitation.isPending || cancelInvitation.isPending}
+                        style={styles.invitationActionButton}
+                      >
+                        <ThemedText type="small">再送</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID={`participant-invitation-cancel-${invitation.id}`}
+                        onPress={() => cancelInvitation.mutate(invitation.id)}
+                        disabled={resendInvitation.isPending || cancelInvitation.isPending}
+                        style={styles.invitationActionButton}
+                      >
+                        <ThemedText type="small">キャンセル</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
         </>
       )}
 
@@ -957,6 +1031,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
+  },
+  webTableScroll: {
+    width: '100%',
+    overflow: 'auto',
+    maxWidth: '100%',
+    marginBottom: Spacing.two,
   },
   memberTable: {
     minWidth: 1500,
