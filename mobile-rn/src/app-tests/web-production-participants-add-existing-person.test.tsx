@@ -51,7 +51,7 @@ describe('Web メンバー管理: 既存メンバーをメールアドレスで�
             created_at: '',
             updated_at: '',
             remarks: null,
-            display_name: null,
+            display_name: '山田 太郎',
             person_family_name: '鈴木',
             person_given_name: '花子',
           },

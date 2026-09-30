@@ -184,6 +184,10 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             ParticipantType::cast()
         );
         $this->assertNotNull($participant);
+        // StageArt Production側氏名の権威付けラウンド AC-04: the invitation's
+        // invitedName reaches the real Participant end-to-end through the
+        // actual registration entry point, not just in isolation.
+        $this->assertSame('山田 花子', $participant->displayName());
     }
 
     public function test_email_registration_with_no_matching_invitation_still_succeeds_normally(): void

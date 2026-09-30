@@ -100,6 +100,15 @@ final class CreateParticipantUseCase
             );
         }
 
+        // StageArt Production側氏名の権威付けラウンド (§0/§2): `displayName`
+        // is this Production's own record of the member's name, entirely
+        // independent of `subjectType` - a PERSON Participant is free to
+        // carry a Production-specific name (e.g. a troupe-qualified
+        // "佐藤一郎（劇団いるか）") distinct from that Person's own
+        // familyName/givenName. This Use Case never substitutes the
+        // Person's own name here or anywhere else in this flow - see
+        // ParticipantResult::fromDomain(), which returns both
+        // independently rather than resolving one from the other.
         $participant = $this->transactions->run(
             function () use ($production, $subjectType, $command, $participantType): Participant {
                 $participant = Participant::create(
@@ -107,7 +116,8 @@ final class CreateParticipantUseCase
                     $subjectType,
                     $command->subjectId,
                     $participantType,
-                    $command->remarks
+                    $command->remarks,
+                    $command->displayName
                 );
                 $this->participants->save($participant);
 

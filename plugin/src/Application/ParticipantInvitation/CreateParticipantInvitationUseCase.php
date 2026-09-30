@@ -33,11 +33,13 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  *   existing, unchanged CreateParticipantUseCase (§17: "既存
  *   CreateParticipantUseCaseを利用できる場合は必ず利用してください") -
  *   Authorization for that path is exactly CreateParticipantUseCase's
- *   own, untouched; this Use Case adds no second gate around it, and
- *   the submitted `name` is never used/stored in this branch (the
- *   existing Person's own real name is what StageArt already displays -
- *   see ParticipantResult's person_family_name/person_given_name
- *   resolution);
+ *   own, untouched; this Use Case adds no second gate around it.
+ *   StageArt Production側氏名の権威付けラウンド (§0/§5): the submitted
+ *   `name` IS stored as this Participant's own `displayName` - Person
+ *   ID resolution here is for identity matching only, never for
+ *   overwriting what the admin typed with the Person's own
+ *   familyName/givenName (see ParticipantResult's independent
+ *   displayName vs. person_family_name/person_given_name fields);
  * - a resend of an existing usable PENDING ParticipantInvitation for the
  *   same (production, email, participantType) tuple (§9/§11's
  *   duplicate-invitation rule), delegated to
@@ -125,7 +127,7 @@ final class CreateParticipantInvitationUseCase
                 ParticipantSubjectType::PERSON,
                 $existingPerson->id,
                 $command->participantType,
-                null,
+                $name,
                 $command->remarks
             ));
 

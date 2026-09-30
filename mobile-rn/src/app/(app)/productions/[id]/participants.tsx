@@ -667,10 +667,19 @@ function ParticipantEditRow({
   delegateBusy: boolean;
   onToggleDelegateCheckbox: (personId: string, roles: string[], checked: boolean) => Promise<void>;
 }) {
+  /**
+   * StageArt Production側氏名の権威付けラウンド §0/§11: `display_name` is
+   * this Production's own record of the member's name (entered on the
+   * member-add form), independent of the linked Person's own
+   * familyName/givenName - it takes priority here. `personFullName` is
+   * only a fallback for PERSON rows that predate this round or were
+   * created through a path with no name entered, never a value this
+   * round overwrites `display_name` with.
+   */
   const personFullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
   const displayLabel =
     participant.subject_type === 'NAME_ONLY' ? participant.display_name ?? '（氏名未設定）' :
-    participant.subject_type === 'PERSON' ? (isSelf ? 'あなた' : personFullName || '（氏名未設定）') :
+    participant.subject_type === 'PERSON' ? (isSelf ? 'あなた' : participant.display_name || personFullName || '（氏名未設定）') :
     `Organization ID: ${participant.subject_id}`;
   const personDelegates = participant.subject_type === 'PERSON'
     ? delegateRoles.filter((delegate) => delegate.person_id === participant.subject_id)

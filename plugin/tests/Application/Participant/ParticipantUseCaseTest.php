@@ -332,6 +332,79 @@ final class ParticipantUseCaseTest extends TestCase
     }
 
     /**
+     * StageArt Production側氏名の権威付けラウンド AC-01: a PERSON
+     * Participant's own `displayName` (this Production's record of the
+     * member's name) is stored and returned independently of the
+     * Person's own familyName/givenName - never overwritten by it.
+     */
+    public function test_a_person_participants_production_specific_display_name_is_not_overwritten_by_the_persons_own_name(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $person = Person::create(2);
+        $person->setName('佐藤', '一郎');
+        $this->people->save($person);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST',
+            '佐藤一郎（劇団いるか）',
+            '主演'
+        ));
+
+        $this->assertSame('佐藤一郎（劇団いるか）', $created->displayName);
+        $this->assertSame('佐藤', $created->personFamilyName);
+        $this->assertSame('一郎', $created->personGivenName);
+        $this->assertSame('主演', $created->remarks);
+
+        $fetched = $this->getParticipant->execute(new GetParticipantQuery($created->id, 1));
+        $this->assertSame('佐藤一郎（劇団いるか）', $fetched->displayName);
+
+        $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 1));
+        $this->assertSame('佐藤一郎（劇団いるか）', $listed[0]->displayName);
+    }
+
+    /**
+     * StageArt Production側氏名の権威付けラウンド AC-02: the same Person can
+     * carry a different `displayName` in each Production they belong to -
+     * ProductionParticipant's own name is per-Production, not resolved
+     * from a single canonical Person-level name.
+     */
+    public function test_the_same_person_can_have_a_different_display_name_in_each_production(): void
+    {
+        $productionA = $this->givenProductionWithPrimaryManager(1);
+        $productionB = $this->givenProductionWithPrimaryManager(2);
+
+        $person = Person::create(3);
+        $person->setName('佐藤', '一郎');
+        $this->people->save($person);
+
+        $inA = $this->createParticipant->execute(new CreateParticipantCommand(
+            $productionA->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST',
+            '佐藤一郎（劇団いるか）'
+        ));
+
+        $inB = $this->createParticipant->execute(new CreateParticipantCommand(
+            $productionB->id()->toString(),
+            2,
+            'PERSON',
+            $person->id()->toString(),
+            'STAFF',
+            '佐藤一郎'
+        ));
+
+        $this->assertSame('佐藤一郎（劇団いるか）', $inA->displayName);
+        $this->assertSame('佐藤一郎', $inB->displayName);
+    }
+
+    /**
      * A NAME_ONLY Participant has no Person to resolve at all - its own
      * displayName remains the only name field, and person_family_name/
      * person_given_name stay null (not a fabricated fallback).

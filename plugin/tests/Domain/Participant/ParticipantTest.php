@@ -64,6 +64,27 @@ final class ParticipantTest extends TestCase
         $this->assertSame(ParticipantType::STAFF, $participant->participantType()->toString());
     }
 
+    /**
+     * StageArt Production側氏名の権威付けラウンド §0/§2: a PERSON-subject
+     * Participant may carry its own Production-specific displayName,
+     * entirely independent of the linked Person's own name (which this
+     * Entity never even sees - Person resolution happens elsewhere).
+     */
+    public function test_a_person_subject_participant_can_carry_its_own_production_specific_display_name(): void
+    {
+        $participant = Participant::create(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast(),
+            null,
+            '佐藤一郎（劇団いるか）'
+        );
+
+        $this->assertSame(ParticipantSubjectType::PERSON, $participant->subjectType()->toString());
+        $this->assertSame('佐藤一郎（劇団いるか）', $participant->displayName());
+    }
+
     public function test_organization_subject_type_is_supported(): void
     {
         $participant = Participant::create(

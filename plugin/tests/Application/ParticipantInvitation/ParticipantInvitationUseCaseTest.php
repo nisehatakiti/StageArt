@@ -241,6 +241,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
 
         $existingPerson = Person::create(9);
+        $existingPerson->setName('佐藤', '一郎');
         $this->people->save($existingPerson);
         $userAccount = UserAccount::create($existingPerson->id());
         $this->userAccounts->save($userAccount);
@@ -249,7 +250,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
-            '山田 太郎',
+            '佐藤一郎（劇団いるか）',
             'already-registered@example.com',
             'CAST',
             'a remark'
@@ -260,6 +261,11 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertSame($existingPerson->id()->toString(), $result->participant->subjectId);
         $this->assertSame('CAST', $result->participant->participantType);
         $this->assertSame('a remark', $result->participant->remarks);
+        // AC-01: the submitted name is this Participant's own displayName,
+        // never replaced by the existing Person's own real name.
+        $this->assertSame('佐藤一郎（劇団いるか）', $result->participant->displayName);
+        $this->assertSame('佐藤', $result->participant->personFamilyName);
+        $this->assertSame('一郎', $result->participant->personGivenName);
         $this->assertCount(0, $this->mailer->invitationEmails);
         $this->assertCount(0, $this->invitations->findByProductionId($production->id()));
 
@@ -528,13 +534,17 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),
             1,
-            '山田 花子',
+            '佐藤一郎（劇団いるか）',
             'invitee@example.com',
             'CAST',
             'remark text'
         ));
 
+        // AC-04: the invitee registers under their OWN Person name, which
+        // must never replace the invitation's invitedName on the
+        // resulting Participant.
         $invitedPerson = Person::create(30);
+        $invitedPerson->setName('佐藤', '一郎');
         $this->people->save($invitedPerson);
 
         $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
@@ -548,6 +558,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertNotNull($participant);
         $this->assertSame('remark text', $participant->remarks());
         $this->assertSame('CAST', $participant->participantType()->toString());
+        $this->assertSame('佐藤一郎（劇団いるか）', $participant->displayName());
 
         $resolved = array_values(array_filter(
             $this->invitations->findByProductionId($production->id()),

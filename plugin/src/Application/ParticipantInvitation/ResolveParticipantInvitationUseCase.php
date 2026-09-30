@@ -41,6 +41,15 @@ use Throwable;
  * The invitee themselves is never treated as a PrimaryManager/
  * PARTICIPANT_MANAGER at any point in this flow - they are only ever
  * the `subject_id` being added, never the `requestedByWordPressUserId`.
+ *
+ * StageArt Production側氏名の権威付けラウンド (§0/§6): the created
+ * Participant's `displayName` comes from `$invitation->invitedName()`
+ * - the name the admin typed when they created the invitation - never
+ * from the newly-registered Person's own familyName/givenName. The
+ * Person registering may set a completely different name for
+ * themselves; that never touches this Production's own record of who
+ * they are here (§7's "Personの氏名とProductionParticipantの氏名が異なる
+ * ことを許容する").
  */
 final class ResolveParticipantInvitationUseCase
 {
@@ -116,7 +125,7 @@ final class ResolveParticipantInvitationUseCase
                     ParticipantSubjectType::PERSON,
                     $personId->toString(),
                     $invitation->participantType()->toString(),
-                    null,
+                    $invitation->invitedName(),
                     $invitation->remarks()
                 ));
             } catch (ParticipantAlreadyExistsException $exception) {
