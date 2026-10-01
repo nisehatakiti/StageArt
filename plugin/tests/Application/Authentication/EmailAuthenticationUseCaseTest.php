@@ -27,6 +27,7 @@ use StageArt\Tests\Support\FakeAuthMailer;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
+use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryPasswordResetTokenRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
@@ -74,7 +75,8 @@ final class EmailAuthenticationUseCaseTest extends TestCase
             $this->wordPressUserProvisioner,
             new InMemoryTransactionManager(),
             $this->mailer,
-            NullResolveParticipantInvitationUseCaseFactory::create($this->people)
+            NullResolveParticipantInvitationUseCaseFactory::create($this->people),
+            new InMemoryParticipantInvitationRepository()
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,

@@ -37,5 +37,9 @@ describe('register screen: valid invitation token', () => {
     expect(screen.getByText(/踊れチュパカブラ/)).toBeVisible();
     await waitFor(() => expect(screen.getByTestId('register-email').props.value).toBe('invitee@example.com'));
     await waitFor(() => expect(screen.getByTestId('register-invitation-name').props.value).toBe('山田 花子'));
+
+    // StageArt 招待登録のメール確認省略ラウンド §7: fixed once a valid
+    // invitation preview loaded - the invited address cannot be changed.
+    expect(screen.getByTestId('register-email').props.editable).toBe(false);
   });
 });

@@ -370,7 +370,8 @@ final class Plugin
             $wordPressUserProvisioner,
             $transactions,
             $authMailer,
-            $resolveParticipantInvitation
+            $resolveParticipantInvitation,
+            $participantInvitations
         );
         $authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $emailCredentials,

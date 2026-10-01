@@ -36,6 +36,11 @@ describe('register flow', () => {
           is_new_user: true,
         },
       },
+      {
+        test: (u) => u.endsWith('/me'),
+        status: 200,
+        body: { id: 'person-1', word_press_user_id: 1, email_verified: false, family_name: null, given_name: null },
+      },
     ]);
 
     renderRouter('src/app', { initialUrl: '/login' });

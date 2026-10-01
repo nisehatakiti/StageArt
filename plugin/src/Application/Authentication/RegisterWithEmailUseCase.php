@@ -7,6 +7,7 @@ namespace StageArt\Application\Authentication;
 use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
 use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
@@ -14,6 +15,7 @@ use StageArt\Domain\Authentication\EmailVerificationToken;
 use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
@@ -63,6 +65,23 @@ use Throwable;
  * try/catch so an invitation-resolution failure can never turn a
  * successful registration into a failed response - this method's
  * existing return contract (AuthenticationResult) is unchanged.
+ *
+ * StageArt 招待登録のメール確認省略ラウンド: when `$command->invitationToken`
+ * resolves to a usable ParticipantInvitation, that invitation's own
+ * `email()` is used for EVERYTHING below - the duplicate-email check,
+ * WordPress user provisioning, and the EmailCredential itself - never
+ * `$command->email` (the client-submitted value is not trusted for this
+ * path; see §7 of this round's instruction: "招待に記録されている
+ * メールアドレスを登録メールアドレスとして使用する"). An invalid, expired,
+ * cancelled, or already-consumed token fails the whole registration via
+ * ParticipantInvitationNotFoundException (reusing the exact exception/
+ * "not usable" semantics GetParticipantInvitationByTokenUseCase already
+ * established) - it never silently falls back to ordinary registration.
+ * The freshly-created EmailCredential is marked verified immediately
+ * (the invitation link itself already proves this address is
+ * reachable), and no EmailVerificationToken/confirmation mail is ever
+ * created for this path. Ordinary self-registration (`invitationToken`
+ * null) is completely unchanged.
  */
 final class RegisterWithEmailUseCase
 {
@@ -80,6 +99,7 @@ final class RegisterWithEmailUseCase
     private TransactionManagerInterface $transactions;
     private AuthMailerInterface $mailer;
     private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
+    private ParticipantInvitationRepositoryInterface $participantInvitations;
 
     public function __construct(
         EmailCredentialRepositoryInterface $emailCredentials,
@@ -91,7 +111,8 @@ final class RegisterWithEmailUseCase
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
         AuthMailerInterface $mailer,
-        ResolveParticipantInvitationUseCase $resolveParticipantInvitation
+        ResolveParticipantInvitationUseCase $resolveParticipantInvitation,
+        ParticipantInvitationRepositoryInterface $participantInvitations
     ) {
         $this->emailCredentials = $emailCredentials;
         $this->people = $people;
@@ -103,6 +124,7 @@ final class RegisterWithEmailUseCase
         $this->transactions = $transactions;
         $this->mailer = $mailer;
         $this->resolveParticipantInvitation = $resolveParticipantInvitation;
+        $this->participantInvitations = $participantInvitations;
     }
 
     public function execute(RegisterWithEmailCommand $command): AuthenticationResult
@@ -113,19 +135,34 @@ final class RegisterWithEmailUseCase
             );
         }
 
+        $invitation = null;
+
+        if ($command->invitationToken !== null) {
+            $tokenHash = hash('sha256', $command->invitationToken);
+            $invitation = $this->participantInvitations->findByTokenHash($tokenHash);
+
+            if ($invitation === null || ! $invitation->isUsable()) {
+                throw new ParticipantInvitationNotFoundException('No usable ParticipantInvitation found for this token.');
+            }
+        }
+
+        $registrationEmail = $invitation !== null ? $invitation->email() : $command->email;
+
         // Captured by reference from inside the transaction closure below
         // so the mailer can be called AFTER the transaction commits, not
         // from within it - sending mail is external I/O, and must not
         // run inside a DB transaction (nor fire at all if the
-        // transaction ultimately rolls back).
+        // transaction ultimately rolls back). Stays null for the
+        // invitation-sourced path, which never creates a verification
+        // token at all - see the guarded call below.
         $emailVerificationTokenValue = null;
 
-        $result = $this->transactions->run(function () use ($command, &$emailVerificationTokenValue): AuthenticationResult {
-            if ($this->emailCredentials->findByEmail($command->email)) {
+        $result = $this->transactions->run(function () use ($command, $invitation, $registrationEmail, &$emailVerificationTokenValue): AuthenticationResult {
+            if ($this->emailCredentials->findByEmail($registrationEmail)) {
                 throw new EmailAlreadyInUseException('This email address is already registered.');
             }
 
-            $wordPressUserId = $this->wordPressUserProvisioner->provision($command->email);
+            $wordPressUserId = $this->wordPressUserProvisioner->provision($registrationEmail);
 
             $person = Person::create($wordPressUserId);
             $this->people->save($person);
@@ -134,7 +171,12 @@ final class RegisterWithEmailUseCase
             $this->userAccounts->save($userAccount);
 
             $passwordHash = password_hash($command->password, PASSWORD_DEFAULT);
-            $credential = EmailCredential::create($userAccount->id(), $command->email, $passwordHash);
+            $credential = EmailCredential::create($userAccount->id(), $registrationEmail, $passwordHash);
+
+            if ($invitation !== null) {
+                $credential->markEmailVerified();
+            }
+
             $this->emailCredentials->save($credential);
 
             $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());
@@ -148,15 +190,17 @@ final class RegisterWithEmailUseCase
             );
             $this->refreshTokens->save($refreshToken);
 
-            $emailVerificationTokenValue = bin2hex(random_bytes(32));
-            $emailVerificationTokenHash = hash('sha256', $emailVerificationTokenValue);
+            if ($invitation === null) {
+                $emailVerificationTokenValue = bin2hex(random_bytes(32));
+                $emailVerificationTokenHash = hash('sha256', $emailVerificationTokenValue);
 
-            $emailVerificationToken = EmailVerificationToken::create(
-                $userAccount->id(),
-                $emailVerificationTokenHash,
-                (new DateTimeImmutable())->add(new DateInterval(self::EMAIL_VERIFICATION_TOKEN_LIFETIME))
-            );
-            $this->emailVerificationTokens->save($emailVerificationToken);
+                $emailVerificationToken = EmailVerificationToken::create(
+                    $userAccount->id(),
+                    $emailVerificationTokenHash,
+                    (new DateTimeImmutable())->add(new DateInterval(self::EMAIL_VERIFICATION_TOKEN_LIFETIME))
+                );
+                $this->emailVerificationTokens->save($emailVerificationToken);
+            }
 
             return new AuthenticationResult(
                 $accessToken->token,
@@ -168,10 +212,12 @@ final class RegisterWithEmailUseCase
             );
         });
 
-        $this->mailer->sendEmailVerificationEmail($command->email, (string) $emailVerificationTokenValue);
+        if ($emailVerificationTokenValue !== null) {
+            $this->mailer->sendEmailVerificationEmail($registrationEmail, $emailVerificationTokenValue);
+        }
 
         try {
-            $this->resolveParticipantInvitation->execute(PersonId::fromString($result->personId), $command->email);
+            $this->resolveParticipantInvitation->execute(PersonId::fromString($result->personId), $registrationEmail);
         } catch (Throwable $exception) {
             error_log(sprintf(
                 '[StageArt ParticipantInvitation] resolution failed after email registration for person=%s: %s',

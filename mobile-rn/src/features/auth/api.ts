@@ -8,8 +8,20 @@ import type { AuthenticationResult, RefreshAccessTokenResult, UserAccountResult 
  * see ApiClient.authHeader()); they use the shared publicPost() instead
  * (see src/api/publicClient.ts).
  */
-export function registerWithEmail(email: string, password: string): Promise<AuthenticationResult> {
-  return publicPost<AuthenticationResult>('/auth/email/register', { email, password });
+/**
+ * StageArt 招待登録のメール確認省略ラウンド: `invitationToken` is the raw
+ * ParticipantInvitation token from an invitation link's own
+ * `/register?token=...` query param - omitted for ordinary self-
+ * registration. When present, the Backend uses the invitation's own
+ * recorded email as authoritative (not `email` here) and skips sending
+ * the normal email-confirmation message.
+ */
+export function registerWithEmail(email: string, password: string, invitationToken?: string): Promise<AuthenticationResult> {
+  return publicPost<AuthenticationResult>('/auth/email/register', {
+    email,
+    password,
+    ...(invitationToken ? { invitation_token: invitationToken } : {}),
+  });
 }
 
 export function loginWithEmail(email: string, password: string): Promise<AuthenticationResult> {

@@ -29,6 +29,7 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
+use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
@@ -89,7 +90,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $wordPressUserProvisioner,
             $transactions,
             new FakeAuthMailer(),
-            $resolveParticipantInvitation
+            $resolveParticipantInvitation,
+            new InMemoryParticipantInvitationRepository()
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,

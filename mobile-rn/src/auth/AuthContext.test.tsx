@@ -147,7 +147,8 @@ describe('AuthContext', () => {
    * user "logged in" before ever confirming their email.
    */
   it('does not establish a session after a successful Email+Password registration', async () => {
-    mockFetchOnce(200, tokenResponse({ is_new_user: true })); // POST /auth/email/register only
+    mockFetchOnce(200, tokenResponse({ is_new_user: true })); // POST /auth/email/register
+    mockFetchOnce(200, { id: 'person-1', word_press_user_id: 1, email_verified: false, family_name: null, given_name: null }); // GET /me probe
 
     const { result } = await renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe('unauthenticated'));
@@ -167,7 +168,44 @@ describe('AuthContext', () => {
     expect(result.current.status).toBe('unauthenticated');
     expect(mockSecureStore.has('stageart_access_token')).toBe(false);
     expect(mockSecureStore.has('stageart_refresh_token')).toBe(false);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * StageArt 招待登録のメール確認省略ラウンド: registerWithEmail() now
+   * probes GET /me the same way loginWithEmail() always did - when the
+   * Backend reports email_verified: true (as it does immediately for a
+   * registration completed via a valid ParticipantInvitation token, see
+   * RegisterWithEmailUseCase's own docblock), a real session is
+   * established right away instead of routing through
+   * registration-pending.tsx.
+   */
+  it('establishes a session immediately after a successful registration via an invitation token', async () => {
+    mockFetchOnce(200, tokenResponse({ is_new_user: true })); // POST /auth/email/register
+    mockFetchOnce(200, { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: null, given_name: null }); // GET /me probe
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('unauthenticated'));
+
+    let registerResult: Awaited<ReturnType<typeof result.current.registerWithEmail>> | undefined;
+    await act(async () => {
+      registerResult = await result.current.registerWithEmail('invited@example.com', 'password123', 'raw-invitation-token');
+    });
+
+    expect(registerResult).toEqual({
+      ok: true,
+      emailVerified: true,
+      hasName: false,
+      familyNameHint: null,
+      givenNameHint: null,
+    });
+    expect(result.current.status).toBe('authenticated');
+    expect(mockSecureStore.has('stageart_access_token')).toBe(true);
+    expect(mockSecureStore.has('stageart_refresh_token')).toBe(true);
+
+    const registerCall = (global.fetch as jest.Mock).mock.calls[0];
+    const body = JSON.parse(registerCall[1].body as string);
+    expect(body.invitation_token).toBe('raw-invitation-token');
   });
 
   /**

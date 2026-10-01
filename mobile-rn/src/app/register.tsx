@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
@@ -14,13 +14,26 @@ import { fetchParticipantInvitationPreview } from '@/features/participantInvitat
  * POST /auth/email/register). The Backend still returns a full
  * Access/Refresh Token pair on success (matching Google's own new-user
  * path, unchanged Backend contract) - but a real-device correction
- * clarified that this must NOT be treated as "the user is now logged
- * into StageArt": AuthContext.registerWithEmail() deliberately never
- * persists a session for a freshly-registered (always-unverified)
+ * clarified that an ORDINARY self-registration must NOT be treated as
+ * "the user is now logged into StageArt": AuthContext.registerWithEmail()
+ * never persists a session for a freshly-registered, still-unverified
  * account (see its own docblock) - status stays 'unauthenticated', and
- * closing/reopening the app lands back on the login screen, not here
- * again. This screen's own job is unchanged: always navigate to
- * registration-pending.tsx on success, never to /home.
+ * this screen navigates to registration-pending.tsx, never /home.
+ *
+ * StageArt 招待登録のメール確認省略ラウンド: this no longer holds for a
+ * registration reached via a valid Production invitation link
+ * (register.tsx?token=...) - the invitation link itself already proves
+ * the address is reachable, so the Backend marks that EmailCredential
+ * verified immediately and never sends a confirmation mail for it (see
+ * RegisterWithEmailUseCase's own docblock). `handleSubmit()` below
+ * forwards `invitationToken` only once the preview fetch has confirmed
+ * it resolves to a real, usable invitation, and AuthContext's
+ * registerWithEmail() establishes a real session right away for that
+ * case (its own `probePersonGate()` call reflects the Backend's actual
+ * verified status now, not a hardcoded assumption) - this screen routes
+ * straight to /home or /set-name instead of registration-pending.tsx
+ * when that happens. Ordinary self-registration (no token, or a token
+ * that failed to preview) is completely unaffected.
  */
 export default function RegisterScreen() {
   const { registerWithEmail } = useAuth();
@@ -37,29 +50,33 @@ export default function RegisterScreen() {
   /**
    * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §3/§23:
    * arriving via an invitation link (register.tsx?token=...) pre-fills
-   * the invited email AND name as a courtesy - the actual auto-linking
-   * on the Backend matches by the email the invitee actually registers
-   * with (RegisterWithEmailUseCase -> ResolveParticipantInvitationUseCase),
-   * never by this token, so this fetch is display-only and never
-   * blocks or alters the normal registration flow below. Both fields
-   * deliberately stay editable (§3: "本人が登録時に氏名を変更できることを
-   * 妨げない") - if the email is changed, §14's "different email never
-   * auto-links" rule simply means this particular invitation will not
-   * resolve, the same already-decided behavior as a Google sign-up
-   * using a different email. A note next to the field makes that
-   * consequence visible rather than silent.
+   * the invited email AND name as a courtesy.
    *
-   * IMPORTANT (disclosed limitation, not silently decided): `name`
-   * here is UI-only. POST /auth/email/register (RegisterWithEmailUseCase)
-   * has no name parameter - Person.familyName/givenName are only ever
-   * set later via the existing, separate UpdatePersonNameUseCase
-   * (set-name.tsx), which requires an authenticated session this screen
-   * does not have yet (registration does not log the user in until
-   * their email is verified - see AuthContext's own docblock). Wiring
-   * this pre-filled name through to the real Person would mean
-   * extending either RegisterWithEmailUseCase or set-name.tsx, both
-   * outside this round's authorized change scope (§17) - see this
-   * round's final report for this open item.
+   * StageArt 招待登録のメール確認省略ラウンド §7: this fetch succeeding is
+   * also what this screen treats as "this token is confirmed usable" -
+   * `invitationProductionName` being set gates both forwarding
+   * `invitationToken` to registerWithEmail() on submit (see
+   * handleSubmit() below) and fixing the email field so it cannot be
+   * changed to something other than the invited address (the Backend
+   * now uses the invitation's own recorded email unconditionally for
+   * this path regardless, but the field is fixed here too so the UI
+   * never implies an edit that would silently be ignored). `name` stays
+   * editable (§3: "本人が登録時に氏名を変更できることを妨げない") - it is
+   * unrelated to which email ends up registered. If this fetch fails
+   * (invalid/expired/cancelled/unknown token, or no token at all), this
+   * silently falls back to an ordinary, fully-editable self-registration
+   * - never a half-invited submission with a token the Backend would
+   * reject anyway.
+   *
+   * IMPORTANT (disclosed limitation, not silently decided - unchanged by
+   * this round): `name` here is still UI-only. POST /auth/email/register
+   * (RegisterWithEmailUseCase) has no name parameter - Person.familyName/
+   * givenName are only ever set later via the existing, separate
+   * UpdatePersonNameUseCase (set-name.tsx). Wiring this pre-filled name
+   * through to the real Person would mean extending either
+   * RegisterWithEmailUseCase or set-name.tsx, both outside this round's
+   * authorized change scope - see this round's final report for this
+   * open item.
    */
   useEffect(() => {
     if (!invitationToken) {
@@ -86,12 +103,25 @@ export default function RegisterScreen() {
     };
   }, [invitationToken]);
 
+  /**
+   * StageArt 招待登録のメール確認省略ラウンド: `invitationToken` is only
+   * ever forwarded once `invitationProductionName` is set - i.e. once
+   * the preview fetch above has actually confirmed this token resolves
+   * to a usable ParticipantInvitation. If that preview failed (expired/
+   * cancelled/unknown token, or no token at all), this degrades to an
+   * ordinary self-registration exactly as before - never a half-invited
+   * submission with a token the Backend would reject anyway.
+   */
   async function handleSubmit() {
     setSubmitting(true);
     setErrorMessage(null);
 
     const trimmedEmail = email.trim();
-    const result = await registerWithEmail(trimmedEmail, password);
+    const result = await registerWithEmail(
+      trimmedEmail,
+      password,
+      invitationProductionName ? invitationToken : undefined
+    );
 
     setSubmitting(false);
     if (!result.ok) {
@@ -99,7 +129,16 @@ export default function RegisterScreen() {
       return;
     }
 
-    router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+    if (!result.emailVerified) {
+      router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+      return;
+    }
+
+    // The invitation link itself already proved this address is
+    // reachable - registerWithEmail() has already established a real
+    // session (see its own docblock), so there is no "確認メールを
+    // お送りしました" step to show here at all.
+    router.replace(result.hasName ? '/home' : '/set-name');
   }
 
   return (
@@ -113,7 +152,7 @@ export default function RegisterScreen() {
 
       {invitationProductionName && (
         <ThemedText testID="register-invitation-notice" type="small" style={authStyles.description}>
-          「{invitationProductionName}」への招待です。招待されたメールアドレスで登録すると、自動的にメンバーへ追加されます。異なるメールアドレスで登録した場合、自動追加は行われません。
+          「{invitationProductionName}」への招待です。このメールアドレスで登録すると、確認メールなしで自動的にメンバーへ追加されます。
         </ThemedText>
       )}
 
@@ -135,7 +174,8 @@ export default function RegisterScreen() {
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="email-address"
-        style={authStyles.input}
+        editable={!invitationProductionName}
+        style={[authStyles.input, invitationProductionName ? styles.fixedInput : null]}
       />
           {/*
            * textContentType="oneTimeCode" is deliberate, not an oversight
@@ -189,3 +229,7 @@ export default function RegisterScreen() {
     </AuthLayout>
   );
 }
+
+const styles = StyleSheet.create({
+  fixedInput: { opacity: 0.6 },
+});
