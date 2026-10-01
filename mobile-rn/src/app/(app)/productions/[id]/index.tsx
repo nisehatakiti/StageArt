@@ -13,6 +13,7 @@ import {
   useProduction,
 } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
+import { usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -75,6 +76,8 @@ export default function ProductionManagementScreen() {
   const { organization } = useProductionOrganization(production);
 
   const isPrimaryManager = !!production?.is_primary_manager;
+  const canReviewParticipationRequests = isPrimaryManager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
+  const pendingParticipationRequestsQuery = usePendingParticipationRequests(canReviewParticipationRequests ? id : undefined);
 
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const activate = useActivateProduction(id);
@@ -237,6 +240,21 @@ export default function ProductionManagementScreen() {
         </View>
       )}
 
+      {canReviewParticipationRequests && !pendingParticipationRequestsQuery.isError && (pendingParticipationRequestsQuery.data?.length ?? 0) > 0 && (
+        <TouchableOpacity
+          testID="production-management-pending-participation-requests"
+          onPress={() => router.push(`/productions/${id}/participants` as Href)}
+          style={styles.pendingRequestBanner}
+        >
+          <ThemedText type="smallBold">
+            本人確認申請が{pendingParticipationRequestsQuery.data?.length ?? 0}件あります
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            メンバー管理で確認する
+          </ThemedText>
+        </TouchableOpacity>
+      )}
+
       {(production.description || production.venue_name || production.schedule_start_date) && (
         <View style={styles.overviewCard} testID="production-management-overview">
           <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -361,6 +379,15 @@ const styles = StyleSheet.create({
   lifecycleError: { color: '#a6483a', width: '100%' },
   destructiveText: { color: '#a6483a', fontWeight: '600' },
   sectionTitle: { marginTop: Spacing.two, marginBottom: Spacing.one },
+  pendingRequestBanner: {
+    borderWidth: 1,
+    borderColor: BrandColors.warmAmber,
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    marginBottom: Spacing.three,
+    gap: Spacing.one,
+    alignItems: 'flex-start',
+  },
   overviewCard: {
     borderWidth: 1,
     borderColor: '#e1dee6',
