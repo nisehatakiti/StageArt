@@ -3,12 +3,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FormInput } from '@/components/form-input';
 
-import { ApiError } from '@/api/errors';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useParticipants, useUpdateParticipant } from '@/features/participant/useParticipant';
-import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import {
   useCancelParticipantInvitation,
@@ -93,8 +91,6 @@ export default function ProductionParticipantsScreen() {
   const queryClient = useQueryClient();
   const productionQuery = useProduction(id);
   const currentPersonQuery = useCurrentPerson();
-  const pendingQuery = usePendingParticipationRequests(id);
-  const { approve, reject } = useParticipationRequestDecision(id);
   const participantsQuery = useParticipants(id);
   const updateParticipant = useUpdateParticipant(id);
   const production = productionQuery.data;
@@ -308,6 +304,8 @@ export default function ProductionParticipantsScreen() {
         <ThemedText style={styles.memberNameHeader}>名前</ThemedText>
         <ThemedText style={styles.memberRoleHeader}>役割</ThemedText>
         <ThemedText style={styles.memberRemarksHeader}>備考</ThemedText>
+        <ThemedText style={styles.memberEmailHeader}>メールアドレス</ThemedText>
+        <ThemedText style={styles.memberAddActionHeader}>操作</ThemedText>
         {canManageDelegateRoles &&
           DELEGATE_CHECKBOXES.map((checkbox) => (
             <ThemedText key={checkbox.key} style={styles.permissionHeader}>
@@ -347,6 +345,64 @@ export default function ProductionParticipantsScreen() {
           }}
         />
       ))}
+
+      <View style={styles.addMemberTableRow} testID="production-participants-add-member-form">
+        <View style={styles.memberDeleteHeader} />
+        <ThemedTextInput
+          testID="production-participants-new-member-name"
+          value={newMemberName}
+          onChangeText={setNewMemberName}
+          placeholder="氏名"
+          style={styles.addMemberNameInput}
+        />
+        <View style={styles.addMemberRoleCell}>
+          {PARTICIPANT_TYPES.map((type) => (
+            <TouchableOpacity
+              key={type}
+              testID={`production-participants-new-member-type-${type}`}
+              onPress={() => setNewMemberType(type)}
+              style={[styles.roleButton, newMemberType === type && styles.roleButtonActive]}
+            >
+              <ThemedText type="small" style={newMemberType === type ? styles.typeButtonTextActive : undefined}>
+                {PARTICIPANT_TYPE_LABEL[type]}
+              </ThemedText>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <ThemedTextInput
+          testID="production-participants-new-member-remarks"
+          value={newMemberRemarks}
+          onChangeText={setNewMemberRemarks}
+          placeholder="備考"
+          style={styles.addMemberRemarksInput}
+        />
+        <ThemedTextInput
+          testID="production-participants-new-member-email"
+          value={newMemberEmail}
+          onChangeText={setNewMemberEmail}
+          placeholder="メールアドレス"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          style={styles.addMemberEmailInput}
+        />
+        <TouchableOpacity
+          testID="production-participants-add-member"
+          onPress={handleAddMember}
+          disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
+          style={styles.addMemberAction}
+        >
+          {createInvitation.isPending ? (
+            <ActivityIndicator color={BrandColors.warmAmber} />
+          ) : (
+            <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
+          )}
+        </TouchableOpacity>
+        {canManageDelegateRoles &&
+          DELEGATE_CHECKBOXES.map((checkbox) => (
+            <View key={checkbox.key} style={styles.permissionCell} />
+          ))}
+      </View>
     </View>
   );
 
@@ -416,54 +472,6 @@ export default function ProductionParticipantsScreen() {
       </ThemedText>
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>
-        参加申請
-      </ThemedText>
-
-      {pendingQuery.isLoading && <ActivityIndicator testID="production-participation-requests-loading" />}
-      {pendingQuery.isError && (
-        <ThemedText testID="production-participation-requests-error">
-          {pendingQuery.error instanceof ApiError && pendingQuery.error.statusCode === 403
-            ? '参加申請の管理はPrimaryManagerまたは参加者管理の権限を持つ担当者のみ利用できます。'
-            : getErrorMessage(pendingQuery.error)}
-        </ThemedText>
-      )}
-      {!pendingQuery.isLoading && !pendingQuery.isError && (pendingQuery.data?.length ?? 0) === 0 && (
-        <ThemedText testID="production-participation-requests-empty" themeColor="textSecondary">
-          現在、参加申請はありません。
-        </ThemedText>
-      )}
-      {(pendingQuery.data?.length ?? 0) > 0 && (
-        <View style={styles.list} testID="production-participation-requests-list">
-          {pendingQuery.data?.map((request) => (
-            <View key={request.id} style={styles.row} testID={`participation-request-row-${request.id}`}>
-              <ThemedText style={styles.requestName}>{[request.person_family_name, request.person_given_name].filter(Boolean).join(' ') || '（氏名未設定）'}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.requestType}>
-                {PARTICIPANT_TYPE_LABEL[request.participant_type] ?? request.participant_type}
-              </ThemedText>
-              <View style={[styles.colAction, styles.actionButtons]}>
-                <TouchableOpacity
-                  testID={`participation-request-approve-${request.id}`}
-                  onPress={() => approve.mutate(request.id)}
-                  disabled={approve.isPending || reject.isPending}
-                  style={styles.approveButton}
-                >
-                  <ThemedText style={styles.approveButtonText}>承認</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID={`participation-request-reject-${request.id}`}
-                  onPress={() => reject.mutate(request.id)}
-                  disabled={approve.isPending || reject.isPending}
-                  style={styles.rejectButton}
-                >
-                  <ThemedText style={styles.rejectButtonText}>却下</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
         登録済みメンバー
       </ThemedText>
 
@@ -503,158 +511,6 @@ export default function ProductionParticipantsScreen() {
             </ScrollView>
           )}
         </>
-      )}
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        メンバー情報公開日時（任意）
-      </ThemedText>
-      <View style={styles.datetimeRow}>
-        <View style={styles.datetimeField}>
-          <ThemedText type="small" themeColor="textSecondary">公開日</ThemedText>
-          <FormInput
-            testID="production-participants-published-date"
-            kind="date"
-            value={localDatePart(memberInfoPublishedAt)}
-            onChangeText={(date) => {
-              if (!date) {
-                setMemberInfoPublishedAt('');
-                return;
-              }
-              const time = localTimePart(memberInfoPublishedAt) || '00:00';
-              setMemberInfoPublishedAt(composePublishedAt(date, time));
-            }}
-            style={styles.datetimeInput}
-          />
-        </View>
-        <View style={styles.datetimeField}>
-          <ThemedText type="small" themeColor="textSecondary">公開時刻</ThemedText>
-          <FormInput
-            testID="production-participants-published-time"
-            kind="time"
-            value={localTimePart(memberInfoPublishedAt)}
-            onChangeText={(time) => {
-              if (!time) {
-                setMemberInfoPublishedAt('');
-                return;
-              }
-              const date = localDatePart(memberInfoPublishedAt) || new Date().toLocaleDateString('sv-SE');
-              setMemberInfoPublishedAt(composePublishedAt(date, time));
-            }}
-            style={styles.datetimeInput}
-          />
-        </View>
-        <TouchableOpacity
-          testID="production-participants-published-clear"
-          onPress={() => setMemberInfoPublishedAt('')}
-          style={styles.clearDateButton}
-        >
-          <ThemedText type="small">クリア</ThemedText>
-        </TouchableOpacity>
-      </View>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-        ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
-      </ThemedText>
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        メンバーを追加
-      </ThemedText>
-
-      {/*
-       * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド
-       * §1/§12: the one, unified add form - no Person ID input, no
-       * standalone "search by email" step, no NAME_ONLY-only path.
-       * Submitting calls POST /productions/{id}/participant-invitations
-       * once with 氏名＋メールアドレス＋役割＋備考 together; the Backend
-       * decides internally whether that becomes an existing-Person
-       * Participant or a new/resent invitation (§2).
-       */}
-      <View style={styles.addMemberTable} testID="production-participants-add-member-form">
-        <View style={styles.addMemberTableHeader}>
-          <View style={styles.memberDeleteHeader} />
-          <ThemedText style={styles.addMemberNameHeader}>名前</ThemedText>
-          <ThemedText style={styles.addMemberRoleHeader}>役割</ThemedText>
-          <ThemedText style={styles.addMemberRemarksHeader}>備考</ThemedText>
-          <ThemedText style={styles.addMemberEmailHeader}>メールアドレス</ThemedText>
-          <View style={styles.addMemberActionHeader} />
-        </View>
-        <View style={styles.addMemberTableRow}>
-          <View style={styles.memberDeleteHeader} />
-          <ThemedTextInput
-            testID="production-participants-new-member-name"
-            value={newMemberName}
-            onChangeText={setNewMemberName}
-            placeholder="氏名"
-            style={styles.addMemberNameInput}
-          />
-          <View style={styles.addMemberRoleCell}>
-            {PARTICIPANT_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type}
-                testID={`production-participants-new-member-type-${type}`}
-                onPress={() => setNewMemberType(type)}
-                style={[styles.roleButton, newMemberType === type && styles.roleButtonActive]}
-              >
-                <ThemedText type="small" style={newMemberType === type ? styles.typeButtonTextActive : undefined}>
-                  {PARTICIPANT_TYPE_LABEL[type]}
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <ThemedTextInput
-            testID="production-participants-new-member-remarks"
-            value={newMemberRemarks}
-            onChangeText={setNewMemberRemarks}
-            placeholder="備考"
-            style={styles.addMemberRemarksInput}
-          />
-          <ThemedTextInput
-            testID="production-participants-new-member-email"
-            value={newMemberEmail}
-            onChangeText={setNewMemberEmail}
-            placeholder="メールアドレス"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={styles.addMemberEmailInput}
-          />
-          <TouchableOpacity
-            testID="production-participants-add-member"
-            onPress={handleAddMember}
-            disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
-            style={styles.addMemberAction}
-          >
-            {createInvitation.isPending ? (
-              <ActivityIndicator color={BrandColors.warmAmber} />
-            ) : (
-              <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {addMemberMessage && (
-        <ThemedText testID="production-participants-add-member-message" style={styles.invitationMessage}>
-          {addMemberMessage}
-        </ThemedText>
-      )}
-
-      <TouchableOpacity
-        testID="production-participants-add-member"
-        onPress={handleAddMember}
-        disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
-        style={styles.addButton}
-      >
-        {createInvitation.isPending ? (
-          <ActivityIndicator color={BrandColors.warmAmber} />
-        ) : (
-          <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
-        )}
-      </TouchableOpacity>
-
-      {errorMessage && (
-        <ThemedText testID="production-participants-error" style={styles.error}>
-          {errorMessage}
-        </ThemedText>
       )}
 
       <TouchableOpacity
@@ -778,97 +634,15 @@ const styles = StyleSheet.create({
   fieldLabel: { marginTop: Spacing.one },
   hint: { marginBottom: Spacing.one },
   list: { gap: Spacing.one },
-  row: {
-    paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-  },
-  webTableScroll: {
-    width: '100%',
-    overflow: 'scroll',
-    maxWidth: '100%',
-    marginBottom: Spacing.two,
-  },
-  memberTable: {
-    minWidth: 1500,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  memberTableHeader: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: '#f5f3ef',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-  },
-  memberTableRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    minHeight: 58,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e5e5',
-  },
-  memberTableRowDeleted: { opacity: 0.5 },
-  memberDeleteHeader: { width: 42 },
-  memberDeleteCell: { width: 42, justifyContent: 'center', alignItems: 'center' },
-  memberNameHeader: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  memberNameCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlignVertical: 'center' },
-  memberRoleHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  memberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.one },
-  roleButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: 4, paddingHorizontal: 8 },
-  roleButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
-  roleButtonTextActive: { color: '#fff' },
-  memberRemarksHeader: { width: 300, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  memberRemarksCell: { width: 300, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
-  permissionHeader: { width: 150, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
-  permissionCell: { width: 150, justifyContent: 'center', alignItems: 'center', borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#e5e5e5' },
-  permissionCellDisabled: { opacity: 0.55 },
-  tableCheckbox: { fontSize: 20 },
-  strikethrough: { textDecorationLine: 'line-through', opacity: 0.5 },
-  actionButtons: { flexDirection: 'row', gap: Spacing.two },
-  colAction: { marginLeft: 'auto' },
-  typeToggle: { flexDirection: 'row', gap: Spacing.one, marginBottom: Spacing.one },
-  typeButton: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: Radius.medium,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-  },
-  typeButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
-  typeButtonTextActive: { color: '#fff' },
-  datetimeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: Spacing.two, marginBottom: Spacing.one },
-  datetimeField: { width: 220, minWidth: 180 },
-  datetimeInput: { marginTop: 4 },
-  clearDateButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: Spacing.one, paddingHorizontal: Spacing.two },
-  requestRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
-  requestName: { width: 220, fontWeight: '600' },
-  requestType: { minWidth: 100 },
-  addMemberTable: {
-    minWidth: 1122,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-    marginBottom: Spacing.two,
-  },
-  addMemberTableHeader: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: '#f5f3ef',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-  },
+  memberEmailHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  memberAddActionHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
   addMemberTableRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     minHeight: 58,
-  },
-  addMemberNameHeader: {
-    width: 180,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontWeight: '600',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
   addMemberNameInput: {
     width: 180,
@@ -880,25 +654,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 16,
   },
-  addMemberRoleHeader: {
-    width: 150,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontWeight: '600',
-  },
-  addMemberRoleCell: {
-    width: 150,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.one,
-  },
-  addMemberRemarksHeader: {
-    width: 300,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontWeight: '600',
-  },
   addMemberRemarksInput: {
     width: 300,
     margin: Spacing.one,
@@ -909,14 +664,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 16,
   },
-  addMemberEmailHeader: {
-    width: 300,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontWeight: '600',
-  },
   addMemberEmailInput: {
-    width: 300,
+    width: 260,
     margin: Spacing.one,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -925,7 +674,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 16,
   },
-  addMemberActionHeader: { width: 150 },
   addMemberAction: {
     width: 150,
     justifyContent: 'center',
@@ -936,7 +684,6 @@ const styles = StyleSheet.create({
     margin: Spacing.one,
     paddingVertical: Spacing.one,
   },
-  addButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
   error: { color: '#a6483a', marginTop: Spacing.two },
   invitationMessage: { color: BrandColors.warmAmber, marginTop: Spacing.one, marginBottom: Spacing.one },
   invitationTable: {
@@ -984,4 +731,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
   },
   rejectButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
-});
+});      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+        メンバー情報公開日時（任意）
+      </ThemedText>
+      <View style={styles.datetimeRow}>
+        <View style={styles.datetimeField}>
+          <ThemedText type="small" themeColor="textSecondary">公開日</ThemedText>
+          <FormInput
+            testID="production-participants-published-date"
+            kind="date"
+            value={localDatePart(memberInfoPublishedAt)}
+            onChangeText={(date) => {
+              if (!date) {
+                setMemberInfoPublishedAt('');
+                return;
+              }
+              const time = localTimePart(memberInfoPublishedAt) || '00:00';
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
+            }}
+            style={styles.datetimeInput}
+          />
+        </View>
+        <View style={styles.datetimeField}>
+          <ThemedText type="small" themeColor="textSecondary">公開時刻</ThemedText>
+          <FormInput
+            testID="production-participants-published-time"
+            kind="time"
+            value={localTimePart(memberInfoPublishedAt)}
+            onChangeText={(time) => {
+              if (!time) {
+                setMemberInfoPublishedAt('');
+                return;
+              }
+              const date = localDatePart(memberInfoPublishedAt) || new Date().toLocaleDateString('sv-SE');
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
+            }}
+            style={styles.datetimeInput}
+          />
+        </View>
+        <TouchableOpacity
+          testID="production-participants-published-clear"
+          onPress={() => setMemberInfoPublishedAt('')}
+          style={styles.clearDateButton}
+        >
+          <ThemedText type="small">クリア</ThemedText>
+        </TouchableOpacity>
+      </View>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+        ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
+      </ThemedText>
+
+      {errorMessage && (
+        <ThemedText testID="production-participants-error" style={styles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
+
+
