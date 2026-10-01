@@ -484,16 +484,14 @@ export default function ProductionParticipantsScreen() {
           まだ参加者がいません。
         </ThemedText>
       )}
-      {activeParticipants.length > 0 && (
-        Platform.OS === 'web' ? (
-          <View style={styles.webTableScroll} testID="production-participants-table-scroll">
-            {memberTable}
-          </View>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participants-table-scroll">
-            {memberTable}
-          </ScrollView>
-        )
+      {Platform.OS === 'web' ? (
+        <View style={styles.webTableScroll} testID="production-participants-table-scroll">
+          {memberTable}
+        </View>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator testID="production-participants-table-scroll">
+          {memberTable}
+        </ScrollView>
       )}
 
       {pendingInvitations.length > 0 && (
@@ -512,6 +510,56 @@ export default function ProductionParticipantsScreen() {
           )}
         </>
       )}
+
+      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+        メンバー情報公開日時（任意）
+      </ThemedText>
+      <View style={styles.datetimeRow}>
+        <View style={styles.datetimeField}>
+          <ThemedText type="small" themeColor="textSecondary">公開日</ThemedText>
+          <FormInput
+            testID="production-participants-published-date"
+            kind="date"
+            value={localDatePart(memberInfoPublishedAt)}
+            onChangeText={(date) => {
+              if (!date) {
+                setMemberInfoPublishedAt('');
+                return;
+              }
+              const time = localTimePart(memberInfoPublishedAt) || '00:00';
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
+            }}
+            style={styles.datetimeInput}
+          />
+        </View>
+        <View style={styles.datetimeField}>
+          <ThemedText type="small" themeColor="textSecondary">公開時刻</ThemedText>
+          <FormInput
+            testID="production-participants-published-time"
+            kind="time"
+            value={localTimePart(memberInfoPublishedAt)}
+            onChangeText={(time) => {
+              if (!time) {
+                setMemberInfoPublishedAt('');
+                return;
+              }
+              const date = localDatePart(memberInfoPublishedAt) || new Date().toLocaleDateString('sv-SE');
+              setMemberInfoPublishedAt(composePublishedAt(date, time));
+            }}
+            style={styles.datetimeInput}
+          />
+        </View>
+        <TouchableOpacity
+          testID="production-participants-published-clear"
+          onPress={() => setMemberInfoPublishedAt('')}
+          style={styles.clearDateButton}
+        >
+          <ThemedText type="small">クリア</ThemedText>
+        </TouchableOpacity>
+      </View>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+        ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
+      </ThemedText>
 
       <TouchableOpacity
         testID="production-participants-save"
