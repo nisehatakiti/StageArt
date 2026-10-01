@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
   memberRoleHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   memberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.one },
   memberRemarksHeader: { width: 300, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  memberRemarksCell: { width: 300, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
+  memberRemarksCell: { width: 284, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
   permissionHeader: { width: 150, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
   permissionCell: { width: 150, justifyContent: 'center', alignItems: 'center', borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#e5e5e5' },
   permissionCellDisabled: { opacity: 0.55 },
@@ -764,7 +764,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#ddd',
   },
   addMemberNameInput: {
-    width: 180,
+    width: 164,
     margin: Spacing.one,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   addMemberRemarksInput: {
-    width: 300,
+    width: 284,
     margin: Spacing.one,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -784,7 +784,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   addMemberEmailInput: {
-    width: 260,
+    width: 244,
     margin: Spacing.one,
     borderWidth: 1,
     borderColor: '#ccc',
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   addMemberAction: {
-    width: 150,
+    width: 134,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
