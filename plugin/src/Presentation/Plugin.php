@@ -542,7 +542,18 @@ final class Plugin
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
 
         $searchPersonByEmail = new SearchPersonByEmailUseCase($productions, $productionAuthorization, $findPersonByEmail);
-        $participantInvitationMailer = new WordPressParticipantInvitationMailer($emailVerificationBaseUrl);
+        // Its own constant, deliberately separate from
+        // $emailVerificationBaseUrl above: that one points at the static
+        // email-confirmation page (STAGEART_EMAIL_VERIFICATION_BASE_URL,
+        // historically defaulting to .../verify-app), while this one is
+        // the base URL of the mobile-rn Web app itself - the invitation
+        // link is `{this}/register?token=...`, a real app route, not a
+        // static confirmation page. Reusing the verification URL here
+        // previously produced broken /verify-app/register links.
+        $participantInvitationBaseUrl = defined('STAGEART_PARTICIPANT_INVITATION_BASE_URL')
+            ? STAGEART_PARTICIPANT_INVITATION_BASE_URL
+            : 'https://dev.stageart.top';
+        $participantInvitationMailer = new WordPressParticipantInvitationMailer($participantInvitationBaseUrl);
         $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
             $participantInvitations,
             $productions,
