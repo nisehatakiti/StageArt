@@ -494,6 +494,12 @@ export default function ProductionParticipantsScreen() {
         </ScrollView>
       )}
 
+      {addMemberMessage && (
+        <ThemedText testID="production-participants-add-member-message" style={styles.invitationMessage}>
+          {addMemberMessage}
+        </ThemedText>
+      )}
+
       {pendingInvitations.length > 0 && (
         <>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -560,6 +566,12 @@ export default function ProductionParticipantsScreen() {
       <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
         ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
       </ThemedText>
+
+      {errorMessage && (
+        <ThemedText testID="production-participants-error" style={styles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
 
       <TouchableOpacity
         testID="production-participants-save"
@@ -684,6 +696,62 @@ const styles = StyleSheet.create({
   fieldLabel: { marginTop: Spacing.one },
   hint: { marginBottom: Spacing.one },
   list: { gap: Spacing.one },
+  memberTable: {
+    minWidth: 1532,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  memberTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#f5f3ef',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  memberTableRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 58,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e5e5',
+  },
+  memberTableRowDeleted: { opacity: 0.5 },
+  memberDeleteHeader: { width: 42 },
+  memberDeleteCell: { width: 42, justifyContent: 'center', alignItems: 'center' },
+  memberNameHeader: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberNameCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlignVertical: 'center' },
+  memberRoleHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.one },
+  memberRemarksHeader: { width: 300, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  memberRemarksCell: { width: 300, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
+  permissionHeader: { width: 150, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
+  permissionCell: { width: 150, justifyContent: 'center', alignItems: 'center', borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: '#e5e5e5' },
+  permissionCellDisabled: { opacity: 0.55 },
+  tableCheckbox: { fontSize: 20 },
+  strikethrough: { textDecorationLine: 'line-through', opacity: 0.5 },
+  addMemberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.one },
+  roleButton: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: Radius.medium,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  roleButtonActive: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
+  roleButtonTextActive: { color: '#fff' },
+  typeButtonTextActive: { color: '#fff' },
+  addButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
+  webTableScroll: {
+    width: '100%',
+    overflow: 'scroll',
+    maxWidth: '100%',
+    marginBottom: Spacing.two,
+  },
+  datetimeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: Spacing.two, marginBottom: Spacing.one },
+  datetimeField: { width: 220, minWidth: 180 },
+  datetimeInput: { marginTop: 4 },
+  clearDateButton: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingVertical: Spacing.one, paddingHorizontal: Spacing.two },
   memberEmailHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   memberEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   memberAddActionHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
@@ -782,60 +850,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
   },
   rejectButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
-});      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        メンバー情報公開日時（任意）
-      </ThemedText>
-      <View style={styles.datetimeRow}>
-        <View style={styles.datetimeField}>
-          <ThemedText type="small" themeColor="textSecondary">公開日</ThemedText>
-          <FormInput
-            testID="production-participants-published-date"
-            kind="date"
-            value={localDatePart(memberInfoPublishedAt)}
-            onChangeText={(date) => {
-              if (!date) {
-                setMemberInfoPublishedAt('');
-                return;
-              }
-              const time = localTimePart(memberInfoPublishedAt) || '00:00';
-              setMemberInfoPublishedAt(composePublishedAt(date, time));
-            }}
-            style={styles.datetimeInput}
-          />
-        </View>
-        <View style={styles.datetimeField}>
-          <ThemedText type="small" themeColor="textSecondary">公開時刻</ThemedText>
-          <FormInput
-            testID="production-participants-published-time"
-            kind="time"
-            value={localTimePart(memberInfoPublishedAt)}
-            onChangeText={(time) => {
-              if (!time) {
-                setMemberInfoPublishedAt('');
-                return;
-              }
-              const date = localDatePart(memberInfoPublishedAt) || new Date().toLocaleDateString('sv-SE');
-              setMemberInfoPublishedAt(composePublishedAt(date, time));
-            }}
-            style={styles.datetimeInput}
-          />
-        </View>
-        <TouchableOpacity
-          testID="production-participants-published-clear"
-          onPress={() => setMemberInfoPublishedAt('')}
-          style={styles.clearDateButton}
-        >
-          <ThemedText type="small">クリア</ThemedText>
-        </TouchableOpacity>
-      </View>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-        ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
-      </ThemedText>
-
-      {errorMessage && (
-        <ThemedText testID="production-participants-error" style={styles.error}>
-          {errorMessage}
-        </ThemedText>
-      )}
+});
 
 
