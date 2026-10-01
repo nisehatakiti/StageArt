@@ -640,6 +640,8 @@ function ParticipantEditRow({
         placeholder="備考"
         style={styles.memberRemarksCell}
       />
+      <View style={styles.memberEmailCell} />
+      <View style={styles.memberAddActionCell} />
       {canManageDelegateRoles &&
         DELEGATE_CHECKBOXES.map((checkbox) => {
           const checked = checkbox.roles.every((role) =>
@@ -685,6 +687,7 @@ const styles = StyleSheet.create({
   memberEmailHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   memberEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   memberAddActionHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
+  memberAddActionCell: { width: 150, justifyContent: 'center', alignItems: 'center' },
   addMemberTableRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
