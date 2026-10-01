@@ -568,54 +568,69 @@ export default function ProductionParticipantsScreen() {
        * decides internally whether that becomes an existing-Person
        * Participant or a new/resent invitation (§2).
        */}
-      <ThemedText type="small" themeColor="textSecondary">
-        氏名
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-participants-new-member-name"
-        value={newMemberName}
-        onChangeText={setNewMemberName}
-        style={styles.input}
-      />
-
-      <ThemedText type="small" themeColor="textSecondary">
-        メールアドレス
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-participants-new-member-email"
-        value={newMemberEmail}
-        onChangeText={setNewMemberEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        style={styles.input}
-      />
-
-      <ThemedText type="small" themeColor="textSecondary">
-        役割
-      </ThemedText>
-      <View style={styles.typeToggle}>
-        {PARTICIPANT_TYPES.map((type) => (
+      <View style={styles.addMemberTable} testID="production-participants-add-member-form">
+        <View style={styles.addMemberTableHeader}>
+          <View style={styles.memberDeleteHeader} />
+          <ThemedText style={styles.addMemberNameHeader}>名前</ThemedText>
+          <ThemedText style={styles.addMemberRoleHeader}>役割</ThemedText>
+          <ThemedText style={styles.addMemberRemarksHeader}>備考</ThemedText>
+          <ThemedText style={styles.addMemberEmailHeader}>メールアドレス</ThemedText>
+          <View style={styles.addMemberActionHeader} />
+        </View>
+        <View style={styles.addMemberTableRow}>
+          <View style={styles.memberDeleteHeader} />
+          <ThemedTextInput
+            testID="production-participants-new-member-name"
+            value={newMemberName}
+            onChangeText={setNewMemberName}
+            placeholder="氏名"
+            style={styles.addMemberNameInput}
+          />
+          <View style={styles.addMemberRoleCell}>
+            {PARTICIPANT_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                testID={`production-participants-new-member-type-${type}`}
+                onPress={() => setNewMemberType(type)}
+                style={[styles.roleButton, newMemberType === type && styles.roleButtonActive]}
+              >
+                <ThemedText type="small" style={newMemberType === type ? styles.typeButtonTextActive : undefined}>
+                  {PARTICIPANT_TYPE_LABEL[type]}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ThemedTextInput
+            testID="production-participants-new-member-remarks"
+            value={newMemberRemarks}
+            onChangeText={setNewMemberRemarks}
+            placeholder="備考"
+            style={styles.addMemberRemarksInput}
+          />
+          <ThemedTextInput
+            testID="production-participants-new-member-email"
+            value={newMemberEmail}
+            onChangeText={setNewMemberEmail}
+            placeholder="メールアドレス"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            style={styles.addMemberEmailInput}
+          />
           <TouchableOpacity
-            key={type}
-            testID={`production-participants-new-member-type-${type}`}
-            onPress={() => setNewMemberType(type)}
-            style={[styles.typeButton, newMemberType === type && styles.typeButtonActive]}
+            testID="production-participants-add-member"
+            onPress={handleAddMember}
+            disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
+            style={styles.addMemberAction}
           >
-            <ThemedText style={newMemberType === type ? styles.typeButtonTextActive : undefined}>{PARTICIPANT_TYPE_LABEL[type]}</ThemedText>
+            {createInvitation.isPending ? (
+              <ActivityIndicator color={BrandColors.warmAmber} />
+            ) : (
+              <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
+            )}
           </TouchableOpacity>
-        ))}
+        </View>
       </View>
-
-      <ThemedText type="small" themeColor="textSecondary">
-        備考
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-participants-new-member-remarks"
-        value={newMemberRemarks}
-        onChangeText={setNewMemberRemarks}
-        style={styles.input}
-      />
 
       {addMemberMessage && (
         <ThemedText testID="production-participants-add-member-message" style={styles.invitationMessage}>
@@ -830,22 +845,96 @@ const styles = StyleSheet.create({
   requestRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   requestName: { width: 220, fontWeight: '600' },
   requestType: { minWidth: 100 },
-  input: {
+  addMemberTable: {
+    minWidth: 1122,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
     marginBottom: Spacing.two,
   },
-  addButton: {
+  addMemberTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#f5f3ef',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  addMemberTableRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 58,
+  },
+  addMemberNameHeader: {
+    width: 180,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    fontWeight: '600',
+  },
+  addMemberNameInput: {
+    width: 180,
+    margin: Spacing.one,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 6,
+    fontSize: 16,
+  },
+  addMemberRoleHeader: {
+    width: 150,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    fontWeight: '600',
+  },
+  addMemberRoleCell: {
+    width: 150,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.one,
+  },
+  addMemberRemarksHeader: {
+    width: 300,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    fontWeight: '600',
+  },
+  addMemberRemarksInput: {
+    width: 300,
+    margin: Spacing.one,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 6,
+    fontSize: 16,
+  },
+  addMemberEmailHeader: {
+    width: 300,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    fontWeight: '600',
+  },
+  addMemberEmailInput: {
+    width: 300,
+    margin: Spacing.one,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 6,
+    fontSize: 16,
+  },
+  addMemberActionHeader: { width: 150 },
+  addMemberAction: {
+    width: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: BrandColors.warmAmber,
     borderRadius: Radius.medium,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-    marginTop: Spacing.one,
+    margin: Spacing.one,
+    paddingVertical: Spacing.one,
   },
   addButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
   error: { color: '#a6483a', marginTop: Spacing.two },
