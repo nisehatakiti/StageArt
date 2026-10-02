@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -26,6 +27,7 @@ final class CreateParticipantUseCase
     private OrganizationRepositoryInterface $organizations;
     private ProductionAuthorizationService $authorization;
     private TransactionManagerInterface $transactions;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
@@ -33,7 +35,8 @@ final class CreateParticipantUseCase
         PersonRepositoryInterface $people,
         OrganizationRepositoryInterface $organizations,
         ProductionAuthorizationService $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->productions = $productions;
         $this->participants = $participants;
@@ -41,6 +44,7 @@ final class CreateParticipantUseCase
         $this->organizations = $organizations;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     public function execute(CreateParticipantCommand $command): ParticipantResult
@@ -125,11 +129,11 @@ final class CreateParticipantUseCase
             }
         );
 
-        $person = $subjectType->equals(ParticipantSubjectType::person())
-            ? $this->people->findById(PersonId::fromString($command->subjectId))
-            : null;
+        $isPersonSubject = $subjectType->equals(ParticipantSubjectType::person());
+        $person = $isPersonSubject ? $this->people->findById(PersonId::fromString($command->subjectId)) : null;
+        $email = $isPersonSubject ? $this->personEmailResolver->resolve(PersonId::fromString($command->subjectId)) : null;
 
-        return ParticipantResult::fromDomain($participant, $person);
+        return ParticipantResult::fromDomain($participant, $person, $email);
     }
 
     private function assertSubjectExists(ParticipantSubjectType $subjectType, string $subjectId): void

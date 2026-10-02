@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\Participant;
@@ -21,17 +22,20 @@ final class ListParticipantsUseCase
     private ProductionRepositoryInterface $productions;
     private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
         PersonRepositoryInterface $people,
-        ProductionAuthorizationService $authorization
+        ProductionAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
         $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     /**
@@ -73,10 +77,17 @@ final class ListParticipantsUseCase
             }
         }
 
+        /** @var array<string, ?string> $emailsByPersonId */
+        $emailsByPersonId = [];
+        foreach ($personIds as $personId) {
+            $emailsByPersonId[$personId] = $this->personEmailResolver->resolve(PersonId::fromString($personId));
+        }
+
         return array_map(
             fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain(
                 $participant,
-                $peopleById[$participant->subjectId()] ?? null
+                $peopleById[$participant->subjectId()] ?? null,
+                $emailsByPersonId[$participant->subjectId()] ?? null
             ),
             $participants
         );

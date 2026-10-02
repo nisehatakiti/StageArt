@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Tests\Application\Participant;
 
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Participant\CancelParticipantCommand;
 use StageArt\Application\Participant\CancelParticipantUseCase;
@@ -21,6 +22,7 @@ use StageArt\Application\Participant\UpdateParticipantCommand;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Domain\Membership\Membership;
+use StageArt\Domain\Notification\NotificationEmail;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\Person;
@@ -30,13 +32,19 @@ use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\UserAccount\EmailCredential;
+use StageArt\Domain\UserAccount\UserAccount;
+use StageArt\Tests\Support\FakeWordPressUserLookup;
+use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
 final class ParticipantUseCaseTest extends TestCase
 {
@@ -46,6 +54,9 @@ final class ParticipantUseCaseTest extends TestCase
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
     private InMemoryParticipantRepository $participants;
+    private InMemoryUserAccountRepository $userAccounts;
+    private InMemoryEmailCredentialRepository $emailCredentials;
+    private InMemoryNotificationEmailRepository $notificationEmails;
     private CreateParticipantUseCase $createParticipant;
     private GetParticipantUseCase $getParticipant;
     private ListParticipantsUseCase $listParticipants;
@@ -60,12 +71,22 @@ final class ParticipantUseCaseTest extends TestCase
         $this->productions = new InMemoryProductionRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
         $this->participants = new InMemoryParticipantRepository();
+        $this->userAccounts = new InMemoryUserAccountRepository();
+        $this->emailCredentials = new InMemoryEmailCredentialRepository();
+        $this->notificationEmails = new InMemoryNotificationEmailRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
             $this->participants
+        );
+        $personEmailResolver = new PersonEmailResolver(
+            $this->people,
+            $this->userAccounts,
+            $this->emailCredentials,
+            new FakeWordPressUserLookup(),
+            $this->notificationEmails
         );
 
         $this->createParticipant = new CreateParticipantUseCase(
@@ -74,12 +95,28 @@ final class ParticipantUseCaseTest extends TestCase
             $this->people,
             $this->organizations,
             $productionAuthorization,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $personEmailResolver
         );
-        $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
-        $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
-        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
+        $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
+        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
         $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
+    }
+
+    private function givenPersonWithVerifiedEmailCredential(int $wordPressUserId, string $email): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+
+        $userAccount = UserAccount::create($person->id());
+        $this->userAccounts->save($userAccount);
+
+        $credential = EmailCredential::create($userAccount->id(), $email, 'hash');
+        $credential->markEmailVerified();
+        $this->emailCredentials->save($credential);
+
+        return $person;
     }
 
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
@@ -329,6 +366,128 @@ final class ParticipantUseCaseTest extends TestCase
         $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 1, 'STAFF', 'ACTIVE'));
         $this->assertSame('山田', $updated->personFamilyName);
         $this->assertSame('太郎', $updated->personGivenName);
+    }
+
+    /**
+     * StageArt メンバー一覧メールアドレス表示ラウンド: resolved via the
+     * existing PersonEmailResolver (EmailCredential source), on
+     * create/get/list/update - never a new field stored on Participant
+     * itself.
+     */
+    public function test_a_person_participants_email_resolves_from_their_email_credential_on_create_get_list_and_update(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $person = $this->givenPersonWithVerifiedEmailCredential(2, 'cast-member@example.com');
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST'
+        ));
+        $this->assertSame('cast-member@example.com', $created->email);
+
+        $fetched = $this->getParticipant->execute(new GetParticipantQuery($created->id, 1));
+        $this->assertSame('cast-member@example.com', $fetched->email);
+
+        $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 1));
+        $this->assertSame('cast-member@example.com', $listed[0]->email);
+
+        $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 1, 'STAFF', 'ACTIVE'));
+        $this->assertSame('cast-member@example.com', $updated->email);
+    }
+
+    /** §4/既存のメール照合仕様: a verified NotificationEmail is also an
+     * accepted source (the same PersonEmailResolver priority chain
+     * Settings' own notification-email display already uses), even
+     * when the Person has no EmailCredential at all (e.g. Google-only). */
+    public function test_a_person_participants_email_resolves_from_a_verified_notification_email_with_no_credential(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->notificationEmails->save(NotificationEmail::create(
+            $person->id(),
+            'google-notify@example.com',
+            true,
+            NotificationEmail::SOURCE_GOOGLE
+        ));
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST'
+        ));
+
+        $this->assertSame('google-notify@example.com', $created->email);
+    }
+
+    /** §4の絶対条件: an UNVERIFIED NotificationEmail must never be shown
+     * as if it were a confirmed address - with no other source
+     * available, this must resolve to null, not that unverified value. */
+    public function test_a_person_participants_email_is_null_when_only_an_unverified_notification_email_exists(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+        $this->notificationEmails->save(NotificationEmail::create(
+            $person->id(),
+            'unverified@example.com',
+            false,
+            NotificationEmail::SOURCE_GOOGLE
+        ));
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST'
+        ));
+
+        $this->assertNull($created->email);
+    }
+
+    /** No EmailCredential, no NotificationEmail, no real WordPress
+     * user_email - a deliverable address genuinely does not exist
+     * anywhere in StageArt for this Person, and that is not an error. */
+    public function test_a_person_participants_email_is_null_when_no_source_has_one(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $person = Person::create(2);
+        $this->people->save($person);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $person->id()->toString(),
+            'CAST'
+        ));
+
+        $this->assertNull($created->email);
+    }
+
+    public function test_name_only_participants_have_a_null_email(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'NAME_ONLY',
+            null,
+            'CAST',
+            '山田太郎'
+        ));
+
+        $this->assertNull($created->email);
     }
 
     /**

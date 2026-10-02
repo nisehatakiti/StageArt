@@ -12,6 +12,7 @@ use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\RegisterWithEmailCommand;
 use StageArt\Application\Authentication\RegisterWithEmailUseCase;
 use StageArt\Application\Notification\NotificationEmailSeeder;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
@@ -38,6 +39,7 @@ use StageArt\Tests\Support\FakeAccessTokenIssuer;
 use StageArt\Tests\Support\FakeAuthMailer;
 use StageArt\Tests\Support\FakeGoogleIdTokenVerifier;
 use StageArt\Tests\Support\FakeParticipantInvitationMailer;
+use StageArt\Tests\Support\FakeWordPressUserLookup;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
@@ -98,7 +100,14 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             $this->people,
             $this->organizations,
             $productionAuthorization,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new PersonEmailResolver(
+                $this->people,
+                new InMemoryUserAccountRepository(),
+                new InMemoryEmailCredentialRepository(),
+                new FakeWordPressUserLookup(),
+                new InMemoryNotificationEmailRepository()
+            )
         );
         $resolveParticipantInvitation = new ResolveParticipantInvitationUseCase(
             $this->invitations,

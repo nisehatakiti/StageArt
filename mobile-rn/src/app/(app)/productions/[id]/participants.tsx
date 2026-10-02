@@ -652,7 +652,9 @@ function ParticipantEditRow({
         placeholder="備考"
         style={styles.memberRemarksCell}
       />
-      <View style={styles.memberEmailCell} />
+      <ThemedText testID={`participant-email-${participant.id}`} type="small" themeColor="textSecondary" style={styles.memberEmailCell}>
+        {participant.email ?? ''}
+      </ThemedText>
       <View style={styles.memberAddActionCell} />
       {canManageDelegateRoles &&
         DELEGATE_CHECKBOXES.map((checkbox) => {

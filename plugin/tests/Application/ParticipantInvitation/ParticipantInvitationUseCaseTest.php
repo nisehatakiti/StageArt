@@ -7,6 +7,7 @@ namespace StageArt\Tests\Application\ParticipantInvitation;
 use DateInterval;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Participant\CreateParticipantCommand;
 use StageArt\Application\Participant\CreateParticipantUseCase;
@@ -44,6 +45,7 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\UserAccount\EmailCredential;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Tests\Support\FakeParticipantInvitationMailer;
+use StageArt\Tests\Support\FakeWordPressUserLookup;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
@@ -104,7 +106,14 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             $this->people,
             $this->organizations,
             $this->productionAuthorization,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new PersonEmailResolver(
+                $this->people,
+                $this->userAccounts,
+                $this->emailCredentials,
+                new FakeWordPressUserLookup(),
+                new InMemoryNotificationEmailRepository()
+            )
         );
 
         $findPersonByEmail = new FindPersonByEmailUseCase(

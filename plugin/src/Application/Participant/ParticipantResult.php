@@ -30,6 +30,7 @@ final class ParticipantResult
     public ?string $displayName;
     public ?string $personFamilyName;
     public ?string $personGivenName;
+    public ?string $email;
 
     private function __construct(
         string $id,
@@ -43,7 +44,8 @@ final class ParticipantResult
         ?string $remarks,
         ?string $displayName,
         ?string $personFamilyName,
-        ?string $personGivenName
+        ?string $personGivenName,
+        ?string $email = null
     ) {
         $this->id = $id;
         $this->productionId = $productionId;
@@ -57,9 +59,21 @@ final class ParticipantResult
         $this->displayName = $displayName;
         $this->personFamilyName = $personFamilyName;
         $this->personGivenName = $personGivenName;
+        $this->email = $email;
     }
 
-    public static function fromDomain(Participant $participant, ?Person $person = null): self
+    /**
+     * StageArt メンバー一覧メールアドレス表示ラウンド: `$email` is resolved by
+     * the caller via the existing PersonEmailResolver (the same "single
+     * resolution point for both delivery AND display" Settings'
+     * notification-email screen already uses - see that class's own
+     * docblock), never a new field stored on Participant itself. Null
+     * for a NAME_ONLY/ORGANIZATION subject (no Person to resolve), and
+     * also null for a PERSON subject with no deliverable address found
+     * in any of PersonEmailResolver's sources - never a reason to fail
+     * this call.
+     */
+    public static function fromDomain(Participant $participant, ?Person $person = null, ?string $email = null): self
     {
         return new self(
             $participant->id()->toString(),
@@ -73,7 +87,8 @@ final class ParticipantResult
             $participant->remarks(),
             $participant->displayName(),
             $person?->familyName(),
-            $person?->givenName()
+            $person?->givenName(),
+            $email
         );
     }
 
@@ -95,6 +110,7 @@ final class ParticipantResult
             'display_name' => $this->displayName,
             'person_family_name' => $this->personFamilyName,
             'person_given_name' => $this->personGivenName,
+            'email' => $this->email,
         ];
     }
 }

@@ -315,7 +315,8 @@ final class Plugin
             $people,
             $organizations,
             $productionAuthorization,
-            $transactions
+            $transactions,
+            $personEmailResolver
         );
         $resolveParticipantInvitation = new ResolveParticipantInvitationUseCase(
             $participantInvitations,
@@ -537,9 +538,9 @@ final class Plugin
         // $createParticipant itself was moved earlier in this method -
         // see the comment above ResolveParticipantInvitationUseCase's
         // construction for why.
-        $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization);
-        $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization);
-        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization);
+        $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
+        $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
+        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
 
         $searchPersonByEmail = new SearchPersonByEmailUseCase($productions, $productionAuthorization, $findPersonByEmail);

@@ -87,6 +87,7 @@ export const participants: Participant[] = [
     display_name: null,
     person_family_name: null,
     person_given_name: null,
+    email: null,
   },
 ];
 

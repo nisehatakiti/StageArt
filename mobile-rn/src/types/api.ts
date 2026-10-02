@@ -435,6 +435,12 @@ export type Participant = {
   display_name: string | null;
   person_family_name: string | null;
   person_given_name: string | null;
+  /** StageArt メンバー一覧メールアドレス表示ラウンド: resolved server-side via
+   * the existing PersonEmailResolver (EmailCredential / verified
+   * NotificationEmail) - never a field stored on Participant itself.
+   * Null for a NAME_ONLY/ORGANIZATION subject, or a PERSON subject with
+   * no deliverable address found in any trusted source. */
+  email: string | null;
 };
 
 /**

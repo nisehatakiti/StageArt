@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\ParticipantId;
@@ -19,17 +20,20 @@ final class GetParticipantUseCase
     private ProductionRepositoryInterface $productions;
     private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
         PersonRepositoryInterface $people,
-        ProductionAuthorizationService $authorization
+        ProductionAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
         $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     public function execute(GetParticipantQuery $query): ParticipantResult
@@ -58,10 +62,10 @@ final class GetParticipantUseCase
             );
         }
 
-        $person = $participant->subjectType()->equals(ParticipantSubjectType::person())
-            ? $this->people->findById(PersonId::fromString($participant->subjectId()))
-            : null;
+        $isPersonSubject = $participant->subjectType()->equals(ParticipantSubjectType::person());
+        $person = $isPersonSubject ? $this->people->findById(PersonId::fromString($participant->subjectId())) : null;
+        $email = $isPersonSubject ? $this->personEmailResolver->resolve(PersonId::fromString($participant->subjectId())) : null;
 
-        return ParticipantResult::fromDomain($participant, $person);
+        return ParticipantResult::fromDomain($participant, $person, $email);
     }
 }

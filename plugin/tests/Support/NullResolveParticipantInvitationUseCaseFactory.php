@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
@@ -38,7 +39,14 @@ final class NullResolveParticipantInvitationUseCaseFactory
                     new InMemoryProductionDelegateRepository(),
                     new InMemoryParticipantRepository()
                 ),
-                new InMemoryTransactionManager()
+                new InMemoryTransactionManager(),
+                new PersonEmailResolver(
+                    $people,
+                    new InMemoryUserAccountRepository(),
+                    new InMemoryEmailCredentialRepository(),
+                    new FakeWordPressUserLookup(),
+                    new InMemoryNotificationEmailRepository()
+                )
             )
         );
     }
