@@ -444,6 +444,22 @@ export type Participant = {
 };
 
 /**
+ * GET /me/participating-productions: one row per the caller's own
+ * ACTIVE PERSON Participant, joined to its Production - the formal
+ * data source for 「参加している公演・活動」 (ListMyParticipatingProductionsUseCase.php),
+ * replacing the old upcoming_rehearsals-based proxy (MyDashboard's
+ * `upcoming_rehearsals` only reflects Rehearsal attendance, not
+ * Production membership - see participating-productions.tsx history).
+ */
+export type ParticipatingProduction = {
+  participant_id: string;
+  production_id: string;
+  production_name: string;
+  production_slug: string | null;
+  participant_type: string;
+};
+
+/**
  * StageArt メンバー管理: Person ID検索 (担当者権限をメンバー管理へ統合・整理
  * §1/§2-A instruction) - the minimal GET /people/{id} response, just
  * enough to confirm "is this the right person?" before adding them as a

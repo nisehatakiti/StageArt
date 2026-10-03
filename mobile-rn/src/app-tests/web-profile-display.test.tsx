@@ -4,7 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react-native';
 import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
-import { mockFetchRoutes, myDashboardEmpty, orgOne } from './__fixtures__/homeFixtures';
+import { mockFetchRoutes, orgOne } from './__fixtures__/homeFixtures';
 import { ProfileContent } from '../features/person/ProfileContent';
 
 jest.mock('expo-secure-store', () => ({
@@ -39,7 +39,7 @@ jest.mock('expo-router', () => ({
 function renderProfile() {
   mockFetchRoutes([
     { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
-    { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
+    { test: (u) => u.endsWith('/me/participating-productions'), status: 200, body: [] },
   ]);
 
   const queryClient = new QueryClient();

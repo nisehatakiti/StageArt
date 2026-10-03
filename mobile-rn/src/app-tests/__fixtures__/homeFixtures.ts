@@ -1,4 +1,4 @@
-import type { MyDashboard, Organization, Production, Project } from '@/types/api';
+import type { MyDashboard, Organization, ParticipatingProduction, Production, Project } from '@/types/api';
 
 export const orgOne: Organization = {
   id: 'org-1',
@@ -80,6 +80,14 @@ export const productionTwo: Production = {
   is_primary_manager: false,
   delegate_role: 'REHEARSAL_MANAGER',
   delegate_roles: ['REHEARSAL_MANAGER'],
+};
+
+export const participatingProductionOne: ParticipatingProduction = {
+  participant_id: 'participant-1',
+  production_id: 'prod-1',
+  production_name: '踊れチュパカブラ',
+  production_slug: null,
+  participant_type: 'CAST',
 };
 
 export const myDashboardEmpty: MyDashboard = {

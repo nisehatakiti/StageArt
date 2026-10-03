@@ -2,11 +2,10 @@ import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import { dedupeProductions } from '@/app/(app)/participating-productions';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
-import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { useMyParticipatingProductions } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -16,21 +15,24 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * 所属団体一覧/参加公演一覧/参加コード入力). Authentication/security
  * (メールアドレス確認/パスワード/Google連携/Push通知/ログアウト) moved out
  * to `/account` (features/account/AccountContent.tsx) - see this Phase's
- * report for the exact before/after split. Every data hook here is
- * reused unchanged from the pre-existing WebProfileContent.tsx/
- * MyPageContent.tsx (useCurrentPerson, useOrganizations, useMyDashboard/
- * dedupeProductions) - no new Person endpoint.
+ * report for the exact before/after split.
+ *
+ * 参加している公演一覧は GET /me/participating-productions
+ * (useMyParticipatingProductions) が正式なデータソース - 稽古予定
+ * (upcoming_rehearsals) ベースの旧プロキシは ProductionParticipant 自体を
+ * 見ていなかったため、ACTIVEなPERSON Participantが存在しても一覧に出ない
+ * 問題があった (participating-productions.tsx と同じ根本原因・同じ修正)。
  */
 export function ProfileContent() {
   const router = useRouter();
   const currentPersonQuery = useCurrentPerson();
   const organizationsQuery = useOrganizations();
-  const dashboardQuery = useMyDashboard();
+  const participatingProductionsQuery = useMyParticipatingProductions();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const person = currentPersonQuery.data;
   const displayName = person ? [person.family_name, person.given_name].filter(Boolean).join(' ') : '';
-  const participatingProductions = dashboardQuery.data ? dedupeProductions(dashboardQuery.data.upcoming_rehearsals) : [];
+  const participatingProductions = participatingProductionsQuery.data ?? [];
 
   return (
     <View style={styles.container}>
@@ -115,8 +117,8 @@ export function ProfileContent() {
 
       {/* 参加している公演 */}
       <SectionCard title="参加している公演" testID="profile-productions">
-        {dashboardQuery.isLoading && <ActivityIndicator testID="profile-productions-loading" />}
-        {!dashboardQuery.isLoading && participatingProductions.length === 0 && (
+        {participatingProductionsQuery.isLoading && <ActivityIndicator testID="profile-productions-loading" />}
+        {!participatingProductionsQuery.isLoading && participatingProductions.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" testID="profile-productions-empty">
             参加している公演・活動はありません。
           </ThemedText>
@@ -125,12 +127,12 @@ export function ProfileContent() {
           <View style={styles.list} testID="profile-productions-list">
             {participatingProductions.map((production) => (
               <TouchableOpacity
-                key={production.productionId}
-                testID={`profile-production-${production.productionId}`}
+                key={production.production_id}
+                testID={`profile-production-${production.production_id}`}
                 style={styles.itemRow}
-                onPress={() => router.push(`/production/${production.productionId}/schedule` as Href)}
+                onPress={() => router.push(`/production/${production.production_id}/schedule` as Href)}
               >
-                <ThemedText type="smallBold">{production.productionName}</ThemedText>
+                <ThemedText type="smallBold">{production.production_name}</ThemedText>
               </TouchableOpacity>
             ))}
           </View>

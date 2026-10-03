@@ -70,6 +70,7 @@ use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use StageArt\Application\Participant\CancelParticipantUseCase;
 use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\Participant\GetParticipantUseCase;
+use StageArt\Application\Participant\ListMyParticipatingProductionsUseCase;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
 use StageArt\Application\Production\ActivateProductionUseCase;
@@ -699,6 +700,7 @@ final class Plugin
             $organizations,
             $productionAuthorization
         );
+        $listMyParticipatingProductions = new ListMyParticipatingProductionsUseCase($participants, $productions, $productionAuthorization);
         $getPushPreference = new GetPushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $updatePushPreference = new UpdatePushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
@@ -873,7 +875,7 @@ final class Plugin
 
         $pushPreferenceRestController = new PushPreferenceRestController($getPushPreference, $updatePushPreference);
 
-        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
+        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows, $listMyParticipatingProductions);
 
         $personRestController = new PersonRestController($getPersonById, $searchPersonByEmail);
 

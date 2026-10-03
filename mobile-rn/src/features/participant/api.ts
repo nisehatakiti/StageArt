@@ -1,5 +1,5 @@
 import type { ApiClient } from '@/api/client';
-import type { Participant } from '@/types/api';
+import type { Participant, ParticipatingProduction } from '@/types/api';
 
 /**
  * StageArt Web版 公演管理 Phase: no `features/participant/` layer
@@ -13,6 +13,17 @@ import type { Participant } from '@/types/api';
  */
 export function fetchParticipants(client: ApiClient, productionId: string): Promise<Participant[]> {
   return client.get<Participant[]>(`/productions/${productionId}/participants`);
+}
+
+/**
+ * GET /me/participating-productions: the caller's own ACTIVE PERSON
+ * Participant rows, each joined to its Production
+ * (ListMyParticipatingProductionsUseCase.php) - the formal data source
+ * for 「参加している公演・活動」, replacing the old upcoming_rehearsals-based
+ * proxy (see participating-productions.tsx).
+ */
+export function fetchMyParticipatingProductions(client: ApiClient): Promise<ParticipatingProduction[]> {
+  return client.get<ParticipatingProduction[]>('/me/participating-productions');
 }
 
 export function cancelParticipant(client: ApiClient, participantId: string): Promise<void> {

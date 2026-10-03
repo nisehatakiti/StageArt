@@ -7,6 +7,9 @@ namespace StageArt\Presentation\Rest;
 use InvalidArgumentException;
 use StageArt\Application\Follow\ListMyFollowsQuery;
 use StageArt\Application\Follow\ListMyFollowsUseCase;
+use StageArt\Application\Participant\ListMyParticipatingProductionsQuery;
+use StageArt\Application\Participant\ListMyParticipatingProductionsUseCase;
+use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Person\CurrentPersonNotFoundException;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
 use StageArt\Application\Person\UpdatePersonNameCommand;
@@ -22,15 +25,18 @@ final class MeRestController
     private GetCurrentPersonUseCase $getCurrentPerson;
     private UpdatePersonNameUseCase $updatePersonName;
     private ListMyFollowsUseCase $listMyFollows;
+    private ListMyParticipatingProductionsUseCase $listMyParticipatingProductions;
 
     public function __construct(
         GetCurrentPersonUseCase $getCurrentPerson,
         UpdatePersonNameUseCase $updatePersonName,
-        ListMyFollowsUseCase $listMyFollows
+        ListMyFollowsUseCase $listMyFollows,
+        ListMyParticipatingProductionsUseCase $listMyParticipatingProductions
     ) {
         $this->getCurrentPerson = $getCurrentPerson;
         $this->updatePersonName = $updatePersonName;
         $this->listMyFollows = $listMyFollows;
+        $this->listMyParticipatingProductions = $listMyParticipatingProductions;
     }
 
     public function register_routes(): void
@@ -59,6 +65,14 @@ final class MeRestController
             [
                 'methods' => 'GET',
                 'callback' => [$this, 'listMyFollows'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/me/participating-productions', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listMyParticipatingProductions'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -109,5 +123,25 @@ final class MeRestController
             array_map(static fn ($result) => $result->toArray(), $results),
             200
         );
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listMyParticipatingProductions(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListMyParticipatingProductionsQuery(get_current_user_id());
+
+            return new WP_REST_Response(
+                array_map(
+                    static fn ($result) => $result->toArray(),
+                    $this->listMyParticipatingProductions->execute($query)
+                ),
+                200
+            );
+        } catch (ParticipantAccessDeniedException $exception) {
+            return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
+        }
     }
 }

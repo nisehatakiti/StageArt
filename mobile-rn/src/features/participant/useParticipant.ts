@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { cancelParticipant, createNameOnlyParticipant, createPersonParticipant, fetchParticipants, updateParticipant } from './api';
+import {
+  cancelParticipant,
+  createNameOnlyParticipant,
+  createPersonParticipant,
+  fetchMyParticipatingProductions,
+  fetchParticipants,
+  updateParticipant,
+} from './api';
 
 export function useParticipants(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -11,6 +18,17 @@ export function useParticipants(productionId: string | undefined) {
     queryKey: ['participants', productionId],
     queryFn: () => fetchParticipants(apiClient, productionId as string),
     enabled: status === 'authenticated' && !!productionId,
+  });
+}
+
+/** 「参加している公演・活動」の正式なデータソース - see fetchMyParticipatingProductions()'s own docblock. */
+export function useMyParticipatingProductions() {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['my-participating-productions'],
+    queryFn: () => fetchMyParticipatingProductions(apiClient),
+    enabled: status === 'authenticated',
   });
 }
 
