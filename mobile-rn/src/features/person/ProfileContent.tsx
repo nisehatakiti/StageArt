@@ -22,6 +22,11 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * (upcoming_rehearsals) ベースの旧プロキシは ProductionParticipant 自体を
  * 見ていなかったため、ACTIVEなPERSON Participantが存在しても一覧に出ない
  * 問題があった (participating-productions.tsx と同じ根本原因・同じ修正)。
+ *
+ * 行タップ時の遷移先は `/production/{id}/overview`（参加者向け公演概要
+ * ダッシュボード）- `/production/{id}/schedule` はProduction管理Context
+ * の「稽古管理」導線も兼ねており、管理操作を参加者に見せてしまうため
+ * (participating-productions.tsx と同じ修正、overview.tsx 参照)。
  */
 export function ProfileContent() {
   const router = useRouter();
@@ -130,7 +135,7 @@ export function ProfileContent() {
                 key={production.production_id}
                 testID={`profile-production-${production.production_id}`}
                 style={styles.itemRow}
-                onPress={() => router.push(`/production/${production.production_id}/schedule` as Href)}
+                onPress={() => router.push(`/production/${production.production_id}/overview` as Href)}
               >
                 <ThemedText type="smallBold">{production.production_name}</ThemedText>
               </TouchableOpacity>

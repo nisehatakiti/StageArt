@@ -17,6 +17,8 @@ use StageArt\Application\Production\CompleteProductionCommand;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\CreateProductionCommand;
 use StageArt\Application\Production\CreateProductionUseCase;
+use StageArt\Application\Production\GetProductionOverviewQuery;
+use StageArt\Application\Production\GetProductionOverviewUseCase;
 use StageArt\Application\Production\GetProductionQuery;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\GetPublicProductionBySlugQuery;
@@ -49,6 +51,7 @@ final class ProductionRestController
 
     private CreateProductionUseCase $createProduction;
     private GetProductionUseCase $getProduction;
+    private GetProductionOverviewUseCase $getProductionOverview;
     private GetPublicProductionBySlugUseCase $getPublicProductionBySlug;
     private ListProductionsUseCase $listProductions;
     private UpdateProductionUseCase $updateProduction;
@@ -62,6 +65,7 @@ final class ProductionRestController
     public function __construct(
         CreateProductionUseCase $createProduction,
         GetProductionUseCase $getProduction,
+        GetProductionOverviewUseCase $getProductionOverview,
         GetPublicProductionBySlugUseCase $getPublicProductionBySlug,
         ListProductionsUseCase $listProductions,
         UpdateProductionUseCase $updateProduction,
@@ -74,6 +78,7 @@ final class ProductionRestController
     ) {
         $this->createProduction = $createProduction;
         $this->getProduction = $getProduction;
+        $this->getProductionOverview = $getProductionOverview;
         $this->getPublicProductionBySlug = $getPublicProductionBySlug;
         $this->listProductions = $listProductions;
         $this->updateProduction = $updateProduction;
@@ -125,6 +130,14 @@ final class ProductionRestController
             [
                 'methods' => 'PUT',
                 'callback' => [$this, 'update'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/overview', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'getOverview'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -230,6 +243,30 @@ final class ProductionRestController
             $query = new GetProductionQuery((string) $request->get_param('id'), get_current_user_id());
 
             return new WP_REST_Response($this->getProduction->execute($query)->toArray(), 200);
+        } catch (ProductionAccessDeniedException $exception) {
+            return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * 参加者向け「公演概要ダッシュボード」instruction: isProductionMember-gated
+     * counterpart to get() above (canReadProduction-gated) - see
+     * GetProductionOverviewUseCase's own docblock for why this is a
+     * separate Use Case/endpoint rather than widening get()'s own
+     * authorization.
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function getOverview(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetProductionOverviewQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->getProductionOverview->execute($query)->toArray(), 200);
         } catch (ProductionAccessDeniedException $exception) {
             return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {

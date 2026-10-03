@@ -4,7 +4,15 @@ import { useMemo } from 'react';
 import { useAuth } from '@/auth/AuthContext';
 import { fetchProjects } from '@/features/organization/api';
 
-import { activateProduction, archiveProduction, cancelProduction, completeProduction, fetchProduction, fetchProductions } from './api';
+import {
+  activateProduction,
+  archiveProduction,
+  cancelProduction,
+  completeProduction,
+  fetchProduction,
+  fetchProductionOverview,
+  fetchProductions,
+} from './api';
 
 /**
  * Organization-scoped Production list.
@@ -87,6 +95,17 @@ export function useProduction(id: string | undefined) {
   return useQuery({
     queryKey: ['production', id],
     queryFn: () => fetchProduction(apiClient, id as string),
+    enabled: status === 'authenticated' && !!id,
+  });
+}
+
+/** 参加者向け「公演概要ダッシュボード」- see fetchProductionOverview()'s own docblock. */
+export function useProductionOverview(id: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['production-overview', id],
+    queryFn: () => fetchProductionOverview(apiClient, id as string),
     enabled: status === 'authenticated' && !!id,
   });
 }

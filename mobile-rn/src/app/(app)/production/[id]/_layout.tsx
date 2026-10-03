@@ -31,6 +31,17 @@ import { useProduction } from '@/features/production/useProductions';
  * an explicit testID keeps §24's "Production → Homeへ戻る" test
  * deterministic rather than exercising native chrome.
  *
+ * 参加者向け「公演概要ダッシュボード」instruction: "overview" (概要) is
+ * declared LAST, not first - `<Tabs>` defaults to `backBehavior:
+ * 'initialRoute'` (the FIRST declared Tabs.Screen), and every existing
+ * entry point into this Shell (Home's Production card, Organization's
+ * Production list, the Web Management sidebar's「稽古管理」, etc.) still
+ * navigates straight to "schedule" - empirically confirmed that
+ * declaring "overview" first breaks "← Home" (it would first jump to
+ * "overview" instead of leaving the Shell; home-to-production.test.tsx
+ * catches this). Only "参加している公演・活動"/Profile's own link targets
+ * `/production/{id}/overview` directly, so it never depends on tab order.
+ *
  * Phase 7.1 (ProductionTitleHeadingPolicy.md, explicitly names
  * "Mobile設計"): when `title_heading` is set, it renders above the
  * Production Title, never concatenated into it ("公演肩書は公演タイトルの
@@ -75,6 +86,7 @@ export default function ProductionShellLayout() {
         <Tabs.Screen name="notifications" options={{ title: 'お知らせ' }} />
         <Tabs.Screen name="accounting" options={{ title: '会計' }} />
         <Tabs.Screen name="mypage" options={{ title: 'マイページ' }} />
+        <Tabs.Screen name="overview" options={{ title: '概要' }} />
       </Tabs>
     </View>
   );

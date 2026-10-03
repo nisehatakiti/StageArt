@@ -79,6 +79,7 @@ use StageArt\Application\Production\CancelProductionUseCase;
 use StageArt\Application\Production\ChangePrimaryManagerUseCase;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\CreateProductionUseCase;
+use StageArt\Application\Production\GetProductionOverviewUseCase;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsUseCase;
@@ -501,6 +502,7 @@ final class Plugin
             $transactions
         );
         $getProduction = new GetProductionUseCase($productions, $productionAuthorization);
+        $getProductionOverview = new GetProductionOverviewUseCase($productions, $productionAuthorization);
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
         $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
@@ -822,6 +824,7 @@ final class Plugin
         $productionRestController = new ProductionRestController(
             $createProduction,
             $getProduction,
+            $getProductionOverview,
             $getPublicProductionBySlug,
             $listProductions,
             $updateProduction,

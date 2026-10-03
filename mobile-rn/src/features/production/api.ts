@@ -23,6 +23,19 @@ export function fetchProduction(client: ApiClient, id: string): Promise<Producti
 }
 
 /**
+ * 参加者向け「公演概要ダッシュボード」instruction: GET /productions/{id}/overview
+ * (GetProductionOverviewUseCase.php) - the isProductionMember-gated
+ * counterpart to fetchProduction() above. fetchProduction()'s own
+ * endpoint (canReadProduction: PrimaryManager/active Delegate only) 403s
+ * for an ordinary ACTIVE Person-Participant, so the 概要 screen (which
+ * must work for every Participant, not just managers) uses this instead.
+ * Returns the identical `Production` shape - same fields, same type.
+ */
+export function fetchProductionOverview(client: ApiClient, id: string): Promise<Production> {
+  return client.get<Production>(`/productions/${id}/overview`);
+}
+
+/**
  * StageArt Web First Phase 2: `primaryManagerPersonId` is always the
  * caller's own Person ID in the onboarding flow (the Organization Owner
  * who just created the Production - see CreateProductionUseCase's
