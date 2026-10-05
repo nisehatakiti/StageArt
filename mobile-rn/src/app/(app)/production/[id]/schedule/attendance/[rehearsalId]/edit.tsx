@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
+import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
 import { useRehearsal, useUpdateRehearsal } from '@/features/attendance/useRehearsals';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -124,14 +125,13 @@ export default function EditRehearsalScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             日付（YYYY-MM-DD）
           </ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="date"
             testID="rehearsal-edit-date"
             placeholder="2026-09-10"
             value={date}
             onChangeText={setDate}
-            autoCapitalize="none"
             editable={!isDateLocked}
-            style={[styles.input, isDateLocked && styles.inputDisabled]}
           />
           {isDateLocked && (
             <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-edit-date-locked-caption" style={styles.caption}>
@@ -142,25 +142,23 @@ export default function EditRehearsalScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             開始時刻（HH:mm）
           </ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="time"
             testID="rehearsal-edit-time"
             placeholder="18:00"
             value={time}
             onChangeText={setTime}
-            autoCapitalize="none"
-            style={styles.input}
           />
 
           <ThemedText type="small" themeColor="textSecondary">
             終了時刻（HH:mm）
           </ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="time"
             testID="rehearsal-edit-end-time"
             placeholder="20:00"
             value={endTime}
             onChangeText={setEndTime}
-            autoCapitalize="none"
-            style={styles.input}
           />
 
           <ThemedText type="small" themeColor="textSecondary">
@@ -177,25 +175,23 @@ export default function EditRehearsalScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             回答期限（任意・YYYY-MM-DD）
           </ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="date"
             testID="rehearsal-edit-deadline-date"
             placeholder="2026-09-19"
             value={deadlineDate}
             onChangeText={setDeadlineDate}
-            autoCapitalize="none"
-            style={styles.input}
           />
 
           <ThemedText type="small" themeColor="textSecondary">
             回答期限の時刻（HH:mm）
           </ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="time"
             testID="rehearsal-edit-deadline-time"
             placeholder="18:00"
             value={deadlineTime}
             onChangeText={setDeadlineTime}
-            autoCapitalize="none"
-            style={styles.input}
           />
 
           {updateRehearsal.isError && <ThemedText style={styles.error}>{getErrorMessage(updateRehearsal.error)}</ThemedText>}
