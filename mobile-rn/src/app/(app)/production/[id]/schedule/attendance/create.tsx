@@ -34,7 +34,7 @@ export default function CreateRehearsalScreen() {
   const participantsQuery = useParticipants(productionId);
   const currentPersonQuery = useCurrentPerson();
 
-  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -111,7 +111,8 @@ export default function CreateRehearsalScreen() {
     const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
 
     const rehearsal = await createRehearsal.mutateAsync({
-      title: title.trim(),
+      title: null,
+      description: description.trim() || null,
       startDateTime,
       endDateTime,
       timezone: 'Asia/Tokyo',
@@ -145,13 +146,15 @@ export default function CreateRehearsalScreen() {
         <View style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>基本情報</ThemedText>
 
-          <ThemedText type="small" themeColor="textSecondary">稽古名</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">備考</ThemedText>
           <ThemedTextInput
-            testID="rehearsal-create-title"
-            placeholder="例：通し稽古"
-            value={title}
-            onChangeText={setTitle}
-            style={styles.input}
+            testID="rehearsal-create-description"
+            placeholder="例：通し稽古／発声練習／台本○ページ。持ち物：台本、衣装、筆記用具"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            textAlignVertical="top"
+            style={[styles.input, styles.textarea]}
           />
 
           <ThemedText type="small" themeColor="textSecondary">ステータス</ThemedText>
@@ -333,8 +336,8 @@ export default function CreateRehearsalScreen() {
         <TouchableOpacity
           testID="rehearsal-create-submit"
           onPress={handleSubmit}
-          disabled={!title.trim() || createRehearsal.isPending || isConfirming}
-          style={[styles.button, (!title.trim() || createRehearsal.isPending || isConfirming) && styles.buttonDisabled]}
+          disabled={createRehearsal.isPending || isConfirming}
+          style={[styles.button, (createRehearsal.isPending || isConfirming) && styles.buttonDisabled]}
         >
           {createRehearsal.isPending || isConfirming ? (
             <ActivityIndicator color="#fff" />
@@ -370,6 +373,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.one,
     minHeight: 44,
   },
+  textarea: { minHeight: 100, paddingTop: Spacing.two },
   fieldRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   fieldHalf: { flex: 1, minWidth: 240 },
   helperText: { lineHeight: 18 },
