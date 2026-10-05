@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, type ChangeEvent } from 'react';
 import { Platform, StyleSheet, TextInput, type TextInputProps } from 'react-native';
 
 type DateTimeInputProps = Pick<TextInputProps, 'value' | 'onChangeText' | 'placeholder' | 'editable' | 'testID'> & {
@@ -10,7 +10,7 @@ export function DateTimeInput({ mode, value, onChangeText, placeholder, editable
     return createElement('input', {
       type: mode,
       value: value ?? '',
-      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      onChange: (event: ChangeEvent<HTMLInputElement>) => onChangeText?.(event.target.value),
       disabled: !editable,
       placeholder,
       'data-testid': testID,
