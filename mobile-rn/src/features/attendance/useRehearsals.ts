@@ -39,7 +39,8 @@ export function useCreateRehearsal(productionId: string | undefined) {
 
   return useMutation({
     mutationFn: (fields: {
-      title: string;
+      title?: string | null;
+      description?: string | null;
       startDateTime?: string;
       endDateTime?: string;
       timezone?: string;
