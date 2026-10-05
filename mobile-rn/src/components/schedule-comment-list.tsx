@@ -86,11 +86,7 @@ export function ScheduleCommentList({
   }
 
   if (!comments || comments.length === 0) {
-    return (
-      <ThemedView style={styles.centered}>
-        <ThemedText testID="comments-empty">まだコメントはありません。</ThemedText>
-      </ThemedView>
-    );
+    return null;
   }
 
   return (
