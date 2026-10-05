@@ -34,6 +34,7 @@ export function ScheduleCommentList({
   isError,
   error,
   comments,
+  authorNameByPersonId,
   onEdit,
   onDelete,
   editingCommentId,
@@ -51,6 +52,7 @@ export function ScheduleCommentList({
   isError: boolean;
   error: unknown;
   comments: ScheduleComment[] | undefined;
+  authorNameByPersonId?: Map<string, string>;
   onEdit?: (comment: ScheduleComment) => void;
   onDelete?: (comment: ScheduleComment) => void;
   editingCommentId?: string | null;
@@ -134,7 +136,7 @@ export function ScheduleCommentList({
               <>
                 <ThemedText type="default">{comment.body}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {comment.author_person_id} ・ {formatDateTime(comment.created_at)}
+                  {authorNameByPersonId?.get(comment.author_person_id) ?? '名前未設定'} ・ {formatDateTime(comment.created_at)}
                 </ThemedText>
               </>
             )}
