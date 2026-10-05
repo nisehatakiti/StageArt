@@ -44,7 +44,7 @@ export default function RehearsalListScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ThemedText type="title" style={styles.title}>
-        出欠
+        稽古一覧
       </ThemedText>
 
       {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」 - 権限
@@ -90,8 +90,7 @@ export default function RehearsalListScreen() {
               style={styles.row}
               onPress={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsal.id}`)}
             >
-              <ThemedText type="smallBold">{rehearsalStatusLabel(rehearsal.status)}</ThemedText>
-              <ThemedText type="small" testID={`rehearsal-status-${rehearsal.id}`}>
+              <ThemedText type="smallBold" testID={`rehearsal-status-${rehearsal.id}`}>
                 {rehearsalStatusLabel(rehearsal.status)}
               </ThemedText>
               {rehearsal.start_date_time && (
