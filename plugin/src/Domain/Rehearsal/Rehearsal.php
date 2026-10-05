@@ -86,12 +86,24 @@ final class Rehearsal
         $this->updatedAt = $updatedAt;
     }
 
+    /**
+     * StageArt 稽古管理ステータス自動同期 instruction: start/end date-time
+     * are now required (docs/20-RehearsalManagementScreen.md §4's own
+     * Rehearsal Information table already marked both "必須", but no code
+     * path enforced it before this round - confirmed with the user as
+     * the resolution for CONFIRMED->ACTIVE/ACTIVE->COMPLETED time-based
+     * sync needing an unambiguous instant to compare "now" against).
+     * Enforced here and in updateBasicInfo() only - never in
+     * reconstitute(), which must keep hydrating any already-persisted
+     * row (including a historical null one) without throwing; this is a
+     * forward validation rule, not a retroactive data migration.
+     */
     public static function create(
         ProductionId $productionId,
         ?string $title,
         ?string $description,
-        ?DateTimeImmutable $startDateTime,
-        ?DateTimeImmutable $endDateTime,
+        DateTimeImmutable $startDateTime,
+        DateTimeImmutable $endDateTime,
         ?string $timezone,
         ?string $location,
         ?DateTimeImmutable $responseDeadline = null
@@ -150,8 +162,8 @@ final class Rehearsal
     public function updateBasicInfo(
         ?string $title,
         ?string $description,
-        ?DateTimeImmutable $startDateTime,
-        ?DateTimeImmutable $endDateTime,
+        DateTimeImmutable $startDateTime,
+        DateTimeImmutable $endDateTime,
         ?string $timezone,
         ?string $location
     ): void {

@@ -95,8 +95,8 @@ final class CreateRehearsalUseCase
             );
         }
 
-        $startDateTime = $this->parseOptionalDateTime($command->startDateTime);
-        $endDateTime = $this->parseOptionalDateTime($command->endDateTime);
+        $startDateTime = $this->parseRequiredDateTime($command->startDateTime, 'start date/time');
+        $endDateTime = $this->parseRequiredDateTime($command->endDateTime, 'end date/time');
         $responseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
 
         $activeMemberIdStrings = array_map(
@@ -147,6 +147,26 @@ final class CreateRehearsalUseCase
     {
         if ($value === null || $value === '') {
             return null;
+        }
+
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Exception $exception) {
+            throw new InvalidArgumentException("Invalid date/time value: {$value}");
+        }
+    }
+
+    /**
+     * StageArt 稽古管理ステータス自動同期 instruction: Rehearsal's start/end
+     * are now required (see Rehearsal::create()'s own docblock) - a
+     * missing or unparseable value is rejected here, before the Domain
+     * layer's own non-nullable parameter type would otherwise surface it
+     * as an uncaught TypeError instead of a clean InvalidArgumentException.
+     */
+    private function parseRequiredDateTime(?string $value, string $fieldName): DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            throw new InvalidArgumentException("Rehearsal {$fieldName} is required.");
         }
 
         try {

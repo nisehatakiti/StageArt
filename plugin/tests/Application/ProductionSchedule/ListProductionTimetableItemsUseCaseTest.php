@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\ProductionSchedule;
 
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -165,7 +166,15 @@ final class ListProductionTimetableItemsUseCaseTest extends TestCase
 
     private function givenRehearsal(Production $production, string $title): Rehearsal
     {
-        $rehearsal = Rehearsal::create($production->id(), $title, null, null, null, null, null);
+        $rehearsal = Rehearsal::create(
+            $production->id(),
+            $title,
+            null,
+            new DateTimeImmutable('2099-01-01 18:00'),
+            new DateTimeImmutable('2099-01-01 20:00'),
+            null,
+            null
+        );
         $this->rehearsals->save($rehearsal);
 
         return $rehearsal;

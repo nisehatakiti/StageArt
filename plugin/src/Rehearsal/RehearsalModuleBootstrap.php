@@ -16,6 +16,7 @@ use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
 use StageArt\Application\Rehearsal\RehearsalReminderSchedulerInterface;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Application\Rehearsal\SendRehearsalReminderUseCase;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
 use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
@@ -136,6 +137,7 @@ final class RehearsalModuleBootstrap
         $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $timetableItemTargetValidator = new TimetableItemTargetValidator($membership);
         $reminderDispatcher = new RehearsalReminderDispatcher($rehearsalAttendances, $productionContext, $notification);
+        $statusTimeSync = new RehearsalStatusTimeSync($rehearsals);
 
         $createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -148,8 +150,8 @@ final class RehearsalModuleBootstrap
             $authorization,
             $transactions
         );
-        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership);
-        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership);
+        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
+        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
         $updateRehearsal = new UpdateRehearsalUseCase(
             $rehearsals,
             $productionContext,
@@ -157,7 +159,8 @@ final class RehearsalModuleBootstrap
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
         $confirmRehearsal = new ConfirmRehearsalUseCase(
             $rehearsals,
@@ -166,7 +169,8 @@ final class RehearsalModuleBootstrap
             $membership,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
         $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
         $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
@@ -178,7 +182,8 @@ final class RehearsalModuleBootstrap
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
 
         $this->sendRehearsalReminder = new SendRehearsalReminderUseCase($rehearsals, $reminderDispatcher, $transactions);
@@ -188,22 +193,25 @@ final class RehearsalModuleBootstrap
             $rehearsals,
             $productionContext,
             $identity,
-            $membership
+            $membership,
+            $statusTimeSync
         );
         $getRehearsalAttendance = new GetRehearsalAttendanceUseCase(
             $rehearsalAttendances,
             $rehearsals,
             $productionContext,
             $identity,
-            $membership
+            $membership,
+            $statusTimeSync
         );
-        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $rehearsals, $identity);
+        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $rehearsals, $identity, $statusTimeSync);
         $recordActualRehearsalAttendanceStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $rehearsalAttendances,
             $rehearsals,
             $productionContext,
             $identity,
-            $authorization
+            $authorization,
+            $statusTimeSync
         );
         $addRehearsalAttendanceTargets = new AddRehearsalAttendanceTargetsUseCase(
             $rehearsalAttendances,
@@ -212,7 +220,8 @@ final class RehearsalModuleBootstrap
             $membership,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
 
         $createScheduleComment = new CreateScheduleCommentUseCase(

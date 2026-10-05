@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
@@ -75,6 +76,7 @@ final class AddRehearsalAttendanceTargetsUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
@@ -83,7 +85,8 @@ final class AddRehearsalAttendanceTargetsUseCase
         MembershipContract $membership,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
@@ -92,6 +95,7 @@ final class AddRehearsalAttendanceTargetsUseCase
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     /**
@@ -123,6 +127,8 @@ final class AddRehearsalAttendanceTargetsUseCase
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can add Rehearsal Attendance targets.'
             );
         }
+
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         $this->guardTargetAdditionAllowed($rehearsal);
 

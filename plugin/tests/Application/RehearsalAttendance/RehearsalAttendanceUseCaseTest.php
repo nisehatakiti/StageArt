@@ -14,6 +14,7 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
@@ -101,6 +102,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
         $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
         $reminderScheduler = new InMemoryRehearsalReminderScheduler();
+        $statusTimeSync = new RehearsalStatusTimeSync($this->rehearsals);
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -120,29 +122,33 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
         $this->listAttendances = new ListRehearsalAttendancesUseCase(
             $this->attendances,
             $this->rehearsals,
             $productionContext,
             $identity,
-            $memberResolver
+            $memberResolver,
+            $statusTimeSync
         );
         $this->getAttendance = new GetRehearsalAttendanceUseCase(
             $this->attendances,
             $this->rehearsals,
             $productionContext,
             $identity,
-            $memberResolver
+            $memberResolver,
+            $statusTimeSync
         );
-        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $this->rehearsals, $identity);
+        $this->respondAttendance = new RespondRehearsalAttendanceUseCase($this->attendances, $this->rehearsals, $identity, $statusTimeSync);
         $this->recordActualStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $this->attendances,
             $this->rehearsals,
             $productionContext,
             $identity,
-            $authorization
+            $authorization,
+            $statusTimeSync
         );
         $this->addTargets = new AddRehearsalAttendanceTargetsUseCase(
             $this->attendances,
@@ -151,7 +157,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
     }
 
@@ -198,9 +205,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -223,9 +230,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -252,9 +259,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -286,9 +293,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$memberTwo->id()->toString(), $memberThree->id()->toString()]
         ));
@@ -316,9 +323,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -351,9 +358,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -379,9 +386,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -403,9 +410,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -442,9 +449,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -463,9 +470,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -496,9 +503,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -531,9 +538,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -560,9 +567,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -590,9 +597,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -618,9 +625,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -647,9 +654,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -675,9 +682,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -700,9 +707,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -744,9 +751,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -772,9 +779,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -804,9 +811,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -832,9 +839,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -860,9 +867,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -891,9 +898,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));

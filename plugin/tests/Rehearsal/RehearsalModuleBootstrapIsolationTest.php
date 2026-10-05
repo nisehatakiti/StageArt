@@ -91,9 +91,9 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             1,
             'Run-through',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$this->phantomMember->toString()]
         ));

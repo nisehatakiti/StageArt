@@ -56,6 +56,7 @@ final class ConfirmRehearsalUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -64,7 +65,8 @@ final class ConfirmRehearsalUseCase
         MembershipContract $membership,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
@@ -73,6 +75,7 @@ final class ConfirmRehearsalUseCase
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(ConfirmRehearsalCommand $command): RehearsalResult
@@ -101,6 +104,13 @@ final class ConfirmRehearsalUseCase
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can confirm this Rehearsal.'
             );
         }
+
+        // A no-op in practice: sync() only acts on CONFIRMED/ACTIVE, and
+        // $rehearsal->confirm() below requires SCHEDULED - included for
+        // the same "every Rehearsal read/write path syncs" consistency
+        // as the other UseCases, not because confirming a Rehearsal can
+        // itself trigger a transition.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         $phase = RehearsalAttendancePhase::attendanceConfirmation();
 

@@ -244,9 +244,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -272,9 +272,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -292,9 +292,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -317,9 +317,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -342,9 +342,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -384,9 +384,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -409,9 +409,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -441,9 +441,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -470,9 +470,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -503,9 +503,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -532,9 +532,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 

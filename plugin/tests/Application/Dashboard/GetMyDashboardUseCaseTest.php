@@ -16,6 +16,7 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
@@ -103,6 +104,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
         $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
         $reminderScheduler = new InMemoryRehearsalReminderScheduler();
+        $statusTimeSync = new RehearsalStatusTimeSync($this->rehearsals);
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -122,7 +124,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
 
         $upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(
@@ -198,13 +201,15 @@ final class GetMyDashboardUseCaseTest extends TestCase
         string $startDateTime,
         array $targetPersonIds = []
     ): RehearsalId {
+        $endDateTime = (new DateTimeImmutable($startDateTime))->modify('+2 hours')->format(DATE_ATOM);
+
         $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             $creatorWordPressUserId,
             'Rehearsal',
             null,
             $startDateTime,
-            null,
+            $endDateTime,
             null,
             'Studio A',
             $targetPersonIds

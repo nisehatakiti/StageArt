@@ -22,17 +22,20 @@ final class ListRehearsalsUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private MembershipContract $membership;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        MembershipContract $membership
+        MembershipContract $membership,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->membership = $membership;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     /**
@@ -57,9 +60,11 @@ final class ListRehearsalsUseCase
             throw new RehearsalAccessDeniedException('You must be a member of this Production to view its Rehearsals.');
         }
 
+        $rehearsals = $this->statusTimeSync->syncAll($this->rehearsals->findByProductionId($productionId));
+
         return array_map(
             static fn ($rehearsal) => RehearsalResult::fromDomain($rehearsal),
-            $this->rehearsals->findByProductionId($productionId)
+            $rehearsals
         );
     }
 }

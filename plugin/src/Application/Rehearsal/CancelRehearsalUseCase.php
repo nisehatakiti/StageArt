@@ -42,6 +42,7 @@ final class CancelRehearsalUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -51,7 +52,8 @@ final class CancelRehearsalUseCase
         RehearsalReminderSchedulerInterface $reminderScheduler,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->rehearsals = $rehearsals;
         $this->attendances = $attendances;
@@ -61,6 +63,7 @@ final class CancelRehearsalUseCase
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(CancelRehearsalCommand $command): RehearsalResult
@@ -89,6 +92,14 @@ final class CancelRehearsalUseCase
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can cancel this Rehearsal.'
             );
         }
+
+        // If this Rehearsal's end date/time has already passed, syncing
+        // first (CONFIRMED->ACTIVE->COMPLETED as needed) means cancel()
+        // below correctly rejects cancelling an already-COMPLETED
+        // Rehearsal (isTerminal()) instead of cancelling a DB row that
+        // was still stale-CONFIRMED/ACTIVE only because nothing had
+        // triggered a sync yet.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         $this->transactions->run(function () use ($rehearsal, $production): void {
             $rehearsal->cancel();

@@ -7,6 +7,7 @@ namespace StageArt\Application\RehearsalAttendance;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
@@ -49,15 +50,18 @@ final class RespondRehearsalAttendanceUseCase
     private RehearsalAttendanceRepositoryInterface $attendances;
     private RehearsalRepositoryInterface $rehearsals;
     private IdentityContract $identity;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
         RehearsalRepositoryInterface $rehearsals,
-        IdentityContract $identity
+        IdentityContract $identity,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
         $this->identity = $identity;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(RespondRehearsalAttendanceCommand $command): RehearsalAttendanceResult
@@ -83,6 +87,13 @@ final class RespondRehearsalAttendanceUseCase
         if (! $rehearsal) {
             throw new RehearsalNotFoundException($attendance->rehearsalId()->toString());
         }
+
+        // Synced before the blocked-status check below: a Rehearsal
+        // whose start time has passed must be treated as ACTIVE (and
+        // self-response correctly blocked) even if nothing had triggered
+        // the DB update yet - never a stale CONFIRMED read that would
+        // wrongly still allow a response.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         if (in_array($rehearsal->status()->toString(), self::RESPONSE_BLOCKED_STATUSES, true)) {
             throw new InvalidArgumentException(

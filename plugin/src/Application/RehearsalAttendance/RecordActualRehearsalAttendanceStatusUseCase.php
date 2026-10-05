@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
@@ -51,19 +52,22 @@ final class RecordActualRehearsalAttendanceStatusUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(RecordActualRehearsalAttendanceStatusCommand $command): RehearsalAttendanceResult
@@ -98,6 +102,12 @@ final class RecordActualRehearsalAttendanceStatusUseCase
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can record the actual attendance result.'
             );
         }
+
+        // Synced before the allowed-status check below: a CONFIRMED
+        // Rehearsal whose start time has passed must become ACTIVE here
+        // so recording an actual result is correctly permitted without
+        // requiring a manual "稽古を開始する" first.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         if (! in_array($rehearsal->status()->toString(), self::ACTUAL_STATUS_ALLOWED_STATUSES, true)) {
             throw new InvalidArgumentException(

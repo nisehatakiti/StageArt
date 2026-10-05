@@ -25,6 +25,7 @@ use StageArt\Application\Rehearsal\ListRehearsalsForProductionQuery;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
 use StageArt\Application\Rehearsal\RehearsalReminderPolicy;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
@@ -109,6 +110,7 @@ final class RehearsalUseCaseTest extends TestCase
         $notificationContract = new CoreNotificationAdapter($this->notificationDispatcher);
         $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
         $this->reminderScheduler = new InMemoryRehearsalReminderScheduler();
+        $statusTimeSync = new RehearsalStatusTimeSync($this->rehearsals);
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -121,8 +123,8 @@ final class RehearsalUseCaseTest extends TestCase
             $authorization,
             $transactions
         );
-        $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
-        $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $productionContext, $identity, $memberResolver);
+        $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $productionContext, $identity, $memberResolver, $statusTimeSync);
+        $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $productionContext, $identity, $memberResolver, $statusTimeSync);
         $this->updateRehearsal = new UpdateRehearsalUseCase(
             $this->rehearsals,
             $productionContext,
@@ -130,7 +132,8 @@ final class RehearsalUseCaseTest extends TestCase
             $this->reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
@@ -139,7 +142,8 @@ final class RehearsalUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
         $this->activateRehearsal = new ActivateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
         $this->completeRehearsal = new CompleteRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
@@ -151,7 +155,8 @@ final class RehearsalUseCaseTest extends TestCase
             $this->reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync
         );
     }
 
@@ -214,9 +219,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$member->id()->toString()]
         ));
@@ -247,9 +252,9 @@ final class RehearsalUseCaseTest extends TestCase
             5,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -287,9 +292,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$memberA->id()->toString(), $memberC->id()->toString()]
         ));
@@ -316,9 +321,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             []
         ));
@@ -373,9 +378,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$activeMember->id()->toString(), $memberToDeactivate->id()->toString()]
         ));
@@ -410,9 +415,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             [$selectedMember->id()->toString()]
         ));
@@ -438,9 +443,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -460,9 +465,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -479,9 +484,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -503,9 +508,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -523,9 +528,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'A Rehearsal',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
         $this->createRehearsal->execute(new CreateRehearsalCommand(
@@ -533,9 +538,9 @@ final class RehearsalUseCaseTest extends TestCase
             2,
             'B Rehearsal',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -712,8 +717,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-20T18:00:00+09:00',
-            '2026-09-20T20:00:00+09:00',
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -723,19 +728,19 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-21T18:00:00+09:00',
-            '2026-09-21T20:00:00+09:00',
+            '2099-01-02T18:00:00+09:00',
+            '2099-01-02T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
 
-        $this->assertSame('2026-09-21T18:00:00+09:00', $updated->startDateTime);
+        $this->assertSame('2099-01-02T18:00:00+09:00', $updated->startDateTime);
     }
 
     public function test_date_change_is_rejected_while_confirmed(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2099-01-01T18:00:00+09:00', '2099-01-01T20:00:00+09:00');
 
         $this->expectException(InvalidArgumentException::class);
         $this->updateRehearsal->execute(new UpdateRehearsalCommand(
@@ -743,8 +748,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-21T18:00:00+09:00',
-            '2026-09-21T20:00:00+09:00',
+            '2099-01-02T18:00:00+09:00',
+            '2099-01-02T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -753,7 +758,7 @@ final class RehearsalUseCaseTest extends TestCase
     public function test_date_change_is_rejected_while_active(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2099-01-01T18:00:00+09:00', '2099-01-01T20:00:00+09:00');
         $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
 
         $this->expectException(InvalidArgumentException::class);
@@ -762,8 +767,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-21T18:00:00+09:00',
-            '2026-09-21T20:00:00+09:00',
+            '2099-01-02T18:00:00+09:00',
+            '2099-01-02T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -772,7 +777,7 @@ final class RehearsalUseCaseTest extends TestCase
     public function test_date_change_is_rejected_while_completed(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2099-01-01T18:00:00+09:00', '2099-01-01T20:00:00+09:00');
         $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
         $this->completeRehearsal->execute(new CompleteRehearsalCommand($rehearsalId, 1));
 
@@ -782,8 +787,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-21T18:00:00+09:00',
-            '2026-09-21T20:00:00+09:00',
+            '2099-01-02T18:00:00+09:00',
+            '2099-01-02T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -797,8 +802,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-20T18:00:00+09:00',
-            '2026-09-20T20:00:00+09:00',
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -810,8 +815,8 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-21T18:00:00+09:00',
-            '2026-09-21T20:00:00+09:00',
+            '2099-01-02T18:00:00+09:00',
+            '2099-01-02T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -820,27 +825,27 @@ final class RehearsalUseCaseTest extends TestCase
     public function test_time_only_change_is_still_allowed_while_confirmed(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2099-01-01T18:00:00+09:00', '2099-01-01T20:00:00+09:00');
 
         $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
             $rehearsalId,
             1,
             'Act 1 Run',
             null,
-            '2026-09-20T19:00:00+09:00',
-            '2026-09-20T21:00:00+09:00',
+            '2099-01-01T19:00:00+09:00',
+            '2099-01-01T21:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
 
-        $this->assertSame('2026-09-20T19:00:00+09:00', $updated->startDateTime);
+        $this->assertSame('2099-01-01T19:00:00+09:00', $updated->startDateTime);
         $this->assertSame('CONFIRMED', $updated->status);
     }
 
     public function test_time_only_change_is_still_allowed_while_active(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $rehearsalId = $this->createAndConfirmRehearsal($production, '2026-09-20T18:00:00+09:00', '2026-09-20T20:00:00+09:00');
+        $rehearsalId = $this->createAndConfirmRehearsal($production, '2099-01-01T18:00:00+09:00', '2099-01-01T20:00:00+09:00');
         $this->activateRehearsal->execute(new ActivateRehearsalCommand($rehearsalId, 1));
 
         $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
@@ -848,13 +853,13 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            '2026-09-20T19:00:00+09:00',
-            '2026-09-20T21:00:00+09:00',
+            '2099-01-01T19:00:00+09:00',
+            '2099-01-01T21:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
 
-        $this->assertSame('2026-09-20T19:00:00+09:00', $updated->startDateTime);
+        $this->assertSame('2099-01-01T19:00:00+09:00', $updated->startDateTime);
     }
 
     // --- Phase 7 §4: 回答期限 ---
@@ -869,7 +874,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             '2026-09-20T18:00:00+09:00',
-            null,
+            '2026-09-20T20:00:00+09:00',
             'Asia/Tokyo',
             null,
             null,
@@ -891,9 +896,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -912,9 +917,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null,
             $farFutureDeadline
@@ -939,9 +944,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null,
             $original
@@ -954,9 +959,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             $extended
         ));
@@ -979,9 +984,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null,
             $original
@@ -993,9 +998,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             $pulledEarlier
         ));
@@ -1021,13 +1026,15 @@ final class RehearsalUseCaseTest extends TestCase
         // Rehearsal itself.
         $startDateTime = (new DateTimeImmutable('+40 days'))->format(DATE_ATOM);
 
+        $endDateTime = (new DateTimeImmutable('+40 days'))->modify('+2 hours')->format(DATE_ATOM);
+
         $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             1,
             'Act 1 Run',
             null,
             $startDateTime,
-            null,
+            $endDateTime,
             'Asia/Tokyo',
             null,
             [$member->id()->toString()],
@@ -1041,7 +1048,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             $startDateTime,
-            null,
+            $endDateTime,
             'Asia/Tokyo',
             null,
             $overdue
@@ -1066,9 +1073,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null,
             $deadline
@@ -1081,9 +1088,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null
         ));
@@ -1105,7 +1112,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             '2026-09-20T18:00:00+09:00',
-            null,
+            '2026-09-20T20:00:00+09:00',
             'Asia/Tokyo',
             null,
             [$memberA->id()->toString(), $memberB->id()->toString()]
@@ -1137,9 +1144,9 @@ final class RehearsalUseCaseTest extends TestCase
             1,
             'Act 1 Run',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
             null,
             $deadline
@@ -1162,7 +1169,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             '2026-09-20T18:00:00+09:00',
-            null,
+            '2026-09-20T20:00:00+09:00',
             'Asia/Tokyo',
             null
         ));
@@ -1193,7 +1200,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             '2026-09-20T18:00:00+09:00',
-            null,
+            '2026-09-20T20:00:00+09:00',
             'Asia/Tokyo',
             null,
             [$unanswered->id()->toString(), $available->id()->toString(), $unavailable->id()->toString()]
@@ -1229,7 +1236,7 @@ final class RehearsalUseCaseTest extends TestCase
             'Act 1 Run',
             null,
             '2026-09-20T18:00:00+09:00',
-            null,
+            '2026-09-20T20:00:00+09:00',
             'Asia/Tokyo',
             null,
             (new DateTimeImmutable('+1 hour'))->format(DATE_ATOM)

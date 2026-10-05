@@ -30,6 +30,7 @@ final class UpdateRehearsalUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -38,7 +39,8 @@ final class UpdateRehearsalUseCase
         RehearsalReminderSchedulerInterface $reminderScheduler,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
@@ -47,6 +49,7 @@ final class UpdateRehearsalUseCase
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(UpdateRehearsalCommand $command): RehearsalResult
@@ -76,14 +79,16 @@ final class UpdateRehearsalUseCase
             );
         }
 
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
+
         $newResponseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
 
         $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline): void {
             $rehearsal->updateBasicInfo(
                 $command->title,
                 $command->description,
-                $this->parseOptionalDateTime($command->startDateTime),
-                $this->parseOptionalDateTime($command->endDateTime),
+                $this->parseRequiredDateTime($command->startDateTime, 'start date/time'),
+                $this->parseRequiredDateTime($command->endDateTime, 'end date/time'),
                 $command->timezone,
                 $command->location
             );
@@ -139,6 +144,24 @@ final class UpdateRehearsalUseCase
     {
         if ($value === null || $value === '') {
             return null;
+        }
+
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Exception $exception) {
+            throw new InvalidArgumentException("Invalid date/time value: {$value}");
+        }
+    }
+
+    /**
+     * StageArt 稽古管理ステータス自動同期 instruction: see
+     * CreateRehearsalUseCase's identical method for why this is required
+     * rather than optional now.
+     */
+    private function parseRequiredDateTime(?string $value, string $fieldName): DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            throw new InvalidArgumentException("Rehearsal {$fieldName} is required.");
         }
 
         try {
