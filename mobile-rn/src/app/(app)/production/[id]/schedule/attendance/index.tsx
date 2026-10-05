@@ -90,7 +90,7 @@ export default function RehearsalListScreen() {
               style={styles.row}
               onPress={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsal.id}`)}
             >
-              <ThemedText type="smallBold">{rehearsal.title ?? '無題の稽古'}</ThemedText>
+              <ThemedText type="smallBold">{rehearsalStatusLabel(rehearsal.status)}</ThemedText>
               <ThemedText type="small" testID={`rehearsal-status-${rehearsal.id}`}>
                 {rehearsalStatusLabel(rehearsal.status)}
               </ThemedText>
@@ -101,6 +101,7 @@ export default function RehearsalListScreen() {
                 </ThemedText>
               )}
               {rehearsal.location && <ThemedText type="small">{rehearsal.location}</ThemedText>}
+              {rehearsal.description && <ThemedText type="small">{rehearsal.description}</ThemedText>}
             </TouchableOpacity>
           )}
         />
