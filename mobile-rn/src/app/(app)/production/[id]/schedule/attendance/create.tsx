@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
+import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/AuthContext';
 import { confirmRehearsal } from '@/features/attendance/api';
@@ -181,36 +182,33 @@ export default function CreateRehearsalScreen() {
         <View style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>日時</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">日付（YYYY-MM-DD）</ThemedText>
-          <ThemedTextInput
+          <DateTimeInput
+            mode="date"
             testID="rehearsal-create-date"
             placeholder="2026-09-10"
             value={date}
             onChangeText={setDate}
-            autoCapitalize="none"
-            style={styles.input}
           />
 
           <View style={styles.fieldRow}>
             <View style={styles.fieldHalf}>
               <ThemedText type="small" themeColor="textSecondary">開始時刻（HH:mm）</ThemedText>
-              <ThemedTextInput
+              <DateTimeInput
+                mode="time"
                 testID="rehearsal-create-time"
                 placeholder="18:00"
                 value={time}
                 onChangeText={setTime}
-                autoCapitalize="none"
-                style={styles.input}
               />
             </View>
             <View style={styles.fieldHalf}>
               <ThemedText type="small" themeColor="textSecondary">終了時刻（HH:mm）</ThemedText>
-              <ThemedTextInput
+              <DateTimeInput
+                mode="time"
                 testID="rehearsal-create-end-time"
                 placeholder="20:00"
                 value={endTime}
                 onChangeText={setEndTime}
-                autoCapitalize="none"
-                style={styles.input}
               />
             </View>
           </View>
@@ -230,24 +228,22 @@ export default function CreateRehearsalScreen() {
           <View style={styles.fieldRow}>
             <View style={styles.fieldHalf}>
               <ThemedText type="small" themeColor="textSecondary">回答期限（任意）</ThemedText>
-              <ThemedTextInput
+              <DateTimeInput
+                mode="date"
                 testID="rehearsal-create-deadline-date"
                 placeholder="YYYY-MM-DD"
                 value={deadlineDate}
                 onChangeText={setDeadlineDate}
-                autoCapitalize="none"
-                style={styles.input}
               />
             </View>
             <View style={styles.fieldHalf}>
               <ThemedText type="small" themeColor="textSecondary">回答期限の時刻</ThemedText>
-              <ThemedTextInput
+              <DateTimeInput
+                mode="time"
                 testID="rehearsal-create-deadline-time"
                 placeholder="HH:mm"
                 value={deadlineTime}
                 onChangeText={setDeadlineTime}
-                autoCapitalize="none"
-                style={styles.input}
               />
             </View>
           </View>
