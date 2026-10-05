@@ -140,160 +140,195 @@ export default function CreateRehearsalScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
-        <ThemedText type="title" style={styles.title}>
-          稽古を作成
-        </ThemedText>
+        <ThemedText type="title" style={styles.title}>稽古を作成</ThemedText>
 
-        <ThemedText type="small" themeColor="textSecondary">
-          稽古名
-        </ThemedText>
-        <ThemedTextInput testID="rehearsal-create-title" placeholder="稽古名" value={title} onChangeText={setTitle} style={styles.input} />
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>基本情報</ThemedText>
 
-        <ThemedText type="small" themeColor="textSecondary">
-          ステータス
-        </ThemedText>
-        <View style={styles.statusRow}>
-          <TouchableOpacity
-            testID="rehearsal-create-status-adjustment"
-            onPress={() => setConfirmOnCreate(false)}
-            style={[styles.statusOption, !confirmOnCreate && styles.statusOptionSelected]}
-          >
-            <ThemedText style={!confirmOnCreate ? styles.statusOptionTextSelected : undefined}>調整</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            testID="rehearsal-create-status-confirmed"
-            onPress={() => setConfirmOnCreate(true)}
-            style={[styles.statusOption, confirmOnCreate && styles.statusOptionSelected]}
-          >
-            <ThemedText style={confirmOnCreate ? styles.statusOptionTextSelected : undefined}>確定</ThemedText>
-          </TouchableOpacity>
-        </View>
+          <ThemedText type="small" themeColor="textSecondary">稽古名</ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-create-title"
+            placeholder="例：通し稽古"
+            value={title}
+            onChangeText={setTitle}
+            style={styles.input}
+          />
 
-        <ThemedText type="small" themeColor="textSecondary">
-          日付（YYYY-MM-DD）
-        </ThemedText>
-        <ThemedTextInput
-          testID="rehearsal-create-date"
-          placeholder="2026-09-10"
-          value={date}
-          onChangeText={setDate}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          開始時刻（HH:mm）
-        </ThemedText>
-        <ThemedTextInput
-          testID="rehearsal-create-time"
-          placeholder="18:00"
-          value={time}
-          onChangeText={setTime}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          終了時刻（HH:mm）
-        </ThemedText>
-        <ThemedTextInput
-          testID="rehearsal-create-end-time"
-          placeholder="20:00"
-          value={endTime}
-          onChangeText={setEndTime}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          場所
-        </ThemedText>
-        <ThemedTextInput testID="rehearsal-create-location" placeholder="○○スタジオ" value={location} onChangeText={setLocation} style={styles.input} />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          回答期限（任意・YYYY-MM-DD）
-        </ThemedText>
-        <ThemedTextInput
-          testID="rehearsal-create-deadline-date"
-          placeholder="2026-09-19"
-          value={deadlineDate}
-          onChangeText={setDeadlineDate}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          回答期限の時刻（HH:mm）
-        </ThemedText>
-        <ThemedTextInput
-          testID="rehearsal-create-deadline-time"
-          placeholder="18:00"
-          value={deadlineTime}
-          onChangeText={setDeadlineTime}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-
-        <ThemedText type="small" themeColor="textSecondary">
-          参加メンバー
-        </ThemedText>
-        <View style={styles.memberSelectRow}>
-          <TouchableOpacity testID="rehearsal-create-select-all" onPress={selectAllMembers}>
-            <ThemedText type="link">全選択</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity testID="rehearsal-create-deselect-all" onPress={deselectAllMembers}>
-            <ThemedText type="link">全選択解除</ThemedText>
-          </TouchableOpacity>
-        </View>
-
-        {participantsQuery.isLoading && <ActivityIndicator testID="rehearsal-create-members-loading" />}
-
-        {/* StageArt 稽古作成画面の参加メンバー表示修正 instruction: a failed
-            GET /productions/{id}/participants (403/network/etc.) must
-            never render as "参加可能なメンバーがいません。" - that message
-            means the request succeeded and genuinely found zero eligible
-            members, which is a different situation from "the request
-            itself failed". */}
-        {participantsQuery.isError && (
-          <ThemedText type="small" style={styles.error} testID="rehearsal-create-members-error">
-            {getErrorMessage(participantsQuery.error)}
-          </ThemedText>
-        )}
-
-        {!participantsQuery.isLoading && !participantsQuery.isError && eligibleMembers.length === 0 && (
-          <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-create-members-empty">
-            参加可能なメンバーがいません。
-          </ThemedText>
-        )}
-
-        {!participantsQuery.isError && eligibleMembers.map((participant) => {
-          const isSelf = participant.subject_id === currentPersonQuery.data?.id;
-          const label = isSelf ? 'あなた' : `Person ID: ${participant.subject_id}`;
-          const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
-          const isChecked = selectedPersonIds.has(participant.subject_id);
-
-          return (
+          <ThemedText type="small" themeColor="textSecondary">ステータス</ThemedText>
+          <View style={styles.statusRow}>
             <TouchableOpacity
-              key={participant.id}
-              testID={`rehearsal-create-member-${participant.subject_id}`}
-              onPress={() => toggleMember(participant.subject_id)}
-              style={styles.memberRow}
+              testID="rehearsal-create-status-adjustment"
+              onPress={() => setConfirmOnCreate(false)}
+              style={[styles.statusOption, !confirmOnCreate && styles.statusOptionSelected]}
             >
-              <View
-                testID={`rehearsal-create-member-checkbox-${participant.subject_id}`}
-                style={[styles.checkbox, isChecked && styles.checkboxChecked]}
-              >
-                {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
-              </View>
-              <ThemedText>{label}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                （{typeLabel}）
-              </ThemedText>
+              <ThemedText style={!confirmOnCreate ? styles.statusOptionTextSelected : undefined}>調整</ThemedText>
+              <ThemedText type="small" style={!confirmOnCreate ? styles.statusHintSelected : styles.statusHint}>回答を集める</ThemedText>
             </TouchableOpacity>
-          );
-        })}
+            <TouchableOpacity
+              testID="rehearsal-create-status-confirmed"
+              onPress={() => setConfirmOnCreate(true)}
+              style={[styles.statusOption, confirmOnCreate && styles.statusOptionSelected]}
+            >
+              <ThemedText style={confirmOnCreate ? styles.statusOptionTextSelected : undefined}>確定</ThemedText>
+              <ThemedText type="small" style={confirmOnCreate ? styles.statusHintSelected : styles.statusHint}>作成後に確定</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {createRehearsal.isError && <ThemedText style={styles.error}>{getErrorMessage(createRehearsal.error)}</ThemedText>}
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>日時</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">日付（YYYY-MM-DD）</ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-create-date"
+            placeholder="2026-09-10"
+            value={date}
+            onChangeText={setDate}
+            autoCapitalize="none"
+            style={styles.input}
+          />
+
+          <View style={styles.fieldRow}>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">開始時刻（HH:mm）</ThemedText>
+              <ThemedTextInput
+                testID="rehearsal-create-time"
+                placeholder="18:00"
+                value={time}
+                onChangeText={setTime}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+            </View>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">終了時刻（HH:mm）</ThemedText>
+              <ThemedTextInput
+                testID="rehearsal-create-end-time"
+                placeholder="20:00"
+                value={endTime}
+                onChangeText={setEndTime}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>場所・回答期限</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">場所</ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-create-location"
+            placeholder="例：○○スタジオ"
+            value={location}
+            onChangeText={setLocation}
+            style={styles.input}
+          />
+
+          <View style={styles.fieldRow}>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">回答期限（任意）</ThemedText>
+              <ThemedTextInput
+                testID="rehearsal-create-deadline-date"
+                placeholder="YYYY-MM-DD"
+                value={deadlineDate}
+                onChangeText={setDeadlineDate}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+            </View>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">回答期限の時刻</ThemedText>
+              <ThemedTextInput
+                testID="rehearsal-create-deadline-time"
+                placeholder="HH:mm"
+                value={deadlineTime}
+                onChangeText={setDeadlineTime}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.helperText}>
+            回答期限を設定すると、メンバーは期限までに出欠を回答できます。
+          </ThemedText>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.memberHeader}>
+            <View style={styles.memberHeaderText}>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>参加メンバー</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                この稽古の出欠確認対象を選択してください。
+              </ThemedText>
+            </View>
+            <View style={styles.memberSelectRow}>
+              <TouchableOpacity testID="rehearsal-create-select-all" onPress={selectAllMembers}>
+                <ThemedText type="link">全選択</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity testID="rehearsal-create-deselect-all" onPress={deselectAllMembers}>
+                <ThemedText type="link">全解除</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {participantsQuery.isLoading && <ActivityIndicator testID="rehearsal-create-members-loading" />}
+
+          {participantsQuery.isError && (
+            <View style={styles.errorBox}>
+              <ThemedText style={styles.error} testID="rehearsal-create-members-error">
+                {getErrorMessage(participantsQuery.error)}
+              </ThemedText>
+            </View>
+          )}
+
+          {!participantsQuery.isLoading && !participantsQuery.isError && eligibleMembers.length === 0 && (
+            <View style={styles.emptyBox}>
+              <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-create-members-empty">
+                参加可能なメンバーがいません。
+              </ThemedText>
+            </View>
+          )}
+
+          {!participantsQuery.isError && eligibleMembers.map((participant) => {
+            const isSelf = participant.subject_id === currentPersonQuery.data?.id;
+            const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+            const label = participant.display_name?.trim() || fullName || (isSelf ? 'あなた' : `Person ID: ${participant.subject_id}`);
+            const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
+            const isChecked = selectedPersonIds.has(participant.subject_id);
+
+            return (
+              <TouchableOpacity
+                key={participant.id}
+                testID={`rehearsal-create-member-${participant.subject_id}`}
+                onPress={() => toggleMember(participant.subject_id)}
+                style={[styles.memberRow, isChecked && styles.memberRowSelected]}
+              >
+                <View
+                  testID={`rehearsal-create-member-checkbox-${participant.subject_id}`}
+                  style={[styles.checkbox, isChecked && styles.checkboxChecked]}
+                >
+                  {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
+                </View>
+                <View style={styles.memberIdentity}>
+                  <ThemedText style={styles.memberName}>{label}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">{typeLabel}</ThemedText>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+
+          {!participantsQuery.isError && eligibleMembers.length > 0 && (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.selectionSummary}>
+              {selectedPersonIds.size}人を選択中
+            </ThemedText>
+          )}
+        </View>
+
+        {createRehearsal.isError && (
+          <View style={styles.errorBox}>
+            <ThemedText style={styles.error}>{getErrorMessage(createRehearsal.error)}</ThemedText>
+          </View>
+        )}
 
         <TouchableOpacity
           testID="rehearsal-create-submit"
@@ -309,13 +344,22 @@ export default function CreateRehearsalScreen() {
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { padding: Spacing.four, gap: Spacing.two },
-  title: { fontSize: 22, lineHeight: 28, marginBottom: Spacing.two },
+  container: { padding: Spacing.four, gap: Spacing.three },
+  title: { fontSize: 22, lineHeight: 28, marginBottom: Spacing.one },
+  section: {
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    backgroundColor: '#fff',
+  },
+  sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '700', marginBottom: Spacing.one },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -323,39 +367,77 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 16,
-    marginBottom: Spacing.two,
+    marginBottom: Spacing.one,
+    minHeight: 44,
   },
+  fieldRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  fieldHalf: { flex: 1, minWidth: 240 },
+  helperText: { lineHeight: 18 },
   button: {
     backgroundColor: '#4a3f7a',
     borderRadius: Radius.medium,
     paddingVertical: Spacing.three,
     alignItems: 'center',
-    marginTop: Spacing.two,
+    marginTop: Spacing.one,
+    minHeight: 48,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
   error: { color: '#a6483a' },
-  statusRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
+  errorBox: {
+    borderWidth: 1,
+    borderColor: '#e3b5ac',
+    borderRadius: 8,
+    padding: Spacing.two,
+    backgroundColor: '#fff7f5',
+  },
+  emptyBox: {
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+    borderRadius: 8,
+    padding: Spacing.three,
+    backgroundColor: '#fafafa',
+  },
+  statusRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   statusOption: {
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: Radius.medium,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
+    minWidth: 120,
   },
   statusOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
   statusOptionTextSelected: { color: '#fff', fontWeight: '600' },
+  statusHint: { marginTop: 2 },
+  statusHintSelected: { color: '#fff', opacity: 0.9, marginTop: 2 },
+  memberHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' },
+  memberHeaderText: { flex: 1, minWidth: 240 },
   memberSelectRow: { flexDirection: 'row', gap: Spacing.three, marginBottom: Spacing.one },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    borderRadius: 8,
+  },
+  memberRowSelected: { borderColor: '#b7afd7', backgroundColor: '#f7f5fc' },
+  memberIdentity: { flex: 1, minWidth: 0 },
+  memberName: { fontWeight: '600' },
   checkbox: {
     width: 22,
     height: 22,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#bbb',
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   checkboxChecked: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
   checkboxMark: { color: '#fff', fontSize: 14, lineHeight: 16 },
+  selectionSummary: { textAlign: 'right', marginTop: Spacing.one },
 });
