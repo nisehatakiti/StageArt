@@ -29,7 +29,8 @@ export function createRehearsal(
   client: ApiClient,
   productionId: string,
   fields: {
-    title: string;
+    title?: string | null;
+    description?: string | null;
     startDateTime?: string;
     endDateTime?: string;
     timezone?: string;
@@ -40,7 +41,8 @@ export function createRehearsal(
   }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
-    title: fields.title,
+    title: fields.title ?? null,
+    description: fields.description ?? null,
     start_date_time: fields.startDateTime,
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
