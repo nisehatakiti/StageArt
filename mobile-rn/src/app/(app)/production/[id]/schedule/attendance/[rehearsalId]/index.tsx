@@ -456,8 +456,9 @@ export default function RehearsalAttendanceScreen() {
                   disabled={!commentDraft.trim() || postComment.isPending}
                   accessibilityRole="button"
                   accessibilityLabel="コメントを投稿する"
+                  style={[styles.postButton, (!commentDraft.trim() || postComment.isPending) && styles.disabledButton]}
                 >
-                  {postComment.isPending ? <ActivityIndicator /> : <ThemedText type="link">投稿する</ThemedText>}
+                  {postComment.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>投稿する</ThemedText>}
                 </TouchableOpacity>
                 {postComment.isError && (
                   <ThemedText testID="rehearsal-comment-post-error">{getErrorMessage(postComment.error)}</ThemedText>
@@ -478,8 +479,8 @@ function AttendanceRow({
   attendance: RehearsalAttendance;
   displayName: string;
 }) {
-  const isAttending = attendance.status === 'ATTENDING';
-  const isNotAttending = attendance.status === 'NOT_ATTENDING';
+  const isAttending = ['ATTENDING', 'ATTENDED', 'LATE', 'EARLY_LEFT'].includes(attendance.status);
+  const isNotAttending = ['NOT_ATTENDING', 'ABSENT'].includes(attendance.status);
   return (
     <ThemedView style={styles.rosterRow} testID="attendance-roster-row">
       <ThemedText type="smallBold">{displayName}</ThemedText>
@@ -489,7 +490,9 @@ function AttendanceRow({
           isAttending ? styles.attendingButton : isNotAttending ? styles.absentButton : styles.unansweredButton,
         ]}
       >
-        <ThemedText style={styles.actionButtonText}>{statusLabel(attendance.status)}</ThemedText>
+        <ThemedText style={styles.actionButtonText}>
+          {isAttending ? '出席' : isNotAttending ? '欠席' : '未回答'}
+        </ThemedText>
       </ThemedView>
     </ThemedView>
   );
@@ -574,6 +577,15 @@ const styles = StyleSheet.create({
   buttonRow: { flexDirection: 'row', gap: Spacing.three },
   commentsSection: { marginTop: Spacing.four, gap: Spacing.three },
   commentForm: { gap: Spacing.two },
+  postButton: {
+    minHeight: 44,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    borderRadius: 8,
+    backgroundColor: '#1976d2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   commentInput: {
     borderWidth: 1,
     borderColor: '#ccc',
