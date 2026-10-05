@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { ACTUAL_STATUS_OPTIONS, attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
+import { attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import {
@@ -18,7 +18,6 @@ import {
 } from '@/features/attendance/useRehearsals';
 import {
   useAddRehearsalAttendanceTargets,
-  useRecordActualRehearsalAttendanceStatus,
   useRehearsalAttendances,
   useRespondRehearsalAttendance,
 } from '@/features/attendance/useRehearsalAttendance';
@@ -80,7 +79,6 @@ export default function RehearsalAttendanceScreen() {
   const attendancesQuery = useRehearsalAttendances(rehearsalId, phase);
   const currentPersonQuery = useCurrentPerson();
   const respondMutation = useRespondRehearsalAttendance(rehearsalId, phase);
-  const recordActualMutation = useRecordActualRehearsalAttendanceStatus(rehearsalId, phase);
 
   const participantsQuery = useParticipants(productionId);
   const addTargetsMutation = useAddRehearsalAttendanceTargets(rehearsalId, phase);
@@ -190,6 +188,15 @@ export default function RehearsalAttendanceScreen() {
     return map;
   }, [participantsQuery.data]);
 
+  const commentAuthorNameByPersonId = useMemo(() => {
+    const map = new Map(participantNameByPersonId);
+    if (myPersonId) {
+      const myName = [currentPersonQuery.data?.family_name, currentPersonQuery.data?.given_name].filter(Boolean).join(' ');
+      if (myName) map.set(myPersonId, myName);
+    }
+    return map;
+  }, [participantNameByPersonId, currentPersonQuery.data, myPersonId]);
+
   const summary = useMemo(
     () => attendanceSummary((attendancesQuery.data ?? []).map((a) => a.status)),
     [attendancesQuery.data]
@@ -240,7 +247,43 @@ export default function RehearsalAttendanceScreen() {
             <ThemedView>
               {rehearsalQuery.data && (
                 <ThemedView style={styles.summaryCard} testID="rehearsal-info">
-                  <ThemedText testID="rehearsal-info-status">{rehearsalStatusLabel(rehearsalQuery.data.status)}</ThemedText>
+                  <ThemedView style={styles.rehearsalInfoHeader}>
+                    <ThemedText type="smallBold" testID="rehearsal-info-status">
+                      {rehearsalStatusLabel(rehearsalQuery.data.status)}
+                    </ThemedText>
+                    <ThemedView style={styles.actionRow}>
+                      {(rehearsalQuery.data.status === 'SCHEDULED' || rehearsalQuery.data.status === 'CONFIRMED') && (
+                        <TouchableOpacity
+                          testID="rehearsal-edit"
+                          onPress={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsalId}/edit`)}
+                          style={[styles.actionButton, styles.editButton]}
+                          accessibilityRole="button"
+                          accessibilityLabel="稽古を編集する"
+                        >
+                          <ThemedText style={styles.actionButtonText}>編集</ThemedText>
+                        </TouchableOpacity>
+                      )}
+                      {(rehearsalQuery.data.status === 'SCHEDULED' ||
+                        rehearsalQuery.data.status === 'CONFIRMED' ||
+                        rehearsalQuery.data.status === 'ACTIVE') && (
+                        <TouchableOpacity
+                          testID="rehearsal-cancel"
+                          onPress={() =>
+                            confirmAlert('稽古を中止する', 'この稽古を中止しますか？この操作は元に戻せません。', [
+                              { text: 'キャンセル', style: 'cancel' },
+                              { text: '中止する', style: 'destructive', onPress: () => cancelRehearsal.mutate() },
+                            ])
+                          }
+                          disabled={cancelRehearsal.isPending}
+                          style={[styles.actionButton, styles.cancelButton]}
+                          accessibilityRole="button"
+                          accessibilityLabel="稽古を中止する"
+                        >
+                          {cancelRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>中止</ThemedText>}
+                        </TouchableOpacity>
+                      )}
+                    </ThemedView>
+                  </ThemedView>
                   {rehearsalQuery.data.start_date_time && (
                     <ThemedText testID="rehearsal-info-datetime">
                       {formatDayHeader(new Date(rehearsalQuery.data.start_date_time))} {formatTime(rehearsalQuery.data.start_date_time)}
@@ -250,23 +293,22 @@ export default function RehearsalAttendanceScreen() {
                   {rehearsalQuery.data.location && (
                     <ThemedText testID="rehearsal-info-location">{rehearsalQuery.data.location}</ThemedText>
                   )}
+                  {rehearsalQuery.data.status === 'SCHEDULED' && (
+                    <TouchableOpacity
+                      testID="rehearsal-confirm"
+                      onPress={() => confirmRehearsal.mutate()}
+                      disabled={confirmRehearsal.isPending}
+                      style={[styles.actionButton, styles.confirmButton]}
+                      accessibilityRole="button"
+                      accessibilityLabel="稽古情報を確定する"
+                    >
+                      {confirmRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>稽古情報を確定する</ThemedText>}
+                    </TouchableOpacity>
+                  )}
+                  {confirmRehearsal.isError && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmRehearsal.error)}</ThemedText>}
+                  {cancelRehearsal.isError && <ThemedText testID="rehearsal-cancel-error">{getErrorMessage(cancelRehearsal.error)}</ThemedText>}
                 </ThemedView>
               )}
-              <RehearsalManagementPanel
-                rehearsalStatus={rehearsalQuery.data?.status}
-                onEdit={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsalId}/edit`)}
-                onConfirm={() => confirmRehearsal.mutate()}
-                isConfirmPending={confirmRehearsal.isPending}
-                confirmError={confirmRehearsal.isError ? confirmRehearsal.error : null}
-                onCancel={() =>
-                  confirmAlert('稽古を中止する', 'この稽古を中止しますか？この操作は元に戻せません。', [
-                    { text: 'キャンセル', style: 'cancel' },
-                    { text: '中止する', style: 'destructive', onPress: () => cancelRehearsal.mutate() },
-                  ])
-                }
-                isCancelPending={cancelRehearsal.isPending}
-                cancelError={cancelRehearsal.isError ? cancelRehearsal.error : null}
-              />
               <ThemedView style={styles.summaryCard} testID="attendance-summary">
                 <ThemedText type="smallBold">出席状況サマリー</ThemedText>
                 <ThemedText testID="attendance-summary-attending">出席 {summary.attending}名</ThemedText>
@@ -322,13 +364,39 @@ export default function RehearsalAttendanceScreen() {
               </ThemedView>
               {myRecord && (
                 <ThemedView style={styles.myCard} testID="attendance-my-record">
-                  <ThemedText type="smallBold">あなたの回答</ThemedText>
-                  <ThemedText testID="attendance-my-status">{statusLabel(myRecord.status)}</ThemedText>
+                  <ThemedText type="subtitle">稽古の出欠を登録してください。</ThemedText>
                   {responseDeadlinePassed && (
                     <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
                       回答期限を過ぎたため、回答・変更はできません。
                     </ThemedText>
                   )}
+                  <ThemedView style={styles.responseButtonRow}>
+                    {responseOptionsForPhase(phase).map((option) => {
+                      const isAttending = option === 'ATTENDING';
+                      const isNotAttending = option === 'NOT_ATTENDING';
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          testID={`attendance-respond-${option}`}
+                          onPress={() =>
+                            respondMutation.mutate({
+                              attendanceId: myRecord.id,
+                              status: option,
+                              remarks: remarksDraft.trim() || null,
+                            })
+                          }
+                          disabled={respondMutation.isPending || responseDeadlinePassed}
+                          style={[
+                            styles.responseButton,
+                            isAttending ? styles.attendingButton : isNotAttending ? styles.absentButton : styles.unansweredButton,
+                            (respondMutation.isPending || responseDeadlinePassed) && styles.disabledButton,
+                          ]}
+                        >
+                          <ThemedText style={styles.actionButtonText}>{statusLabel(option)}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ThemedView>
                   <ThemedTextInput
                     testID="attendance-remarks-input"
                     placeholder="備考（任意）"
@@ -337,24 +405,6 @@ export default function RehearsalAttendanceScreen() {
                     multiline
                     editable={!responseDeadlinePassed}
                   />
-                  <ThemedView style={styles.buttonRow}>
-                    {responseOptionsForPhase(phase).map((option) => (
-                      <TouchableOpacity
-                        key={option}
-                        testID={`attendance-respond-${option}`}
-                        onPress={() =>
-                          respondMutation.mutate({
-                            attendanceId: myRecord.id,
-                            status: option,
-                            remarks: remarksDraft.trim() || null,
-                          })
-                        }
-                        disabled={respondMutation.isPending || responseDeadlinePassed}
-                      >
-                        <ThemedText type="link">{statusLabel(option)}</ThemedText>
-                      </TouchableOpacity>
-                    ))}
-                  </ThemedView>
                   {respondMutation.isError && (
                     <ThemedText testID="attendance-respond-error">{getErrorMessage(respondMutation.error)}</ThemedText>
                   )}
@@ -366,14 +416,6 @@ export default function RehearsalAttendanceScreen() {
             <AttendanceRow
               attendance={item}
               displayName={participantNameByPersonId.get(item.person_id) ?? '氏名未設定'}
-              phase={phase}
-              onRecordActual={(status) => recordActualMutation.mutate({ attendanceId: item.id, status })}
-              isRecordPending={recordActualMutation.isPending}
-              recordError={
-                recordActualMutation.isError && recordActualMutation.variables?.attendanceId === item.id
-                  ? recordActualMutation.error
-                  : null
-              }
             />
           )}
           ListFooterComponent={
@@ -384,6 +426,7 @@ export default function RehearsalAttendanceScreen() {
                 isError={commentsQuery.isError}
                 error={commentsQuery.error}
                 comments={commentsQuery.data}
+                authorNameByPersonId={commentAuthorNameByPersonId}
                 onEdit={handleStartEdit}
                 onDelete={handleDelete}
                 editingCommentId={editingCommentId}
@@ -431,42 +474,23 @@ export default function RehearsalAttendanceScreen() {
 function AttendanceRow({
   attendance,
   displayName,
-  phase,
-  onRecordActual,
-  isRecordPending,
-  recordError,
 }: {
   attendance: RehearsalAttendance;
   displayName: string;
-  phase: string;
-  onRecordActual: (status: string) => void;
-  isRecordPending: boolean;
-  recordError: unknown;
 }) {
+  const isAttending = attendance.status === 'ATTENDING';
+  const isNotAttending = attendance.status === 'NOT_ATTENDING';
   return (
     <ThemedView style={styles.rosterRow} testID="attendance-roster-row">
-      <ThemedText type="smallBold">
-        {displayName}
-      </ThemedText>
-      <ThemedText>{statusLabel(attendance.status)}</ThemedText>
-
-      {phase === 'ATTENDANCE_CONFIRMATION' && (
-        <ThemedView style={styles.buttonRow}>
-          {ACTUAL_STATUS_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option}
-              testID={`attendance-record-actual-${attendance.id}-${option}`}
-              onPress={() => onRecordActual(option)}
-              disabled={isRecordPending}
-            >
-              <ThemedText type="link">{statusLabel(option)}</ThemedText>
-            </TouchableOpacity>
-          ))}
-        </ThemedView>
-      )}
-      {recordError !== null && (
-        <ThemedText testID={`attendance-record-actual-error-${attendance.id}`}>{getErrorMessage(recordError)}</ThemedText>
-      )}
+      <ThemedText type="smallBold">{displayName}</ThemedText>
+      <ThemedView
+        style={[
+          styles.statusBadge,
+          isAttending ? styles.attendingButton : isNotAttending ? styles.absentButton : styles.unansweredButton,
+        ]}
+      >
+        <ThemedText style={styles.actionButtonText}>{statusLabel(attendance.status)}</ThemedText>
+      </ThemedView>
     </ThemedView>
   );
 }
