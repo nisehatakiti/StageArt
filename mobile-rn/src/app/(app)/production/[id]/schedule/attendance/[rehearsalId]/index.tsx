@@ -327,7 +327,7 @@ export default function RehearsalAttendanceScreen() {
                   const isChecked = selectedNewMemberIds.has(participant.subject_id);
                   const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
                   const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
-                  const label = participant.display_name?.trim() || fullName || `Person ID: ${participant.subject_id}`;
+                  const label = participant.display_name?.trim() || fullName || '名前未設定';
 
                   return (
                     <TouchableOpacity
@@ -372,8 +372,8 @@ export default function RehearsalAttendanceScreen() {
                   )}
                   <ThemedView style={styles.responseButtonRow}>
                     {responseOptionsForPhase(phase).map((option) => {
-                      const isAttending = option === 'ATTENDING';
-                      const isNotAttending = option === 'NOT_ATTENDING';
+                      const isAttending = option === 'ATTENDING' || option === 'AVAILABLE';
+                      const isNotAttending = option === 'NOT_ATTENDING' || option === 'UNAVAILABLE';
                       return (
                         <TouchableOpacity
                           key={option}
@@ -495,82 +495,6 @@ function AttendanceRow({
   );
 }
 
-/**
- * docs/04-HomeRoleBasedMenu.md §07の稽古管理: 内容追加(TimetableItem)・
- * 公開(TimetableVersion publish)・確定(Rehearsal confirm)。§24/§25と同じ
- * 既存方針で、権限のないPersonにもこのPanel自体は表示し、実際のMutationが
- * Backendの403をそのまま表示する（Client側でRoleを複製しない）。
- */
-function RehearsalManagementPanel({
-  rehearsalStatus,
-  onEdit,
-  onConfirm,
-  isConfirmPending,
-  confirmError,
-  onCancel,
-  isCancelPending,
-  cancelError,
-}: {
-  rehearsalStatus: string | undefined;
-  onEdit: () => void;
-  onConfirm: () => void;
-  isConfirmPending: boolean;
-  confirmError: unknown;
-  onCancel: () => void;
-  isCancelPending: boolean;
-  cancelError: unknown;
-}) {
-  return (
-    <ThemedView style={managementStyles.panel} testID="rehearsal-management-panel">
-      <ThemedText type="subtitle">稽古管理</ThemedText>
-
-      {(rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED') && (
-        <ThemedView style={managementStyles.section}>
-          <TouchableOpacity testID="rehearsal-edit" onPress={onEdit} style={managementStyles.secondaryButton}>
-            <ThemedText type="link">編集</ThemedText>
-          </TouchableOpacity>
-
-          {rehearsalStatus === 'SCHEDULED' && (
-            <>
-              <TouchableOpacity
-                testID="rehearsal-confirm"
-                onPress={onConfirm}
-                disabled={isConfirmPending}
-                style={managementStyles.secondaryButton}
-              >
-                {isConfirmPending ? <ActivityIndicator /> : <ThemedText type="link">稽古情報を確定する</ThemedText>}
-              </TouchableOpacity>
-              {confirmError !== null && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmError)}</ThemedText>}
-            </>
-          )}
-        </ThemedView>
-      )}
-
-      {(rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED' || rehearsalStatus === 'ACTIVE') && (
-        <ThemedView style={managementStyles.section}>
-          <TouchableOpacity testID="rehearsal-cancel" onPress={onCancel} disabled={isCancelPending} style={managementStyles.secondaryButton}>
-            {isCancelPending ? <ActivityIndicator /> : <ThemedText type="link">中止する</ThemedText>}
-          </TouchableOpacity>
-          {cancelError !== null && <ThemedText testID="rehearsal-cancel-error">{getErrorMessage(cancelError)}</ThemedText>}
-        </ThemedView>
-      )}
-    </ThemedView>
-  );
-}
-
-const managementStyles = StyleSheet.create({
-  panel: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: 10,
-    padding: Spacing.three,
-    gap: Spacing.three,
-    marginBottom: Spacing.three,
-  },
-  section: { gap: Spacing.two },
-  secondaryButton: { alignItems: 'flex-start' },
-});
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   backRow: { paddingHorizontal: Spacing.four, paddingVertical: Spacing.two },
@@ -604,6 +528,49 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.one,
   },
+  rehearsalInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  actionRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  actionButton: {
+    minHeight: 42,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonText: { color: '#fff', fontWeight: '700' },
+  editButton: { backgroundColor: '#d99a00' },
+  cancelButton: { backgroundColor: '#c62828' },
+  confirmButton: { backgroundColor: '#2e7d32' },
+  responseButtonRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  responseButton: {
+    flex: 1,
+    minWidth: 120,
+    minHeight: 48,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadge: {
+    minHeight: 40,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  attendingButton: { backgroundColor: '#2e7d32' },
+  absentButton: { backgroundColor: '#c62828' },
+  unansweredButton: { backgroundColor: '#777' },
+  disabledButton: { opacity: 0.5 },
   buttonRow: { flexDirection: 'row', gap: Spacing.three },
   commentsSection: { marginTop: Spacing.four, gap: Spacing.three },
   commentForm: { gap: Spacing.two },
