@@ -271,6 +271,8 @@ export default function RehearsalAttendanceScreen() {
                 {unselectedMembers.map((participant) => {
                   const isChecked = selectedNewMemberIds.has(participant.subject_id);
                   const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
+                  const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+                  const label = participant.display_name?.trim() || fullName || `Person ID: ${participant.subject_id}`;
 
                   return (
                     <TouchableOpacity
@@ -285,7 +287,7 @@ export default function RehearsalAttendanceScreen() {
                       >
                         {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
                       </View>
-                      <ThemedText>Person ID: {participant.subject_id}</ThemedText>
+                      <ThemedText>{label}</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
                         （{typeLabel}）
                       </ThemedText>
