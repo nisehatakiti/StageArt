@@ -12,9 +12,7 @@ import { ACTUAL_STATUS_OPTIONS, attendanceSummary, responseOptionsForPhase, stat
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import {
-  useActivateRehearsal,
   useCancelRehearsal,
-  useCompleteRehearsal,
   useConfirmRehearsal,
   useRehearsal,
 } from '@/features/attendance/useRehearsals';
@@ -32,14 +30,9 @@ import {
   useRehearsalComments,
   useUpdateRehearsalComment,
 } from '@/features/schedule/useScheduleComments';
-import {
-  useCreateTimetableItem,
-  usePublishRehearsalTimetable,
-  useRehearsalDraftTimetableItems,
-} from '@/features/schedule/useTimetableAuthoring';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
-import type { Participant, RehearsalAttendance, ScheduleComment, TimetableItem } from '@/types/api';
+import type { Participant, RehearsalAttendance, ScheduleComment } from '@/types/api';
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
 
@@ -127,12 +120,6 @@ export default function RehearsalAttendanceScreen() {
 
   const confirmRehearsal = useConfirmRehearsal(rehearsalId);
   const cancelRehearsal = useCancelRehearsal(rehearsalId);
-  const activateRehearsal = useActivateRehearsal(rehearsalId);
-  const completeRehearsal = useCompleteRehearsal(rehearsalId);
-  const draftItemsQuery = useRehearsalDraftTimetableItems(rehearsalId);
-  const createTimetableItem = useCreateTimetableItem(rehearsalId);
-  const publishTimetable = usePublishRehearsalTimetable(rehearsalId);
-
   const commentsQuery = useRehearsalComments(rehearsalId);
   const postComment = usePostRehearsalComment(rehearsalId as string);
   const updateComment = useUpdateRehearsalComment(rehearsalId);
@@ -266,21 +253,6 @@ export default function RehearsalAttendanceScreen() {
                 }
                 isCancelPending={cancelRehearsal.isPending}
                 cancelError={cancelRehearsal.isError ? cancelRehearsal.error : null}
-                onActivate={() => activateRehearsal.mutate()}
-                isActivatePending={activateRehearsal.isPending}
-                activateError={activateRehearsal.isError ? activateRehearsal.error : null}
-                onComplete={() => completeRehearsal.mutate()}
-                isCompletePending={completeRehearsal.isPending}
-                completeError={completeRehearsal.isError ? completeRehearsal.error : null}
-                draftItems={draftItemsQuery.data}
-                isDraftItemsLoading={draftItemsQuery.isLoading}
-                onAddItem={(fields) => createTimetableItem.mutate(fields)}
-                isAddItemPending={createTimetableItem.isPending}
-                addItemError={createTimetableItem.isError ? createTimetableItem.error : null}
-                onPublish={() => publishTimetable.mutate(undefined)}
-                isPublishPending={publishTimetable.isPending}
-                publishError={publishTimetable.isError ? publishTimetable.error : null}
-                publishSuccess={publishTimetable.isSuccess}
               />
               <ThemedView style={styles.summaryCard} testID="attendance-summary">
                 <ThemedText type="smallBold">出席状況サマリー</ThemedText>
@@ -496,21 +468,6 @@ function RehearsalManagementPanel({
   onCancel,
   isCancelPending,
   cancelError,
-  onActivate,
-  isActivatePending,
-  activateError,
-  onComplete,
-  isCompletePending,
-  completeError,
-  draftItems,
-  isDraftItemsLoading,
-  onAddItem,
-  isAddItemPending,
-  addItemError,
-  onPublish,
-  isPublishPending,
-  publishError,
-  publishSuccess,
 }: {
   rehearsalStatus: string | undefined;
   onEdit: () => void;
@@ -520,118 +477,18 @@ function RehearsalManagementPanel({
   onCancel: () => void;
   isCancelPending: boolean;
   cancelError: unknown;
-  onActivate: () => void;
-  isActivatePending: boolean;
-  activateError: unknown;
-  onComplete: () => void;
-  isCompletePending: boolean;
-  completeError: unknown;
-  draftItems: TimetableItem[] | undefined;
-  isDraftItemsLoading: boolean;
-  onAddItem: (fields: { title: string; startDateTime: string; category?: string; venue?: string }) => void;
-  isAddItemPending: boolean;
-  addItemError: unknown;
-  onPublish: () => void;
-  isPublishPending: boolean;
-  publishError: unknown;
-  publishSuccess: boolean;
 }) {
-  const [itemTitle, setItemTitle] = useState('');
-  const [itemDate, setItemDate] = useState('');
-  const [itemTime, setItemTime] = useState('');
-  const [itemVenue, setItemVenue] = useState('');
-
-  function handleAddItem() {
-    if (!itemTitle.trim() || !itemDate || !itemTime) return;
-
-    onAddItem({
-      title: itemTitle.trim(),
-      startDateTime: `${itemDate}T${itemTime}:00+09:00`,
-      venue: itemVenue.trim() || undefined,
-    });
-    setItemTitle('');
-    setItemVenue('');
-  }
-
   return (
     <ThemedView style={managementStyles.panel} testID="rehearsal-management-panel">
       <ThemedText type="subtitle">稽古管理</ThemedText>
 
-      <ThemedView style={managementStyles.section}>
-        <ThemedText type="smallBold">内容（タイムテーブル項目）</ThemedText>
-        {isDraftItemsLoading && <ActivityIndicator testID="draft-items-loading" />}
-        {(draftItems?.length ?? 0) > 0 && (
-          <ThemedView testID="draft-items-list" style={managementStyles.itemList}>
-            {draftItems?.map((item) => (
-              <ThemedText key={item.id} type="small" testID={`draft-item-${item.id}`}>
-                {item.title}
-                {item.venue ? `（${item.venue}）` : ''}
-              </ThemedText>
-            ))}
-          </ThemedView>
-        )}
-
-        <ThemedTextInput
-          testID="timetable-item-title"
-          placeholder="項目名"
-          value={itemTitle}
-          onChangeText={setItemTitle}
-          style={managementStyles.input}
-        />
-        <ThemedView style={managementStyles.row}>
-          <ThemedTextInput
-            testID="timetable-item-date"
-            placeholder="2026-09-10"
-            value={itemDate}
-            onChangeText={setItemDate}
-            autoCapitalize="none"
-            style={[managementStyles.input, managementStyles.flexInput]}
-          />
-          <ThemedTextInput
-            testID="timetable-item-time"
-            placeholder="18:00"
-            value={itemTime}
-            onChangeText={setItemTime}
-            autoCapitalize="none"
-            style={[managementStyles.input, managementStyles.flexInput]}
-          />
-        </ThemedView>
-        <ThemedTextInput
-          testID="timetable-item-venue"
-          placeholder="場所（任意）"
-          value={itemVenue}
-          onChangeText={setItemVenue}
-          style={managementStyles.input}
-        />
-        <TouchableOpacity
-          testID="timetable-item-add"
-          onPress={handleAddItem}
-          disabled={!itemTitle.trim() || !itemDate || !itemTime || isAddItemPending}
-          style={managementStyles.secondaryButton}
-        >
-          {isAddItemPending ? <ActivityIndicator /> : <ThemedText type="link">項目を追加する</ThemedText>}
-        </TouchableOpacity>
-        {addItemError !== null && <ThemedText testID="timetable-item-add-error">{getErrorMessage(addItemError)}</ThemedText>}
-      </ThemedView>
-
-      <ThemedView style={managementStyles.section}>
-        <TouchableOpacity testID="rehearsal-publish" onPress={onPublish} disabled={isPublishPending} style={managementStyles.secondaryButton}>
-          {isPublishPending ? <ActivityIndicator /> : <ThemedText type="link">内容を公開する</ThemedText>}
-        </TouchableOpacity>
-        {publishSuccess && (
-          <ThemedText testID="rehearsal-publish-success" type="small" themeColor="textSecondary">
-            公開しました。
-          </ThemedText>
-        )}
-        {publishError !== null && <ThemedText testID="rehearsal-publish-error">{getErrorMessage(publishError)}</ThemedText>}
-      </ThemedView>
-
-      {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED' || rehearsalStatus === 'ACTIVE') && (
+      {(rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED') && (
         <ThemedView style={managementStyles.section}>
           <TouchableOpacity testID="rehearsal-edit" onPress={onEdit} style={managementStyles.secondaryButton}>
             <ThemedText type="link">編集</ThemedText>
           </TouchableOpacity>
-          {(rehearsalStatus === 'DRAFT' || rehearsalStatus === 'SCHEDULED') && (
+
+          {rehearsalStatus === 'SCHEDULED' && (
             <>
               <TouchableOpacity
                 testID="rehearsal-confirm"
@@ -644,32 +501,11 @@ function RehearsalManagementPanel({
               {confirmError !== null && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmError)}</ThemedText>}
             </>
           )}
-          {rehearsalStatus === 'CONFIRMED' && (
-            <>
-              <TouchableOpacity
-                testID="rehearsal-activate"
-                onPress={onActivate}
-                disabled={isActivatePending}
-                style={managementStyles.secondaryButton}
-              >
-                {isActivatePending ? <ActivityIndicator /> : <ThemedText type="link">稽古を開始する</ThemedText>}
-              </TouchableOpacity>
-              {activateError !== null && <ThemedText testID="rehearsal-activate-error">{getErrorMessage(activateError)}</ThemedText>}
-            </>
-          )}
-          {rehearsalStatus === 'ACTIVE' && (
-            <>
-              <TouchableOpacity
-                testID="rehearsal-complete"
-                onPress={onComplete}
-                disabled={isCompletePending}
-                style={managementStyles.secondaryButton}
-              >
-                {isCompletePending ? <ActivityIndicator /> : <ThemedText type="link">実施済みにする</ThemedText>}
-              </TouchableOpacity>
-              {completeError !== null && <ThemedText testID="rehearsal-complete-error">{getErrorMessage(completeError)}</ThemedText>}
-            </>
-          )}
+        </ThemedView>
+      )}
+
+      {(rehearsalStatus === 'SCHEDULED' || rehearsalStatus === 'CONFIRMED' || rehearsalStatus === 'ACTIVE') && (
+        <ThemedView style={managementStyles.section}>
           <TouchableOpacity testID="rehearsal-cancel" onPress={onCancel} disabled={isCancelPending} style={managementStyles.secondaryButton}>
             {isCancelPending ? <ActivityIndicator /> : <ThemedText type="link">中止する</ThemedText>}
           </TouchableOpacity>
@@ -690,17 +526,6 @@ const managementStyles = StyleSheet.create({
     marginBottom: Spacing.three,
   },
   section: { gap: Spacing.two },
-  itemList: { gap: Spacing.half },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 14,
-  },
-  row: { flexDirection: 'row', gap: Spacing.two },
-  flexInput: { flex: 1 },
   secondaryButton: { alignItems: 'flex-start' },
 });
 
