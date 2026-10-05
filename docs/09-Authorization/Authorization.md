@@ -249,6 +249,7 @@ Rehearsal.Create
 Rehearsal.Update
 Rehearsal.Delete
 Schedule.Read
+Participant.Read
 
 RESERVATION_MANAGER
     ↓
@@ -275,6 +276,11 @@ Performance.Cancel
 Performance.Finish
 
 などを定義できる。
+
+REHEARSAL_MANAGERのParticipant.Readは、稽古の対象メンバーを選定するために
+Production Participant一覧を参照できることを意味する。Participant.Create /
+Update / Deleteは含まず、Participant自体の追加・削除・役割変更は
+PARTICIPANT_MANAGER（またはPrimaryManager）の権限に留める。
 
 RoleはPermission Setの定義であり、
 Person固有の属性ではない。
@@ -493,6 +499,7 @@ Rehearsal.Create
 Rehearsal.Update
 Rehearsal.Delete
 Schedule.Read
+Participant.Read
 
 RESERVATION_MANAGER
     ↓

@@ -1,7 +1,8 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { ApiClient } from '@/api/client';
+import { createQueryClient } from '@/api/queryClient';
 import { mockFetchRoutes } from '@/features/attendance/__fixtures__/attendanceFixtures';
 import CreateRehearsalScreen from '../../../app/(app)/production/[id]/schedule/attendance/create';
 
@@ -62,7 +63,7 @@ const staffD = participant('participant-d', 'person-d', 'STAFF');
 const staffE = participant('participant-e', 'person-e', 'STAFF');
 
 function renderCreate() {
-  const queryClient = new QueryClient();
+  const queryClient = createQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <CreateRehearsalScreen />
@@ -251,6 +252,24 @@ describe('稽古作成: ステータス選択', () => {
     expect(
       calls.some(([url, options]: [string, RequestInit]) => url.endsWith('/rehearsals/rehearsal-new/confirm') && options?.method === 'POST')
     ).toBe(true);
+  });
+});
+
+/**
+ * StageArt 稽古作成画面の参加メンバー表示修正 instruction: a failed
+ * GET /productions/{id}/participants must render as an error, not as
+ * "参加可能なメンバーがいません。" (which means the request succeeded and
+ * genuinely found zero eligible members - a different situation).
+ */
+describe('稽古作成: 参加メンバーAPIが失敗した場合', () => {
+  it('403の場合、「参加可能なメンバーがいません。」ではなくエラーメッセージを表示する', async () => {
+    mockFetchRoutes([{ test: (u) => u.endsWith('/productions/prod-1/participants'), status: 403, body: { code: 'stageart_participant_access_denied', message: 'forbidden' } }]);
+
+    renderCreate();
+
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-members-error')).toBeVisible());
+    expect(screen.getByTestId('rehearsal-create-members-error')).toHaveTextContent('この情報を表示する権限がありません。');
+    expect(screen.queryByTestId('rehearsal-create-members-empty')).toBeNull();
   });
 });
 

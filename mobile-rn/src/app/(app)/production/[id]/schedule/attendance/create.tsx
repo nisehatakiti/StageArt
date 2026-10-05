@@ -248,13 +248,25 @@ export default function CreateRehearsalScreen() {
 
         {participantsQuery.isLoading && <ActivityIndicator testID="rehearsal-create-members-loading" />}
 
-        {!participantsQuery.isLoading && eligibleMembers.length === 0 && (
+        {/* StageArt 稽古作成画面の参加メンバー表示修正 instruction: a failed
+            GET /productions/{id}/participants (403/network/etc.) must
+            never render as "参加可能なメンバーがいません。" - that message
+            means the request succeeded and genuinely found zero eligible
+            members, which is a different situation from "the request
+            itself failed". */}
+        {participantsQuery.isError && (
+          <ThemedText type="small" style={styles.error} testID="rehearsal-create-members-error">
+            {getErrorMessage(participantsQuery.error)}
+          </ThemedText>
+        )}
+
+        {!participantsQuery.isLoading && !participantsQuery.isError && eligibleMembers.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-create-members-empty">
             参加可能なメンバーがいません。
           </ThemedText>
         )}
 
-        {eligibleMembers.map((participant) => {
+        {!participantsQuery.isError && eligibleMembers.map((participant) => {
           const isSelf = participant.subject_id === currentPersonQuery.data?.id;
           const label = isSelf ? 'あなた' : `Person ID: ${participant.subject_id}`;
           const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;

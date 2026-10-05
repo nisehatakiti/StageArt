@@ -25,6 +25,10 @@ use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationEmail;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantStatus;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
@@ -666,5 +670,229 @@ final class ParticipantUseCaseTest extends TestCase
         ));
 
         $this->assertSame('○○日は出演しないので代わりに出演します', $updated->remarks);
+    }
+
+    /**
+     * StageArt 稽古作成画面の参加メンバー表示修正 instruction: the actual fix -
+     * a REHEARSAL_MANAGER delegate (who needs to read the Participant
+     * roster to pick Rehearsal Attendance targets - see
+     * CreateRehearsalUseCase's own MembershipContract::
+     * activeProductionMemberPersonIds() check) can now list Participants,
+     * via the new Participant.Read Permission RolePermissions::MAP
+     * grants them (ProductionAuthorizationService::canReadParticipants()).
+     * Before this round, this 403'd (the same population
+     * ProductionAuthorizationTest's
+     * test_organization_owner_without_primary_manager_or_delegate_status_cannot_read_production-
+     * style cases cover for other Read gates).
+     */
+    public function test_rehearsal_manager_delegate_can_list_participants(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $castPerson = Person::create(2);
+        $this->people->save($castPerson);
+        $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $castPerson->id()->toString(),
+            'CAST'
+        ));
+
+        $rehearsalManagerPerson = Person::create(3);
+        $this->people->save($rehearsalManagerPerson);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $rehearsalManagerPerson->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 3));
+
+        $this->assertCount(1, $listed);
+    }
+
+    /**
+     * §重要: REHEARSAL_MANAGER's new Participant.Read must not come with
+     * Participant.Create/Update/Delete - those stay PARTICIPANT_MANAGER/
+     * PrimaryManager-only via canManageParticipants()'s own unchanged
+     * Participant.Update check.
+     */
+    public function test_rehearsal_manager_delegate_cannot_create_update_or_cancel_participants(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $castPerson = Person::create(2);
+        $this->people->save($castPerson);
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            1,
+            'PERSON',
+            $castPerson->id()->toString(),
+            'CAST'
+        ));
+
+        $rehearsalManagerPerson = Person::create(3);
+        $this->people->save($rehearsalManagerPerson);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $rehearsalManagerPerson->id(),
+            RoleKey::rehearsalManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $anotherPerson = Person::create(4);
+        $this->people->save($anotherPerson);
+
+        try {
+            $this->createParticipant->execute(new CreateParticipantCommand(
+                $production->id()->toString(),
+                3,
+                'PERSON',
+                $anotherPerson->id()->toString(),
+                'STAFF'
+            ));
+            $this->fail('REHEARSAL_MANAGER must not be able to create a Participant.');
+        } catch (ParticipantAccessDeniedException $exception) {
+            $this->assertInstanceOf(ParticipantAccessDeniedException::class, $exception);
+        }
+
+        try {
+            $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 3, 'STAFF', 'ACTIVE'));
+            $this->fail('REHEARSAL_MANAGER must not be able to update a Participant.');
+        } catch (ParticipantAccessDeniedException $exception) {
+            $this->assertInstanceOf(ParticipantAccessDeniedException::class, $exception);
+        }
+
+        try {
+            $this->cancelParticipant->execute(new CancelParticipantCommand($created->id, 3));
+            $this->fail('REHEARSAL_MANAGER must not be able to cancel a Participant.');
+        } catch (ParticipantAccessDeniedException $exception) {
+            $this->assertInstanceOf(ParticipantAccessDeniedException::class, $exception);
+        }
+    }
+
+    /**
+     * §PARTICIPANT_MANAGERの既存メンバー管理が壊れない: full regression check
+     * via a delegate (not just PrimaryManager, which every other test in
+     * this file already exercises) - list, create, update, and cancel
+     * all still work unchanged for PARTICIPANT_MANAGER.
+     */
+    public function test_participant_manager_delegate_retains_full_list_create_update_and_cancel_access(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $participantManagerPerson = Person::create(2);
+        $this->people->save($participantManagerPerson);
+        $this->delegates->save(ProductionDelegate::create(
+            $production->id(),
+            $participantManagerPerson->id(),
+            RoleKey::participantManager(),
+            $production->primaryManagerPersonId()
+        ));
+
+        $castPerson = Person::create(3);
+        $this->people->save($castPerson);
+
+        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+            $production->id()->toString(),
+            2,
+            'PERSON',
+            $castPerson->id()->toString(),
+            'CAST'
+        ));
+        $this->assertSame('ACTIVE', $created->status);
+
+        $this->assertCount(1, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2)));
+
+        $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 2, 'STAFF', 'ACTIVE'));
+        $this->assertSame('STAFF', $updated->participantType);
+
+        $this->cancelParticipant->execute(new CancelParticipantCommand($created->id, 2));
+        $cancelled = $this->getParticipant->execute(new GetParticipantQuery($created->id, 2));
+        $this->assertSame('CANCELLED', $cancelled->status);
+    }
+
+    /**
+     * §権限なしユーザーが管理用Participant APIを不正利用できない: neither
+     * PrimaryManager, nor any ProductionDelegate Role, nor a plain
+     * ACTIVE Participant gains list access from this change - only
+     * Participant.Read/Participant.Update holders (and PrimaryManager)
+     * do.
+     */
+    public function test_unrelated_person_cannot_list_participants(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $outsider = Person::create(2);
+        $this->people->save($outsider);
+
+        $this->expectException(ParticipantAccessDeniedException::class);
+
+        $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2));
+    }
+
+    /**
+     * §稽古対象候補の母集団確認: ListParticipantsUseCase itself returns
+     * every Participant regardless of status/subject_type (unchanged -
+     * this is the existing Admin-facing roster, still used by the
+     * member-management screen) - "ACTIVEかつPERSON" eligibility for
+     * Rehearsal target selection is, and remains, a client-side filter
+     * matching CoreMembershipAdapter::activeProductionMemberPersonIds()'s
+     * own population exactly (Participant Domain semantics are
+     * unchanged by this round). This only confirms that population is
+     * still reachable through the list this REHEARSAL_MANAGER fix
+     * grants - not a new Domain rule.
+     */
+    public function test_list_participants_includes_every_status_and_subject_type_unfiltered(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $activePerson = Person::create(2);
+        $this->people->save($activePerson);
+        $activeParticipant = Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $activePerson->id()->toString(),
+            ParticipantType::cast()
+        );
+        $this->participants->save($activeParticipant);
+
+        $inactivePerson = Person::create(3);
+        $this->people->save($inactivePerson);
+        $inactiveParticipant = Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $inactivePerson->id()->toString(),
+            ParticipantType::staff()
+        );
+        $inactiveParticipant->changeStatus(ParticipantStatus::fromString('INACTIVE'));
+        $this->participants->save($inactiveParticipant);
+
+        $cancelledPerson = Person::create(4);
+        $this->people->save($cancelledPerson);
+        $cancelledParticipant = Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $cancelledPerson->id()->toString(),
+            ParticipantType::cast()
+        );
+        $cancelledParticipant->changeStatus(ParticipantStatus::fromString('CANCELLED'));
+        $this->participants->save($cancelledParticipant);
+
+        $this->participants->save(Participant::createNameOnly(
+            $production->id(),
+            '山田太郎',
+            ParticipantType::staff()
+        ));
+
+        $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 1));
+        $this->assertCount(4, $listed, 'The Admin-facing list is unfiltered - every status/subject_type still appears.');
+
+        $eligibleForRehearsal = array_filter(
+            $listed,
+            static fn ($participant) => $participant->subjectType === 'PERSON' && $participant->status === 'ACTIVE'
+        );
+        $this->assertCount(1, $eligibleForRehearsal, 'Only the ACTIVE, PERSON-subject Participant is Rehearsal-target-eligible.');
+        $this->assertSame($activePerson->id()->toString(), array_values($eligibleForRehearsal)[0]->subjectId);
     }
 }

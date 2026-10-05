@@ -293,6 +293,24 @@ final class ProductionAuthorizationService
             || $this->hasProductionPermission($person, $production, Permission::fromString('Participant.Update'));
     }
 
+    /**
+     * StageArt 稽古作成画面の参加メンバー表示修正 instruction: the Read-level
+     * counterpart to canManageParticipants() above - checks
+     * `Participant.Read` instead of `Participant.Update`, so a
+     * REHEARSAL_MANAGER delegate (who now carries `Participant.Read` in
+     * RolePermissions::MAP, but deliberately not Participant.Create/
+     * Update/Delete) can view the Production's Participant roster to
+     * pick Rehearsal Attendance targets, without gaining any ability to
+     * add/remove/edit Participants themselves. PARTICIPANT_MANAGER keeps
+     * passing this too (their own Permission Set already includes both
+     * Participant.Read and Participant.Update).
+     */
+    public function canReadParticipants(Person $person, Production $production): bool
+    {
+        return $this->isPrimaryManager($person, $production)
+            || $this->hasProductionPermission($person, $production, Permission::fromString('Participant.Read'));
+    }
+
     public function isActivePersonParticipant(Person $person, Production $production): bool
     {
         foreach ($this->participants->findByProductionId($production->id()) as $participant) {

@@ -27,6 +27,20 @@ namespace StageArt\Domain\Role;
  * was added, since Core does not need to know a Capability string exists
  * ahead of time (see AuthorizationContract's own docblock).
  *
+ * StageArt 稽古作成画面の参加メンバー表示修正 instruction: REHEARSAL_MANAGER's
+ * entry also carries `Participant.Read` now (Authorization.md's worked
+ * example updated to match) - 稽古管理者 must be able to read the
+ * Production's Participant roster to pick Rehearsal Attendance targets
+ * (CreateRehearsalUseCase already validates those targets against
+ * MembershipContract::activeProductionMemberPersonIds(), the same
+ * Participant data). Deliberately Read-only: Participant.Create/Update/
+ * Delete are NOT added, so REHEARSAL_MANAGER still cannot add/remove/
+ * edit Participants - that stays PARTICIPANT_MANAGER-only via
+ * ProductionAuthorizationService::canManageParticipants()'s own
+ * unchanged Participant.Update check. See
+ * ProductionAuthorizationService::canReadParticipants() for the new
+ * Read-level gate this gets checked against.
+ *
  * OWNER and MEMBER intentionally have no entry here. Organization Scope
  * authorization (OrganizationAuthorizationService::hasRole()) continues
  * to check membership in an explicit allowed-RoleKey list per call site
@@ -83,6 +97,19 @@ final class RolePermissions
             'Rehearsal.Update',
             'Rehearsal.Delete',
             'Schedule.Read',
+            // StageArt 稽古作成画面の参加メンバー表示修正 instruction:
+            // CreateRehearsalUseCase already validates target selection
+            // against the Production's active Person-Participants
+            // (MembershipContract::activeProductionMemberPersonIds()) -
+            // 稽古管理者 needs to be able to READ that same roster to
+            // pick targets in the first place. `Participant.Read` was
+            // already declared here in the catalog (unused until now -
+            // see ProductionAuthorizationService::canReadParticipants())
+            // for PARTICIPANT_MANAGER; this does not grant Create/
+            // Update/Delete, which stay PARTICIPANT_MANAGER-only via
+            // canManageParticipants()'s own unchanged Participant.Update
+            // check.
+            'Participant.Read',
         ],
         RoleKey::PERFORMANCE_MANAGER => [
             'Performance.Read',

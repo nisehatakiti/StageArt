@@ -55,9 +55,16 @@ final class ListParticipantsUseCase
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->canManageParticipants($requester, $production)) {
+        // StageArt 稽古作成画面の参加メンバー表示修正 instruction: listing/
+        // viewing Participants is a Read operation, gated by
+        // canReadParticipants() (Participant.Read) - not
+        // canManageParticipants() (Participant.Update), which stays the
+        // gate for Create/Update/Cancel below. This is what admits a
+        // REHEARSAL_MANAGER delegate (who has Participant.Read but not
+        // Participant.Update) without giving them any write access.
+        if (! $this->authorization->canReadParticipants($requester, $production)) {
             throw new ParticipantAccessDeniedException(
-                'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER Role can view Participants.'
+                'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER or REHEARSAL_MANAGER Role can view Participants.'
             );
         }
 
