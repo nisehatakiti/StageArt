@@ -179,6 +179,17 @@ export default function RehearsalAttendanceScreen() {
     setRemarksDraft(myRecord.remarks ?? '');
     setRemarksInitializedForId(myRecord.id);
   }
+  const participantNameByPersonId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const participant of participantsQuery.data ?? []) {
+      if (participant.subject_type !== 'PERSON' || participant.status !== 'ACTIVE') continue;
+      const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+      const name = participant.display_name?.trim() || fullName;
+      if (name) map.set(participant.subject_id, name);
+    }
+    return map;
+  }, [participantsQuery.data]);
+
   const summary = useMemo(
     () => attendanceSummary((attendancesQuery.data ?? []).map((a) => a.status)),
     [attendancesQuery.data]
@@ -222,6 +233,8 @@ export default function RehearsalAttendanceScreen() {
           testID="attendance-roster"
           data={attendancesQuery.data ?? []}
           keyExtractor={(a) => a.id}
+          numColumns={2}
+          columnWrapperStyle={styles.rosterColumns}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <ThemedView>
@@ -352,6 +365,7 @@ export default function RehearsalAttendanceScreen() {
           renderItem={({ item }) => (
             <AttendanceRow
               attendance={item}
+              displayName={participantNameByPersonId.get(item.person_id) ?? '氏名未設定'}
               phase={phase}
               onRecordActual={(status) => recordActualMutation.mutate({ attendanceId: item.id, status })}
               isRecordPending={recordActualMutation.isPending}
@@ -364,7 +378,7 @@ export default function RehearsalAttendanceScreen() {
           )}
           ListFooterComponent={
             <ThemedView style={styles.commentsSection}>
-              <ThemedText type="subtitle">コメント</ThemedText>
+              {(commentsQuery.data?.length ?? 0) > 0 && <ThemedText type="smallBold">コメント</ThemedText>}
               <ScheduleCommentList
                 isLoading={commentsQuery.isLoading}
                 isError={commentsQuery.isError}
@@ -416,12 +430,14 @@ export default function RehearsalAttendanceScreen() {
 
 function AttendanceRow({
   attendance,
+  displayName,
   phase,
   onRecordActual,
   isRecordPending,
   recordError,
 }: {
   attendance: RehearsalAttendance;
+  displayName: string;
   phase: string;
   onRecordActual: (status: string) => void;
   isRecordPending: boolean;
@@ -429,8 +445,8 @@ function AttendanceRow({
 }) {
   return (
     <ThemedView style={styles.rosterRow} testID="attendance-roster-row">
-      <ThemedText type="small" themeColor="textSecondary">
-        {attendance.person_id}
+      <ThemedText type="smallBold">
+        {displayName}
       </ThemedText>
       <ThemedText>{statusLabel(attendance.status)}</ThemedText>
 
@@ -552,7 +568,12 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     marginBottom: Spacing.three,
   },
+  rosterColumns: {
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
+  },
   rosterRow: {
+    flex: 1,
     borderWidth: 1,
     borderColor: '#e1dee6',
     borderRadius: 10,
