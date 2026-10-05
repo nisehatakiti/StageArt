@@ -174,7 +174,7 @@ function buildProductionContextItems(
     { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
     { key: 'production-delegates', label: '担当者', href: `/productions/${id}/delegates` as Href, disabled: !isPrimaryManager },
     { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
-    { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule` as Href },
+    { key: 'production-rehearsal', label: '稽古管理', href: `/production/${id}/schedule/attendance` as Href },
     {
       key: 'production-performances',
       label: '公演スケジュール管理',
