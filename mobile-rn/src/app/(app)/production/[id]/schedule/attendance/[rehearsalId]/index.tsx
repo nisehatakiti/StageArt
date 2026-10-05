@@ -574,7 +574,6 @@ const styles = StyleSheet.create({
   absentButton: { backgroundColor: '#c62828' },
   unansweredButton: { backgroundColor: '#777' },
   disabledButton: { opacity: 0.5 },
-  buttonRow: { flexDirection: 'row', gap: Spacing.three },
   commentsSection: { marginTop: Spacing.four, gap: Spacing.three },
   commentForm: { gap: Spacing.two },
   postButton: {
