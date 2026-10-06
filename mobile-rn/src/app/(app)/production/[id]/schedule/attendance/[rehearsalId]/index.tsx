@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
+import { useProduction } from '@/features/production/useProductions';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import {
   useCancelRehearsal,
@@ -17,7 +18,6 @@ import {
   useRehearsal,
 } from '@/features/attendance/useRehearsals';
 import {
-  useAddRehearsalAttendanceTargets,
   useRehearsalAttendances,
   useRespondRehearsalAttendance,
 } from '@/features/attendance/useRehearsalAttendance';
@@ -31,9 +31,7 @@ import {
 } from '@/features/schedule/useScheduleComments';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
-import type { Participant, RehearsalAttendance, ScheduleComment } from '@/types/api';
-
-const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
+import type { RehearsalAttendance, ScheduleComment } from '@/types/api';
 
 /** Same map as the Rehearsal list screen (schedule/attendance/index.tsx)
  * - docs/20-RehearsalManagementScreen.md §4/§4.1 confirms the Detail
@@ -81,40 +79,10 @@ export default function RehearsalAttendanceScreen() {
   const respondMutation = useRespondRehearsalAttendance(rehearsalId, phase);
 
   const participantsQuery = useParticipants(productionId);
-  const addTargetsMutation = useAddRehearsalAttendanceTargets(rehearsalId, phase);
-  const [selectedNewMemberIds, setSelectedNewMemberIds] = useState<Set<string>>(new Set());
-
-  /**
-   * 「未選択メンバー」= 現在このRehearsalのRehearsalAttendance対象に
-   * なっていない、ACTIVEなPerson-subject Participant。Backend側で追加時に
-   * 同じ母集団を再検証する（AddRehearsalAttendanceTargetsUseCase.php）ため、
-   * ここでの絞り込みはUI表示専用で、権限・整合性チェックを肩代わりしない。
-   */
-  const eligibleMembers = (participantsQuery.data ?? []).filter(
-    (participant): participant is Participant => participant.subject_type === 'PERSON' && participant.status === 'ACTIVE'
-  );
-  const currentTargetPersonIds = new Set((attendancesQuery.data ?? []).map((a) => a.person_id));
-  const unselectedMembers = eligibleMembers.filter((participant) => !currentTargetPersonIds.has(participant.subject_id));
-
-  function toggleNewMember(personId: string) {
-    setSelectedNewMemberIds((current) => {
-      const next = new Set(current);
-      if (next.has(personId)) {
-        next.delete(personId);
-      } else {
-        next.add(personId);
-      }
-      return next;
-    });
-  }
-
-  function handleAddSelectedMembers() {
-    if (selectedNewMemberIds.size === 0) return;
-
-    addTargetsMutation.mutate(Array.from(selectedNewMemberIds), {
-      onSuccess: () => setSelectedNewMemberIds(new Set()),
-    });
-  }
+  const productionQuery = useProduction(productionId);
+  const canManageRehearsal =
+    productionQuery.data?.is_primary_manager === true ||
+    productionQuery.data?.delegate_roles?.includes('REHEARSAL_MANAGER') === true;
 
   const confirmRehearsal = useConfirmRehearsal(rehearsalId);
   const cancelRehearsal = useCancelRehearsal(rehearsalId);
@@ -240,7 +208,7 @@ export default function RehearsalAttendanceScreen() {
           testID="attendance-roster"
           data={attendancesQuery.data ?? []}
           keyExtractor={(a) => a.id}
-          numColumns={2}
+          numColumns={3}
           columnWrapperStyle={styles.rosterColumns}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
@@ -251,7 +219,7 @@ export default function RehearsalAttendanceScreen() {
                     <ThemedText type="smallBold" testID="rehearsal-info-status">
                       {rehearsalStatusLabel(rehearsalQuery.data.status)}
                     </ThemedText>
-                    <ThemedView style={styles.actionRow}>
+                    {canManageRehearsal && <ThemedView style={styles.actionRow}>
                       {(rehearsalQuery.data.status === 'SCHEDULED' || rehearsalQuery.data.status === 'CONFIRMED') && (
                         <TouchableOpacity
                           testID="rehearsal-edit"
@@ -293,7 +261,11 @@ export default function RehearsalAttendanceScreen() {
                   {rehearsalQuery.data.location && (
                     <ThemedText testID="rehearsal-info-location">{rehearsalQuery.data.location}</ThemedText>
                   )}
-                  {rehearsalQuery.data.status === 'SCHEDULED' && (
+                  <ThemedText type="smallBold">備考</ThemedText>
+                  <ThemedText testID="rehearsal-info-description">
+                    {rehearsalQuery.data.description?.trim() || 'なし'}
+                  </ThemedText>
+                  {canManageRehearsal && rehearsalQuery.data.status === 'SCHEDULED' && (
                     <TouchableOpacity
                       testID="rehearsal-confirm"
                       onPress={() => confirmRehearsal.mutate()}
@@ -305,8 +277,8 @@ export default function RehearsalAttendanceScreen() {
                       {confirmRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>稽古情報を確定する</ThemedText>}
                     </TouchableOpacity>
                   )}
-                  {confirmRehearsal.isError && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmRehearsal.error)}</ThemedText>}
-                  {cancelRehearsal.isError && <ThemedText testID="rehearsal-cancel-error">{getErrorMessage(cancelRehearsal.error)}</ThemedText>}
+                  {canManageRehearsal && confirmRehearsal.isError && <ThemedText testID="rehearsal-confirm-error">{getErrorMessage(confirmRehearsal.error)}</ThemedText>}
+                  {canManageRehearsal && cancelRehearsal.isError && <ThemedText testID="rehearsal-cancel-error">{getErrorMessage(cancelRehearsal.error)}</ThemedText>}
                 </ThemedView>
               )}
               <ThemedView style={styles.summaryCard} testID="attendance-summary">
@@ -315,56 +287,9 @@ export default function RehearsalAttendanceScreen() {
                 <ThemedText testID="attendance-summary-not-attending">欠席 {summary.notAttending}名</ThemedText>
                 <ThemedText testID="attendance-summary-unanswered">未回答 {summary.unanswered}名</ThemedText>
               </ThemedView>
-              <ThemedView style={styles.summaryCard} testID="unselected-members-panel">
-                <ThemedText type="smallBold">未選択メンバー</ThemedText>
-                {participantsQuery.isLoading && <ActivityIndicator testID="unselected-members-loading" />}
-                {!participantsQuery.isLoading && unselectedMembers.length === 0 && (
-                  <ThemedText type="small" themeColor="textSecondary" testID="unselected-members-empty">
-                    未選択のメンバーはいません。
-                  </ThemedText>
-                )}
-                {unselectedMembers.map((participant) => {
-                  const isChecked = selectedNewMemberIds.has(participant.subject_id);
-                  const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
-                  const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
-                  const label = participant.display_name?.trim() || fullName || '名前未設定';
-
-                  return (
-                    <TouchableOpacity
-                      key={participant.id}
-                      testID={`unselected-member-${participant.subject_id}`}
-                      onPress={() => toggleNewMember(participant.subject_id)}
-                      style={styles.memberRow}
-                    >
-                      <View
-                        testID={`unselected-member-checkbox-${participant.subject_id}`}
-                        style={[styles.checkbox, isChecked && styles.checkboxChecked]}
-                      >
-                        {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
-                      </View>
-                      <ThemedText>{label}</ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        （{typeLabel}）
-                      </ThemedText>
-                    </TouchableOpacity>
-                  );
-                })}
-                {unselectedMembers.length > 0 && (
-                  <TouchableOpacity
-                    testID="unselected-members-add"
-                    onPress={handleAddSelectedMembers}
-                    disabled={selectedNewMemberIds.size === 0 || addTargetsMutation.isPending}
-                  >
-                    {addTargetsMutation.isPending ? <ActivityIndicator /> : <ThemedText type="link">追加する</ThemedText>}
-                  </TouchableOpacity>
-                )}
-                {addTargetsMutation.isError && (
-                  <ThemedText testID="unselected-members-add-error">{getErrorMessage(addTargetsMutation.error)}</ThemedText>
-                )}
-              </ThemedView>
               {myRecord && (
                 <ThemedView style={styles.myCard} testID="attendance-my-record">
-                  <ThemedText type="subtitle">稽古の出欠を登録してください。</ThemedText>
+                  <ThemedText type="smallBold" style={styles.attendancePrompt}>稽古の出欠を登録してください。</ThemedText>
                   {responseDeadlinePassed && (
                     <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
                       回答期限を過ぎたため、回答・変更はできません。
@@ -520,16 +445,19 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.three,
   },
   rosterColumns: {
-    gap: Spacing.two,
-    marginBottom: Spacing.two,
+    gap: Spacing.three,
+    marginBottom: Spacing.one,
+    justifyContent: 'flex-start',
   },
   rosterRow: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: 10,
-    padding: Spacing.three,
+    width: 180,
+    flexGrow: 0,
+    flexShrink: 0,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.one,
     gap: Spacing.one,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   rehearsalInfoHeader: {
     flexDirection: 'row',
@@ -550,6 +478,17 @@ const styles = StyleSheet.create({
   editButton: { backgroundColor: '#d99a00' },
   cancelButton: { backgroundColor: '#c62828' },
   confirmButton: { backgroundColor: '#2e7d32' },
+  attendancePrompt: { fontSize: 18, lineHeight: 24 },
+  remarksInput: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#b7b2c0',
+    borderRadius: 8,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    backgroundColor: '#fff',
+  },
   responseButtonRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   responseButton: {
     flex: 1,
