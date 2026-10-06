@@ -101,7 +101,7 @@ export default function OrganizationEditScreen() {
     { label: 'StageArt', href: '/dashboard' as Href },
     { label: '団体', href: '/organizations' as Href },
     { label: organization?.name ?? '...', href: `/organizations/${id}` as Href },
-    { label: '団体情報編集' },
+    { label: '団体情報' },
   ];
 
   if (organizationsQuery.isLoading) {
@@ -131,7 +131,7 @@ export default function OrganizationEditScreen() {
   return (
     <>
       <ThemedText type="title" style={styles.pageTitle}>
-        団体情報編集
+        団体情報
       </ThemedText>
 
       <View style={styles.form}>
