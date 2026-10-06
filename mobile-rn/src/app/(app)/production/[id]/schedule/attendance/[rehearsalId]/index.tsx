@@ -33,6 +33,7 @@ import {
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { RehearsalAttendance, ScheduleComment } from '@/types/api';
+import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 
 /** Rehearsal detail status labels. */
 const REHEARSAL_STATUS_LABELS: Record<string, string> = {
@@ -220,7 +221,7 @@ export default function RehearsalAttendanceScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <TouchableOpacity onPress={() => router.back()} testID="attendance-back" style={styles.backRow}>
-        <ThemedText type="link">← 稽古予定</ThemedText>
+        <ThemedText type="link">← 予定</ThemedText>
       </TouchableOpacity>
 
       {isLoading && (
@@ -272,7 +273,7 @@ export default function RehearsalAttendanceScreen() {
                           onPress={() => router.push(`/production/${productionId}/schedule/attendance/${rehearsalId}/edit`)}
                           style={[styles.actionButton, styles.editButton]}
                           accessibilityRole="button"
-                          accessibilityLabel="稽古を編集する"
+                          accessibilityLabel="予定を編集する"
                         >
                           <ThemedText style={styles.actionButtonText}>編集</ThemedText>
                         </TouchableOpacity>
@@ -297,6 +298,12 @@ export default function RehearsalAttendanceScreen() {
                         </TouchableOpacity>
                       )}
                     </ThemedView>}
+                  </ThemedView>
+                  <ThemedView style={styles.rehearsalSecondaryInfo}>
+                    <ThemedText type="smallBold">種別</ThemedText>
+                    <ThemedText testID="rehearsal-info-activity-type" style={styles.rehearsalLocation}>
+                      {rehearsalActivityTypeLabel(rehearsalQuery.data.activity_type)}
+                    </ThemedText>
                   </ThemedView>
                   {rehearsalQuery.data.start_date_time && (
                     <ThemedView style={styles.rehearsalPrimaryInfo}>
