@@ -104,6 +104,8 @@ function generateNonce(): string {
  */
 export function GoogleSignInButtonWeb({ onIdToken, disabled }: { onIdToken: (idToken: string) => void; disabled?: boolean }) {
   const containerRef = useRef<View>(null);
+  const onIdTokenRef = useRef(onIdToken);
+  onIdTokenRef.current = onIdToken;
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +119,7 @@ export function GoogleSignInButtonWeb({ onIdToken, disabled }: { onIdToken: (idT
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: (response) => {
-            if (!cancelled) onIdToken(response.credential);
+            if (!cancelled) onIdTokenRef.current(response.credential);
           },
           nonce: generateNonce(),
           ux_mode: 'popup',
@@ -148,7 +150,7 @@ export function GoogleSignInButtonWeb({ onIdToken, disabled }: { onIdToken: (idT
     return () => {
       cancelled = true;
     };
-  }, [onIdToken]);
+  }, []);
 
   return <View ref={containerRef} testID="login-google-button-web" pointerEvents={disabled ? 'none' : 'auto'} />;
 }
