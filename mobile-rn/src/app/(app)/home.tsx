@@ -415,7 +415,7 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
         testID={'upcoming-rehearsal-row-' + rehearsal.rehearsalId}
         onPress={() => router.push('/production/' + rehearsal.productionId + '/schedule/attendance/' + rehearsal.rehearsalId)}
         accessibilityRole="button"
-        accessibilityLabel={'稽古詳細、' + rehearsal.productionName}
+        accessibilityLabel={'予定詳細、' + rehearsal.productionName}
       >
         <ThemedView style={styles.titleRow}>
           {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
