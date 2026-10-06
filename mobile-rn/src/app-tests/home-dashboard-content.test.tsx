@@ -29,7 +29,7 @@ const dashboardWithContent: MyDashboard = {
       production_name: '○○公演2026',
       title: '通し稽古',
       start_date_time: '2026-08-21T19:00:00+09:00',
-      end_date_time: null,
+      end_date_time: '2026-08-21T21:00:00+09:00',
       location: '○○スタジオ',
       attendance_status: 'UNANSWERED',
     },
@@ -131,6 +131,7 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
     expect(screen.getByText('○○公演2026')).toBeVisible();
     expect(screen.getByText('通し稽古')).toBeVisible();
     expect(screen.getByText(/○○スタジオ/)).toBeVisible();
+    expect(screen.getByText(/19:00〜21:00/)).toBeVisible();
     // attendance_status itself is never shown as text (Phase 7.4 §11).
     expect(screen.queryByText('UNANSWERED')).toBeNull();
     expect(screen.queryByText('未回答')).toBeNull();
