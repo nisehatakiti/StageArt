@@ -1,5 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,13 +25,7 @@ type NavEntry = {
   route: '/favorites';
 };
 
-const PRODUCTION_STATUS_LABEL: Record<string, string> = {
-  PLANNING: '準備中',
-  ACTIVE: '進行中',
-  COMPLETED: '終了',
-  ARCHIVED: 'アーカイブ済み',
-  CANCELLED: '中止',
-};
+
 
 /**
  * StageArt Blueprint再構成 Phase 1c: the single canonical Home, replacing
@@ -479,18 +473,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7E4DE',
   },
   navTileText: { textAlign: 'center' },
-  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
-  quickAction: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: Radius.medium,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    backgroundColor: '#fff',
-  },
-  quickActionPrimary: { backgroundColor: BrandColors.warmAmber, borderColor: BrandColors.warmAmber },
-  quickActionText: { color: '#2A2320' },
-  quickActionTextPrimary: { color: '#fff' },
   inviteLink: {
     paddingTop: Spacing.two,
   },
@@ -503,33 +485,6 @@ const styles = StyleSheet.create({
   rehearsalCard: { width: '100%', maxWidth: 760, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.two, gap: Spacing.one, backgroundColor: '#fff' },
   homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.one, gap: Spacing.one },
   responseButtonSelected: { borderWidth: 2, borderColor: '#fff' },
-  organizationProductions: { gap: Spacing.one, paddingTop: Spacing.one },
-  organizationProductionRow: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: 8,
-    gap: Spacing.half,
-    backgroundColor: '#fff',
-  },
-  organizationName: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
-  organizationProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
-  card: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: Radius.medium,
-    padding: Spacing.two,
-    gap: Spacing.half,
-  },
-  organizationCard: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: Radius.medium,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    gap: Spacing.half,
-  },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, flexWrap: 'wrap' },
   unansweredDot: {
     width: 8,
