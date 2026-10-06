@@ -44,7 +44,7 @@ export default function RehearsalListScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ThemedText type="title" style={styles.title}>
-        稽古一覧
+        稽古予定
       </ThemedText>
 
       {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」 - 権限
