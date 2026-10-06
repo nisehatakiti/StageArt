@@ -387,6 +387,12 @@ function HomeNotificationRow({ notification }: { notification: MyNotification })
  * not a new permission concept (still exactly `current_person_role ===
  * 'OWNER'`, the same field/check as before).
  */
+function formatTimeRange(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
 function formatNotificationCreatedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -417,30 +423,42 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
         <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
         {rehearsal.dateDisplay && (
           <ThemedText type="small" themeColor="textSecondary">
-            {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}{rehearsal.location ? ' ・ ' + rehearsal.location : ''}
+            {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}
+            {rehearsalQuery.data?.end_date_time ? '〜' + formatTimeRange(rehearsalQuery.data.end_date_time) : ''}
+            {rehearsal.location ? ' ・ ' + rehearsal.location : ''}
+          </ThemedText>
+        )}
+        {rehearsalQuery.data?.description && (
+          <ThemedText type="small" style={styles.rehearsalDescription}>
+            {rehearsalQuery.data.description}
           </ThemedText>
         )}
       </TouchableOpacity>
       {myRecord && responseOptions.length > 0 && (
         <ThemedView style={styles.homeAttendanceArea}>
           <ThemedText type="smallBold">出欠</ThemedText>
-          <ThemedView style={styles.responseButtonRow}>
-            {responseOptions.map((option) => {
-              const isAttending = option === 'ATTENDING' || option === 'AVAILABLE';
-              const selected = myRecord.status === option;
-              return (
-                <TouchableOpacity
-                  key={option}
-                  testID={'home-rehearsal-respond-' + rehearsal.rehearsalId + '-' + option}
-                  onPress={() => respondMutation.mutate({ attendanceId: myRecord.id, status: option })}
-                  disabled={respondMutation.isPending}
-                  style={[styles.responseButton, isAttending ? styles.attendingButton : styles.absentButton, selected && styles.responseButtonSelected, respondMutation.isPending && styles.disabledButton]}
-                >
-                  <ThemedText style={styles.actionButtonText}>{statusLabel(option)}</ThemedText>
-                </TouchableOpacity>
-              );
-            })}
-          </ThemedView>
+          {myRecord.status === 'UNANSWERED' ? (
+            <ThemedView style={styles.responseButtonRow}>
+              {responseOptions.map((option) => {
+                const isAttending = option === 'ATTENDING' || option === 'AVAILABLE';
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    testID={'home-rehearsal-respond-' + rehearsal.rehearsalId + '-' + option}
+                    onPress={() => respondMutation.mutate({ attendanceId: myRecord.id, status: option })}
+                    disabled={respondMutation.isPending}
+                    style={[styles.responseButton, isAttending ? styles.attendingButton : styles.absentButton, respondMutation.isPending && styles.disabledButton]}
+                  >
+                    <ThemedText style={styles.actionButtonText}>{statusLabel(option)}</ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </ThemedView>
+          ) : (
+            <ThemedText type="smallBold" style={styles.currentAttendanceStatus}>
+              {statusLabel(myRecord.status)}
+            </ThemedText>
+          )}
           {respondMutation.isError && <ThemedText themeColor="textSecondary">{getErrorMessage(respondMutation.error)}</ThemedText>}
         </ThemedView>
       )}
@@ -523,6 +541,8 @@ const styles = StyleSheet.create({
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
   rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   rehearsalLabel: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  rehearsalDescription: { paddingTop: Spacing.half },
+  currentAttendanceStatus: { paddingVertical: Spacing.half },
   rehearsalCard: { width: '100%', maxWidth: 760, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.two, gap: Spacing.one, backgroundColor: '#fff' },
   homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.one, gap: Spacing.one },
   responseButtonSelected: { borderWidth: 2, borderColor: '#fff' },
