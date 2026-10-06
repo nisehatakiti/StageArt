@@ -462,7 +462,7 @@ function HomeOrganizationCard({ organization }: { organization: Organization }) 
         onPress={() => router.push(`/organizations/${organization.id}` as Href)}
       >
         <View style={styles.titleRow}>
-          <ThemedText type="smallBold">{organization.name}</ThemedText>
+          <ThemedText type="default" style={styles.organizationName}>{organization.name}</ThemedText>
           <RolePill role={organization.current_person_role} />
         </View>
       </TouchableOpacity>
@@ -617,7 +617,7 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   list: { gap: Spacing.two },
   section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
-  sectionTitle: { paddingTop: Spacing.two, paddingBottom: Spacing.one, fontSize: 24, lineHeight: 30 },
+  sectionTitle: { paddingTop: Spacing.two, paddingBottom: Spacing.one, fontSize: 22, lineHeight: 28 },
   rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   rehearsalLabel: { fontSize: 15, lineHeight: 20 },
   organizationProductions: { gap: Spacing.one, paddingTop: Spacing.one },
@@ -630,7 +630,8 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
     backgroundColor: '#fff',
   },
-  organizationProductionName: { fontSize: 17, lineHeight: 22, fontWeight: '700' },
+  organizationName: { fontSize: 17, lineHeight: 22, fontWeight: '700' },
+  organizationProductionName: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
   card: {
     borderWidth: 1,
     borderColor: '#e1dee6',
