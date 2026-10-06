@@ -421,22 +421,28 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
           <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
         </ThemedView>
         <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
-        {rehearsal.dateDisplay && (
-          <ThemedText type="small" themeColor="textSecondary">
-            {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}
-            {rehearsalQuery.data?.end_date_time ? '〜' + formatTimeRange(rehearsalQuery.data.end_date_time) : ''}
-            {rehearsal.location ? ' ・ ' + rehearsal.location : ''}
-          </ThemedText>
-        )}
-        {rehearsalQuery.data?.description && (
-          <ThemedText type="small" style={styles.rehearsalDescription}>
-            {rehearsalQuery.data.description}
-          </ThemedText>
-        )}
+        <ThemedView style={styles.rehearsalMeta}>
+          {rehearsal.dateDisplay && (
+            <ThemedText type="small" style={styles.rehearsalMetaPrimary}>
+              {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}
+              {rehearsal.endTimeDisplay ? '〜' + rehearsal.endTimeDisplay : ''}
+            </ThemedText>
+          )}
+          {rehearsal.location && (
+            <ThemedText type="small" themeColor="textSecondary">
+              場所：{rehearsal.location}
+            </ThemedText>
+          )}
+          {rehearsalQuery.data?.description && (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.rehearsalDescription}>
+              備考：{rehearsalQuery.data.description}
+            </ThemedText>
+          )}
+        </ThemedView>
       </TouchableOpacity>
       {myRecord && responseOptions.length > 0 && (
         <ThemedView style={styles.homeAttendanceArea}>
-          <ThemedText type="smallBold">出欠</ThemedText>
+          <ThemedText type="smallBold" style={styles.attendanceHeading}>出欠</ThemedText>
           {myRecord.status === 'UNANSWERED' ? (
             <ThemedView style={styles.responseButtonRow}>
               {responseOptions.map((option) => {
@@ -455,9 +461,12 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
               })}
             </ThemedView>
           ) : (
-            <ThemedText type="smallBold" style={styles.currentAttendanceStatus}>
-              {statusLabel(myRecord.status)}
-            </ThemedText>
+            <ThemedView style={styles.answeredStatus}>
+              <ThemedText type="smallBold" themeColor="textSecondary">回答済み</ThemedText>
+              <ThemedText type="smallBold" style={styles.currentAttendanceStatus}>
+                {statusLabel(myRecord.status)}
+              </ThemedText>
+            </ThemedView>
           )}
           {respondMutation.isError && <ThemedText themeColor="textSecondary">{getErrorMessage(respondMutation.error)}</ThemedText>}
         </ThemedView>
@@ -541,10 +550,14 @@ const styles = StyleSheet.create({
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
   rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   rehearsalLabel: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.half },
+  rehearsalMetaPrimary: { fontWeight: '600' },
   rehearsalDescription: { paddingTop: Spacing.half },
-  currentAttendanceStatus: { paddingVertical: Spacing.half },
-  rehearsalCard: { width: '100%', maxWidth: 760, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.two, gap: Spacing.one, backgroundColor: '#fff' },
-  homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.one, gap: Spacing.one },
+  attendanceHeading: { fontSize: 14, lineHeight: 18 },
+  answeredStatus: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two, paddingVertical: Spacing.half },
+  currentAttendanceStatus: { fontSize: 16, lineHeight: 22 },
+  rehearsalCard: { width: '100%', maxWidth: 680, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.three, gap: Spacing.two, backgroundColor: '#fff' },
+  homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.two, gap: Spacing.one },
   responseButtonSelected: { borderWidth: 2, borderColor: '#fff' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, flexWrap: 'wrap' },
   unansweredDot: {
