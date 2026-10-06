@@ -8,6 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import { useRehearsals } from '@/features/attendance/useRehearsals';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 
 /**
  * Rehearsal.md's 6 Status values, only 3 of which this UI's own actions
@@ -44,7 +45,7 @@ export default function RehearsalListScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ThemedText type="title" style={styles.title}>
-        稽古予定
+        予定
       </ThemedText>
 
       {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」 - 権限
@@ -55,7 +56,7 @@ export default function RehearsalListScreen() {
         onPress={() => router.push(`/production/${productionId}/schedule/attendance/create`)}
         style={styles.createLink}
       >
-        <ThemedText type="link">＋ 稽古を作成する</ThemedText>
+        <ThemedText type="link">＋ 予定を作成する</ThemedText>
       </TouchableOpacity>
 
       {rehearsalsQuery.isLoading && (
@@ -73,7 +74,7 @@ export default function RehearsalListScreen() {
       {!rehearsalsQuery.isLoading && !rehearsalsQuery.isError && (rehearsalsQuery.data?.length ?? 0) === 0 && (
         <ThemedView style={styles.centered}>
           <ThemedText testID="rehearsal-list-empty" themeColor="textSecondary">
-            稽古の予定はまだありません。
+            予定はまだありません。
           </ThemedText>
         </ThemedView>
       )}
@@ -92,6 +93,9 @@ export default function RehearsalListScreen() {
             >
               <ThemedText type="smallBold" testID={`rehearsal-status-${rehearsal.id}`}>
                 {rehearsalStatusLabel(rehearsal.status)}
+              </ThemedText>
+              <ThemedText type="small">
+                種別：{rehearsalActivityTypeLabel(rehearsal.activity_type)}
               </ThemedText>
               {rehearsal.start_date_time && (
                 <ThemedText type="small">
