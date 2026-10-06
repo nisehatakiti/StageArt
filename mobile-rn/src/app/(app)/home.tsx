@@ -425,12 +425,14 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
         <ThemedView style={styles.rehearsalMeta}>
           {rehearsal.dateDisplay && (
             <ThemedView style={styles.rehearsalDate}>
+              <ThemedText type="small" style={styles.rehearsalMetaLine}>
+                <ThemedText style={styles.rehearsalMetaLabel}>日時：</ThemedText>
+              </ThemedText>
               <ThemedText type="small" style={styles.rehearsalDateText}>
                 {rehearsal.dateDisplay}
               </ThemedText>
               {rehearsal.timeDisplay && (
                 <ThemedText type="small" style={styles.rehearsalMetaLine}>
-                  <ThemedText style={styles.rehearsalMetaLabel}>日時：</ThemedText>
                   {rehearsal.timeDisplay}{rehearsal.endTimeDisplay ? '〜' + rehearsal.endTimeDisplay : ''}
                 </ThemedText>
               )}
