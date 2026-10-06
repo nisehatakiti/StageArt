@@ -79,7 +79,7 @@ describe('useNavMenu', () => {
     expect(result.current.contextType).toBe('organization');
     const info = result.current.contextItems.find((item) => item.key === 'organization-info');
     expect(info?.disabled).toBe(false);
-    expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(true);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(false);
   });
 
   /**
@@ -107,18 +107,12 @@ describe('useNavMenu', () => {
     await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
     expect(result.current.contextItems.map((item) => item.key)).toEqual([
       'organization-info',
-      'organization-about',
-      'organization-sns',
-      'organization-links',
       'organization-members',
       'organization-members-add',
       'organization-members-delegate',
       'organization-members-owner-transfer',
-      'organization-requests',
-      'organization-invite',
       'organization-productions',
       'organization-productions-create',
-      'organization-productions-create-past',
       'organization-productions-edit',
     ]);
   });
@@ -350,12 +344,7 @@ describe('useNavMenu', () => {
     expect(result.current.backTo).toBeNull();
   });
 
-  /**
-   * StageArt UI再構成 instruction (this round §「Organization Context」):
-   * 団体情報(flat) / 公開ページ管理(ABOUT・SNS・リンク) / メンバー管理 /
-   * 公演管理 という2階層構造 - 前回の小屋入り～本番と同じgroupLabelパターン。
-   */
-  it('groups ABOUT/SNS/リンク under 公開ページ管理, and メンバー管理/公演管理 items under their own headings', async () => {
+  it('keeps Organization information as the single top-level entry and groups member/production operations', async () => {
     mockPathname = `/organizations/${orgOne.id}`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
@@ -366,15 +355,19 @@ describe('useNavMenu', () => {
     const { result } = await renderHook(() => useNavMenu(), { wrapper });
 
     await waitFor(() => expect(result.current.contextLabel).toBe(orgOne.name));
-    const about = result.current.contextItems.find((item) => item.key === 'organization-about');
-    const membersGroupStart = result.current.contextItems.find((item) => item.key === 'organization-members');
-    const productionsGroupStart = result.current.contextItems.find((item) => item.key === 'organization-productions');
-    expect(about?.groupLabel).toBe('公開ページ管理');
-    expect(membersGroupStart?.groupLabel).toBe('メンバー管理');
-    expect(productionsGroupStart?.groupLabel).toBe('公演管理');
-    // 団体情報 itself is not grouped - it is the Organization's own flat top item.
     expect(result.current.contextItems.find((item) => item.key === 'organization-info')?.groupLabel).toBeUndefined();
+    expect(result.current.contextItems.find((item) => item.key === 'organization-members')?.groupLabel).toBe('メンバー管理');
+    expect(result.current.contextItems.find((item) => item.key === 'organization-members-add')?.label).toBe('メンバーを追加');
+    expect(result.current.contextItems.find((item) => item.key === 'organization-members-delegate')?.label).toBe('代理人を設定');
+    expect(result.current.contextItems.find((item) => item.key === 'organization-productions')?.groupLabel).toBe('公演管理');
+    expect(result.current.contextItems.some((item) => item.key === 'organization-about')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-sns')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-links')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-requests')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-invite')).toBe(false);
+    expect(result.current.contextItems.some((item) => item.key === 'organization-productions-create-past')).toBe(false);
   });
+
 
   it('switches contextItems correctly when navigating from Organization to Production and back to Home (context isolation)', async () => {
     mockFetchRoutes([
