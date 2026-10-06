@@ -220,7 +220,7 @@ export default function RehearsalAttendanceScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <TouchableOpacity onPress={() => router.back()} testID="attendance-back" style={styles.backRow}>
-        <ThemedText type="link">← 稽古一覧</ThemedText>
+        <ThemedText type="link">← 稽古予定</ThemedText>
       </TouchableOpacity>
 
       {isLoading && (
@@ -299,23 +299,31 @@ export default function RehearsalAttendanceScreen() {
                     </ThemedView>}
                   </ThemedView>
                   {rehearsalQuery.data.start_date_time && (
-                    <ThemedText testID="rehearsal-info-datetime" style={styles.rehearsalDateTime}>
-                      {formatDayHeader(new Date(rehearsalQuery.data.start_date_time))} {formatTime(rehearsalQuery.data.start_date_time)}
-                      {rehearsalQuery.data.end_date_time ? `〜${formatTime(rehearsalQuery.data.end_date_time)}` : ''}
-                    </ThemedText>
+                    <ThemedView style={styles.rehearsalPrimaryInfo}>
+                      <ThemedText type="smallBold">日時</ThemedText>
+                      <ThemedText testID="rehearsal-info-datetime-date" style={styles.rehearsalDate}>
+                        {formatDayHeader(new Date(rehearsalQuery.data.start_date_time))}
+                      </ThemedText>
+                      <ThemedText testID="rehearsal-info-datetime" style={styles.rehearsalTime}>
+                        {formatTime(rehearsalQuery.data.start_date_time)}
+                        {rehearsalQuery.data.end_date_time ? `〜${formatTime(rehearsalQuery.data.end_date_time)}` : ''}
+                      </ThemedText>
+                    </ThemedView>
                   )}
                   {rehearsalQuery.data.location && (
-                    <ThemedView>
+                    <ThemedView style={styles.rehearsalSecondaryInfo}>
                       <ThemedText type="smallBold">場所</ThemedText>
                       <ThemedText testID="rehearsal-info-location" style={styles.rehearsalLocation}>
                         {rehearsalQuery.data.location}
                       </ThemedText>
                     </ThemedView>
                   )}
-                  <ThemedText type="smallBold">備考</ThemedText>
-                  <ThemedText testID="rehearsal-info-description">
-                    {rehearsalQuery.data.description?.trim() || 'なし'}
-                  </ThemedText>
+                  <ThemedView style={styles.rehearsalDescription}>
+                    <ThemedText type="smallBold">備考</ThemedText>
+                    <ThemedText testID="rehearsal-info-description" style={styles.rehearsalDescriptionText}>
+                      {rehearsalQuery.data.description?.trim() || 'なし'}
+                    </ThemedText>
+                  </ThemedView>
                   {canManageRehearsal && rehearsalQuery.data.status === 'SCHEDULED' && (
                     <TouchableOpacity
                       testID="rehearsal-confirm"
@@ -518,25 +526,30 @@ const styles = StyleSheet.create({
   },
   actionRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   actionButton: {
-    minHeight: 42,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: 8,
+    minHeight: 36,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionButtonText: { color: '#fff', fontWeight: '700' },
+  actionButtonText: { color: '#fff', fontWeight: '700', fontSize: 14, lineHeight: 18 },
   editButton: { backgroundColor: '#d99a00' },
   cancelButton: { backgroundColor: '#c62828' },
   confirmButton: { backgroundColor: '#2e7d32' },
-  rehearsalDateTime: { fontSize: 20, lineHeight: 26, fontWeight: '700' },
-  rehearsalLocation: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  rehearsalPrimaryInfo: { gap: 2 },
+  rehearsalSecondaryInfo: { gap: 2 },
+  rehearsalDate: { fontSize: 17, lineHeight: 22, fontWeight: '700' },
+  rehearsalTime: { fontSize: 21, lineHeight: 27, fontWeight: '800' },
+  rehearsalLocation: { fontSize: 17, lineHeight: 22, fontWeight: '700' },
+  rehearsalDescription: { gap: 2, marginTop: Spacing.one },
+  rehearsalDescriptionText: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   summaryAttending: { color: '#2e7d32' },
   summaryNotAttending: { color: '#c62828' },
   summaryUnanswered: { color: '#777' },
   rosterStatusBadge: {
-    minHeight: 28,
-    paddingHorizontal: Spacing.two,
+    minHeight: 24,
+    paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.half,
     alignSelf: 'flex-start',
   },
@@ -551,22 +564,21 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     backgroundColor: '#fff',
   },
-  responseButtonRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  responseButtonRow: { flexDirection: 'row', gap: Spacing.one, flexWrap: 'wrap', alignItems: 'flex-start' },
   responseButton: {
-    flex: 1,
-    minWidth: 120,
-    minHeight: 48,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: 8,
+    minWidth: 88,
+    minHeight: 36,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statusBadge: {
-    minHeight: 40,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: 8,
+    minHeight: 30,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-start',
