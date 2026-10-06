@@ -204,7 +204,7 @@ export default function RehearsalAttendanceScreen() {
           testID="attendance-roster"
           data={attendancesQuery.data ?? []}
           keyExtractor={(a) => a.id}
-          numColumns={3}
+          numColumns={2}
           columnWrapperStyle={styles.rosterColumns}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   rosterRow: {
-    width: 180,
+    width: 160,
     flexGrow: 0,
     flexShrink: 0,
     paddingVertical: Spacing.one,
