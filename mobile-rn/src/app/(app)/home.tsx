@@ -13,6 +13,7 @@ import {
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { useMyNotifications } from '@/features/notifications/useNotifications';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
@@ -109,6 +110,8 @@ export default function HomeScreen() {
   const currentPersonQuery = useCurrentPerson();
   const dashboardQuery = useMyDashboard();
   const dashboardViewModel = dashboardQuery.data ? buildDashboardViewModel(dashboardQuery.data) : null;
+  const notificationsQuery = useMyNotifications();
+  const unreadNotifications = (notificationsQuery.data ?? []).filter((notification) => !notification.is_read);
 
   // Loading and error both resolve to "not confirmed" - never shown as
   // if it were confirmed present (this Phase's own §13 safety rule).
@@ -132,11 +135,11 @@ export default function HomeScreen() {
 
       <PersonalOverviewSection
         isLoading={dashboardQuery.isLoading}
-        isError={dashboardQuery.isError}
-        error={dashboardQuery.error}
-        onRetry={() => dashboardQuery.refetch()}
+        isError={dashboardQuery.isError || notificationsQuery.isError}
+        error={dashboardQuery.error ?? notificationsQuery.error}
+        onRetry={() => { dashboardQuery.refetch(); notificationsQuery.refetch(); }}
         upcomingRehearsals={dashboardViewModel?.upcomingRehearsals ?? []}
-        notifications={dashboardViewModel?.notifications ?? []}
+        notifications={unreadNotifications}
       />
 
       <FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />
@@ -252,7 +255,7 @@ function PersonalOverviewSection({
   error: unknown;
   onRetry: () => void;
   upcomingRehearsals: UpcomingRehearsalViewModel[];
-  notifications: DashboardNotificationViewModel[];
+  notifications: Array<{ id: string; message: string; created_at: string; is_read: boolean }>;
 }) {
   const router = useRouter();
 
@@ -311,23 +314,23 @@ function PersonalOverviewSection({
                 key={notification.id}
                 testID={`home-notification-row-${notification.id}`}
                 style={styles.card}
-                onPress={() => router.push(`/production/${notification.productionId}/notifications`)}
+                onPress={() => router.push('/my-notifications')}
               >
-                <ThemedText type={notification.isRead ? 'default' : 'smallBold'}>{notification.title}</ThemedText>
-                {notification.summary && <ThemedText type="small">{notification.summary}</ThemedText>}
+                <ThemedText type="smallBold">{notification.message}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {formatNotificationCreatedAt(notification.created_at)}
+                </ThemedText>
               </TouchableOpacity>
             ))}
           </ThemedView>
         </>
       )}
 
-      {/* Notification基盤実装 phase §15: the new personal Notification
-          feed (Rehearsal Cancel/Reminder) - a distinct feed from the
-          Production-scoped Timetable one above, so its own link, always
-          visible regardless of whether there is anything unread yet. */}
-      <TouchableOpacity testID="home-my-notifications-link" style={styles.myNotificationsLink} onPress={() => router.push('/my-notifications')}>
-        <ThemedText type="link">すべてのお知らせを見る</ThemedText>
-      </TouchableOpacity>
+      {notifications.length > 0 && (
+        <TouchableOpacity testID="home-my-notifications-link" style={styles.myNotificationsLink} onPress={() => router.push('/my-notifications')}>
+          <ThemedText type="link">すべてのお知らせを見る</ThemedText>
+        </TouchableOpacity>
+      )}
     </ThemedView>
   );
 }
@@ -352,6 +355,12 @@ function PersonalOverviewSection({
  * not a new permission concept (still exactly `current_person_role ===
  * 'OWNER'`, the same field/check as before).
  */
+function formatNotificationCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalViewModel }) {
   const router = useRouter();
   const rehearsalQuery = useRehearsal(rehearsal.rehearsalId);
