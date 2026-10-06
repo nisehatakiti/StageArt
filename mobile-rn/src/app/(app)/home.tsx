@@ -3,7 +3,6 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpa
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TwoColumnLayout } from '@/components/chrome/TwoColumnLayout';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import {
   buildDashboardViewModel,
@@ -13,11 +12,12 @@ import {
 } from '@/features/dashboard/viewModel';
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
-import { useOrganizations } from '@/features/organization/useOrganizations';
-import { useOrganizationProductions } from '@/features/production/useProductions';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import type { Organization } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { phaseForRehearsalStatus } from '@/features/attendance/phase';
+import { responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
+import { useRehearsal } from '@/features/attendance/useRehearsals';
+import { useRehearsalAttendances, useRespondRehearsalAttendance } from '@/features/attendance/useRehearsalAttendance';
 
 type NavEntry = {
   key: string;
@@ -116,10 +116,6 @@ export default function HomeScreen() {
   const dashboardQuery = useMyDashboard();
   const dashboardViewModel = dashboardQuery.data ? buildDashboardViewModel(dashboardQuery.data) : null;
 
-  const { data: organizations, isLoading: organizationsLoading, isError: organizationsError, error: organizationsErrorObj } = useOrganizations();
-
-  const hasOrganizations = !organizationsLoading && !organizationsError && !!organizations && organizations.length > 0;
-
   // Loading and error both resolve to "not confirmed" - never shown as
   // if it were confirmed present (this Phase's own §13 safety rule).
   const favoritesQuery = useMyFavorites();
@@ -151,57 +147,7 @@ export default function HomeScreen() {
         notifications={dashboardViewModel?.notifications ?? []}
       />
 
-      <View style={styles.section}>
-        <TwoColumnLayout
-          main={
-            <>
-              <ThemedText type="subtitle" style={styles.sectionTitle}>
-                団体
-              </ThemedText>
-
-              {organizationsLoading && (
-                <ThemedView style={styles.centered}>
-                  <ActivityIndicator testID="organizations-loading" />
-                </ThemedView>
-              )}
-
-              {organizationsError && (
-                <ThemedView style={styles.centered}>
-                  <ThemedText testID="organizations-error">{getErrorMessage(organizationsErrorObj)}</ThemedText>
-                </ThemedView>
-              )}
-
-              {!organizationsLoading && !organizationsError && !hasOrganizations && (
-                <ThemedView style={styles.centered}>
-                  <ThemedText type="small" themeColor="textSecondary" testID="organizations-empty">
-                    まだ団体がありません。
-                  </ThemedText>
-                  <TouchableOpacity
-                    testID="home-create-organization"
-                    onPress={() => router.push('/organizations/create')}
-                    accessibilityRole="button"
-                    accessibilityLabel="団体を作る"
-                  >
-                    <ThemedText type="link">＋ 団体を作る</ThemedText>
-                  </TouchableOpacity>
-                </ThemedView>
-              )}
-
-              {hasOrganizations && (
-                <ThemedView style={styles.list} testID="home-organizations-list">
-                  {organizations.map((organization) => (
-                    <HomeOrganizationCard key={organization.id} organization={organization} />
-                  ))}
-                </ThemedView>
-              )}
-            </>
-          }
-          // フォロー中の新着はPerson単位(Organization/Production非依存)の
-          // 情報のため、所属団体の有無に関係なく常に試みる - 中身が空なら
-          // FollowedOrganizationsFeedSection自身が何も描画しない。
-          side={<FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />}
-        />
-      </View>
+      <FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />
     </ScrollView>
   );
 }
@@ -373,25 +319,7 @@ function PersonalOverviewSection({
           </ThemedText>
           <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
             {upcomingRehearsals.map((rehearsal) => (
-              <TouchableOpacity
-                key={rehearsal.rehearsalId}
-                testID={`upcoming-rehearsal-row-${rehearsal.rehearsalId}`}
-                style={styles.card}
-                onPress={() => router.push(`/production/${rehearsal.productionId}/schedule/attendance/${rehearsal.rehearsalId}`)}
-              >
-                <ThemedView style={styles.titleRow}>
-                  {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
-                  <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
-                </ThemedView>
-                <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
-                {rehearsal.dateDisplay && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {rehearsal.dateDisplay}
-                    {rehearsal.timeDisplay ? ` ${rehearsal.timeDisplay}` : ''}
-                    {rehearsal.location ? ` ・ ${rehearsal.location}` : ''}
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
+              <UpcomingRehearsalCard key={rehearsal.rehearsalId} rehearsal={rehearsal} />
             ))}
           </ThemedView>
         </>
@@ -449,89 +377,60 @@ function PersonalOverviewSection({
  * not a new permission concept (still exactly `current_person_role ===
  * 'OWNER'`, the same field/check as before).
  */
-function HomeOrganizationCard({ organization }: { organization: Organization }) {
+function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalViewModel }) {
   const router = useRouter();
-  const productionsQuery = useOrganizationProductions(organization.id);
-  const productions = productionsQuery.data ?? [];
-  const isOwner = organization.current_person_role === 'OWNER';
+  const rehearsalQuery = useRehearsal(rehearsal.rehearsalId);
+  const phase = rehearsalQuery.data ? phaseForRehearsalStatus(rehearsalQuery.data.status) : undefined;
+  const attendancesQuery = useRehearsalAttendances(rehearsal.rehearsalId, phase);
+  const respondMutation = useRespondRehearsalAttendance(rehearsal.rehearsalId, phase);
+  const currentPersonQuery = useCurrentPerson();
+  const myRecord = attendancesQuery.data?.find((a) => a.person_id === currentPersonQuery.data?.id);
+  const responseOptions = phase ? responseOptionsForPhase(phase) : [];
 
   return (
-    <View testID={`home-organization-row-${organization.id}`} style={styles.organizationCard}>
+    <ThemedView testID={'upcoming-rehearsal-row-' + rehearsal.rehearsalId} style={styles.rehearsalCard}>
       <TouchableOpacity
-        testID={`home-organization-link-${organization.id}`}
-        onPress={() => router.push(`/organizations/${organization.id}` as Href)}
+        onPress={() => router.push('/production/' + rehearsal.productionId + '/schedule/attendance/' + rehearsal.rehearsalId)}
+        accessibilityRole="button"
+        accessibilityLabel={'稽古詳細、' + rehearsal.productionName}
       >
-        <View style={styles.titleRow}>
-          <ThemedText type="default" style={styles.organizationName}>{organization.name}</ThemedText>
-          <RolePill role={organization.current_person_role} />
-        </View>
+        <ThemedView style={styles.titleRow}>
+          {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
+          <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
+        </ThemedView>
+        <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
+        {rehearsal.dateDisplay && (
+          <ThemedText type="small" themeColor="textSecondary">
+            {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}{rehearsal.location ? ' ・ ' + rehearsal.location : ''}
+          </ThemedText>
+        )}
       </TouchableOpacity>
-
-      {productionsQuery.isLoading && <ActivityIndicator testID={`home-organization-productions-loading-${organization.id}`} />}
-
-      {productionsQuery.isError && (
-        <ThemedText testID="productions-error">{getErrorMessage(productionsQuery.error)}</ThemedText>
+      {myRecord && responseOptions.length > 0 && (
+        <ThemedView style={styles.homeAttendanceArea}>
+          <ThemedText type="smallBold">出欠</ThemedText>
+          <ThemedView style={styles.responseButtonRow}>
+            {responseOptions.map((option) => {
+              const isAttending = option === 'ATTENDING' || option === 'AVAILABLE';
+              const selected = myRecord.status === option;
+              return (
+                <TouchableOpacity
+                  key={option}
+                  testID={'home-rehearsal-respond-' + rehearsal.rehearsalId + '-' + option}
+                  onPress={() => respondMutation.mutate({ attendanceId: myRecord.id, status: option })}
+                  disabled={respondMutation.isPending}
+                  style={[styles.responseButton, isAttending ? styles.attendingButton : styles.absentButton, selected && styles.responseButtonSelected, respondMutation.isPending && styles.disabledButton]}
+                >
+                  <ThemedText style={styles.actionButtonText}>{statusLabel(option)}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </ThemedView>
+          {respondMutation.isError && <ThemedText themeColor="textSecondary">{getErrorMessage(respondMutation.error)}</ThemedText>}
+        </ThemedView>
       )}
-
-      {!productionsQuery.isLoading && !productionsQuery.isError && productions.length === 0 && (
-        <ThemedText testID="productions-empty" type="small" themeColor="textSecondary">
-          公演・活動はまだありません
-        </ThemedText>
-      )}
-
-      {productions.length > 0 && (
-        <View testID={`home-organization-productions-${organization.id}`} style={styles.organizationProductions}>
-          {productions.map((production) => (
-            <TouchableOpacity
-              key={production.id}
-              style={styles.organizationProductionRow}
-              onPress={() => router.push(`/production/${production.id}/schedule`)}
-              testID={`home-organization-production-${production.id}`}
-            >
-              {production.title_heading && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {production.title_heading}
-                </ThemedText>
-              )}
-              <ThemedText type="default" style={styles.organizationProductionName}>
-                {production.name}
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {PRODUCTION_STATUS_LABEL[production.status] ?? production.status}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {isOwner && (
-        <TouchableOpacity
-          style={styles.inviteLink}
-          onPress={() => router.push(`/organizations/${organization.id}/invite` as Href)}
-          testID={`home-organization-invite-link-${organization.id}`}
-        >
-          <ThemedText type="link">団体への参加・参加申請の管理</ThemedText>
-        </TouchableOpacity>
-      )}
-    </View>
+    </ThemedView>
   );
 }
-
-function RolePill({ role }: { role: string }) {
-  return (
-    <View style={[styles.pill, styles.pillRole]}>
-      <ThemedText type="small" style={styles.pillTextRole}>
-        {role === 'OWNER' ? 'オーナー' : 'メンバー'}
-      </ThemedText>
-    </View>
-  );
-}
-
-/**
- * docs/03-FollowAndHomeExperience.md's "3. Follow中の新着". Renders
- * nothing at all when the feed is empty (no "フォローなし" placeholder) -
- * same "存在する情報だけを表示" principle used throughout this screen.
- */
 function FollowedOrganizationsFeedSection({ items }: { items: FollowedOrganizationFeedItemViewModel[] }) {
   const router = useRouter();
 
@@ -615,11 +514,14 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
   },
   centered: { alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
-  list: { gap: Spacing.two },
-  section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
+  list: { gap: Spacing.two, width: '100%' },
+  section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, width: '100%' },
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
-  rehearsalProductionName: { fontSize: 20, lineHeight: 26, fontWeight: '700' },
-  rehearsalLabel: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
+  rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  rehearsalLabel: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  rehearsalCard: { width: '100%', maxWidth: 760, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.two, gap: Spacing.one, backgroundColor: '#fff' },
+  homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.one, gap: Spacing.one },
+  responseButtonSelected: { borderWidth: 2, borderColor: '#fff' },
   organizationProductions: { gap: Spacing.one, paddingTop: Spacing.one },
   organizationProductionRow: {
     paddingVertical: Spacing.one,
