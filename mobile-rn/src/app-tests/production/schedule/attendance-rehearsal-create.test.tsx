@@ -39,6 +39,7 @@ const newRehearsal = {
   timezone: 'Asia/Tokyo',
   location: null,
   status: 'SCHEDULED',
+  activity_type: 'REHEARSAL',
   created_at: '',
   updated_at: '',
 };
@@ -197,6 +198,31 @@ describe('稽古作成: 参加メンバー選択の初期状態とチェック�
     expect(isCheckboxChecked('person-c')).toBe(false);
     expect(isCheckboxChecked('person-d')).toBe(false);
     expect(isCheckboxChecked('person-e')).toBe(false);
+  });
+});
+
+describe('稽古作成: 予定の種別', () => {
+  it('選択した予定の種別をactivity_typeとして送信する', async () => {
+    mockFetchRoutes([
+      { test: (u) => u.endsWith('/productions/prod-1/participants'), status: 200, body: [] },
+      { test: (u) => u.endsWith('/productions/prod-1/rehearsals'), status: 201, body: newRehearsal },
+    ]);
+
+    renderCreate();
+
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-activity-type-REHEARSAL')).toBeVisible());
+    fireEvent.press(screen.getByTestId('rehearsal-create-activity-type-WORKSHOP'));
+    await waitFor(() =>
+      expect(screen.getByTestId('rehearsal-create-activity-type-WORKSHOP').props.accessibilityState).toMatchObject({ selected: true })
+    );
+    fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
+
+    const call = (global.fetch as jest.Mock).mock.calls.find(
+      ([url, options]: [string, RequestInit]) => url.endsWith('/productions/prod-1/rehearsals') && options?.method === 'POST'
+    );
+    expect(JSON.parse(call![1].body as string).activity_type).toBe('WORKSHOP');
   });
 });
 
