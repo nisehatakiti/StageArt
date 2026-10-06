@@ -1,7 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import { ProductionCard } from '@/components/production-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TwoColumnLayout } from '@/components/chrome/TwoColumnLayout';
@@ -24,6 +23,14 @@ type NavEntry = {
   key: string;
   label: string;
   route: '/favorites';
+};
+
+const PRODUCTION_STATUS_LABEL: Record<string, string> = {
+  PLANNING: '準備中',
+  ACTIVE: '進行中',
+  COMPLETED: '終了',
+  ARCHIVED: 'アーカイブ済み',
+  CANCELLED: '中止',
 };
 
 /**
@@ -362,7 +369,7 @@ function PersonalOverviewSection({
       {hasRehearsals && (
         <>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
-            次の稽古
+            稽古予定
           </ThemedText>
           <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
             {upcomingRehearsals.map((rehearsal) => (
@@ -374,9 +381,9 @@ function PersonalOverviewSection({
               >
                 <ThemedView style={styles.titleRow}>
                   {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
-                  <ThemedText type="smallBold">{rehearsal.productionName}</ThemedText>
+                  <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
                 </ThemedView>
-                <ThemedText type="small">{rehearsal.title ?? '稽古'}</ThemedText>
+                <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
                 {rehearsal.dateDisplay && (
                   <ThemedText type="small" themeColor="textSecondary">
                     {rehearsal.dateDisplay}
@@ -473,9 +480,26 @@ function HomeOrganizationCard({ organization }: { organization: Organization }) 
       )}
 
       {productions.length > 0 && (
-        <View testID={`home-organization-productions-${organization.id}`}>
+        <View testID={`home-organization-productions-${organization.id}`} style={styles.organizationProductions}>
           {productions.map((production) => (
-            <ProductionCard key={production.id} production={production} onPress={() => router.push(`/production/${production.id}/schedule`)} />
+            <TouchableOpacity
+              key={production.id}
+              style={styles.organizationProductionRow}
+              onPress={() => router.push(`/production/${production.id}/schedule`)}
+              testID={`home-organization-production-${production.id}`}
+            >
+              {production.title_heading && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {production.title_heading}
+                </ThemedText>
+              )}
+              <ThemedText type="default" style={styles.organizationProductionName}>
+                {production.name}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {PRODUCTION_STATUS_LABEL[production.status] ?? production.status}
+              </ThemedText>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -593,12 +617,25 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   list: { gap: Spacing.two },
   section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
-  sectionTitle: { paddingTop: Spacing.three, paddingBottom: Spacing.one },
+  sectionTitle: { paddingTop: Spacing.two, paddingBottom: Spacing.one, fontSize: 24, lineHeight: 30 },
+  rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  rehearsalLabel: { fontSize: 15, lineHeight: 20 },
+  organizationProductions: { gap: Spacing.one, paddingTop: Spacing.one },
+  organizationProductionRow: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: 8,
+    gap: Spacing.half,
+    backgroundColor: '#fff',
+  },
+  organizationProductionName: { fontSize: 17, lineHeight: 22, fontWeight: '700' },
   card: {
     borderWidth: 1,
     borderColor: '#e1dee6',
     borderRadius: Radius.medium,
-    padding: Spacing.three,
+    padding: Spacing.two,
     gap: Spacing.half,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, flexWrap: 'wrap' },
