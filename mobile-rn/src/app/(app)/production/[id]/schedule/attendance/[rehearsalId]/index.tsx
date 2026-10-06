@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScheduleCommentList } from '@/components/schedule-comment-list';
@@ -33,11 +33,7 @@ import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { RehearsalAttendance, ScheduleComment } from '@/types/api';
 
-/** Same map as the Rehearsal list screen (schedule/attendance/index.tsx)
- * - docs/20-RehearsalManagementScreen.md §4/§4.1 confirms the Detail
- * screen must display Status/Date/Start time/End time/Location too, not
- * just the list. Duplicated locally rather than exported/shared,
- * matching this file's own existing PARTICIPANT_TYPE_LABEL precedent. */
+/** Rehearsal detail status labels. */
 const REHEARSAL_STATUS_LABELS: Record<string, string> = {
   DRAFT: '下書き',
   SCHEDULED: '調整中',
