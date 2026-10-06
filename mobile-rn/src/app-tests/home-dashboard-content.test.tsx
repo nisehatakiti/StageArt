@@ -131,8 +131,9 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
     expect(screen.getByText('今後の予定')).toBeVisible();
     expect(screen.getByText('○○公演2026')).toBeVisible();
     expect(screen.getByText('通し稽古')).toBeVisible();
+    expect(screen.getAllByText(/日時：/).length).toBeGreaterThan(0);
     expect(screen.getByText('2026/8/21（金）')).toBeVisible();
-    expect(screen.getByText(/日時：19:00〜21:00/)).toBeVisible();
+    expect(screen.getByText('19:00〜21:00')).toBeVisible();
     expect(screen.getByText(/場所：○○スタジオ/)).toBeVisible();
     // attendance_status itself is never shown as text (Phase 7.4 §11).
     expect(screen.queryByText('UNANSWERED')).toBeNull();
