@@ -19,6 +19,7 @@ export type UpcomingRehearsalViewModel = {
   title: string | null;
   dateDisplay: string | null;
   timeDisplay: string | null;
+  endTimeDisplay: string | null;
   location: string | null;
   isUnanswered: boolean;
 };
@@ -41,6 +42,7 @@ export function buildUpcomingRehearsalViewModel(rehearsal: UpcomingRehearsal): U
     title: rehearsal.title,
     dateDisplay: start ? formatDayHeader(start) : null,
     timeDisplay: rehearsal.start_date_time ? formatTime(rehearsal.start_date_time) : null,
+    endTimeDisplay: rehearsal.end_date_time ? formatTime(rehearsal.end_date_time) : null,
     location: rehearsal.location,
     isUnanswered: rehearsal.attendance_status === 'UNANSWERED',
   };
