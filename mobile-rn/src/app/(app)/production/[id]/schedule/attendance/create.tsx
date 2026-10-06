@@ -13,6 +13,7 @@ import { useCreateRehearsal } from '@/features/attendance/useRehearsals';
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
 import type { Participant } from '@/types/api';
 
 /** Same label map as productions/[id]/participants.tsx - Participant
@@ -36,6 +37,7 @@ export default function CreateRehearsalScreen() {
   const currentPersonQuery = useCurrentPerson();
 
   const [description, setDescription] = useState('');
+  const [activityType, setActivityType] = useState('REHEARSAL');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -114,6 +116,7 @@ export default function CreateRehearsalScreen() {
     const rehearsal = await createRehearsal.mutateAsync({
       title: null,
       description: description.trim() || null,
+      activityType,
       startDateTime,
       endDateTime,
       timezone: 'Asia/Tokyo',
@@ -146,6 +149,25 @@ export default function CreateRehearsalScreen() {
 
         <View style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>基本情報</ThemedText>
+
+          <ThemedText type="small" themeColor="textSecondary">予定の種別</ThemedText>
+          <View style={styles.activityTypeRow}>
+            {REHEARSAL_ACTIVITY_TYPES.map((option) => {
+              const selected = activityType === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  testID={`rehearsal-create-activity-type-${option.value}`}
+                  onPress={() => setActivityType(option.value)}
+                  style={[styles.activityTypeOption, selected && styles.activityTypeOptionSelected]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <ThemedText style={selected ? styles.activityTypeOptionTextSelected : undefined}>{option.label}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           <ThemedText type="small" themeColor="textSecondary">備考</ThemedText>
           <ThemedTextInput
@@ -359,6 +381,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '700', marginBottom: Spacing.one },
+  activityTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  activityTypeOption: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  activityTypeOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  activityTypeOptionTextSelected: { color: '#fff', fontWeight: '600' },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
