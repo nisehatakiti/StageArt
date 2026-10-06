@@ -31,6 +31,7 @@ export function createRehearsal(
   fields: {
     title?: string | null;
     description?: string | null;
+    activityType?: string;
     startDateTime?: string;
     endDateTime?: string;
     timezone?: string;
@@ -43,6 +44,7 @@ export function createRehearsal(
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
     title: fields.title ?? null,
     description: fields.description ?? null,
+    activity_type: fields.activityType ?? 'REHEARSAL',
     start_date_time: fields.startDateTime,
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
@@ -68,6 +70,7 @@ export function updateRehearsal(
   fields: {
     title?: string | null;
     description: string | null;
+    activityType?: string;
     startDateTime?: string;
     endDateTime?: string;
     timezone?: string;
@@ -80,6 +83,7 @@ export function updateRehearsal(
   return client.put<Rehearsal>(`/rehearsals/${rehearsalId}`, {
     title: fields.title,
     description: fields.description,
+    activity_type: fields.activityType,
     start_date_time: fields.startDateTime,
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
