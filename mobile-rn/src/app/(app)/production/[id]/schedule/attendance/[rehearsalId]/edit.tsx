@@ -129,7 +129,7 @@ export default function EditRehearsalScreen() {
       {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && !productionQuery.isLoading && canManageRehearsal && (
         <ScrollView contentContainerStyle={styles.container}>
           <ThemedText type="title" style={styles.title}>
-            稽古を編集
+            予定を編集
           </ThemedText>
 
           <ThemedText type="small" themeColor="textSecondary">
