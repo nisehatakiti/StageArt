@@ -52,15 +52,32 @@ export const ACTUAL_STATUS_OPTIONS = ['ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT'
 const ATTENDING_STATUSES = new Set(['AVAILABLE', 'ATTENDING', 'ATTENDED', 'LATE', 'EARLY_LEFT']);
 const NOT_ATTENDING_STATUSES = new Set(['UNAVAILABLE', 'NOT_ATTENDING', 'ABSENT']);
 
+export type AttendanceGroup = 'ATTENDING' | 'NOT_ATTENDING' | 'UNANSWERED';
+
+/**
+ * The single source of truth for which of the 3 summary buckets a raw
+ * RehearsalAttendanceStatus value belongs to - shared by
+ * attendanceSummary() (counts) and the roster display (per-row badge
+ * color/sort grouping), so the two never drift apart as they
+ * previously could when the roster kept its own separate, slightly
+ * different status list.
+ */
+export function attendanceGroup(status: string): AttendanceGroup {
+  if (ATTENDING_STATUSES.has(status)) return 'ATTENDING';
+  if (NOT_ATTENDING_STATUSES.has(status)) return 'NOT_ATTENDING';
+  return 'UNANSWERED';
+}
+
 export function attendanceSummary(statuses: string[]): { attending: number; notAttending: number; unanswered: number } {
   let attending = 0;
   let notAttending = 0;
   let unanswered = 0;
 
   for (const status of statuses) {
-    if (ATTENDING_STATUSES.has(status)) {
+    const group = attendanceGroup(status);
+    if (group === 'ATTENDING') {
       attending += 1;
-    } else if (NOT_ATTENDING_STATUSES.has(status)) {
+    } else if (group === 'NOT_ATTENDING') {
       notAttending += 1;
     } else {
       unanswered += 1;

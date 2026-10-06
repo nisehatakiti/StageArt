@@ -8,7 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
+import { attendanceGroup, attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
+import type { AttendanceGroup } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { useProduction } from '@/features/production/useProductions';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
@@ -46,6 +47,42 @@ const REHEARSAL_STATUS_LABELS: Record<string, string> = {
 function rehearsalStatusLabel(status: string): string {
   return REHEARSAL_STATUS_LABELS[status] ?? status;
 }
+
+/**
+ * Rehearsal status badge colors - deliberately reuses the exact 4 colors
+ * already established on this screen (confirmButton/attendingButton
+ * green, cancelButton/absentButton red, editButton amber,
+ * unansweredButton gray) rather than inventing a new palette.
+ * CONFIRMED/ACTIVE take the same green as "稽古情報を確定する";
+ * CANCELLED takes the same red as "中止" (identical label, too);
+ * SCHEDULED (調整中) takes the same amber as "編集" (an in-progress,
+ * still-adjustable state); DRAFT/COMPLETED take the neutral gray also
+ * used for 未回答 (neither is a state needing attention right now).
+ */
+const REHEARSAL_STATUS_COLORS: Record<string, string> = {
+  DRAFT: '#777',
+  SCHEDULED: '#d99a00',
+  CONFIRMED: '#2e7d32',
+  ACTIVE: '#2e7d32',
+  COMPLETED: '#777',
+  CANCELLED: '#c62828',
+};
+
+function rehearsalStatusColor(status: string): string {
+  return REHEARSAL_STATUS_COLORS[status] ?? '#777';
+}
+
+const ATTENDANCE_GROUP_COLORS: Record<AttendanceGroup, string> = {
+  ATTENDING: '#2e7d32',
+  NOT_ATTENDING: '#c62828',
+  UNANSWERED: '#777',
+};
+
+const ATTENDANCE_GROUP_LABELS: Record<AttendanceGroup, string> = {
+  ATTENDING: '出席',
+  NOT_ATTENDING: '欠席',
+  UNANSWERED: '未回答',
+};
 
 /**
  * §17-19: Attendance roster + self-response for one Rehearsal. Whether
@@ -166,6 +203,16 @@ export default function RehearsalAttendanceScreen() {
     [attendancesQuery.data]
   );
 
+  /** 出席 -> 欠席 -> 未回答, stable within each group (Array.prototype.sort
+   * is stable per the ES2019+ spec) so the existing natural order inside
+   * a group is preserved - only a status-based grouping is added. */
+  const sortedAttendances = useMemo(() => {
+    const groupOrder: Record<AttendanceGroup, number> = { ATTENDING: 0, NOT_ATTENDING: 1, UNANSWERED: 2 };
+    return [...(attendancesQuery.data ?? [])].sort(
+      (a, b) => groupOrder[attendanceGroup(a.status)] - groupOrder[attendanceGroup(b.status)]
+    );
+  }, [attendancesQuery.data]);
+
   const isLoading = rehearsalQuery.isLoading || attendancesQuery.isLoading;
   const isError = rehearsalQuery.isError || attendancesQuery.isError;
   const loadError = rehearsalQuery.error ?? attendancesQuery.error;
@@ -202,7 +249,7 @@ export default function RehearsalAttendanceScreen() {
       {!isLoading && !isError && phase && (
         <FlatList
           testID="attendance-roster"
-          data={attendancesQuery.data ?? []}
+          data={sortedAttendances}
           keyExtractor={(a) => a.id}
           numColumns={2}
           columnWrapperStyle={styles.rosterColumns}
@@ -212,9 +259,12 @@ export default function RehearsalAttendanceScreen() {
               {rehearsalQuery.data && (
                 <ThemedView style={styles.summaryCard} testID="rehearsal-info">
                   <ThemedView style={styles.rehearsalInfoHeader}>
-                    <ThemedText type="smallBold" testID="rehearsal-info-status">
-                      {rehearsalStatusLabel(rehearsalQuery.data.status)}
-                    </ThemedText>
+                    <ThemedView
+                      style={[styles.statusBadge, { backgroundColor: rehearsalStatusColor(rehearsalQuery.data.status) }]}
+                      testID="rehearsal-info-status"
+                    >
+                      <ThemedText style={styles.actionButtonText}>{rehearsalStatusLabel(rehearsalQuery.data.status)}</ThemedText>
+                    </ThemedView>
                     {canManageRehearsal && <ThemedView style={styles.actionRow}>
                       {(rehearsalQuery.data.status === 'SCHEDULED' || rehearsalQuery.data.status === 'CONFIRMED') && (
                         <TouchableOpacity
@@ -249,13 +299,18 @@ export default function RehearsalAttendanceScreen() {
                     </ThemedView>}
                   </ThemedView>
                   {rehearsalQuery.data.start_date_time && (
-                    <ThemedText testID="rehearsal-info-datetime">
+                    <ThemedText testID="rehearsal-info-datetime" style={styles.rehearsalDateTime}>
                       {formatDayHeader(new Date(rehearsalQuery.data.start_date_time))} {formatTime(rehearsalQuery.data.start_date_time)}
                       {rehearsalQuery.data.end_date_time ? `〜${formatTime(rehearsalQuery.data.end_date_time)}` : ''}
                     </ThemedText>
                   )}
                   {rehearsalQuery.data.location && (
-                    <ThemedText testID="rehearsal-info-location">{rehearsalQuery.data.location}</ThemedText>
+                    <ThemedView>
+                      <ThemedText type="smallBold">場所</ThemedText>
+                      <ThemedText testID="rehearsal-info-location" style={styles.rehearsalLocation}>
+                        {rehearsalQuery.data.location}
+                      </ThemedText>
+                    </ThemedView>
                   )}
                   <ThemedText type="smallBold">備考</ThemedText>
                   <ThemedText testID="rehearsal-info-description">
@@ -277,15 +332,15 @@ export default function RehearsalAttendanceScreen() {
                   {canManageRehearsal && cancelRehearsal.isError && <ThemedText testID="rehearsal-cancel-error">{getErrorMessage(cancelRehearsal.error)}</ThemedText>}
                 </ThemedView>
               )}
-              <ThemedView style={styles.summaryCard} testID="attendance-summary">
-                <ThemedText type="smallBold">出席状況サマリー</ThemedText>
-                <ThemedText testID="attendance-summary-attending">出席 {summary.attending}名</ThemedText>
-                <ThemedText testID="attendance-summary-not-attending">欠席 {summary.notAttending}名</ThemedText>
-                <ThemedText testID="attendance-summary-unanswered">未回答 {summary.unanswered}名</ThemedText>
+              <ThemedView style={styles.compactCard} testID="attendance-summary">
+                <ThemedText type="smallBold">出欠回答状況</ThemedText>
+                <ThemedText testID="attendance-summary-attending" style={styles.summaryAttending}>出席 {summary.attending}名</ThemedText>
+                <ThemedText testID="attendance-summary-not-attending" style={styles.summaryNotAttending}>欠席 {summary.notAttending}名</ThemedText>
+                <ThemedText testID="attendance-summary-unanswered" style={styles.summaryUnanswered}>未回答 {summary.unanswered}名</ThemedText>
               </ThemedView>
               {myRecord && (
-                <ThemedView style={styles.myCard} testID="attendance-my-record">
-                  <ThemedText type="smallBold" style={styles.attendancePrompt}>稽古の出欠を登録してください。</ThemedText>
+                <ThemedView style={styles.compactCard} testID="attendance-my-record">
+                  <ThemedText type="smallBold">稽古の出欠を登録してください。</ThemedText>
                   {responseDeadlinePassed && (
                     <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
                       回答期限を過ぎたため、回答・変更はできません。
@@ -325,6 +380,7 @@ export default function RehearsalAttendanceScreen() {
                     onChangeText={setRemarksDraft}
                     multiline
                     editable={!responseDeadlinePassed}
+                    style={styles.remarksInput}
                   />
                   {respondMutation.isError && (
                     <ThemedText testID="attendance-respond-error">{getErrorMessage(respondMutation.error)}</ThemedText>
@@ -341,7 +397,7 @@ export default function RehearsalAttendanceScreen() {
           )}
           ListFooterComponent={
             <ThemedView style={styles.commentsSection}>
-              {(commentsQuery.data?.length ?? 0) > 0 && <ThemedText type="smallBold">コメント</ThemedText>}
+              <ThemedText type="smallBold">稽古連絡用コメント</ThemedText>
               <ScheduleCommentList
                 isLoading={commentsQuery.isLoading}
                 isError={commentsQuery.isError}
@@ -400,21 +456,18 @@ function AttendanceRow({
   attendance: RehearsalAttendance;
   displayName: string;
 }) {
-  const isAttending = ['ATTENDING', 'ATTENDED', 'LATE', 'EARLY_LEFT'].includes(attendance.status);
-  const isNotAttending = ['NOT_ATTENDING', 'ABSENT'].includes(attendance.status);
+  const group = attendanceGroup(attendance.status);
   return (
     <ThemedView style={styles.rosterRow} testID="attendance-roster-row">
-      <ThemedText type="smallBold">{displayName}</ThemedText>
-      <ThemedView
-        style={[
-          styles.statusBadge,
-          isAttending ? styles.attendingButton : isNotAttending ? styles.absentButton : styles.unansweredButton,
-        ]}
-      >
-        <ThemedText style={styles.actionButtonText}>
-          {isAttending ? '出席' : isNotAttending ? '欠席' : '未回答'}
-        </ThemedText>
+      <ThemedText type="smallBold" numberOfLines={1}>{displayName}</ThemedText>
+      <ThemedView style={[styles.statusBadge, styles.rosterStatusBadge, { backgroundColor: ATTENDANCE_GROUP_COLORS[group] }]}>
+        <ThemedText style={styles.actionButtonText}>{ATTENDANCE_GROUP_LABELS[group]}</ThemedText>
       </ThemedView>
+      {attendance.remarks?.trim() ? (
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.rosterRemarks}>
+          {attendance.remarks}
+        </ThemedText>
+      ) : null}
     </ThemedView>
   );
 }
@@ -424,14 +477,6 @@ const styles = StyleSheet.create({
   backRow: { paddingHorizontal: Spacing.four, paddingVertical: Spacing.two },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   list: { padding: Spacing.four, gap: Spacing.two },
-  myCard: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: 10,
-    padding: Spacing.three,
-    gap: Spacing.two,
-    marginBottom: Spacing.three,
-  },
   summaryCard: {
     borderWidth: 1,
     borderColor: '#e1dee6',
@@ -439,6 +484,17 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.one,
     marginBottom: Spacing.three,
+  },
+  /** 出欠回答状況/自分の回答カード向けの、より控えめなpadding/gapバージョン
+   * - 稽古の日時・場所・備考（summaryCard）を主役にし、出欠部分を相対的に
+   * コンパクトにするための専用スタイル。 */
+  compactCard: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: 10,
+    padding: Spacing.two,
+    gap: Spacing.one,
+    marginBottom: Spacing.two,
   },
   rosterColumns: {
     gap: Spacing.three,
@@ -451,9 +507,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.one,
-    gap: Spacing.one,
-    flexDirection: 'row',
-    alignItems: 'center',
+    gap: Spacing.half,
+    alignItems: 'flex-start',
   },
   rehearsalInfoHeader: {
     flexDirection: 'row',
@@ -474,7 +529,18 @@ const styles = StyleSheet.create({
   editButton: { backgroundColor: '#d99a00' },
   cancelButton: { backgroundColor: '#c62828' },
   confirmButton: { backgroundColor: '#2e7d32' },
-  attendancePrompt: { fontSize: 18, lineHeight: 24 },
+  rehearsalDateTime: { fontSize: 20, lineHeight: 26, fontWeight: '700' },
+  rehearsalLocation: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  summaryAttending: { color: '#2e7d32' },
+  summaryNotAttending: { color: '#c62828' },
+  summaryUnanswered: { color: '#777' },
+  rosterStatusBadge: {
+    minHeight: 28,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+    alignSelf: 'flex-start',
+  },
+  rosterRemarks: { alignSelf: 'stretch' },
   remarksInput: {
     minHeight: 88,
     textAlignVertical: 'top',
