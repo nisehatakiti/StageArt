@@ -246,7 +246,7 @@ export default function RehearsalAttendanceScreen() {
                           {cancelRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>中止</ThemedText>}
                         </TouchableOpacity>
                       )}
-                    </ThemedView>
+                    </ThemedView>}
                   </ThemedView>
                   {rehearsalQuery.data.start_date_time && (
                     <ThemedText testID="rehearsal-info-datetime">

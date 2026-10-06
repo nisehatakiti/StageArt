@@ -66,7 +66,7 @@ export function updateRehearsal(
   client: ApiClient,
   rehearsalId: string,
   fields: {
-    title?: string;
+    title?: string | null;
     description: string | null;
     startDateTime?: string;
     endDateTime?: string;
