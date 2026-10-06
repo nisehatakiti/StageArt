@@ -218,7 +218,7 @@ export default function EditRehearsalScreen() {
             testID="rehearsal-edit-submit"
             onPress={handleSubmit}
             disabled={updateRehearsal.isPending}
-            style={[styles.button, (!title.trim() || updateRehearsal.isPending) && styles.buttonDisabled]}
+            style={[styles.button, updateRehearsal.isPending && styles.buttonDisabled]}
           >
             {updateRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>保存する</ThemedText>}
           </TouchableOpacity>
