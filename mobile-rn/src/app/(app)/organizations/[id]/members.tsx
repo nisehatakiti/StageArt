@@ -4,7 +4,6 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useOrganizations } from '@/features/organization/useOrganizations';
-import { useOrganizationJoinKeys } from '@/features/joinKey/useJoinKey';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -34,7 +33,6 @@ export default function OrganizationMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const organizationsQuery = useOrganizations();
   const router = useRouter();
-  const joinKeysQuery = useOrganizationJoinKeys(id);
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
   const isOwner = organization?.current_person_role === 'OWNER';
