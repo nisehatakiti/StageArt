@@ -35,7 +35,7 @@ export default function EditRehearsalScreen() {
   const updateRehearsal = useUpdateRehearsal(rehearsalId);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -53,7 +53,7 @@ export default function EditRehearsalScreen() {
   // typed into this form.
   if (rehearsalQuery.data && !hasInitialized) {
     setHasInitialized(true);
-    setTitle(rehearsalQuery.data.title ?? '');
+    setDescription(rehearsalQuery.data.description ?? '');
     setDate(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(0, 10) : '');
     setTime(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(11, 16) : '');
     setEndTime(rehearsalQuery.data.end_date_time ? rehearsalQuery.data.end_date_time.slice(11, 16) : '');
@@ -79,11 +79,8 @@ export default function EditRehearsalScreen() {
     const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
 
     await updateRehearsal.mutateAsync({
-      title: title.trim(),
-      // Never edited on this screen - passed straight through unchanged
-      // so UpdateRehearsalUseCase's unconditional-overwrite behavior
-      // cannot silently wipe an existing description.
-      description: rehearsalQuery.data.description,
+      title: null,
+      description: description.trim() || null,
       startDateTime,
       endDateTime,
       timezone: 'Asia/Tokyo',
@@ -116,11 +113,6 @@ export default function EditRehearsalScreen() {
           <ThemedText type="title" style={styles.title}>
             稽古を編集
           </ThemedText>
-
-          <ThemedText type="small" themeColor="textSecondary">
-            稽古名
-          </ThemedText>
-          <ThemedTextInput testID="rehearsal-edit-title" placeholder="稽古名" value={title} onChangeText={setTitle} style={styles.input} />
 
           <ThemedText type="small" themeColor="textSecondary">
             日付（YYYY-MM-DD）
@@ -173,6 +165,18 @@ export default function EditRehearsalScreen() {
           />
 
           <ThemedText type="small" themeColor="textSecondary">
+            備考（任意）
+          </ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-edit-description"
+            placeholder="稽古内容、持ち物、連絡事項など"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            style={[styles.input, styles.descriptionInput]}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
             回答期限（任意・YYYY-MM-DD）
           </ThemedText>
           <DateTimeInput
@@ -199,7 +203,7 @@ export default function EditRehearsalScreen() {
           <TouchableOpacity
             testID="rehearsal-edit-submit"
             onPress={handleSubmit}
-            disabled={!title.trim() || updateRehearsal.isPending}
+            disabled={updateRehearsal.isPending}
             style={[styles.button, (!title.trim() || updateRehearsal.isPending) && styles.buttonDisabled]}
           >
             {updateRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>保存する</ThemedText>}
@@ -225,6 +229,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   inputDisabled: { opacity: 0.5 },
+  descriptionInput: { minHeight: 100, textAlignVertical: 'top' },
   caption: { marginTop: -Spacing.one, marginBottom: Spacing.two },
   button: {
     backgroundColor: '#4a3f7a',
