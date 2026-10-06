@@ -59,28 +59,17 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
 ];
 
 /**
- * StageArt UI再構成 instruction (this round §「Organization Context」):
- * 団体情報(flat) / 公開ページ管理(ABOUT・SNS・リンク) / メンバー管理(メンバー
- * 管理・追加・代理人を設定・代表者交代) / 公演管理(公演を作る・過去公演を
- * 登録する・公演を編集する) / 会計管理(ON時のみ) という2階層構造を、前回の
- * 小屋入り～本番と同じ groupLabel パターンで表現する。
- *
- * この構造は docs/03-PublicPageURLAndPublicationSchedule.md の
- * 「団体管理メニュー構成」「Organization Context Menu」と一致する一方、
- * docs/04-CommonNavigationDesign.md 内の§2.5/§6/§15にはこれと異なる
- * 簡略版が3種類存在し、相互にも矛盾している（要確認・今回の作業報告参照）。
- * 今回はユーザー自身がこのラウンドの指示で明示した候補構造を正本として
- * 採用し、04-CommonNavigationDesign.md側の矛盾は解消せず「要確認」のまま
- * 報告する。
- *
- * 「公演一覧」（organization-productions）は候補リストに明記されていないが、
- * 既存の実装済み・動作する画面であり削除する仕様もないため、公演管理グル
- * ープの先頭に残す（要確認）。「参加申請」「招待」も同様に候補リストにない
- * ため、いずれのグループにも属させず既存のフラット項目のまま維持する
- * （要確認）。会計管理の6子項目（会計入力/仕訳一覧/貸借対照表/損益計算書/
- * 予算作成/会計締め処理）はBackend/UI共に画面が存在しない（今回のバック
- * エンド調査で確認）ため、既存どおり単一のPlaceholder遷移先のままとする。
+ * Organization Context: the organization menu is intentionally kept small.
+ * 「団体情報」 is the single entry point for the Organization's identity and
+ * public-page information (ABOUT/SNS/links/logo are not separate menu items).
+ * 「メンバー管理」 is the single entry point for roster operations; its
+ * add/delegate actions are grouped underneath it, matching Production
+ * member management. Participation approvals belong on Home, and invitations
+ * are handled from Member Management rather than as a separate Organization
+ * menu item. Past-production registration uses the normal Production creation
+ * flow, so it has no separate menu entry.
  */
+
 function buildOrganizationContextItems(id: string, isOwner: boolean, accountingEnabled: boolean): NavMenuItem[] {
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
