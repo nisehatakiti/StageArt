@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
 import { useRehearsal, useUpdateRehearsal } from '@/features/attendance/useRehearsals';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -32,7 +33,11 @@ export default function EditRehearsalScreen() {
   const { id: productionId, rehearsalId } = useLocalSearchParams<{ id: string; rehearsalId: string }>();
   const router = useRouter();
   const rehearsalQuery = useRehearsal(rehearsalId);
+  const productionQuery = useProduction(productionId);
   const updateRehearsal = useUpdateRehearsal(rehearsalId);
+  const canManageRehearsal =
+    productionQuery.data?.is_primary_manager === true ||
+    productionQuery.data?.delegate_roles?.includes('REHEARSAL_MANAGER') === true;
 
   const [hasInitialized, setHasInitialized] = useState(false);
   const [description, setDescription] = useState('');
@@ -108,7 +113,16 @@ export default function EditRehearsalScreen() {
         </ThemedView>
       )}
 
-      {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && (
+      {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && !productionQuery.isLoading && !canManageRehearsal && (
+        <ThemedView style={styles.centered}>
+          <ThemedText>この稽古を編集する権限がありません。</ThemedText>
+          <TouchableOpacity onPress={() => router.replace(`/production/${productionId}/schedule/attendance/${rehearsalId}`)} testID="rehearsal-edit-back" accessibilityRole="button">
+            <ThemedText type="link">稽古詳細へ戻る</ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+      )}
+
+      {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && !productionQuery.isLoading && canManageRehearsal && (
         <ScrollView contentContainerStyle={styles.container}>
           <ThemedText type="title" style={styles.title}>
             稽古を編集
