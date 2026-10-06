@@ -84,11 +84,8 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
 function buildOrganizationContextItems(id: string, isOwner: boolean, accountingEnabled: boolean): NavMenuItem[] {
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
-    { key: 'organization-about', label: 'ABOUT', href: `/organizations/${id}/about` as Href, groupLabel: '公開ページ管理' },
-    { key: 'organization-sns', label: 'SNS', href: `/organizations/${id}/sns` as Href },
-    { key: 'organization-links', label: 'リンク', href: `/organizations/${id}/links` as Href },
     { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href, groupLabel: 'メンバー管理' },
-    { key: 'organization-members-add', label: '追加', href: `/organizations/${id}/members/add` as Href },
+    { key: 'organization-members-add', label: 'メンバーを追加', href: `/organizations/${id}/members/add` as Href },
     { key: 'organization-members-delegate', label: '代理人を設定', href: `/organizations/${id}/members/delegate` as Href },
     {
       key: 'organization-members-owner-transfer',
@@ -97,21 +94,9 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
     },
   ];
 
-  if (isOwner) {
-    items.push(
-      { key: 'organization-requests', label: '参加申請', href: `/organizations/${id}/membership-requests` as Href },
-      { key: 'organization-invite', label: '招待', href: `/organizations/${id}/invite` as Href }
-    );
-  }
-
   items.push(
     { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演管理' },
     { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href },
-    {
-      key: 'organization-productions-create-past',
-      label: '過去公演を登録する',
-      href: `/organizations/${id}/productions/create-past` as Href,
-    },
     { key: 'organization-productions-edit', label: '公演を編集する', href: `/organizations/${id}/productions/edit` as Href }
   );
 
