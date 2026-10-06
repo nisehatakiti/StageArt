@@ -171,6 +171,7 @@ describe('useNavMenu', () => {
     expect(members?.disabled).toBe(true);
     const rehearsal = result.current.contextItems.find((item) => item.key === 'production-rehearsal');
     expect(rehearsal?.disabled).toBeUndefined();
+    expect(rehearsal?.label).toBe('予定管理');
     // productionTwo's delegate_role is REHEARSAL_MANAGER, not PERFORMANCE_MANAGER.
     const performances = result.current.contextItems.find((item) => item.key === 'production-performances');
     expect(performances?.disabled).toBe(true);
