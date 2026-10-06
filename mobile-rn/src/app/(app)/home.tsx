@@ -456,7 +456,7 @@ function HomeOrganizationCard({ organization }: { organization: Organization }) 
   const isOwner = organization.current_person_role === 'OWNER';
 
   return (
-    <View testID={`home-organization-row-${organization.id}`} style={styles.card}>
+    <View testID={`home-organization-row-${organization.id}`} style={styles.organizationCard}>
       <TouchableOpacity
         testID={`home-organization-link-${organization.id}`}
         onPress={() => router.push(`/organizations/${organization.id}` as Href)}
@@ -633,6 +633,13 @@ const styles = StyleSheet.create({
   organizationName: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
   organizationProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   card: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.two,
+    gap: Spacing.half,
+  },
+  organizationCard: {
     borderWidth: 1,
     borderColor: '#e1dee6',
     borderRadius: Radius.medium,
