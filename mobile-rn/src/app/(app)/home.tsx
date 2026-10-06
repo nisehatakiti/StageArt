@@ -3,7 +3,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpa
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BrandColors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import {
   buildDashboardViewModel,
   type DashboardNotificationViewModel,
@@ -136,8 +136,6 @@ export default function HomeScreen() {
 
       <PrimaryNavGrid hasFavorites={hasFavorites} />
 
-      <QuickCreateRow />
-
       <PersonalOverviewSection
         isLoading={dashboardQuery.isLoading}
         isError={dashboardQuery.isError}
@@ -246,23 +244,6 @@ function PrimaryNavGrid({ hasFavorites }: { hasFavorites: boolean }) {
  * regression, not a cosmetic Home cleanup, so it stays until that
  * navigation gap is resolved elsewhere.
  */
-function QuickCreateRow() {
-  const router = useRouter();
-
-  return (
-    <View style={styles.quickActions} testID="home-quick-actions">
-      <TouchableOpacity
-        testID="home-quick-action-create-organization"
-        style={[styles.quickAction, styles.quickActionPrimary]}
-        onPress={() => router.push('/organizations/create')}
-      >
-        <ThemedText type="smallBold" style={styles.quickActionTextPrimary}>
-          ＋ 団体を作る
-        </ThemedText>
-      </TouchableOpacity>
-    </View>
-  );
-}
 
 function PersonalOverviewSection({
   isLoading,
