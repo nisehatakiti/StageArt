@@ -293,7 +293,7 @@ function PersonalOverviewSection({
       {hasRehearsals && (
         <>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
-            稽古予定
+            今後の予定
           </ThemedText>
           <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
             {upcomingRehearsals.map((rehearsal) => (
@@ -421,22 +421,31 @@ function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalView
           {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
           <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
         </ThemedView>
-        <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '稽古'}</ThemedText>
+        <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '予定'}</ThemedText>
         <ThemedView style={styles.rehearsalMeta}>
           {rehearsal.dateDisplay && (
-            <ThemedText type="small" style={styles.rehearsalMetaPrimary}>
-              {rehearsal.dateDisplay}{rehearsal.timeDisplay ? ' ' + rehearsal.timeDisplay : ''}
-              {rehearsal.endTimeDisplay ? '〜' + rehearsal.endTimeDisplay : ''}
-            </ThemedText>
+            <ThemedView style={styles.rehearsalDate}>
+              <ThemedText type="small" style={styles.rehearsalDateText}>
+                {rehearsal.dateDisplay}
+              </ThemedText>
+              {rehearsal.timeDisplay && (
+                <ThemedText type="small" style={styles.rehearsalMetaLine}>
+                  <ThemedText style={styles.rehearsalMetaLabel}>日時：</ThemedText>
+                  {rehearsal.timeDisplay}{rehearsal.endTimeDisplay ? '〜' + rehearsal.endTimeDisplay : ''}
+                </ThemedText>
+              )}
+            </ThemedView>
           )}
           {rehearsal.location && (
-            <ThemedText type="small" themeColor="textSecondary">
-              場所：{rehearsal.location}
+            <ThemedText type="small" style={styles.rehearsalMetaLine}>
+              <ThemedText style={styles.rehearsalMetaLabel}>場所：</ThemedText>
+              {rehearsal.location}
             </ThemedText>
           )}
           {rehearsalQuery.data?.description && (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.rehearsalDescription}>
-              備考：{rehearsalQuery.data.description}
+            <ThemedText type="small" style={styles.rehearsalMetaLine}>
+              <ThemedText style={styles.rehearsalMetaLabel}>備考：</ThemedText>
+              {rehearsalQuery.data.description}
             </ThemedText>
           )}
         </ThemedView>
@@ -549,11 +558,13 @@ const styles = StyleSheet.create({
   list: { gap: Spacing.two, width: '100%' },
   section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, width: '100%' },
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
-  rehearsalProductionName: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
-  rehearsalLabel: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
-  rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.half },
-  rehearsalMetaPrimary: { fontWeight: '600' },
-  rehearsalDescription: { paddingTop: Spacing.half },
+  rehearsalProductionName: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  rehearsalLabel: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.two },
+  rehearsalDate: { paddingBottom: Spacing.half },
+  rehearsalDateText: { fontWeight: '600' },
+  rehearsalMetaLine: { fontWeight: '600' },
+  rehearsalMetaLabel: { fontWeight: '700' },
   attendanceHeading: { fontSize: 14, lineHeight: 18 },
   answeredStatus: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two, paddingVertical: Spacing.half },
   currentAttendanceStatus: { fontSize: 16, lineHeight: 22 },
