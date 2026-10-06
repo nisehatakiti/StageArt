@@ -6,7 +6,6 @@ import { ThemedText } from '@/components/themed-text';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useOrganizationContext } from '@/features/organization/OrganizationContext';
 import { useOrganizations } from '@/features/organization/useOrganizations';
-import { usePendingMembershipRequests } from '@/features/membership/useMembership';
 import { useOrganizationProductions } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -47,7 +46,6 @@ export default function OrganizationManagementScreen() {
 
   const organization = organizationsQuery.data?.find((org) => org.id === id) ?? null;
   const isOwner = organization?.current_person_role === 'OWNER';
-  const pendingRequestsQuery = usePendingMembershipRequests(isOwner ? id : undefined);
 
   // Keep OrganizationContext's own "current Organization" in sync with
   // whichever Organization's management screen is actually open - the
@@ -84,8 +82,6 @@ export default function OrganizationManagementScreen() {
 
   const productions = productionsQuery.data ?? [];
   const hasNoProductions = !productionsQuery.isLoading && !productionsQuery.isError && productions.length === 0;
-  const pendingCount = pendingRequestsQuery.data?.length ?? 0;
-
   return (
     <>
       {saved === '1' && (
@@ -122,19 +118,6 @@ export default function OrganizationManagementScreen() {
       </View>
 
       {organization.description && <ThemedText themeColor="textSecondary">{organization.description}</ThemedText>}
-
-      {isOwner && pendingCount > 0 && (
-        <TouchableOpacity
-          testID="organization-management-pending-requests"
-          onPress={() => router.push(`/organizations/${id}/membership-requests` as Href)}
-          style={styles.nextStepBanner}
-        >
-          <ThemedText type="smallBold">参加申請が{pendingCount}件あります</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            確認する
-          </ThemedText>
-        </TouchableOpacity>
-      )}
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>
         公演・活動
