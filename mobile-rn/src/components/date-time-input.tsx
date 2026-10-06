@@ -9,6 +9,7 @@ export function DateTimeInput({ mode, value, onChangeText, placeholder, editable
   if (Platform.OS === 'web') {
     return createElement('input', {
       type: mode,
+      step: mode === 'time' ? 300 : undefined,
       value: value ?? '',
       onChange: (event: ChangeEvent<HTMLInputElement>) => onChangeText?.(event.target.value),
       disabled: !editable,
