@@ -6,7 +6,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import {
   buildDashboardViewModel,
-  type DashboardNotificationViewModel,
   type FollowedOrganizationFeedItemViewModel,
   type UpcomingRehearsalViewModel,
 } from '@/features/dashboard/viewModel';
