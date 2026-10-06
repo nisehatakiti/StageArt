@@ -34,6 +34,9 @@ describe('Rehearsal edit screen: submit', () => {
 
     await waitFor(() => expect(screen.getByTestId('rehearsal-edit-location').props.value).toBe(rehearsalConfirmed.location));
 
+    fireEvent.press(screen.getByTestId('rehearsal-edit-activity-type-SELF_PRACTICE'));
+    await waitFor(() => expect(screen.getByTestId('rehearsal-edit-activity-type-SELF_PRACTICE').props.accessibilityState).toMatchObject({ selected: true }));
+
     await fireEvent.changeText(screen.getByTestId('rehearsal-edit-location'), '稽古場B');
     await waitFor(() => expect(screen.getByTestId('rehearsal-edit-location').props.value).toBe('稽古場B'));
     fireEvent.press(screen.getByTestId('rehearsal-edit-submit'));
@@ -46,6 +49,7 @@ describe('Rehearsal edit screen: submit', () => {
 
       const body = JSON.parse(updateCall![1].body as string);
       expect(body.location).toBe('稽古場B');
+      expect(body.activity_type).toBe('SELF_PRACTICE');
       expect(body.description).toBe('飲み物と着替えを持参してください');
     });
   });
