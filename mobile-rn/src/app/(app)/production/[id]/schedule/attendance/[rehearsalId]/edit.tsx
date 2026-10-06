@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,6 +10,7 @@ import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
 import { useRehearsal, useUpdateRehearsal } from '@/features/attendance/useRehearsals';
 import { useProduction } from '@/features/production/useProductions';
+import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -41,6 +42,7 @@ export default function EditRehearsalScreen() {
 
   const [hasInitialized, setHasInitialized] = useState(false);
   const [description, setDescription] = useState('');
+  const [activityType, setActivityType] = useState('REHEARSAL');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -59,6 +61,7 @@ export default function EditRehearsalScreen() {
   if (rehearsalQuery.data && !hasInitialized) {
     setHasInitialized(true);
     setDescription(rehearsalQuery.data.description ?? '');
+    setActivityType(rehearsalQuery.data.activity_type);
     setDate(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(0, 10) : '');
     setTime(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(11, 16) : '');
     setEndTime(rehearsalQuery.data.end_date_time ? rehearsalQuery.data.end_date_time.slice(11, 16) : '');
@@ -86,6 +89,7 @@ export default function EditRehearsalScreen() {
     await updateRehearsal.mutateAsync({
       title: null,
       description: description.trim() || null,
+      activityType,
       startDateTime,
       endDateTime,
       timezone: 'Asia/Tokyo',
@@ -127,6 +131,27 @@ export default function EditRehearsalScreen() {
           <ThemedText type="title" style={styles.title}>
             稽古を編集
           </ThemedText>
+
+          <ThemedText type="small" themeColor="textSecondary">
+            予定の種別
+          </ThemedText>
+          <View style={styles.activityTypeRow}>
+            {REHEARSAL_ACTIVITY_TYPES.map((option) => {
+              const selected = activityType === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  testID={`rehearsal-edit-activity-type-${option.value}`}
+                  onPress={() => setActivityType(option.value)}
+                  style={[styles.activityTypeOption, selected && styles.activityTypeOptionSelected]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <ThemedText style={selected ? styles.activityTypeOptionTextSelected : undefined}>{option.label}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           <ThemedText type="small" themeColor="textSecondary">
             日付（YYYY-MM-DD）
@@ -233,6 +258,10 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   container: { padding: Spacing.four, gap: Spacing.two },
   title: { fontSize: 22, lineHeight: 28, marginBottom: Spacing.two },
+  activityTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two },
+  activityTypeOption: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  activityTypeOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  activityTypeOptionTextSelected: { color: '#fff', fontWeight: '600' },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
