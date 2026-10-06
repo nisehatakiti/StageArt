@@ -1,4 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
+import { useAuth } from '@/auth/AuthContext';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,7 +12,10 @@ import {
 } from '@/features/dashboard/viewModel';
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
+import { useOrganizations } from '@/features/organization/useOrganizations';
+import { approveMembershipRequest, fetchPendingMembershipRequests, rejectMembershipRequest } from '@/features/membership/api';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
@@ -116,6 +120,7 @@ export default function HomeScreen() {
   // Loading and error both resolve to "not confirmed" - never shown as
   // if it were confirmed present (this Phase's own §13 safety rule).
   const favoritesQuery = useMyFavorites();
+  const organizationsQuery = useOrganizations();
   const hasFavorites = !favoritesQuery.isLoading && !favoritesQuery.isError && (favoritesQuery.data?.length ?? 0) > 0;
 
   return (
@@ -142,6 +147,8 @@ export default function HomeScreen() {
         notifications={unreadNotifications}
       />
 
+      <HomeMembershipApprovalSection organizations={organizationsQuery.data ?? []} />
+
       <FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />
     </ScrollView>
   );
@@ -156,6 +163,88 @@ export default function HomeScreen() {
  * convention). Home is only ever reached once set-name.tsx has been
  * completed, so family_name should always be present in practice.
  */
+function HomeMembershipApprovalSection({ organizations }: { organizations: import('@/types/api').Organization[] }) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+  const ownerOrganizations = organizations.filter((organization) => organization.current_person_role === 'OWNER');
+  const pendingQueries = useQueries({
+    queries: ownerOrganizations.map((organization) => ({
+      queryKey: ['pending-membership-requests', organization.id],
+      queryFn: () => fetchPendingMembershipRequests(apiClient, organization.id),
+      enabled: !!organization.id,
+    })),
+  });
+
+  const approve = useMutation({
+    mutationFn: ({ membershipId }: { membershipId: string }) => approveMembershipRequest(apiClient, membershipId),
+    onSuccess: (_data, variables) => {
+      const request = pendingQueries
+        .flatMap((query) => query.data ?? [])
+        .find((candidate) => candidate.id === variables.membershipId);
+      if (request) {
+        queryClient.invalidateQueries({ queryKey: ['pending-membership-requests', request.organization_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['pending-membership-requests'] });
+      }
+    },
+  });
+
+  const reject = useMutation({
+    mutationFn: ({ membershipId }: { membershipId: string }) => rejectMembershipRequest(apiClient, membershipId),
+    onSuccess: (_data, variables) => {
+      const request = pendingQueries
+        .flatMap((query) => query.data ?? [])
+        .find((candidate) => candidate.id === variables.membershipId);
+      if (request) {
+        queryClient.invalidateQueries({ queryKey: ['pending-membership-requests', request.organization_id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['pending-membership-requests'] });
+      }
+    },
+  });
+
+  const requests = pendingQueries.flatMap((query, index) =>
+    (query.data ?? []).map((request) => ({
+      request,
+      organization: ownerOrganizations[index],
+    }))
+  );
+
+  if (requests.length === 0) return null;
+
+  return (
+    <ThemedView style={styles.section} testID="home-membership-approval">
+      <ThemedText type="subtitle" style={styles.sectionTitle}>参加申請</ThemedText>
+      {requests.map(({ request, organization }) => (
+        <ThemedView key={request.id} style={styles.card}>
+          <ThemedText type="smallBold">{organization?.name ?? '団体'}</ThemedText>
+          <ThemedText type="small">
+            {[request.person_family_name, request.person_given_name].filter(Boolean).join(' ') || '氏名未設定'}
+          </ThemedText>
+          <ThemedView style={styles.responseRow}>
+            <TouchableOpacity
+              testID={`home-membership-approve-${request.id}`}
+              onPress={() => approve.mutate({ membershipId: request.id })}
+              disabled={approve.isPending || reject.isPending}
+              style={styles.approveButton}
+            >
+              <ThemedText style={styles.approveButtonText}>承認</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID={`home-membership-reject-${request.id}`}
+              onPress={() => reject.mutate({ membershipId: request.id })}
+              disabled={approve.isPending || reject.isPending}
+              style={styles.rejectButton}
+            >
+              <ThemedText style={styles.rejectButtonText}>却下</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        </ThemedView>
+      ))}
+    </ThemedView>
+  );
+}
+
 function GreetingHeader() {
   const router = useRouter();
   const currentPersonQuery = useCurrentPerson();
@@ -570,6 +659,11 @@ const styles = StyleSheet.create({
   attendanceHeading: { fontSize: 14, lineHeight: 18 },
   answeredStatus: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two, paddingVertical: Spacing.half },
   currentAttendanceStatus: { fontSize: 16, lineHeight: 22 },
+  responseRow: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one },
+  approveButton: { backgroundColor: '#C6892B', borderRadius: Radius.medium, paddingVertical: Spacing.one, paddingHorizontal: Spacing.three },
+  approveButtonText: { color: '#fff', fontWeight: '600' },
+  rejectButton: { borderWidth: 1, borderColor: '#C6892B', borderRadius: Radius.medium, paddingVertical: Spacing.one, paddingHorizontal: Spacing.three },
+  rejectButtonText: { color: '#C6892B', fontWeight: '600' },
   rehearsalCard: { width: '100%', maxWidth: 680, alignSelf: 'flex-start', borderWidth: 1, borderColor: '#e1dee6', borderRadius: Radius.medium, padding: Spacing.three, gap: Spacing.two, backgroundColor: '#fff' },
   homeAttendanceArea: { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: Spacing.two, gap: Spacing.one },
   responseButtonSelected: { borderWidth: 2, borderColor: '#fff' },
