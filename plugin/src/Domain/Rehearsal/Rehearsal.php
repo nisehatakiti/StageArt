@@ -16,6 +16,17 @@ use StageArt\Domain\Production\ProductionId;
  * finalized ("まだ日程が確定していない場合がある"). This mirrors
  * Project.name's precedent from Phase 1 for the same reason.
  *
+ * StageArt 予定・活動一般化調査: `activityType` (稽古/練習/自主練/
+ * ワークショップ/会議/打ち合わせ/イベント/その他) lets this same Entity
+ * represent StageArt's whole "予定・活動" concept rather than being
+ * copied into a parallel Event/Activity Domain - `title` is therefore
+ * read as a general 予定名 (schedule/activity name), not "稽古名"
+ * specifically. This Entity, its REST paths, and `RehearsalAttendance`'s
+ * RehearsalId FK are deliberately NOT renamed (see the investigation
+ * report) - only the new field is additive. Never add 公演/小屋入り/
+ * 仕込み/場当たり/ゲネプロ/本番 as an activityType value: those remain
+ * Timetable's responsibility.
+ *
  * create() always starts at SCHEDULED (not DRAFT): BusinessFlow.md
  * Flow 18 ("稽古予定を提示する(日程調整開始)") describes creation and
  * beginning the schedule-adjustment period as a single Business
@@ -51,6 +62,7 @@ final class Rehearsal
     private ?string $timezone;
     private ?string $location;
     private RehearsalStatus $status;
+    private RehearsalActivityType $activityType;
     private ?DateTimeImmutable $responseDeadline;
     private ?DateTimeImmutable $reminderSentAt;
     private DateTimeImmutable $createdAt;
@@ -66,6 +78,7 @@ final class Rehearsal
         ?string $timezone,
         ?string $location,
         RehearsalStatus $status,
+        RehearsalActivityType $activityType,
         ?DateTimeImmutable $responseDeadline,
         ?DateTimeImmutable $reminderSentAt,
         DateTimeImmutable $createdAt,
@@ -80,6 +93,7 @@ final class Rehearsal
         $this->timezone = $timezone;
         $this->location = $location;
         $this->status = $status;
+        $this->activityType = $activityType;
         $this->responseDeadline = $responseDeadline;
         $this->reminderSentAt = $reminderSentAt;
         $this->createdAt = $createdAt;
@@ -106,7 +120,8 @@ final class Rehearsal
         DateTimeImmutable $endDateTime,
         ?string $timezone,
         ?string $location,
-        ?DateTimeImmutable $responseDeadline = null
+        ?DateTimeImmutable $responseDeadline = null,
+        ?RehearsalActivityType $activityType = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -120,6 +135,7 @@ final class Rehearsal
             $timezone,
             $location,
             RehearsalStatus::scheduled(),
+            $activityType ?? RehearsalActivityType::rehearsal(),
             $responseDeadline,
             null,
             $now,
@@ -140,7 +156,8 @@ final class Rehearsal
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?DateTimeImmutable $responseDeadline = null,
-        ?DateTimeImmutable $reminderSentAt = null
+        ?DateTimeImmutable $reminderSentAt = null,
+        ?RehearsalActivityType $activityType = null
     ): self {
         return new self(
             $id,
@@ -152,6 +169,7 @@ final class Rehearsal
             $timezone,
             $location,
             $status,
+            $activityType ?? RehearsalActivityType::rehearsal(),
             $responseDeadline,
             $reminderSentAt,
             $createdAt,
@@ -165,7 +183,8 @@ final class Rehearsal
         DateTimeImmutable $startDateTime,
         DateTimeImmutable $endDateTime,
         ?string $timezone,
-        ?string $location
+        ?string $location,
+        ?RehearsalActivityType $activityType = null
     ): void {
         if ($this->isTerminal()) {
             throw new InvalidArgumentException(
@@ -185,6 +204,16 @@ final class Rehearsal
         $this->endDateTime = $endDateTime;
         $this->timezone = $timezone;
         $this->location = $location;
+
+        // null means "leave the current species unchanged" - every other
+        // updateBasicInfo() parameter is a whole-field overwrite (the
+        // caller must pass the current value back to keep it), but
+        // activityType is the one field most existing callers (every
+        // pre-existing UpdateRehearsalCommand) never pass at all.
+        if ($activityType !== null) {
+            $this->activityType = $activityType;
+        }
+
         $this->touch();
     }
 
@@ -360,6 +389,11 @@ final class Rehearsal
     public function status(): RehearsalStatus
     {
         return $this->status;
+    }
+
+    public function activityType(): RehearsalActivityType
+    {
+        return $this->activityType;
     }
 
     public function responseDeadline(): ?DateTimeImmutable

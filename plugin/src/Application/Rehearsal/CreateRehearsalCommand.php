@@ -24,6 +24,12 @@ final class CreateRehearsalCommand
      * (no targets) rather than null so callers who genuinely don't pass
      * anything never fall back to the old auto-all-members behavior. */
     public array $targetPersonIds;
+    /** StageArt 予定・活動一般化調査: one of RehearsalActivityType's
+     * values (REHEARSAL/PRACTICE/SELF_PRACTICE/WORKSHOP/MEETING/
+     * DISCUSSION/EVENT/OTHER); null defers to the Domain's own default
+     * (REHEARSAL) - existing callers that never pass this keep working
+     * unchanged. */
+    public ?string $activityType;
 
     /**
      * @param string[]|null $targetPersonIds
@@ -38,7 +44,8 @@ final class CreateRehearsalCommand
         ?string $timezone,
         ?string $location,
         ?array $targetPersonIds = null,
-        ?string $responseDeadline = null
+        ?string $responseDeadline = null,
+        ?string $activityType = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -50,5 +57,6 @@ final class CreateRehearsalCommand
         $this->location = $location;
         $this->targetPersonIds = $targetPersonIds ?? [];
         $this->responseDeadline = $responseDeadline;
+        $this->activityType = $activityType;
     }
 }

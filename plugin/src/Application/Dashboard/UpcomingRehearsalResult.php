@@ -31,6 +31,12 @@ final class UpcomingRehearsalResult
     public ?string $endDateTime;
     public ?string $location;
     public string $attendanceStatus;
+    /** StageArt 予定・活動一般化調査: one of RehearsalActivityType's
+     * string values (REHEARSAL/PRACTICE/SELF_PRACTICE/WORKSHOP/MEETING/
+     * DISCUSSION/EVENT/OTHER), passed through as a primitive string -
+     * this DTO must not import Rehearsal's Domain VO (see this file's
+     * own class docblock). */
+    public string $activityType;
 
     private function __construct(
         string $rehearsalId,
@@ -40,7 +46,8 @@ final class UpcomingRehearsalResult
         ?string $startDateTime,
         ?string $endDateTime,
         ?string $location,
-        string $attendanceStatus
+        string $attendanceStatus,
+        string $activityType
     ) {
         $this->rehearsalId = $rehearsalId;
         $this->productionId = $productionId;
@@ -50,6 +57,7 @@ final class UpcomingRehearsalResult
         $this->endDateTime = $endDateTime;
         $this->location = $location;
         $this->attendanceStatus = $attendanceStatus;
+        $this->activityType = $activityType;
     }
 
     public static function create(
@@ -60,7 +68,8 @@ final class UpcomingRehearsalResult
         ?string $startDateTime,
         ?string $endDateTime,
         ?string $location,
-        string $attendanceStatus
+        string $attendanceStatus,
+        string $activityType
     ): self {
         return new self(
             $rehearsalId,
@@ -70,7 +79,8 @@ final class UpcomingRehearsalResult
             $startDateTime,
             $endDateTime,
             $location,
-            $attendanceStatus
+            $attendanceStatus,
+            $activityType
         );
     }
 
@@ -88,6 +98,7 @@ final class UpcomingRehearsalResult
             'end_date_time' => $this->endDateTime,
             'location' => $this->location,
             'attendance_status' => $this->attendanceStatus,
+            'activity_type' => $this->activityType,
         ];
     }
 }

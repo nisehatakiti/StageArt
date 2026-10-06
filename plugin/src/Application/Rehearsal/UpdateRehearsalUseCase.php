@@ -13,6 +13,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 
@@ -82,15 +83,17 @@ final class UpdateRehearsalUseCase
         $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         $newResponseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
+        $activityType = $this->parseOptionalActivityType($command->activityType);
 
-        $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline): void {
+        $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline, $activityType): void {
             $rehearsal->updateBasicInfo(
                 $command->title,
                 $command->description,
                 $this->parseRequiredDateTime($command->startDateTime, 'start date/time'),
                 $this->parseRequiredDateTime($command->endDateTime, 'end date/time'),
                 $command->timezone,
-                $command->location
+                $command->location,
+                $activityType
             );
 
             $oldResponseDeadline = $rehearsal->responseDeadline();
@@ -150,6 +153,25 @@ final class UpdateRehearsalUseCase
             return new DateTimeImmutable($value);
         } catch (Exception $exception) {
             throw new InvalidArgumentException("Invalid date/time value: {$value}");
+        }
+    }
+
+    /**
+     * StageArt 予定・活動一般化調査: null/empty leaves the Rehearsal's
+     * current species unchanged (see Rehearsal::updateBasicInfo()'s own
+     * docblock) - an invalid species string is rejected as a 422, same
+     * as every other invalid Rehearsal input.
+     */
+    private function parseOptionalActivityType(?string $value): ?RehearsalActivityType
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return RehearsalActivityType::fromString($value);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException("Invalid activity_type value: {$value}");
         }
     }
 

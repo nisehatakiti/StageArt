@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
@@ -73,7 +74,8 @@ final class RehearsalUpcomingRehearsalProviderTest extends TestCase
         ?DateTimeImmutable $start,
         ?DateTimeImmutable $end,
         ?string $timezone = 'Asia/Tokyo',
-        ?string $status = null
+        ?string $status = null,
+        ?string $activityType = null
     ): Rehearsal {
         $rehearsalStatus = $status !== null ? RehearsalStatus::fromString($status) : RehearsalStatus::scheduled();
 
@@ -88,7 +90,10 @@ final class RehearsalUpcomingRehearsalProviderTest extends TestCase
             null,
             $rehearsalStatus,
             new DateTimeImmutable(),
-            new DateTimeImmutable()
+            new DateTimeImmutable(),
+            null,
+            null,
+            $activityType !== null ? RehearsalActivityType::fromString($activityType) : null
         );
 
         $this->rehearsals->save($rehearsal);
@@ -265,5 +270,38 @@ final class RehearsalUpcomingRehearsalProviderTest extends TestCase
         $this->assertCount(2, $results);
         $this->assertSame($sooner->id()->toString(), $results[0]->rehearsalId);
         $this->assertSame($later->id()->toString(), $results[1]->rehearsalId);
+    }
+
+    // --- StageArt 予定・活動一般化調査: activity_type ---
+
+    public function test_activity_type_is_passed_through_to_the_dashboard_result(): void
+    {
+        $now = new DateTimeImmutable('2026-01-10T00:00:00+00:00');
+        $this->givenRehearsal(
+            new DateTimeImmutable('2026-01-15T18:00:00+09:00'),
+            new DateTimeImmutable('2026-01-15T20:00:00+09:00'),
+            'Asia/Tokyo',
+            null,
+            RehearsalActivityType::SELF_PRACTICE
+        );
+
+        $results = $this->provider->findUpcomingRehearsalsForPerson($this->personId, $now, 50);
+
+        $this->assertCount(1, $results);
+        $this->assertSame(RehearsalActivityType::SELF_PRACTICE, $results[0]->activityType);
+    }
+
+    public function test_activity_type_defaults_to_rehearsal_when_the_rehearsal_does_not_specify_one(): void
+    {
+        $now = new DateTimeImmutable('2026-01-10T00:00:00+00:00');
+        $this->givenRehearsal(
+            new DateTimeImmutable('2026-01-15T18:00:00+09:00'),
+            new DateTimeImmutable('2026-01-15T20:00:00+09:00')
+        );
+
+        $results = $this->provider->findUpcomingRehearsalsForPerson($this->personId, $now, 50);
+
+        $this->assertCount(1, $results);
+        $this->assertSame(RehearsalActivityType::REHEARSAL, $results[0]->activityType);
     }
 }

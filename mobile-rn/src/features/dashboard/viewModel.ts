@@ -22,6 +22,11 @@ export type UpcomingRehearsalViewModel = {
   endTimeDisplay: string | null;
   location: string | null;
   isUnanswered: boolean;
+  /** StageArt 予定・活動一般化調査: one of RehearsalActivityType's
+   * backend values (REHEARSAL/PRACTICE/SELF_PRACTICE/WORKSHOP/MEETING/
+   * DISCUSSION/EVENT/OTHER) - carried through for a future "種別＋予定名"
+   * Home display; not yet rendered anywhere. */
+  activityType: string;
 };
 
 /**
@@ -45,6 +50,7 @@ export function buildUpcomingRehearsalViewModel(rehearsal: UpcomingRehearsal): U
     endTimeDisplay: rehearsal.end_date_time ? formatTime(rehearsal.end_date_time) : null,
     location: rehearsal.location,
     isUnanswered: rehearsal.attendance_status === 'UNANSWERED',
+    activityType: rehearsal.activity_type,
   };
 }
 

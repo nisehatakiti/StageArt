@@ -32,6 +32,7 @@ const dashboardWithContent: MyDashboard = {
       end_date_time: '2026-08-21T21:00:00+09:00',
       location: '○○スタジオ',
       attendance_status: 'UNANSWERED',
+      activity_type: 'REHEARSAL',
     },
   ],
   // StageArt ホームお知らせ・稽古出欠通知 instruction: home.tsx no longer

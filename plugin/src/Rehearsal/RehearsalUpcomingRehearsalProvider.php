@@ -138,7 +138,8 @@ final class RehearsalUpcomingRehearsalProvider implements UpcomingRehearsalProvi
                 $rehearsal->startDateTime() !== null ? $rehearsal->startDateTime()->format(DATE_ATOM) : null,
                 $rehearsal->endDateTime() !== null ? $rehearsal->endDateTime()->format(DATE_ATOM) : null,
                 $rehearsal->location(),
-                $attendance->status()->toString()
+                $attendance->status()->toString(),
+                $rehearsal->activityType()->toString()
             );
         }
 

@@ -9,6 +9,7 @@ use DateTimeZone;
 use RuntimeException;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
@@ -36,6 +37,7 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
             'timezone' => $rehearsal->timezone(),
             'location' => $rehearsal->location(),
             'status' => $rehearsal->status()->toString(),
+            'activity_type' => $rehearsal->activityType()->toString(),
             'response_deadline' => $rehearsal->responseDeadline() !== null ? $rehearsal->responseDeadline()->format('Y-m-d H:i:s') : null,
             'reminder_sent_at' => $rehearsal->reminderSentAt() !== null ? $rehearsal->reminderSentAt()->format('Y-m-d H:i:s') : null,
             'updated_at' => $rehearsal->updatedAt()->format('Y-m-d H:i:s'),
@@ -143,6 +145,9 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
                 : null,
             isset($row['reminder_sent_at']) && $row['reminder_sent_at'] !== null
                 ? new DateTimeImmutable($row['reminder_sent_at'])
+                : null,
+            isset($row['activity_type']) && $row['activity_type'] !== null
+                ? RehearsalActivityType::fromString($row['activity_type'])
                 : null
         );
     }

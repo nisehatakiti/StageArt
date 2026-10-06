@@ -16,6 +16,7 @@ use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -98,6 +99,7 @@ final class CreateRehearsalUseCase
         $startDateTime = $this->parseRequiredDateTime($command->startDateTime, 'start date/time');
         $endDateTime = $this->parseRequiredDateTime($command->endDateTime, 'end date/time');
         $responseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
+        $activityType = $this->parseOptionalActivityType($command->activityType);
 
         $activeMemberIdStrings = array_map(
             static fn (PersonId $personId): string => $personId->toString(),
@@ -113,7 +115,7 @@ final class CreateRehearsalUseCase
         }
 
         $rehearsal = $this->transactions->run(
-            function () use ($productionId, $command, $startDateTime, $endDateTime, $responseDeadline): Rehearsal {
+            function () use ($productionId, $command, $startDateTime, $endDateTime, $responseDeadline, $activityType): Rehearsal {
                 $rehearsal = Rehearsal::create(
                     $productionId,
                     $command->title,
@@ -122,7 +124,8 @@ final class CreateRehearsalUseCase
                     $endDateTime,
                     $command->timezone,
                     $command->location,
-                    $responseDeadline
+                    $responseDeadline,
+                    $activityType
                 );
 
                 $this->rehearsals->save($rehearsal);
@@ -153,6 +156,25 @@ final class CreateRehearsalUseCase
             return new DateTimeImmutable($value);
         } catch (Exception $exception) {
             throw new InvalidArgumentException("Invalid date/time value: {$value}");
+        }
+    }
+
+    /**
+     * StageArt 予定・活動一般化調査: null/empty defers to
+     * Rehearsal::create()'s own default (REHEARSAL) - an invalid species
+     * string is rejected the same way every other invalid Rehearsal
+     * input is, as a 422.
+     */
+    private function parseOptionalActivityType(?string $value): ?RehearsalActivityType
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return RehearsalActivityType::fromString($value);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException("Invalid activity_type value: {$value}");
         }
     }
 

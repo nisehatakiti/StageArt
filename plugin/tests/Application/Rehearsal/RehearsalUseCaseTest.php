@@ -905,6 +905,134 @@ final class RehearsalUseCaseTest extends TestCase
         $this->assertNull($result->responseDeadline);
     }
 
+    // --- StageArt 予定・活動一般化調査: activity_type ---
+
+    public function test_activity_type_defaults_to_rehearsal_when_not_specified(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('REHEARSAL', $result->activityType);
+    }
+
+    public function test_activity_type_can_be_set_at_creation_and_round_trips(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            '殺陣自主練',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            null,
+            null,
+            'SELF_PRACTICE'
+        ));
+
+        $this->assertSame('SELF_PRACTICE', $result->activityType);
+
+        $fetched = $this->getRehearsal->execute(new GetRehearsalQuery($result->id, 1));
+        $this->assertSame('SELF_PRACTICE', $fetched->activityType);
+    }
+
+    public function test_create_rehearsal_rejects_an_invalid_activity_type(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1 Run',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            null,
+            null,
+            'PERFORMANCE'
+        ));
+    }
+
+    public function test_update_rehearsal_can_change_activity_type(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            '発声WS',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            '発声WS',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            null,
+            'WORKSHOP'
+        ));
+
+        $this->assertSame('WORKSHOP', $updated->activityType);
+    }
+
+    public function test_update_rehearsal_without_activity_type_leaves_it_unchanged(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            '10月公演制作会議',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            null,
+            null,
+            'MEETING'
+        ));
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id,
+            1,
+            '10月公演制作会議',
+            null,
+            '2099-01-01T19:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null
+        ));
+
+        $this->assertSame('MEETING', $updated->activityType, 'Omitting activity_type on Update must leave the existing species unchanged.');
+    }
+
     // --- Phase 7 §5: Reminderスケジューリング（UseCase配線） ---
 
     public function test_setting_a_future_deadline_schedules_a_reminder(): void

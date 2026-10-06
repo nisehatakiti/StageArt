@@ -9,6 +9,8 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
+use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
 
 final class RehearsalTest extends TestCase
@@ -329,5 +331,95 @@ final class RehearsalTest extends TestCase
 
         $rehearsal->clearReminderSentMark();
         $this->assertNull($rehearsal->reminderSentAt());
+    }
+
+    // --- StageArt 予定・活動一般化調査: activity_type ---
+
+    public function test_create_defaults_activity_type_to_rehearsal(): void
+    {
+        $rehearsal = Rehearsal::create(ProductionId::generate(), 'Act 1', null, new DateTimeImmutable('2026-09-20 18:00'), new DateTimeImmutable('2026-09-20 20:00'), null, null);
+
+        $this->assertSame(RehearsalActivityType::REHEARSAL, $rehearsal->activityType()->toString());
+    }
+
+    public function test_create_accepts_an_explicit_activity_type(): void
+    {
+        $rehearsal = Rehearsal::create(
+            ProductionId::generate(),
+            '殺陣自主練',
+            null,
+            new DateTimeImmutable('2026-09-20 18:00'),
+            new DateTimeImmutable('2026-09-20 20:00'),
+            null,
+            null,
+            null,
+            RehearsalActivityType::fromString(RehearsalActivityType::SELF_PRACTICE)
+        );
+
+        $this->assertSame(RehearsalActivityType::SELF_PRACTICE, $rehearsal->activityType()->toString());
+    }
+
+    public function test_update_basic_info_changes_activity_type_when_given(): void
+    {
+        $rehearsal = Rehearsal::create(ProductionId::generate(), '発声WS', null, new DateTimeImmutable('2026-09-20 18:00'), new DateTimeImmutable('2026-09-20 20:00'), null, null);
+
+        $rehearsal->updateBasicInfo(
+            '発声WS',
+            null,
+            new DateTimeImmutable('2026-09-20 18:00'),
+            new DateTimeImmutable('2026-09-20 20:00'),
+            null,
+            null,
+            RehearsalActivityType::fromString(RehearsalActivityType::WORKSHOP)
+        );
+
+        $this->assertSame(RehearsalActivityType::WORKSHOP, $rehearsal->activityType()->toString());
+    }
+
+    public function test_update_basic_info_without_activity_type_leaves_it_unchanged(): void
+    {
+        $rehearsal = Rehearsal::create(
+            ProductionId::generate(),
+            '10月公演制作会議',
+            null,
+            new DateTimeImmutable('2026-09-20 18:00'),
+            new DateTimeImmutable('2026-09-20 20:00'),
+            null,
+            null,
+            null,
+            RehearsalActivityType::fromString(RehearsalActivityType::MEETING)
+        );
+
+        $rehearsal->updateBasicInfo(
+            '10月公演制作会議',
+            null,
+            new DateTimeImmutable('2026-09-20 19:00'),
+            new DateTimeImmutable('2026-09-20 20:00'),
+            null,
+            null
+        );
+
+        $this->assertSame(RehearsalActivityType::MEETING, $rehearsal->activityType()->toString());
+    }
+
+    public function test_reconstitute_defaults_activity_type_to_rehearsal_when_absent(): void
+    {
+        $now = new DateTimeImmutable();
+
+        $rehearsal = Rehearsal::reconstitute(
+            RehearsalId::generate(),
+            ProductionId::generate(),
+            'Act 1',
+            null,
+            null,
+            null,
+            null,
+            null,
+            RehearsalStatus::scheduled(),
+            $now,
+            $now
+        );
+
+        $this->assertSame(RehearsalActivityType::REHEARSAL, $rehearsal->activityType()->toString());
     }
 }

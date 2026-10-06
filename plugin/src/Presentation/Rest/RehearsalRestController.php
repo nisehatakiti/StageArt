@@ -142,7 +142,8 @@ final class RehearsalRestController
                 $this->stringOrNull($request->get_param('timezone')),
                 $this->stringOrNull($request->get_param('location')),
                 $this->personIdArray($request->get_param('person_ids')),
-                $this->stringOrNull($request->get_param('response_deadline'))
+                $this->stringOrNull($request->get_param('response_deadline')),
+                $this->stringOrNull($request->get_param('activity_type'))
             );
 
             return new WP_REST_Response($this->createRehearsal->execute($command)->toArray(), 201);
@@ -190,7 +191,8 @@ final class RehearsalRestController
                 $this->stringOrNull($request->get_param('end_date_time')),
                 $this->stringOrNull($request->get_param('timezone')),
                 $this->stringOrNull($request->get_param('location')),
-                $this->stringOrNull($request->get_param('response_deadline'))
+                $this->stringOrNull($request->get_param('response_deadline')),
+                $this->stringOrNull($request->get_param('activity_type'))
             );
 
             return new WP_REST_Response($this->updateRehearsal->execute($command)->toArray(), 200);

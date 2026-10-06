@@ -52,6 +52,12 @@ final class RehearsalInstaller
          * duplicate-send guard (Rehearsal::markReminderSent()/
          * clearReminderSentMark()) - both dbDelta-added, not part of the
          * original Phase 3 schema.
+         *
+         * StageArt 予定・活動一般化調査: activity_type (稽古/練習/自主練/
+         * ワークショップ/会議/打ち合わせ/イベント/その他) is dbDelta-added
+         * here too, `NOT NULL DEFAULT 'REHEARSAL'` so every existing row
+         * backfills to REHEARSAL automatically - no separate data
+         * migration/backfill statement is needed.
          */
         dbDelta("CREATE TABLE {$rehearsals} (
             id CHAR(36) NOT NULL,
@@ -63,6 +69,7 @@ final class RehearsalInstaller
             timezone VARCHAR(64) NULL,
             location VARCHAR(255) NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+            activity_type VARCHAR(32) NOT NULL DEFAULT 'REHEARSAL',
             response_deadline DATETIME NULL,
             reminder_sent_at DATETIME NULL,
             created_at DATETIME NOT NULL,

@@ -623,6 +623,10 @@ export type Rehearsal = {
   timezone: string | null;
   location: string | null;
   status: string;
+  /** StageArt 予定・活動一般化調査: REHEARSAL/PRACTICE/SELF_PRACTICE/
+   * WORKSHOP/MEETING/DISCUSSION/EVENT/OTHER - always present (defaults
+   * to REHEARSAL on the Backend for every existing/legacy row). */
+  activity_type: string;
   /** Phase 7 (Rehearsal仕様整合): "回答期限" - governs SCHEDULE_ADJUSTMENT
    * (予定) phase self-response specifically; null means no deadline. */
   response_deadline: string | null;
@@ -743,6 +747,8 @@ export type UpcomingRehearsal = {
   end_date_time: string | null;
   location: string | null;
   attendance_status: string;
+  /** StageArt 予定・活動一般化調査: see `Rehearsal.activity_type` above. */
+  activity_type: string;
 };
 
 /**
