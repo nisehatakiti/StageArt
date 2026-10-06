@@ -1,9 +1,10 @@
-import { useLocalSearchParams, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { useOrganizationJoinKeys } from '@/features/joinKey/useJoinKey';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -32,6 +33,8 @@ import { getErrorMessage } from '@/utils/errorMessage';
 export default function OrganizationMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const organizationsQuery = useOrganizations();
+  const router = useRouter();
+  const joinKeysQuery = useOrganizationJoinKeys(id);
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
   const isOwner = organization?.current_person_role === 'OWNER';
@@ -73,6 +76,35 @@ export default function OrganizationMembersScreen() {
         メンバー
       </ThemedText>
 
+      {isOwner && (
+        <View style={styles.actionsCard} testID="organization-members-actions">
+          <ThemedText type="subtitle">メンバー管理</ThemedText>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              testID="organization-members-add"
+              onPress={() => router.push(`/organizations/${id}/members/add` as Href)}
+              style={styles.primaryButton}
+            >
+              <ThemedText style={styles.primaryButtonText}>メンバーを追加</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="organization-members-delegate"
+              onPress={() => router.push(`/organizations/${id}/members/delegate` as Href)}
+              style={styles.secondaryButton}
+            >
+              <ThemedText style={styles.secondaryButtonText}>代理人を設定</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="organization-members-invite"
+              onPress={() => router.push(`/organizations/${id}/invite` as Href)}
+              style={styles.secondaryButton}
+            >
+              <ThemedText style={styles.secondaryButtonText}>招待・参加コード</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <View style={styles.card} testID="organization-members-self-role">
         <ThemedText type="small" themeColor="textSecondary">
           あなたの役割
@@ -93,6 +125,19 @@ export default function OrganizationMembersScreen() {
 
 const styles = StyleSheet.create({
   pageTitle: { marginBottom: Spacing.four },
+  actionsCard: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    marginBottom: Spacing.three,
+  },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  primaryButton: { backgroundColor: '#C6892B', borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.three },
+  primaryButtonText: { color: '#fff', fontWeight: '600' },
+  secondaryButton: { borderWidth: 1, borderColor: '#C6892B', borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.three },
+  secondaryButtonText: { color: '#C6892B', fontWeight: '600' },
   card: {
     borderWidth: 1,
     borderColor: '#e1dee6',
