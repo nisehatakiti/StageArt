@@ -12,15 +12,24 @@ final class MyNotificationResult
     public string $type;
     public string $message;
     public ?string $productionId;
+    public ?string $rehearsalId;
     public bool $isRead;
     public string $createdAt;
 
-    private function __construct(string $id, string $type, string $message, ?string $productionId, bool $isRead, string $createdAt)
-    {
+    private function __construct(
+        string $id,
+        string $type,
+        string $message,
+        ?string $productionId,
+        ?string $rehearsalId,
+        bool $isRead,
+        string $createdAt
+    ) {
         $this->id = $id;
         $this->type = $type;
         $this->message = $message;
         $this->productionId = $productionId;
+        $this->rehearsalId = $rehearsalId;
         $this->isRead = $isRead;
         $this->createdAt = $createdAt;
     }
@@ -32,6 +41,7 @@ final class MyNotificationResult
             $notification->type(),
             $notification->message(),
             $notification->productionId()?->toString(),
+            $notification->rehearsalId(),
             $notification->isRead(),
             $notification->createdAt()->format(DATE_ATOM)
         );
@@ -47,6 +57,7 @@ final class MyNotificationResult
             'type' => $this->type,
             'message' => $this->message,
             'production_id' => $this->productionId,
+            'rehearsal_id' => $this->rehearsalId,
             'is_read' => $this->isRead,
             'created_at' => $this->createdAt,
         ];

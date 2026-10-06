@@ -12,12 +12,13 @@ import {
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { useMyNotifications } from '@/features/notifications/useNotifications';
+import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
 import { useRehearsal } from '@/features/attendance/useRehearsals';
 import { useRehearsalAttendances, useRespondRehearsalAttendance } from '@/features/attendance/useRehearsalAttendance';
+import type { MyNotification } from '@/types/api';
 
 type NavEntry = {
   key: string;
@@ -254,7 +255,7 @@ function PersonalOverviewSection({
   error: unknown;
   onRetry: () => void;
   upcomingRehearsals: UpcomingRehearsalViewModel[];
-  notifications: Array<{ id: string; message: string; created_at: string; is_read: boolean }>;
+  notifications: MyNotification[];
 }) {
   const router = useRouter();
 
@@ -309,28 +310,60 @@ function PersonalOverviewSection({
           </ThemedText>
           <ThemedView testID="home-notifications-list" style={styles.list}>
             {notifications.map((notification) => (
-              <TouchableOpacity
-                key={notification.id}
-                testID={`home-notification-row-${notification.id}`}
-                style={styles.card}
-                onPress={() => router.push('/my-notifications')}
-              >
-                <ThemedText type="smallBold">{notification.message}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {formatNotificationCreatedAt(notification.created_at)}
-                </ThemedText>
-              </TouchableOpacity>
+              <HomeNotificationRow key={notification.id} notification={notification} />
             ))}
           </ThemedView>
         </>
       )}
 
-      {notifications.length > 0 && (
-        <TouchableOpacity testID="home-my-notifications-link" style={styles.myNotificationsLink} onPress={() => router.push('/my-notifications')}>
-          <ThemedText type="link">すべてのお知らせを見る</ThemedText>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity testID="home-my-notifications-link" style={styles.myNotificationsLink} onPress={() => router.push('/my-notifications')}>
+        <ThemedText type="link">すべてのお知らせを見る</ThemedText>
+      </TouchableOpacity>
     </ThemedView>
+  );
+}
+
+/**
+ * StageArt ホームお知らせ・稽古出欠通知 instruction: tapping an unread
+ * notification (1) marks it read (`PATCH /me/notifications/{id}/read`,
+ * refetch-driven - same Source-of-Truth pattern as every other
+ * mark-read flow in this codebase) and, once that succeeds, (2)
+ * navigates - to the target Rehearsal's own detail screen when this
+ * notification carries both `rehearsal_id` and `production_id` (never
+ * by parsing `message`), or to `/my-notifications` otherwise (every
+ * other notification type's own existing history destination). Read
+ * state is set before navigation ever starts, so even if navigation
+ * itself were interrupted, the "read" fact is already persisted
+ * server-side - it is never lost.
+ */
+function HomeNotificationRow({ notification }: { notification: MyNotification }) {
+  const router = useRouter();
+  const markRead = useMarkMyNotificationRead();
+
+  function handlePress() {
+    markRead.mutate(notification.id, {
+      onSuccess: () => {
+        if (notification.rehearsal_id && notification.production_id) {
+          router.push(`/production/${notification.production_id}/schedule/attendance/${notification.rehearsal_id}`);
+        } else {
+          router.push('/my-notifications');
+        }
+      },
+    });
+  }
+
+  return (
+    <TouchableOpacity
+      testID={`home-notification-row-${notification.id}`}
+      style={styles.card}
+      onPress={handlePress}
+      disabled={markRead.isPending}
+    >
+      <ThemedText type="smallBold">{notification.message}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {formatNotificationCreatedAt(notification.created_at)}
+      </ThemedText>
+    </TouchableOpacity>
   );
 }
 
@@ -503,4 +536,37 @@ const styles = StyleSheet.create({
   pill: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderRadius: Radius.medium },
   pillRole: { backgroundColor: '#eef0fb' },
   pillTextRole: { color: '#3a4baf', fontWeight: '600' },
+  /**
+   * StageArt ホームお知らせ・稽古出欠通知 instruction: these 6 style keys
+   * were already referenced by this file's own JSX (the お知らせ card and
+   * the 稽古予定 self-response row) but missing from this StyleSheet
+   * object - a pre-existing gap confirmed via `git stash` (the same
+   * `tsc --noEmit` errors reproduce on the unmodified file), not
+   * something this round's own edits introduced. Values are copied
+   * verbatim from the established precedent for this exact same
+   * card/response-button pattern
+   * (production/[id]/schedule/attendance/[rehearsalId]/index.tsx's
+   * identically-named styles), not a new design decision.
+   */
+  card: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: 10,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  responseButtonRow: { flexDirection: 'row', gap: Spacing.one, flexWrap: 'wrap', alignItems: 'flex-start' },
+  responseButton: {
+    minWidth: 88,
+    minHeight: 36,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attendingButton: { backgroundColor: '#2e7d32' },
+  absentButton: { backgroundColor: '#c62828' },
+  disabledButton: { opacity: 0.5 },
+  actionButtonText: { color: '#fff', fontWeight: '700', fontSize: 14, lineHeight: 18 },
 });

@@ -31,6 +31,7 @@ final class WordPressNotificationRepository implements NotificationRepositoryInt
             'type' => $notification->type(),
             'message' => $notification->message(),
             'production_id' => $notification->productionId()?->toString(),
+            'rehearsal_id' => $notification->rehearsalId(),
             'read_at' => $notification->readAt()?->format('Y-m-d H:i:s'),
         ];
 
@@ -91,7 +92,8 @@ final class WordPressNotificationRepository implements NotificationRepositoryInt
             $row['message'],
             $row['production_id'] !== null ? ProductionId::fromString($row['production_id']) : null,
             $row['read_at'] !== null ? new DateTimeImmutable($row['read_at']) : null,
-            new DateTimeImmutable($row['created_at'])
+            new DateTimeImmutable($row['created_at']),
+            $row['rehearsal_id'] ?? null
         );
     }
 }

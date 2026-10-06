@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,11 +16,36 @@ import type { MyNotification } from '@/types/api';
  * GET /me/notifications. Mirrors production/[id]/notifications.tsx's
  * card/unread-dot/tap-to-mark-read pattern, since this is the same
  * "お知らせ" concept, just personally- rather than Production-scoped.
+ *
+ * StageArt ホームお知らせ・稽古出欠通知 instruction: tapping a row here (1)
+ * marks it read only when it is currently unread (an already-read
+ * notification never re-sends the PATCH - it is already idempotent
+ * Backend-side, but there is nothing to do client-side either) and (2)
+ * navigates to the target Rehearsal's own detail screen when the row
+ * carries both `rehearsal_id` and `production_id`. A notification with
+ * neither stays on this screen - the existing "お知らせ履歴" list itself
+ * already is that notification's history destination.
  */
 export default function MyNotificationsScreen() {
+  const router = useRouter();
   const notificationsQuery = useMyNotifications();
   const markRead = useMarkMyNotificationRead();
   const items = notificationsQuery.data ?? [];
+
+  function handlePress(item: MyNotification) {
+    function navigateIfTargeted() {
+      if (item.rehearsal_id && item.production_id) {
+        router.push(`/production/${item.production_id}/schedule/attendance/${item.rehearsal_id}`);
+      }
+    }
+
+    if (item.is_read) {
+      navigateIfTargeted();
+      return;
+    }
+
+    markRead.mutate(item.id, { onSuccess: navigateIfTargeted });
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -65,7 +91,7 @@ export default function MyNotificationsScreen() {
             <RefreshControl refreshing={notificationsQuery.isFetching} onRefresh={notificationsQuery.refetch} testID="my-notifications-refresh-control" />
           }
           renderItem={({ item }) => (
-            <MyNotificationRow item={item} onPress={() => markRead.mutate(item.id)} isMarkingRead={markRead.isPending} />
+            <MyNotificationRow item={item} onPress={() => handlePress(item)} isMarkingRead={markRead.isPending} />
           )}
         />
       )}

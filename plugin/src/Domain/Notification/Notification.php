@@ -36,6 +36,16 @@ final class Notification
     private string $type;
     private string $message;
     private ?ProductionId $productionId;
+    /**
+     * Plain string, not a `RehearsalId` Value Object - Core must not know
+     * what a Rehearsal is (docs/architecture/CoreModuleArchitecture.md:
+     * "Core does not know what a Rehearsal, a Ticket, or an Accounting
+     * entry [is]"). The Rehearsal Module already passes this through
+     * `NotificationContract::notify()`'s untyped payload array exactly
+     * the same way it already does for `type`/`message` - this is not a
+     * new coupling, just a new opaque string the Module happens to send.
+     */
+    private ?string $rehearsalId;
     private ?DateTimeImmutable $readAt;
     private DateTimeImmutable $createdAt;
 
@@ -45,6 +55,7 @@ final class Notification
         string $type,
         string $message,
         ?ProductionId $productionId,
+        ?string $rehearsalId,
         ?DateTimeImmutable $readAt,
         DateTimeImmutable $createdAt
     ) {
@@ -53,13 +64,19 @@ final class Notification
         $this->type = $type;
         $this->message = $message;
         $this->productionId = $productionId;
+        $this->rehearsalId = $rehearsalId;
         $this->readAt = $readAt;
         $this->createdAt = $createdAt;
     }
 
-    public static function create(PersonId $personId, string $type, string $message, ?ProductionId $productionId): self
-    {
-        return new self(NotificationId::generate(), $personId, $type, $message, $productionId, null, new DateTimeImmutable());
+    public static function create(
+        PersonId $personId,
+        string $type,
+        string $message,
+        ?ProductionId $productionId,
+        ?string $rehearsalId = null
+    ): self {
+        return new self(NotificationId::generate(), $personId, $type, $message, $productionId, $rehearsalId, null, new DateTimeImmutable());
     }
 
     public static function reconstitute(
@@ -69,9 +86,10 @@ final class Notification
         string $message,
         ?ProductionId $productionId,
         ?DateTimeImmutable $readAt,
-        DateTimeImmutable $createdAt
+        DateTimeImmutable $createdAt,
+        ?string $rehearsalId = null
     ): self {
-        return new self($id, $personId, $type, $message, $productionId, $readAt, $createdAt);
+        return new self($id, $personId, $type, $message, $productionId, $rehearsalId, $readAt, $createdAt);
     }
 
     /** Idempotent by design, matching `NotificationReadState`'s own
@@ -112,6 +130,11 @@ final class Notification
     public function productionId(): ?ProductionId
     {
         return $this->productionId;
+    }
+
+    public function rehearsalId(): ?string
+    {
+        return $this->rehearsalId;
     }
 
     public function readAt(): ?DateTimeImmutable

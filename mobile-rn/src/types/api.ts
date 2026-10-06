@@ -602,6 +602,13 @@ export type MyNotification = {
   type: string;
   message: string;
   production_id: string | null;
+  /** StageArt ホームお知らせ・稽古出欠通知 instruction: the specific
+   * Rehearsal this notification is about (e.g. "出欠を回答してください"),
+   * so the client can navigate straight to it without parsing `message`
+   * - a Production can have several Rehearsals, so `production_id` alone
+   * is never enough. `null` for any notification not about one
+   * particular Rehearsal (e.g. `timetable_version_published`). */
+  rehearsal_id: string | null;
   is_read: boolean;
   created_at: string;
 };

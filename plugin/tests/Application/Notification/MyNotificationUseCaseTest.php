@@ -13,6 +13,7 @@ use StageArt\Application\Notification\NotificationAccessDeniedException;
 use StageArt\Application\Notification\NotificationNotFoundException;
 use StageArt\Domain\Notification\Notification;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Production\ProductionId;
 use StageArt\Tests\Support\FakeIdentityContract;
 use StageArt\Tests\Support\InMemoryNotificationRepository;
 
@@ -44,6 +45,36 @@ final class MyNotificationUseCaseTest extends TestCase
 
         $this->assertCount(1, $results);
         $this->assertSame('mine', $results[0]->message);
+    }
+
+    /**
+     * StageArt ホームお知らせ・稽古出欠通知 instruction: `rehearsal_id` must
+     * reach the API response (`GET /me/notifications`), not just the
+     * Domain Entity - the Frontend has nothing else to navigate to the
+     * right Rehearsal with.
+     */
+    public function test_rehearsal_id_is_included_in_the_result(): void
+    {
+        $me = PersonId::generate();
+        $this->identity->register(1, $me);
+        $this->notifications->save(
+            Notification::create($me, 'rehearsal_response_reminder', 'mine', ProductionId::generate(), 'rehearsal-42')
+        );
+
+        $results = $this->listMine->execute(new ListMyNotificationsQuery(1));
+
+        $this->assertSame('rehearsal-42', $results[0]->rehearsalId);
+    }
+
+    public function test_rehearsal_id_is_null_for_a_notification_not_about_a_specific_rehearsal(): void
+    {
+        $me = PersonId::generate();
+        $this->identity->register(1, $me);
+        $this->notifications->save(Notification::create($me, 'timetable_version_published', 'mine', ProductionId::generate()));
+
+        $results = $this->listMine->execute(new ListMyNotificationsQuery(1));
+
+        $this->assertNull($results[0]->rehearsalId);
     }
 
     public function test_list_rejects_a_wordpress_user_with_no_linked_person(): void

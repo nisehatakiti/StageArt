@@ -416,12 +416,23 @@ final class Installer
          * stageart_notification_read_states, since a per-recipient row
          * already exists and a second table would add nothing.
          */
+        /*
+         * StageArt ホームお知らせ・稽古出欠通知 instruction: rehearsal_id
+         * identifies the specific Rehearsal a notification is about (e.g.
+         * "出欠を回答してください"), so the Frontend can navigate straight
+         * to the right Rehearsal Detail screen without parsing the
+         * message string - a Production can have several Rehearsals, so
+         * production_id alone is not enough. NULL for any notification
+         * that is not about one particular Rehearsal (e.g.
+         * timetable_version_published, which is Production-wide).
+         */
         dbDelta("CREATE TABLE {$notifications} (
             id CHAR(36) NOT NULL,
             person_id CHAR(36) NOT NULL,
             type VARCHAR(50) NOT NULL,
             message TEXT NOT NULL,
             production_id CHAR(36) NULL,
+            rehearsal_id CHAR(36) NULL,
             read_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY  (id),

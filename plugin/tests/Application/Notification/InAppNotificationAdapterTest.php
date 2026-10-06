@@ -56,4 +56,41 @@ final class InAppNotificationAdapterTest extends TestCase
         $rows = $notifications->findByPersonId($personId);
         $this->assertNull($rows[0]->productionId());
     }
+
+    /**
+     * StageArt ホームお知らせ・稽古出欠通知 instruction: the Frontend must be
+     * able to navigate straight to the right Rehearsal (a Production can
+     * have several) without parsing the message string - this is the
+     * exact point where `rehearsal_id` already arrives in the payload
+     * (RehearsalReminderDispatcher/CancelRehearsalUseCase both already
+     * send it) and must now actually be persisted, not silently dropped.
+     */
+    public function test_persists_rehearsal_id_when_present_in_payload(): void
+    {
+        $notifications = new InMemoryNotificationRepository();
+        $adapter = new InAppNotificationAdapter($notifications);
+        $personId = PersonId::generate();
+        $productionId = ProductionId::generate();
+
+        $adapter->deliver($personId, 'rehearsal_response_reminder', [
+            'message' => 'Show の2026/09/20の稽古の出欠を回答してください',
+            'production_id' => $productionId->toString(),
+            'rehearsal_id' => 'rehearsal-abc-123',
+        ]);
+
+        $rows = $notifications->findByPersonId($personId);
+        $this->assertSame('rehearsal-abc-123', $rows[0]->rehearsalId());
+    }
+
+    public function test_rehearsal_id_is_null_when_not_present_in_payload(): void
+    {
+        $notifications = new InMemoryNotificationRepository();
+        $adapter = new InAppNotificationAdapter($notifications);
+        $personId = PersonId::generate();
+
+        $adapter->deliver($personId, 'timetable_version_published', ['message' => 'msg']);
+
+        $rows = $notifications->findByPersonId($personId);
+        $this->assertNull($rows[0]->rehearsalId());
+    }
 }

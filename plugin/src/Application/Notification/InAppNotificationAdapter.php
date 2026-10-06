@@ -33,7 +33,8 @@ final class InAppNotificationAdapter implements NotificationDeliveryAdapterInter
         $message = is_string($payload['message'] ?? null) ? $payload['message'] : "StageArtからのお知らせがあります（{$type}）。";
         $productionIdString = $payload['production_id'] ?? null;
         $productionId = is_string($productionIdString) ? ProductionId::fromString($productionIdString) : null;
+        $rehearsalId = is_string($payload['rehearsal_id'] ?? null) ? $payload['rehearsal_id'] : null;
 
-        $this->notifications->save(Notification::create($personId, $type, $message, $productionId));
+        $this->notifications->save(Notification::create($personId, $type, $message, $productionId, $rehearsalId));
     }
 }

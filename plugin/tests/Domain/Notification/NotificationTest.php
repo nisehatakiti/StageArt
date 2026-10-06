@@ -48,4 +48,24 @@ final class NotificationTest extends TestCase
 
         $this->assertNull($notification->productionId());
     }
+
+    public function test_rehearsal_id_is_null_by_default(): void
+    {
+        $notification = Notification::create(PersonId::generate(), 'rehearsal_cancelled', 'message', null);
+
+        $this->assertNull($notification->rehearsalId());
+    }
+
+    public function test_rehearsal_id_can_be_set_at_creation(): void
+    {
+        $notification = Notification::create(
+            PersonId::generate(),
+            'rehearsal_response_reminder',
+            'message',
+            ProductionId::generate(),
+            'rehearsal-123'
+        );
+
+        $this->assertSame('rehearsal-123', $notification->rehearsalId());
+    }
 }
