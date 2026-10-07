@@ -24,6 +24,7 @@ use StageArt\Application\Organization\ListOrganizationMembersUseCase;
 use StageArt\Application\Organization\ListOrganizationsForPersonQuery;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
+use StageArt\Application\Organization\OrganizationLogoUploadRejectedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Organization\OrganizationOwnerInvariantViolatedException;
 use StageArt\Application\Organization\OrganizationSlugAlreadyTakenException;
@@ -36,7 +37,13 @@ use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
 use StageArt\Application\Organization\SearchOrganizationsQuery;
 use StageArt\Application\Organization\SearchOrganizationsUseCase;
 use StageArt\Application\Organization\UpdateOrganizationCommand;
+use StageArt\Application\Organization\OrganizationMemberNotFoundException;
+use StageArt\Application\Organization\UpdateOrganizationLogoCommand;
+use StageArt\Application\Organization\UpdateOrganizationLogoUseCase;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksCommand;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksUseCase;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
+use StageArt\Infrastructure\WordPress\Media\WordPressOrganizationLogoUploader;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -74,6 +81,9 @@ final class OrganizationRestController
     private ListOrganizationMembersUseCase $listOrganizationMembers;
     private AssignOrganizationDelegateUseCase $assignOrganizationDelegate;
     private RevokeOrganizationDelegateUseCase $revokeOrganizationDelegate;
+    private UpdateOrganizationLogoUseCase $updateOrganizationLogo;
+    private WordPressOrganizationLogoUploader $logoUploader;
+    private UpdateOrganizationMemberRemarksUseCase $updateOrganizationMemberRemarks;
 
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
@@ -88,7 +98,10 @@ final class OrganizationRestController
         SearchOrganizationsUseCase $searchOrganizations,
         ListOrganizationMembersUseCase $listOrganizationMembers,
         AssignOrganizationDelegateUseCase $assignOrganizationDelegate,
-        RevokeOrganizationDelegateUseCase $revokeOrganizationDelegate
+        RevokeOrganizationDelegateUseCase $revokeOrganizationDelegate,
+        UpdateOrganizationLogoUseCase $updateOrganizationLogo,
+        WordPressOrganizationLogoUploader $logoUploader,
+        UpdateOrganizationMemberRemarksUseCase $updateOrganizationMemberRemarks
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
@@ -103,6 +116,9 @@ final class OrganizationRestController
         $this->listOrganizationMembers = $listOrganizationMembers;
         $this->assignOrganizationDelegate = $assignOrganizationDelegate;
         $this->revokeOrganizationDelegate = $revokeOrganizationDelegate;
+        $this->updateOrganizationLogo = $updateOrganizationLogo;
+        $this->logoUploader = $logoUploader;
+        $this->updateOrganizationMemberRemarks = $updateOrganizationMemberRemarks;
     }
 
     public function register_routes(): void
@@ -196,11 +212,41 @@ final class OrganizationRestController
             ],
         ]);
 
+        // StageArt Organization管理UI/UX統一 "メンバー管理": the roster's
+        // 備考 column, editable after the fact (see
+        // UpdateOrganizationMemberRemarksUseCase's own docblock for why
+        // only 備考, never Role, is editable here).
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/members/(?P<personId>[^/]+)', [
+            [
+                'methods' => 'PATCH',
+                'callback' => [$this, 'updateMemberRemarks'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         // StageArt Follow: authenticated (any logged-in Person, not
         // Membership-gated - see FollowOrganizationUseCase's own
         // docblock), so these deliberately use require_login rather than
         // being folded into the Organization Scope permission checks the
         // rest of this controller uses.
+        // StageArt Organization管理UI/UX統一 "団体ロゴ": multipart upload
+        // via WordPress's own wp_handle_upload() (WordPressOrganizationLogoUploader)
+        // - no base64-into-the-Organization-row shortcut. DELETE clears
+        // logo_url back to null without touching every other field (see
+        // UpdateOrganizationLogoUseCase's own docblock).
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/logo', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'uploadLogo'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+            [
+                'methods' => 'DELETE',
+                'callback' => [$this, 'deleteLogo'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/follow', [
             [
                 'methods' => 'POST',
@@ -404,6 +450,29 @@ final class OrganizationRestController
     /**
      * @return WP_REST_Response|WP_Error
      */
+    public function updateMemberRemarks(WP_REST_Request $request)
+    {
+        try {
+            $command = new UpdateOrganizationMemberRemarksCommand(
+                (string) $request->get_param('id'),
+                (string) $request->get_param('personId'),
+                get_current_user_id(),
+                $this->stringOrNull($request->get_param('remarks'))
+            );
+
+            return new WP_REST_Response($this->updateOrganizationMemberRemarks->execute($command)->toArray(), 200);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationMemberNotFoundException $exception) {
+            return new WP_Error('stageart_organization_member_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
     public function assignDelegate(WP_REST_Request $request)
     {
         try {
@@ -442,6 +511,52 @@ final class OrganizationRestController
             return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function uploadLogo(WP_REST_Request $request)
+    {
+        try {
+            $files = $request->get_file_params();
+
+            if (empty($files['file']) || ! is_array($files['file'])) {
+                return new WP_Error('stageart_organization_logo_invalid', 'A "file" upload is required.', ['status' => 422]);
+            }
+
+            $logoUrl = $this->logoUploader->upload($files['file']);
+
+            $command = new UpdateOrganizationLogoCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                $logoUrl
+            );
+
+            return new WP_REST_Response($this->updateOrganizationLogo->execute($command)->toArray(), 200);
+        } catch (OrganizationLogoUploadRejectedException $exception) {
+            return new WP_Error('stageart_organization_logo_rejected', $exception->getMessage(), ['status' => 422]);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function deleteLogo(WP_REST_Request $request)
+    {
+        try {
+            $command = new UpdateOrganizationLogoCommand((string) $request->get_param('id'), get_current_user_id(), null);
+
+            return new WP_REST_Response($this->updateOrganizationLogo->execute($command)->toArray(), 200);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
         }
     }
 

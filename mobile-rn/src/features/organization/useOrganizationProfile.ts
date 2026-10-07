@@ -15,7 +15,7 @@ import {
 } from './api';
 
 type SnsFields = { service: string; account_identifier: string; profile_url: string; display_name?: string | null; display_order?: number; visibility?: boolean };
-type LinkFields = { label: string; url: string; display_order?: number };
+type LinkFields = { label: string; url: string; display_order?: number; visibility?: boolean };
 
 /** StageArt 団体管理UI整理 "団体情報": SNS CRUD for the management screen
  * (shows hidden links too, unlike the Public Page). */

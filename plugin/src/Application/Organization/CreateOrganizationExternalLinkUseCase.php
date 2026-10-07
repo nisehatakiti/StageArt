@@ -41,7 +41,7 @@ final class CreateOrganizationExternalLinkUseCase
             throw new InvalidArgumentException("Invalid url: {$command->url}");
         }
 
-        $link = OrganizationExternalLink::create($organizationId, $label, $url, $command->displayOrder);
+        $link = OrganizationExternalLink::create($organizationId, $label, $url, $command->displayOrder, $command->visibility);
         $this->links->save($link);
 
         return OrganizationExternalLinkResult::fromDomain($link);

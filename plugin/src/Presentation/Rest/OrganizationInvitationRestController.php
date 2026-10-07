@@ -7,10 +7,14 @@ namespace StageArt\Presentation\Rest;
 use InvalidArgumentException;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationCommand;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationCommand;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenQuery;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsQuery;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsUseCase;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotFoundException;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotPendingException;
 use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationCommand;
@@ -31,16 +35,22 @@ final class OrganizationInvitationRestController
     private const API_NAMESPACE = 'stageart/v1';
 
     private CreateOrganizationInvitationUseCase $createInvitation;
+    private ListOrganizationInvitationsUseCase $listInvitations;
     private ResendOrganizationInvitationUseCase $resendInvitation;
+    private CancelOrganizationInvitationUseCase $cancelInvitation;
     private GetOrganizationInvitationByTokenUseCase $getInvitationByToken;
 
     public function __construct(
         CreateOrganizationInvitationUseCase $createInvitation,
+        ListOrganizationInvitationsUseCase $listInvitations,
         ResendOrganizationInvitationUseCase $resendInvitation,
+        CancelOrganizationInvitationUseCase $cancelInvitation,
         GetOrganizationInvitationByTokenUseCase $getInvitationByToken
     ) {
         $this->createInvitation = $createInvitation;
+        $this->listInvitations = $listInvitations;
         $this->resendInvitation = $resendInvitation;
+        $this->cancelInvitation = $cancelInvitation;
         $this->getInvitationByToken = $getInvitationByToken;
     }
 
@@ -52,12 +62,25 @@ final class OrganizationInvitationRestController
                 'callback' => [$this, 'create'],
                 'permission_callback' => [$this, 'require_login'],
             ],
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'list'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
         ]);
 
         register_rest_route(self::API_NAMESPACE, '/organization-invitations/(?P<id>[^/]+)/resend', [
             [
                 'methods' => 'POST',
                 'callback' => [$this, 'resend'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/organization-invitations/(?P<id>[^/]+)/cancel', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'cancel'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -97,6 +120,45 @@ final class OrganizationInvitationRestController
             return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_organization_invitation_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function list(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListOrganizationInvitationsQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->listInvitations->execute($query)),
+                200
+            );
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function cancel(WP_REST_Request $request)
+    {
+        try {
+            $command = new CancelOrganizationInvitationCommand((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->cancelInvitation->execute($command)->toArray(), 200);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationInvitationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_invitation_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (OrganizationInvitationNotPendingException $exception) {
+            return new WP_Error('stageart_organization_invitation_not_pending', $exception->getMessage(), ['status' => 422]);
         }
     }
 

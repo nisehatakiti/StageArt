@@ -65,7 +65,7 @@ final class ResolveOrganizationInvitationUseCase
         $existingMembership = $this->memberships->findByOrganizationAndPerson($invitation->organizationId(), $personId);
 
         if ($existingMembership === null || ! $existingMembership->isActive()) {
-            $membership = Membership::create($invitation->organizationId(), $personId, RoleKey::member());
+            $membership = Membership::create($invitation->organizationId(), $personId, RoleKey::member(), $invitation->remarks());
             $this->memberships->save($membership);
         }
 

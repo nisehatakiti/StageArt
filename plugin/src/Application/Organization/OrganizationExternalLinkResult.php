@@ -13,6 +13,7 @@ final class OrganizationExternalLinkResult
     public string $label;
     public string $url;
     public int $displayOrder;
+    public bool $visibility;
     public string $createdAt;
     public string $updatedAt;
 
@@ -22,6 +23,7 @@ final class OrganizationExternalLinkResult
         string $label,
         string $url,
         int $displayOrder,
+        bool $visibility,
         string $createdAt,
         string $updatedAt
     ) {
@@ -30,6 +32,7 @@ final class OrganizationExternalLinkResult
         $this->label = $label;
         $this->url = $url;
         $this->displayOrder = $displayOrder;
+        $this->visibility = $visibility;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -42,6 +45,7 @@ final class OrganizationExternalLinkResult
             $link->label(),
             $link->url(),
             $link->displayOrder(),
+            $link->isVisible(),
             $link->createdAt()->format(DATE_ATOM),
             $link->updatedAt()->format(DATE_ATOM)
         );
@@ -58,6 +62,7 @@ final class OrganizationExternalLinkResult
             'label' => $this->label,
             'url' => $this->url,
             'display_order' => $this->displayOrder,
+            'visibility' => $this->visibility,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
         ];

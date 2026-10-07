@@ -142,12 +142,37 @@ final class OrganizationExternalLinkUseCaseTest extends TestCase
             1,
             'New Label',
             'https://new.example.com',
-            5
+            5,
+            false
         ));
 
         $this->assertSame('New Label', $updated->label);
         $this->assertSame('https://new.example.com', $updated->url);
         $this->assertSame(5, $updated->displayOrder);
+        $this->assertFalse($updated->visibility);
+    }
+
+    public function test_visibility_defaults_to_true_and_can_be_set_false_at_creation(): void
+    {
+        $this->givenOwner(1);
+
+        $visible = $this->create->execute(new CreateOrganizationExternalLinkCommand(
+            $this->organizationId->toString(),
+            1,
+            'Visible',
+            'https://visible.example.com'
+        ));
+        $hidden = $this->create->execute(new CreateOrganizationExternalLinkCommand(
+            $this->organizationId->toString(),
+            1,
+            'Hidden',
+            'https://hidden.example.com',
+            0,
+            false
+        ));
+
+        $this->assertTrue($visible->visibility);
+        $this->assertFalse($hidden->visibility);
     }
 
     public function test_updating_an_unknown_id_is_not_found(): void

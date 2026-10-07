@@ -6,6 +6,7 @@ import type {
   Organization,
   OrganizationExternalLink,
   OrganizationFollowStatus,
+  OrganizationInvitation,
   OrganizationInvitationPreview,
   OrganizationMember,
   OrganizationSNS,
@@ -130,6 +131,50 @@ export function fetchOrganizationInvitationByToken(token: string): Promise<Organ
   return publicGet<OrganizationInvitationPreview>(`/organization-invitations/by-token/${encodeURIComponent(token)}`);
 }
 
+/** GET /organizations/{id}/invitations - 招待中のメンバー, mirroring
+ * Production's メンバー管理 own pending-invitations table. */
+export function fetchOrganizationInvitations(client: ApiClient, organizationId: string): Promise<OrganizationInvitation[]> {
+  return client.get<OrganizationInvitation[]>(`/organizations/${organizationId}/invitations`);
+}
+
+/** POST /organization-invitations/{id}/resend. */
+export function resendOrganizationInvitation(client: ApiClient, invitationId: string): Promise<OrganizationInvitation> {
+  return client.post<OrganizationInvitation>(`/organization-invitations/${invitationId}/resend`);
+}
+
+/** POST /organization-invitations/{id}/cancel. */
+export function cancelOrganizationInvitation(client: ApiClient, invitationId: string): Promise<OrganizationInvitation> {
+  return client.post<OrganizationInvitation>(`/organization-invitations/${invitationId}/cancel`);
+}
+
+/** PATCH /organizations/{id}/members/{personId} - the roster's 備考
+ * column, the only field editable directly from メンバー管理's table
+ * (Role changes stay behind 代理人を設定/代表者交代 - see
+ * UpdateOrganizationMemberRemarksUseCase's own docblock). */
+export function updateOrganizationMemberRemarks(
+  client: ApiClient,
+  organizationId: string,
+  personId: string,
+  remarks: string | null
+): Promise<OrganizationMember> {
+  return client.patch<OrganizationMember>(`/organizations/${organizationId}/members/${personId}`, { remarks });
+}
+
+/**
+ * POST /organizations/{id}/logo (multipart) - uploads via WordPress's
+ * own wp_handle_upload() Infrastructure-side (see
+ * WordPressOrganizationLogoUploader's own docblock); never a base64
+ * blob into the Organization row.
+ */
+export function uploadOrganizationLogo(client: ApiClient, organizationId: string, file: Blob, fileName: string): Promise<Organization> {
+  return client.postFile<Organization>(`/organizations/${organizationId}/logo`, 'file', file, fileName);
+}
+
+/** DELETE /organizations/{id}/logo - clears logo_url back to null. */
+export function deleteOrganizationLogo(client: ApiClient, organizationId: string): Promise<Organization> {
+  return client.delete<Organization>(`/organizations/${organizationId}/logo`);
+}
+
 // --- StageArt 団体管理UI整理 "団体情報": SNS ---
 
 export function fetchOrganizationSns(client: ApiClient, organizationId: string): Promise<OrganizationSNS[]> {
@@ -165,7 +210,7 @@ export function fetchOrganizationExternalLinks(client: ApiClient, organizationId
 export function createOrganizationExternalLink(
   client: ApiClient,
   organizationId: string,
-  fields: { label: string; url: string; display_order?: number }
+  fields: { label: string; url: string; display_order?: number; visibility?: boolean }
 ): Promise<OrganizationExternalLink> {
   return client.post<OrganizationExternalLink>(`/organizations/${organizationId}/external-links`, fields);
 }
@@ -173,7 +218,7 @@ export function createOrganizationExternalLink(
 export function updateOrganizationExternalLink(
   client: ApiClient,
   id: string,
-  fields: { label: string; url: string; display_order?: number }
+  fields: { label: string; url: string; display_order?: number; visibility?: boolean }
 ): Promise<OrganizationExternalLink> {
   return client.put<OrganizationExternalLink>(`/organization-external-links/${id}`, fields);
 }

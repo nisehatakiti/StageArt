@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Domain\Organization\OrganizationExternalLink;
 use StageArt\Domain\Organization\OrganizationExternalLinkRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationSNS;
@@ -81,9 +82,13 @@ final class GetPublicOrganizationBySlugUseCase
             $visibleSns
         );
 
+        $visibleExternalLinks = array_values(array_filter(
+            $this->externalLinks->findByOrganizationId($organization->id()),
+            static fn (OrganizationExternalLink $link): bool => $link->isVisible()
+        ));
         $externalLinkResults = array_map(
             static fn ($link) => OrganizationExternalLinkResult::fromDomain($link),
-            $this->externalLinks->findByOrganizationId($organization->id())
+            $visibleExternalLinks
         );
 
         return PublicOrganizationResult::fromDomain($organization, $summaries, $snsResults, $externalLinkResults);

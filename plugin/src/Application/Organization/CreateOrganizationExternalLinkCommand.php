@@ -11,18 +11,21 @@ final class CreateOrganizationExternalLinkCommand
     public string $label;
     public string $url;
     public int $displayOrder;
+    public bool $visibility;
 
     public function __construct(
         string $organizationId,
         int $requestedByWordPressUserId,
         string $label,
         string $url,
-        int $displayOrder = 0
+        int $displayOrder = 0,
+        bool $visibility = true
     ) {
         $this->organizationId = $organizationId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
         $this->label = $label;
         $this->url = $url;
         $this->displayOrder = $displayOrder;
+        $this->visibility = $visibility;
     }
 }

@@ -3,20 +3,19 @@ import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { BrandColors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useOrganizationMembers, useOrganizations, useTransferOrganizationOwner } from '@/features/organization/useOrganizations';
 import { getErrorMessage } from '@/utils/errorMessage';
 
+const DANGER_COLOR = '#a6483a';
+
 /**
- * StageArt 団体管理UI整理 "代表者交代": owner-only
- * (OwnerTransferUseCase - "既存メンバーから新しい代表者を選択して実行する").
- * An inline confirm step (select -> confirm -> execute) stands in for a
- * native confirmation dialog, so this stays testable the same way the
- * rest of this app's destructive actions are. On success, navigates to
- * Home (per the confirmed spec: "処理成功後はOrganization Contextではなく
- * Home画面へ移動する") - this Person is no longer the Owner, so staying
- * inside this same Organization Context's management screens would be
- * confusing.
+ * StageArt Organization管理UI/UX統一 "代表者交代": select -> inline
+ * confirm -> the real POST /organizations/{id}/owner-transfer
+ * (OwnerTransferUseCase - そのまま利用、ロジックは変更しない)。この回の§7
+ * により、確認画面は「危険な操作」として視覚的に分かるよう、現在の代表者→
+ * 新しい代表者を明示する（amberではなくエラー色で強調）。処理成功後は
+ * Organization ContextではなくHome画面へ移動する。
  */
 export default function OrganizationMembersOwnerTransferScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,6 +41,7 @@ export default function OrganizationMembersOwnerTransferScreen() {
     return <ThemedText testID="organization-owner-transfer-forbidden">代表者交代はオーナーのみ行えます。</ThemedText>;
   }
 
+  const currentOwner = (membersQuery.data ?? []).find((member) => member.role_key === 'OWNER') ?? null;
   const candidates = (membersQuery.data ?? []).filter((member) => member.role_key !== 'OWNER');
   const selected = candidates.find((member) => member.person_id === selectedPersonId) ?? null;
 
@@ -95,7 +95,31 @@ export default function OrganizationMembersOwnerTransferScreen() {
 
       {selected && (
         <View style={styles.confirmCard} testID="organization-owner-transfer-confirm">
-          <ThemedText type="smallBold">
+          <ThemedText type="smallBold" style={styles.dangerLabel}>
+            ⚠ この操作は取り消せません
+          </ThemedText>
+
+          <View style={styles.transferDiagram} testID="organization-owner-transfer-diagram">
+            <View style={styles.transferBox}>
+              <ThemedText type="small" themeColor="textSecondary">
+                現在の代表者
+              </ThemedText>
+              <ThemedText type="smallBold">
+                {currentOwner ? `${currentOwner.person_family_name ?? ''} ${currentOwner.person_given_name ?? ''}` : 'あなた'}
+              </ThemedText>
+            </View>
+            <ThemedText style={styles.transferArrow}>↓</ThemedText>
+            <View style={styles.transferBox}>
+              <ThemedText type="small" themeColor="textSecondary">
+                新しい代表者
+              </ThemedText>
+              <ThemedText type="smallBold">
+                {selected.person_family_name ?? ''} {selected.person_given_name ?? ''}
+              </ThemedText>
+            </View>
+          </View>
+
+          <ThemedText type="small">
             本当に代表者を {selected.person_family_name ?? ''} {selected.person_given_name ?? ''} さんに交代しますか？
           </ThemedText>
 
@@ -110,9 +134,9 @@ export default function OrganizationMembersOwnerTransferScreen() {
               testID="organization-owner-transfer-confirm-submit"
               onPress={handleConfirm}
               disabled={transferOwner.isPending}
-              style={styles.primaryButton}
+              style={styles.dangerButton}
             >
-              {transferOwner.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.primaryButtonText}>交代する</ThemedText>}
+              {transferOwner.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.dangerButtonText}>交代する</ThemedText>}
             </TouchableOpacity>
             <TouchableOpacity
               testID="organization-owner-transfer-confirm-cancel"
@@ -146,18 +170,30 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
   },
   confirmCard: {
-    borderWidth: 1,
-    borderColor: BrandColors.warmAmber,
+    borderWidth: 2,
+    borderColor: DANGER_COLOR,
     borderRadius: Radius.medium,
     padding: Spacing.four,
     gap: Spacing.three,
     maxWidth: 480,
   },
+  dangerLabel: { color: DANGER_COLOR },
+  transferDiagram: { alignItems: 'center', gap: Spacing.one },
+  transferBox: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    alignItems: 'center',
+    minWidth: 180,
+  },
+  transferArrow: { fontSize: 20, color: DANGER_COLOR },
   actions: { flexDirection: 'row', gap: Spacing.two },
-  primaryButton: { backgroundColor: BrandColors.warmAmber, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '600' },
-  secondaryButton: { borderWidth: 1, borderColor: BrandColors.warmAmber, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center' },
-  secondaryButtonText: { color: BrandColors.warmAmber, fontWeight: '600' },
-  error: { color: '#a6483a' },
+  dangerButton: { backgroundColor: DANGER_COLOR, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center' },
+  dangerButtonText: { color: '#fff', fontWeight: '600' },
+  secondaryButton: { borderWidth: 1, borderColor: DANGER_COLOR, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center' },
+  secondaryButtonText: { color: DANGER_COLOR, fontWeight: '600' },
+  error: { color: DANGER_COLOR },
   backLink: { marginTop: Spacing.three },
 });

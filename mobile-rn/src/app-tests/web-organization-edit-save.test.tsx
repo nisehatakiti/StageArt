@@ -103,7 +103,7 @@ describe('Web 団体情報編集: Owner saves changes', () => {
       ([url, options]: [string, RequestInit]) => url.includes('/organizations/org-1') && options?.method === 'PUT'
     );
     const sentBody = JSON.parse(putCall[1].body as string);
-    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null, logo_url: null, published: false });
+    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null, published: false });
     expect(mockReplace).not.toHaveBeenCalled();
   });
 });

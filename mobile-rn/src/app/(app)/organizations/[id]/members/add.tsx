@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import { ManagementCard } from '@/components/management-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
@@ -67,7 +68,7 @@ export default function OrganizationMembersAddScreen() {
         メンバーを追加
       </ThemedText>
 
-      <View style={styles.form}>
+      <ManagementCard title="メンバーを追加" description="既にStageArtに登録されている方はすぐに追加され、未登録のメールアドレスには招待メールを送信します。">
         <ThemedText type="small" themeColor="textSecondary">
           氏名
         </ThemedText>
@@ -116,7 +117,7 @@ export default function OrganizationMembersAddScreen() {
             <ThemedText type="link">メンバー管理へ戻る</ThemedText>
           </TouchableOpacity>
         </View>
-      </View>
+      </ManagementCard>
     </ScrollView>
   );
 }

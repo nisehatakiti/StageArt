@@ -37,10 +37,25 @@ final class OrganizationExternalLinkTest extends TestCase
     {
         $link = OrganizationExternalLink::create(OrganizationId::generate(), 'Old Label', 'https://old.example.com', 0);
 
-        $link->update('New Label', 'https://new.example.com', 3);
+        $link->update('New Label', 'https://new.example.com', 3, false);
 
         $this->assertSame('New Label', $link->label());
         $this->assertSame('https://new.example.com', $link->url());
         $this->assertSame(3, $link->displayOrder());
+        $this->assertFalse($link->isVisible());
+    }
+
+    public function test_visibility_defaults_to_true(): void
+    {
+        $link = OrganizationExternalLink::create(OrganizationId::generate(), 'YouTube', 'https://youtube.com/@stageart', 0);
+
+        $this->assertTrue($link->isVisible());
+    }
+
+    public function test_visibility_can_be_set_false_at_creation(): void
+    {
+        $link = OrganizationExternalLink::create(OrganizationId::generate(), 'YouTube', 'https://youtube.com/@stageart', 0, false);
+
+        $this->assertFalse($link->isVisible());
     }
 }

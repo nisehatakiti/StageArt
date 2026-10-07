@@ -30,6 +30,7 @@ final class WordPressOrganizationExternalLinkRepository implements OrganizationE
             'label' => $link->label(),
             'url' => $link->url(),
             'display_order' => $link->displayOrder(),
+            'visibility' => $link->isVisible() ? 1 : 0,
             'updated_at' => $link->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -94,7 +95,8 @@ final class WordPressOrganizationExternalLinkRepository implements OrganizationE
             $row['url'],
             (int) $row['display_order'],
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            isset($row['visibility']) ? (bool) $row['visibility'] : true
         );
     }
 }

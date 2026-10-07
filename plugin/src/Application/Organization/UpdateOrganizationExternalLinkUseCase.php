@@ -45,7 +45,7 @@ final class UpdateOrganizationExternalLinkUseCase
             throw new InvalidArgumentException("Invalid url: {$command->url}");
         }
 
-        $link->update($label, $url, $command->displayOrder);
+        $link->update($label, $url, $command->displayOrder, $command->visibility);
         $this->links->save($link);
 
         return OrganizationExternalLinkResult::fromDomain($link);

@@ -131,6 +131,7 @@ export type OrganizationExternalLink = {
   label: string;
   url: string;
   display_order: number;
+  visibility: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -142,8 +143,10 @@ export type OrganizationMember = {
   person_id: string;
   person_family_name: string | null;
   person_given_name: string | null;
+  email: string | null;
   role_key: string;
   joined_at: string | null;
+  remarks: string | null;
 };
 
 /** StageArt 団体管理UI整理 "メンバーを追加": POST /organizations/{id}/invitations

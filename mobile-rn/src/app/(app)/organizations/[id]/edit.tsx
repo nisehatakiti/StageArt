@@ -1,17 +1,18 @@
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
+import { ManagementCard } from '@/components/management-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
-import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateOrganization } from '@/features/organization/api';
 import { useOrganizationExternalLinks, useOrganizationSns } from '@/features/organization/useOrganizationProfile';
-import { useOrganizations } from '@/features/organization/useOrganizations';
+import { useOrganizationLogo, useOrganizations } from '@/features/organization/useOrganizations';
 import type { OrganizationExternalLink, OrganizationSNS } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { isValidSlug } from '@/utils/slug';
@@ -24,20 +25,11 @@ const SNS_SERVICES: { value: string; label: string }[] = [
 ];
 
 /**
- * StageArt 団体管理UI整理: 団体情報 is the single, unified management
- * entry point for everything about the Organization itself - basic
- * info/logo (this round's own additive Domain fields), 公開ページ
- * (published state, already existed), SNS
- * (docs/04-DomainModel/OrganizationSNS.md) and 外部リンク
- * (docs/04-DomainModel/OrganizationPublicSiteStructure.md "OTHER
- * LINKS"). ABOUT/SNS/リンク/公開ページ管理 are no longer separate screens -
- * their content lives here instead (see this round's own report for
- * which old routes were removed).
- *
- * OWNER and ORGANIZATION_MANAGER (代理人) can both edit - matches
- * UpdateOrganizationUseCase/the SNS and external-link Use Cases' own
- * Authorization (both allow OWNER or ORGANIZATION_MANAGER, never a
- * plain MEMBER).
+ * StageArt Organization管理UI/UX統一: 団体情報は団体の設定・公開情報を管理す
+ * るダッシュボードとして、1つの長いフォームではなく基本情報/団体ロゴ/公開ペー
+ * ジ/SNS/外部リンクの各 ManagementCard に分ける。OWNER/ORGANIZATION_MANAGER
+ * のみ編集可能 - UpdateOrganizationUseCase/SNS/外部リンク/ロゴの各UseCase
+ * と同じAuthorization。
  */
 export default function OrganizationEditScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,7 +45,6 @@ export default function OrganizationEditScreen() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
   const [published, setPublished] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -65,7 +56,6 @@ export default function OrganizationEditScreen() {
       setName(organization.name);
       setSlug(organization.slug ?? '');
       setDescription(organization.description ?? '');
-      setLogoUrl(organization.logo_url ?? '');
       setPublished(organization.published_at !== null);
       setInitialized(true);
     }
@@ -92,7 +82,6 @@ export default function OrganizationEditScreen() {
         status: organization.status,
         slug: slug !== (organization.slug ?? '') ? slug : undefined,
         published,
-        logo_url: logoUrl.trim() ? logoUrl.trim() : null,
       });
       await queryClient.invalidateQueries({ queryKey: ['organizations'] });
       setSavedMessage('団体情報を保存しました。');
@@ -126,12 +115,11 @@ export default function OrganizationEditScreen() {
       <ThemedText type="title" style={styles.pageTitle}>
         団体情報
       </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.pageLead}>
+        団体の基本情報を管理します。
+      </ThemedText>
 
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          基本情報
-        </ThemedText>
-
+      <ManagementCard title="基本情報">
         <ThemedText type="small" themeColor="textSecondary">
           団体名
         </ThemedText>
@@ -165,26 +153,11 @@ export default function OrganizationEditScreen() {
           numberOfLines={4}
           style={[styles.input, styles.textarea]}
         />
+      </ManagementCard>
 
-        <ThemedText type="small" themeColor="textSecondary">
-          団体ロゴ画像URL
-        </ThemedText>
-        <ThemedTextInput
-          testID="organization-edit-logo-url"
-          value={logoUrl}
-          onChangeText={setLogoUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="https://..."
-          style={styles.input}
-        />
-      </ThemedView>
+      <OrganizationLogoCard organizationId={organization.id} logoUrl={organization.logo_url} />
 
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          公開ページ
-        </ThemedText>
-
+      <ManagementCard title="公開ページ">
         <View style={styles.switchRow}>
           <ThemedText type="small">公開する</ThemedText>
           <Switch testID="organization-edit-published" value={published} onValueChange={setPublished} />
@@ -192,10 +165,10 @@ export default function OrganizationEditScreen() {
 
         {organization.published_at !== null && organization.slug && (
           <ThemedText type="small" themeColor="textSecondary">
-            公開ページ: /{organization.slug}
+            公開ページURL: /{organization.slug}
           </ThemedText>
         )}
-      </ThemedView>
+      </ManagementCard>
 
       {errorMessage && (
         <ThemedText testID="organization-edit-error" style={styles.error}>
@@ -228,15 +201,125 @@ export default function OrganizationEditScreen() {
   );
 }
 
+/**
+ * StageArt Organization管理UI/UX統一 "団体ロゴ": 画像ファイルを選択 ->
+ * アップロード (POST /organizations/{id}/logo, multipart) -> プレビュー
+ * 表示 / 画像を変更 / ロゴを削除 - URL入力欄は廃止。pick()はweb/nativeの両方
+ * でexpo-image-pickerの`launchImageLibraryAsync`を使い、返ってきたuri
+ * をfetch()でBlobへ変換してから送る（Expoの標準パターン - webのblob: URI
+ * とnativeのfile: URIの両方で同じ経路が使える）。
+ */
+function OrganizationLogoCard({ organizationId, logoUrl }: { organizationId: string; logoUrl: string | null }) {
+  const { upload, remove } = useOrganizationLogo(organizationId);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  async function handlePick() {
+    setPickError(null);
+
+    if (Platform.OS !== 'web') {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setPickError('画像ライブラリへのアクセスが許可されていません。');
+        return;
+      }
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      quality: 0.8,
+    });
+
+    if (result.canceled || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+
+    try {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const fileName = asset.fileName ?? `logo.${(blob.type.split('/')[1] ?? 'jpg').replace('jpeg', 'jpg')}`;
+      await upload.mutateAsync({ file: blob, fileName });
+    } catch (error) {
+      setPickError(getErrorMessage(error));
+    }
+  }
+
+  return (
+    <ManagementCard title="団体ロゴ">
+      <View style={styles.logoRow}>
+        {logoUrl ? (
+          <Image testID="organization-edit-logo-preview" source={{ uri: logoUrl }} style={styles.logoPreview} />
+        ) : (
+          <View style={styles.logoPlaceholder} testID="organization-edit-logo-empty">
+            <ThemedText type="small" themeColor="textSecondary">
+              ロゴ画像が設定されていません
+            </ThemedText>
+          </View>
+        )}
+
+        <View style={styles.logoActions}>
+          <TouchableOpacity
+            testID="organization-edit-logo-change"
+            onPress={handlePick}
+            disabled={upload.isPending || remove.isPending}
+            style={styles.secondaryButton}
+          >
+            {upload.isPending ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.secondaryButtonText}>画像を変更</ThemedText>}
+          </TouchableOpacity>
+          {logoUrl && (
+            <TouchableOpacity
+              testID="organization-edit-logo-delete"
+              onPress={() => remove.mutate()}
+              disabled={upload.isPending || remove.isPending}
+              style={styles.secondaryButton}
+            >
+              <ThemedText style={styles.error}>ロゴを削除</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {(pickError || upload.isError) && (
+        <ThemedText testID="organization-edit-logo-error" style={styles.error}>
+          {pickError ?? getErrorMessage(upload.error)}
+        </ThemedText>
+      )}
+      {upload.isSuccess && !upload.isPending && (
+        <ThemedText testID="organization-edit-logo-saved" style={styles.success}>
+          ロゴ画像を保存しました。
+        </ThemedText>
+      )}
+    </ManagementCard>
+  );
+}
+
 function OrganizationSnsSection({ organizationId }: { organizationId: string }) {
   const { query, create, update, remove } = useOrganizationSns(organizationId);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [service, setService] = useState('X');
   const [accountIdentifier, setAccountIdentifier] = useState('');
   const [profileUrl, setProfileUrl] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  async function handleAdd() {
+  function resetForm() {
+    setEditingId(null);
+    setService('X');
+    setAccountIdentifier('');
+    setProfileUrl('');
+    setFormError(null);
+  }
+
+  function beginEdit(sns: OrganizationSNS) {
+    setEditingId(sns.id);
+    setService(sns.service);
+    setAccountIdentifier(sns.account_identifier);
+    setProfileUrl(sns.profile_url);
+    setFormError(null);
+  }
+
+  async function handleSubmitForm() {
     if (!accountIdentifier.trim() || !profileUrl.trim()) {
       return;
     }
@@ -244,33 +327,71 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
     setFormError(null);
 
     try {
-      await create.mutateAsync({
-        service,
-        account_identifier: accountIdentifier.trim(),
-        profile_url: profileUrl.trim(),
-      });
-      setAccountIdentifier('');
-      setProfileUrl('');
+      if (editingId) {
+        const current = (query.data ?? []).find((sns) => sns.id === editingId);
+        await update.mutateAsync({
+          id: editingId,
+          fields: {
+            service,
+            account_identifier: accountIdentifier.trim(),
+            profile_url: profileUrl.trim(),
+            display_name: current?.display_name ?? null,
+            display_order: current?.display_order ?? 0,
+            visibility: current?.visibility ?? true,
+          },
+        });
+      } else {
+        await create.mutateAsync({
+          service,
+          account_identifier: accountIdentifier.trim(),
+          profile_url: profileUrl.trim(),
+          display_order: query.data?.length ?? 0,
+        });
+      }
+      resetForm();
     } catch (error) {
       setFormError(getErrorMessage(error));
     }
   }
 
-  return (
-    <ThemedView style={styles.section} testID="organization-edit-sns-section">
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        SNS
-      </ThemedText>
+  const busy = create.isPending || update.isPending;
 
+  return (
+    <ManagementCard title="SNS" testID="organization-edit-sns-section">
       {query.isLoading && <ActivityIndicator testID="organization-edit-sns-loading" />}
 
       <View style={styles.list}>
         {(query.data ?? []).map((sns) => (
-          <SnsRow key={sns.id} sns={sns} onUpdate={update} onDelete={() => remove.mutate(sns.id)} />
+          <SnsRow
+            key={sns.id}
+            sns={sns}
+            editing={editingId === sns.id}
+            onEdit={() => beginEdit(sns)}
+            onToggleVisibility={() =>
+              update.mutate({
+                id: sns.id,
+                fields: {
+                  service: sns.service,
+                  account_identifier: sns.account_identifier,
+                  profile_url: sns.profile_url,
+                  display_name: sns.display_name,
+                  display_order: sns.display_order,
+                  visibility: !sns.visibility,
+                },
+              })
+            }
+            onDelete={() => remove.mutate(sns.id)}
+          />
         ))}
+        {!query.isLoading && (query.data ?? []).length === 0 && (
+          <ThemedText type="small" themeColor="textSecondary" testID="organization-edit-sns-empty">
+            登録されているSNSはありません。
+          </ThemedText>
+        )}
       </View>
 
       <View style={styles.addForm} testID="organization-edit-sns-add-form">
+        <ThemedText type="smallBold">{editingId ? 'SNSを編集' : '+ SNSを追加'}</ThemedText>
         <View style={styles.chipRow}>
           {SNS_SERVICES.map((option) => (
             <TouchableOpacity
@@ -302,55 +423,54 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
           style={styles.input}
         />
         {formError && <ThemedText style={styles.error}>{formError}</ThemedText>}
-        <TouchableOpacity
-          testID="organization-edit-sns-add-submit"
-          onPress={handleAdd}
-          disabled={create.isPending}
-          style={styles.secondaryButton}
-        >
-          <ThemedText style={styles.secondaryButtonText}>SNSを追加する</ThemedText>
-        </TouchableOpacity>
+        <View style={styles.formActions}>
+          <TouchableOpacity testID="organization-edit-sns-add-submit" onPress={handleSubmitForm} disabled={busy} style={styles.secondaryButton}>
+            {busy ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.secondaryButtonText}>{editingId ? '変更を保存' : 'SNSを追加する'}</ThemedText>}
+          </TouchableOpacity>
+          {editingId && (
+            <TouchableOpacity testID="organization-edit-sns-edit-cancel" onPress={resetForm}>
+              <ThemedText type="link">キャンセル</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    </ThemedView>
+    </ManagementCard>
   );
 }
 
 function SnsRow({
   sns,
-  onUpdate,
+  editing,
+  onEdit,
+  onToggleVisibility,
   onDelete,
 }: {
   sns: OrganizationSNS;
-  onUpdate: ReturnType<typeof useOrganizationSns>['update'];
+  editing: boolean;
+  onEdit: () => void;
+  onToggleVisibility: () => void;
   onDelete: () => void;
 }) {
   return (
-    <View style={styles.row} testID={`organization-sns-row-${sns.id}`}>
+    <View style={[styles.row, editing && styles.rowEditing]} testID={`organization-sns-row-${sns.id}`}>
       <View style={styles.rowInfo}>
         <ThemedText type="smallBold">{SNS_SERVICES.find((option) => option.value === sns.service)?.label ?? sns.service}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           {sns.account_identifier}
         </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {sns.profile_url}
+        </ThemedText>
       </View>
       <View style={styles.rowActions}>
-        <TouchableOpacity
-          testID={`organization-sns-visibility-${sns.id}`}
-          onPress={() =>
-            onUpdate.mutate({
-              id: sns.id,
-              fields: {
-                service: sns.service,
-                account_identifier: sns.account_identifier,
-                profile_url: sns.profile_url,
-                display_name: sns.display_name,
-                display_order: sns.display_order,
-                visibility: !sns.visibility,
-              },
-            })
-          }
-        >
+        <TouchableOpacity testID={`organization-sns-visibility-${sns.id}`} onPress={onToggleVisibility}>
           <ThemedText type="small" style={styles.secondaryButtonText}>
             {sns.visibility ? '公開中' : '非公開'}
+          </ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity testID={`organization-sns-edit-${sns.id}`} onPress={onEdit}>
+          <ThemedText type="small" style={styles.secondaryButtonText}>
+            編集
           </ThemedText>
         </TouchableOpacity>
         <TouchableOpacity testID={`organization-sns-delete-${sns.id}`} onPress={onDelete}>
@@ -364,13 +484,28 @@ function SnsRow({
 }
 
 function OrganizationExternalLinksSection({ organizationId }: { organizationId: string }) {
-  const { query, create, remove } = useOrganizationExternalLinks(organizationId);
+  const { query, create, update, remove } = useOrganizationExternalLinks(organizationId);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  async function handleAdd() {
+  function resetForm() {
+    setEditingId(null);
+    setLabel('');
+    setUrl('');
+    setFormError(null);
+  }
+
+  function beginEdit(link: OrganizationExternalLink) {
+    setEditingId(link.id);
+    setLabel(link.label);
+    setUrl(link.url);
+    setFormError(null);
+  }
+
+  async function handleSubmitForm() {
     if (!label.trim() || !url.trim()) {
       return;
     }
@@ -378,41 +513,67 @@ function OrganizationExternalLinksSection({ organizationId }: { organizationId: 
     setFormError(null);
 
     try {
-      await create.mutateAsync({ label: label.trim(), url: url.trim(), display_order: query.data?.length ?? 0 });
-      setLabel('');
-      setUrl('');
+      if (editingId) {
+        const current = (query.data ?? []).find((link) => link.id === editingId);
+        await update.mutateAsync({
+          id: editingId,
+          fields: { label: label.trim(), url: url.trim(), display_order: current?.display_order ?? 0, visibility: current?.visibility ?? true },
+        });
+      } else {
+        await create.mutateAsync({ label: label.trim(), url: url.trim(), display_order: query.data?.length ?? 0 });
+      }
+      resetForm();
     } catch (error) {
       setFormError(getErrorMessage(error));
     }
   }
 
-  return (
-    <ThemedView style={styles.section} testID="organization-edit-external-links-section">
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        外部リンク
-      </ThemedText>
+  const busy = create.isPending || update.isPending;
 
+  return (
+    <ManagementCard title="外部リンク" testID="organization-edit-external-links-section">
       {query.isLoading && <ActivityIndicator testID="organization-edit-external-links-loading" />}
 
       <View style={styles.list}>
         {(query.data ?? []).map((link: OrganizationExternalLink) => (
-          <View key={link.id} style={styles.row} testID={`organization-external-link-row-${link.id}`}>
+          <View key={link.id} style={[styles.row, editingId === link.id && styles.rowEditing]} testID={`organization-external-link-row-${link.id}`}>
             <View style={styles.rowInfo}>
               <ThemedText type="smallBold">{link.label}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 {link.url}
               </ThemedText>
             </View>
-            <TouchableOpacity testID={`organization-external-link-delete-${link.id}`} onPress={() => remove.mutate(link.id)}>
-              <ThemedText type="small" style={styles.error}>
-                削除
-              </ThemedText>
-            </TouchableOpacity>
+            <View style={styles.rowActions}>
+              <TouchableOpacity
+                testID={`organization-external-link-visibility-${link.id}`}
+                onPress={() => update.mutate({ id: link.id, fields: { label: link.label, url: link.url, display_order: link.display_order, visibility: !link.visibility } })}
+              >
+                <ThemedText type="small" style={styles.secondaryButtonText}>
+                  {link.visibility ? '公開中' : '非公開'}
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity testID={`organization-external-link-edit-${link.id}`} onPress={() => beginEdit(link)}>
+                <ThemedText type="small" style={styles.secondaryButtonText}>
+                  編集
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity testID={`organization-external-link-delete-${link.id}`} onPress={() => remove.mutate(link.id)}>
+                <ThemedText type="small" style={styles.error}>
+                  削除
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
+        {!query.isLoading && (query.data ?? []).length === 0 && (
+          <ThemedText type="small" themeColor="textSecondary" testID="organization-edit-external-links-empty">
+            登録されている外部リンクはありません。
+          </ThemedText>
+        )}
       </View>
 
       <View style={styles.addForm} testID="organization-edit-external-links-add-form">
+        <ThemedText type="smallBold">{editingId ? '外部リンクを編集' : '+ 外部リンクを追加'}</ThemedText>
         <ThemedTextInput
           testID="organization-edit-external-link-label"
           value={label}
@@ -429,24 +590,25 @@ function OrganizationExternalLinksSection({ organizationId }: { organizationId: 
           style={styles.input}
         />
         {formError && <ThemedText style={styles.error}>{formError}</ThemedText>}
-        <TouchableOpacity
-          testID="organization-edit-external-link-add-submit"
-          onPress={handleAdd}
-          disabled={create.isPending}
-          style={styles.secondaryButton}
-        >
-          <ThemedText style={styles.secondaryButtonText}>リンクを追加する</ThemedText>
-        </TouchableOpacity>
+        <View style={styles.formActions}>
+          <TouchableOpacity testID="organization-edit-external-link-add-submit" onPress={handleSubmitForm} disabled={busy} style={styles.secondaryButton}>
+            {busy ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.secondaryButtonText}>{editingId ? '変更を保存' : 'リンクを追加する'}</ThemedText>}
+          </TouchableOpacity>
+          {editingId && (
+            <TouchableOpacity testID="organization-edit-external-link-edit-cancel" onPress={resetForm}>
+              <ThemedText type="link">キャンセル</ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    </ThemedView>
+    </ManagementCard>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: Spacing.four, gap: Spacing.two },
-  pageTitle: { marginBottom: Spacing.two },
-  section: { gap: Spacing.one, maxWidth: 480, marginBottom: Spacing.four },
-  sectionTitle: { marginBottom: Spacing.one },
+  container: { padding: Spacing.four, gap: Spacing.one, paddingBottom: Spacing.six },
+  pageTitle: { marginBottom: Spacing.half },
+  pageLead: { marginBottom: Spacing.three },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -470,6 +632,20 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.one },
+  logoRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.three },
+  logoPreview: { width: 96, height: 96, borderRadius: Radius.medium, backgroundColor: '#f0eee9' },
+  logoPlaceholder: {
+    width: 96,
+    height: 96,
+    borderRadius: Radius.medium,
+    backgroundColor: '#f0eee9',
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.one,
+  },
+  logoActions: { gap: Spacing.two },
   list: { gap: Spacing.two, marginBottom: Spacing.two },
   row: {
     borderWidth: 1,
@@ -481,7 +657,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
-  rowInfo: { gap: Spacing.half },
+  rowEditing: { borderColor: BrandColors.warmAmber, borderWidth: 2 },
+  rowInfo: { gap: Spacing.half, flexShrink: 1 },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   addForm: {
     borderWidth: 1,
@@ -491,6 +668,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     backgroundColor: '#F7F5F1',
   },
+  formActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, marginBottom: Spacing.one },
   chip: { borderWidth: 1, borderColor: BrandColors.warmAmber, borderRadius: Radius.medium, paddingVertical: Spacing.half, paddingHorizontal: Spacing.two },
   chipSelected: { backgroundColor: BrandColors.warmAmber },

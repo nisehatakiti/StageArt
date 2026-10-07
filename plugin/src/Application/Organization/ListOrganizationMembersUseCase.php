@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
@@ -22,15 +23,18 @@ final class ListOrganizationMembersUseCase
     private MembershipRepositoryInterface $memberships;
     private PersonRepositoryInterface $people;
     private OrganizationAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         MembershipRepositoryInterface $memberships,
         PersonRepositoryInterface $people,
-        OrganizationAuthorizationService $authorization
+        OrganizationAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->memberships = $memberships;
         $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     /**
@@ -51,7 +55,11 @@ final class ListOrganizationMembersUseCase
         );
 
         return array_values(array_map(
-            fn (Membership $membership) => OrganizationMemberResult::fromDomain($membership, $this->people->findById($membership->personId())),
+            fn (Membership $membership) => OrganizationMemberResult::fromDomain(
+                $membership,
+                $this->people->findById($membership->personId()),
+                $this->personEmailResolver->resolve($membership->personId())
+            ),
             $active
         ));
     }

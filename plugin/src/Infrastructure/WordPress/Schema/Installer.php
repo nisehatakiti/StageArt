@@ -136,6 +136,7 @@ final class Installer
             label VARCHAR(255) NOT NULL,
             url VARCHAR(500) NOT NULL,
             display_order INT NOT NULL DEFAULT 0,
+            visibility TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -186,6 +187,7 @@ final class Installer
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
             created_at DATETIME NOT NULL,
             joined_at DATETIME NULL,
+            remarks TEXT NULL,
             PRIMARY KEY  (id),
             KEY organization_id (organization_id),
             KEY person_id (person_id)

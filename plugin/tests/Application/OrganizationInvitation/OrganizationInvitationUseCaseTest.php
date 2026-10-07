@@ -10,11 +10,15 @@ use StageArt\Application\Membership\MembershipAlreadyExistsException;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationCommand;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationCommand;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationResult;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenQuery;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsQuery;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsUseCase;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotFoundException;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotPendingException;
 use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationCommand;
@@ -53,6 +57,8 @@ final class OrganizationInvitationUseCaseTest extends TestCase
     private ResendOrganizationInvitationUseCase $resendInvitation;
     private GetOrganizationInvitationByTokenUseCase $getInvitationByToken;
     private ResolveOrganizationInvitationUseCase $resolveInvitation;
+    private ListOrganizationInvitationsUseCase $listInvitations;
+    private CancelOrganizationInvitationUseCase $cancelInvitation;
 
     protected function setUp(): void
     {
@@ -89,6 +95,8 @@ final class OrganizationInvitationUseCaseTest extends TestCase
         );
         $this->getInvitationByToken = new GetOrganizationInvitationByTokenUseCase($this->invitations, $this->organizations);
         $this->resolveInvitation = new ResolveOrganizationInvitationUseCase($this->invitations, $this->memberships);
+        $this->listInvitations = new ListOrganizationInvitationsUseCase($this->invitations, $this->organizations, $this->authorization);
+        $this->cancelInvitation = new CancelOrganizationInvitationUseCase($this->invitations, $this->organizations, $this->authorization);
     }
 
     private function givenOrganizationWithOwner(int $ownerWordPressUserId): Organization
@@ -137,6 +145,23 @@ final class OrganizationInvitationUseCaseTest extends TestCase
         $this->assertTrue($membership->isActive());
         $this->assertSame(RoleKey::MEMBER, $membership->roleKey()->toString());
         $this->assertEmpty($this->mailer->invitationEmails);
+    }
+
+    public function test_adding_an_existing_registered_person_carries_remarks_onto_the_membership(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $existingPerson = $this->givenRegisteredPerson(2, 'existing@example.com');
+
+        $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '既存メンバー',
+            'existing@example.com',
+            '衣装合わせ待ち'
+        ));
+
+        $membership = $this->memberships->findByOrganizationAndPerson($organization->id(), $existingPerson->id());
+        $this->assertSame('衣装合わせ待ち', $membership->remarks());
     }
 
     public function test_adding_an_already_active_member_is_rejected(): void
@@ -309,6 +334,25 @@ final class OrganizationInvitationUseCaseTest extends TestCase
         $this->assertSame(RoleKey::MEMBER, $membership->roleKey()->toString());
     }
 
+    public function test_resolve_invitation_carries_remarks_onto_the_new_membership(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待',
+            'newcomer@example.com',
+            '初回公演から参加予定'
+        ));
+        $newPerson = Person::create(10);
+        $this->people->save($newPerson);
+
+        $this->resolveInvitation->execute($newPerson->id(), 'newcomer@example.com');
+
+        $membership = $this->memberships->findByOrganizationAndPerson($organization->id(), $newPerson->id());
+        $this->assertSame('初回公演から参加予定', $membership->remarks());
+    }
+
     public function test_resolve_invitation_marks_it_consumed(): void
     {
         $organization = $this->givenOrganizationWithOwner(1);
@@ -336,5 +380,112 @@ final class OrganizationInvitationUseCaseTest extends TestCase
         $this->resolveInvitation->execute($newPerson->id(), 'nobody-invited-this@example.com');
 
         $this->assertCount(0, $this->memberships->findByPersonId($newPerson->id()));
+    }
+
+    public function test_list_invitations_returns_every_invitation_for_the_organization(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待A',
+            'a@example.com'
+        ));
+        $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待B',
+            'b@example.com'
+        ));
+
+        $results = $this->listInvitations->execute(new ListOrganizationInvitationsQuery($organization->id()->toString(), 1));
+
+        $this->assertCount(2, $results);
+    }
+
+    public function test_list_invitations_is_denied_for_a_plain_member(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $member = Person::create(5);
+        $this->people->save($member);
+        $this->memberships->save(Membership::create($organization->id(), $member->id(), RoleKey::member()));
+
+        $this->expectException(OrganizationAccessDeniedException::class);
+
+        $this->listInvitations->execute(new ListOrganizationInvitationsQuery($organization->id()->toString(), 5));
+    }
+
+    public function test_list_invitations_on_an_unknown_organization_is_not_found(): void
+    {
+        $requester = Person::create(1);
+        $this->people->save($requester);
+
+        $this->expectException(OrganizationNotFoundException::class);
+
+        $this->listInvitations->execute(new ListOrganizationInvitationsQuery(OrganizationId::generate()->toString(), 1));
+    }
+
+    public function test_cancel_marks_a_pending_invitation_cancelled_and_it_is_no_longer_resolvable_by_token(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $created = $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待',
+            'newcomer@example.com'
+        ));
+        $token = $this->mailer->invitationEmails[0]['token'];
+
+        $result = $this->cancelInvitation->execute(new CancelOrganizationInvitationCommand($created->invitation->id, 1));
+
+        $this->assertSame('CANCELLED', $result->status);
+        $this->expectException(OrganizationInvitationNotFoundException::class);
+        $this->getInvitationByToken->execute(new GetOrganizationInvitationByTokenQuery($token));
+    }
+
+    public function test_cancel_is_denied_for_a_plain_member(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $created = $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待',
+            'newcomer@example.com'
+        ));
+        $member = Person::create(5);
+        $this->people->save($member);
+        $this->memberships->save(Membership::create($organization->id(), $member->id(), RoleKey::member()));
+
+        $this->expectException(OrganizationAccessDeniedException::class);
+
+        $this->cancelInvitation->execute(new CancelOrganizationInvitationCommand($created->invitation->id, 5));
+    }
+
+    public function test_cancel_an_already_cancelled_invitation_is_rejected(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $created = $this->createInvitation->execute(new CreateOrganizationInvitationCommand(
+            $organization->id()->toString(),
+            1,
+            '新規招待',
+            'newcomer@example.com'
+        ));
+        $this->cancelInvitation->execute(new CancelOrganizationInvitationCommand($created->invitation->id, 1));
+
+        $this->expectException(OrganizationInvitationNotPendingException::class);
+
+        $this->cancelInvitation->execute(new CancelOrganizationInvitationCommand($created->invitation->id, 1));
+    }
+
+    public function test_cancel_an_unknown_invitation_is_not_found(): void
+    {
+        $this->givenOrganizationWithOwner(1);
+
+        $this->expectException(OrganizationInvitationNotFoundException::class);
+
+        $this->cancelInvitation->execute(new CancelOrganizationInvitationCommand(
+            \StageArt\Domain\OrganizationInvitation\OrganizationInvitationId::generate()->toString(),
+            1
+        ));
     }
 }

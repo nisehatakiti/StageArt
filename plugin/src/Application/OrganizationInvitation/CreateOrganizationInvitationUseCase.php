@@ -110,11 +110,11 @@ final class CreateOrganizationInvitationUseCase
                 throw new MembershipAlreadyExistsException();
             }
 
-            $membership = Membership::create($organizationId, $targetPersonId, RoleKey::member());
+            $membership = Membership::create($organizationId, $targetPersonId, RoleKey::member(), $command->remarks);
             $this->memberships->save($membership);
 
             return CreateOrganizationInvitationResult::forExistingPerson(
-                OrganizationMemberResult::fromDomain($membership, null)
+                OrganizationMemberResult::fromDomain($membership, null, $email)
             );
         }
 

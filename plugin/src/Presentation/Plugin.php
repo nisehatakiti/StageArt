@@ -64,9 +64,13 @@ use StageArt\Application\Organization\ListOrganizationMembersUseCase;
 use StageArt\Application\Organization\ListOrganizationSNSUseCase;
 use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
 use StageArt\Application\Organization\UpdateOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\UpdateOrganizationLogoUseCase;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksUseCase;
 use StageArt\Application\Organization\UpdateOrganizationSNSUseCase;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsUseCase;
 use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
@@ -153,6 +157,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationInvitatio
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationSNSRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPasswordResetTokenRepository;
+use StageArt\Infrastructure\WordPress\Media\WordPressOrganizationLogoUploader;
 use StageArt\Infrastructure\WordPress\OrganizationInvitation\WordPressOrganizationInvitationMailer;
 use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressParticipantInvitationMailer;
 use StageArt\Infrastructure\Authentication\GoogleIdTokenVerifier;
@@ -506,9 +511,16 @@ final class Plugin
         // StageArt 団体管理UI整理 "メンバー管理"/"代理人を設定": roster +
         // delegate grant/revoke (Membership::changeRole() toward/away from
         // RoleKey::ORGANIZATION_MANAGER - no separate Delegate table).
-        $listOrganizationMembers = new ListOrganizationMembersUseCase($memberships, $people, $authorization);
+        $listOrganizationMembers = new ListOrganizationMembersUseCase($memberships, $people, $authorization, $personEmailResolver);
         $assignOrganizationDelegate = new AssignOrganizationDelegateUseCase($memberships, $authorization);
         $revokeOrganizationDelegate = new RevokeOrganizationDelegateUseCase($memberships, $authorization);
+
+        // StageArt Organization管理UI/UX統一 "団体ロゴ": a dedicated, narrow
+        // UseCase (see its own docblock) + the WordPress-native upload
+        // wrapper the REST controller calls directly.
+        $updateOrganizationLogo = new UpdateOrganizationLogoUseCase($organizations, $authorization);
+        $organizationLogoUploader = new WordPressOrganizationLogoUploader();
+        $updateOrganizationMemberRemarks = new UpdateOrganizationMemberRemarksUseCase($memberships, $authorization);
 
         // StageArt 団体管理UI整理 "団体情報": SNS (docs/04-DomainModel/
         // OrganizationSNS.md) and external-link CRUD, both OWNER/
@@ -655,6 +667,8 @@ final class Plugin
             $organizationInvitationMailer
         );
         $getOrganizationInvitationByToken = new GetOrganizationInvitationByTokenUseCase($organizationInvitations, $organizations);
+        $listOrganizationInvitations = new ListOrganizationInvitationsUseCase($organizationInvitations, $organizations, $authorization);
+        $cancelOrganizationInvitation = new CancelOrganizationInvitationUseCase($organizationInvitations, $organizations, $authorization);
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
         // entire own wiring (UseCase construction + REST Controller
@@ -873,7 +887,10 @@ final class Plugin
             $searchOrganizations,
             $listOrganizationMembers,
             $assignOrganizationDelegate,
-            $revokeOrganizationDelegate
+            $revokeOrganizationDelegate,
+            $updateOrganizationLogo,
+            $organizationLogoUploader,
+            $updateOrganizationMemberRemarks
         );
 
         $organizationSnsRestController = new OrganizationSNSRestController(
@@ -892,7 +909,9 @@ final class Plugin
 
         $organizationInvitationRestController = new OrganizationInvitationRestController(
             $createOrganizationInvitation,
+            $listOrganizationInvitations,
             $resendOrganizationInvitation,
+            $cancelOrganizationInvitation,
             $getOrganizationInvitationByToken
         );
 

@@ -166,4 +166,33 @@ export class ApiClient {
 
     return response.arrayBuffer();
   }
+
+  /**
+   * StageArt Organization管理UI/UX統一 "団体ロゴ": the first multipart
+   * upload this Client makes - deliberately a separate method rather
+   * than teaching post()/put() about FormData, since every other
+   * request body here is plain JSON. No `Content-Type` header is set
+   * explicitly; fetch() derives the correct `multipart/form-data;
+   * boundary=...` value from the FormData instance itself, which a
+   * manually-set header would only break.
+   */
+  async postFile<T = unknown>(path: string, fieldName: string, file: Blob, fileName: string): Promise<T> {
+    const url = this.buildUrl(path);
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader(),
+      Accept: 'application/json',
+    };
+
+    const body = new FormData();
+    body.append(fieldName, file, fileName);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'POST', headers, body });
+    } catch (cause) {
+      throw new NetworkError(cause);
+    }
+
+    return this.decodeJson(response) as Promise<T>;
+  }
 }

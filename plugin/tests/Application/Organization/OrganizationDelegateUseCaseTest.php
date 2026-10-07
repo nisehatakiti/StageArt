@@ -6,6 +6,7 @@ namespace StageArt\Tests\Application\Organization;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\AssignOrganizationDelegateCommand;
 use StageArt\Application\Organization\AssignOrganizationDelegateUseCase;
 use StageArt\Application\Organization\ListOrganizationMembersQuery;
@@ -18,8 +19,12 @@ use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Tests\Support\FakeWordPressUserLookup;
+use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
+use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
 final class OrganizationDelegateUseCaseTest extends TestCase
 {
@@ -38,7 +43,14 @@ final class OrganizationDelegateUseCaseTest extends TestCase
         $this->authorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->assign = new AssignOrganizationDelegateUseCase($this->memberships, $this->authorization);
         $this->revoke = new RevokeOrganizationDelegateUseCase($this->memberships, $this->authorization);
-        $this->listMembers = new ListOrganizationMembersUseCase($this->memberships, $this->people, $this->authorization);
+        $personEmailResolver = new PersonEmailResolver(
+            $this->people,
+            new InMemoryUserAccountRepository(),
+            new InMemoryEmailCredentialRepository(),
+            new FakeWordPressUserLookup(),
+            new InMemoryNotificationEmailRepository()
+        );
+        $this->listMembers = new ListOrganizationMembersUseCase($this->memberships, $this->people, $this->authorization, $personEmailResolver);
         $this->organizationId = OrganizationId::generate();
     }
 

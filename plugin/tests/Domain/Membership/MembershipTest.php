@@ -91,4 +91,29 @@ final class MembershipTest extends TestCase
 
         $membership->approve();
     }
+
+    public function test_remarks_defaults_to_null(): void
+    {
+        $membership = Membership::create(OrganizationId::generate(), PersonId::generate(), RoleKey::member());
+
+        $this->assertNull($membership->remarks());
+    }
+
+    public function test_remarks_can_be_set_at_creation(): void
+    {
+        $membership = Membership::create(OrganizationId::generate(), PersonId::generate(), RoleKey::member(), '代役調整中');
+
+        $this->assertSame('代役調整中', $membership->remarks());
+    }
+
+    public function test_change_remarks_updates_and_clears_it(): void
+    {
+        $membership = Membership::create(OrganizationId::generate(), PersonId::generate(), RoleKey::member());
+
+        $membership->changeRemarks('退団予定');
+        $this->assertSame('退団予定', $membership->remarks());
+
+        $membership->changeRemarks(null);
+        $this->assertNull($membership->remarks());
+    }
 }

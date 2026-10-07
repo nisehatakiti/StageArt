@@ -341,4 +341,29 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
         $this->assertCount(1, $result->externalLinks);
         $this->assertSame('YouTube', $result->externalLinks[0]->label);
     }
+
+    public function test_public_result_excludes_hidden_external_links(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $externalLinks = new InMemoryOrganizationExternalLinkRepository();
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            $externalLinks
+        );
+
+        $organization = Organization::create(new OrganizationName('Hidden Links Theatre'), null, null, new OrganizationSlug('hidden-links-theatre'));
+        $organization->publish();
+        $organizations->save($organization);
+
+        $externalLinks->save(OrganizationExternalLink::create($organization->id(), 'Visible', 'https://visible.example.com', 0, true));
+        $externalLinks->save(OrganizationExternalLink::create($organization->id(), 'Hidden', 'https://hidden.example.com', 1, false));
+
+        $result = $useCase->execute(new GetPublicOrganizationBySlugQuery('hidden-links-theatre'));
+
+        $this->assertCount(1, $result->externalLinks);
+        $this->assertSame('Visible', $result->externalLinks[0]->label);
+    }
 }

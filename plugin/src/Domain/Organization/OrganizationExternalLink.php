@@ -20,6 +20,9 @@ final class OrganizationExternalLink
     private string $label;
     private string $url;
     private int $displayOrder;
+    /** StageArt Organization管理UI/UX統一: mirrors OrganizationSNS's own
+     * visibility field exactly - 公開/非公開 toggle, defaults true. */
+    private bool $visibility;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -29,6 +32,7 @@ final class OrganizationExternalLink
         string $label,
         string $url,
         int $displayOrder,
+        bool $visibility,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -37,15 +41,16 @@ final class OrganizationExternalLink
         $this->label = $label;
         $this->url = $url;
         $this->displayOrder = $displayOrder;
+        $this->visibility = $visibility;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
 
-    public static function create(OrganizationId $organizationId, string $label, string $url, int $displayOrder): self
+    public static function create(OrganizationId $organizationId, string $label, string $url, int $displayOrder, bool $visibility = true): self
     {
         $now = new DateTimeImmutable();
 
-        return new self(OrganizationExternalLinkId::generate(), $organizationId, $label, $url, $displayOrder, $now, $now);
+        return new self(OrganizationExternalLinkId::generate(), $organizationId, $label, $url, $displayOrder, $visibility, $now, $now);
     }
 
     public static function reconstitute(
@@ -55,17 +60,24 @@ final class OrganizationExternalLink
         string $url,
         int $displayOrder,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        bool $visibility = true
     ): self {
-        return new self($id, $organizationId, $label, $url, $displayOrder, $createdAt, $updatedAt);
+        return new self($id, $organizationId, $label, $url, $displayOrder, $visibility, $createdAt, $updatedAt);
     }
 
-    public function update(string $label, string $url, int $displayOrder): void
+    public function update(string $label, string $url, int $displayOrder, bool $visibility = true): void
     {
         $this->label = $label;
         $this->url = $url;
         $this->displayOrder = $displayOrder;
+        $this->visibility = $visibility;
         $this->touch();
+    }
+
+    public function isVisible(): bool
+    {
+        return $this->visibility;
     }
 
     private function touch(): void
