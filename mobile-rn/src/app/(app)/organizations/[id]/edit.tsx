@@ -82,6 +82,7 @@ export default function OrganizationEditScreen() {
         status: organization.status,
         slug: slug !== (organization.slug ?? '') ? slug : undefined,
         published,
+        logo_url: organization.logo_url,
       });
       await queryClient.invalidateQueries({ queryKey: ['organizations'] });
       setSavedMessage('団体情報を保存しました。');
