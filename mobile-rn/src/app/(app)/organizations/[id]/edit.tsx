@@ -21,7 +21,6 @@ const SNS_SERVICES: { value: string; label: string }[] = [
   { value: 'X', label: 'X' },
   { value: 'INSTAGRAM', label: 'Instagram' },
   { value: 'FACEBOOK', label: 'Facebook' },
-  { value: 'OTHER', label: 'その他' },
 ];
 
 /**
@@ -295,20 +294,33 @@ function OrganizationLogoCard({ organizationId, logoUrl }: { organizationId: str
   );
 }
 
+function buildSnsProfileUrl(service: string, accountIdentifier: string): string | null {
+  const account = accountIdentifier.replace(/^@/, '').trim();
+  if (!account) return null;
+  switch (service) {
+    case 'X':
+      return `https://x.com/${encodeURIComponent(account)}`;
+    case 'INSTAGRAM':
+      return `https://www.instagram.com/${encodeURIComponent(account)}`;
+    case 'FACEBOOK':
+      return `https://www.facebook.com/${encodeURIComponent(account)}`;
+    default:
+      return null;
+  }
+}
+
 function OrganizationSnsSection({ organizationId }: { organizationId: string }) {
   const { query, create, update, remove } = useOrganizationSns(organizationId);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [service, setService] = useState('X');
   const [accountIdentifier, setAccountIdentifier] = useState('');
-  const [profileUrl, setProfileUrl] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   function resetForm() {
     setEditingId(null);
     setService('X');
     setAccountIdentifier('');
-    setProfileUrl('');
     setFormError(null);
   }
 
@@ -316,12 +328,11 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
     setEditingId(sns.id);
     setService(sns.service);
     setAccountIdentifier(sns.account_identifier);
-    setProfileUrl(sns.profile_url);
     setFormError(null);
   }
 
   async function handleSubmitForm() {
-    if (!accountIdentifier.trim() || !profileUrl.trim()) {
+    if (!accountIdentifier.trim()) {
       return;
     }
 
@@ -335,7 +346,7 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
           fields: {
             service,
             account_identifier: accountIdentifier.trim(),
-            profile_url: profileUrl.trim(),
+            profile_url: buildSnsProfileUrl(service, accountIdentifier.trim()),
             display_name: current?.display_name ?? null,
             display_order: current?.display_order ?? 0,
             visibility: current?.visibility ?? true,
@@ -345,7 +356,7 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
         await create.mutateAsync({
           service,
           account_identifier: accountIdentifier.trim(),
-          profile_url: profileUrl.trim(),
+          profile_url: buildSnsProfileUrl(service, accountIdentifier.trim()),
           display_order: query.data?.length ?? 0,
         });
       }
@@ -415,14 +426,9 @@ function OrganizationSnsSection({ organizationId }: { organizationId: string }) 
           autoCapitalize="none"
           style={styles.input}
         />
-        <ThemedTextInput
-          testID="organization-edit-sns-profile-url"
-          value={profileUrl}
-          onChangeText={setProfileUrl}
-          placeholder="https://..."
-          autoCapitalize="none"
-          style={styles.input}
-        />
+        <ThemedText type="small" themeColor="textSecondary">
+          アカウントIDだけ入力してください。公開ページへのリンクはSNSの種類から自動生成します。
+        </ThemedText>
         {formError && <ThemedText style={styles.error}>{formError}</ThemedText>}
         <View style={styles.formActions}>
           <TouchableOpacity testID="organization-edit-sns-add-submit" onPress={handleSubmitForm} disabled={busy} style={styles.secondaryButton}>
@@ -459,9 +465,11 @@ function SnsRow({
         <ThemedText type="small" themeColor="textSecondary">
           {sns.account_identifier}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {sns.profile_url}
-        </ThemedText>
+        {sns.profile_url && (
+          <ThemedText type="small" themeColor="textSecondary">
+            {sns.profile_url}
+          </ThemedText>
+        )}
       </View>
       <View style={styles.rowActions}>
         <TouchableOpacity testID={`organization-sns-visibility-${sns.id}`} onPress={onToggleVisibility}>
