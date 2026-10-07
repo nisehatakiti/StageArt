@@ -39,16 +39,12 @@ final class CreateOrganizationSNSUseCase
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can manage SNS links.');
         }
 
-        $accountIdentifier = trim($command->accountIdentifier);
-        $profileUrl = trim($command->profileUrl);
-
+        $accountIdentifier = ltrim(trim($command->accountIdentifier), '@');
         if ($accountIdentifier === '') {
             throw new InvalidArgumentException('account_identifier must not be empty.');
         }
 
-        if ($profileUrl === '' || filter_var($profileUrl, FILTER_VALIDATE_URL) === false) {
-            throw new InvalidArgumentException("Invalid profile_url: {$command->profileUrl}");
-        }
+        $profileUrl = $this->profileUrlForService(OrganizationSNSService::fromString($command->service), $accountIdentifier, $command->profileUrl);
 
         $sns = OrganizationSNS::create(
             $organizationId,
@@ -65,3 +61,14 @@ final class CreateOrganizationSNSUseCase
         return OrganizationSNSResult::fromDomain($sns);
     }
 }
+
+
+    private function profileUrlForService(OrganizationSNSService $service, string $accountIdentifier, ?string $providedUrl): ?string
+    {
+        return match ($service->toString()) {
+            OrganizationSNSService::X => 'https://x.com/' . rawurlencode($accountIdentifier),
+            OrganizationSNSService::INSTAGRAM => 'https://www.instagram.com/' . rawurlencode($accountIdentifier),
+            OrganizationSNSService::FACEBOOK => 'https://www.facebook.com/' . rawurlencode($accountIdentifier),
+            default => $providedUrl !== null && trim($providedUrl) !== '' ? trim($providedUrl) : null,
+        };
+    }
