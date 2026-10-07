@@ -111,7 +111,7 @@ final class OrganizationSNSRestController
                 get_current_user_id(),
                 (string) $request->get_param('service'),
                 (string) $request->get_param('account_identifier'),
-                (string) $request->get_param('profile_url'),
+                $this->stringOrNull($request->get_param('profile_url')),
                 $this->stringOrNull($request->get_param('display_name')),
                 $this->intOrDefault($request->get_param('display_order'), 0),
                 $request->get_param('visibility') === null ? true : (bool) $request->get_param('visibility')
