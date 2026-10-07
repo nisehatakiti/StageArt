@@ -72,13 +72,13 @@ export default function OrganizationProductionsScreen() {
   return (
     <>
       <View style={styles.headerRow}>
-        <ThemedText type="title">公演</ThemedText>
+        <ThemedText type="title">公演・活動一覧</ThemedText>
         <TouchableOpacity
           testID="organization-productions-create-link"
           onPress={() => router.push(`/organizations/${id}/productions/create` as Href)}
           style={styles.createButton}
         >
-          <ThemedText style={styles.createButtonText}>＋ 公演を作成する</ThemedText>
+          <ThemedText style={styles.createButtonText}>＋ 公演・活動を作成する</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -88,7 +88,7 @@ export default function OrganizationProductionsScreen() {
       )}
       {!productionsQuery.isLoading && !productionsQuery.isError && (productionsQuery.data?.length ?? 0) === 0 && (
         <ThemedText testID="organization-productions-empty" themeColor="textSecondary">
-          まだ公演・活動がありません。「公演を作成する」から最初の公演・活動を登録してください。
+          まだ公演・活動がありません。「公演・活動を作成する」から最初の公演・活動を登録してください。
         </ThemedText>
       )}
 
