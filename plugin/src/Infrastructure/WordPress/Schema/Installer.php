@@ -80,6 +80,9 @@ final class Installer
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
         $participantInvitations = $wpdb->prefix . 'stageart_participant_invitations';
+        $organizationSns = $wpdb->prefix . 'stageart_organization_sns';
+        $organizationExternalLinks = $wpdb->prefix . 'stageart_organization_external_links';
+        $organizationInvitations = $wpdb->prefix . 'stageart_organization_invitations';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -90,10 +93,79 @@ final class Installer
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
             published_at DATETIME NULL,
             accounting_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            logo_url VARCHAR(500) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY slug (slug)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationSNS.md,
+         * Confirmed): service/account_identifier/profile_url/
+         * display_name/display_order/visibility, exactly the field list
+         * that doc specifies. Deliberately NO credential/token columns
+         * (doc's "Security" section forbids storing them here at all).
+         */
+        dbDelta("CREATE TABLE {$organizationSns} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            service VARCHAR(20) NOT NULL,
+            account_identifier VARCHAR(255) NOT NULL,
+            profile_url VARCHAR(500) NOT NULL,
+            display_name VARCHAR(255) NULL,
+            display_order INT NOT NULL DEFAULT 0,
+            visibility TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理 (docs/04-DomainModel/
+         * OrganizationPublicSiteStructure.md "OTHER LINKS", Confirmed at
+         * the structure/behavior level: "劇団が自由に登録できる外部リンク
+         * 一覧...V1ではサービスを限定しない") - label/url/display_order is
+         * this round's own field-naming decision (the doc confirms the
+         * concept and free-form nature, not exact column names).
+         */
+        dbDelta("CREATE TABLE {$organizationExternalLinks} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            url VARCHAR(500) NOT NULL,
+            display_order INT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理: Organization-Scope counterpart of
+         * stageart_participant_invitations, same shape (email/
+         * invited_name/invited_by_person_id/remarks/token_hash/status/
+         * expires_at/consumed_at) minus participant_type (Organization
+         * membership carries no per-invite Role choice at add-time - see
+         * CreateOrganizationInvitationUseCase's own docblock).
+         */
+        dbDelta("CREATE TABLE {$organizationInvitations} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            invited_name VARCHAR(255) NOT NULL DEFAULT '',
+            invited_by_person_id CHAR(36) NOT NULL,
+            remarks TEXT NULL,
+            token_hash CHAR(64) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            created_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY token_hash (token_hash),
+            KEY organization_id (organization_id),
+            KEY email (email)
         ) {$charsetCollate};");
 
         dbDelta("CREATE TABLE {$people} (

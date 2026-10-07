@@ -33,6 +33,7 @@ use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveOrganizationInvitationUseCaseFactory;
 use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 final class AuthenticationUseCaseTest extends TestCase
@@ -80,7 +81,8 @@ final class AuthenticationUseCaseTest extends TestCase
             $this->wordPressUserProvisioner,
             $transactions,
             $notificationEmailSeeder,
-            NullResolveParticipantInvitationUseCaseFactory::create($this->people)
+            NullResolveParticipantInvitationUseCaseFactory::create($this->people),
+            NullResolveOrganizationInvitationUseCaseFactory::create()
         );
         $this->refreshAccessToken = new RefreshAccessTokenUseCase(
             $this->refreshTokens,

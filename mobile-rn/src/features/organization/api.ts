@@ -1,6 +1,17 @@
 import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
-import type { MyFollow, Organization, OrganizationFollowStatus, Project, PublicOrganization } from '@/types/api';
+import type {
+  CreateOrganizationInvitationResult,
+  MyFollow,
+  Organization,
+  OrganizationExternalLink,
+  OrganizationFollowStatus,
+  OrganizationInvitationPreview,
+  OrganizationMember,
+  OrganizationSNS,
+  Project,
+  PublicOrganization,
+} from '@/types/api';
 
 /** Public, unauthenticated search (団体検索) - published Organizations
  * whose name contains `query`. */
@@ -67,9 +78,108 @@ export function updateOrganization(
     status: string;
     slug?: string;
     published?: boolean;
+    logo_url?: string | null;
   }
 ): Promise<Organization> {
   return client.put<Organization>(`/organizations/${id}`, fields);
+}
+
+/** POST /organizations/{id}/owner-transfer - owner-only 代表者交代. */
+export function transferOrganizationOwner(client: ApiClient, organizationId: string, newOwnerPersonId: string): Promise<void> {
+  return client.post<void>(`/organizations/${organizationId}/owner-transfer`, { new_owner_person_id: newOwnerPersonId });
+}
+
+// --- StageArt 団体管理UI整理 "メンバー管理" ---
+
+/** GET /organizations/{id}/members - OWNER/ORGANIZATION_MANAGER only. */
+export function fetchOrganizationMembers(client: ApiClient, organizationId: string): Promise<OrganizationMember[]> {
+  return client.get<OrganizationMember[]>(`/organizations/${organizationId}/members`);
+}
+
+/** POST /organizations/{id}/delegates - owner-only "代理人を設定". */
+export function assignOrganizationDelegate(client: ApiClient, organizationId: string, personId: string): Promise<void> {
+  return client.post<void>(`/organizations/${organizationId}/delegates`, { person_id: personId });
+}
+
+/** DELETE /organizations/{id}/delegates/{personId} - owner-only revoke. */
+export function revokeOrganizationDelegate(client: ApiClient, organizationId: string, personId: string): Promise<void> {
+  return client.delete<void>(`/organizations/${organizationId}/delegates/${personId}`);
+}
+
+// --- StageArt 団体管理UI整理 "メンバーを追加" ---
+
+/** POST /organizations/{id}/invitations - 氏名＋メールアドレス single
+ * entry point (existing Person -> immediate Membership, unregistered
+ * email -> invitation email). */
+export function createOrganizationInvitation(
+  client: ApiClient,
+  organizationId: string,
+  name: string,
+  email: string,
+  remarks?: string
+): Promise<CreateOrganizationInvitationResult> {
+  return client.post<CreateOrganizationInvitationResult>(`/organizations/${organizationId}/invitations`, {
+    name,
+    email,
+    remarks: remarks ?? null,
+  });
+}
+
+/** GET /organization-invitations/by-token/{token} - public, unauthenticated registration preview. */
+export function fetchOrganizationInvitationByToken(token: string): Promise<OrganizationInvitationPreview> {
+  return publicGet<OrganizationInvitationPreview>(`/organization-invitations/by-token/${encodeURIComponent(token)}`);
+}
+
+// --- StageArt 団体管理UI整理 "団体情報": SNS ---
+
+export function fetchOrganizationSns(client: ApiClient, organizationId: string): Promise<OrganizationSNS[]> {
+  return client.get<OrganizationSNS[]>(`/organizations/${organizationId}/sns`);
+}
+
+export function createOrganizationSns(
+  client: ApiClient,
+  organizationId: string,
+  fields: { service: string; account_identifier: string; profile_url: string; display_name?: string | null; display_order?: number; visibility?: boolean }
+): Promise<OrganizationSNS> {
+  return client.post<OrganizationSNS>(`/organizations/${organizationId}/sns`, fields);
+}
+
+export function updateOrganizationSns(
+  client: ApiClient,
+  id: string,
+  fields: { service: string; account_identifier: string; profile_url: string; display_name?: string | null; display_order?: number; visibility?: boolean }
+): Promise<OrganizationSNS> {
+  return client.put<OrganizationSNS>(`/organization-sns/${id}`, fields);
+}
+
+export function deleteOrganizationSns(client: ApiClient, id: string): Promise<void> {
+  return client.delete<void>(`/organization-sns/${id}`);
+}
+
+// --- StageArt 団体管理UI整理 "団体情報": 外部リンク ---
+
+export function fetchOrganizationExternalLinks(client: ApiClient, organizationId: string): Promise<OrganizationExternalLink[]> {
+  return client.get<OrganizationExternalLink[]>(`/organizations/${organizationId}/external-links`);
+}
+
+export function createOrganizationExternalLink(
+  client: ApiClient,
+  organizationId: string,
+  fields: { label: string; url: string; display_order?: number }
+): Promise<OrganizationExternalLink> {
+  return client.post<OrganizationExternalLink>(`/organizations/${organizationId}/external-links`, fields);
+}
+
+export function updateOrganizationExternalLink(
+  client: ApiClient,
+  id: string,
+  fields: { label: string; url: string; display_order?: number }
+): Promise<OrganizationExternalLink> {
+  return client.put<OrganizationExternalLink>(`/organization-external-links/${id}`, fields);
+}
+
+export function deleteOrganizationExternalLink(client: ApiClient, id: string): Promise<void> {
+  return client.delete<void>(`/organization-external-links/${id}`);
 }
 
 /** GET /organizations/by-slug/{slug} - public, unauthenticated (see

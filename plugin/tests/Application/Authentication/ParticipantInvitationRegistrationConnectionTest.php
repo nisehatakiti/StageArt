@@ -14,6 +14,7 @@ use StageArt\Application\Authentication\RegisterWithEmailUseCase;
 use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
@@ -46,6 +47,7 @@ use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
+use StageArt\Tests\Support\InMemoryOrganizationInvitationRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
@@ -136,6 +138,8 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         $this->emailCredentials = new InMemoryEmailCredentialRepository();
         $userAccounts = new InMemoryUserAccountRepository();
         $this->authMailer = new FakeAuthMailer();
+        $organizationInvitations = new InMemoryOrganizationInvitationRepository();
+        $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $this->memberships);
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
@@ -148,7 +152,9 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             new InMemoryTransactionManager(),
             $this->authMailer,
             $resolveParticipantInvitation,
-            $this->invitations
+            $this->invitations,
+            $resolveOrganizationInvitation,
+            $organizationInvitations
         );
 
         $this->googleVerifier = new FakeGoogleIdTokenVerifier();
@@ -165,7 +171,8 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             new FakeWordPressUserProvisioner(),
             new InMemoryTransactionManager(),
             $notificationEmailSeeder,
-            $resolveParticipantInvitation
+            $resolveParticipantInvitation,
+            $resolveOrganizationInvitation
         );
     }
 

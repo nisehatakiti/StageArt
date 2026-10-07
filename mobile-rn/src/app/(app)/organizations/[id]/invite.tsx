@@ -5,23 +5,23 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useOrganizationJoinKeys } from '@/features/joinKey/useJoinKey';
-import { useMembershipRequestDecision, usePendingMembershipRequests } from '@/features/membership/useMembership';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
- * docs/04-DomainModel/JoinKey.md's Organization管理画面: 参加コードを発行
- * する/発行済みコードを確認する/コードを無効にする, plus
- * docs/04-HomeRoleBasedMenu.md's "Organization参加申請（3件）" approval
- * queue. QR code display is explicitly deferred this phase (see the
- * completion report) - only the underlying Join Key code, which is the
- * actual participation mechanism, is implemented here.
+ * StageArt 団体管理UI整理 "メンバー管理": 参加コードを発行する/発行済み
+ * コードを確認する/コードを無効にする (docs/04-DomainModel/JoinKey.md) -
+ * only ever reached from members.tsx's own button, never an independent
+ * Organization Context menu item. 参加申請の承認/却下はここにはもう存在し
+ * ない - Homeへ移動した（HomeMembershipApprovalSection、
+ * home-membership-approval.test.tsxで検証）。QR code display is
+ * explicitly deferred (see the completion report) - only the underlying
+ * Join Key code, which is the actual participation mechanism, is
+ * implemented here.
  */
 export default function OrganizationInviteScreen() {
   const { id: organizationId } = useLocalSearchParams<{ id: string }>();
 
   const { query: joinKeysQuery, issue, disable } = useOrganizationJoinKeys(organizationId);
-  const pendingQuery = usePendingMembershipRequests(organizationId);
-  const { approve, reject } = useMembershipRequestDecision(organizationId);
 
   const activeKey = joinKeysQuery.data?.find((key) => key.status === 'ACTIVE');
 
@@ -75,50 +75,6 @@ export default function OrganizationInviteScreen() {
 
           {issue.isError && <ThemedText style={styles.error}>{getErrorMessage(issue.error)}</ThemedText>}
         </ThemedView>
-
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            団体参加申請
-          </ThemedText>
-
-          {pendingQuery.isLoading && <ActivityIndicator testID="pending-requests-loading" />}
-
-          {!pendingQuery.isLoading && (pendingQuery.data?.length ?? 0) === 0 && (
-            <ThemedText testID="pending-requests-empty" themeColor="textSecondary">
-              現在、参加申請はありません。
-            </ThemedText>
-          )}
-
-          {(pendingQuery.data?.length ?? 0) > 0 && (
-            <ThemedView testID="pending-requests-list" style={styles.list}>
-              {pendingQuery.data?.map((request) => (
-                <ThemedView key={request.id} style={styles.requestCard} testID={`pending-request-${request.id}`}>
-                  <ThemedText type="smallBold">
-                    {request.person_family_name ?? ''} {request.person_given_name ?? ''}
-                  </ThemedText>
-                  <ThemedView style={styles.requestActions}>
-                    <TouchableOpacity
-                      testID={`approve-request-${request.id}`}
-                      onPress={() => approve.mutate(request.id)}
-                      disabled={approve.isPending || reject.isPending}
-                      style={styles.approveButton}
-                    >
-                      <ThemedText style={styles.primaryButtonText}>承認</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID={`reject-request-${request.id}`}
-                      onPress={() => reject.mutate(request.id)}
-                      disabled={approve.isPending || reject.isPending}
-                      style={styles.secondaryButton}
-                    >
-                      <ThemedText style={styles.secondaryButtonText}>却下</ThemedText>
-                    </TouchableOpacity>
-                  </ThemedView>
-                </ThemedView>
-              ))}
-            </ThemedView>
-          )}
-        </ThemedView>
       </ScrollView>
     </>
   );
@@ -138,15 +94,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   keyCode: { letterSpacing: 4 },
-  list: { gap: Spacing.two },
-  requestCard: {
-    borderWidth: 1,
-    borderColor: '#e1dee6',
-    borderRadius: Radius.medium,
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  requestActions: { flexDirection: 'row', gap: Spacing.two },
   primaryButton: {
     backgroundColor: BrandColors.warmAmber,
     borderRadius: Radius.medium,
@@ -155,13 +102,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButtonText: { color: '#fff', fontWeight: '600' },
-  approveButton: {
-    backgroundColor: BrandColors.warmAmber,
-    borderRadius: Radius.medium,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
-  },
   secondaryButton: {
     borderWidth: 1,
     borderColor: BrandColors.warmAmber,

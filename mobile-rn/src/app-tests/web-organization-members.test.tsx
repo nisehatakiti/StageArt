@@ -11,28 +11,35 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt Web版 団体管理 Phase: メンバー管理. No Backend Use Case lists an
- * Organization's active Members (confirmed by reading every
- * Application/Membership/* class - see members.tsx's own docblock), so
- * this only ever asserts what IS real: the current Person's own Role -
- * never a fabricated roster.
- *
- * StageArt Organization Context Menu整理: this screen previously also
- * linked to 参加申請/招待, duplicating the Organization Context left
- * sidebar's own 参加申請/招待 items (see useNavMenu.ts) - those links are
- * now removed, so this test no longer asserts on them.
+ * StageArt 団体管理UI整理 "メンバー管理": GET /organizations/{id}/members
+ * now exists (ListOrganizationMembersUseCase) - this screen shows the
+ * real roster for an Owner/代理人, not the "準備中" placeholder the
+ * earlier Backend gap forced (see git history for that earlier state).
  */
 describe('Web メンバー管理', () => {
-  it('shows the current Person’s own Role, with no fabricated member list', async () => {
+  it('shows the current Person’s own Role and the real member roster', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
+      {
+        test: (u) => u.endsWith('/organizations/org-1/members'),
+        status: 200,
+        body: [
+          { membership_id: 'm-1', person_id: 'person-1', person_family_name: '舞台', person_given_name: '芸術', role_key: 'OWNER', joined_at: '2026-01-01T00:00:00+09:00' },
+          { membership_id: 'm-2', person_id: 'person-2', person_family_name: '山田', person_given_name: '太郎', role_key: 'MEMBER', joined_at: '2026-01-02T00:00:00+09:00' },
+        ],
+      },
     ]);
 
     renderRouter('src/app', { initialUrl: '/organizations/org-1/members' });
 
     await waitFor(() => expect(screen.getByTestId('organization-members-self-role')).toBeVisible());
-    expect(screen.getByText('オーナー')).toBeVisible();
-    expect(screen.getByTestId('organization-members-list-unavailable')).toBeVisible();
+    expect(screen.getByText('オーナー（代表者）')).toBeVisible();
+
+    await waitFor(() => expect(screen.getByTestId('organization-members-list')).toBeVisible());
+    expect(screen.getByTestId('organization-member-person-2')).toHaveTextContent(/山田/);
+    expect(screen.getByTestId('organization-members-add')).toBeVisible();
+    expect(screen.getByTestId('organization-members-delegate')).toBeVisible();
+    expect(screen.getByTestId('organization-members-owner-transfer')).toBeVisible();
   });
 });

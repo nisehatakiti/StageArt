@@ -10,14 +10,19 @@ use StageArt\Application\Organization\GetPublicOrganizationBySlugQuery;
 use StageArt\Application\Organization\GetPublicOrganizationBySlugUseCase;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Organization\OrganizationExternalLink;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationSlug;
+use StageArt\Domain\Organization\OrganizationSNS;
+use StageArt\Domain\Organization\OrganizationSNSService;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Project\Project;
+use StageArt\Tests\Support\InMemoryOrganizationExternalLinkRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\InMemoryOrganizationSNSRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
 
@@ -26,7 +31,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_returns_the_public_view_of_a_published_organization(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Public Theatre'),
@@ -53,7 +64,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_public_result_never_exposes_type_or_status(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Public Theatre'),
@@ -74,7 +91,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_unpublished_organization_is_treated_as_not_found(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Draft Theatre'),
@@ -93,7 +116,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_nonexistent_slug_throws_the_same_exception_as_unpublished(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $this->expectException(OrganizationNotFoundException::class);
 
@@ -111,7 +140,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
         $organizations = new InMemoryOrganizationRepository();
         $projects = new InMemoryProjectRepository();
         $productions = new InMemoryProductionRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, $projects, $productions);
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            $projects,
+            $productions,
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Public Theatre'),
@@ -156,7 +191,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_scheduled_organization_before_its_publish_date_is_not_found(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Scheduled Theatre'),
@@ -175,7 +216,13 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
     public function test_scheduled_organization_after_its_publish_date_is_visible(): void
     {
         $organizations = new InMemoryOrganizationRepository();
-        $useCase = new GetPublicOrganizationBySlugUseCase($organizations, new InMemoryProjectRepository(), new InMemoryProductionRepository());
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
 
         $organization = Organization::create(
             new OrganizationName('Now Visible Theatre'),
@@ -189,5 +236,109 @@ final class GetPublicOrganizationBySlugUseCaseTest extends TestCase
         $result = $useCase->execute(new GetPublicOrganizationBySlugQuery('now-visible-theatre'));
 
         $this->assertSame('Now Visible Theatre', $result->name);
+    }
+
+    // --- StageArt 団体管理UI整理: logo/SNS/external links ---
+
+    public function test_public_result_includes_the_logo_url(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            new InMemoryOrganizationExternalLinkRepository()
+        );
+
+        $organization = Organization::create(
+            new OrganizationName('Logo Theatre'),
+            null,
+            null,
+            new OrganizationSlug('logo-theatre'),
+            false,
+            'https://example.com/logo.png'
+        );
+        $organization->publish();
+        $organizations->save($organization);
+
+        $result = $useCase->execute(new GetPublicOrganizationBySlugQuery('logo-theatre'));
+
+        $this->assertSame('https://example.com/logo.png', $result->logoUrl);
+    }
+
+    public function test_public_result_includes_only_visible_sns_links_ordered_by_display_order(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $sns = new InMemoryOrganizationSNSRepository();
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            $sns,
+            new InMemoryOrganizationExternalLinkRepository()
+        );
+
+        $organization = Organization::create(new OrganizationName('SNS Theatre'), null, null, new OrganizationSlug('sns-theatre'));
+        $organization->publish();
+        $organizations->save($organization);
+
+        $sns->save(OrganizationSNS::create(
+            $organization->id(),
+            OrganizationSNSService::fromString(OrganizationSNSService::INSTAGRAM),
+            'second',
+            'https://instagram.com/second',
+            null,
+            2,
+            true
+        ));
+        $sns->save(OrganizationSNS::create(
+            $organization->id(),
+            OrganizationSNSService::fromString(OrganizationSNSService::X),
+            'first',
+            'https://x.com/first',
+            null,
+            1,
+            true
+        ));
+        $sns->save(OrganizationSNS::create(
+            $organization->id(),
+            OrganizationSNSService::fromString(OrganizationSNSService::X),
+            'hidden',
+            'https://x.com/hidden',
+            null,
+            0,
+            false
+        ));
+
+        $result = $useCase->execute(new GetPublicOrganizationBySlugQuery('sns-theatre'));
+
+        $this->assertCount(2, $result->sns);
+        $this->assertSame('first', $result->sns[0]->accountIdentifier);
+        $this->assertSame('second', $result->sns[1]->accountIdentifier);
+    }
+
+    public function test_public_result_includes_external_links(): void
+    {
+        $organizations = new InMemoryOrganizationRepository();
+        $externalLinks = new InMemoryOrganizationExternalLinkRepository();
+        $useCase = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            new InMemoryProjectRepository(),
+            new InMemoryProductionRepository(),
+            new InMemoryOrganizationSNSRepository(),
+            $externalLinks
+        );
+
+        $organization = Organization::create(new OrganizationName('Links Theatre'), null, null, new OrganizationSlug('links-theatre'));
+        $organization->publish();
+        $organizations->save($organization);
+
+        $externalLinks->save(OrganizationExternalLink::create($organization->id(), 'YouTube', 'https://youtube.com/@stageart', 0));
+
+        $result = $useCase->execute(new GetPublicOrganizationBySlugQuery('links-theatre'));
+
+        $this->assertCount(1, $result->externalLinks);
+        $this->assertSame('YouTube', $result->externalLinks[0]->label);
     }
 }

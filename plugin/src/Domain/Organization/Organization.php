@@ -17,6 +17,16 @@ final class Organization
     private OrganizationStatus $status;
     private ?DateTimeImmutable $publishedAt;
     private bool $accountingEnabled;
+    /**
+     * StageArt 団体管理UI整理: the uploaded logo's resulting URL, mirroring
+     * Production.flyerUrl's exact pattern - actual image hosting/upload
+     * is out of this round's scope (no file-upload infrastructure exists
+     * anywhere in this codebase yet, Production's own flyerUrl has never
+     * had a working upload UI either), so this is a plain URL the
+     * Organization info screen lets an Owner/ORGANIZATION_MANAGER paste
+     * or edit directly.
+     */
+    private ?string $logoUrl;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -29,6 +39,7 @@ final class Organization
         OrganizationStatus $status,
         ?DateTimeImmutable $publishedAt,
         bool $accountingEnabled,
+        ?string $logoUrl,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -40,6 +51,7 @@ final class Organization
         $this->status = $status;
         $this->publishedAt = $publishedAt;
         $this->accountingEnabled = $accountingEnabled;
+        $this->logoUrl = $logoUrl;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -63,7 +75,8 @@ final class Organization
         ?string $type = null,
         ?string $description = null,
         ?OrganizationSlug $slug = null,
-        bool $accountingEnabled = false
+        bool $accountingEnabled = false,
+        ?string $logoUrl = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -76,6 +89,7 @@ final class Organization
             OrganizationStatus::active(),
             null,
             $accountingEnabled,
+            $logoUrl,
             $now,
             $now
         );
@@ -91,9 +105,10 @@ final class Organization
         DateTimeImmutable $updatedAt,
         ?OrganizationSlug $slug = null,
         ?DateTimeImmutable $publishedAt = null,
-        bool $accountingEnabled = false
+        bool $accountingEnabled = false,
+        ?string $logoUrl = null
     ): self {
-        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $accountingEnabled, $createdAt, $updatedAt);
+        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $accountingEnabled, $logoUrl, $createdAt, $updatedAt);
     }
 
     public function rename(OrganizationName $name): void
@@ -159,6 +174,12 @@ final class Organization
     public function changeDescription(?string $description): void
     {
         $this->description = $description;
+        $this->touch();
+    }
+
+    public function changeLogoUrl(?string $logoUrl): void
+    {
+        $this->logoUrl = $logoUrl;
         $this->touch();
     }
 
@@ -236,6 +257,11 @@ final class Organization
     public function description(): ?string
     {
         return $this->description;
+    }
+
+    public function logoUrl(): ?string
+    {
+        return $this->logoUrl;
     }
 
     public function status(): OrganizationStatus

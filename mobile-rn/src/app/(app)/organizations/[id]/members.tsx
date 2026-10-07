@@ -1,33 +1,19 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
-import { useOrganizations } from '@/features/organization/useOrganizations';
+import { useOrganizationMembers, useOrganizations } from '@/features/organization/useOrganizations';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
- * StageArt Web版 団体管理 Phase: メンバー管理.
- *
- * Deliberately does NOT render a member table: no Backend Use Case/REST
- * route exists anywhere to list an Organization's ACTIVE Memberships
- * with Person names (confirmed by reading MembershipRestController.php
- * and every Application/Membership/* Use Case - only
- * ListPendingMembershipRequestsUseCase, which explicitly filters to
- * isPending() REQUESTED rows only, and ListMyMembershipsUseCase, which
- * is scoped to the CALLER's own Memberships across every Organization,
- * never another Person's). MembershipRepositoryInterface::findByOrganizationId()
- * does exist and could back a real "list active Members" Use Case, but
- * nothing in the Application/Presentation layers exposes it today - a
- * real Backend/API gap, not a Frontend oversight. Per this Phase's own
- * instruction ("実際にAPIから取得できない情報をUI上に架空表示しないでください"),
- * this screen shows only what real data supports today: the current
- * Person's own Role in this Organization - never an invented roster.
- *
- * StageArt Organization Context Menu整理: previously also linked to
- * 参加申請/招待 (both already reachable from the Organization Context
- * left sidebar's own 参加申請/招待 items - see useNavMenu.ts) - removed
- * as duplicate in-content navigation, not as a functionality change.
+ * StageArt 団体管理UI整理 "メンバー管理": the single management hub -
+ * roster (GET /organizations/{id}/members) + メンバーを追加/代理人を設定/
+ * 代表者交代 entry points. OWNER and ORGANIZATION_MANAGER (代理人) can both
+ * view the roster and reach メンバーを追加/代理人を設定; 代表者交代 and
+ * 招待・参加コード stay reachable too (招待 is not an independent
+ * Organization Context menu item - it is only ever reached from here,
+ * inside メンバー管理, per this round's confirmed spec).
  */
 export default function OrganizationMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,13 +21,18 @@ export default function OrganizationMembersScreen() {
   const router = useRouter();
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
-  const isOwner = organization?.current_person_role === 'OWNER';
+  const role = organization?.current_person_role ?? null;
+  const isOwner = role === 'OWNER';
+  const isManager = role === 'ORGANIZATION_MANAGER';
+  const canManage = isOwner || isManager;
+
+  const membersQuery = useOrganizationMembers(canManage ? id : undefined).query;
 
   const breadcrumbs = [
     { label: 'StageArt', href: '/dashboard' as Href },
     { label: '団体', href: '/organizations' as Href },
     { label: organization?.name ?? '...', href: `/organizations/${id}` as Href },
-    { label: 'メンバー' },
+    { label: 'メンバー管理' },
   ];
 
   if (organizationsQuery.isLoading) {
@@ -71,12 +62,11 @@ export default function OrganizationMembersScreen() {
   return (
     <>
       <ThemedText type="title" style={styles.pageTitle}>
-        メンバー
+        メンバー管理
       </ThemedText>
 
-      {isOwner && (
+      {canManage && (
         <View style={styles.actionsCard} testID="organization-members-actions">
-          <ThemedText type="subtitle">メンバー管理</ThemedText>
           <View style={styles.actionRow}>
             <TouchableOpacity
               testID="organization-members-add"
@@ -85,19 +75,30 @@ export default function OrganizationMembersScreen() {
             >
               <ThemedText style={styles.primaryButtonText}>メンバーを追加</ThemedText>
             </TouchableOpacity>
-            <TouchableOpacity
-              testID="organization-members-delegate"
-              onPress={() => router.push(`/organizations/${id}/members/delegate` as Href)}
-              style={styles.secondaryButton}
-            >
-              <ThemedText style={styles.secondaryButtonText}>代理人を設定</ThemedText>
-            </TouchableOpacity>
+            {isOwner && (
+              <TouchableOpacity
+                testID="organization-members-delegate"
+                onPress={() => router.push(`/organizations/${id}/members/delegate` as Href)}
+                style={styles.secondaryButton}
+              >
+                <ThemedText style={styles.secondaryButtonText}>代理人を設定</ThemedText>
+              </TouchableOpacity>
+            )}
+            {isOwner && (
+              <TouchableOpacity
+                testID="organization-members-owner-transfer"
+                onPress={() => router.push(`/organizations/${id}/members/owner-transfer` as Href)}
+                style={styles.secondaryButton}
+              >
+                <ThemedText style={styles.secondaryButtonText}>代表者交代</ThemedText>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               testID="organization-members-invite"
               onPress={() => router.push(`/organizations/${id}/invite` as Href)}
               style={styles.secondaryButton}
             >
-              <ThemedText style={styles.secondaryButtonText}>招待・参加コード</ThemedText>
+              <ThemedText style={styles.secondaryButtonText}>参加コード</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -107,22 +108,63 @@ export default function OrganizationMembersScreen() {
         <ThemedText type="small" themeColor="textSecondary">
           あなたの役割
         </ThemedText>
-        <ThemedText type="smallBold">{isOwner ? 'オーナー' : 'メンバー'}</ThemedText>
+        <ThemedText type="smallBold">{roleLabel(role)}</ThemedText>
       </View>
 
-      <View style={styles.noticeCard} testID="organization-members-list-unavailable">
-        <ThemedText type="smallBold">メンバー一覧は現在表示できません</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          所属メンバーの氏名・Roleを一覧取得するAPIがStageArt
-          Backendにまだ実装されていないため、他のメンバーの一覧はここに表示できません。
-        </ThemedText>
-      </View>
+      {canManage ? (
+        <>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            メンバー一覧
+          </ThemedText>
+
+          {membersQuery.isLoading && <ActivityIndicator testID="organization-members-list-loading" />}
+
+          {membersQuery.isError && (
+            <ThemedText testID="organization-members-list-error">{getErrorMessage(membersQuery.error)}</ThemedText>
+          )}
+
+          {membersQuery.data && (
+            <View style={styles.list} testID="organization-members-list">
+              {membersQuery.data.map((member) => (
+                <View key={member.membership_id} style={styles.memberRow} testID={`organization-member-${member.person_id}`}>
+                  <ThemedText type="smallBold">
+                    {member.person_family_name ?? ''} {member.person_given_name ?? ''}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {roleLabel(member.role_key)}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      ) : (
+        <View style={styles.noticeCard} testID="organization-members-list-unavailable">
+          <ThemedText type="small" themeColor="textSecondary">
+            メンバー一覧の閲覧・管理は、オーナーまたは代理人のみ行えます。
+          </ThemedText>
+        </View>
+      )}
     </>
   );
 }
 
+function roleLabel(roleKey: string | null): string {
+  switch (roleKey) {
+    case 'OWNER':
+      return 'オーナー（代表者）';
+    case 'ORGANIZATION_MANAGER':
+      return '代理人';
+    case 'MEMBER':
+      return 'メンバー';
+    default:
+      return 'メンバー';
+  }
+}
+
 const styles = StyleSheet.create({
   pageTitle: { marginBottom: Spacing.four },
+  sectionTitle: { marginTop: Spacing.three, marginBottom: Spacing.two },
   actionsCard: {
     borderWidth: 1,
     borderColor: '#e1dee6',
@@ -144,6 +186,14 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
     maxWidth: 320,
     marginBottom: Spacing.three,
+  },
+  list: { gap: Spacing.two, maxWidth: 480 },
+  memberRow: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.half,
   },
   noticeCard: {
     borderWidth: 1,

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import Head from 'expo-router/head';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
@@ -35,6 +35,13 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * "所属なしユーザー" - 観劇客 can browse without an account); Follow/
  * Favorite/Membership-request actions require one.
  */
+const SNS_SERVICE_LABEL: Record<string, string> = {
+  X: 'X',
+  INSTAGRAM: 'Instagram',
+  FACEBOOK: 'Facebook',
+  OTHER: 'SNS',
+};
+
 export default function PublicOrganizationScreen() {
   const { organizationSlug } = useLocalSearchParams<{ organizationSlug: string }>();
   const { status } = useAuth();
@@ -85,6 +92,10 @@ export default function PublicOrganizationScreen() {
 
         {query.data && (
           <ThemedView testID="public-organization-content" style={styles.content}>
+            {query.data.logo_url && (
+              <Image testID="public-organization-logo" source={{ uri: query.data.logo_url }} style={styles.logo} />
+            )}
+
             <ThemedText type="title" testID="public-organization-name">
               {query.data.name}
             </ThemedText>
@@ -92,6 +103,41 @@ export default function PublicOrganizationScreen() {
               <ThemedText testID="public-organization-description" style={styles.description}>
                 {query.data.description}
               </ThemedText>
+            )}
+
+            {query.data.sns.length > 0 && (
+              <ThemedView style={styles.snsSection} testID="public-organization-sns">
+                <ThemedText type="smallBold">公式SNS</ThemedText>
+                {query.data.sns.map((sns) => (
+                  <TouchableOpacity
+                    key={sns.id}
+                    testID={`public-organization-sns-${sns.id}`}
+                    onPress={() => Linking.openURL(sns.profile_url)}
+                    style={styles.snsRow}
+                  >
+                    <ThemedText type="small" style={styles.snsService}>
+                      {SNS_SERVICE_LABEL[sns.service] ?? sns.service}
+                    </ThemedText>
+                    <ThemedText type="link">{sns.display_name ?? sns.account_identifier}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </ThemedView>
+            )}
+
+            {query.data.external_links.length > 0 && (
+              <ThemedView style={styles.linksSection} testID="public-organization-external-links">
+                <ThemedText type="smallBold">リンク</ThemedText>
+                {query.data.external_links.map((link) => (
+                  <TouchableOpacity
+                    key={link.id}
+                    testID={`public-organization-external-link-${link.id}`}
+                    onPress={() => Linking.openURL(link.url)}
+                    style={styles.linkRow}
+                  >
+                    <ThemedText type="link">{link.label}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </ThemedView>
             )}
 
             {status === 'authenticated' ? (
@@ -206,7 +252,13 @@ export default function PublicOrganizationScreen() {
 const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
+  logo: { width: 96, height: 96, borderRadius: Radius.medium, marginBottom: Spacing.two },
   description: { marginTop: Spacing.two },
+  snsSection: { marginTop: Spacing.three, gap: Spacing.one },
+  snsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.half },
+  snsService: { fontWeight: '700', minWidth: 72 },
+  linksSection: { marginTop: Spacing.three, gap: Spacing.one },
+  linkRow: { paddingVertical: Spacing.half },
   followButton: {
     borderRadius: Radius.medium,
     paddingVertical: Spacing.two,

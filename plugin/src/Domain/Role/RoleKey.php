@@ -39,6 +39,22 @@ final class RoleKey
 {
     public const OWNER = 'OWNER';
     public const MEMBER = 'MEMBER';
+    /**
+     * StageArt 団体管理UI整理: the Organization-Scope "代理人" (delegate)
+     * Role, per docs/04-DomainModel/Organization.md's "DelegateRole"
+     * section ("Organization Ownerという独立したRole体系は作成しない" /
+     * "一つのMembershipへ複数Roleを直接付与する構造は基本設計としない") -
+     * delegation at Organization Scope is a Membership.changeRole() call
+     * toward this Role, never a separate Delegate Entity/table the way
+     * ProductionDelegate works at Production Scope. Granted/revoked only
+     * by the Organization OWNER (see AssignOrganizationDelegateUseCase/
+     * RevokeOrganizationDelegateUseCase); authorized via the same
+     * explicit per-call-site RoleKey allow-list OWNER already uses
+     * (OrganizationAuthorizationService::hasRole()), not a RolePermissions
+     * entry - matching RolePermissions.php's own documented reason for
+     * leaving OWNER/MEMBER out of that map.
+     */
+    public const ORGANIZATION_MANAGER = 'ORGANIZATION_MANAGER';
     public const PARTICIPANT_MANAGER = 'PARTICIPANT_MANAGER';
     public const REHEARSAL_MANAGER = 'REHEARSAL_MANAGER';
     public const PERFORMANCE_MANAGER = 'PERFORMANCE_MANAGER';
@@ -51,6 +67,7 @@ final class RoleKey
     private const VALID = [
         self::OWNER,
         self::MEMBER,
+        self::ORGANIZATION_MANAGER,
         self::PARTICIPANT_MANAGER,
         self::REHEARSAL_MANAGER,
         self::PERFORMANCE_MANAGER,
@@ -80,6 +97,11 @@ final class RoleKey
     public static function member(): self
     {
         return new self(self::MEMBER);
+    }
+
+    public static function organizationManager(): self
+    {
+        return new self(self::ORGANIZATION_MANAGER);
     }
 
     public static function participantManager(): self

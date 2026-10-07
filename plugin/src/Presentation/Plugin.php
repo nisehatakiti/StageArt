@@ -53,7 +53,22 @@ use StageArt\Application\Membership\ListMyMembershipsUseCase;
 use StageArt\Application\Membership\ListPendingMembershipRequestsUseCase;
 use StageArt\Application\Membership\RejectMembershipRequestUseCase;
 use StageArt\Application\Membership\RequestOrganizationMembershipUseCase;
+use StageArt\Application\Organization\AssignOrganizationDelegateUseCase;
+use StageArt\Application\Organization\CreateOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\CreateOrganizationSNSUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
+use StageArt\Application\Organization\DeleteOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\DeleteOrganizationSNSUseCase;
+use StageArt\Application\Organization\ListOrganizationExternalLinksUseCase;
+use StageArt\Application\Organization\ListOrganizationMembersUseCase;
+use StageArt\Application\Organization\ListOrganizationSNSUseCase;
+use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
+use StageArt\Application\Organization\UpdateOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\UpdateOrganizationSNSUseCase;
+use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
+use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationUseCase;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
 use StageArt\Application\Participant\ListPendingParticipantRequestsUseCase;
 use StageArt\Application\Participant\RejectParticipantRequestUseCase;
@@ -133,8 +148,12 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialReposi
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExpenseRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJournalEntryRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationExternalLinkRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationInvitationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationSNSRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPasswordResetTokenRepository;
+use StageArt\Infrastructure\WordPress\OrganizationInvitation\WordPressOrganizationInvitationMailer;
 use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressParticipantInvitationMailer;
 use StageArt\Infrastructure\Authentication\GoogleIdTokenVerifier;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenIssuer;
@@ -187,6 +206,9 @@ use StageArt\Presentation\Rest\DashboardRestController;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\MeRestController;
+use StageArt\Presentation\Rest\OrganizationExternalLinkRestController;
+use StageArt\Presentation\Rest\OrganizationInvitationRestController;
+use StageArt\Presentation\Rest\OrganizationSNSRestController;
 use StageArt\Presentation\Rest\PersonRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
@@ -232,6 +254,9 @@ final class Plugin
         $productionDelegates = new WordPressProductionDelegateRepository($wpdb);
         $participants        = new WordPressParticipantRepository($wpdb);
         $participantInvitations = new WordPressParticipantInvitationRepository($wpdb);
+        $organizationSns         = new WordPressOrganizationSNSRepository($wpdb);
+        $organizationExternalLinks = new WordPressOrganizationExternalLinkRepository($wpdb);
+        $organizationInvitations = new WordPressOrganizationInvitationRepository($wpdb);
         $rehearsals           = new WordPressRehearsalRepository($wpdb);
         $performances         = new WordPressPerformanceRepository($wpdb);
         $tickets              = new WordPressTicketRepository($wpdb);
@@ -326,6 +351,7 @@ final class Plugin
             $people,
             $createParticipant
         );
+        $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $memberships);
 
         // Phase 2 (StageArt Authentication): both secrets are read from
         // wp-config.php constants, never committed to source control
@@ -361,7 +387,8 @@ final class Plugin
             $wordPressUserProvisioner,
             $transactions,
             $notificationEmailSeeder,
-            $resolveParticipantInvitation
+            $resolveParticipantInvitation,
+            $resolveOrganizationInvitation
         );
         $registerWithEmail = new RegisterWithEmailUseCase(
             $emailCredentials,
@@ -374,7 +401,9 @@ final class Plugin
             $transactions,
             $authMailer,
             $resolveParticipantInvitation,
-            $participantInvitations
+            $participantInvitations,
+            $resolveOrganizationInvitation,
+            $organizationInvitations
         );
         $authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $emailCredentials,
@@ -462,11 +491,36 @@ final class Plugin
             $transactions
         );
         $getOrganization    = new GetOrganizationUseCase($organizations, $organizationFollows, $authorization);
-        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations, $projects, $productions);
+        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            $projects,
+            $productions,
+            $organizationSns,
+            $organizationExternalLinks
+        );
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $ownerTransfer      = new OwnerTransferUseCase($memberships, $userAccounts, $authorization, $transactions);
+
+        // StageArt 団体管理UI整理 "メンバー管理"/"代理人を設定": roster +
+        // delegate grant/revoke (Membership::changeRole() toward/away from
+        // RoleKey::ORGANIZATION_MANAGER - no separate Delegate table).
+        $listOrganizationMembers = new ListOrganizationMembersUseCase($memberships, $people, $authorization);
+        $assignOrganizationDelegate = new AssignOrganizationDelegateUseCase($memberships, $authorization);
+        $revokeOrganizationDelegate = new RevokeOrganizationDelegateUseCase($memberships, $authorization);
+
+        // StageArt 団体管理UI整理 "団体情報": SNS (docs/04-DomainModel/
+        // OrganizationSNS.md) and external-link CRUD, both OWNER/
+        // ORGANIZATION_MANAGER-scoped.
+        $createOrganizationSns = new CreateOrganizationSNSUseCase($organizationSns, $authorization);
+        $updateOrganizationSns = new UpdateOrganizationSNSUseCase($organizationSns, $authorization);
+        $deleteOrganizationSns = new DeleteOrganizationSNSUseCase($organizationSns, $authorization);
+        $listOrganizationSns = new ListOrganizationSNSUseCase($organizationSns, $authorization);
+        $createOrganizationExternalLink = new CreateOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $updateOrganizationExternalLink = new UpdateOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $deleteOrganizationExternalLink = new DeleteOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $listOrganizationExternalLinks = new ListOrganizationExternalLinksUseCase($organizationExternalLinks, $authorization);
         $followOrganization   = new FollowOrganizationUseCase($organizations, $organizationFollows, $authorization);
         $unfollowOrganization = new UnfollowOrganizationUseCase($organizationFollows, $authorization);
         $listMyFollows         = new ListMyFollowsUseCase($organizationFollows, $organizations, $authorization);
@@ -577,6 +631,30 @@ final class Plugin
         $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
         $getParticipantInvitationByToken = new GetParticipantInvitationByTokenUseCase($participantInvitations, $productions);
         $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization);
+
+        // StageArt 団体管理UI整理 "メンバーを追加": mirrors
+        // CreateParticipantInvitationUseCase's own 氏名＋メールアドレス
+        // single-entry-point shape at Organization Scope. Reuses the
+        // same $participantInvitationBaseUrl Web host (same mobile-rn
+        // Web export, same /register?token=... destination) - see
+        // WordPressOrganizationInvitationMailer's own docblock.
+        $organizationInvitationMailer = new WordPressOrganizationInvitationMailer($participantInvitationBaseUrl);
+        $resendOrganizationInvitation = new ResendOrganizationInvitationUseCase(
+            $organizationInvitations,
+            $organizations,
+            $authorization,
+            $organizationInvitationMailer
+        );
+        $createOrganizationInvitation = new CreateOrganizationInvitationUseCase(
+            $organizations,
+            $authorization,
+            $findPersonByEmail,
+            $memberships,
+            $organizationInvitations,
+            $resendOrganizationInvitation,
+            $organizationInvitationMailer
+        );
+        $getOrganizationInvitationByToken = new GetOrganizationInvitationByTokenUseCase($organizationInvitations, $organizations);
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
         // entire own wiring (UseCase construction + REST Controller
@@ -792,7 +870,30 @@ final class Plugin
             $ownerTransfer,
             $followOrganization,
             $unfollowOrganization,
-            $searchOrganizations
+            $searchOrganizations,
+            $listOrganizationMembers,
+            $assignOrganizationDelegate,
+            $revokeOrganizationDelegate
+        );
+
+        $organizationSnsRestController = new OrganizationSNSRestController(
+            $createOrganizationSns,
+            $updateOrganizationSns,
+            $deleteOrganizationSns,
+            $listOrganizationSns
+        );
+
+        $organizationExternalLinkRestController = new OrganizationExternalLinkRestController(
+            $createOrganizationExternalLink,
+            $updateOrganizationExternalLink,
+            $deleteOrganizationExternalLink,
+            $listOrganizationExternalLinks
+        );
+
+        $organizationInvitationRestController = new OrganizationInvitationRestController(
+            $createOrganizationInvitation,
+            $resendOrganizationInvitation,
+            $getOrganizationInvitationByToken
         );
 
         $projectRestController = new ProjectRestController(
@@ -909,6 +1010,9 @@ final class Plugin
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
 
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationSnsRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationExternalLinkRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationInvitationRestController, 'register_routes']);
         add_action('rest_api_init', [$projectRestController, 'register_routes']);
         add_action('rest_api_init', [$userAccountRestController, 'register_routes']);
         add_action('rest_api_init', [$authenticationRestController, 'register_routes']);

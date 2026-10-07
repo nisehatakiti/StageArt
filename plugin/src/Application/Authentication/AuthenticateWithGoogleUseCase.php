@@ -7,6 +7,7 @@ namespace StageArt\Application\Authentication;
 use DateInterval;
 use DateTimeImmutable;
 use StageArt\Application\Notification\NotificationEmailSeeder;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Authentication\RefreshToken;
@@ -49,6 +50,7 @@ final class AuthenticateWithGoogleUseCase
     private TransactionManagerInterface $transactions;
     private NotificationEmailSeeder $notificationEmailSeeder;
     private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
+    private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
 
     public function __construct(
         GoogleIdTokenVerifierInterface $googleVerifier,
@@ -60,7 +62,8 @@ final class AuthenticateWithGoogleUseCase
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
         NotificationEmailSeeder $notificationEmailSeeder,
-        ResolveParticipantInvitationUseCase $resolveParticipantInvitation
+        ResolveParticipantInvitationUseCase $resolveParticipantInvitation,
+        ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation
     ) {
         $this->googleVerifier = $googleVerifier;
         $this->externalIdentities = $externalIdentities;
@@ -72,6 +75,7 @@ final class AuthenticateWithGoogleUseCase
         $this->transactions = $transactions;
         $this->notificationEmailSeeder = $notificationEmailSeeder;
         $this->resolveParticipantInvitation = $resolveParticipantInvitation;
+        $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
     }
 
     public function execute(AuthenticateWithGoogleCommand $command): AuthenticationResult
@@ -154,6 +158,16 @@ final class AuthenticateWithGoogleUseCase
             } catch (Throwable $exception) {
                 error_log(sprintf(
                     '[StageArt ParticipantInvitation] resolution failed after Google authentication for person=%s: %s',
+                    $result->personId,
+                    $exception->getMessage()
+                ));
+            }
+
+            try {
+                $this->resolveOrganizationInvitation->execute(PersonId::fromString($result->personId), $claims->email);
+            } catch (Throwable $exception) {
+                error_log(sprintf(
+                    '[StageArt OrganizationInvitation] resolution failed after Google authentication for person=%s: %s',
                     $result->personId,
                     $exception->getMessage()
                 ));

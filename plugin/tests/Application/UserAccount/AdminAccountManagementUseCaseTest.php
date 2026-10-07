@@ -29,11 +29,13 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
+use StageArt\Tests\Support\InMemoryOrganizationInvitationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveOrganizationInvitationUseCaseFactory;
 use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 /**
@@ -91,7 +93,9 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $transactions,
             new FakeAuthMailer(),
             $resolveParticipantInvitation,
-            new InMemoryParticipantInvitationRepository()
+            new InMemoryParticipantInvitationRepository(),
+            NullResolveOrganizationInvitationUseCaseFactory::create(),
+            new InMemoryOrganizationInvitationRepository()
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,
@@ -111,7 +115,8 @@ final class AdminAccountManagementUseCaseTest extends TestCase
             $wordPressUserProvisioner,
             $transactions,
             $notificationEmailSeeder,
-            $resolveParticipantInvitation
+            $resolveParticipantInvitation,
+            NullResolveOrganizationInvitationUseCaseFactory::create()
         );
         $this->listAllUserAccounts = new ListAllUserAccountsUseCase(
             $this->userAccounts,

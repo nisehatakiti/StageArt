@@ -96,10 +96,84 @@ export type Organization = {
   slug: string | null;
   published_at: string | null;
   accounting_enabled: boolean;
+  /** StageArt 団体管理UI整理: mirrors Production.flyer_url's own
+   * convention - a plain URL the 団体情報 screen lets an Owner/delegate
+   * paste or edit directly (no file-upload infrastructure exists
+   * anywhere in this codebase to build a real upload widget on). */
+  logo_url: string | null;
   created_at: string;
   updated_at: string;
   current_person_role: string;
   follower_count: number | null;
+};
+
+/** StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationSNS.md):
+ * GET/POST /organizations/{id}/sns, PUT/DELETE /organization-sns/{id}. */
+export type OrganizationSNS = {
+  id: string;
+  organization_id: string;
+  service: string;
+  account_identifier: string;
+  profile_url: string;
+  display_name: string | null;
+  display_order: number;
+  visibility: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationPublicSiteStructure.md
+ * "OTHER LINKS"): GET/POST /organizations/{id}/external-links,
+ * PUT/DELETE /organization-external-links/{id}. */
+export type OrganizationExternalLink = {
+  id: string;
+  organization_id: string;
+  label: string;
+  url: string;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** StageArt 団体管理UI整理 "メンバー管理": GET /organizations/{id}/members -
+ * every ACTIVE Membership with the Person's own display name. */
+export type OrganizationMember = {
+  membership_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  role_key: string;
+  joined_at: string | null;
+};
+
+/** StageArt 団体管理UI整理 "メンバーを追加": POST /organizations/{id}/invitations
+ * response shape (never carries the raw token). */
+export type OrganizationInvitation = {
+  id: string;
+  organization_id: string;
+  email: string;
+  name: string;
+  invited_by_person_id: string;
+  remarks: string | null;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  consumed_at: string | null;
+};
+
+export type CreateOrganizationInvitationResult = {
+  outcome: 'MEMBER_ADDED' | 'INVITATION_CREATED' | 'INVITATION_RESENT';
+  member: OrganizationMember | null;
+  invitation: OrganizationInvitation | null;
+};
+
+/** GET /organization-invitations/by-token/{token} - unauthenticated
+ * registration-screen preview. */
+export type OrganizationInvitationPreview = {
+  organization_name: string;
+  email: string;
+  name: string;
+  status: string;
 };
 
 /**
@@ -130,8 +204,12 @@ export type PublicOrganization = {
   name: string;
   slug: string;
   description: string | null;
+  logo_url: string | null;
   published_at: string;
   productions: PublicOrganizationProductionSummary[];
+  /** Already filtered to visibility=true and ordered by display_order by the Backend. */
+  sns: OrganizationSNS[];
+  external_links: OrganizationExternalLink[];
 };
 
 /**

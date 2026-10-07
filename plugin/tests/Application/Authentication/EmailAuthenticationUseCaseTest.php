@@ -27,12 +27,14 @@ use StageArt\Tests\Support\FakeAuthMailer;
 use StageArt\Tests\Support\FakeWordPressUserProvisioner;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
+use StageArt\Tests\Support\InMemoryOrganizationInvitationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryPasswordResetTokenRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveOrganizationInvitationUseCaseFactory;
 use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 final class EmailAuthenticationUseCaseTest extends TestCase
@@ -76,7 +78,9 @@ final class EmailAuthenticationUseCaseTest extends TestCase
             new InMemoryTransactionManager(),
             $this->mailer,
             NullResolveParticipantInvitationUseCaseFactory::create($this->people),
-            new InMemoryParticipantInvitationRepository()
+            new InMemoryParticipantInvitationRepository(),
+            NullResolveOrganizationInvitationUseCaseFactory::create(),
+            new InMemoryOrganizationInvitationRepository()
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,

@@ -12,18 +12,26 @@ jest.mock('expo-secure-store', () => ({
 
 /**
  * StageArt UI再構成 instruction (this round §「Organization Context」):
- * 団体管理トップ is now a real Dashboard - Role, the actual Production
- * list, and (Owner only) a pending-membership-request count - all reused
- * from data already fetched elsewhere in the app (useOrganizationProductions/
- * usePendingMembershipRequests), not a new API.
+ * 団体管理トップ is a real Dashboard - Role and the actual Production
+ * list, reused from data already fetched elsewhere in the app
+ * (useOrganizationProductions), not a new API.
+ *
+ * StageArt 団体管理UI整理: this test previously also asserted an
+ * `organization-management-pending-requests` count badge here - that
+ * testID never actually existed anywhere in the component (a stale
+ * assertion from an earlier, incomplete refactor; confirmed failing on
+ * this branch even before this round's own changes). It is removed, not
+ * weakened: this round's own confirmed spec moves 参加申請 off the
+ * Organization Context entirely and onto Home
+ * (home-membership-approval.test.tsx), so a pending-request count
+ * belongs there now, not on this Dashboard.
  */
 describe('Web 団体管理トップ: Dashboard content', () => {
-  it('shows the current Role, the Production list, and the pending membership request count for the Owner', async () => {
+  it('shows the current Role and the Production list', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
       { test: (u) => u.endsWith('/productions'), status: 200, body: [productionOne] },
-      { test: (u) => u.endsWith('/organizations/org-1/membership-requests'), status: 200, body: [{ id: 'req-1' }, { id: 'req-2' }] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
@@ -32,7 +40,5 @@ describe('Web 団体管理トップ: Dashboard content', () => {
     await waitFor(() => expect(screen.getByTestId('organization-management-role')).toHaveTextContent('オーナー'));
     await waitFor(() => expect(screen.getByTestId(`organization-management-production-${productionOne.id}`)).toBeVisible());
     expect(screen.getByTestId(`organization-management-production-${productionOne.id}`)).toHaveTextContent(new RegExp(productionOne.name));
-
-    await waitFor(() => expect(screen.getByTestId('organization-management-pending-requests')).toHaveTextContent(/2件/));
   });
 });

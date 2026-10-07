@@ -7,6 +7,7 @@ namespace StageArt\Application\Authentication;
 use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
 use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -15,6 +16,7 @@ use StageArt\Domain\Authentication\EmailVerificationToken;
 use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
+use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
@@ -100,6 +102,8 @@ final class RegisterWithEmailUseCase
     private AuthMailerInterface $mailer;
     private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
     private ParticipantInvitationRepositoryInterface $participantInvitations;
+    private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
+    private OrganizationInvitationRepositoryInterface $organizationInvitations;
 
     public function __construct(
         EmailCredentialRepositoryInterface $emailCredentials,
@@ -112,7 +116,9 @@ final class RegisterWithEmailUseCase
         TransactionManagerInterface $transactions,
         AuthMailerInterface $mailer,
         ResolveParticipantInvitationUseCase $resolveParticipantInvitation,
-        ParticipantInvitationRepositoryInterface $participantInvitations
+        ParticipantInvitationRepositoryInterface $participantInvitations,
+        ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation,
+        OrganizationInvitationRepositoryInterface $organizationInvitations
     ) {
         $this->emailCredentials = $emailCredentials;
         $this->people = $people;
@@ -125,6 +131,8 @@ final class RegisterWithEmailUseCase
         $this->mailer = $mailer;
         $this->resolveParticipantInvitation = $resolveParticipantInvitation;
         $this->participantInvitations = $participantInvitations;
+        $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
+        $this->organizationInvitations = $organizationInvitations;
     }
 
     public function execute(RegisterWithEmailCommand $command): AuthenticationResult
@@ -136,17 +144,32 @@ final class RegisterWithEmailUseCase
         }
 
         $invitation = null;
+        $organizationInvitation = null;
 
         if ($command->invitationToken !== null) {
             $tokenHash = hash('sha256', $command->invitationToken);
             $invitation = $this->participantInvitations->findByTokenHash($tokenHash);
 
+            // A single `invitationToken` field serves both invitation
+            // kinds (the registration screen has no way to know in
+            // advance which one a link carries) - if it isn't a usable
+            // ParticipantInvitation, check OrganizationInvitation before
+            // giving up. Both are 32-byte random hex values, so a
+            // collision across the two tables is not a realistic
+            // concern.
             if ($invitation === null || ! $invitation->isUsable()) {
-                throw new ParticipantInvitationNotFoundException('No usable ParticipantInvitation found for this token.');
+                $invitation = null;
+                $organizationInvitation = $this->organizationInvitations->findByTokenHash($tokenHash);
+
+                if ($organizationInvitation === null || ! $organizationInvitation->isUsable()) {
+                    throw new ParticipantInvitationNotFoundException('No usable invitation found for this token.');
+                }
             }
         }
 
-        $registrationEmail = $invitation !== null ? $invitation->email() : $command->email;
+        $invitationEmail = $invitation?->email() ?? $organizationInvitation?->email();
+        $registrationEmail = $invitationEmail ?? $command->email;
+        $hasTrustedInvitation = $invitation !== null || $organizationInvitation !== null;
 
         // Captured by reference from inside the transaction closure below
         // so the mailer can be called AFTER the transaction commits, not
@@ -157,7 +180,7 @@ final class RegisterWithEmailUseCase
         // token at all - see the guarded call below.
         $emailVerificationTokenValue = null;
 
-        $result = $this->transactions->run(function () use ($command, $invitation, $registrationEmail, &$emailVerificationTokenValue): AuthenticationResult {
+        $result = $this->transactions->run(function () use ($command, $hasTrustedInvitation, $registrationEmail, &$emailVerificationTokenValue): AuthenticationResult {
             if ($this->emailCredentials->findByEmail($registrationEmail)) {
                 throw new EmailAlreadyInUseException('This email address is already registered.');
             }
@@ -173,7 +196,7 @@ final class RegisterWithEmailUseCase
             $passwordHash = password_hash($command->password, PASSWORD_DEFAULT);
             $credential = EmailCredential::create($userAccount->id(), $registrationEmail, $passwordHash);
 
-            if ($invitation !== null) {
+            if ($hasTrustedInvitation) {
                 $credential->markEmailVerified();
             }
 
@@ -190,7 +213,7 @@ final class RegisterWithEmailUseCase
             );
             $this->refreshTokens->save($refreshToken);
 
-            if ($invitation === null) {
+            if (! $hasTrustedInvitation) {
                 $emailVerificationTokenValue = bin2hex(random_bytes(32));
                 $emailVerificationTokenHash = hash('sha256', $emailVerificationTokenValue);
 
@@ -221,6 +244,16 @@ final class RegisterWithEmailUseCase
         } catch (Throwable $exception) {
             error_log(sprintf(
                 '[StageArt ParticipantInvitation] resolution failed after email registration for person=%s: %s',
+                $result->personId,
+                $exception->getMessage()
+            ));
+        }
+
+        try {
+            $this->resolveOrganizationInvitation->execute(PersonId::fromString($result->personId), $registrationEmail);
+        } catch (Throwable $exception) {
+            error_log(sprintf(
+                '[StageArt OrganizationInvitation] resolution failed after email registration for person=%s: %s',
                 $result->personId,
                 $exception->getMessage()
             ));

@@ -186,4 +186,38 @@ final class OrganizationTest extends TestCase
 
         $this->assertTrue($organization->isAccountingEnabled());
     }
+
+    // --- StageArt 団体管理UI整理: logoUrl ---
+
+    public function test_logo_url_defaults_to_null(): void
+    {
+        $organization = Organization::create(new OrganizationName('No Logo Yet'));
+
+        $this->assertNull($organization->logoUrl());
+    }
+
+    public function test_create_accepts_an_explicit_logo_url(): void
+    {
+        $organization = Organization::create(new OrganizationName('With Logo'), null, null, null, false, 'https://example.com/logo.png');
+
+        $this->assertSame('https://example.com/logo.png', $organization->logoUrl());
+    }
+
+    public function test_change_logo_url_updates_it(): void
+    {
+        $organization = Organization::create(new OrganizationName('Changing Logo'));
+
+        $organization->changeLogoUrl('https://example.com/new-logo.png');
+
+        $this->assertSame('https://example.com/new-logo.png', $organization->logoUrl());
+    }
+
+    public function test_change_logo_url_can_clear_it(): void
+    {
+        $organization = Organization::create(new OrganizationName('Clearing Logo'), null, null, null, false, 'https://example.com/logo.png');
+
+        $organization->changeLogoUrl(null);
+
+        $this->assertNull($organization->logoUrl());
+    }
 }

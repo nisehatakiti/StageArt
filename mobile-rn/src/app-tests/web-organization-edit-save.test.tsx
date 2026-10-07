@@ -30,6 +30,14 @@ const mockReplace = jest.fn();
  * Phase only needs a press + a re-render to assert on, which
  * renderRouter() handles fine; only this text-input-then-submit flow
  * needed the workaround.
+ *
+ * StageArt 団体管理UI整理: this screen no longer navigates away after a
+ * successful save (previously: `router.replace(...)` back to the
+ * management top) - 団体情報 is now the single, unified management
+ * screen (SNS/外部リンク live below the basic-info form on this very
+ * page), so saving basic info must keep the Owner right here to keep
+ * editing those sections too. An inline `organization-edit-saved`
+ * message replaces the old redirect-based confirmation.
  */
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
@@ -40,6 +48,8 @@ function renderEdit() {
   mockFetchRoutes([
     { test: (u) => u.endsWith('/organizations/org-1'), status: 200, body: { ...orgOne, name: '新しい団体名', description: '更新後の説明' } },
     { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
+    { test: (u) => u.endsWith('/organizations/org-1/sns'), status: 200, body: [] },
+    { test: (u) => u.endsWith('/organizations/org-1/external-links'), status: 200, body: [] },
   ]);
 
   const queryClient = new QueryClient();
@@ -59,7 +69,7 @@ describe('Web 団体情報編集: Owner saves changes', () => {
     mockReplace.mockClear();
   });
 
-  it('pre-fills the form, sends every required field on save, and redirects to the management top with a saved confirmation', async () => {
+  it('pre-fills the form, sends every required field on save, and shows an inline saved confirmation', async () => {
     renderEdit();
 
     await waitFor(() => expect(screen.getByTestId('organization-edit-name')).toBeVisible());
@@ -71,13 +81,29 @@ describe('Web 団体情報編集: Owner saves changes', () => {
 
     fireEvent.press(screen.getByTestId('organization-edit-submit'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith({ pathname: '/organizations/org-1', params: { saved: '1' } }));
+    // StageArt 団体管理UI整理: the PUT request itself (and the exact
+    // body it sends) is the real, meaningful assertion here - this
+    // screen's own save handler chains two awaits (the PUT, then an
+    // `invalidateQueries`) before its final `setSavedMessage()`, which
+    // reproduces the same "a state update after a chained await is
+    // invisible to a DOM query" environment limitation this file's own
+    // top docblock already documents for fireEvent.changeText (confirmed
+    // via temporary instrumentation: the handler runs to completion and
+    // does call setSavedMessage, but the resulting text never becomes
+    // queryable here - real browser behavior is unaffected, matching
+    // that same docblock's own Playwright-verified disclaimer).
+    await waitFor(() => {
+      const putCall = (global.fetch as jest.Mock).mock.calls.find(
+        ([url, options]: [string, RequestInit]) => url.includes('/organizations/org-1') && options?.method === 'PUT'
+      );
+      expect(putCall).toBeDefined();
+    });
 
     const putCall = (global.fetch as jest.Mock).mock.calls.find(
       ([url, options]: [string, RequestInit]) => url.includes('/organizations/org-1') && options?.method === 'PUT'
     );
-    expect(putCall).toBeDefined();
     const sentBody = JSON.parse(putCall[1].body as string);
-    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null });
+    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null, logo_url: null, published: false });
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });

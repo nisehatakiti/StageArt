@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Domain\Organization\OrganizationExternalLinkRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationSNS;
+use StageArt\Domain\Organization\OrganizationSNSRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
 
@@ -30,15 +33,21 @@ final class GetPublicOrganizationBySlugUseCase
     private OrganizationRepositoryInterface $organizations;
     private ProjectRepositoryInterface $projects;
     private ProductionRepositoryInterface $productions;
+    private OrganizationSNSRepositoryInterface $sns;
+    private OrganizationExternalLinkRepositoryInterface $externalLinks;
 
     public function __construct(
         OrganizationRepositoryInterface $organizations,
         ProjectRepositoryInterface $projects,
-        ProductionRepositoryInterface $productions
+        ProductionRepositoryInterface $productions,
+        OrganizationSNSRepositoryInterface $sns,
+        OrganizationExternalLinkRepositoryInterface $externalLinks
     ) {
         $this->organizations = $organizations;
         $this->projects = $projects;
         $this->productions = $productions;
+        $this->sns = $sns;
+        $this->externalLinks = $externalLinks;
     }
 
     public function execute(GetPublicOrganizationBySlugQuery $query): PublicOrganizationResult
@@ -63,6 +72,20 @@ final class GetPublicOrganizationBySlugUseCase
             $publishedProductions
         );
 
-        return PublicOrganizationResult::fromDomain($organization, $summaries);
+        $visibleSns = array_values(array_filter(
+            $this->sns->findByOrganizationId($organization->id()),
+            static fn (OrganizationSNS $sns): bool => $sns->isVisible()
+        ));
+        $snsResults = array_map(
+            static fn (OrganizationSNS $sns) => OrganizationSNSResult::fromDomain($sns),
+            $visibleSns
+        );
+
+        $externalLinkResults = array_map(
+            static fn ($link) => OrganizationExternalLinkResult::fromDomain($link),
+            $this->externalLinks->findByOrganizationId($organization->id())
+        );
+
+        return PublicOrganizationResult::fromDomain($organization, $summaries, $snsResults, $externalLinkResults);
     }
 }

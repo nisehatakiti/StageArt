@@ -9,6 +9,7 @@ export const orgOne: Organization = {
   slug: null,
   published_at: null,
   accounting_enabled: false,
+  logo_url: null,
   created_at: '2026-01-01T00:00:00+09:00',
   updated_at: '2026-01-01T00:00:00+09:00',
   current_person_role: 'OWNER',

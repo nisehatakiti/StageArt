@@ -42,6 +42,11 @@ final class RoleKeyTest extends TestCase
         $this->assertSame('ACCOUNTING_MANAGER', RoleKey::accountingManager()->toString());
     }
 
+    public function test_organization_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('ORGANIZATION_MANAGER', RoleKey::organizationManager()->toString());
+    }
+
     public function test_unknown_role_key_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
