@@ -114,7 +114,7 @@ export type OrganizationSNS = {
   organization_id: string;
   service: string;
   account_identifier: string;
-  profile_url: string;
+  profile_url: string | null;
   display_name: string | null;
   display_order: number;
   visibility: boolean;
