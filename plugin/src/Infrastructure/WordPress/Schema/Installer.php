@@ -632,6 +632,25 @@ final class Installer
         // that class's own docblock, and PerformanceInstaller's identical
         // precedent above.
         QuestionnaireInstaller::install($wpdb, $charsetCollate);
+
+        self::applyColumnNullabilityFixups($wpdb, $organizationSns);
+    }
+
+    /**
+     * StageArt SNS backend nullable対応 (schema 1.40.0): dbDelta only
+     * reliably handles ADD COLUMN/ADD KEY/CREATE TABLE - it does not
+     * relax an existing column's NOT NULL constraint to NULL on an
+     * already-created table (confirmed empirically on dev: after this
+     * round's dbDelta-based migration ran, `DESCRIBE` still showed
+     * profile_url as NOT NULL and a genuine NULL insert was rejected by
+     * MySQL). An explicit MODIFY COLUMN closes that gap. Idempotent -
+     * safe to run on every boot via maybeUpgrade(), and harmless on a
+     * fresh install where the CREATE TABLE above already declares the
+     * column nullable.
+     */
+    private static function applyColumnNullabilityFixups($wpdb, string $organizationSns): void
+    {
+        $wpdb->query("ALTER TABLE {$organizationSns} MODIFY profile_url VARCHAR(500) NULL");
     }
 
     private static function installAdminConsoleRole(): void
