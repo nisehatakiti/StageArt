@@ -10,7 +10,7 @@ final class CreateOrganizationSNSCommand
     public int $requestedByWordPressUserId;
     public string $service;
     public string $accountIdentifier;
-    public string $profileUrl;
+    public ?string $profileUrl;
     public ?string $displayName;
     public int $displayOrder;
     public bool $visibility;
@@ -20,7 +20,7 @@ final class CreateOrganizationSNSCommand
         int $requestedByWordPressUserId,
         string $service,
         string $accountIdentifier,
-        string $profileUrl,
+        ?string $profileUrl = null,
         ?string $displayName = null,
         int $displayOrder = 0,
         bool $visibility = true
