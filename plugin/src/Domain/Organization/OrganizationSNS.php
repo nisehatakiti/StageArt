@@ -32,7 +32,7 @@ final class OrganizationSNS
         OrganizationId $organizationId,
         OrganizationSNSService $service,
         string $accountIdentifier,
-        ?string $profileUrl,
+        ??string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility,
@@ -55,7 +55,7 @@ final class OrganizationSNS
         OrganizationId $organizationId,
         OrganizationSNSService $service,
         string $accountIdentifier,
-        string $profileUrl,
+        ?string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility
@@ -105,7 +105,7 @@ final class OrganizationSNS
     public function update(
         OrganizationSNSService $service,
         string $accountIdentifier,
-        string $profileUrl,
+        ?string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility
