@@ -74,8 +74,6 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
   const items: NavMenuItem[] = [
     { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
     { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href, groupLabel: 'メンバー管理' },
-    { key: 'organization-members-add', label: 'メンバーを追加', href: `/organizations/${id}/members/add` as Href },
-    { key: 'organization-members-delegate', label: '代理人を設定', href: `/organizations/${id}/members/delegate` as Href },
     {
       key: 'organization-members-owner-transfer',
       label: '代表者交代',
@@ -84,9 +82,7 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
   ];
 
   items.push(
-    { key: 'organization-productions', label: '公演一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演管理' },
-    { key: 'organization-productions-create', label: '公演を作る', href: `/organizations/${id}/productions/create` as Href },
-    { key: 'organization-productions-edit', label: '公演を編集する', href: `/organizations/${id}/productions/edit` as Href }
+    { key: 'organization-productions', label: '公演・活動一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演・活動管理' }
   );
 
   if (accountingEnabled) {
