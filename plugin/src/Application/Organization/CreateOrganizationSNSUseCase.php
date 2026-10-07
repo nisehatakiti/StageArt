@@ -60,15 +60,38 @@ final class CreateOrganizationSNSUseCase
 
         return OrganizationSNSResult::fromDomain($sns);
     }
-}
 
-
+    /**
+     * X/Instagram/Facebook: profile_url is always derived from the
+     * sanitized account identifier - whatever the client sent for
+     * profile_url is ignored outright, not merely unvalidated, so a
+     * garbage value there can never reach storage. OTHER (not
+     * creatable from the current UI, but still a valid existing
+     * OrganizationSNSService - see that class's own docblock) is the
+     * only case the client's own profile_url is actually used, so it
+     * still gets real URL validation here rather than being accepted
+     * verbatim.
+     */
     private function profileUrlForService(OrganizationSNSService $service, string $accountIdentifier, ?string $providedUrl): ?string
     {
-        return match ($service->toString()) {
-            OrganizationSNSService::X => 'https://x.com/' . rawurlencode($accountIdentifier),
-            OrganizationSNSService::INSTAGRAM => 'https://www.instagram.com/' . rawurlencode($accountIdentifier),
-            OrganizationSNSService::FACEBOOK => 'https://www.facebook.com/' . rawurlencode($accountIdentifier),
-            default => $providedUrl !== null && trim($providedUrl) !== '' ? trim($providedUrl) : null,
-        };
+        if (in_array($service->toString(), [OrganizationSNSService::X, OrganizationSNSService::INSTAGRAM, OrganizationSNSService::FACEBOOK], true)) {
+            return match ($service->toString()) {
+                OrganizationSNSService::X => 'https://x.com/' . rawurlencode($accountIdentifier),
+                OrganizationSNSService::INSTAGRAM => 'https://www.instagram.com/' . rawurlencode($accountIdentifier),
+                default => 'https://www.facebook.com/' . rawurlencode($accountIdentifier),
+            };
+        }
+
+        $trimmed = $providedUrl !== null ? trim($providedUrl) : '';
+
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (filter_var($trimmed, FILTER_VALIDATE_URL) === false) {
+            throw new InvalidArgumentException("Invalid profile_url: {$providedUrl}");
+        }
+
+        return $trimmed;
     }
+}

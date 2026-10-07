@@ -20,6 +20,7 @@ final class OrganizationInvitationResult
     public string $createdAt;
     public string $expiresAt;
     public ?string $consumedAt;
+    public bool $isExpired;
 
     public function __construct(
         string $id,
@@ -31,7 +32,8 @@ final class OrganizationInvitationResult
         string $status,
         string $createdAt,
         string $expiresAt,
-        ?string $consumedAt
+        ?string $consumedAt,
+        bool $isExpired
     ) {
         $this->id = $id;
         $this->organizationId = $organizationId;
@@ -43,6 +45,7 @@ final class OrganizationInvitationResult
         $this->createdAt = $createdAt;
         $this->expiresAt = $expiresAt;
         $this->consumedAt = $consumedAt;
+        $this->isExpired = $isExpired;
     }
 
     public static function fromDomain(OrganizationInvitation $invitation): self
@@ -57,7 +60,8 @@ final class OrganizationInvitationResult
             $invitation->status()->toString(),
             $invitation->createdAt()->format(DATE_ATOM),
             $invitation->expiresAt()->format(DATE_ATOM),
-            $invitation->consumedAt() !== null ? $invitation->consumedAt()->format(DATE_ATOM) : null
+            $invitation->consumedAt() !== null ? $invitation->consumedAt()->format(DATE_ATOM) : null,
+            $invitation->isExpired()
         );
     }
 
@@ -77,6 +81,7 @@ final class OrganizationInvitationResult
             'created_at' => $this->createdAt,
             'expires_at' => $this->expiresAt,
             'consumed_at' => $this->consumedAt,
+            'is_expired' => $this->isExpired,
         ];
     }
 }

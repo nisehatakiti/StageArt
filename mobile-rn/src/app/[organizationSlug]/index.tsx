@@ -112,7 +112,12 @@ export default function PublicOrganizationScreen() {
                   <TouchableOpacity
                     key={sns.id}
                     testID={`public-organization-sns-${sns.id}`}
-                    onPress={() => Linking.openURL(sns.profile_url)}
+                    onPress={() => {
+                      if (sns.profile_url) {
+                        Linking.openURL(sns.profile_url);
+                      }
+                    }}
+                    disabled={!sns.profile_url}
                     style={styles.snsRow}
                   >
                     <ThemedText type="small" style={styles.snsService}>

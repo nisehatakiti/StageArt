@@ -32,7 +32,7 @@ final class OrganizationSNS
         OrganizationId $organizationId,
         OrganizationSNSService $service,
         string $accountIdentifier,
-        ??string $profileUrl,
+        ?string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility,

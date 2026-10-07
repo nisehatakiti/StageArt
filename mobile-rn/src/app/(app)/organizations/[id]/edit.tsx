@@ -41,6 +41,8 @@ export default function OrganizationEditScreen() {
   const role = organization?.current_person_role ?? null;
   const canEdit = role === 'OWNER' || role === 'ORGANIZATION_MANAGER';
 
+  const logo = useOrganizationLogo(organization?.id);
+
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
@@ -62,7 +64,12 @@ export default function OrganizationEditScreen() {
 
   const slugChanged = slug !== (organization?.slug ?? '');
   const slugValid = isValidSlug(slug);
-  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && !submitting;
+  // StageArt 団体ロゴ保存バグ対策: a logo upload/delete in flight means
+  // `organization.logo_url` in this closure may still be the pre-upload
+  // value - blocking the main save here (on top of the synchronous cache
+  // write in useOrganizationLogo) removes the window entirely rather
+  // than narrowing it.
+  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && !submitting && !logo.upload.isPending && !logo.remove.isPending;
 
   async function handleSubmit() {
     if (!organization || !canSubmit) {
@@ -155,7 +162,7 @@ export default function OrganizationEditScreen() {
         />
       </ManagementCard>
 
-      <OrganizationLogoCard organizationId={organization.id} logoUrl={organization.logo_url} />
+      <OrganizationLogoCard logoUrl={organization.logo_url} upload={logo.upload} remove={logo.remove} />
 
       <ManagementCard title="公開ページ">
         <View style={styles.switchRow}>
@@ -209,8 +216,15 @@ export default function OrganizationEditScreen() {
  * をfetch()でBlobへ変換してから送る（Expoの標準パターン - webのblob: URI
  * とnativeのfile: URIの両方で同じ経路が使える）。
  */
-function OrganizationLogoCard({ organizationId, logoUrl }: { organizationId: string; logoUrl: string | null }) {
-  const { upload, remove } = useOrganizationLogo(organizationId);
+function OrganizationLogoCard({
+  logoUrl,
+  upload,
+  remove,
+}: {
+  logoUrl: string | null;
+  upload: ReturnType<typeof useOrganizationLogo>['upload'];
+  remove: ReturnType<typeof useOrganizationLogo>['remove'];
+}) {
   const [pickError, setPickError] = useState<string | null>(null);
 
   async function handlePick() {

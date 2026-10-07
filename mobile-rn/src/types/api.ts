@@ -162,6 +162,7 @@ export type OrganizationInvitation = {
   created_at: string;
   expires_at: string;
   consumed_at: string | null;
+  is_expired: boolean;
 };
 
 export type CreateOrganizationInvitationResult = {

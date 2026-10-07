@@ -355,7 +355,7 @@ describe('useNavMenu', () => {
     expect(result.current.contextItems.find((item) => item.key === 'organization-members')?.groupLabel).toBe('メンバー管理');
     expect(result.current.contextItems.find((item) => item.key === 'organization-members-owner-transfer')?.label).toBe('代表者交代');
     expect(result.current.contextItems.find((item) => item.key === 'organization-productions')?.label).toBe('公演・活動一覧');
-    expect(result.current.contextItems.find((item) => item.key === 'organization-productions')?.groupLabel).toBe('公演管理');
+    expect(result.current.contextItems.find((item) => item.key === 'organization-productions')?.groupLabel).toBe('公演・活動管理');
     expect(result.current.contextItems.some((item) => item.key === 'organization-about')).toBe(false);
     expect(result.current.contextItems.some((item) => item.key === 'organization-sns')).toBe(false);
     expect(result.current.contextItems.some((item) => item.key === 'organization-links')).toBe(false);

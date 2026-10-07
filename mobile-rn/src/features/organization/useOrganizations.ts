@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
+import type { Organization } from '@/types/api';
 
 import {
   assignOrganizationDelegate,
@@ -99,19 +100,32 @@ export function useOrganizationLogo(organizationId: string | undefined) {
   const { apiClient } = useAuth();
   const queryClient = useQueryClient();
 
-  function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['organizations'] });
+  /**
+   * StageArt Organization管理UI/UX統一 "団体ロゴ" race-condition fix:
+   * writes the Backend's own response directly into the `organizations`
+   * cache instead of only `invalidateQueries`-ing it. A plain invalidate
+   * schedules a background refetch that resolves after this callback
+   * returns, so a 団体情報編集画面 save fired in that gap would still read
+   * the pre-upload `organization.logo_url` from the (still stale) cache
+   * and overwrite the just-uploaded logo back to its old value - this
+   * closes that window by updating the cache synchronously, in the same
+   * tick the upload/delete itself resolves.
+   */
+  function applyUpdatedOrganization(updated: Organization) {
+    queryClient.setQueryData<Organization[]>(['organizations'], (current) =>
+      current?.map((organization) => (organization.id === updated.id ? updated : organization))
+    );
   }
 
   const upload = useMutation({
     mutationFn: ({ file, fileName }: { file: Blob; fileName: string }) =>
       uploadOrganizationLogo(apiClient, organizationId as string, file, fileName),
-    onSuccess: invalidate,
+    onSuccess: applyUpdatedOrganization,
   });
 
   const remove = useMutation({
     mutationFn: () => deleteOrganizationLogo(apiClient, organizationId as string),
-    onSuccess: invalidate,
+    onSuccess: applyUpdatedOrganization,
   });
 
   return { upload, remove };

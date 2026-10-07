@@ -55,15 +55,29 @@ final class UpdateOrganizationSNSUseCase
 
         return OrganizationSNSResult::fromDomain($sns);
     }
-}
 
-
+    /** Mirrors CreateOrganizationSNSUseCase::profileUrlForService() - see
+     * that method's own docblock. */
     private function profileUrlForService(OrganizationSNSService $service, string $accountIdentifier, ?string $providedUrl): ?string
     {
-        return match ($service->toString()) {
-            OrganizationSNSService::X => 'https://x.com/' . rawurlencode($accountIdentifier),
-            OrganizationSNSService::INSTAGRAM => 'https://www.instagram.com/' . rawurlencode($accountIdentifier),
-            OrganizationSNSService::FACEBOOK => 'https://www.facebook.com/' . rawurlencode($accountIdentifier),
-            default => $providedUrl !== null && trim($providedUrl) !== '' ? trim($providedUrl) : null,
-        };
+        if (in_array($service->toString(), [OrganizationSNSService::X, OrganizationSNSService::INSTAGRAM, OrganizationSNSService::FACEBOOK], true)) {
+            return match ($service->toString()) {
+                OrganizationSNSService::X => 'https://x.com/' . rawurlencode($accountIdentifier),
+                OrganizationSNSService::INSTAGRAM => 'https://www.instagram.com/' . rawurlencode($accountIdentifier),
+                default => 'https://www.facebook.com/' . rawurlencode($accountIdentifier),
+            };
+        }
+
+        $trimmed = $providedUrl !== null ? trim($providedUrl) : '';
+
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (filter_var($trimmed, FILTER_VALIDATE_URL) === false) {
+            throw new InvalidArgumentException("Invalid profile_url: {$providedUrl}");
+        }
+
+        return $trimmed;
     }
+}

@@ -128,7 +128,17 @@ final class OrganizationSNSUseCaseTest extends TestCase
         ));
     }
 
-    public function test_create_rejects_an_invalid_profile_url(): void
+    /**
+     * StageArt SNS registration simplification: X/Instagram/Facebook now
+     * always derive profile_url from the account identifier and ignore
+     * whatever the client sends for profile_url outright (see
+     * CreateOrganizationSNSUseCase::profileUrlForService()'s own
+     * docblock) - only OTHER (not creatable from the current UI, but
+     * still a valid existing OrganizationSNSService) still uses a
+     * client-supplied profile_url, so that is the only case real URL
+     * validation still applies to.
+     */
+    public function test_create_rejects_an_invalid_profile_url_for_other_service(): void
     {
         $this->givenOwner(1);
 
@@ -137,10 +147,62 @@ final class OrganizationSNSUseCaseTest extends TestCase
         $this->create->execute(new CreateOrganizationSNSCommand(
             $this->organizationId->toString(),
             1,
-            OrganizationSNSService::X,
+            OrganizationSNSService::OTHER,
             'handle',
             'not-a-url'
         ));
+    }
+
+    public function test_create_with_account_identifier_only_derives_the_profile_url(): void
+    {
+        $this->givenOwner(1);
+
+        $x = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::X, 'stageart_theatre'));
+        $instagram = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::INSTAGRAM, 'stageart_theatre'));
+        $facebook = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::FACEBOOK, 'stageart_theatre'));
+
+        $this->assertSame('https://x.com/stageart_theatre', $x->profileUrl);
+        $this->assertSame('https://www.instagram.com/stageart_theatre', $instagram->profileUrl);
+        $this->assertSame('https://www.facebook.com/stageart_theatre', $facebook->profileUrl);
+    }
+
+    public function test_create_for_x_ignores_any_client_supplied_profile_url(): void
+    {
+        $this->givenOwner(1);
+
+        $result = $this->create->execute(new CreateOrganizationSNSCommand(
+            $this->organizationId->toString(),
+            1,
+            OrganizationSNSService::X,
+            'handle',
+            'not-a-url-and-irrelevant'
+        ));
+
+        $this->assertSame('https://x.com/handle', $result->profileUrl);
+    }
+
+    public function test_create_for_other_service_accepts_a_valid_profile_url(): void
+    {
+        $this->givenOwner(1);
+
+        $result = $this->create->execute(new CreateOrganizationSNSCommand(
+            $this->organizationId->toString(),
+            1,
+            OrganizationSNSService::OTHER,
+            'handle',
+            'https://example.com/handle'
+        ));
+
+        $this->assertSame('https://example.com/handle', $result->profileUrl);
+    }
+
+    public function test_create_for_other_service_without_a_profile_url_is_null(): void
+    {
+        $this->givenOwner(1);
+
+        $result = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::OTHER, 'handle'));
+
+        $this->assertNull($result->profileUrl);
     }
 
     public function test_update_overwrites_the_link(): void
@@ -168,6 +230,44 @@ final class OrganizationSNSUseCaseTest extends TestCase
         $this->assertSame('INSTAGRAM', $updated->service);
         $this->assertSame('new_handle', $updated->accountIdentifier);
         $this->assertFalse($updated->visibility);
+    }
+
+    public function test_update_for_x_derives_the_profile_url_and_ignores_any_client_supplied_value(): void
+    {
+        $this->givenOwner(1);
+        $created = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::OTHER, 'placeholder', 'https://example.com/placeholder'));
+
+        $updated = $this->update->execute(new UpdateOrganizationSNSCommand(
+            $created->id,
+            1,
+            OrganizationSNSService::X,
+            'new_handle',
+            'not-a-url-and-irrelevant',
+            null,
+            0,
+            true
+        ));
+
+        $this->assertSame('https://x.com/new_handle', $updated->profileUrl);
+    }
+
+    public function test_update_rejects_an_invalid_profile_url_for_other_service(): void
+    {
+        $this->givenOwner(1);
+        $created = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::OTHER, 'handle', 'https://example.com/handle'));
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->update->execute(new UpdateOrganizationSNSCommand(
+            $created->id,
+            1,
+            OrganizationSNSService::OTHER,
+            'handle',
+            'not-a-url',
+            null,
+            0,
+            true
+        ));
     }
 
     public function test_updating_an_unknown_id_is_not_found(): void
