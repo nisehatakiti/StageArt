@@ -112,7 +112,7 @@ final class Installer
             organization_id CHAR(36) NOT NULL,
             service VARCHAR(20) NOT NULL,
             account_identifier VARCHAR(255) NOT NULL,
-            profile_url VARCHAR(500) NOT NULL,
+            profile_url VARCHAR(500) NULL,
             display_name VARCHAR(255) NULL,
             display_order INT NOT NULL DEFAULT 0,
             visibility TINYINT(1) NOT NULL DEFAULT 1,
