@@ -184,7 +184,7 @@ export function fetchOrganizationSns(client: ApiClient, organizationId: string):
 export function createOrganizationSns(
   client: ApiClient,
   organizationId: string,
-  fields: { service: string; account_identifier: string; profile_url: string; display_name?: string | null; display_order?: number; visibility?: boolean }
+  fields: { service: string; account_identifier: string; profile_url?: string | null; display_name?: string | null; display_order?: number; visibility?: boolean }
 ): Promise<OrganizationSNS> {
   return client.post<OrganizationSNS>(`/organizations/${organizationId}/sns`, fields);
 }
@@ -192,7 +192,7 @@ export function createOrganizationSns(
 export function updateOrganizationSns(
   client: ApiClient,
   id: string,
-  fields: { service: string; account_identifier: string; profile_url: string; display_name?: string | null; display_order?: number; visibility?: boolean }
+  fields: { service: string; account_identifier: string; profile_url?: string | null; display_name?: string | null; display_order?: number; visibility?: boolean }
 ): Promise<OrganizationSNS> {
   return client.put<OrganizationSNS>(`/organization-sns/${id}`, fields);
 }
