@@ -96,7 +96,7 @@ final class WordPressOrganizationSNSRepository implements OrganizationSNSReposit
             OrganizationId::fromString($row['organization_id']),
             OrganizationSNSService::fromString($row['service']),
             $row['account_identifier'],
-            $row['profile_url'],
+            $row['profile_url'] !== null && $row['profile_url'] !== '' ? $row['profile_url'] : null,
             $row['display_name'] ?? null,
             (int) $row['display_order'],
             ! empty($row['visibility']),
