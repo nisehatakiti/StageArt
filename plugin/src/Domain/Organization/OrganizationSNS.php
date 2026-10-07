@@ -20,7 +20,7 @@ final class OrganizationSNS
     private OrganizationId $organizationId;
     private OrganizationSNSService $service;
     private string $accountIdentifier;
-    private string $profileUrl;
+    private ?string $profileUrl;
     private ?string $displayName;
     private int $displayOrder;
     private bool $visibility;
@@ -32,7 +32,7 @@ final class OrganizationSNS
         OrganizationId $organizationId,
         OrganizationSNSService $service,
         string $accountIdentifier,
-        string $profileUrl,
+        ?string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility,
@@ -144,7 +144,7 @@ final class OrganizationSNS
         return $this->accountIdentifier;
     }
 
-    public function profileUrl(): string
+    public function profileUrl(): ?string
     {
         return $this->profileUrl;
     }
