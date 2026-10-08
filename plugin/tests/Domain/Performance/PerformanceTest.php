@@ -49,6 +49,43 @@ final class PerformanceTest extends TestCase
         $this->assertNull($performance->endTime());
     }
 
+    public function test_create_rejects_non_five_minute_time(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Performance::create(ProductionId::generate(), new DateTimeImmutable('2026-10-10'), '13:03', null, 50, null, null);
+    }
+
+    public function test_create_calculates_end_time_from_duration_when_requested(): void
+    {
+        $performance = Performance::create(
+            ProductionId::generate(),
+            new DateTimeImmutable('2026-10-10'),
+            '22:15',
+            Performance::calculateEndTime('22:15', 90),
+            50,
+            null,
+            null,
+            null,
+            false
+        );
+
+        $this->assertSame('23:45:00', $performance->endTime());
+        $this->assertFalse($performance->endTimeCustomized());
+    }
+
+    public function test_calculate_end_time_rolls_over_midnight(): void
+    {
+        $this->assertSame('01:15:00', Performance::calculateEndTime('23:45', 90));
+    }
+
+    public function test_calculate_end_time_rejects_non_five_minute_duration(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Performance::calculateEndTime('13:00', 91);
+    }
+
     public function test_create_rejects_invalid_time_format(): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -83,6 +120,7 @@ final class PerformanceTest extends TestCase
         $this->assertSame('注意事項', $performance->remarks());
         $this->assertSame('A', $performance->symbol());
         $this->assertSame('夜公演', $performance->symbolDescription());
+        $this->assertTrue($performance->endTimeCustomized());
     }
 
     public function test_update_basic_info_rejects_cancelled_performance(): void
