@@ -47,7 +47,7 @@ jest.mock('expo-router', () => ({
 function renderEdit() {
   mockFetchRoutes([
     { test: (u) => u.endsWith('/organizations/org-1'), status: 200, body: { ...orgOne, name: '新しい団体名', description: '更新後の説明', slug: 'kujira', published_at: '2026-10-09T09:00:00+09:00' } },
-    { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
+    { test: (u) => u.endsWith('/organizations'), status: 200, body: [{ ...orgOne, slug: 'kujira', published_at: '2026-10-09T09:00:00+09:00' }] },
     { test: (u) => u.endsWith('/organizations/org-1/sns'), status: 200, body: [] },
     { test: (u) => u.endsWith('/organizations/org-1/external-links'), status: 200, body: [] },
   ]);
