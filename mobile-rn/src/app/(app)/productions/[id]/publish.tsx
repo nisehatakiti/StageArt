@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
+import { getPublicWebBaseUrl } from '@/api/config';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
@@ -66,7 +67,7 @@ export default function ProductionPublishScreen() {
   // Canonical root-level public URL - see
   // [organizationSlug]/[productionSlug].tsx's own docblock (`/o/{slug}/{slug}`
   // is now only a legacy redirect to this).
-  const publicPath = published && organization?.slug && production?.slug ? `/${organization.slug}/${production.slug}` : null;
+  const publicUrl = published && organization?.slug && production?.slug ? `${getPublicWebBaseUrl()}/${organization.slug}/${production.slug}/` : null;
 
   async function setPublished(next: boolean) {
     if (!production) {
@@ -181,9 +182,9 @@ export default function ProductionPublishScreen() {
           </TouchableOpacity>
         ) : (
           <>
-            {publicPath && (
-              <TouchableOpacity testID="production-publish-view-public" onPress={() => router.push(publicPath as Href)} style={styles.buttonSecondary}>
-                <ThemedText style={styles.buttonSecondaryText}>公開ページを見る（{publicPath}）</ThemedText>
+            {publicUrl && (
+              <TouchableOpacity testID="production-publish-view-public" onPress={() => Linking.openURL(publicUrl)} style={styles.buttonSecondary}>
+                <ThemedText style={styles.buttonSecondaryText}>公開ページを見る（{publicUrl}）</ThemedText>
               </TouchableOpacity>
             )}
             <TouchableOpacity
