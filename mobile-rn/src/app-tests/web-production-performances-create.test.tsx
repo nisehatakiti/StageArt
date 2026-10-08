@@ -76,6 +76,8 @@ describe('Web 公演スケジュール管理: 公演スケジュールの作成'
     fireEvent.changeText(screen.getByTestId('production-performances-new-date'), '2026-10-10');
     await waitFor(() => expect(screen.getByTestId('production-performances-new-date').props.value).toBe('2026-10-10'));
 
+    expect(screen.getByTestId('production-performances-new-start-time').props.step).toBe(300);
+    expect(screen.getByTestId('production-performances-new-end-time').props.step).toBe(300);
     fireEvent.changeText(screen.getByTestId('production-performances-new-start-time'), '13:00');
     fireEvent.changeText(screen.getByTestId('production-performances-new-symbol'), '○');
     fireEvent.changeText(screen.getByTestId('production-performances-new-symbol-description'), '昼公演');
