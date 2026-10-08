@@ -60,6 +60,7 @@ export default function ProductionEditScreen() {
   const [scriptCredit, setScriptCredit] = useState('');
   const [directionCredit, setDirectionCredit] = useState('');
   const [capacity, setCapacity] = useState('');
+  const [performanceDurationMinutes, setPerformanceDurationMinutes] = useState('');
   const [performanceCommonRemarks, setPerformanceCommonRemarks] = useState('');
   const [newPerformanceDate, setNewPerformanceDate] = useState('');
   const [newPerformanceStartTime, setNewPerformanceStartTime] = useState('');
@@ -106,6 +107,7 @@ export default function ProductionEditScreen() {
       setScriptCredit(production.script_credit ?? '');
       setDirectionCredit(production.direction_credit ?? '');
       setCapacity(production.capacity !== null && production.capacity !== undefined ? String(production.capacity) : '');
+      setPerformanceDurationMinutes(production.performance_duration_minutes != null ? String(production.performance_duration_minutes) : '');
       setPerformanceCommonRemarks(production.performance_common_remarks ?? '');
       setInitialized(true);
     }
@@ -115,6 +117,8 @@ export default function ProductionEditScreen() {
   const slugValid = isValidSlug(slug);
   const capacityTrimmed = capacity.trim();
   const capacityValid = capacityTrimmed === '' || (/^\d+$/.test(capacityTrimmed) && Number(capacityTrimmed) > 0);
+  const performanceDurationTrimmed = performanceDurationMinutes.trim();
+  const performanceDurationValid = performanceDurationTrimmed === '' || (/^\d+$/.test(performanceDurationTrimmed) && Number(performanceDurationTrimmed) >= 5 && Number(performanceDurationTrimmed) % 5 === 0);
   const canSubmit = !!name.trim() && (!slugChanged || slugValid) && capacityValid && !submitting;
 
   async function handleAddPerformance() {
@@ -232,6 +236,7 @@ export default function ProductionEditScreen() {
         directionCredit: trimmedDirection,
         scriptDirectionPublishedAt: trimmedScript || trimmedDirection ? production.script_direction_published_at ?? now : null,
         capacity: capacityTrimmed === '' ? null : Number(capacityTrimmed),
+        performanceDurationMinutes: performanceDurationTrimmed === '' ? null : Number(performanceDurationTrimmed),
         performanceCommonRemarks: performanceCommonRemarks.trim() || null,
       });
       await queryClient.invalidateQueries({ queryKey: ['production', production.id] });
@@ -397,6 +402,27 @@ export default function ProductionEditScreen() {
           </ThemedText>
         )}
 
+        <ThemedText type="small" themeColor="textSecondary">
+          標準公演時間（分・任意）
+        </ThemedText>
+        <FormInput
+          testID="production-edit-performance-duration-minutes"
+          value={performanceDurationMinutes}
+          onChangeText={setPerformanceDurationMinutes}
+          keyboardType="number-pad"
+          step={5}
+          placeholder="例：120"
+          style={[styles.input, styles.inputNumber]}
+        />
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          公演スケジュールの「終演予定時刻」を空欄にすると、この時間から自動計算します。個別に終演時刻を入力した公演は、その設定を優先します。
+        </ThemedText>
+        {!performanceDurationValid && (
+          <ThemedText type="small" style={styles.error}>
+            標準公演時間は5分刻みの5分以上で入力してください。
+          </ThemedText>
+        )}
+
         <ThemedText type="subtitle" style={styles.sectionTitle}>
           公演スケジュール
         </ThemedText>
@@ -445,7 +471,7 @@ export default function ProductionEditScreen() {
           style={[styles.input, styles.inputTime]}
         />
         <ThemedText type="small" themeColor="textSecondary">
-          終演予定時刻（任意）
+          終演予定時刻（個別設定・任意）
         </ThemedText>
         <FormInput
           kind="time"
@@ -455,6 +481,9 @@ export default function ProductionEditScreen() {
           onChangeText={setNewPerformanceEndTime}
           style={[styles.input, styles.inputTime]}
         />
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          空欄の場合は「標準公演時間」から自動計算します。入力すると、この公演だけ個別設定になります。
+        </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           定員（任意）
         </ThemedText>
