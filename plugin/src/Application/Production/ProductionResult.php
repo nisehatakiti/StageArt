@@ -38,6 +38,7 @@ final class ProductionResult
     public ?string $memberInfoPublishedAt;
     public ?int $capacity;
     public ?string $performanceCommonRemarks;
+    public ?int $performanceDurationMinutes;
 
     private function __construct(
         string $id,
@@ -67,7 +68,8 @@ final class ProductionResult
         ?string $scriptDirectionPublishedAt,
         ?string $memberInfoPublishedAt,
         ?int $capacity,
-        ?string $performanceCommonRemarks
+        ?string $performanceCommonRemarks,
+        ?int $performanceDurationMinutes
     ) {
         $this->id = $id;
         $this->projectId = $projectId;
@@ -97,6 +99,7 @@ final class ProductionResult
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
         $this->capacity = $capacity;
         $this->performanceCommonRemarks = $performanceCommonRemarks;
+        $this->performanceDurationMinutes = $performanceDurationMinutes;
     }
 
     /**
@@ -142,7 +145,8 @@ final class ProductionResult
             $production->scriptDirectionPublishedAt()?->format(DATE_ATOM),
             $production->memberInfoPublishedAt()?->format(DATE_ATOM),
             $production->capacity(),
-            $production->performanceCommonRemarks()
+            $production->performanceCommonRemarks(),
+            $production->performanceDurationMinutes()
         );
     }
 
@@ -180,6 +184,7 @@ final class ProductionResult
             'member_info_published_at' => $this->memberInfoPublishedAt,
             'capacity' => $this->capacity,
             'performance_common_remarks' => $this->performanceCommonRemarks,
+            'performance_duration_minutes' => $this->performanceDurationMinutes,
         ];
     }
 }
