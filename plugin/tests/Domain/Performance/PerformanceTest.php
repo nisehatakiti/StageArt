@@ -74,7 +74,7 @@ final class PerformanceTest extends TestCase
     {
         $performance = Performance::create(ProductionId::generate(), new DateTimeImmutable('2026-10-10'), '13:00', null, 50, null, null);
 
-        $performance->updateBasicInfo(new DateTimeImmutable('2026-10-11'), '18:00', '20:00', 80, '注意事項', 'A');
+        $performance->updateBasicInfo(new DateTimeImmutable('2026-10-11'), '18:00', '20:00', 80, '注意事項', 'A', '夜公演');
 
         $this->assertSame('2026-10-11', $performance->performanceDate()->format('Y-m-d'));
         $this->assertSame('18:00:00', $performance->startTime());
@@ -82,6 +82,7 @@ final class PerformanceTest extends TestCase
         $this->assertSame(80, $performance->capacity());
         $this->assertSame('注意事項', $performance->remarks());
         $this->assertSame('A', $performance->symbol());
+        $this->assertSame('夜公演', $performance->symbolDescription());
     }
 
     public function test_update_basic_info_rejects_cancelled_performance(): void
