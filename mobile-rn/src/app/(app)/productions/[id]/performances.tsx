@@ -395,7 +395,7 @@ function PerformanceEditRow({
         style={[styles.editInput, styles.inputLong]}
       />
       <FormInput
-        testID={`performance-edit-capacity-${performanceId}`
+        testID={`performance-edit-capacity-${performanceId}`}
         value={edit.capacity}
         onChangeText={(value) => setEdit({ ...edit, capacity: value })}
         keyboardType="number-pad"
