@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 
 import { ApiClient } from './client';
-import { getApiBaseUrl } from './config';
+import { DEV_PUBLIC_WEB_BASE_URL, PROD_PUBLIC_WEB_BASE_URL, getApiBaseUrl, getPublicWebBaseUrl } from './config';
 import { DEV_API_BASE_URL, PROD_API_BASE_URL } from './environment';
 import { publicGet } from './publicClient';
 
@@ -29,6 +29,18 @@ describe('getApiBaseUrl() and every API Client built on it', () => {
   it('getApiBaseUrl() returns the Development API Base URL when so configured', () => {
     setConfiguredApiBaseUrl(DEV_API_BASE_URL);
     expect(getApiBaseUrl()).toBe('https://dev-api.stageart.top/wp-json/stageart/v1');
+  });
+
+  it('getPublicWebBaseUrl() resolves the Development public site', () => {
+    setConfiguredApiBaseUrl(DEV_API_BASE_URL);
+    (Constants as any).expoConfig.extra.apiEnv = 'development';
+    expect(getPublicWebBaseUrl()).toBe(DEV_PUBLIC_WEB_BASE_URL);
+  });
+
+  it('getPublicWebBaseUrl() resolves the Production public site', () => {
+    setConfiguredApiBaseUrl(PROD_API_BASE_URL);
+    (Constants as any).expoConfig.extra.apiEnv = 'production';
+    expect(getPublicWebBaseUrl()).toBe(PROD_PUBLIC_WEB_BASE_URL);
   });
 
   it('getApiBaseUrl() returns the Production API Base URL when so configured', () => {
