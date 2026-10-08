@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, type Href } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -53,7 +53,6 @@ import { getErrorMessage } from '@/utils/errorMessage';
 export default function ProductionPublishScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { apiClient } = useAuth();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const productionQuery = useProduction(id);
 
