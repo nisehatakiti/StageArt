@@ -163,7 +163,7 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
     expect(screen.getByText('今後の予定')).toBeVisible();
     expect(screen.getByTestId('home-greeting')).toHaveTextContent('おはようございます、テストさん');
     expect(screen.getByText('【○○演劇団】○○公演2026')).toBeVisible();
-    expect(screen.getByText('通し稽古')).toBeVisible();
+    expect(screen.getByText('予定名：通し稽古')).toBeVisible();
     expect(screen.getAllByText(/日時：/).length).toBeGreaterThan(0);
     expect(screen.getByText('2026/8/21（金）')).toBeVisible();
     expect(screen.getByText('19:00〜21:00')).toBeVisible();
