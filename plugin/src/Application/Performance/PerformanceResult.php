@@ -17,6 +17,7 @@ final class PerformanceResult
     public ?string $remarks;
     public ?string $symbol;
     public ?string $symbolDescription;
+    public bool $endTimeCustomized;
     public string $status;
     public string $createdAt;
     public string $updatedAt;
@@ -44,6 +45,7 @@ final class PerformanceResult
         $this->remarks = $remarks;
         $this->symbol = $symbol;
         $this->symbolDescription = $symbolDescription;
+        $this->endTimeCustomized = $endTimeCustomized;
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
@@ -82,6 +84,7 @@ final class PerformanceResult
             'remarks' => $this->remarks,
             'symbol' => $this->symbol,
             'symbol_description' => $this->symbolDescription,
+            'end_time_customized' => $this->endTimeCustomized,
             'status' => $this->status,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
