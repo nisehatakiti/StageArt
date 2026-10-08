@@ -32,6 +32,7 @@ final class PerformanceResult
         ?string $remarks,
         ?string $symbol,
         ?string $symbolDescription,
+        bool $endTimeCustomized,
         string $status,
         string $createdAt,
         string $updatedAt
@@ -63,6 +64,7 @@ final class PerformanceResult
             $performance->remarks(),
             $performance->symbol(),
             $performance->symbolDescription(),
+            $performance->endTimeCustomized(),
             $performance->status()->toString(),
             $performance->createdAt()->format(DATE_ATOM),
             $performance->updatedAt()->format(DATE_ATOM)
