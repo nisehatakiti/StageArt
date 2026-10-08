@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
+import { getPublicWebBaseUrl } from '@/api/config';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { FormInput } from '@/components/form-input';
@@ -76,6 +77,7 @@ export default function ProductionEditScreen() {
   const [ticketErrorMessage, setTicketErrorMessage] = useState<string | null>(null);
   const [publicationAt, setPublicationAt] = useState('');
   const [salesStartAt, setSalesStartAt] = useState('');
+  const [published, setPublished] = useState(false);
   const [salesEndRule, setSalesEndRule] = useState<'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START'>('HOURS_BEFORE_START');
   const [salesEndParameter, setSalesEndParameter] = useState('');
   const [ticketSettingsSeeded, setTicketSettingsSeeded] = useState(false);
@@ -109,6 +111,7 @@ export default function ProductionEditScreen() {
       setCapacity(production.capacity !== null && production.capacity !== undefined ? String(production.capacity) : '');
       setPerformanceDurationMinutes(production.performance_duration_minutes != null ? String(production.performance_duration_minutes) : '');
       setPerformanceCommonRemarks(production.performance_common_remarks ?? '');
+      setPublished(production.published_at !== null);
       setInitialized(true);
     }
   }, [production, initialized]);
@@ -238,6 +241,7 @@ export default function ProductionEditScreen() {
         capacity: capacityTrimmed === '' ? null : Number(capacityTrimmed),
         performanceDurationMinutes: performanceDurationTrimmed === '' ? null : Number(performanceDurationTrimmed),
         performanceCommonRemarks: performanceCommonRemarks.trim() || null,
+        published,
       });
       await queryClient.invalidateQueries({ queryKey: ['production', production.id] });
       await queryClient.invalidateQueries({ queryKey: ['productions'] });
@@ -671,7 +675,40 @@ export default function ProductionEditScreen() {
           style={[styles.input, styles.multilineInput, styles.inputLong]}
         />
 
-        {errorMessage && (
+        <View style={styles.publicPageCard} testID="production-edit-public-page-card">
+        <ThemedText type="subtitle">公開ページ</ThemedText>
+        <View style={styles.publicPageSwitchRow}>
+          <ThemedText type="small">公開する</ThemedText>
+          <Switch
+            testID="production-edit-published"
+            value={published}
+            onValueChange={setPublished}
+            disabled={production.status === 'PLANNING' || submitting}
+          />
+        </View>
+        {production.status === 'PLANNING' && !published && (
+          <ThemedText type="small" themeColor="textSecondary">
+            公演を確定してACTIVEにすると公開できます。
+          </ThemedText>
+        )}
+        {production.published_at !== null && production.slug && organization?.slug && (
+          <TouchableOpacity
+            testID="production-edit-public-page-link"
+            onPress={() => Linking.openURL(`${getPublicWebBaseUrl()}/${organization.slug}/${production.slug}/`)}
+          >
+            <ThemedText type="link">
+              公開ページを見る：{getPublicWebBaseUrl()}/{organization.slug}/{production.slug}/
+            </ThemedText>
+          </TouchableOpacity>
+        )}
+        {production.published_at !== null && (!production.slug || !organization?.slug) && (
+          <ThemedText type="small" themeColor="textSecondary">
+            公開ページURLを表示するには、団体と公演のSlugが必要です。
+          </ThemedText>
+        )}
+      </View>
+
+      {errorMessage && (
           <ThemedText testID="production-edit-error" style={styles.error}>
             {errorMessage}
           </ThemedText>
@@ -768,5 +805,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.three,
   },
   buttonDisabled: { opacity: 0.6 },
+  publicPageCard: {
+    borderWidth: 1,
+    borderColor: '#e1dee6',
+    borderRadius: Radius.medium,
+    padding: Spacing.four,
+    gap: Spacing.two,
+    maxWidth: 640,
+  },
+  publicPageSwitchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   buttonText: { color: '#fff', fontWeight: '600' },
 });
