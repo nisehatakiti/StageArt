@@ -9,10 +9,8 @@ import {
   useArchiveTicket,
   useCreateTicket,
   usePerformanceTicketAvailability,
-  useQuotaAndTicketBackSettings,
   useTickets,
   useTicketSalesSettings,
-  useUpdateQuotaAndTicketBackSettings,
   useUpdateTicket,
   useUpdateTicketSalesSettings,
 } from '@/features/ticket/useTickets';
@@ -41,12 +39,10 @@ export default function ProductionTicketsScreen() {
   const production = productionQuery.data;
   const ticketsQuery = useTickets(id);
   const salesSettingsQuery = useTicketSalesSettings(id);
-  const quotaAndTicketBackQuery = useQuotaAndTicketBackSettings(id);
   const availabilityQuery = usePerformanceTicketAvailability(id);
   const createTicket = useCreateTicket(id);
   const archiveTicket = useArchiveTicket(id);
   const updateSalesSettings = useUpdateTicketSalesSettings(id);
-  const updateQuotaAndTicketBack = useUpdateQuotaAndTicketBackSettings(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
   const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('TICKET_MANAGER');
@@ -75,31 +71,6 @@ export default function ProductionTicketsScreen() {
       setSalesEndRule(salesSettingsQuery.data.ticket_sales_end_rule);
     }
     setSalesEndParameter(salesSettingsQuery.data.ticket_sales_end_parameter ?? '');
-  }
-
-  const [quotaEnabled, setQuotaEnabled] = useState(false);
-  const [quotaCount, setQuotaCount] = useState('');
-  const [quotaBuybackEnabled, setQuotaBuybackEnabled] = useState(false);
-  const [quotaShortfallUnitPrice, setQuotaShortfallUnitPrice] = useState('');
-
-  const [ticketBackEnabled, setTicketBackEnabled] = useState(false);
-  const [ticketBackMode, setTicketBackMode] = useState<'PROGRESSIVE' | 'SEPARATED'>('PROGRESSIVE');
-  const [ticketBackConditions, setTicketBackConditions] = useState<TicketBackCondition[]>([]);
-  const [quotaSettingsSeeded, setQuotaSettingsSeeded] = useState(false);
-
-  if (quotaAndTicketBackQuery.data && !quotaSettingsSeeded) {
-    setQuotaSettingsSeeded(true);
-    setQuotaEnabled(quotaAndTicketBackQuery.data.quota_enabled);
-    setQuotaCount(quotaAndTicketBackQuery.data.quota_count !== null ? String(quotaAndTicketBackQuery.data.quota_count) : '');
-    setQuotaBuybackEnabled(quotaAndTicketBackQuery.data.quota_buyback_enabled);
-    setQuotaShortfallUnitPrice(
-      quotaAndTicketBackQuery.data.quota_shortfall_unit_price !== null ? String(quotaAndTicketBackQuery.data.quota_shortfall_unit_price) : ''
-    );
-    setTicketBackEnabled(quotaAndTicketBackQuery.data.ticket_back_mode !== null);
-    if (quotaAndTicketBackQuery.data.ticket_back_mode !== null) {
-      setTicketBackMode(quotaAndTicketBackQuery.data.ticket_back_mode);
-    }
-    setTicketBackConditions(quotaAndTicketBackQuery.data.ticket_back_conditions);
   }
 
   async function handleAddTicket() {
@@ -141,36 +112,7 @@ export default function ProductionTicketsScreen() {
     }
   }
 
-  function addTicketBackCondition() {
-    setTicketBackConditions((current) => [
-      ...current,
-      { priority: current.length + 1, threshold: 1, comparator: 'GTE', rate_percent: 10 },
-    ]);
-  }
 
-  function removeTicketBackCondition(index: number) {
-    setTicketBackConditions((current) => current.filter((_, i) => i !== index));
-  }
-
-  function updateTicketBackCondition(index: number, patch: Partial<TicketBackCondition>) {
-    setTicketBackConditions((current) => current.map((c, i) => (i === index ? { ...c, ...patch } : c)));
-  }
-
-  async function handleSaveQuotaAndTicketBack() {
-    setErrorMessage(null);
-    try {
-      await updateQuotaAndTicketBack.mutateAsync({
-        quotaEnabled,
-        quotaCount: quotaEnabled ? Number(quotaCount.trim()) : null,
-        quotaBuybackEnabled: quotaEnabled && quotaBuybackEnabled,
-        quotaShortfallUnitPrice: quotaEnabled && quotaBuybackEnabled ? Number(quotaShortfallUnitPrice.trim()) : null,
-        ticketBackMode: ticketBackEnabled ? ticketBackMode : null,
-        ticketBackConditions: ticketBackEnabled ? ticketBackConditions : [],
-      });
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }
 
   if (productionQuery.isLoading) {
     return (
@@ -258,7 +200,7 @@ export default function ProductionTicketsScreen() {
       )}
 
       <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        チケット名
+        チケット種別
       </ThemedText>
       <ThemedTextInput testID="production-tickets-new-name" value={newName} onChangeText={setNewName} style={styles.input} />
 
@@ -328,100 +270,6 @@ export default function ProductionTicketsScreen() {
 
       <TouchableOpacity testID="production-tickets-save-sales-settings" onPress={handleSaveSalesSettings} style={styles.button}>
         <ThemedText style={styles.buttonText}>公開・販売設定を更新</ThemedText>
-      </TouchableOpacity>
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        チケットノルマ
-      </ThemedText>
-
-      <TouchableOpacity testID="production-tickets-quota-toggle" onPress={() => setQuotaEnabled((v) => !v)} style={styles.toggleRow}>
-        <ThemedText>{quotaEnabled ? '☑' : '☐'} ノルマを設定する</ThemedText>
-      </TouchableOpacity>
-
-      {quotaEnabled && (
-        <>
-          <ThemedText type="small" themeColor="textSecondary">
-            ノルマ枚数
-          </ThemedText>
-          <ThemedTextInput testID="production-tickets-quota-count" value={quotaCount} onChangeText={setQuotaCount} keyboardType="number-pad" style={styles.input} />
-
-          <TouchableOpacity testID="production-tickets-quota-buyback-toggle" onPress={() => setQuotaBuybackEnabled((v) => !v)} style={styles.toggleRow}>
-            <ThemedText>{quotaBuybackEnabled ? '◉' : '○'} 買取にする</ThemedText>
-          </TouchableOpacity>
-
-          {quotaBuybackEnabled && (
-            <>
-              <ThemedText type="small" themeColor="textSecondary">
-                未達チケット単価（円）
-              </ThemedText>
-              <ThemedTextInput
-                testID="production-tickets-quota-shortfall-unit-price"
-                value={quotaShortfallUnitPrice}
-                onChangeText={setQuotaShortfallUnitPrice}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </>
-          )}
-        </>
-      )}
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        チケットバック
-      </ThemedText>
-
-      <TouchableOpacity testID="production-tickets-ticket-back-toggle" onPress={() => setTicketBackEnabled((v) => !v)} style={styles.toggleRow}>
-        <ThemedText>{ticketBackEnabled ? '☑' : '☐'} チケットバックを設定する</ThemedText>
-      </TouchableOpacity>
-
-      {ticketBackEnabled && (
-        <>
-          <View style={styles.radioRow}>
-            <TouchableOpacity testID="production-tickets-ticket-back-mode-progressive" onPress={() => setTicketBackMode('PROGRESSIVE')} style={styles.radioOption}>
-              <ThemedText>{ticketBackMode === 'PROGRESSIVE' ? '◉' : '○'} 累進方式</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity testID="production-tickets-ticket-back-mode-separated" onPress={() => setTicketBackMode('SEPARATED')} style={styles.radioOption}>
-              <ThemedText>{ticketBackMode === 'SEPARATED' ? '◉' : '○'} 分離方式</ThemedText>
-            </TouchableOpacity>
-          </View>
-
-          {ticketBackConditions.map((condition, index) => (
-            <View key={index} style={styles.conditionRow} testID={`ticket-back-condition-${index}`}>
-              <ThemedTextInput
-                testID={`ticket-back-condition-${index}-priority`}
-                value={String(condition.priority)}
-                onChangeText={(v) => updateTicketBackCondition(index, { priority: Number(v) || 0 })}
-                keyboardType="number-pad"
-                style={styles.smallInput}
-              />
-              <ThemedTextInput
-                testID={`ticket-back-condition-${index}-threshold`}
-                value={String(condition.threshold)}
-                onChangeText={(v) => updateTicketBackCondition(index, { threshold: Number(v) || 0 })}
-                keyboardType="number-pad"
-                style={styles.smallInput}
-              />
-              <ThemedTextInput
-                testID={`ticket-back-condition-${index}-rate`}
-                value={String(condition.rate_percent)}
-                onChangeText={(v) => updateTicketBackCondition(index, { rate_percent: Number(v) || 0 })}
-                keyboardType="number-pad"
-                style={styles.smallInput}
-              />
-              <TouchableOpacity testID={`ticket-back-condition-${index}-remove`} onPress={() => removeTicketBackCondition(index)}>
-                <ThemedText type="link">削除</ThemedText>
-              </TouchableOpacity>
-            </View>
-          ))}
-
-          <TouchableOpacity testID="production-tickets-add-condition" onPress={addTicketBackCondition} style={styles.secondaryButton}>
-            <ThemedText style={styles.secondaryButtonText}>＋ 条件を追加</ThemedText>
-          </TouchableOpacity>
-        </>
-      )}
-
-      <TouchableOpacity testID="production-tickets-save-quota-ticket-back" onPress={handleSaveQuotaAndTicketBack} style={styles.button}>
-        <ThemedText style={styles.buttonText}>ノルマ／チケットバック設定を更新</ThemedText>
       </TouchableOpacity>
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>
