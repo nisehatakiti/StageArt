@@ -1,6 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useMemo } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -13,9 +14,11 @@ import {
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { fetchProjects } from '@/features/organization/api';
+import { fetchProductions } from '@/features/production/api';
 import { approveMembershipRequest, fetchPendingMembershipRequests, rejectMembershipRequest } from '@/features/membership/api';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
@@ -110,7 +113,7 @@ type NavEntry = {
  * gap in this Phase's own report, not decided unilaterally here.
  */
 export default function HomeScreen() {
-  const router = useRouter();
+  const { apiClient, status } = useAuth();
   const currentPersonQuery = useCurrentPerson();
   const dashboardQuery = useMyDashboard();
   const dashboardViewModel = dashboardQuery.data ? buildDashboardViewModel(dashboardQuery.data) : null;
@@ -121,6 +124,27 @@ export default function HomeScreen() {
   // if it were confirmed present (this Phase's own §13 safety rule).
   const favoritesQuery = useMyFavorites();
   const organizationsQuery = useOrganizations();
+  const productionsQuery = useQuery({
+    queryKey: ['productions'],
+    queryFn: () => fetchProductions(apiClient),
+    enabled: status === 'authenticated',
+  });
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => fetchProjects(apiClient),
+    enabled: status === 'authenticated',
+  });
+  const productionOrganizationNames = useMemo(() => {
+    const organizationNames = new Map((organizationsQuery.data ?? []).map((organization) => [organization.id, organization.name]));
+    const organizationByProject = new Map((projectsQuery.data ?? []).map((project) => [project.id, project.organization_id]));
+    const result = new Map<string, string>();
+    for (const production of productionsQuery.data ?? []) {
+      const organizationId = organizationByProject.get(production.project_id);
+      const organizationName = organizationId ? organizationNames.get(organizationId) : undefined;
+      if (organizationName) result.set(production.id, organizationName);
+    }
+    return result;
+  }, [organizationsQuery.data, projectsQuery.data, productionsQuery.data]);
   const hasFavorites = !favoritesQuery.isLoading && !favoritesQuery.isError && (favoritesQuery.data?.length ?? 0) > 0;
 
   return (
@@ -144,6 +168,7 @@ export default function HomeScreen() {
         error={dashboardQuery.error ?? notificationsQuery.error}
         onRetry={() => { dashboardQuery.refetch(); notificationsQuery.refetch(); }}
         upcomingRehearsals={dashboardViewModel?.upcomingRehearsals ?? []}
+        productionOrganizationNames={productionOrganizationNames}
         notifications={unreadNotifications}
       />
 
@@ -337,13 +362,16 @@ function PersonalOverviewSection({
   error,
   onRetry,
   upcomingRehearsals,
+  productionOrganizationNames,
   notifications,
 }: {
+
   isLoading: boolean;
   isError: boolean;
   error: unknown;
   onRetry: () => void;
   upcomingRehearsals: UpcomingRehearsalViewModel[];
+  productionOrganizationNames: Map<string, string>;
   notifications: MyNotification[];
 }) {
   const router = useRouter();
@@ -386,7 +414,11 @@ function PersonalOverviewSection({
           </ThemedText>
           <ThemedView testID="upcoming-rehearsals-list" style={styles.list}>
             {upcomingRehearsals.map((rehearsal) => (
-              <UpcomingRehearsalCard key={rehearsal.rehearsalId} rehearsal={rehearsal} />
+              <UpcomingRehearsalCard
+                key={rehearsal.rehearsalId}
+                rehearsal={rehearsal}
+                organizationName={productionOrganizationNames.get(rehearsal.productionId) ?? null}
+              />
             ))}
           </ThemedView>
         </>
@@ -488,7 +520,13 @@ function formatNotificationCreatedAt(iso: string): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function UpcomingRehearsalCard({ rehearsal }: { rehearsal: UpcomingRehearsalViewModel }) {
+function UpcomingRehearsalCard({
+  rehearsal,
+  organizationName,
+}: {
+  rehearsal: UpcomingRehearsalViewModel;
+  organizationName: string | null;
+}) {
   const router = useRouter();
   const rehearsalQuery = useRehearsal(rehearsal.rehearsalId);
   const phase = rehearsalQuery.data ? phaseForRehearsalStatus(rehearsalQuery.data.status) : undefined;
@@ -650,11 +688,11 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, width: '100%' },
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
   rehearsalProductionName: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
-  rehearsalLabel: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  rehearsalTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
   rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.two },
   rehearsalDate: { paddingBottom: Spacing.half },
   rehearsalDateText: { fontWeight: '600' },
-  rehearsalMetaLine: { fontWeight: '600' },
+  rehearsalMetaLine: { fontSize: 15, lineHeight: 21, fontWeight: '600' },
   rehearsalMetaLabel: { fontWeight: '700' },
   attendanceHeading: { fontSize: 14, lineHeight: 18 },
   answeredStatus: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two, paddingVertical: Spacing.half },
