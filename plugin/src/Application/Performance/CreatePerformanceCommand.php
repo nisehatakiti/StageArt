@@ -18,6 +18,7 @@ final class CreatePerformanceCommand
     public ?int $capacity;
     public ?string $remarks;
     public ?string $symbol;
+    public ?string $symbolDescription;
 
     public function __construct(
         string $productionId,
@@ -27,7 +28,8 @@ final class CreatePerformanceCommand
         ?string $endTime,
         ?int $capacity,
         ?string $remarks,
-        ?string $symbol
+        ?string $symbol,
+        ?string $symbolDescription = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -37,5 +39,6 @@ final class CreatePerformanceCommand
         $this->capacity = $capacity;
         $this->remarks = $remarks;
         $this->symbol = $symbol;
+        $this->symbolDescription = $symbolDescription;
     }
 }
