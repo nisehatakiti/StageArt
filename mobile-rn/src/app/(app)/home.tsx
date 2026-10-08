@@ -554,9 +554,13 @@ function UpcomingRehearsalCard({
       >
         <ThemedView style={styles.titleRow}>
           {rehearsal.isUnanswered && <ThemedView style={styles.unansweredDot} testID="upcoming-rehearsal-unanswered-dot" />}
-          <ThemedText type="default" style={styles.rehearsalProductionName}>{rehearsal.productionName}</ThemedText>
+          <ThemedText type="default" style={styles.rehearsalProductionName}>
+            {organizationName ? `【${organizationName}】` : ''}{rehearsal.productionName}
+          </ThemedText>
         </ThemedView>
-        <ThemedText type="smallBold" style={styles.rehearsalLabel}>{rehearsal.title ?? '予定'}</ThemedText>
+        <ThemedText type="smallBold" style={styles.rehearsalTitle}>
+          予定名：{rehearsal.title ?? activityTypeLabel(rehearsal.activityType)}
+        </ThemedText>
         <ThemedView style={styles.rehearsalMeta}>
           {rehearsal.dateDisplay && (
             <ThemedView style={styles.rehearsalDate}>

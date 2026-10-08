@@ -24,12 +24,13 @@ const PERFORMANCE_STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * StageArt Phase 3 Ticket/Reservation基盤 §49: チケット設定
- * (Chapter 32 §3の「登録済みチケット」＋「公開設定」＋「販売設定」) と
- * チケットバック／ノルマ設定 (Chapter 32 §4) を1画面にまとめる - Ch32自身の
- * Production Management Menu (§2) が両方を「チケット管理」1メニュー配下の
- * 2セクションとして扱っているのに合わせた。Ticket Type二軸Matrix UIは
- * 作らない（§5/§49 - フラットなTicket名+料金のみ）。
+ * StageArt チケット管理の整理: この画面は「チケット管理」として、チケット
+ * 種別の登録・編集・アーカイブと、公演スケジュールごとの販売可能状態の確認
+ * のみを扱う。公開日時・販売開始日時・販売終了ルールは公演情報画面
+ * (productions/[id]/edit.tsx) に、チケットノルマ／チケットバック設定は
+ * 専用メニューの quota.tsx に、それぞれ分離済み - この画面に戻すことは
+ * しない。Ticket Type二軸Matrix UIは作らない（フラットなTicket名+料金の
+ * み）。
  */
 export default function ProductionTicketsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

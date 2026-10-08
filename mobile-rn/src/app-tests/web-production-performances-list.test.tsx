@@ -78,7 +78,9 @@ describe('Web 公演スケジュール管理: 一覧表示', () => {
 
     await waitFor(() => expect(screen.getByTestId('performance-row-perf-1')).toBeVisible());
 
-    expect(screen.getByText('2026-10-10')).toBeVisible();
+    // StageArt 公演スケジュール表示の統一: 公演日はYYYY/MM/DD表示に整形される
+    // (formatDisplayDate()) - 公演情報画面/公演管理トップ画面と同じ表記。
+    expect(screen.getByText('2026/10/10')).toBeVisible();
     expect(screen.getByText('13:00')).toBeVisible();
     expect(screen.getByText('15:00')).toBeVisible();
     expect(screen.getByText('100')).toBeVisible();

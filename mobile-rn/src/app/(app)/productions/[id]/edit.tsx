@@ -124,11 +124,11 @@ export default function ProductionEditScreen() {
     }
     const startMinute = Number(newPerformanceStartTime.slice(3, 5));
     const endMinute = newPerformanceEndTime.trim() ? Number(newPerformanceEndTime.slice(3, 5)) : null;
-    if (!/^\\d{2}:\\d{2}$/.test(newPerformanceStartTime) || startMinute % 5 !== 0) {
+    if (!/^\d{2}:\d{2}$/.test(newPerformanceStartTime) || startMinute % 5 !== 0) {
       setPerformanceErrorMessage('開演時刻の分は5分刻みで入力してください。');
       return;
     }
-    if (newPerformanceEndTime.trim() && (!/^\\d{2}:\\d{2}$/.test(newPerformanceEndTime) || endMinute === null || endMinute % 5 !== 0)) {
+    if (newPerformanceEndTime.trim() && (!/^\d{2}:\d{2}$/.test(newPerformanceEndTime) || endMinute === null || endMinute % 5 !== 0)) {
       setPerformanceErrorMessage('終演予定時刻の分は5分刻みで入力してください。');
       return;
     }
@@ -667,7 +667,7 @@ function toApiDateTime(value: string): string | null {
 }
 
 function formatDisplayDate(value: string): string {
-  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[1]}/${match[2]}/${match[3]}` : value;
 }
 
