@@ -14,6 +14,7 @@ final class UpdatePerformanceCommand
     public int $capacity;
     public ?string $remarks;
     public ?string $symbol;
+    public ?string $symbolDescription;
     /** null means "leave Status unchanged" - Status is otherwise only
      * ever moved to CANCELLED via CancelPerformanceUseCase, but §15
      * allows a direct Status edit here too ("Status（権限・業務ルールに応じ
@@ -29,7 +30,8 @@ final class UpdatePerformanceCommand
         int $capacity,
         ?string $remarks,
         ?string $symbol,
-        ?string $status = null
+        ?string $status = null,
+        ?string $symbolDescription = null
     ) {
         $this->performanceId = $performanceId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -40,5 +42,6 @@ final class UpdatePerformanceCommand
         $this->remarks = $remarks;
         $this->symbol = $symbol;
         $this->status = $status;
+        $this->symbolDescription = $symbolDescription;
     }
 }
