@@ -67,6 +67,7 @@ export function updatePerformance(
     remarks: string | null;
     symbol: string | null;
     symbolDescription: string | null;
+    endTimeCustomized?: boolean;
     status?: string;
   }
 ): Promise<Performance> {
@@ -78,6 +79,7 @@ export function updatePerformance(
     remarks: fields.remarks,
     symbol: fields.symbol,
     symbol_description: fields.symbolDescription,
+    end_time_customized: fields.endTimeCustomized,
     status: fields.status,
   });
 }
