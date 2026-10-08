@@ -10,12 +10,10 @@ import {
   useCreateTicket,
   usePerformanceTicketAvailability,
   useTickets,
-  useTicketSalesSettings,
   useUpdateTicket,
-  useUpdateTicketSalesSettings,
 } from '@/features/ticket/useTickets';
 import { useProduction } from '@/features/production/useProductions';
-import type { Ticket, TicketBackCondition } from '@/types/api';
+import type { Ticket } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 const PERFORMANCE_STATUS_LABEL: Record<string, string> = {
@@ -38,11 +36,9 @@ export default function ProductionTicketsScreen() {
   const productionQuery = useProduction(id);
   const production = productionQuery.data;
   const ticketsQuery = useTickets(id);
-  const salesSettingsQuery = useTicketSalesSettings(id);
   const availabilityQuery = usePerformanceTicketAvailability(id);
   const createTicket = useCreateTicket(id);
   const archiveTicket = useArchiveTicket(id);
-  const updateSalesSettings = useUpdateTicketSalesSettings(id);
 
   const isPrimaryManager = !!production?.is_primary_manager;
   const canManage = isPrimaryManager || !!production?.delegate_roles?.includes('TICKET_MANAGER');
@@ -52,26 +48,6 @@ export default function ProductionTicketsScreen() {
   const [newPrice, setNewPrice] = useState('');
   const [newRemarks, setNewRemarks] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const [publicationAt, setPublicationAt] = useState('');
-  const [salesStartAt, setSalesStartAt] = useState('');
-  const [salesEndRule, setSalesEndRule] = useState<'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START'>('HOURS_BEFORE_START');
-  const [salesEndParameter, setSalesEndParameter] = useState('');
-  // Seeded from the server exactly once real data arrives, matching this
-  // codebase's own established "adjust state during render, once"
-  // pattern (see e.g. production edit screens) - a background refetch
-  // must not silently discard whatever the user has already typed.
-  const [salesSettingsSeeded, setSalesSettingsSeeded] = useState(false);
-
-  if (salesSettingsQuery.data && !salesSettingsSeeded) {
-    setSalesSettingsSeeded(true);
-    setPublicationAt(salesSettingsQuery.data.ticket_publication_at ?? '');
-    setSalesStartAt(salesSettingsQuery.data.ticket_sales_start_at ?? '');
-    if (salesSettingsQuery.data.ticket_sales_end_rule === 'DAY_BEFORE_AT_TIME' || salesSettingsQuery.data.ticket_sales_end_rule === 'HOURS_BEFORE_START') {
-      setSalesEndRule(salesSettingsQuery.data.ticket_sales_end_rule);
-    }
-    setSalesEndParameter(salesSettingsQuery.data.ticket_sales_end_parameter ?? '');
-  }
 
   async function handleAddTicket() {
     setErrorMessage(null);
@@ -93,20 +69,6 @@ export default function ProductionTicketsScreen() {
     setErrorMessage(null);
     try {
       await archiveTicket.mutateAsync(ticketId);
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }
-
-  async function handleSaveSalesSettings() {
-    setErrorMessage(null);
-    try {
-      await updateSalesSettings.mutateAsync({
-        ticketPublicationAt: publicationAt.trim() || null,
-        ticketSalesStartAt: salesStartAt.trim() || null,
-        ticketSalesEndRule: salesEndParameter.trim() ? salesEndRule : null,
-        ticketSalesEndParameter: salesEndParameter.trim() || null,
-      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -221,55 +183,6 @@ export default function ProductionTicketsScreen() {
         style={[styles.button, createTicket.isPending && styles.buttonDisabled]}
       >
         <ThemedText style={styles.buttonText}>＋ チケットを追加</ThemedText>
-      </TouchableOpacity>
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        公開・販売設定
-      </ThemedText>
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        情報公開日時
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-tickets-publication-at"
-        value={publicationAt}
-        onChangeText={setPublicationAt}
-        placeholder="2026-09-01T00:00:00+09:00"
-        style={styles.input}
-      />
-
-      <ThemedText type="small" themeColor="textSecondary">
-        販売開始日時
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-tickets-sales-start-at"
-        value={salesStartAt}
-        onChangeText={setSalesStartAt}
-        placeholder="2026-09-10T00:00:00+09:00"
-        style={styles.input}
-      />
-
-      <ThemedText type="small" themeColor="textSecondary">
-        販売終了ルール
-      </ThemedText>
-      <View style={styles.radioRow}>
-        <TouchableOpacity testID="production-tickets-sales-end-rule-day-before" onPress={() => setSalesEndRule('DAY_BEFORE_AT_TIME')} style={styles.radioOption}>
-          <ThemedText>{salesEndRule === 'DAY_BEFORE_AT_TIME' ? '◉' : '○'} 公演前日の指定時刻まで（HH:MM）</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity testID="production-tickets-sales-end-rule-hours-before" onPress={() => setSalesEndRule('HOURS_BEFORE_START')} style={styles.radioOption}>
-          <ThemedText>{salesEndRule === 'HOURS_BEFORE_START' ? '◉' : '○'} 開演の指定時間前まで（時間数）</ThemedText>
-        </TouchableOpacity>
-      </View>
-      <ThemedTextInput
-        testID="production-tickets-sales-end-parameter"
-        value={salesEndParameter}
-        onChangeText={setSalesEndParameter}
-        placeholder={salesEndRule === 'DAY_BEFORE_AT_TIME' ? '23:00' : '3'}
-        style={styles.input}
-      />
-
-      <TouchableOpacity testID="production-tickets-save-sales-settings" onPress={handleSaveSalesSettings} style={styles.button}>
-        <ThemedText style={styles.buttonText}>公開・販売設定を更新</ThemedText>
       </TouchableOpacity>
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>
