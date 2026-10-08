@@ -49,6 +49,7 @@ const createdPerformance = {
   capacity: 100,
   remarks: null,
   symbol: null,
+  symbol_description: null,
   status: 'PUBLISHED',
   created_at: '',
   updated_at: '',
@@ -74,6 +75,8 @@ describe('Web 公演スケジュール管理: 公演スケジュールの作成'
     await waitFor(() => expect(screen.getByTestId('production-performances-new-date').props.value).toBe('2026-10-10'));
 
     fireEvent.changeText(screen.getByTestId('production-performances-new-start-time'), '13:00');
+    fireEvent.changeText(screen.getByTestId('production-performances-new-symbol'), '○');
+    fireEvent.changeText(screen.getByTestId('production-performances-new-symbol-description'), '昼公演');
     await waitFor(
       () => {
         expect(screen.getByTestId('production-performances-new-start-time').props.value).toBe('13:00');
@@ -100,6 +103,8 @@ describe('Web 公演スケジュール管理: 公演スケジュールの作成'
       const body = JSON.parse(call![1].body as string);
       expect(body.performance_date).toBe('2026-10-10');
       expect(body.start_time).toBe('13:00');
+      expect(body.symbol).toBe('○');
+      expect(body.symbol_description).toBe('昼公演');
     });
   });
 });
