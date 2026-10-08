@@ -87,11 +87,42 @@ function renderHome(dashboard: MyDashboard, myNotifications: MyNotification[] = 
       } as Response;
     }
 
+    if (url.endsWith('/me')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          id: 'person-1',
+          word_press_user_id: 1,
+          email_verified: true,
+          family_name: 'テスト',
+          given_name: '太郎',
+        }),
+      } as Response;
+    }
     if (url.endsWith('/me/dashboard')) {
       return { ok: true, status: 200, text: async () => JSON.stringify(dashboard) } as Response;
     }
     if (url.endsWith('/organizations')) {
-      return { ok: true, status: 200, text: async () => JSON.stringify([]) } as Response;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify([{ id: 'org-1', name: '○○演劇団', current_person_role: 'MEMBER' }]),
+      } as Response;
+    }
+    if (url.endsWith('/productions')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify([{ id: 'prod-1', project_id: 'project-1', name: '○○公演2026' }]),
+      } as Response;
+    }
+    if (url.endsWith('/projects')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify([{ id: 'project-1', organization_id: 'org-1' }]),
+      } as Response;
     }
     const readMatch = url.match(/\/me\/notifications\/([^/]+)\/read$/);
     if (readMatch && init?.method === 'PATCH') {
@@ -130,7 +161,8 @@ describe('Home: Personal Overview (Phase 7.5)', () => {
 
     await waitFor(() => expect(screen.getByTestId('upcoming-rehearsal-row-rehearsal-1')).toBeVisible());
     expect(screen.getByText('今後の予定')).toBeVisible();
-    expect(screen.getByText('○○公演2026')).toBeVisible();
+    expect(screen.getByTestId('home-greeting')).toHaveTextContent('おはようございます、テストさん');
+    expect(screen.getByText('【○○演劇団】○○公演2026')).toBeVisible();
     expect(screen.getByText('通し稽古')).toBeVisible();
     expect(screen.getAllByText(/日時：/).length).toBeGreaterThan(0);
     expect(screen.getByText('2026/8/21（金）')).toBeVisible();
