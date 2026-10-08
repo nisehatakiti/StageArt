@@ -109,6 +109,7 @@ export function updateProduction(
      * Production (UpdateProductionUseCase's own confirmed behavior). */
     capacity?: number | null;
     performanceCommonRemarks?: string | null;
+    performanceDurationMinutes?: number | null;
   }
 ): Promise<Production> {
   return client.put<Production>(`/productions/${id}`, {
@@ -131,6 +132,7 @@ export function updateProduction(
     member_info_published_at: fields.memberInfoPublishedAt,
     capacity: fields.capacity,
     performance_common_remarks: fields.performanceCommonRemarks,
+    performance_duration_minutes: fields.performanceDurationMinutes,
   });
 }
 
