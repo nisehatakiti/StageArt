@@ -1,10 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
+import { getPublicWebBaseUrl } from '@/api/config';
 import { useAuth } from '@/auth/AuthContext';
 import { ManagementCard } from '@/components/management-card';
 import { ThemedText } from '@/components/themed-text';
@@ -171,9 +172,14 @@ export default function OrganizationEditScreen() {
         </View>
 
         {organization.published_at !== null && organization.slug && (
-          <ThemedText type="small" themeColor="textSecondary">
-            公開ページURL: /{organization.slug}
-          </ThemedText>
+          <TouchableOpacity
+            testID="organization-edit-public-page-link"
+            onPress={() => Linking.openURL(`${getPublicWebBaseUrl()}/${organization.slug}/`)}
+          >
+            <ThemedText type="link">
+              公開ページを見る：{getPublicWebBaseUrl()}/{organization.slug}/
+            </ThemedText>
+          </TouchableOpacity>
         )}
       </ManagementCard>
 
