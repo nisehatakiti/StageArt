@@ -34,6 +34,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             'capacity' => $performance->capacity(),
             'remarks' => $performance->remarks(),
             'symbol' => $performance->symbol(),
+            'symbol_description' => $performance->symbolDescription(),
             'status' => $performance->status()->toString(),
             'updated_at' => $performance->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -153,6 +154,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             (int) $row['capacity'],
             $row['remarks'],
             $row['symbol'],
+            $row['symbol_description'] ?? null,
             PerformanceStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at'])
