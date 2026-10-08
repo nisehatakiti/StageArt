@@ -281,6 +281,7 @@ export type Production = {
   /** §14: one shared free-form field covering both 開場情報 and 全体備考,
    * reused across every Performance under this Production. */
   performance_common_remarks: string | null;
+  performance_duration_minutes: number | null;
 };
 
 /**
@@ -361,6 +362,7 @@ export type PublicPerformance = {
   end_time: string | null;
   symbol?: string | null;
   symbol_description?: string | null;
+  end_time_customized?: boolean;
   status: string;
 };
 
