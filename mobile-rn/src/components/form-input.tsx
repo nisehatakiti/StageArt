@@ -9,10 +9,12 @@ export type FormInputKind = 'text' | 'date' | 'time' | 'textarea';
 export type FormInputProps = TextInputProps & {
   themeColor?: ThemeColor;
   kind?: FormInputKind;
+  /** Web input step, e.g. 300 seconds for five-minute time increments. */
+  step?: number | string;
 };
 
 export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function FormInput(
-  { style, themeColor, placeholderTextColor, kind = 'text', multiline, onChangeText, testID, ...rest },
+  { style, themeColor, placeholderTextColor, kind = 'text', multiline, onChangeText, testID, step, ...rest },
   ref
 ) {
   const theme = useTheme();
@@ -59,6 +61,7 @@ export const FormInput = forwardRef<TextInputInstance, FormInputProps>(function 
       type: kind,
       value: rest.value ?? '',
       placeholder: rest.placeholder,
+      step,
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
       'data-testid': testID,
       style: baseStyle,
