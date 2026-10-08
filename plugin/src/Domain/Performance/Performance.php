@@ -45,6 +45,7 @@ final class Performance
     private int $capacity;
     private ?string $remarks;
     private ?string $symbol;
+    private ?string $symbolDescription;
     private PerformanceStatus $status;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
@@ -58,6 +59,7 @@ final class Performance
         int $capacity,
         ?string $remarks,
         ?string $symbol,
+        ?string $symbolDescription,
         PerformanceStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
@@ -70,6 +72,7 @@ final class Performance
         $this->capacity = $capacity;
         $this->remarks = $remarks;
         $this->symbol = $symbol;
+        $this->symbolDescription = $symbolDescription;
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
@@ -82,7 +85,8 @@ final class Performance
         ?string $endTime,
         int $capacity,
         ?string $remarks,
-        ?string $symbol
+        ?string $symbol,
+        ?string $symbolDescription = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -95,6 +99,7 @@ final class Performance
             self::validateCapacity($capacity),
             self::normalizeNullableString($remarks),
             self::normalizeNullableString($symbol),
+            self::normalizeNullableString($symbolDescription),
             PerformanceStatus::published(),
             $now,
             $now
@@ -110,6 +115,7 @@ final class Performance
         int $capacity,
         ?string $remarks,
         ?string $symbol,
+        ?string $symbolDescription,
         PerformanceStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
@@ -123,6 +129,7 @@ final class Performance
             $capacity,
             $remarks,
             $symbol,
+            $symbolDescription,
             $status,
             $createdAt,
             $updatedAt
@@ -144,7 +151,8 @@ final class Performance
         ?string $endTime,
         int $capacity,
         ?string $remarks,
-        ?string $symbol
+        ?string $symbol,
+        ?string $symbolDescription = null
     ): void {
         if ($this->status->equals(PerformanceStatus::fromString(PerformanceStatus::CANCELLED))) {
             throw new InvalidArgumentException('A CANCELLED Performance cannot be edited.');
@@ -156,6 +164,7 @@ final class Performance
         $this->capacity = self::validateCapacity($capacity);
         $this->remarks = self::normalizeNullableString($remarks);
         $this->symbol = self::normalizeNullableString($symbol);
+        $this->symbolDescription = self::normalizeNullableString($symbolDescription);
         $this->touch();
     }
 
@@ -297,6 +306,11 @@ final class Performance
     public function symbol(): ?string
     {
         return $this->symbol;
+    }
+
+    public function symbolDescription(): ?string
+    {
+        return $this->symbolDescription;
     }
 
     public function status(): PerformanceStatus
