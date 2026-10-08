@@ -212,7 +212,8 @@ final class PerformanceRestController
                 $this->stringOrNull($request->get_param('remarks')),
                 $this->stringOrNull($request->get_param('symbol')),
                 $this->stringOrNull($request->get_param('status')),
-                $this->stringOrNull($request->get_param('symbol_description'))
+                $this->stringOrNull($request->get_param('symbol_description')),
+                $this->boolOrNull($request->get_param('end_time_customized'))
             );
 
             return new WP_REST_Response($this->updatePerformance->execute($command)->toArray(), 200);
@@ -261,5 +262,10 @@ final class PerformanceRestController
     private function intOrNull($value): ?int
     {
         return $value === null || $value === '' ? null : (int) $value;
+    }
+
+    private function boolOrNull($value): ?bool
+    {
+        return $value === null || $value === '' ? null : (bool) $value;
     }
 }
