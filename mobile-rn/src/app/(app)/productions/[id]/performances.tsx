@@ -42,6 +42,7 @@ type EditState = {
   remarks: string;
   symbol: string;
   symbolDescription: string;
+  endTimeCustomized: boolean;
   status: string;
 };
 
@@ -54,6 +55,7 @@ function toEditState(performance: Performance): EditState {
     remarks: performance.remarks ?? '',
     symbol: performance.symbol ?? '',
     symbolDescription: performance.symbol_description ?? '',
+    endTimeCustomized: performance.end_time_customized !== false,
     status: performance.status,
   };
 }
@@ -345,6 +347,7 @@ function PerformanceEditRow({
         remarks: edit.remarks.trim() || null,
         symbol: edit.symbol.trim() || null,
         symbolDescription: edit.symbolDescription.trim() || null,
+        endTimeCustomized: edit.endTime.trim() ? (edit.endTime.trim() !== initialEdit.endTime.trim() ? true : initialEdit.endTimeCustomized) : false,
         status: edit.status,
       });
       onSaved();
