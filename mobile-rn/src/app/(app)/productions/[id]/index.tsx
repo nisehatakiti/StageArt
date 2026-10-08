@@ -295,7 +295,7 @@ export default function ProductionManagementScreen() {
           )}
           {(production.schedule_start_date || production.schedule_end_date) && (
             <ThemedText type="small" testID="production-management-schedule-period">
-              公演期間：{production.schedule_start_date ?? '未定'} 〜 {production.schedule_end_date ?? '未定'}
+              公演期間：{production.schedule_start_date ? formatDisplayDate(production.schedule_start_date) : '未定'} 〜 {production.schedule_end_date ? formatDisplayDate(production.schedule_end_date) : '未定'}
             </ThemedText>
           )}
           {production.description && (
