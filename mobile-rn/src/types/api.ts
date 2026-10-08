@@ -362,7 +362,6 @@ export type PublicPerformance = {
   end_time: string | null;
   symbol?: string | null;
   symbol_description?: string | null;
-  end_time_customized?: boolean;
   status: string;
 };
 
@@ -742,6 +741,7 @@ export type Performance = {
   remarks: string | null;
   symbol: string | null;
   symbol_description?: string | null;
+  end_time_customized?: boolean;
   status: string;
   created_at: string;
   updated_at: string;
