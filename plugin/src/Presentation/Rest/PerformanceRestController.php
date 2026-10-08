@@ -160,7 +160,8 @@ final class PerformanceRestController
                 $this->stringOrNull($request->get_param('end_time')),
                 $this->intOrNull($request->get_param('capacity')),
                 $this->stringOrNull($request->get_param('remarks')),
-                $this->stringOrNull($request->get_param('symbol'))
+                $this->stringOrNull($request->get_param('symbol')),
+                $this->stringOrNull($request->get_param('symbol_description'))
             );
 
             return new WP_REST_Response($this->createPerformance->execute($command)->toArray(), 201);
@@ -210,7 +211,8 @@ final class PerformanceRestController
                 (int) $request->get_param('capacity'),
                 $this->stringOrNull($request->get_param('remarks')),
                 $this->stringOrNull($request->get_param('symbol')),
-                $this->stringOrNull($request->get_param('status'))
+                $this->stringOrNull($request->get_param('status')),
+                $this->stringOrNull($request->get_param('symbol_description'))
             );
 
             return new WP_REST_Response($this->updatePerformance->execute($command)->toArray(), 200);
