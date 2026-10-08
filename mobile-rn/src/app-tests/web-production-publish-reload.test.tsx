@@ -41,7 +41,7 @@ describe('Web 公開設定: 公開後にリロードしても公開済み状態�
     // after the Production fetch above already has - wait for it
     // separately rather than asserting synchronously right after.
     await waitFor(() => expect(screen.getByTestId('production-publish-view-public')).toBeVisible());
-    expect(screen.getByText('公開ページを見る（/kujira-theatre/kappa-homerun）')).toBeVisible();
+    expect(screen.getByText('公開ページを見る（https://dummy.stageart.top/kujira-theatre/kappa-homerun/）')).toBeVisible();
     expect(screen.queryByTestId('production-publish-button')).toBeNull();
   });
 });
