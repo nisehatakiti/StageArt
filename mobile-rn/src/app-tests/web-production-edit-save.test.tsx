@@ -59,6 +59,7 @@ describe('Web 公演情報編集: PrimaryManager saves changes', () => {
     expect(screen.getByTestId('production-edit-name').props.value).toBe('○○公演2026');
 
     fireEvent.changeText(screen.getByTestId('production-edit-name'), '新しい公演名');
+    fireEvent.changeText(screen.getByTestId('production-edit-performance-duration-minutes'), '120');
     await waitFor(() => expect(screen.getByTestId('production-edit-name').props.value).toBe('新しい公演名'));
 
     fireEvent.press(screen.getByTestId('production-edit-submit'));
@@ -70,7 +71,7 @@ describe('Web 公演情報編集: PrimaryManager saves changes', () => {
     );
     expect(putCall).toBeDefined();
     const sentBody = JSON.parse(putCall[1].body as string);
-    expect(sentBody).toMatchObject({ name: '新しい公演名', title_heading: null });
+    expect(sentBody).toMatchObject({ name: '新しい公演名', title_heading: null, performance_duration_minutes: 120 });
     expect(sentBody.published).toBeUndefined();
   });
 });
