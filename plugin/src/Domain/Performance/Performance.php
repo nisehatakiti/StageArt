@@ -46,6 +46,7 @@ final class Performance
     private ?string $remarks;
     private ?string $symbol;
     private ?string $symbolDescription;
+    private bool $endTimeCustomized;
     private PerformanceStatus $status;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
@@ -60,6 +61,7 @@ final class Performance
         ?string $remarks,
         ?string $symbol,
         ?string $symbolDescription,
+        bool $endTimeCustomized,
         PerformanceStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
@@ -73,6 +75,7 @@ final class Performance
         $this->remarks = $remarks;
         $this->symbol = $symbol;
         $this->symbolDescription = $symbolDescription;
+        $this->endTimeCustomized = $endTimeCustomized;
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
@@ -86,7 +89,8 @@ final class Performance
         int $capacity,
         ?string $remarks,
         ?string $symbol,
-        ?string $symbolDescription = null
+        ?string $symbolDescription = null,
+        bool $endTimeCustomized = true
     ): self {
         $now = new DateTimeImmutable();
 
@@ -100,6 +104,7 @@ final class Performance
             self::normalizeNullableString($remarks),
             self::normalizeNullableString($symbol),
             self::normalizeNullableString($symbolDescription),
+            $endTimeCustomized,
             PerformanceStatus::published(),
             $now,
             $now
@@ -118,7 +123,8 @@ final class Performance
         PerformanceStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
-        ?string $symbolDescription = null
+        ?string $symbolDescription = null,
+        bool $endTimeCustomized = true
     ): self {
         return new self(
             $id,
@@ -130,6 +136,7 @@ final class Performance
             $remarks,
             $symbol,
             $symbolDescription,
+            $endTimeCustomized,
             $status,
             $createdAt,
             $updatedAt
@@ -152,7 +159,8 @@ final class Performance
         int $capacity,
         ?string $remarks,
         ?string $symbol,
-        ?string $symbolDescription = null
+        ?string $symbolDescription = null,
+        ?bool $endTimeCustomized = null
     ): void {
         if ($this->status->equals(PerformanceStatus::fromString(PerformanceStatus::CANCELLED))) {
             throw new InvalidArgumentException('A CANCELLED Performance cannot be edited.');
@@ -161,6 +169,7 @@ final class Performance
         $this->performanceDate = $performanceDate;
         $this->startTime = self::normalizeTime($startTime);
         $this->endTime = self::normalizeOptionalTime($endTime);
+        $this->endTimeCustomized = $endTimeCustomized ?? ($endTime !== null && trim($endTime) !== '');
         $this->capacity = self::validateCapacity($capacity);
         $this->remarks = self::normalizeNullableString($remarks);
         $this->symbol = self::normalizeNullableString($symbol);
@@ -209,6 +218,25 @@ final class Performance
         $this->touch();
     }
 
+    public static function calculateEndTime(string $startTime, int $durationMinutes): string
+    {
+        if ($durationMinutes < 5 || $durationMinutes % 5 !== 0) {
+            throw new InvalidArgumentException('Performance duration must be a positive multiple of 5 minutes.');
+        }
+
+        $normalizedStart = self::normalizeTime($startTime);
+        $base = new DateTimeImmutable('2000-01-01 ' . $normalizedStart);
+
+        return $base->modify('+' . $durationMinutes . ' minutes')->format('H:i:s');
+    }
+
+    public function setAutoCalculatedEndTime(?string $endTime): void
+    {
+        $this->endTime = self::normalizeOptionalTime($endTime);
+        $this->endTimeCustomized = false;
+        $this->touch();
+    }
+
     private static function validateCapacity(int $capacity): int
     {
         if ($capacity < 1) {
@@ -224,6 +252,11 @@ final class Performance
 
         if (! preg_match(self::TIME_PATTERN, $trimmed)) {
             throw new InvalidArgumentException("Invalid time value (expected H:i or H:i:s): {$time}");
+        }
+
+        $minute = (int) substr($trimmed, 3, 2);
+        if ($minute % 5 !== 0) {
+            throw new InvalidArgumentException('Performance times must use 5-minute increments.');
         }
 
         return strlen($trimmed) === 5 ? "{$trimmed}:00" : $trimmed;
@@ -311,6 +344,11 @@ final class Performance
     public function symbolDescription(): ?string
     {
         return $this->symbolDescription;
+    }
+
+    public function endTimeCustomized(): bool
+    {
+        return $this->endTimeCustomized;
     }
 
     public function status(): PerformanceStatus
