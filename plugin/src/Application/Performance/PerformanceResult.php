@@ -16,6 +16,7 @@ final class PerformanceResult
     public int $capacity;
     public ?string $remarks;
     public ?string $symbol;
+    public ?string $symbolDescription;
     public string $status;
     public string $createdAt;
     public string $updatedAt;
@@ -29,6 +30,7 @@ final class PerformanceResult
         int $capacity,
         ?string $remarks,
         ?string $symbol,
+        ?string $symbolDescription,
         string $status,
         string $createdAt,
         string $updatedAt
@@ -41,6 +43,7 @@ final class PerformanceResult
         $this->capacity = $capacity;
         $this->remarks = $remarks;
         $this->symbol = $symbol;
+        $this->symbolDescription = $symbolDescription;
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
@@ -57,6 +60,7 @@ final class PerformanceResult
             $performance->capacity(),
             $performance->remarks(),
             $performance->symbol(),
+            $performance->symbolDescription(),
             $performance->status()->toString(),
             $performance->createdAt()->format(DATE_ATOM),
             $performance->updatedAt()->format(DATE_ATOM)
@@ -77,6 +81,7 @@ final class PerformanceResult
             'capacity' => $this->capacity,
             'remarks' => $this->remarks,
             'symbol' => $this->symbol,
+            'symbol_description' => $this->symbolDescription,
             'status' => $this->status,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
