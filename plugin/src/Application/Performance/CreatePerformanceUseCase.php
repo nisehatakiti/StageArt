@@ -88,7 +88,8 @@ final class CreatePerformanceUseCase
             $command->endTime,
             $capacity,
             $command->remarks,
-            $command->symbol
+            $command->symbol,
+            $command->symbolDescription
         );
 
         $duplicate = $this->performances->findByProductionAndDateTime(
