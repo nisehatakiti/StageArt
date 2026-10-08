@@ -519,8 +519,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.four,
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginBottom: Spacing.three,
   },
   buttonDisabled: { opacity: 0.6 },
-  button: { backgroundColor: BrandColors.warmAmber, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center', alignSelf: 'flex-start', marginBottom: Spacing.three },
   buttonText: { color: '#fff', fontWeight: '600' },
 });
