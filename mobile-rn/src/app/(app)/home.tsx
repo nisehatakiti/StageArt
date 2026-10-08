@@ -282,7 +282,7 @@ function GreetingHeader() {
   return (
     <ThemedView style={styles.greeting}>
       <ThemedText type="subtitle" testID="home-greeting">
-        {greetingForCurrentTime()}、{familyName}さん
+        おはようございます、{familyName}さん
       </ThemedText>
       {currentPersonQuery.data && !currentPersonQuery.data.email_verified && (
         <ThemedText type="small" themeColor="textSecondary" testID="home-email-unverified">
@@ -294,13 +294,6 @@ function GreetingHeader() {
       )}
     </ThemedView>
   );
-}
-
-function greetingForCurrentTime(): string {
-  const hour = new Date().getHours();
-  if (hour < 11) return 'おはようございます';
-  if (hour < 18) return 'こんにちは';
-  return 'こんばんは';
 }
 
 /**
