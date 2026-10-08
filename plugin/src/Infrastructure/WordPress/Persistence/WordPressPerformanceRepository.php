@@ -35,6 +35,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             'remarks' => $performance->remarks(),
             'symbol' => $performance->symbol(),
             'symbol_description' => $performance->symbolDescription(),
+            'end_time_customized' => $performance->endTimeCustomized() ? 1 : 0,
             'status' => $performance->status()->toString(),
             'updated_at' => $performance->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -157,7 +158,8 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             PerformanceStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at']),
-            $row['symbol_description'] ?? null
+            $row['symbol_description'] ?? null,
+            isset($row['end_time_customized']) ? (bool) $row['end_time_customized'] : ($row['end_time'] !== null && $row['end_time'] !== '')
         );
     }
 }
