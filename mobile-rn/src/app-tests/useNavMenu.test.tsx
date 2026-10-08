@@ -240,6 +240,7 @@ describe('useNavMenu', () => {
 
     await waitFor(() => expect(result.current.contextLabel).toBe(productionOne.name));
     expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(false);
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket-quota')?.disabled).toBe(false);
   });
 
   it('disables チケット管理 for a REHEARSAL_MANAGER delegate (not TICKET_MANAGER)', async () => {
@@ -255,6 +256,7 @@ describe('useNavMenu', () => {
 
     await waitFor(() => expect(result.current.contextType).toBe('production'));
     expect(result.current.contextItems.find((item) => item.key === 'production-ticket')?.disabled).toBe(true);
+    expect(result.current.contextItems.find((item) => item.key === 'production-ticket-quota')?.disabled).toBe(true);
   });
 
   /**
