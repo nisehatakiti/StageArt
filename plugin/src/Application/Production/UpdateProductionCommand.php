@@ -56,6 +56,7 @@ final class UpdateProductionCommand
      */
     public ?int $capacity;
     public ?string $performanceCommonRemarks;
+    public ?int $performanceDurationMinutes;
 
     public function __construct(
         string $productionId,
@@ -79,7 +80,8 @@ final class UpdateProductionCommand
         ?string $scriptDirectionPublishedAt = null,
         ?string $memberInfoPublishedAt = null,
         ?int $capacity = null,
-        ?string $performanceCommonRemarks = null
+        ?string $performanceCommonRemarks = null,
+        ?int $performanceDurationMinutes = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -103,5 +105,6 @@ final class UpdateProductionCommand
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
         $this->capacity = $capacity;
         $this->performanceCommonRemarks = $performanceCommonRemarks;
+        $this->performanceDurationMinutes = $performanceDurationMinutes;
     }
 }
