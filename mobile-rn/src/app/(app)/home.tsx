@@ -682,6 +682,7 @@ const styles = StyleSheet.create({
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
   rehearsalProductionName: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   rehearsalTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  rehearsalSubTitle: { fontSize: 14, lineHeight: 19 },
   rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.two },
   rehearsalDate: { paddingBottom: Spacing.half },
   rehearsalDateText: { fontWeight: '600' },
