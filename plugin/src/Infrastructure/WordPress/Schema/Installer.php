@@ -319,6 +319,7 @@ final class Installer
             member_info_published_at DATETIME NULL,
             capacity INT NULL,
             performance_common_remarks TEXT NULL,
+            performance_duration_minutes INT NULL,
             ticket_publication_at DATETIME NULL,
             ticket_sales_start_at DATETIME NULL,
             ticket_sales_end_rule VARCHAR(30) NULL,
