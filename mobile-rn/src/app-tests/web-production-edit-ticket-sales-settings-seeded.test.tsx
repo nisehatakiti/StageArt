@@ -70,5 +70,7 @@ describe('Web 公演情報編集: チケット公開・販売設定が既存値�
     await waitFor(() => expect(screen.getByTestId('production-edit-ticket-publication-at').props.value).toBe('2026-09-01T00:00'));
     expect(screen.getByTestId('production-edit-ticket-sales-start-at').props.value).toBe('2026-09-10T00:00');
     expect(screen.getByTestId('production-edit-ticket-sales-end-time').props.value).toBe('23:00');
+    expect(screen.getByTestId('production-edit-ticket-publication-at').props.step).toBe(300);
+    expect(screen.getByTestId('production-edit-ticket-sales-start-at').props.step).toBe(300);
   });
 });
