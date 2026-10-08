@@ -80,6 +80,7 @@ final class Production
      * carries no venue/common-notes field of its own).
      */
     private ?string $performanceCommonRemarks;
+    private ?int $performanceDurationMinutes;
 
     /**
      * Phase 3 Ticket/Reservation基盤 §36: Ticket販売条件はProduction共通
@@ -146,6 +147,7 @@ final class Production
         ?DateTimeImmutable $memberInfoPublishedAt = null,
         ?int $capacity = null,
         ?string $performanceCommonRemarks = null,
+        ?int $performanceDurationMinutes = null,
         ?DateTimeImmutable $ticketPublicationAt = null,
         ?DateTimeImmutable $ticketSalesStartAt = null,
         ?string $ticketSalesEndRule = null,
@@ -182,6 +184,7 @@ final class Production
         $this->memberInfoPublishedAt = $memberInfoPublishedAt;
         $this->capacity = $capacity;
         $this->performanceCommonRemarks = $performanceCommonRemarks;
+        $this->performanceDurationMinutes = $performanceDurationMinutes;
         $this->ticketPublicationAt = $ticketPublicationAt;
         $this->ticketSalesStartAt = $ticketSalesStartAt;
         $this->ticketSalesEndRule = $ticketSalesEndRule;
@@ -289,6 +292,7 @@ final class Production
             $memberInfoPublishedAt,
             $capacity,
             $performanceCommonRemarks,
+            $performanceDurationMinutes,
             $ticketPublicationAt,
             $ticketSalesStartAt,
             $ticketSalesEndRule,
@@ -613,6 +617,16 @@ final class Production
         $this->touch();
     }
 
+    public function updatePerformanceDurationMinutes(?int $minutes): void
+    {
+        if ($minutes !== null && ($minutes < 5 || $minutes % 5 !== 0)) {
+            throw new InvalidArgumentException('Performance duration must be a positive multiple of 5 minutes.');
+        }
+
+        $this->performanceDurationMinutes = $minutes;
+        $this->touch();
+    }
+
     /**
      * Phase 3 §7/§9: Ticket情報公開日時とProduction共通の販売開始日時。
      * どちらも絶対日時のまま保存する（販売開始は指示書§7で明示的に
@@ -623,12 +637,14 @@ final class Production
      */
     public function updateTicketPublicationAt(?DateTimeImmutable $at): void
     {
+        self::validateFiveMinuteDateTime($at);
         $this->ticketPublicationAt = $at;
         $this->touch();
     }
 
     public function updateTicketSalesStartAt(?DateTimeImmutable $at): void
     {
+        self::validateFiveMinuteDateTime($at);
         $this->ticketSalesStartAt = $at;
         $this->touch();
     }
@@ -681,6 +697,13 @@ final class Production
         $this->ticketBackMode = self::normalizeNullableString($mode);
         $this->ticketBackRules = self::normalizeNullableString($rulesJson);
         $this->touch();
+    }
+
+    private static function validateFiveMinuteDateTime(?DateTimeImmutable $at): void
+    {
+        if ($at !== null && ((int) $at->format('i')) % 5 !== 0) {
+            throw new InvalidArgumentException('Ticket publication and sales start times must use 5-minute increments.');
+        }
     }
 
     private static function normalizeNullableString(?string $value): ?string
@@ -822,6 +845,11 @@ final class Production
     public function performanceCommonRemarks(): ?string
     {
         return $this->performanceCommonRemarks;
+    }
+
+    public function performanceDurationMinutes(): ?int
+    {
+        return $this->performanceDurationMinutes;
     }
 
     public function ticketPublicationAt(): ?DateTimeImmutable
