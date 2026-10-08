@@ -9,6 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
+import { useCreatePerformance, usePerformances } from '@/features/performance/usePerformances';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -40,6 +41,8 @@ export default function ProductionEditScreen() {
 
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
+  const performancesQuery = usePerformances(id);
+  const createPerformance = useCreatePerformance(id);
   const isPrimaryManager = !!production?.is_primary_manager;
 
   const [name, setName] = useState('');
@@ -53,6 +56,13 @@ export default function ProductionEditScreen() {
   const [directionCredit, setDirectionCredit] = useState('');
   const [capacity, setCapacity] = useState('');
   const [performanceCommonRemarks, setPerformanceCommonRemarks] = useState('');
+  const [newPerformanceDate, setNewPerformanceDate] = useState('');
+  const [newPerformanceStartTime, setNewPerformanceStartTime] = useState('');
+  const [newPerformanceEndTime, setNewPerformanceEndTime] = useState('');
+  const [newPerformanceCapacity, setNewPerformanceCapacity] = useState('');
+  const [newPerformanceSymbol, setNewPerformanceSymbol] = useState('');
+  const [newPerformanceRemarks, setNewPerformanceRemarks] = useState('');
+  const [performanceErrorMessage, setPerformanceErrorMessage] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -79,6 +89,46 @@ export default function ProductionEditScreen() {
   const capacityTrimmed = capacity.trim();
   const capacityValid = capacityTrimmed === '' || (/^\d+$/.test(capacityTrimmed) && Number(capacityTrimmed) > 0);
   const canSubmit = !!name.trim() && (!slugChanged || slugValid) && capacityValid && !submitting;
+
+  async function handleAddPerformance() {
+    setPerformanceErrorMessage(null);
+    if (!newPerformanceDate.trim() || !newPerformanceStartTime.trim()) {
+      setPerformanceErrorMessage('公演日と開演時刻を入力してください。');
+      return;
+    }
+    const startMinute = Number(newPerformanceStartTime.slice(3, 5));
+    const endMinute = newPerformanceEndTime.trim() ? Number(newPerformanceEndTime.slice(3, 5)) : null;
+    if (!/^\\d{2}:\\d{2}$/.test(newPerformanceStartTime) || startMinute % 5 !== 0) {
+      setPerformanceErrorMessage('開演時刻の分は5分刻みで入力してください。');
+      return;
+    }
+    if (newPerformanceEndTime.trim() && (!/^\\d{2}:\\d{2}$/.test(newPerformanceEndTime) || endMinute === null || endMinute % 5 !== 0)) {
+      setPerformanceErrorMessage('終演予定時刻の分は5分刻みで入力してください。');
+      return;
+    }
+    try {
+      await createPerformance.mutateAsync({
+        performanceDate: newPerformanceDate.trim(),
+        startTime: newPerformanceStartTime.trim(),
+        endTime: newPerformanceEndTime.trim() || undefined,
+        capacity: newPerformanceCapacity.trim() ? Number(newPerformanceCapacity.trim()) : undefined,
+        symbol: newPerformanceSymbol.trim() || undefined,
+        remarks: newPerformanceRemarks.trim() || undefined,
+      });
+      setNewPerformanceDate('');
+      setNewPerformanceStartTime('');
+      setNewPerformanceEndTime('');
+      setNewPerformanceCapacity('');
+      setNewPerformanceSymbol('');
+      setNewPerformanceRemarks('');
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'stageart_performance_duplicate_datetime') {
+        setPerformanceErrorMessage('同じ公演日・開演時刻の公演スケジュールは登録できません。');
+      } else {
+        setPerformanceErrorMessage(getErrorMessage(error));
+      }
+    }
+  }
 
   async function handleSubmit() {
     if (!production || !canSubmit) {
@@ -284,6 +334,108 @@ export default function ProductionEditScreen() {
           </ThemedText>
         )}
 
+        <ThemedText type="subtitle" style={styles.sectionTitle}>
+          公演スケジュール
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          公演スケジュールはここから追加できます。時刻の分は5分刻みです。
+        </ThemedText>
+
+        {performancesQuery.data && performancesQuery.data.length > 0 && (
+          <View style={styles.performanceList} testID="production-edit-performance-list">
+            {performancesQuery.data.map((performance) => (
+              <View key={performance.id} style={styles.performanceRow}>
+                <ThemedText style={styles.performanceDate}>{formatDisplayDate(performance.performance_date)}</ThemedText>
+                <ThemedText style={styles.performanceTime}>
+                  {performance.start_time.slice(0, 5)}
+                  {performance.end_time ? `〜${performance.end_time.slice(0, 5)}` : ''}
+                </ThemedText>
+                {performance.symbol && <ThemedText type="small">{performance.symbol}</ThemedText>}
+                <ThemedText type="small" themeColor="textSecondary">
+                  {performance.status === 'CANCELLED' ? '中止' : performance.status === 'SOLD_OUT' ? '満席' : performance.status === 'FINISHED' ? '終了' : '公開中'}
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <ThemedText type="small" themeColor="textSecondary">
+          公演日
+        </ThemedText>
+        <FormInput
+          kind="date"
+          testID="production-edit-performance-date"
+          value={newPerformanceDate}
+          onChangeText={setNewPerformanceDate}
+          style={[styles.input, styles.inputDate]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          開演時刻
+        </ThemedText>
+        <FormInput
+          kind="time"
+          step={300}
+          testID="production-edit-performance-start-time"
+          value={newPerformanceStartTime}
+          onChangeText={setNewPerformanceStartTime}
+          style={[styles.input, styles.inputTime]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          終演予定時刻（任意）
+        </ThemedText>
+        <FormInput
+          kind="time"
+          step={300}
+          testID="production-edit-performance-end-time"
+          value={newPerformanceEndTime}
+          onChangeText={setNewPerformanceEndTime}
+          style={[styles.input, styles.inputTime]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          定員（任意）
+        </ThemedText>
+        <FormInput
+          testID="production-edit-performance-capacity"
+          value={newPerformanceCapacity}
+          onChangeText={setNewPerformanceCapacity}
+          keyboardType="number-pad"
+          placeholder={production.capacity != null ? String(production.capacity) : ''}
+          style={[styles.input, styles.inputNumber]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          記号（任意）
+        </ThemedText>
+        <FormInput
+          testID="production-edit-performance-symbol"
+          value={newPerformanceSymbol}
+          onChangeText={setNewPerformanceSymbol}
+          style={[styles.input, styles.inputSymbol]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          備考（任意）
+        </ThemedText>
+        <FormInput
+          kind="textarea"
+          testID="production-edit-performance-remarks"
+          value={newPerformanceRemarks}
+          onChangeText={setNewPerformanceRemarks}
+          multiline
+          style={[styles.input, styles.multilineInput, styles.inputLong]}
+        />
+        {performanceErrorMessage && (
+          <ThemedText testID="production-edit-performance-error" style={styles.error}>
+            {performanceErrorMessage}
+          </ThemedText>
+        )}
+        <TouchableOpacity
+          testID="production-edit-performance-add"
+          onPress={handleAddPerformance}
+          disabled={createPerformance.isPending}
+          style={[styles.button, createPerformance.isPending && styles.buttonDisabled]}
+        >
+          {createPerformance.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ 公演スケジュールを追加</ThemedText>}
+        </TouchableOpacity>
+
         <ThemedText type="small" themeColor="textSecondary">
           公演スケジュール共通備考（任意）
         </ThemedText>
@@ -321,6 +473,11 @@ export default function ProductionEditScreen() {
   );
 }
 
+function formatDisplayDate(value: string): string {
+  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match ? `${match[1]}/${match[2]}/${match[3]}` : value;
+}
+
 const styles = StyleSheet.create({
   pageContainer: { padding: Spacing.five, paddingBottom: Spacing.six },
   pageTitle: { marginBottom: Spacing.four, fontSize: 32, lineHeight: 40 },
@@ -342,6 +499,13 @@ const styles = StyleSheet.create({
   inputDate: { width: 180 },
   inputPerson: { width: 320 },
   inputNumber: { width: 160 },
+  inputTime: { width: 140 },
+  inputSymbol: { width: 220 },
+  performanceList: { width: '100%', maxWidth: 760, gap: Spacing.one, marginBottom: Spacing.three },
+  performanceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  performanceDate: { width: 120, fontWeight: '600' },
+  performanceTime: { width: 130 },
+  sectionTitle: { marginTop: Spacing.three, marginBottom: Spacing.one },
   inputLong: { width: '100%', maxWidth: 760 },
   error: { color: '#a6483a', marginBottom: Spacing.two },
   caption: { marginBottom: Spacing.two },
@@ -357,5 +521,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
+  button: { backgroundColor: BrandColors.warmAmber, borderRadius: Radius.medium, paddingVertical: Spacing.two, paddingHorizontal: Spacing.four, alignItems: 'center', alignSelf: 'flex-start', marginBottom: Spacing.three },
   buttonText: { color: '#fff', fontWeight: '600' },
 });
