@@ -115,10 +115,10 @@ final class Performance
         int $capacity,
         ?string $remarks,
         ?string $symbol,
-        ?string $symbolDescription,
         PerformanceStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $symbolDescription = null
     ): self {
         return new self(
             $id,
