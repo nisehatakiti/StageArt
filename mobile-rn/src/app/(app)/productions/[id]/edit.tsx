@@ -66,6 +66,7 @@ export default function ProductionEditScreen() {
   const [newPerformanceEndTime, setNewPerformanceEndTime] = useState('');
   const [newPerformanceCapacity, setNewPerformanceCapacity] = useState('');
   const [newPerformanceSymbol, setNewPerformanceSymbol] = useState('');
+  const [newPerformanceSymbolDescription, setNewPerformanceSymbolDescription] = useState('');
   const [newPerformanceRemarks, setNewPerformanceRemarks] = useState('');
   const [performanceErrorMessage, setPerformanceErrorMessage] = useState<string | null>(null);
   const [newTicketType, setNewTicketType] = useState('');
@@ -139,6 +140,7 @@ export default function ProductionEditScreen() {
         endTime: newPerformanceEndTime.trim() || undefined,
         capacity: newPerformanceCapacity.trim() ? Number(newPerformanceCapacity.trim()) : undefined,
         symbol: newPerformanceSymbol.trim() || undefined,
+        symbolDescription: newPerformanceSymbolDescription.trim() || undefined,
         remarks: newPerformanceRemarks.trim() || undefined,
       });
       setNewPerformanceDate('');
@@ -146,6 +148,7 @@ export default function ProductionEditScreen() {
       setNewPerformanceEndTime('');
       setNewPerformanceCapacity('');
       setNewPerformanceSymbol('');
+      setNewPerformanceSymbolDescription('');
       setNewPerformanceRemarks('');
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stageart_performance_duplicate_datetime') {
@@ -411,6 +414,7 @@ export default function ProductionEditScreen() {
                   {performance.end_time ? `〜${performance.end_time.slice(0, 5)}` : ''}
                 </ThemedText>
                 {performance.symbol && <ThemedText type="small">{performance.symbol}</ThemedText>}
+                {performance.symbol_description && <ThemedText type="small" themeColor="textSecondary">{performance.symbol_description}</ThemedText>}
                 <ThemedText type="small" themeColor="textSecondary">
                   {performance.status === 'CANCELLED' ? '中止' : performance.status === 'SOLD_OUT' ? '満席' : performance.status === 'FINISHED' ? '終了' : '公開中'}
                 </ThemedText>
@@ -470,6 +474,17 @@ export default function ProductionEditScreen() {
           value={newPerformanceSymbol}
           onChangeText={setNewPerformanceSymbol}
           style={[styles.input, styles.inputSymbol]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          記号の説明（任意）
+        </ThemedText>
+        <FormInput
+          kind="textarea"
+          testID="production-edit-performance-symbol-description"
+          value={newPerformanceSymbolDescription}
+          onChangeText={setNewPerformanceSymbolDescription}
+          multiline
+          style={[styles.input, styles.multilineInput, styles.inputLong]}
         />
         <ThemedText type="small" themeColor="textSecondary">
           備考（任意）
