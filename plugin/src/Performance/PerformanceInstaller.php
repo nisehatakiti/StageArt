@@ -37,5 +37,8 @@ final class PerformanceInstaller
             PRIMARY KEY  (id),
             KEY production_id (production_id)
         ) {$charsetCollate};");
+        // Existing rows with no end time are auto-calculable; rows with an
+        // existing end time remain manual overrides.
+        $wpdb->query("UPDATE {$performances} SET end_time_customized = 0 WHERE end_time IS NULL");
     }
 }
