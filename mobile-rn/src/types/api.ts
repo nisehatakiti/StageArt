@@ -359,6 +359,8 @@ export type PublicPerformance = {
   performance_date: string;
   start_time: string;
   end_time: string | null;
+  symbol?: string | null;
+  symbol_description?: string | null;
   status: string;
 };
 
@@ -737,6 +739,7 @@ export type Performance = {
   capacity: number;
   remarks: string | null;
   symbol: string | null;
+  symbol_description?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
