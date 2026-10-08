@@ -30,6 +30,7 @@ final class PerformanceInstaller
             remarks TEXT NULL,
             symbol VARCHAR(50) NULL,
             symbol_description TEXT NULL,
+            end_time_customized TINYINT(1) NOT NULL DEFAULT 1,
             status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED',
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
