@@ -273,7 +273,7 @@ export default function ProductionEditScreen() {
         <FormInput testID="production-edit-venue" value={venueName} onChangeText={setVenueName} style={[styles.input, styles.inputVenue]} />
 
         <ThemedText type="small" themeColor="textSecondary">
-          日程（開始日 〜 終了日、任意・YYYY-MM-DD）
+          日程（開始日 〜 終了日、任意）
         </ThemedText>
         <View style={styles.row}>
           <FormInput
