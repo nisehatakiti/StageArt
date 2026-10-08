@@ -10,8 +10,9 @@ use StageArt\Domain\Performance\Performance;
  * Phase 3 Ticket/Reservation基盤 §33/§34: the Public Page's own
  * Performance listing - deliberately excludes `capacity` (§34's non-
  * disclosure list explicitly names "Performance capacityそのもの") and
- * `remarks`/`symbol` (internal management detail), unlike the admin-side
- * `PerformanceResult`.
+ * `remarks`, while exposing the public schedule symbol and its explanation
+ * so a public page can render a schedule legend in the same style as
+ * StageArtCore.
  */
 final class PublicPerformanceResult
 {
