@@ -153,6 +153,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             $row['end_time'],
             (int) $row['capacity'],
             $row['remarks'],
+            $row['symbol'],
             PerformanceStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at']),
