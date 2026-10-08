@@ -10,6 +10,7 @@ import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
 import { useCreatePerformance, usePerformances } from '@/features/performance/usePerformances';
+import { useCreateTicket, useTicketSalesSettings, useTickets, useUpdateTicketSalesSettings } from '@/features/ticket/useTickets';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -43,6 +44,10 @@ export default function ProductionEditScreen() {
   const { organization } = useProductionOrganization(production);
   const performancesQuery = usePerformances(id);
   const createPerformance = useCreatePerformance(id);
+  const ticketsQuery = useTickets(id);
+  const createTicket = useCreateTicket(id);
+  const ticketSalesSettingsQuery = useTicketSalesSettings(id);
+  const updateTicketSalesSettings = useUpdateTicketSalesSettings(id);
   const isPrimaryManager = !!production?.is_primary_manager;
 
   const [name, setName] = useState('');
@@ -63,9 +68,30 @@ export default function ProductionEditScreen() {
   const [newPerformanceSymbol, setNewPerformanceSymbol] = useState('');
   const [newPerformanceRemarks, setNewPerformanceRemarks] = useState('');
   const [performanceErrorMessage, setPerformanceErrorMessage] = useState<string | null>(null);
+  const [newTicketType, setNewTicketType] = useState('');
+  const [newTicketPrice, setNewTicketPrice] = useState('');
+  const [newTicketRemarks, setNewTicketRemarks] = useState('');
+  const [ticketErrorMessage, setTicketErrorMessage] = useState<string | null>(null);
+  const [publicationAt, setPublicationAt] = useState('');
+  const [salesStartAt, setSalesStartAt] = useState('');
+  const [salesEndRule, setSalesEndRule] = useState<'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START'>('HOURS_BEFORE_START');
+  const [salesEndParameter, setSalesEndParameter] = useState('');
+  const [ticketSettingsSeeded, setTicketSettingsSeeded] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (ticketSalesSettingsQuery.data && !ticketSettingsSeeded) {
+      setTicketSettingsSeeded(true);
+      setPublicationAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_publication_at));
+      setSalesStartAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_sales_start_at));
+      if (ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'DAY_BEFORE_AT_TIME' || ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'HOURS_BEFORE_START') {
+        setSalesEndRule(ticketSalesSettingsQuery.data.ticket_sales_end_rule);
+      }
+      setSalesEndParameter(ticketSalesSettingsQuery.data.ticket_sales_end_parameter ?? '');
+    }
+  }, [ticketSalesSettingsQuery.data, ticketSettingsSeeded]);
 
   useEffect(() => {
     if (production && !initialized) {
@@ -127,6 +153,40 @@ export default function ProductionEditScreen() {
       } else {
         setPerformanceErrorMessage(getErrorMessage(error));
       }
+    }
+  }
+
+  async function handleAddTicket() {
+    setTicketErrorMessage(null);
+    if (!newTicketType.trim() || !newTicketPrice.trim()) {
+      setTicketErrorMessage('チケット種別と料金を入力してください。');
+      return;
+    }
+    try {
+      await createTicket.mutateAsync({
+        name: newTicketType.trim(),
+        price: Number(newTicketPrice.trim()),
+        remarks: newTicketRemarks.trim() || undefined,
+      });
+      setNewTicketType('');
+      setNewTicketPrice('');
+      setNewTicketRemarks('');
+    } catch (error) {
+      setTicketErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleSaveTicketSalesSettings() {
+    setTicketErrorMessage(null);
+    try {
+      await updateTicketSalesSettings.mutateAsync({
+        ticketPublicationAt: toApiDateTime(publicationAt),
+        ticketSalesStartAt: toApiDateTime(salesStartAt),
+        ticketSalesEndRule: salesEndParameter.trim() ? salesEndRule : null,
+        ticketSalesEndParameter: salesEndParameter.trim() || null,
+      });
+    } catch (error) {
+      setTicketErrorMessage(getErrorMessage(error));
     }
   }
 
@@ -436,6 +496,125 @@ export default function ProductionEditScreen() {
           {createPerformance.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ 公演スケジュールを追加</ThemedText>}
         </TouchableOpacity>
 
+        <ThemedText type="subtitle" style={styles.sectionTitle}>
+          チケット
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          チケット種別・料金は公演情報から追加できます。チケットノルマは専用メニューで管理します。
+        </ThemedText>
+        {ticketsQuery.data && ticketsQuery.data.filter((ticket) => ticket.status === 'ACTIVE').length > 0 && (
+          <View style={styles.ticketList} testID="production-edit-ticket-list">
+            {ticketsQuery.data.filter((ticket) => ticket.status === 'ACTIVE').map((ticket) => (
+              <View key={ticket.id} style={styles.ticketRow}>
+                <ThemedText style={styles.ticketType}>{ticket.name}</ThemedText>
+                <ThemedText style={styles.ticketPrice}>{ticket.price}円</ThemedText>
+                {ticket.remarks && <ThemedText type="small" themeColor="textSecondary">{ticket.remarks}</ThemedText>}
+              </View>
+            ))}
+          </View>
+        )}
+        <ThemedText type="small" themeColor="textSecondary">チケット種別</ThemedText>
+        <FormInput
+          testID="production-edit-ticket-type"
+          value={newTicketType}
+          onChangeText={setNewTicketType}
+          placeholder="一般・学生・前売りなど"
+          style={[styles.input, styles.inputTicketType]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">料金（円）</ThemedText>
+        <FormInput
+          testID="production-edit-ticket-price"
+          value={newTicketPrice}
+          onChangeText={setNewTicketPrice}
+          keyboardType="number-pad"
+          style={[styles.input, styles.inputNumber]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">備考（任意）</ThemedText>
+        <FormInput
+          testID="production-edit-ticket-remarks"
+          value={newTicketRemarks}
+          onChangeText={setNewTicketRemarks}
+          style={[styles.input, styles.inputLong]}
+        />
+        {ticketErrorMessage && (
+          <ThemedText testID="production-edit-ticket-error" style={styles.error}>
+            {ticketErrorMessage}
+          </ThemedText>
+        )}
+        <TouchableOpacity
+          testID="production-edit-ticket-add"
+          onPress={handleAddTicket}
+          disabled={createTicket.isPending}
+          style={[styles.button, createTicket.isPending && styles.buttonDisabled]}
+        >
+          {createTicket.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>＋ チケットを追加</ThemedText>}
+        </TouchableOpacity>
+
+        <ThemedText type="subtitle" style={styles.sectionTitle}>
+          チケット公開・販売設定
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">情報公開日時</ThemedText>
+        <FormInput
+          kind="datetime-local"
+          step={300}
+          testID="production-edit-ticket-publication-at"
+          value={publicationAt}
+          onChangeText={setPublicationAt}
+          style={[styles.input, styles.inputDateTime]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">販売開始日時</ThemedText>
+        <FormInput
+          kind="datetime-local"
+          step={300}
+          testID="production-edit-ticket-sales-start-at"
+          value={salesStartAt}
+          onChangeText={setSalesStartAt}
+          style={[styles.input, styles.inputDateTime]}
+        />
+        <ThemedText type="small" themeColor="textSecondary">販売終了ルール</ThemedText>
+        <View style={styles.radioRow}>
+          <TouchableOpacity testID="production-edit-ticket-sales-end-day-before" onPress={() => setSalesEndRule('DAY_BEFORE_AT_TIME')} style={styles.radioOption}>
+            <ThemedText>{salesEndRule === 'DAY_BEFORE_AT_TIME' ? '◉' : '○'} 公演前日の指定時刻まで</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity testID="production-edit-ticket-sales-end-hours-before" onPress={() => setSalesEndRule('HOURS_BEFORE_START')} style={styles.radioOption}>
+            <ThemedText>{salesEndRule === 'HOURS_BEFORE_START' ? '◉' : '○'} 開演の指定時間前まで</ThemedText>
+          </TouchableOpacity>
+        </View>
+        {salesEndRule === 'DAY_BEFORE_AT_TIME' ? (
+          <>
+            <ThemedText type="small" themeColor="textSecondary">公演前日の指定時刻</ThemedText>
+            <FormInput
+              kind="time"
+              step={300}
+              testID="production-edit-ticket-sales-end-time"
+              value={salesEndParameter}
+              onChangeText={setSalesEndParameter}
+              placeholder="23:00"
+              style={[styles.input, styles.inputTime]}
+            />
+          </>
+        ) : (
+          <>
+            <ThemedText type="small" themeColor="textSecondary">開演の何時間前か</ThemedText>
+            <FormInput
+              testID="production-edit-ticket-sales-end-hours"
+              value={salesEndParameter}
+              onChangeText={setSalesEndParameter}
+              keyboardType="decimal-pad"
+              placeholder="3"
+              style={[styles.input, styles.inputNumber]}
+            />
+          </>
+        )}
+        <TouchableOpacity
+          testID="production-edit-ticket-sales-settings-save"
+          onPress={handleSaveTicketSalesSettings}
+          disabled={updateTicketSalesSettings.isPending}
+          style={[styles.button, updateTicketSalesSettings.isPending && styles.buttonDisabled]}
+        >
+          {updateTicketSalesSettings.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>公開・販売設定を更新</ThemedText>}
+        </TouchableOpacity>
+
         <ThemedText type="small" themeColor="textSecondary">
           公演スケジュール共通備考（任意）
         </ThemedText>
@@ -473,6 +652,20 @@ export default function ProductionEditScreen() {
   );
 }
 
+function formatDateTimeLocal(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toApiDateTime(value: string): string | null {
+  if (!value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 function formatDisplayDate(value: string): string {
   const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
   return match ? `${match[1]}/${match[2]}/${match[3]}` : value;
@@ -501,6 +694,14 @@ const styles = StyleSheet.create({
   inputNumber: { width: 160 },
   inputTime: { width: 140 },
   inputSymbol: { width: 220 },
+  inputTicketType: { width: 360 },
+  inputDateTime: { width: 300 },
+  ticketList: { width: '100%', maxWidth: 760, gap: Spacing.one, marginBottom: Spacing.two },
+  ticketRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  ticketType: { width: 180, fontWeight: '600' },
+  ticketPrice: { width: 90 },
+  radioRow: { gap: Spacing.one, marginBottom: Spacing.two },
+  radioOption: { paddingVertical: Spacing.half },
   performanceList: { width: '100%', maxWidth: 760, gap: Spacing.one, marginBottom: Spacing.three },
   performanceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
   performanceDate: { width: 120, fontWeight: '600' },
