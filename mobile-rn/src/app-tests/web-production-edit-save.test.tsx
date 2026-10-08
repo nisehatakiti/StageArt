@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
-import { mockFetchRoutes, productionOne } from './__fixtures__/homeFixtures';
+import { mockFetchRoutes, orgOne, productionOne, projectOne } from './__fixtures__/homeFixtures';
 import ProductionEditScreen from '../app/(app)/productions/[id]/edit';
 
 jest.mock('expo-secure-store', () => ({
@@ -76,7 +76,7 @@ describe('Web 公演情報編集: PrimaryManager saves changes', () => {
     expect(putCall).toBeDefined();
     const sentBody = JSON.parse(putCall[1].body as string);
     expect(sentBody).toMatchObject({ name: '新しい公演名', title_heading: null, performance_duration_minutes: 120 });
-    expect(sentBody.published).toBeUndefined();
+    expect(sentBody.published).toBe(false);
   });
 
   it('shows the public-page setting and full development public URL when the Production is published', async () => {
