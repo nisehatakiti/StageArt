@@ -56,6 +56,7 @@ export function useUpdatePerformance(performanceId: string | undefined) {
       remarks: string | null;
       symbol: string | null;
       symbolDescription: string | null;
+      endTimeCustomized?: boolean;
       status?: string;
     }) => updatePerformance(apiClient, performanceId as string, fields),
     onSuccess: (performance) => {
