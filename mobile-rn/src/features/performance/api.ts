@@ -37,6 +37,7 @@ export function createPerformance(
     capacity?: number;
     remarks?: string;
     symbol?: string;
+    symbolDescription?: string;
   }
 ): Promise<Performance> {
   return client.post<Performance>(`/productions/${productionId}/performances`, {
@@ -46,6 +47,7 @@ export function createPerformance(
     capacity: fields.capacity,
     remarks: fields.remarks,
     symbol: fields.symbol,
+    symbol_description: fields.symbolDescription,
   });
 }
 
@@ -64,6 +66,7 @@ export function updatePerformance(
     capacity: number;
     remarks: string | null;
     symbol: string | null;
+    symbolDescription: string | null;
     status?: string;
   }
 ): Promise<Performance> {
@@ -74,6 +77,7 @@ export function updatePerformance(
     capacity: fields.capacity,
     remarks: fields.remarks,
     symbol: fields.symbol,
+    symbol_description: fields.symbolDescription,
     status: fields.status,
   });
 }
