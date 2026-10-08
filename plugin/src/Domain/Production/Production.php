@@ -147,6 +147,7 @@ final class Production
         ?DateTimeImmutable $memberInfoPublishedAt = null,
         ?int $capacity = null,
         ?string $performanceCommonRemarks = null,
+        ?int $performanceDurationMinutes = null,
         ?DateTimeImmutable $ticketPublicationAt = null,
         ?DateTimeImmutable $ticketSalesStartAt = null,
         ?string $ticketSalesEndRule = null,
@@ -292,6 +293,7 @@ final class Production
             $memberInfoPublishedAt,
             $capacity,
             $performanceCommonRemarks,
+            $performanceDurationMinutes,
             $ticketPublicationAt,
             $ticketSalesStartAt,
             $ticketSalesEndRule,
@@ -301,8 +303,7 @@ final class Production
             $quotaBuybackEnabled,
             $quotaShortfallUnitPrice,
             $ticketBackMode,
-            $ticketBackRules,
-            $performanceDurationMinutes
+            $ticketBackRules
         );
     }
 
