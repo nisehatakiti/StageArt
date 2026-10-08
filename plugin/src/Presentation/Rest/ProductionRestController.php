@@ -347,7 +347,8 @@ final class ProductionRestController
                 $this->stringOrNull($request->get_param('script_direction_published_at')),
                 $this->stringOrNull($request->get_param('member_info_published_at')),
                 $this->intOrNull($request->get_param('capacity')),
-                $this->stringOrNull($request->get_param('performance_common_remarks'))
+                $this->stringOrNull($request->get_param('performance_common_remarks')),
+                $this->intOrNull($request->get_param('performance_duration_minutes'))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);
