@@ -152,6 +152,7 @@ function buildProductionContextItems(
       disabled: !canManagePerformances,
     },
     { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
+    { key: 'production-ticket-quota', label: 'チケットノルマ', href: `/productions/${id}/quota` as Href, disabled: !canManageTickets },
     {
       key: 'production-timetable',
       label: 'タイムテーブル',
