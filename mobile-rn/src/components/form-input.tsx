@@ -4,7 +4,7 @@ import { Platform, TextInput, type TextInput as TextInputInstance, type TextInpu
 import { ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type FormInputKind = 'text' | 'date' | 'time' | 'textarea';
+export type FormInputKind = 'text' | 'date' | 'time' | 'datetime-local' | 'textarea';
 
 export type FormInputProps = TextInputProps & {
   themeColor?: ThemeColor;
