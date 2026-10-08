@@ -32,8 +32,12 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: 'prod-1' }),
 }));
 
-function renderEdit() {
-  mockFetchRoutes([{ test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne }]);
+function renderEdit(production = productionOne) {
+  mockFetchRoutes([
+    { test: (u) => u.endsWith('/organizations'), status: 200, body: [{ ...orgOne, slug: 'kujira' }] },
+    { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
+    { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: production },
+  ]);
 
   const queryClient = new QueryClient();
   return render(
@@ -73,5 +77,19 @@ describe('Web 公演情報編集: PrimaryManager saves changes', () => {
     const sentBody = JSON.parse(putCall[1].body as string);
     expect(sentBody).toMatchObject({ name: '新しい公演名', title_heading: null, performance_duration_minutes: 120 });
     expect(sentBody.published).toBeUndefined();
+  });
+
+  it('shows the public-page setting and full development public URL when the Production is published', async () => {
+    renderEdit({
+      ...productionOne,
+      slug: 'kappa-homerun',
+      published_at: '2026-10-09T09:00:00+09:00',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('production-edit-public-page-card')).toBeVisible());
+    expect(screen.getByTestId('production-edit-published').props.value).toBe(true);
+    expect(screen.getByTestId('production-edit-public-page-link')).toHaveTextContent(
+      'https://dummy.stageart.top/kujira/kappa-homerun/'
+    );
   });
 });
