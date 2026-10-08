@@ -198,7 +198,6 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null,
             isset($row['capacity']) && $row['capacity'] !== null && $row['capacity'] !== '' ? (int) $row['capacity'] : null,
             $row['performance_common_remarks'] ?? null,
-            isset($row['performance_duration_minutes']) && $row['performance_duration_minutes'] !== null && $row['performance_duration_minutes'] !== '' ? (int) $row['performance_duration_minutes'] : null,
             ! empty($row['ticket_publication_at']) ? new DateTimeImmutable($row['ticket_publication_at']) : null,
             ! empty($row['ticket_sales_start_at']) ? new DateTimeImmutable($row['ticket_sales_start_at']) : null,
             $row['ticket_sales_end_rule'] ?? null,
@@ -210,7 +209,8 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
                 ? (int) $row['quota_shortfall_unit_price']
                 : null,
             $row['ticket_back_mode'] ?? null,
-            $row['ticket_back_rules'] ?? null
+            $row['ticket_back_rules'] ?? null,
+            isset($row['performance_duration_minutes']) && $row['performance_duration_minutes'] !== null && $row['performance_duration_minutes'] !== '' ? (int) $row['performance_duration_minutes'] : null,
         );
     }
 }
