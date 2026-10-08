@@ -119,7 +119,7 @@ export default function ProductionEditScreen() {
   const capacityValid = capacityTrimmed === '' || (/^\d+$/.test(capacityTrimmed) && Number(capacityTrimmed) > 0);
   const performanceDurationTrimmed = performanceDurationMinutes.trim();
   const performanceDurationValid = performanceDurationTrimmed === '' || (/^\d+$/.test(performanceDurationTrimmed) && Number(performanceDurationTrimmed) >= 5 && Number(performanceDurationTrimmed) % 5 === 0);
-  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && capacityValid && !submitting;
+  const canSubmit = !!name.trim() && (!slugChanged || slugValid) && capacityValid && performanceDurationValid && !submitting;
 
   async function handleAddPerformance() {
     setPerformanceErrorMessage(null);
