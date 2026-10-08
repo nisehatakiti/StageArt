@@ -148,6 +148,97 @@ final class PerformanceUseCaseTest extends TestCase
         $this->assertSame('2026-10-10', $result->performanceDate);
     }
 
+    public function test_create_performance_uses_production_duration_when_end_time_is_omitted(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+        $production->updatePerformanceDurationMinutes(90);
+        $this->productions->save($production);
+
+        $result = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $this->assertSame('14:30:00', $result->endTime);
+        $this->assertFalse($result->endTimeCustomized);
+    }
+
+    public function test_update_performance_recalculates_an_auto_end_time_when_start_time_changes(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+        $production->updatePerformanceDurationMinutes(90);
+        $this->productions->save($production);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $updated = $this->updatePerformance->execute(new UpdatePerformanceCommand(
+            $created->id,
+            1,
+            '2026-10-10',
+            '14:00',
+            '14:30',
+            100,
+            null,
+            null,
+            null,
+            null,
+            false
+        ));
+
+        $this->assertSame('15:30:00', $updated->endTime);
+        $this->assertFalse($updated->endTimeCustomized);
+    }
+
+    public function test_update_performance_keeps_an_explicit_end_time_as_manual_override(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+        $production->updatePerformanceDurationMinutes(90);
+        $this->productions->save($production);
+
+        $created = $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(),
+            1,
+            '2026-10-10',
+            '13:00',
+            null,
+            null,
+            null,
+            null
+        ));
+
+        $updated = $this->updatePerformance->execute(new UpdatePerformanceCommand(
+            $created->id,
+            1,
+            '2026-10-10',
+            '14:00',
+            '16:00',
+            100,
+            null,
+            null,
+            null,
+            null,
+            true
+        ));
+
+        $this->assertSame('16:00:00', $updated->endTime);
+        $this->assertTrue($updated->endTimeCustomized);
+    }
+
     public function test_create_performance_allows_explicit_capacity_override(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1, 100);
