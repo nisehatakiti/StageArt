@@ -88,14 +88,21 @@ final class UpdatePerformanceUseCase
 
         $wasFinished = $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
 
+        $endTimeCustomized = $command->endTimeCustomized ?? ($command->endTime !== null && trim($command->endTime) !== '');
+        $endTime = $command->endTime;
+        if (! $endTimeCustomized && $production->performanceDurationMinutes() !== null) {
+            $endTime = \StageArt\Domain\Performance\Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes());
+        }
+
         $performance->updateBasicInfo(
             $this->parseDate($command->performanceDate),
             $command->startTime,
-            $command->endTime,
+            $endTime,
             $command->capacity,
             $command->remarks,
             $command->symbol,
-            $command->symbolDescription
+            $command->symbolDescription,
+            $endTimeCustomized
         );
 
         $duplicate = $this->performances->findByProductionAndDateTime(
