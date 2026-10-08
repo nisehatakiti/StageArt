@@ -14,6 +14,7 @@ import {
 } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { usePendingParticipationRequests } from '@/features/participation/useParticipation';
+import { usePerformances } from '@/features/performance/usePerformances';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -24,6 +25,11 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * was not decided this round) - same label set used elsewhere
  * (components/production-card.tsx, organizations/[id]/productions.tsx).
  */
+function formatDisplayDate(value: string): string {
+  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match ? `${match[1]}/${match[2]}/${match[3]}` : value;
+}
+
 const STATUS_LABEL: Record<string, string> = {
   PLANNING: '準備中',
   ACTIVE: '進行中',
@@ -78,6 +84,7 @@ export default function ProductionManagementScreen() {
   const isPrimaryManager = !!production?.is_primary_manager;
   const canReviewParticipationRequests = isPrimaryManager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
   const pendingParticipationRequestsQuery = usePendingParticipationRequests(canReviewParticipationRequests ? id : undefined);
+  const performancesQuery = usePerformances(id);
 
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const activate = useActivateProduction(id);
@@ -255,6 +262,27 @@ export default function ProductionManagementScreen() {
         </TouchableOpacity>
       )}
 
+      {performancesQuery.data && performancesQuery.data.length > 0 && (
+        <View style={styles.overviewCard} testID="production-management-performances">
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            公演スケジュール
+          </ThemedText>
+          {performancesQuery.data.map((performance) => (
+            <View key={performance.id} style={styles.performanceRow}>
+              <ThemedText style={styles.performanceDate}>{formatDisplayDate(performance.performance_date)}</ThemedText>
+              <ThemedText style={styles.performanceTime}>
+                {performance.start_time.slice(0, 5)}
+                {performance.end_time ? `〜${performance.end_time.slice(0, 5)}` : ''}
+              </ThemedText>
+              {performance.symbol && <ThemedText type="small">{performance.symbol}</ThemedText>}
+              <ThemedText type="small" themeColor="textSecondary">
+                {performance.status === 'CANCELLED' ? '中止' : performance.status === 'SOLD_OUT' ? '満席' : performance.status === 'FINISHED' ? '終了' : '公開中'}
+              </ThemedText>
+            </View>
+          ))}
+        </View>
+      )}
+
       {(production.description || production.venue_name || production.schedule_start_date) && (
         <View style={styles.overviewCard} testID="production-management-overview">
           <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -388,6 +416,9 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     alignItems: 'flex-start',
   },
+  performanceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two, paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
+  performanceDate: { width: 120, fontWeight: '600' },
+  performanceTime: { width: 130 },
   overviewCard: {
     borderWidth: 1,
     borderColor: '#e1dee6',
