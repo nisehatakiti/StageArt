@@ -41,6 +41,7 @@ type EditState = {
   capacity: string;
   remarks: string;
   symbol: string;
+  symbolDescription: string;
   status: string;
 };
 
@@ -52,6 +53,7 @@ function toEditState(performance: Performance): EditState {
     capacity: String(performance.capacity),
     remarks: performance.remarks ?? '',
     symbol: performance.symbol ?? '',
+    symbolDescription: performance.symbol_description ?? '',
     status: performance.status,
   };
 }
@@ -97,6 +99,7 @@ export default function ProductionPerformancesScreen() {
   const [newCapacity, setNewCapacity] = useState(production?.capacity != null ? String(production.capacity) : '');
   const [newRemarks, setNewRemarks] = useState('');
   const [newSymbol, setNewSymbol] = useState('');
+  const [newSymbolDescription, setNewSymbolDescription] = useState('');
 
   const performances = performancesQuery.data ?? [];
 
@@ -119,12 +122,14 @@ export default function ProductionPerformancesScreen() {
         capacity: newCapacity.trim() ? Number(newCapacity.trim()) : undefined,
         remarks: newRemarks.trim() || undefined,
         symbol: newSymbol.trim() || undefined,
+        symbolDescription: newSymbolDescription.trim() || undefined,
       });
       setNewDate('');
       setNewStartTime('');
       setNewEndTime('');
       setNewRemarks('');
       setNewSymbol('');
+      setNewSymbolDescription('');
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stageart_performance_duplicate_datetime') {
         setErrorMessage('同じ公演日・開演時刻の公演スケジュールは登録できません。');
@@ -279,6 +284,11 @@ export default function ProductionPerformancesScreen() {
       <FormInput testID="production-performances-new-symbol" value={newSymbol} onChangeText={setNewSymbol} style={[styles.input, styles.inputSymbol]} />
 
       <ThemedText type="small" themeColor="textSecondary">
+        記号の説明（任意）
+      </ThemedText>
+      <FormInput kind="textarea" testID="production-performances-new-symbol-description" value={newSymbolDescription} onChangeText={setNewSymbolDescription} style={[styles.input, styles.inputLong]} />
+
+      <ThemedText type="small" themeColor="textSecondary">
         備考（任意）
       </ThemedText>
       <FormInput kind="textarea" testID="production-performances-new-remarks" value={newRemarks} onChangeText={setNewRemarks} style={[styles.input, styles.inputLong]} />
@@ -334,6 +344,7 @@ function PerformanceEditRow({
         capacity: Number(edit.capacity.trim()),
         remarks: edit.remarks.trim() || null,
         symbol: edit.symbol.trim() || null,
+        symbolDescription: edit.symbolDescription.trim() || null,
         status: edit.status,
       });
       onSaved();
@@ -372,7 +383,19 @@ function PerformanceEditRow({
         style={[styles.editInput, styles.inputTime]}
       />
       <FormInput
-        testID={`performance-edit-capacity-${performanceId}`}
+        testID={`performance-edit-symbol-${performanceId}`}
+        value={edit.symbol}
+        onChangeText={(value) => setEdit({ ...edit, symbol: value })}
+        style={[styles.editInput, styles.inputSymbol]}
+      />
+      <FormInput
+        testID={`performance-edit-symbol-description-${performanceId}`}
+        value={edit.symbolDescription}
+        onChangeText={(value) => setEdit({ ...edit, symbolDescription: value })}
+        style={[styles.editInput, styles.inputLong]}
+      />
+      <FormInput
+        testID={`performance-edit-capacity-${performanceId}`
         value={edit.capacity}
         onChangeText={(value) => setEdit({ ...edit, capacity: value })}
         keyboardType="number-pad"
