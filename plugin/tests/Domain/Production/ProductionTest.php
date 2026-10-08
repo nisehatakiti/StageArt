@@ -508,6 +508,50 @@ final class ProductionTest extends TestCase
         $this->assertNull($production->capacity());
     }
 
+    public function test_performance_duration_is_null_by_default(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->performanceDurationMinutes());
+    }
+
+    public function test_performance_duration_accepts_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updatePerformanceDurationMinutes(120);
+
+        $this->assertSame(120, $production->performanceDurationMinutes());
+    }
+
+    public function test_performance_duration_rejects_non_five_minute_values(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->updatePerformanceDurationMinutes(121);
+    }
+
+    public function test_ticket_publication_and_sales_start_require_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->updateTicketPublicationAt(new DateTimeImmutable('2026-10-01 12:03:00'));
+    }
+
+    public function test_ticket_publication_and_sales_start_accept_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $at = new DateTimeImmutable('2026-10-01 12:05:00');
+
+        $production->updateTicketPublicationAt($at);
+        $production->updateTicketSalesStartAt($at);
+
+        $this->assertEquals($at, $production->ticketPublicationAt());
+        $this->assertEquals($at, $production->ticketSalesStartAt());
+    }
+
     public function test_change_capacity_sets_the_value(): void
     {
         $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
