@@ -19,14 +19,18 @@ final class PublicPerformanceResult
     public string $performanceDate;
     public string $startTime;
     public ?string $endTime;
+    public ?string $symbol;
+    public ?string $symbolDescription;
     public string $status;
 
-    private function __construct(string $id, string $performanceDate, string $startTime, ?string $endTime, string $status)
+    private function __construct(string $id, string $performanceDate, string $startTime, ?string $endTime, ?string $symbol, ?string $symbolDescription, string $status)
     {
         $this->id = $id;
         $this->performanceDate = $performanceDate;
         $this->startTime = $startTime;
         $this->endTime = $endTime;
+        $this->symbol = $symbol;
+        $this->symbolDescription = $symbolDescription;
         $this->status = $status;
     }
 
@@ -37,6 +41,8 @@ final class PublicPerformanceResult
             $performance->performanceDate()->format('Y-m-d'),
             $performance->startTime(),
             $performance->endTime(),
+            $performance->symbol(),
+            $performance->symbolDescription(),
             $performance->status()->toString()
         );
     }
@@ -51,6 +57,8 @@ final class PublicPerformanceResult
             'performance_date' => $this->performanceDate,
             'start_time' => $this->startTime,
             'end_time' => $this->endTime,
+            'symbol' => $this->symbol,
+            'symbol_description' => $this->symbolDescription,
             'status' => $this->status,
         ];
     }
