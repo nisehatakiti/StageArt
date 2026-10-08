@@ -71,6 +71,11 @@ function toEditState(performance: Performance): EditState {
  * among these four, only that CANCELLED is terminal - this was simply
  * never sent by this screen before).
  */
+function formatDisplayDate(value: string): string {
+  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match ? `${match[1]}/${match[2]}/${match[3]}` : value;
+}
+
 export default function ProductionPerformancesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const productionQuery = useProduction(id);
@@ -195,7 +200,7 @@ export default function ProductionPerformancesScreen() {
               />
             ) : (
               <View key={performance.id} style={styles.row} testID={`performance-row-${performance.id}`}>
-                <ThemedText style={styles.colDate}>{performance.performance_date}</ThemedText>
+                <ThemedText style={styles.colDate}>{formatDisplayDate(performance.performance_date)}</ThemedText>
                 <ThemedText style={styles.colTime}>{performance.start_time.slice(0, 5)}</ThemedText>
                 <ThemedText style={styles.colTime}>{performance.end_time?.slice(0, 5) ?? '-'}</ThemedText>
                 <ThemedText style={styles.colCapacity}>{performance.capacity}</ThemedText>
@@ -236,6 +241,7 @@ export default function ProductionPerformancesScreen() {
       </ThemedText>
       <FormInput
         kind="time"
+        step={300}
         testID="production-performances-new-start-time"
         value={newStartTime}
         onChangeText={setNewStartTime}
@@ -248,6 +254,7 @@ export default function ProductionPerformancesScreen() {
       </ThemedText>
       <FormInput
         kind="time"
+        step={300}
         testID="production-performances-new-end-time"
         value={newEndTime}
         onChangeText={setNewEndTime}
@@ -350,6 +357,7 @@ function PerformanceEditRow({
       />
       <FormInput
         kind="time"
+        step={300}
         testID={`performance-edit-start-time-${performanceId}`}
         value={edit.startTime}
         onChangeText={(value) => setEdit({ ...edit, startTime: value })}
@@ -357,6 +365,7 @@ function PerformanceEditRow({
       />
       <FormInput
         kind="time"
+        step={300}
         testID={`performance-edit-end-time-${performanceId}`}
         value={edit.endTime}
         onChangeText={(value) => setEdit({ ...edit, endTime: value })}
