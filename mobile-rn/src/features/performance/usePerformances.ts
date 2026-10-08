@@ -37,7 +37,7 @@ export function useCreatePerformance(productionId: string | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (fields: { performanceDate: string; startTime: string; endTime?: string; capacity?: number; remarks?: string; symbol?: string }) =>
+    mutationFn: (fields: { performanceDate: string; startTime: string; endTime?: string; capacity?: number; remarks?: string; symbol?: string; symbolDescription?: string }) =>
       createPerformance(apiClient, productionId as string, fields),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-performances', productionId] }),
   });
@@ -55,6 +55,7 @@ export function useUpdatePerformance(performanceId: string | undefined) {
       capacity: number;
       remarks: string | null;
       symbol: string | null;
+      symbolDescription: string | null;
       status?: string;
     }) => updatePerformance(apiClient, performanceId as string, fields),
     onSuccess: (performance) => {
