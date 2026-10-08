@@ -81,15 +81,22 @@ final class CreatePerformanceUseCase
             );
         }
 
+        $endTimeCustomized = $command->endTime !== null && trim($command->endTime) !== '';
+        $endTime = $command->endTime;
+        if (! $endTimeCustomized && $production->performanceDurationMinutes !== null) {
+            $endTime = Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes);
+        }
+
         $performance = Performance::create(
             $productionId,
             $this->parseDate($command->performanceDate),
             $command->startTime,
-            $command->endTime,
+            $endTime,
             $capacity,
             $command->remarks,
             $command->symbol,
-            $command->symbolDescription
+            $command->symbolDescription,
+            $endTimeCustomized
         );
 
         $duplicate = $this->performances->findByProductionAndDateTime(
