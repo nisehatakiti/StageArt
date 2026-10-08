@@ -513,6 +513,21 @@ function formatNotificationCreatedAt(iso: string): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+  REHEARSAL: '稽古',
+  PRACTICE: '練習',
+  SELF_PRACTICE: '自主練',
+  WORKSHOP: 'ワークショップ',
+  MEETING: '会議',
+  DISCUSSION: '打ち合わせ',
+  EVENT: 'イベント',
+  OTHER: 'その他',
+};
+
+function activityTypeLabel(activityType: string): string {
+  return ACTIVITY_TYPE_LABELS[activityType] ?? activityType;
+}
+
 function UpcomingRehearsalCard({
   rehearsal,
   organizationName,
@@ -682,6 +697,7 @@ const styles = StyleSheet.create({
   sectionTitle: { paddingTop: Spacing.one, paddingBottom: Spacing.one, fontSize: 20, lineHeight: 26 },
   rehearsalProductionName: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   rehearsalTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  rehearsalType: { fontSize: 13, lineHeight: 18 },
   rehearsalSubTitle: { fontSize: 14, lineHeight: 19 },
   rehearsalMeta: { gap: Spacing.half, paddingTop: Spacing.two },
   rehearsalDate: { paddingBottom: Spacing.half },
