@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Performance\Performance;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
@@ -110,23 +111,38 @@ final class UpdateProductionUseCase
         $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
         $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
 
+        $previousDuration = $production->performanceDurationMinutes();
+        $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
+        $newDuration = $production->performanceDurationMinutes();
+        $durationChanged = $newDuration !== $previousDuration;
+
         $previousCapacity = $production->capacity();
         $production->changeCapacity($command->capacity);
         $newCapacity = $production->capacity();
         $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
 
-        $this->transactions->run(function () use ($production, $capacityChanged, $newCapacity): void {
+        $this->transactions->run(function () use ($production, $capacityChanged, $newCapacity, $durationChanged, $newDuration): void {
             $this->productions->save($production);
 
-            if (! $capacityChanged) {
+            if (! $capacityChanged && ! $durationChanged) {
                 return;
             }
 
-            // §11/§26: unconditional overwrite of every child Performance's
-            // capacity, including individually-customized and CANCELLED
-            // ones - no filtering by status here on purpose.
             foreach ($this->performances->findByProductionId($production->id()) as $performance) {
-                $performance->changeCapacity($newCapacity);
+                if ($capacityChanged) {
+                    // §11/§26: unconditional overwrite of every child Performance's
+                    // capacity, including individually-customized and CANCELLED ones.
+                    $performance->changeCapacity($newCapacity);
+                }
+
+                if ($durationChanged && ! $performance->endTimeCustomized()) {
+                    $performance->setAutoCalculatedEndTime(
+                        $newDuration === null
+                            ? null
+                            : Performance::calculateEndTime($performance->startTime(), $newDuration)
+                    );
+                }
+
                 $this->performances->save($performance);
             }
         });
