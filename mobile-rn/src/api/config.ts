@@ -32,3 +32,12 @@ export function getGoogleWebClientId(): string {
 
   return typeof googleWebClientId === 'string' ? googleWebClientId : '';
 }
+
+
+/** Public Web URL origin for the current StageArt environment. */
+export const DEV_PUBLIC_WEB_BASE_URL = 'https://dummy.stageart.top';
+export const PROD_PUBLIC_WEB_BASE_URL = 'https://stageart.top';
+
+export function getPublicWebBaseUrl(): string {
+  return getApiEnv() === 'production' ? PROD_PUBLIC_WEB_BASE_URL : DEV_PUBLIC_WEB_BASE_URL;
+}
