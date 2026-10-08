@@ -38,6 +38,7 @@ const baseProduction = {
   member_info_published_at: null,
   capacity: 100,
   performance_common_remarks: null,
+  performance_duration_minutes: 120,
 };
 
 const createdPerformance = {
@@ -45,7 +46,8 @@ const createdPerformance = {
   production_id: 'prod-1',
   performance_date: '2026-10-10',
   start_time: '13:00:00',
-  end_time: null,
+  end_time: '15:00:00',
+  end_time_customized: false,
   capacity: 100,
   remarks: null,
   symbol: null,
