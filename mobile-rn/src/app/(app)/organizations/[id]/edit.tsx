@@ -89,6 +89,12 @@ export default function OrganizationEditScreen() {
         status: organization.status,
         slug: slug !== (organization.slug ?? '') ? slug : undefined,
         published,
+        // Mirrors every *PublishedAt field's own convention elsewhere in
+        // this codebase (e.g. Production edit's descriptionPublishedAt):
+        // preserve the already-set timestamp across unrelated resaves -
+        // omitting this would make publish() default to "now" on every
+        // save, silently bumping published_at each time the form is saved.
+        published_at: published ? organization.published_at ?? new Date().toISOString() : null,
         logo_url: organization.logo_url,
       });
       await queryClient.invalidateQueries({ queryKey: ['organizations'] });

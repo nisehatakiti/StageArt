@@ -117,6 +117,26 @@ final class ReservationUseCaseTest extends TestCase
         $this->listReservations = new ListReservationsUseCase($this->reservations, $this->performances, $productionContext, $identity, $authorization);
     }
 
+    /**
+     * 公演スケジュール Phase: Performance::create() now rejects start times
+     * off a 5-minute boundary. These fixtures build their start time from
+     * the real wall clock (`new DateTimeImmutable('+N hours')` etc.) so
+     * its minute is whatever second the test happens to run at - floor it
+     * to the nearest 5 minutes rather than hardcoding a clock-independent
+     * time, preserving each test's "N hours/days from now" relative intent.
+     */
+    private function alignedTime(DateTimeImmutable $dt): string
+    {
+        return $this->alignedDateTime($dt)->format('H:i');
+    }
+
+    private function alignedDateTime(DateTimeImmutable $dt): DateTimeImmutable
+    {
+        $minute = (int) $dt->format('i');
+
+        return $dt->setTime((int) $dt->format('H'), $minute - ($minute % 5));
+    }
+
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
     {
         $organization = Organization::create(new OrganizationName('Theatre Co'));
@@ -152,7 +172,7 @@ final class ReservationUseCaseTest extends TestCase
         $performance = Performance::create(
             $production->id(),
             $performanceStart,
-            $performanceStart->format('H:i'),
+            $this->alignedTime($performanceStart),
             null,
             $capacity,
             null,
@@ -165,8 +185,8 @@ final class ReservationUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            ($publicationAt ?? new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            ($salesStartAt ?? new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime($publicationAt ?? new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime($salesStartAt ?? new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
             $salesEndRule,
             $salesEndParameter
         ));
@@ -432,7 +452,7 @@ final class ReservationUseCaseTest extends TestCase
     {
         $performanceStart = new DateTimeImmutable('-1 hour');
         $production = $this->givenProductionWithPrimaryManager(1);
-        $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, 20, null, null);
+        $performance = Performance::create($production->id(), $performanceStart, $this->alignedTime($performanceStart), null, 20, null, null);
         $this->performances->save($performance);
         $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
 
@@ -455,7 +475,7 @@ final class ReservationUseCaseTest extends TestCase
     {
         $performanceStart = new DateTimeImmutable('-1 hour');
         $production = $this->givenProductionWithPrimaryManager(1);
-        $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, 20, null, null);
+        $performance = Performance::create($production->id(), $performanceStart, $this->alignedTime($performanceStart), null, 20, null, null);
         $this->performances->save($performance);
         $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
 
@@ -478,7 +498,7 @@ final class ReservationUseCaseTest extends TestCase
     {
         $performanceStart = new DateTimeImmutable('-1 hour');
         $production = $this->givenProductionWithPrimaryManager(1);
-        $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, 20, null, null);
+        $performance = Performance::create($production->id(), $performanceStart, $this->alignedTime($performanceStart), null, 20, null, null);
         $this->performances->save($performance);
         $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
 

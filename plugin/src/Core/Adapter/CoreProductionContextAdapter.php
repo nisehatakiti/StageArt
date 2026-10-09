@@ -43,7 +43,8 @@ final class CoreProductionContextAdapter implements ProductionContextContract
             $production->id(),
             $production->name()->toString(),
             $production->status()->toString(),
-            $production->capacity()
+            $production->capacity(),
+            $production->performanceDurationMinutes()
         );
     }
 
@@ -60,7 +61,8 @@ final class CoreProductionContextAdapter implements ProductionContextContract
                 $production->id(),
                 $production->name()->toString(),
                 $production->status()->toString(),
-                $production->capacity()
+                $production->capacity(),
+                $production->performanceDurationMinutes()
             );
         }
 

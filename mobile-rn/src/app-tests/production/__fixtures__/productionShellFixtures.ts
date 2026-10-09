@@ -29,6 +29,7 @@ export const productionOne: Production = {
   member_info_published_at: null,
   capacity: null,
   performance_common_remarks: null,
+  performance_duration_minutes: null,
 };
 
 export const productionWithTitleHeading: Production = {

@@ -26,6 +26,17 @@ const mockReplace = jest.fn();
  * home-multi-org-switch.test.tsx's own docblock); this text-input flow
  * needs the workaround, every other production screen in this Phase
  * does not.
+ *
+ * StageArt 公開ページ Phase: this file now covers only the one scenario
+ * ("saves changes"); the 公開ページ-card scenarios moved to their own
+ * files (web-production-edit-public-page-link.test.tsx,
+ * web-production-edit-published-at-preserved.test.tsx) after confirming
+ * empirically that a second/third it() in this same describe block fails
+ * to find even baseline elements (`production-edit-name`) - reproduced
+ * in isolation (this file alone, no other suite running), so it is the
+ * established per-file test-isolation issue this codebase already works
+ * around elsewhere (see home-multi-org-switch.test.tsx's own docblock),
+ * not a real product bug.
  */
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
@@ -77,19 +88,6 @@ describe('Web 公演情報編集: PrimaryManager saves changes', () => {
     const sentBody = JSON.parse(putCall[1].body as string);
     expect(sentBody).toMatchObject({ name: '新しい公演名', title_heading: null, performance_duration_minutes: 120 });
     expect(sentBody.published).toBe(false);
-  });
-
-  it('shows the public-page setting and full development public URL when the Production is published', async () => {
-    renderEdit({
-      ...productionOne,
-      slug: 'kappa-homerun',
-      published_at: '2026-10-09T09:00:00+09:00',
-    });
-
-    await waitFor(() => expect(screen.getByTestId('production-edit-public-page-card')).toBeVisible());
-    expect(screen.getByTestId('production-edit-published').props.value).toBe(true);
-    expect(screen.getByTestId('production-edit-public-page-link')).toHaveTextContent(
-      'https://dummy.stageart.top/kujira/kappa-homerun/'
-    );
+    expect(sentBody.published_at).toBeNull();
   });
 });

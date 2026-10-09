@@ -181,6 +181,22 @@ final class CheckInUseCaseTest extends TestCase
     }
 
     /**
+     * 公演スケジュール Phase: Performance::create() now rejects start times
+     * off a 5-minute boundary, and Production's ticket publication/sales
+     * start times have the same requirement. These fixtures build their
+     * times from the real wall clock (`new DateTimeImmutable('+N hours')`
+     * etc.) so the minute is whatever second the test happens to run at -
+     * floor it to the nearest 5 minutes rather than hardcoding a
+     * clock-independent time, preserving each test's relative intent.
+     */
+    private function alignedDateTime(DateTimeImmutable $dt): DateTimeImmutable
+    {
+        $minute = (int) $dt->format('i');
+
+        return $dt->setTime((int) $dt->format('H'), $minute - ($minute % 5));
+    }
+
+    /**
      * @return array{0: Production, 1: Performance, 2: string} [production, performance, ticketId]
      */
     private function givenProductionWithPerformanceAndTicket(bool $accountingEnabled = false, int $capacity = 20): array
@@ -199,7 +215,7 @@ final class CheckInUseCaseTest extends TestCase
         $production->changeCapacity($capacity);
         $this->productions->save($production);
 
-        $performanceStart = new DateTimeImmutable('+10 days');
+        $performanceStart = $this->alignedDateTime(new DateTimeImmutable('+10 days'));
         $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, $capacity, null, null);
         $this->performances->save($performance);
 
@@ -207,8 +223,8 @@ final class CheckInUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
             'HOURS_BEFORE_START',
             '3'
         ));
@@ -613,7 +629,7 @@ final class CheckInUseCaseTest extends TestCase
         $production->changeCapacity(20);
         $this->productions->save($production);
 
-        $performanceStart = new DateTimeImmutable('+1 hour');
+        $performanceStart = $this->alignedDateTime(new DateTimeImmutable('+1 hour'));
         $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, 20, null, null);
         $this->performances->save($performance);
 
@@ -621,8 +637,8 @@ final class CheckInUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
             'HOURS_BEFORE_START',
             '3'
         ));
@@ -694,7 +710,7 @@ final class CheckInUseCaseTest extends TestCase
     public function test_decrease_guest_count_rejects_after_the_performance_has_started(): void
     {
         [$production, , $ticketId] = $this->givenProductionWithPerformanceAndTicket();
-        $pastStart = new DateTimeImmutable('-1 hour');
+        $pastStart = $this->alignedDateTime(new DateTimeImmutable('-1 hour'));
         $pastPerformance = Performance::create($production->id(), $pastStart, $pastStart->format('H:i'), null, 20, null, null);
         $this->performances->save($pastPerformance);
         $reservation = $this->givenReservedReservation($pastPerformance, $ticketId, 4);

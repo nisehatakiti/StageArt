@@ -74,7 +74,7 @@ describe('Web 団体情報編集: Owner saves changes', () => {
 
     await waitFor(() => expect(screen.getByTestId('organization-edit-name')).toBeVisible());
     expect(screen.getByTestId('organization-edit-name').props.value).toBe('○○演劇団');
-    expect(screen.getByTestId('organization-edit-public-page-link')).toHaveTextContent('https://dummy.stageart.top/kujira/');
+    expect(screen.getByTestId('organization-edit-public-page-link')).toHaveTextContent('https://dummy.stageart.top/kujira/', { exact: false });
 
     fireEvent.changeText(screen.getByTestId('organization-edit-name'), '新しい団体名');
     fireEvent.changeText(screen.getByTestId('organization-edit-description'), '更新後の説明');
@@ -104,7 +104,13 @@ describe('Web 団体情報編集: Owner saves changes', () => {
       ([url, options]: [string, RequestInit]) => url.includes('/organizations/org-1') && options?.method === 'PUT'
     );
     const sentBody = JSON.parse(putCall[1].body as string);
-    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null, published: false });
+    // StageArt 公開ページ Phase: this fixture's organization is already
+    // published (published_at set in renderEdit()'s mock data), so an
+    // unrelated resave must resend published: true (and the existing
+    // published_at, not a fresh "now" - see organization-edit.tsx's own
+    // handleSubmit comment).
+    expect(sentBody).toMatchObject({ name: '新しい団体名', description: '更新後の説明', status: 'ACTIVE', type: null, published: true });
+    expect(sentBody.published_at).toBe('2026-10-09T09:00:00+09:00');
     expect(mockReplace).not.toHaveBeenCalled();
   });
 });

@@ -90,8 +90,8 @@ final class UpdatePerformanceUseCase
 
         $endTimeCustomized = $command->endTimeCustomized ?? ($command->endTime !== null && trim($command->endTime) !== '');
         $endTime = $command->endTime;
-        if (! $endTimeCustomized && $production->performanceDurationMinutes() !== null) {
-            $endTime = \StageArt\Domain\Performance\Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes());
+        if (! $endTimeCustomized && $production->performanceDurationMinutes !== null) {
+            $endTime = \StageArt\Domain\Performance\Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes);
         }
 
         $performance->updateBasicInfo(

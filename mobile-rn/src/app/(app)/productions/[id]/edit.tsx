@@ -23,9 +23,12 @@ import { isValidSlug } from '@/utils/slug';
  * are all applied by UpdateProductionUseCase (confirmed by reading it);
  * `status` is deliberately never sent (Phase 6.1 moved Status changes to
  * dedicated Lifecycle Action endpoints - a `status` key here is now
- * rejected with 422), and `published` is left untouched by this screen
- * entirely (owned by /productions/[id]/publish instead, per this
- * Phase's own screen split) by simply never including it in the request.
+ * rejected with 422). `published`/`publishedAt` ARE sent (公開ページ
+ * Phase: this screen now owns its own Publish toggle alongside
+ * /productions/[id]/publish, which remains for the ACTIVE confirmation
+ * flow) - `publishedAt` always re-sends the existing `published_at` when
+ * already published, never a fresh "now", so an unrelated resave never
+ * bumps the publish timestamp.
  *
  * Ownership is enforced server-side (UpdateProductionUseCase via
  * ProductionAuthorizationService.canManageProduction(): PrimaryManager
@@ -242,6 +245,12 @@ export default function ProductionEditScreen() {
         performanceDurationMinutes: performanceDurationTrimmed === '' ? null : Number(performanceDurationTrimmed),
         performanceCommonRemarks: performanceCommonRemarks.trim() || null,
         published,
+        // Mirrors descriptionPublishedAt/venuePublishedAt/etc.'s own
+        // convention above: preserve the already-set timestamp across
+        // unrelated resaves - omitting this would make publish() default
+        // to "now" on every save, silently bumping published_at each time
+        // the form is saved while already published.
+        publishedAt: published ? production.published_at ?? now : null,
       });
       await queryClient.invalidateQueries({ queryKey: ['production', production.id] });
       await queryClient.invalidateQueries({ queryKey: ['productions'] });

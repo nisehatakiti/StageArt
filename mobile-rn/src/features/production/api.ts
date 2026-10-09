@@ -88,6 +88,7 @@ export function updateProduction(
     titleHeading: string | null;
     slug?: string;
     published?: boolean;
+    publishedAt?: string | null;
     description?: string | null;
     descriptionPublishedAt?: string | null;
     flyerUrl?: string | null;
@@ -117,6 +118,7 @@ export function updateProduction(
     title_heading: fields.titleHeading,
     slug: fields.slug,
     published: fields.published,
+    published_at: fields.publishedAt,
     description: fields.description,
     description_published_at: fields.descriptionPublishedAt,
     flyer_url: fields.flyerUrl,

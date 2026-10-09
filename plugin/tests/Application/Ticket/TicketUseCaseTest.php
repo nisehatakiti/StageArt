@@ -113,6 +113,22 @@ final class TicketUseCaseTest extends TestCase
         $this->listPerformanceAvailability = new ListPerformanceTicketAvailabilityUseCase($this->performances, $productionContext, $identity, $membership);
     }
 
+    /**
+     * 公演スケジュール Phase: ticket publication/sales start times and
+     * Performance start times now reject anything off a 5-minute
+     * boundary. These fixtures build their times from the real wall
+     * clock (`new DateTimeImmutable('-1 day')` etc.) so the minute is
+     * whatever second the test happens to run at - floor it to the
+     * nearest 5 minutes rather than hardcoding a clock-independent time,
+     * preserving each test's relative intent.
+     */
+    private function alignedDateTime(DateTimeImmutable $dt): DateTimeImmutable
+    {
+        $minute = (int) $dt->format('i');
+
+        return $dt->setTime((int) $dt->format('H'), $minute - ($minute % 5));
+    }
+
     private function givenProductionWithPrimaryManager(int $primaryManagerWordPressUserId): Production
     {
         $organization = Organization::create(new OrganizationName('Theatre Co'));
@@ -373,8 +389,8 @@ final class TicketUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            (new DateTimeImmutable('-1 hour'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 hour'))->format(DATE_ATOM),
             null,
             null
         ));
@@ -394,7 +410,7 @@ final class TicketUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
             null,
             null,
             null
@@ -480,8 +496,8 @@ final class TicketUseCaseTest extends TestCase
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            (new DateTimeImmutable('-1 hour'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 hour'))->format(DATE_ATOM),
             'HOURS_BEFORE_START',
             '3'
         ));
@@ -498,13 +514,14 @@ final class TicketUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         // Performance start is only 1 hour from now, but the rule requires
         // sales to end 3 hours before start - already past that deadline.
-        $this->givenPerformance($production, (new DateTimeImmutable('+1 hour'))->format('Y-m-d'), (new DateTimeImmutable('+1 hour'))->format('H:i'));
+        $alignedPerformanceStart = $this->alignedDateTime(new DateTimeImmutable('+1 hour'));
+        $this->givenPerformance($production, $alignedPerformanceStart->format('Y-m-d'), $alignedPerformanceStart->format('H:i'));
 
         $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
-            (new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
             'HOURS_BEFORE_START',
             '3'
         ));

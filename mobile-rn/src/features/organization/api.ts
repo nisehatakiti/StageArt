@@ -79,6 +79,7 @@ export function updateOrganization(
     status: string;
     slug?: string;
     published?: boolean;
+    published_at?: string | null;
     logo_url?: string | null;
   }
 ): Promise<Organization> {

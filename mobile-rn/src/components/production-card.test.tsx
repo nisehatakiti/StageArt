@@ -33,6 +33,7 @@ const baseProduction: Production = {
   member_info_published_at: null,
   capacity: null,
   performance_common_remarks: null,
+  performance_duration_minutes: null,
 };
 
 describe('ProductionCard: title heading (Phase 7.1)', () => {
