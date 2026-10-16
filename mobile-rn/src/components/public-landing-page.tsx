@@ -1,4 +1,4 @@
-import { Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { getStageArtLoginUrl } from '@/api/site-routing';
@@ -43,6 +43,11 @@ const FEATURES = [
 
 export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
   const loginUrl = getStageArtLoginUrl(hostname);
+  const { width } = useWindowDimensions();
+  const compact = width < 760;
+  const narrow = width < 520;
+  const pageGutter = narrow ? 20 : compact ? 28 : Spacing.five;
+  const featureWidth = narrow ? '100%' : compact ? '47%' : '31.5%';
 
   return (
     <ScrollView
@@ -50,7 +55,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
       style={styles.page}
       contentContainerStyle={styles.pageContent}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: pageGutter }]}>
         <View style={styles.brandRow}>
           <View style={styles.brandMark}>
             <ThemedText style={styles.brandMarkText}>S</ThemedText>
@@ -67,13 +72,13 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.hero}>
+      <View style={[styles.hero, { paddingHorizontal: pageGutter, flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', paddingVertical: compact ? 24 : 42 }]}>
         <View style={styles.heroCopy}>
           <View style={styles.eyebrow}>
             <View style={styles.eyebrowLine} />
             <ThemedText style={styles.eyebrowText}>THE STAGE, CONNECTED</ThemedText>
           </View>
-          <ThemedText testID="stageart-landing-headline" style={styles.headline}>
+          <ThemedText testID="stageart-landing-headline" style={[styles.headline, { fontSize: narrow ? 32 : compact ? 36 : 42, lineHeight: narrow ? 43 : compact ? 48 : 56 }]}>
             舞台をつくる人の、{ '\\n' }毎日をもっとスムーズに。
           </ThemedText>
           <ThemedText style={styles.heroDescription}>
@@ -92,7 +97,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
             <ThemedText style={styles.heroFootnote}>舞台活動の管理を、ひとつの場所から。</ThemedText>
           </View>
         </View>
-        <View style={styles.heroVisual} accessibilityLabel="舞台の照明をイメージした装飾">
+        <View style={[styles.heroVisual, { width: compact ? '100%' : undefined, minWidth: compact ? 0 : 260, height: narrow ? 250 : 320, flex: compact ? undefined : 0.9 }]} accessibilityLabel="舞台の照明をイメージした装飾">
           <View style={styles.lightBeamOne} />
           <View style={styles.lightBeamTwo} />
           <View style={styles.stageCircle} />
@@ -104,7 +109,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         </View>
       </View>
 
-      <View style={styles.introSection}>
+      <View style={[styles.introSection, { paddingHorizontal: pageGutter }]}>
         <ThemedText style={styles.sectionEyebrow}>BUILT FOR STAGE PEOPLE</ThemedText>
         <ThemedText style={styles.sectionTitle}>舞台づくりに必要なことを、ひとつに。</ThemedText>
         <ThemedText style={styles.sectionDescription}>
@@ -112,9 +117,9 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         </ThemedText>
       </View>
 
-      <View style={styles.features}>
+      <View style={[styles.features, { paddingHorizontal: pageGutter }]}>
         {FEATURES.map((feature) => (
-          <View key={feature.number} style={styles.featureCard}>
+          <View key={feature.number} style={[styles.featureCard, { width: featureWidth }]}>
             <ThemedText style={styles.featureNumber}>{feature.number}</ThemedText>
             <ThemedText style={styles.featureTitle}>{feature.title}</ThemedText>
             <ThemedText style={styles.featureDescription}>{feature.description}</ThemedText>
@@ -122,7 +127,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         ))}
       </View>
 
-      <View style={styles.closingCta}>
+      <View style={[styles.closingCta, { paddingHorizontal: pageGutter }]}>
         <ThemedText style={styles.closingEyebrow}>READY FOR YOUR NEXT ACT?</ThemedText>
         <ThemedText style={styles.closingTitle}>次の舞台を、もっといい体験に。</ThemedText>
         <ThemedText style={styles.closingDescription}>
@@ -139,7 +144,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingHorizontal: pageGutter, flexDirection: narrow ? 'column' : 'row', justifyContent: narrow ? 'center' : 'space-between', alignItems: narrow ? 'flex-start' : 'center', paddingVertical: narrow ? 22 : 0, gap: 8 }]}>
         <ThemedText style={styles.footerBrand}>StageArt</ThemedText>
         <ThemedText style={styles.footerText}>舞台活動を支えるプラットフォーム</ThemedText>
       </View>
