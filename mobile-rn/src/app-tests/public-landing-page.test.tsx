@@ -12,8 +12,8 @@ describe('StageArt public feature landing page', () => {
     jest.restoreAllMocks();
   });
 
-  it('shows the feature introduction and sends production visitors to app.stageart.top', () => {
-    render(<PublicLandingPage hostname="stageart.top" />);
+  it('shows the feature introduction and sends production visitors to app.stageart.top', async () => {
+    await render(<PublicLandingPage hostname="stageart.top" />);
 
     expect(screen.getByTestId('stageart-landing-headline')).toBeVisible();
     expect(screen.getByText('団体・公演をまとめて管理')).toBeVisible();
@@ -23,8 +23,8 @@ describe('StageArt public feature landing page', () => {
     expect(Linking.openURL).toHaveBeenCalledWith('https://app.stageart.top/login/');
   });
 
-  it('sends development public-site visitors to dev.stageart.top', () => {
-    render(<PublicLandingPage hostname="dummy.stageart.top" />);
+  it('sends development public-site visitors to dev.stageart.top', async () => {
+    await render(<PublicLandingPage hostname="dummy.stageart.top" />);
 
     fireEvent.press(screen.getByTestId('stageart-landing-login-header'));
     expect(Linking.openURL).toHaveBeenCalledWith('https://dev.stageart.top/login/');
