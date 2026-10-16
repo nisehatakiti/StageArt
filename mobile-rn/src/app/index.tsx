@@ -1,11 +1,13 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Platform } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
 import { StartupAnimation } from '@/components/startup-animation';
 import { ThemedView } from '@/components/themed-view';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { getStageArtRootExperience } from '@/api/site-routing';
+import { PublicLandingPage } from '@/components/public-landing-page';
 
 /** Jest sets NODE_ENV=test automatically (jest-expo preset) - the
  * startup animation is a fixed ~1.8s time-based UI concern orthogonal
@@ -61,7 +63,7 @@ function Loading() {
  * no "Google already proved identity" shortcut (this Phase's explicit
  * requirement, mirrored in login.tsx's own post-login routing).
  */
-export default function Index() {
+function ApplicationIndex() {
   const { status } = useAuth();
   const currentPersonQuery = useCurrentPerson();
   const [animationDone, setAnimationDone] = useState(SKIP_STARTUP_ANIMATION);
@@ -87,4 +89,21 @@ export default function Index() {
   }
 
   return <Redirect href="/home" />;
+}
+
+
+/**
+ * Public and application hosts share the exported web bundle, but not the
+ * responsibility of their root page. The public domains keep the feature
+ * introduction at "/", while app.stageart.top and dev.stageart.top retain
+ * the authenticated application's entry flow.
+ */
+export default function Index() {
+  const hostname = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.hostname : '';
+
+  if (Platform.OS === 'web' && getStageArtRootExperience(hostname) === 'public-landing') {
+    return <PublicLandingPage hostname={hostname} />;
+  }
+
+  return <ApplicationIndex />;
 }
