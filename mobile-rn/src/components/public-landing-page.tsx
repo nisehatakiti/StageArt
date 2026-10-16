@@ -72,8 +72,8 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.hero, { paddingHorizontal: pageGutter, flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', paddingVertical: compact ? 24 : 42 }]}>
-        <View style={styles.heroCopy}>
+      <View style={[styles.hero, { paddingHorizontal: pageGutter, flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', paddingVertical: compact ? 24 : 42, minHeight: compact ? 0 : 450 }]}>
+        <View style={[styles.heroCopy, { flex: compact ? 0 : 1.1 }]}>
           <View style={styles.eyebrow}>
             <View style={styles.eyebrowLine} />
             <ThemedText style={styles.eyebrowText}>THE STAGE, CONNECTED</ThemedText>
@@ -97,7 +97,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
             <ThemedText style={styles.heroFootnote}>舞台活動の管理を、ひとつの場所から。</ThemedText>
           </View>
         </View>
-        <View style={[styles.heroVisual, { width: compact ? '100%' : undefined, minWidth: compact ? 0 : 260, height: narrow ? 250 : 320, flex: compact ? undefined : 0.9 }]} accessibilityLabel="舞台の照明をイメージした装飾">
+        <View style={[styles.heroVisual, { width: compact ? '100%' : undefined, minWidth: compact ? 0 : 260, height: narrow ? 250 : 320, flex: compact ? 0 : 0.9 }]} accessibilityLabel="舞台の照明をイメージした装飾">
           <View style={styles.lightBeamOne} />
           <View style={styles.lightBeamTwo} />
           <View style={styles.stageCircle} />
