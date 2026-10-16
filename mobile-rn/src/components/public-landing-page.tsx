@@ -79,7 +79,7 @@ export function PublicLandingPage({ hostname }: PublicLandingPageProps) {
             <ThemedText style={styles.eyebrowText}>THE STAGE, CONNECTED</ThemedText>
           </View>
           <ThemedText testID="stageart-landing-headline" style={[styles.headline, { fontSize: narrow ? 32 : compact ? 36 : 42, lineHeight: narrow ? 43 : compact ? 48 : 56 }]}>
-            舞台をつくる人の、{ '\\n' }毎日をもっとスムーズに。
+            舞台をつくる人の、{'\n'}毎日をもっとスムーズに。
           </ThemedText>
           <ThemedText style={styles.heroDescription}>
             団体運営から公演準備、稽古、チケット、観客とのつながりまで。舞台活動に必要な情報と仕事を、StageArtでひとつにつなぎます。

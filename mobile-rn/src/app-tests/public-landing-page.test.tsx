@@ -23,6 +23,14 @@ describe('StageArt public feature landing page', () => {
     expect(Linking.openURL).toHaveBeenCalledWith('https://app.stageart.top/login/');
   });
 
+  it('breaks the headline with a real line break, never a literal "\\n"', async () => {
+    await render(<PublicLandingPage hostname="dummy.stageart.top" />);
+
+    const headline = screen.getByTestId('stageart-landing-headline');
+    expect(headline).toHaveTextContent('舞台をつくる人の、\n毎日をもっとスムーズに。', { normalizer: (text) => text });
+    expect(headline).not.toHaveTextContent('\\n');
+  });
+
   it('sends development public-site visitors to dev.stageart.top', async () => {
     await render(<PublicLandingPage hostname="dummy.stageart.top" />);
 

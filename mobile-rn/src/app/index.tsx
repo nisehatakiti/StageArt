@@ -1,5 +1,5 @@
 import { Redirect } from 'expo-router';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Platform } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -92,6 +92,24 @@ function ApplicationIndex() {
 }
 
 
+const subscribeToHostname = () => () => {};
+const getClientHostname = () => (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.hostname : '');
+const getStaticRenderHostname = () => '';
+
+/**
+ * The static web export pre-renders "/" without a request host, so its
+ * HTML is always the application entry. Reading window.location directly
+ * during hydration made public hosts render PublicLandingPage instead and
+ * React rejected the mismatch (minified error #418). The server snapshot
+ * keeps the hydration pass identical to that HTML; React then re-renders
+ * with the real hostname immediately after hydrating. Client-only renders
+ * (native, or a client-side navigation back to "/") read the real
+ * hostname from the first render.
+ */
+function useClientHostname(): string {
+  return useSyncExternalStore(subscribeToHostname, getClientHostname, getStaticRenderHostname);
+}
+
 /**
  * Public and application hosts share the exported web bundle, but not the
  * responsibility of their root page. The public domains keep the feature
@@ -99,7 +117,7 @@ function ApplicationIndex() {
  * the authenticated application's entry flow.
  */
 export default function Index() {
-  const hostname = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.hostname : '';
+  const hostname = useClientHostname();
 
   if (Platform.OS === 'web' && getStageArtRootExperience(hostname) === 'public-landing') {
     return <PublicLandingPage hostname={hostname} />;
