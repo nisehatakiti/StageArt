@@ -40,7 +40,7 @@ export function DateTimeInput({ mode, value, onChangeText, placeholder, editable
           onFocus: () => editable && setTimePickerOpen(true),
           onChange: (event: ChangeEvent<HTMLInputElement>) => {
             const candidate = event.target.value;
-            const match = /^(\\d{2}):(\\d{2})$/.exec(candidate);
+            const match = /^(\d{2}):(\d{2})$/.exec(candidate);
             if (match && Number(match[2]) % 5 === 0 && Number(match[1]) <= 23 && Number(match[2]) <= 59) {
               onChangeText?.(candidate);
             }
