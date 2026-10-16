@@ -2,7 +2,7 @@
 
 # 03 - Public Page URL, Publication Schedule and Membership Onboarding
 
-Version : 2.6
+Version : 2.7
 Status : Confirmed
 
 ---
@@ -123,6 +123,22 @@ Development
 ```
 
 この8つのURLを、StageArtのProduction / Development URL Architectureの正本とする。
+
+## Public Siteトップページとログイン導線
+
+Public SiteのルートURLは、ログイン画面ではなくStageArtの機能紹介ページとして表示する。
+
+Production:
+- `https://stageart.top/`：StageArtの機能紹介ページ
+- `https://app.stageart.top/login/`：本番アプリケーションのログイン画面
+
+Development:
+- `https://dummy.stageart.top/`：StageArtの機能紹介ページ（開発確認用）
+- `https://dev.stageart.top/login/`：開発アプリケーションのログイン画面
+
+機能紹介ページの「ログイン」導線は、Productionでは `app.stageart.top`、Developmentでは `dev.stageart.top` に接続する。Public SiteのルートとApplicationのログイン入口を混同してはならない。
+
+団体・公演の公開ページは引き続きPublic SiteのSlug付きURLで提供し、ルートの機能紹介ページによって既存の公開ページURLを変更しない。
 
 ---
 
