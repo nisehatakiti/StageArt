@@ -36,8 +36,15 @@ export function DateTimeInput({ mode, value, onChangeText, placeholder, editable
           disabled: !editable,
           'aria-label': '時刻（5分刻み）',
           'data-testid': testID,
-          onClick: () => editable && setTimePickerOpen((open) => !open),
+          onClick: () => editable && setTimePickerOpen(true),
           onFocus: () => editable && setTimePickerOpen(true),
+          onChange: (event: ChangeEvent<HTMLInputElement>) => {
+            const candidate = event.target.value;
+            const match = /^(\\d{2}):(\\d{2})$/.exec(candidate);
+            if (match && Number(match[2]) % 5 === 0 && Number(match[1]) <= 23 && Number(match[2]) <= 59) {
+              onChangeText?.(candidate);
+            }
+          },
           style: {
             width: '100%',
             minHeight: 44,
