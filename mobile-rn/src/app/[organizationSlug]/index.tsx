@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import Head from 'expo-router/head';
-import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
@@ -93,7 +93,11 @@ export default function PublicOrganizationScreen() {
         {query.data && (
           <ThemedView testID="public-organization-content" style={styles.content}>
             {query.data.logo_url && (
-              <Image testID="public-organization-logo" source={{ uri: query.data.logo_url }} style={styles.logo} />
+              // contain, never cover: the whole logo is shown at its own
+              // aspect ratio inside the square frame (empty margins are fine).
+              <View style={styles.logo}>
+                <Image testID="public-organization-logo" source={{ uri: query.data.logo_url }} style={styles.logoImage} resizeMode="contain" />
+              </View>
             )}
 
             <ThemedText type="title" testID="public-organization-name">
@@ -257,7 +261,8 @@ export default function PublicOrganizationScreen() {
 const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
-  logo: { width: 96, height: 96, borderRadius: Radius.medium, marginBottom: Spacing.two },
+  logo: { width: 96, height: 96, borderRadius: Radius.medium, marginBottom: Spacing.two, padding: Spacing.one },
+  logoImage: { width: '100%', height: '100%' },
   description: { marginTop: Spacing.two },
   snsSection: { marginTop: Spacing.three, gap: Spacing.one },
   snsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.half },

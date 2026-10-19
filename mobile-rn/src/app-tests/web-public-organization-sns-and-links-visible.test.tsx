@@ -62,6 +62,8 @@ describe('Web 団体公開ページ: ロゴ/SNS/外部リンクの反映（ON）
     await waitFor(() => expect(screen.getByTestId('public-organization-content')).toBeVisible());
 
     expect(screen.getByTestId('public-organization-logo')).toBeVisible();
+    // The whole logo is shown at its own aspect ratio - never cropped by cover.
+    expect(screen.getByTestId('public-organization-logo').props.resizeMode).toBe('contain');
     expect(screen.getByTestId('public-organization-sns')).toBeVisible();
     expect(screen.getByTestId('public-organization-sns-sns-1')).toHaveTextContent(/stageart_theatre/);
     expect(screen.getByTestId('public-organization-external-links')).toBeVisible();

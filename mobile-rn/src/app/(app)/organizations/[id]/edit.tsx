@@ -275,7 +275,11 @@ function OrganizationLogoCard({
     <ManagementCard title="団体ロゴ">
       <View style={styles.logoRow}>
         {logoUrl ? (
-          <Image testID="organization-edit-logo-preview" source={{ uri: logoUrl }} style={styles.logoPreview} />
+          // contain, never cover: the whole logo is shown at its own aspect
+          // ratio inside the square frame (empty margins are fine).
+          <View style={styles.logoPreview}>
+            <Image testID="organization-edit-logo-preview" source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
+          </View>
         ) : (
           <View style={styles.logoPlaceholder} testID="organization-edit-logo-empty">
             <ThemedText type="small" themeColor="textSecondary">
@@ -668,7 +672,8 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.one },
   logoRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.three },
-  logoPreview: { width: 96, height: 96, borderRadius: Radius.medium, backgroundColor: '#f0eee9' },
+  logoPreview: { width: 96, height: 96, borderRadius: Radius.medium, backgroundColor: '#f0eee9', padding: Spacing.one },
+  logoImage: { width: '100%', height: '100%' },
   logoPlaceholder: {
     width: 96,
     height: 96,

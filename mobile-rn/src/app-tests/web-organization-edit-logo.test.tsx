@@ -88,6 +88,8 @@ describe('Web 団体情報編集: 団体ロゴ', () => {
 
     await waitFor(() => expect(screen.getByTestId('organization-edit-logo-preview')).toBeVisible());
     expect(screen.getByTestId('organization-edit-logo-preview').props.source).toMatchObject({ uri: NEW_LOGO_URL });
+    // The whole logo is shown at its own aspect ratio - never cropped by cover.
+    expect(screen.getByTestId('organization-edit-logo-preview').props.resizeMode).toBe('contain');
 
     const postCall = (global.fetch as jest.Mock).mock.calls.find(
       ([url, init]: [string, RequestInit]) => String(url).endsWith('/organizations/org-1/logo') && init?.method === 'POST'
