@@ -13,6 +13,7 @@ import { fetchPublicOrganizationBySlug } from '@/features/organization/api';
 import { useFollowOrganization, useMyFollows } from '@/features/organization/useFollow';
 import { useMyMemberships, useRequestOrganizationMembership } from '@/features/membership/useMembership';
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
+import { useIsPublicSite } from '@/hooks/use-site-host';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -46,6 +47,7 @@ export default function PublicOrganizationScreen() {
   const { organizationSlug } = useLocalSearchParams<{ organizationSlug: string }>();
   const { status } = useAuth();
   const router = useRouter();
+  const isPublicSite = useIsPublicSite();
 
   const query = useQuery({
     queryKey: ['public-organization', organizationSlug],
@@ -161,9 +163,13 @@ export default function PublicOrganizationScreen() {
                 </ThemedText>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity testID="public-organization-login-to-follow" onPress={() => router.push('/login')}>
-                <ThemedText type="link">ログインしてフォロー</ThemedText>
-              </TouchableOpacity>
+              // The public-site hosts never ask for a login (only the
+              // application hosts own the login screen).
+              !isPublicSite && (
+                <TouchableOpacity testID="public-organization-login-to-follow" onPress={() => router.push('/login')}>
+                  <ThemedText type="link">ログインしてフォロー</ThemedText>
+                </TouchableOpacity>
+              )
             )}
 
             {status === 'authenticated' && (

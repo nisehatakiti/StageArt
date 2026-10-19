@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { ApiClient } from '@/api/client';
 import { getPendingSession, setPendingSession } from '@/auth/pendingVerificationAccess';
 import { AuthLayout } from '@/components/auth/AuthLayout';
@@ -33,7 +34,7 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * guaranteed way back to the login screen once they've verified (or to
  * try a different account) without that link's "wrong email" framing.
  */
-export default function RegistrationPendingScreen() {
+function RegistrationPendingScreen() {
   const router = useRouter();
   const { email } = useLocalSearchParams<{ email?: string }>();
 
@@ -125,3 +126,6 @@ export default function RegistrationPendingScreen() {
 const styles = StyleSheet.create({
   emailText: { fontWeight: '700', color: STAGE.inputText },
 });
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(RegistrationPendingScreen);

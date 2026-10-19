@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type 
 
 import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
+import { appOnlyRoute } from '@/components/app-only-route';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { STAGE } from '@/components/auth/authTheme';
@@ -129,7 +130,7 @@ function useGoogleSigninButtonComponent(): GoogleSigninButtonComponent | null {
   return Button;
 }
 
-export default function LoginScreen() {
+function LoginScreen() {
   const { loginWithEmail, loginWithGoogle } = useAuth();
   const router = useRouter();
   const GoogleIcon = useGoogleSigninButtonComponent();
@@ -399,3 +400,12 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: STAGE.divider },
   dividerText: { color: STAGE.placeholder },
 });
+
+/**
+ * The public site (public-site build, or a public host) never shows a
+ * login form - its visitors log in on the application host instead (see
+ * PublicLandingPage's login links). A direct /login visit there, or the
+ * (app) group's unauthenticated redirect, goes back to the public top
+ * page. Native and the application hosts keep the login screen unchanged.
+ */
+export default appOnlyRoute(LoginScreen);

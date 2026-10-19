@@ -24,3 +24,12 @@ export function getStageArtLoginUrl(hostname: string): string {
   }
   return 'https://app.stageart.top/login/';
 }
+
+/**
+ * The public site (feature landing + organization/production public pages)
+ * never asks for a login: only the application hosts own the login screen
+ * and the authenticated area.
+ */
+export function isPublicSiteHost(hostname: string): boolean {
+  return getStageArtRootExperience(hostname) === 'public-landing';
+}

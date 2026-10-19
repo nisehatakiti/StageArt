@@ -1,13 +1,13 @@
 import { Redirect } from 'expo-router';
-import { useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Platform } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
 import { StartupAnimation } from '@/components/startup-animation';
 import { ThemedView } from '@/components/themed-view';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { getStageArtRootExperience } from '@/api/site-routing';
 import { PublicLandingPage } from '@/components/public-landing-page';
+import { useIsPublicSite, useSiteHostname } from '@/hooks/use-site-host';
 
 /** Jest sets NODE_ENV=test automatically (jest-expo preset) - the
  * startup animation is a fixed ~1.8s time-based UI concern orthogonal
@@ -91,35 +91,18 @@ function ApplicationIndex() {
   return <Redirect href="/home" />;
 }
 
-
-const subscribeToHostname = () => () => {};
-const getClientHostname = () => (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.hostname : '');
-const getStaticRenderHostname = () => '';
-
-/**
- * The static web export pre-renders "/" without a request host, so its
- * HTML is always the application entry. Reading window.location directly
- * during hydration made public hosts render PublicLandingPage instead and
- * React rejected the mismatch (minified error #418). The server snapshot
- * keeps the hydration pass identical to that HTML; React then re-renders
- * with the real hostname immediately after hydrating. Client-only renders
- * (native, or a client-side navigation back to "/") read the real
- * hostname from the first render.
- */
-function useClientHostname(): string {
-  return useSyncExternalStore(subscribeToHostname, getClientHostname, getStaticRenderHostname);
-}
-
 /**
  * Public and application hosts share the exported web bundle, but not the
  * responsibility of their root page. The public domains keep the feature
  * introduction at "/", while app.stageart.top and dev.stageart.top retain
- * the authenticated application's entry flow.
+ * the authenticated application's entry flow. See use-site-host.ts for why
+ * the hostname is read through useSyncExternalStore (React #418).
  */
 export default function Index() {
-  const hostname = useClientHostname();
+  const hostname = useSiteHostname();
+  const isPublicSite = useIsPublicSite();
 
-  if (Platform.OS === 'web' && getStageArtRootExperience(hostname) === 'public-landing') {
+  if (isPublicSite) {
     return <PublicLandingPage hostname={hostname} />;
   }
 

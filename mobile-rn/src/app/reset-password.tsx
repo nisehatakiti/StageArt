@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { ApiError } from '@/api/errors';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
@@ -25,7 +26,7 @@ import { resetPassword } from '@/features/auth/api';
  * so this screen sends the user back to /login to sign in with the new
  * password, exactly like a normal first login.
  */
-export default function ResetPasswordScreen() {
+function ResetPasswordScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string }>();
 
@@ -114,3 +115,6 @@ export default function ResetPasswordScreen() {
     </AuthLayout>
   );
 }
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(ResetPasswordScreen);

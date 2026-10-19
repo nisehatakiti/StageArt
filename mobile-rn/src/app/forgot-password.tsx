@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
@@ -18,7 +19,7 @@ import { NetworkError } from '@/api/errors';
  * Phase's explicit instruction: "常にアカウント存在を推測できないレスポンス
  * として扱う").
  */
-export default function ForgotPasswordScreen() {
+function ForgotPasswordScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -113,3 +114,6 @@ export default function ForgotPasswordScreen() {
     </AuthLayout>
   );
 }
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(ForgotPasswordScreen);

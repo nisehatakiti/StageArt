@@ -1,4 +1,4 @@
-import { getStageArtLoginUrl, getStageArtRootExperience } from './site-routing';
+import { getStageArtLoginUrl, getStageArtRootExperience, isPublicSiteHost } from './site-routing';
 
 describe('StageArt root host routing', () => {
   it.each(['stageart.top', 'www.stageart.top', 'dummy.stageart.top'])('%s uses the public feature landing page', (hostname) => {
@@ -20,5 +20,13 @@ describe('StageArt root host routing', () => {
   it('normalizes case and a trailing dot in hostnames', () => {
     expect(getStageArtRootExperience('DUMMY.STAGEART.TOP.')).toBe('public-landing');
     expect(getStageArtLoginUrl('DUMMY.STAGEART.TOP.')).toBe('https://dev.stageart.top/login/');
+  });
+
+  it.each(['stageart.top', 'www.stageart.top', 'dummy.stageart.top', 'DUMMY.STAGEART.TOP.'])('%s is a public-site host (no login screen)', (hostname) => {
+    expect(isPublicSiteHost(hostname)).toBe(true);
+  });
+
+  it.each(['app.stageart.top', 'dev.stageart.top', 'localhost', ''])('%s is not a public-site host', (hostname) => {
+    expect(isPublicSiteHost(hostname)).toBe(false);
   });
 });

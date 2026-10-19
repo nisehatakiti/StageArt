@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
@@ -35,7 +36,7 @@ import { fetchParticipantInvitationPreview } from '@/features/participantInvitat
  * when that happens. Ordinary self-registration (no token, or a token
  * that failed to preview) is completely unaffected.
  */
-export default function RegisterScreen() {
+function RegisterScreen() {
   const { registerWithEmail } = useAuth();
   const router = useRouter();
   const { token: invitationToken } = useLocalSearchParams<{ token?: string }>();
@@ -233,3 +234,6 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   fixedInput: { opacity: 0.6 },
 });
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(RegisterScreen);

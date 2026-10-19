@@ -59,7 +59,9 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "export:web": "expo export --platform web",
-    "postexport:web": "node scripts/generate-htaccess.js"
+    "postexport:web": "node scripts/generate-htaccess.js",
+    "export:web:site": "node scripts/export-web-site.js",
+    "verify:web": "node scripts/verify-web-build.js"
   },
   "private": true,
   "jest": {

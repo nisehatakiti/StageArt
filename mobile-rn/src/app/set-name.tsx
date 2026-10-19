@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, Touchabl
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
@@ -32,7 +33,7 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * already-set name from Profile returns there instead of detouring
  * through Home.
  */
-export default function SetNameScreen() {
+function SetNameScreen() {
   const { apiClient } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -147,3 +148,6 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '600' },
 });
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(SetNameScreen);

@@ -7,6 +7,7 @@ import { StageArtLogo } from '@/components/brand/StageArtLogo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Spacing } from '@/constants/theme';
+import { useIsPublicSite } from '@/hooks/use-site-host';
 
 type BottomNavEntry = { key: string; label: string; route: '/home' | '/discover' | '/favorites' | '/profile' };
 
@@ -68,18 +69,25 @@ function WebBottomNav() {
  * (docs/assets/brand/stageart-logo.svg via StageArtLogo), replacing the
  * earlier placeholder text wordmark now that the official asset exists
  * in the Blueprint (docs/03-BrandIdentity.md).
+ *
+ * On the public-site hosts (stageart.top, www.stageart.top,
+ * dummy.stageart.top) the logo returns to the public top page instead of
+ * /home, and the Bottom Navigation is not shown: every one of its
+ * destinations lives in the authenticated (app) group, whose gate would
+ * otherwise send public visitors to a login screen.
  */
 export function AppShell({ children, scroll = false }: PropsWithChildren<{ scroll?: boolean }>) {
   const router = useRouter();
+  const isPublicSite = useIsPublicSite();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <TouchableOpacity
         testID="app-shell-logo"
-        onPress={() => router.replace('/home')}
+        onPress={() => router.replace(isPublicSite ? '/' : '/home')}
         style={styles.logoRow}
         accessibilityRole="button"
-        accessibilityLabel="StageArt ホームへ戻る"
+        accessibilityLabel={isPublicSite ? 'StageArt トップページへ戻る' : 'StageArt ホームへ戻る'}
       >
         <StageArtLogo width={132} height={40} />
       </TouchableOpacity>
@@ -92,7 +100,7 @@ export function AppShell({ children, scroll = false }: PropsWithChildren<{ scrol
         </ThemedText>
       </ThemedView>
 
-      {Platform.OS === 'web' && <WebBottomNav />}
+      {Platform.OS === 'web' && !isPublicSite && <WebBottomNav />}
     </SafeAreaView>
   );
 }
