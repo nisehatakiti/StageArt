@@ -14,6 +14,11 @@ use StageArt\Application\Organization\OrganizationLogoUploadRejectedException;
  * created (Organization.logoUrl is a plain URL field, matching
  * Production.flyerUrl's own established convention), so this only ever
  * needs the resulting public URL back.
+ *
+ * A large JPEG/PNG/WebP is first scaled down (aspect ratio kept, never
+ * cropped or enlarged) by WordPressOrganizationLogoShrinker; the scaled
+ * copy is then stored through `wp_handle_sideload()` - the same upload
+ * handling and checks, for a file that is no longer the raw PHP upload.
  */
 final class WordPressOrganizationLogoUploader
 {
@@ -28,6 +33,13 @@ final class WordPressOrganizationLogoUploader
     ];
 
     public const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+    private WordPressOrganizationLogoShrinker $shrinker;
+
+    public function __construct(?WordPressOrganizationLogoShrinker $shrinker = null)
+    {
+        $this->shrinker = $shrinker ?? new WordPressOrganizationLogoShrinker();
+    }
 
     /**
      * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int} $file
@@ -60,10 +72,34 @@ final class WordPressOrganizationLogoUploader
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
 
-        $result = wp_handle_upload($file, [
+        $overrides = [
             'test_form' => false,
             'mimes' => self::ALLOWED_MIME_TYPES,
-        ]);
+        ];
+
+        $shrunkPath = $this->shrinker->shrink($file['tmp_name'], $checked['type']);
+
+        if ($shrunkPath === null) {
+            $result = wp_handle_upload($file, $overrides);
+        } else {
+            try {
+                // Same name (the format is unchanged, so its extension
+                // still matches); sideload moves the scaled copy into
+                // wp-content/uploads exactly like wp_handle_upload() would.
+                $shrunkFile = [
+                    'name' => $file['name'] ?? '',
+                    'type' => $checked['type'],
+                    'tmp_name' => $shrunkPath,
+                    'error' => UPLOAD_ERR_OK,
+                    'size' => (int) filesize($shrunkPath),
+                ];
+                $result = wp_handle_sideload($shrunkFile, $overrides);
+            } finally {
+                if (is_file($shrunkPath)) {
+                    @unlink($shrunkPath);
+                }
+            }
+        }
 
         if (! isset($result['url'])) {
             throw new OrganizationLogoUploadRejectedException(
