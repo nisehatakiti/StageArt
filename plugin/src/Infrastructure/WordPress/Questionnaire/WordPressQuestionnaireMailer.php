@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Questionnaire;
 
 use StageArt\Application\Questionnaire\QuestionnaireMailerInterface;
+use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /**
  * §22/§23: mirrors WordPressAuthMailer's own "wp_mail() only, no new
@@ -41,7 +42,7 @@ final class WordPressQuestionnaireMailer implements QuestionnaireMailerInterface
             esc_html__('このアンケートは匿名で、どなたでもご回答いただけます。', 'stageart')
         );
 
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             sprintf(
                 /* translators: %s: Production name */

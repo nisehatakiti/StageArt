@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\OrganizationInvitation;
 
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationMailerInterface;
+use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /** Mirrors WordPressParticipantInvitationMailer's own shape exactly - see
  * that class's docblock for the established conventions this follows. */
@@ -43,7 +44,7 @@ final class WordPressOrganizationInvitationMailer implements OrganizationInvitat
             esc_html__('心当たりがない場合は、このメールを破棄してください。', 'stageart')
         );
 
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             sprintf(
                 /* translators: %s: Organization name */

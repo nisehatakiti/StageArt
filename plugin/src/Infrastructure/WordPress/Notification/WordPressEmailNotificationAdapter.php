@@ -7,6 +7,7 @@ namespace StageArt\Infrastructure\WordPress\Notification;
 use StageArt\Application\Notification\NotificationDeliveryAdapterInterface;
 use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /**
  * Notification基盤実装 phase §5: uses `wp_mail()` only, the same
@@ -41,6 +42,6 @@ final class WordPressEmailNotificationAdapter implements NotificationDeliveryAda
 
         $message = is_string($payload['message'] ?? null) ? $payload['message'] : 'StageArtからのお知らせがあります。';
 
-        wp_mail($email, __('StageArt - お知らせ', 'stageart'), $message);
+        StageArtMail::send($email, __('StageArt - お知らせ', 'stageart'), $message);
     }
 }

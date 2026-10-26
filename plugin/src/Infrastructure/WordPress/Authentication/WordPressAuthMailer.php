@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Authentication;
 
 use StageArt\Application\Authentication\AuthMailerInterface;
+use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /**
  * Uses wp_mail() only - no new dependency (WordPress core already
@@ -14,9 +15,9 @@ use StageArt\Application\Authentication\AuthMailerInterface;
  * sendEmailVerificationEmail() sends an HTML message with a single
  * tappable link instead (a real-device correction - see its own
  * docblock). The hidden WordPress User StageArt provisions for its own
- * users is not involved in sending either email - wp_mail() sends from
- * the site's own configured From-address, not from any per-user
- * WordPress account.
+ * users is not involved in sending either email - they are sent through
+ * StageArtMail (wp_mail() with StageArt's own sender, "StageArt
+ * <noreply@stageart.top>"), not from any per-user WordPress account.
  */
 final class WordPressAuthMailer implements AuthMailerInterface
 {
@@ -37,7 +38,7 @@ final class WordPressAuthMailer implements AuthMailerInterface
 
     public function sendPasswordResetEmail(string $toEmail, string $token): void
     {
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             __('StageArt - パスワードリセット', 'stageart'),
             sprintf(
@@ -92,7 +93,7 @@ final class WordPressAuthMailer implements AuthMailerInterface
             esc_html__('心当たりがない場合は、このメールを破棄してください。', 'stageart')
         );
 
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             __('StageArt - メールアドレスの確認', 'stageart'),
             $body,
@@ -130,7 +131,7 @@ final class WordPressAuthMailer implements AuthMailerInterface
             esc_html__('心当たりがない場合は、このメールを破棄してください。通知先は変更されません。', 'stageart')
         );
 
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             __('StageArt - 通知用メールアドレスの確認', 'stageart'),
             $body,

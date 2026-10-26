@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\ParticipantInvitation;
 
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationMailerInterface;
+use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /**
  * wp_mail()-only, no new dependency - mirrors WordPressAuthMailer /
@@ -51,7 +52,7 @@ final class WordPressParticipantInvitationMailer implements ParticipantInvitatio
             esc_html__('心当たりがない場合は、このメールを破棄してください。', 'stageart')
         );
 
-        wp_mail(
+        StageArtMail::send(
             $toEmail,
             sprintf(
                 /* translators: %s: Production name */
