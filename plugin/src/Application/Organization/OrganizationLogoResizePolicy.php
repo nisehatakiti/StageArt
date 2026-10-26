@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Application\Media\JpegStructure;
+
 /**
  * The rules for shrinking a newly uploaded Organization logo, kept free of
  * WordPress so they can be unit tested. The actual pixel work happens in
@@ -15,6 +17,8 @@ namespace StageArt\Application\Organization;
  * - Only images whose long edge exceeds the limit are scaled; anything at
  *   or under it is stored exactly as uploaded (no needless re-encode).
  * - Scaling keeps the aspect ratio and never crops or enlarges.
+ * - A JPEG cut off part-way is rejected whatever its size (see
+ *   isCompleteFile()).
  */
 final class OrganizationLogoResizePolicy
 {
@@ -57,6 +61,17 @@ final class OrganizationLogoResizePolicy
         }
 
         return self::RESIZABLE_MIME_TYPES[$mimeType];
+    }
+
+    /**
+     * Whether an uploaded file is complete. A JPEG must reach its own end
+     * marker (JpegStructure): this server's ImageMagick and GD decode a
+     * truncated JPEG without an error, and a small one would otherwise be
+     * stored as uploaded. Other formats are not checked here.
+     */
+    public function isCompleteFile(string $mimeType, string $bytes): bool
+    {
+        return $mimeType !== 'image/jpeg' || JpegStructure::isComplete($bytes);
     }
 
     public function needsResize(string $mimeType, int $width, int $height): bool

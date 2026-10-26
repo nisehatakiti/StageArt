@@ -107,6 +107,43 @@ final class WordPressOrganizationLogoUploader
             );
         }
 
-        return $result['url'];
+        // The uploads URL is built from the siteurl option, which can say
+        // http:// while the API is reached over https (dev-api did); give it
+        // the scheme of this request (is_ssl(), never a client header), as
+        // the hero image uploader does, so an https page gets an https logo.
+        return set_url_scheme($result['url']);
+    }
+
+    /**
+     * Removes a file upload() stored that ended up not being saved as the
+     * logo. Only a file directly under wp-content/uploads, addressed by an
+     * uploads URL, is ever removed.
+     */
+    public function discard(string $url): void
+    {
+        $uploads = wp_upload_dir(null, false);
+
+        if (! empty($uploads['error']) || empty($uploads['baseurl']) || empty($uploads['basedir'])) {
+            return;
+        }
+
+        $baseUrl = preg_replace('#^https?:#i', '', (string) $uploads['baseurl']);
+        $relativeUrl = preg_replace('#^https?:#i', '', $url);
+
+        if (! is_string($baseUrl) || ! is_string($relativeUrl) || strpos($relativeUrl, $baseUrl . '/') !== 0) {
+            return;
+        }
+
+        $relative = substr($relativeUrl, strlen($baseUrl) + 1);
+
+        if ($relative === '' || strpos($relative, '..') !== false) {
+            return;
+        }
+
+        $path = rtrim((string) $uploads['basedir'], '/\\') . '/' . $relative;
+
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 }

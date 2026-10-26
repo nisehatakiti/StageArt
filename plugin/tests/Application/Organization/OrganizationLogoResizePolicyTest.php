@@ -118,4 +118,53 @@ final class OrganizationLogoResizePolicyTest extends TestCase
     {
         $this->assertFalse((new OrganizationLogoResizePolicy(2048))->isAcceptableOutput('image/jpeg', 1200, 600, 'image/jpeg', 2048, 1024));
     }
+
+    public function test_a_complete_jpeg_is_accepted_and_one_cut_off_part_way_is_not(): void
+    {
+        $policy = new OrganizationLogoResizePolicy();
+        // SOI, DQT, SOS + entropy data (stuffed byte, RST marker), EOI.
+        $jpeg = "\xFF\xD8"
+            . "\xFF\xDB" . pack('n', 67) . str_repeat("\x01", 65)
+            . "\xFF\xDA" . pack('n', 8) . "\x01\x01\x00\x00\x3F\x00"
+            . "\x12\x34\xFF\x00\x56\xFF\xD3\x78\x9A"
+            . "\xFF\xD9";
+
+        $this->assertTrue($policy->isCompleteFile('image/jpeg', $jpeg));
+        $this->assertFalse($policy->isCompleteFile('image/jpeg', substr($jpeg, 0, strlen($jpeg) - 2)));
+        $this->assertFalse($policy->isCompleteFile('image/jpeg', substr($jpeg, 0, 40)));
+        $this->assertFalse($policy->isCompleteFile('image/jpeg', 'not a jpeg'));
+    }
+
+    public function test_a_small_real_jpeg_cut_off_part_way_is_rejected(): void
+    {
+        if (! function_exists('imagecreatetruecolor') || ! function_exists('imagejpeg')) {
+            $this->markTestSkipped('GD with JPEG support is not available here.');
+        }
+
+        // Under the 1024px limit, so it would be stored without resizing.
+        $image = imagecreatetruecolor(400, 100);
+        for ($x = 0; $x < 400; $x += 9) {
+            imagefilledrectangle($image, $x, 0, $x + 4, 99, imagecolorallocate($image, $x % 256, 120, 60));
+        }
+        ob_start();
+        imagejpeg($image, null, 90);
+        $bytes = (string) ob_get_clean();
+        $policy = new OrganizationLogoResizePolicy();
+
+        $this->assertFalse($policy->needsResize('image/jpeg', 400, 100));
+        $this->assertTrue($policy->isCompleteFile('image/jpeg', $bytes));
+        $this->assertFalse($policy->isCompleteFile('image/jpeg', substr($bytes, 0, (int) (strlen($bytes) * 0.7))));
+    }
+
+    /** @dataProvider uncheckedFormats */
+    public function test_other_formats_are_not_checked_here(string $mimeType): void
+    {
+        $this->assertTrue((new OrganizationLogoResizePolicy())->isCompleteFile($mimeType, 'any bytes'));
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function uncheckedFormats(): array
+    {
+        return ['png' => ['image/png'], 'webp' => ['image/webp'], 'gif' => ['image/gif']];
+    }
 }

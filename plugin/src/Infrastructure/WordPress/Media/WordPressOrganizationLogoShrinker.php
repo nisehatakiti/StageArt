@@ -21,9 +21,11 @@ use StageArt\Application\Organization\OrganizationLogoUploadRejectedException;
  *   EXIF data that would otherwise have rotated the image on display).
  *   Both editors read it only via exif_read_data(); without the PHP exif
  *   extension a large JPEG is stored unchanged and that is logged.
- * - A large JPEG is first decoded by GD in strict mode to reject a file
- *   cut off part-way (verified with GD only; with no GD JPEG support the
- *   check is skipped and logged - Imagick's own behavior is unverified).
+ * - Any JPEG cut off part-way (no end marker) is rejected by
+ *   OrganizationLogoResizePolicy::isCompleteFile(), as this server's
+ *   ImageMagick and GD both decode it without an error. A large JPEG is
+ *   also decoded by GD in strict mode, which rejects some other damage
+ *   (with no GD JPEG support that extra check is skipped and logged).
  * - No editor on the server supports the format (`image_no_editor`): the
  *   original is stored unchanged, exactly as before this class existed,
  *   and that is written to the PHP error log.
@@ -72,6 +74,11 @@ final class WordPressOrganizationLogoShrinker
             throw new OrganizationLogoUploadRejectedException('画像ファイルを読み込めませんでした。別の画像をお試しください。');
         }
 
+        // Every JPEG, also one small enough to be stored as uploaded.
+        if (! $this->policy->isCompleteFile($mimeType, (string) file_get_contents($sourcePath))) {
+            throw $this->broken();
+        }
+
         if (! $this->policy->needsResize($mimeType, $size[0], $size[1])) {
             return null;
         }
@@ -88,7 +95,7 @@ final class WordPressOrganizationLogoShrinker
             }
 
             if ($this->isTruncatedJpeg($sourcePath)) {
-                throw new OrganizationLogoUploadRejectedException('画像ファイルが壊れているか、途中までしか送信されていません。別の画像をお試しください。');
+                throw $this->broken();
             }
         }
 
@@ -200,6 +207,11 @@ final class WordPressOrganizationLogoShrinker
             $this->policy->maxLongEdge(),
             $reason
         ));
+    }
+
+    private function broken(): OrganizationLogoUploadRejectedException
+    {
+        return new OrganizationLogoUploadRejectedException('画像ファイルが壊れているか、途中までしか送信されていません。別の画像をお試しください。');
     }
 
     private function failed(): OrganizationLogoUploadRejectedException
