@@ -2,7 +2,7 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -147,6 +147,10 @@ Production決算確定
 公演終了そのものを決算確定条件とはしない。未収金・未払金が残っている場合は決算確定できない。
 
 Productionの決算確定はOrganization全体の会計期間Closeとは別概念とする。
+
+Production決算の確定は、チケットバック未払い金を個人ごとに精算する公演管理「精算」（`29-ProductionSettlementScreen.md`）とは別の操作である。
+
+決算確定時の仕掛品の振替、および確定結果の団体会計の公演別実績への反映は `OrganizationAccountingAndProductionCostPolicy.md` と `AccountingPolicy.md`「Organization Accounting and Production Cost」に従う。
 
 ---
 

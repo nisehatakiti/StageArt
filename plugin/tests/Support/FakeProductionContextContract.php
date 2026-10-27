@@ -65,6 +65,19 @@ final class FakeProductionContextContract implements ProductionContextContract
         return $this->organizationIds[$productionId->toString()] ?? null;
     }
 
+    public function getOrganizationProductions(OrganizationId $organizationId): array
+    {
+        $summaries = [];
+
+        foreach ($this->productions as $key => $summary) {
+            if (isset($this->organizationIds[$key]) && $this->organizationIds[$key]->equals($organizationId)) {
+                $summaries[] = $summary;
+            }
+        }
+
+        return $summaries;
+    }
+
     public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings
     {
         return $this->ticketSettings[$productionId->toString()] ?? null;

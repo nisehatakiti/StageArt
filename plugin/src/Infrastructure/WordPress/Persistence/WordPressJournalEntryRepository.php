@@ -120,6 +120,20 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         return $this->hydrateBulk($rows ?: []);
     }
 
+    public function findPostedWithProductionByOrganizationId(OrganizationId $organizationId): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE organization_id = %s AND production_id IS NOT NULL AND status = %s ORDER BY journal_date ASC",
+                $organizationId->toString(),
+                JournalEntryStatus::POSTED
+            ),
+            ARRAY_A
+        );
+
+        return $this->hydrateBulk($rows ?: []);
+    }
+
     public function findBySourceEvent(string $sourceEventType, string $sourceEventId): ?JournalEntry
     {
         $row = $this->wpdb->get_row(

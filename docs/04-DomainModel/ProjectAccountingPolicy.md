@@ -2,7 +2,7 @@
 
 # Domain Model : Project Accounting Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -40,8 +40,11 @@ Organization Accountingは、Journal Entryを正本とする団体全体の会�
 - 団体全体の収益・費用の確認
 - 団体全体の財務状態の確認
 - Organization全体の会計管理
+- 公演別実績（公演ごとの売上・原価・収支・決算状態）の一覧と合計の確認
 
 Organization Accountingは、特定のProductionだけを対象とするProduction決算とは異なる。
+
+公演別実績では詳細な費目別内訳・取引明細を重複して管理せず、詳細は対象ProductionのProduction Accountingで確認する（`OrganizationAccountingAndProductionCostPolicy.md`）。
 
 ---
 
@@ -82,6 +85,7 @@ Production Accountingでは、個々の公演について最終的な実績を�
 - Production単位のActual確認
 - Production単位の最終収支確認
 - 公演ごとの決算確認
+- 費目別の原価・売上内訳・取引明細の確認
 
 Productionの実績は、Accounting DomainにおけるJournal Entryを基礎として集計する。
 

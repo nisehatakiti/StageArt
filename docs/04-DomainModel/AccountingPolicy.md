@@ -2,7 +2,7 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -158,6 +158,27 @@ Productionが複数の会計年度にまたがる場合、Production全体を公
 Production単位で見た収支とOrganization単位で見た該当Productionの収支は、同じJournal Entryを集計する限り一致する。
 
 Production終了時に費目ごとの合計額をOrganization Accountingへ新たに転記する方式は採用しない。
+
+---
+
+# Organization Accounting and Production Cost
+
+団体会計と公演会計の役割分担、公演別実績、および会計期間をまたぐ未完成公演の仕掛品は `OrganizationAccountingAndProductionCostPolicy.md` に従う。
+
+本書との関係は次のとおりとする。
+
+- 団体会計の公演別実績（売上・原価・収支・決算状態）は、公演に紐付くJournal Entryを集計して表示する。公演決算の確定時に、費目ごとの合計額を団体会計へ新たに転記しない（上記「Production and Organization Consistency」）。
+- 期末の仕掛品計上と、公演決算確定時の仕掛品振替は、公演別実績の集計とは別の会計処理である。両者を混同しない。
+- 仕掛品計上・振替によって費用勘定の残高が変わっても、公演会計の費目別原価と元取引の履歴は失わない。
+- 仕掛品計上・振替の仕訳科目、Journal Date、仕掛品に含める原価の範囲は、同方針書「7. 会計処理上の留意点」のとおり未確定であり、確定するまで実装しない。
+
+各時点の意味：
+
+| 時点 | 意味 |
+|---|---|
+| 仕掛品計上の基準時点 | Organizationの会計期間の期末。期末時点で未完成の公演に対応する対象原価を、仕掛品残高として把握する |
+| 公演決算確定日 | `AccountingUIAndReportingPolicy.md`「Production Closing」に従いProduction決算を確定した時点。当該公演の仕掛品を振り替え、売上・原価を確定する |
+| 公演別実績への反映 | 公演決算確定により、団体会計の公演別実績で当該公演が確定済みとして扱われる時点。金額は各Journal EntryのJournal Dateに基づく集計であり、反映のための新たな転記は行わない |
 
 ---
 
@@ -412,6 +433,8 @@ Mobile / Web UIでAccountingを表示する場合も、OrganizationのAccounting
 - 未収金・未払金の差額は新しいJournal Entryとして調整する。
 - Productionの決算完了はOrganizationの会計期間Closeとは別概念とする。
 - Productionが会計期間をまたぐ場合、Journal Dateに従って各会計期間へ反映する。
+- 団体会計の公演別実績は、公演に紐付くJournal Entryの集計として表示し、公演決算確定時に新たな転記を行わない。
+- 期末の仕掛品計上・公演決算確定時の仕掛品振替は `OrganizationAccountingAndProductionCostPolicy.md` に従い、仕訳科目・Journal Date・対象原価の範囲が確定するまで実装しない。
 - COMPLETED後の修正は新たなAdjustment Journal Entryとして記録する。
 - ActualはJournal Entryから集計し、別の正本データとして二重管理しない。
 - Organization AccountingとProduction Accountingは同一Journal Entryを異なるScopeで集計する。

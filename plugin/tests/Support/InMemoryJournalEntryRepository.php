@@ -8,6 +8,7 @@ use StageArt\Domain\JournalEntry\JournalEntry;
 use StageArt\Domain\JournalEntry\JournalEntryId;
 use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
 use StageArt\Domain\JournalEntry\JournalEntryStatus;
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 
 final class InMemoryJournalEntryRepository implements JournalEntryRepositoryInterface
@@ -40,6 +41,16 @@ final class InMemoryJournalEntryRepository implements JournalEntryRepositoryInte
             $this->entries,
             static fn (JournalEntry $entry): bool => $entry->productionId() !== null
                 && $entry->productionId()->equals($productionId)
+                && $entry->status()->equals(JournalEntryStatus::fromString(JournalEntryStatus::POSTED))
+        ));
+    }
+
+    public function findPostedWithProductionByOrganizationId(OrganizationId $organizationId): array
+    {
+        return array_values(array_filter(
+            $this->entries,
+            static fn (JournalEntry $entry): bool => $entry->productionId() !== null
+                && $entry->organizationId()->equals($organizationId)
                 && $entry->status()->equals(JournalEntryStatus::fromString(JournalEntryStatus::POSTED))
         ));
     }

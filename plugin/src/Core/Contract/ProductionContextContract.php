@@ -46,6 +46,14 @@ interface ProductionContextContract
     public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId;
 
     /**
+     * Every Production of an Organization (through all of its Projects) -
+     * the list 団体会計の公演別実績 is built from.
+     *
+     * @return ProductionSummary[]
+     */
+    public function getOrganizationProductions(OrganizationId $organizationId): array;
+
+    /**
      * Phase 3 Ticket/Reservation基盤: the Ticket Module's own read
      * access to Production's ticket-sales/quota/ticket-back settings -
      * see `ProductionTicketSettings`'s own docblock for why this is a

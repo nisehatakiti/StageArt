@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { ProductionAccountingDetailSection } from '@/features/accounting/ProductionAccountingDetailSection';
 import { useProductionAccounting } from '@/features/accounting/useProductionAccounting';
 import { buildAccountingViewModel } from '@/features/accounting/viewModel';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -71,6 +72,8 @@ export default function AccountingScreen() {
             <SummaryRow testID="accounting-actual-row" label="実績" row={viewModel.actual} />
             <SummaryRow testID="accounting-variance-row" label="差異" row={viewModel.variance} />
           </ThemedView>
+
+          <ProductionAccountingDetailSection productionId={productionId} />
 
           {/* 第1スプリント 予算策定: the 会計 menu's entry to the Budget input screens. */}
           <TouchableOpacity

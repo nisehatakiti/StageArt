@@ -1,4 +1,5 @@
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import type { ReactNode } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,11 +26,14 @@ export function OrganizationPlaceholderScreen({
   testIdPrefix,
   title,
   description,
+  children,
 }: {
   id: string | undefined;
   testIdPrefix: string;
   title: string;
   description: string;
+  /** Content that is already available; the description then stays as a note below it. */
+  children?: ReactNode;
 }) {
   const organizationsQuery = useOrganizations();
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
@@ -58,6 +62,20 @@ export function OrganizationPlaceholderScreen({
     );
   }
 
+  if (children) {
+    return (
+      <ScrollView contentContainerStyle={styles.content}>
+        <ThemedText type="title" style={styles.title} testID={`${testIdPrefix}-title`}>
+          {title}
+        </ThemedText>
+        {children}
+        <ThemedText type="small" themeColor="textSecondary" testID={`${testIdPrefix}-placeholder`}>
+          {description}
+        </ThemedText>
+      </ScrollView>
+    );
+  }
+
   return (
     <>
       <ThemedView style={styles.container}>
@@ -76,4 +94,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },
   title: { fontSize: 22, lineHeight: 28 },
   body: { textAlign: 'center' },
+  content: { padding: Spacing.four, gap: Spacing.three },
 });

@@ -12,6 +12,7 @@ use StageArt\Core\Contract\ProductionSummary;
 use StageArt\Core\Contract\ProductionTicketSettings;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
@@ -82,6 +83,26 @@ final class CoreProductionContextAdapter implements ProductionContextContract
         } catch (ProjectNotFoundException $exception) {
             return null;
         }
+    }
+
+    public function getOrganizationProductions(OrganizationId $organizationId): array
+    {
+        $projectIds = $this->organizationResolver->projectIdsOf($organizationId);
+
+        if ($projectIds === []) {
+            return [];
+        }
+
+        return array_map(
+            static fn (Production $production): ProductionSummary => new ProductionSummary(
+                $production->id(),
+                $production->name()->toString(),
+                $production->status()->toString(),
+                $production->capacity(),
+                $production->performanceDurationMinutes()
+            ),
+            $this->productions->findByProjectIds($projectIds)
+        );
     }
 
     public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings

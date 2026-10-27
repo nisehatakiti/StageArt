@@ -24,6 +24,8 @@ use StageArt\Application\Expense\ListExpensesUseCase;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
+use StageArt\Application\OrganizationAccounting\ListOrganizationProductionResultsUseCase;
+use StageArt\Application\ProductionAccounting\GetProductionAccountingDetailUseCase;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
@@ -161,7 +163,11 @@ final class AccountingModuleBootstrap
         );
 
         $this->restControllers = [
-            new AccountRestController($createAccount, $listAccounts),
+            new AccountRestController(
+                $createAccount,
+                $listAccounts,
+                new ListOrganizationProductionResultsUseCase($journalEntries, $accounts, $productionContext, $organizationContext, $authorization, $identity)
+            ),
             new BudgetRestController(
                 $createBudget,
                 $updateBudget,
@@ -178,7 +184,10 @@ final class AccountingModuleBootstrap
                 $listExpenses
             ),
             new JournalEntryRestController($listJournalEntries, $postJournalEntry),
-            new ProductionAccountingRestController($getProductionAccountingSummary),
+            new ProductionAccountingRestController(
+                $getProductionAccountingSummary,
+                new GetProductionAccountingDetailUseCase($budgets, $journalEntries, $accounts, $productionContext, $authorization, $identity)
+            ),
         ];
     }
 
