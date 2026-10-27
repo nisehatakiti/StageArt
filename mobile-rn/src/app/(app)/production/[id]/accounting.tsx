@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,6 +18,7 @@ import { getErrorMessage } from '@/utils/errorMessage';
  */
 export default function AccountingScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const accountingQuery = useProductionAccounting(productionId);
   const viewModel = accountingQuery.data ? buildAccountingViewModel(accountingQuery.data) : null;
 
@@ -70,6 +71,15 @@ export default function AccountingScreen() {
             <SummaryRow testID="accounting-actual-row" label="実績" row={viewModel.actual} />
             <SummaryRow testID="accounting-variance-row" label="差異" row={viewModel.variance} />
           </ThemedView>
+
+          {/* 第1スプリント 予算策定: the 会計 menu's entry to the Budget input screens. */}
+          <TouchableOpacity
+            onPress={() => router.push(`/productions/${productionId}/budgets` as Href)}
+            testID="accounting-budgets-link"
+            accessibilityRole="button"
+          >
+            <ThemedText type="link">予算を入力・確認する</ThemedText>
+          </TouchableOpacity>
         </ScrollView>
       )}
     </SafeAreaView>

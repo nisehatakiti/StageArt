@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Budget;
 
+use InvalidArgumentException;
 use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -11,7 +12,9 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Budget\Budget;
+use StageArt\Domain\Budget\BudgetLine;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 
 /**
@@ -29,6 +32,7 @@ final class CreateBudgetUseCase
     private AuthorizationContract $authorization;
     private BudgetLineFactory $lineFactory;
     private TransactionManagerInterface $transactions;
+    private ?BudgetItemLineFactory $itemLineFactory;
 
     public function __construct(
         BudgetRepositoryInterface $budgets,
@@ -36,7 +40,8 @@ final class CreateBudgetUseCase
         IdentityContract $identity,
         AuthorizationContract $authorization,
         BudgetLineFactory $lineFactory,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ?BudgetItemLineFactory $itemLineFactory = null
     ) {
         $this->budgets = $budgets;
         $this->productionContext = $productionContext;
@@ -44,6 +49,7 @@ final class CreateBudgetUseCase
         $this->authorization = $authorization;
         $this->lineFactory = $lineFactory;
         $this->transactions = $transactions;
+        $this->itemLineFactory = $itemLineFactory;
     }
 
     public function execute(CreateBudgetCommand $command): BudgetResult
@@ -71,15 +77,35 @@ final class CreateBudgetUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        $lines = $this->lineFactory->build($command->lines, $organizationId);
+        $lines = $command->items === null ? $this->lineFactory->build($command->lines, $organizationId) : null;
 
-        $budget = $this->transactions->run(function () use ($productionId, $command, $lines, $requesterId): Budget {
-            $budget = Budget::create($productionId, $command->name, $lines, $requesterId);
+        $budget = $this->transactions->run(function () use ($productionId, $organizationId, $command, $lines, $requesterId): Budget {
+            // 予算項目 input: the name is validated (Budget::create) before
+            // any preset Account is registered.
+            $budget = Budget::create($productionId, $command->name, $lines ?? [], $requesterId);
+
+            if ($lines === null) {
+                $budget->replaceLines($this->buildItemLines((array) $command->items, $organizationId), $requesterId);
+            }
+
             $this->budgets->save($budget);
 
             return $budget;
         });
 
         return BudgetResult::fromDomain($budget);
+    }
+
+    /**
+     * @param array<int, mixed> $items
+     * @return BudgetLine[]
+     */
+    private function buildItemLines(array $items, OrganizationId $organizationId): array
+    {
+        if ($this->itemLineFactory === null) {
+            throw new InvalidArgumentException('Budget items are not supported here.');
+        }
+
+        return $this->itemLineFactory->build($items, $organizationId);
     }
 }

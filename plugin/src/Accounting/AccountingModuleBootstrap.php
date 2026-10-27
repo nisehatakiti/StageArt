@@ -6,6 +6,10 @@ namespace StageArt\Accounting;
 
 use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsUseCase;
+use StageArt\Application\Accounting\PresetAccountProvisioner;
+use StageArt\Application\Budget\BudgetItemCatalog;
+use StageArt\Application\Budget\BudgetItemLineFactory;
+use StageArt\Application\Budget\ListBudgetItemsUseCase;
 use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
@@ -79,13 +83,17 @@ final class AccountingModuleBootstrap
         $createAccount = new CreateAccountUseCase($accounts, $organizationContext, $identity, $authorization);
         $listAccounts = new ListAccountsUseCase($accounts, $organizationContext, $identity, $authorization);
 
+        $presetAccounts = new PresetAccountProvisioner($accounts);
+        $budgetItemLineFactory = new BudgetItemLineFactory($accounts, $presetAccounts);
+
         $createBudget = new CreateBudgetUseCase(
             $budgets,
             $productionContext,
             $identity,
             $authorization,
             $budgetLineFactory,
-            $transactions
+            $transactions,
+            $budgetItemLineFactory
         );
         $updateBudget = new UpdateBudgetUseCase(
             $budgets,
@@ -93,11 +101,18 @@ final class AccountingModuleBootstrap
             $identity,
             $authorization,
             $budgetLineFactory,
-            $transactions
+            $transactions,
+            $budgetItemLineFactory
         );
         $getBudget = new GetBudgetUseCase($budgets, $identity, $authorization);
         $listBudgets = new ListBudgetsUseCase($budgets, $productionContext, $identity, $authorization);
         $activateBudget = new ActivateBudgetUseCase($budgets, $identity, $authorization, $transactions);
+        $listBudgetItems = new ListBudgetItemsUseCase(
+            new BudgetItemCatalog($accounts, $presetAccounts),
+            $productionContext,
+            $identity,
+            $authorization
+        );
 
         $createExpense = new CreateExpenseUseCase(
             $expenses,
@@ -152,7 +167,8 @@ final class AccountingModuleBootstrap
                 $updateBudget,
                 $getBudget,
                 $listBudgets,
-                $activateBudget
+                $activateBudget,
+                $listBudgetItems
             ),
             new ExpenseRestController(
                 $createExpense,
