@@ -130,6 +130,13 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  * Performance管理を利用"（a label change, not a new/separate screen）。
  * 「担当者」「アンケート」は今回の確定リストに明記されていないが、削除する
  * 仕様も見当たらないため既存のまま維持する（要確認）。
+ *
+ * 会計 (ManagementNavigationPolicy.md "Production Context": 公演 > 会計 >
+ * 予算 / 実績 / 経費承認 / 決算): the Production's own accounting, grouped
+ * under one 会計 heading - 予算 opens the Budget list, 実績 the Production
+ * Accounting Summary (予算・実績・差異). Usable by the PrimaryManager or an
+ * ACCOUNTING_MANAGER only (Accounting.Update), the same rule as the API.
+ * 経費承認 and 決算 have no menu entry yet.
  */
 function buildProductionContextItems(
   id: string,
@@ -138,7 +145,8 @@ function buildProductionContextItems(
   canManagePerformances: boolean,
   canManageTickets: boolean,
   canManageCheckIn: boolean,
-  canManageQuestionnaire: boolean
+  canManageQuestionnaire: boolean,
+  canViewAccounting: boolean
 ): NavMenuItem[] {
   return [
     { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
@@ -163,6 +171,14 @@ function buildProductionContextItems(
     { key: 'production-reception', label: '受付', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
     { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !isPrimaryManager },
     { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, disabled: !canManageQuestionnaire },
+    {
+      key: 'production-accounting-budget',
+      label: '予算',
+      href: `/productions/${id}/budgets` as Href,
+      disabled: !canViewAccounting,
+      groupLabel: '会計',
+    },
+    { key: 'production-accounting', label: '実績', href: `/production/${id}/accounting` as Href, disabled: !canViewAccounting },
   ];
 }
 
@@ -228,6 +244,7 @@ export function useNavMenu() {
     const canManageTickets = isPrimaryManager || delegateRoles.includes('TICKET_MANAGER');
     const canManageCheckIn = isPrimaryManager || delegateRoles.includes('CHECKIN_MANAGER');
     const canManageQuestionnaire = isPrimaryManager || delegateRoles.includes('QUESTIONNAIRE_MANAGER');
+    const canViewAccounting = isPrimaryManager || delegateRoles.includes('ACCOUNTING_MANAGER');
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
@@ -239,7 +256,8 @@ export function useNavMenu() {
         canManagePerformances,
         canManageTickets,
         canManageCheckIn,
-        canManageQuestionnaire
+        canManageQuestionnaire,
+        canViewAccounting
       ),
       // See ORGANIZATION_BACK_TO's own docblock for why this is not yet
       // implemented for Production Context.
