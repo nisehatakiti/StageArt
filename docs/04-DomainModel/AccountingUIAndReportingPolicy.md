@@ -12,6 +12,8 @@ StageArt V1の会計管理における利用者向け明細画面、Journal Entr
 
 Journal Entryを会計上の正本とし、利用者向け画面はJournal Entryを直接編集するための画面ではなく、業務上理解しやすい会計明細ビューとして提供する。
 
+団体会計における公演別売上・原価・収支と、公演会計における費目別原価・取引明細の役割分担、および公演仕掛金の会計処理は、[団体会計と公演原価の管理方針](../OrganizationAccountingAndProductionCostPolicy.md)を参照する。
+
 ---
 
 # Accounting Entry Confirmation
@@ -147,6 +149,10 @@ Production決算確定
 公演終了そのものを決算確定条件とはしない。未収金・未払金が残っている場合は決算確定できない。
 
 Productionの決算確定はOrganization全体の会計期間Closeとは別概念とする。
+
+決算確定時に当該Productionの公演仕掛金残高がある場合は、確定対象となる残高を「売上原価／公演仕掛金」で振り替える。仕訳日はProduction決算確定日とし、元取引・対象Production・期末の仕掛計上仕訳との関連を保持する。
+
+この振替は会計上のJournal Entryであり、団体会計の公演別売上・原価・収支を別の仕訳として転記する処理ではない。団体会計の公演別実績はJournal Entryから集計し、仕掛計上と売上原価振替を二重計上しない。
 
 ---
 
