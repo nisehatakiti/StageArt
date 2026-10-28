@@ -34,6 +34,9 @@ use StageArt\Domain\JournalEntry\JournalEntry;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
@@ -69,6 +72,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
     private InMemoryBudgetRepository $budgets;
     private InMemoryExpenseRepository $expenses;
     private InMemoryJournalEntryRepository $journalEntries;
+    private InMemoryParticipantRepository $participants;
     private OrganizationAuthorizationService $orgAuth;
     private ProductionAuthorizationService $prodAuth;
 
@@ -91,12 +95,13 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $this->budgets = new InMemoryBudgetRepository();
         $this->expenses = new InMemoryExpenseRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->participants = new InMemoryParticipantRepository();
 
         $this->orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->prodAuth = new ProductionAuthorizationService(
             $this->orgAuth,
             new InMemoryProductionDelegateRepository(),
-            new InMemoryParticipantRepository()
+            $this->participants
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
@@ -105,7 +110,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorizationContract = new CoreAuthorizationAdapter($this->prodAuth, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter(
-            new InMemoryParticipantRepository(),
+            $this->participants,
             $this->productions,
             $this->people,
             $this->prodAuth
@@ -174,6 +179,19 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $production = Production::create($project->id(), new ProductionName('Autumn Play'), $owner->id());
         $this->productions->save($production);
 
+        $member = Person::create(2);
+        $this->people->save($member);
+
+        // The Expenses below are created by this member and confirmed by
+        // the PrimaryManager: nobody confirms their own Expense
+        // (自己承認の禁止, ExpenseApprovalWorkflow.md).
+        $this->participants->save(Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $member->id()->toString(),
+            ParticipantType::cast()
+        ));
+
         return [$organization, $production, 1];
     }
 
@@ -233,7 +251,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManager();
         [, $expenseAccountId, $payableAccountId] = $this->createRevenueAndExpenseAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 180000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
@@ -261,7 +279,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         ]));
         $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 1));
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 180000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
@@ -283,7 +301,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManager();
         [, $expenseAccountId, $payableAccountId] = $this->createRevenueAndExpenseAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 50000],
         ]));
         // Confirmed, but its generated JournalEntry is deliberately left
@@ -301,7 +319,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManager();
         [, $expenseAccountId, $payableAccountId] = $this->createRevenueAndExpenseAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 90000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));

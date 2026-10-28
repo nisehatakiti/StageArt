@@ -31,6 +31,9 @@ use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
@@ -57,6 +60,7 @@ final class JournalEntryUseCaseTest extends TestCase
     private InMemoryAccountRepository $accounts;
     private InMemoryExpenseRepository $expenses;
     private InMemoryJournalEntryRepository $journalEntries;
+    private InMemoryParticipantRepository $participants;
 
     private CreateAccountUseCase $createAccount;
     private CreateExpenseUseCase $createExpense;
@@ -74,12 +78,13 @@ final class JournalEntryUseCaseTest extends TestCase
         $this->accounts = new InMemoryAccountRepository();
         $this->expenses = new InMemoryExpenseRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->participants = new InMemoryParticipantRepository();
 
         $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
         $prodAuth = new ProductionAuthorizationService(
             $orgAuth,
             new InMemoryProductionDelegateRepository(),
-            new InMemoryParticipantRepository()
+            $this->participants
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
@@ -88,7 +93,7 @@ final class JournalEntryUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorizationContract = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter(
-            new InMemoryParticipantRepository(),
+            $this->participants,
             $this->productions,
             $this->people,
             $prodAuth
@@ -139,6 +144,16 @@ final class JournalEntryUseCaseTest extends TestCase
         $production = Production::create($project->id(), new ProductionName('Autumn Play'), $manager->id());
         $this->productions->save($production);
 
+        // The Expenses below are created by this member and confirmed by
+        // the PrimaryManager: nobody confirms their own Expense
+        // (自己承認の禁止, ExpenseApprovalWorkflow.md).
+        $this->participants->save(Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $member->id()->toString(),
+            ParticipantType::cast()
+        ));
+
         return [$organization, $production, $manager, $member];
     }
 
@@ -162,7 +177,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
@@ -188,7 +203,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
 
@@ -203,7 +218,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
@@ -219,7 +234,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
@@ -236,7 +251,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
+        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
         $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));

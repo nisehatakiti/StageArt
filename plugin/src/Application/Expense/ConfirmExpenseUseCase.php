@@ -95,6 +95,15 @@ final class ConfirmExpenseUseCase
             throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can confirm an Expense.');
         }
 
+        // 自己承認の禁止 (ExpenseApprovalWorkflow.md): neither the Person who
+        // created the Expense nor the one it reimburses may approve it,
+        // whatever their approval rights - another approver has to.
+        $payer = $expense->payerPersonId();
+
+        if ($expense->createdBy()->equals($requesterId) || ($payer !== null && $payer->equals($requesterId))) {
+            throw new ExpenseAccessDeniedException('An Expense cannot be confirmed by the person who created it or is reimbursed by it.');
+        }
+
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
 
         if (! $organizationId) {

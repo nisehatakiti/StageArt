@@ -308,9 +308,60 @@ final class ExpenseUseCaseTest extends TestCase
     }
 
     /**
+     * 自己承認の禁止 (ExpenseApprovalWorkflow.md): approval rights do not let
+     * anyone confirm an Expense they created themselves - the
+     * PrimaryManager and a 会計管理者 included - and nothing is posted.
+     */
+    public function test_an_approver_cannot_confirm_an_expense_they_created(): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
+        $this->givenDelegate($production, $manager, 9, [RoleKey::accountingManager()]);
+
+        foreach ([1, 9] as $approver) {
+            $own = $this->createExpense->execute(new CreateExpenseCommand($approver, $production->id()->toString(), [
+                ['account_id' => $expenseAccountId, 'amount' => 30000],
+            ]));
+
+            try {
+                $this->confirmExpense->execute(new ConfirmExpenseCommand($own->id, $approver, $payableAccountId));
+                $this->fail("User {$approver} must not confirm their own Expense.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame('DRAFT', $this->getExpense->execute(new GetExpenseQuery($own->id, 1))->status);
+            }
+        }
+
+        $this->assertCount(0, $this->journalEntries->findByProductionId($production->id()));
+    }
+
+    /**
+     * The Person an Expense reimburses (payer_person_id) is also barred
+     * from confirming it, even when someone else created it; a different
+     * approver still can.
+     */
+    public function test_the_reimbursed_person_cannot_confirm_the_expense_but_another_approver_can(): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
+        $proxy = $this->givenDelegate($production, $manager, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        $created = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 30000],
+        ], $proxy->id()->toString()));
+
+        try {
+            $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 8, $payableAccountId));
+            $this->fail('The reimbursed proxy manager must not confirm the Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertCount(0, $this->journalEntries->findByProductionId($production->id()));
+        }
+
+        $this->assertSame('CONFIRMED', $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 1, $payableAccountId))->status);
+    }
+    /**
      * @param RoleKey[] $roles
      */
-    private function givenDelegate(Production $production, Person $primaryManager, int $wordPressUserId, array $roles): void
+    private function givenDelegate(Production $production, Person $primaryManager, int $wordPressUserId, array $roles): Person
     {
         $person = Person::create($wordPressUserId);
         $this->people->save($person);
@@ -318,5 +369,7 @@ final class ExpenseUseCaseTest extends TestCase
         foreach ($roles as $role) {
             $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $role, $primaryManager->id()));
         }
+
+        return $person;
     }
 }
