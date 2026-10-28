@@ -482,8 +482,7 @@ CheckInCompletedは、
 
 # Check In and Accounting
 
-CheckInCompletedは、
-チケット売上をAccounting Domainへ連携する契機となる。
+通常の当日精算ではCheck In時の代金受領とCheckInCompletedが同時に発生するため、通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。ただし仕訳の根拠は実際の代金受領を示すPayment Factとする。スタッフ預りTicketは受付担当者が現金を受領し支払済みを確定した時点で計上し、後続のCheckInCompletedで再計上しない。
 
 基本的なFlow：
 
@@ -827,7 +826,7 @@ Cancellationなどについても、
 - Performance自身は個々のReservationのCheck In状態を保持しない。
 - Check In状態はReservationを正本とする。
 - CheckInCompletedは観劇実績確定のBusiness Eventである。
-- CheckInCompletedをAccounting連携の契機として利用できる。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Performance DomainはJournal Entryを管理しない。
 - Accounting DomainがJournal Entryを生成する。
 - Ticket Type / Priceの正本はProduction側にある。
@@ -965,7 +964,7 @@ Performanceの責務を過度に拡張しない。
 - Performance自身はReservationのCheck In状態を保持しない。
 - ReservationをCheck Inの正本とする。
 - CheckInCompletedを観劇実績確定Eventとして扱う。
-- CheckInCompletedをAccounting連携の契機として利用できる。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Performance DomainはJournal Entryを管理しない。
 - Ticket Type / Priceの正本はProduction側にある。
 - PerformanceはTicket Type / Priceを販売対象として利用する。
