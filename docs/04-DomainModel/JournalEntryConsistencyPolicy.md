@@ -22,23 +22,27 @@ Accountは分類マスタ、Budgetは計画、ActualはJournal Entryから算出
 
 # Canonical Accounting Flow
 
-チケット売上相当額については以下をCanonical Flowとする。
+チケット売上相当額については、会計仕訳の生成と来場実績の記録を分離し、以下をCanonical Flowとする。
 
-Reservation
+Reservation / Payment等の業務Fact
     ↓
-未収金
+既存のTicket / Payment / Accountingルール
     ↓
-Check In
+元の売上Journal Entry（該当する場合）
     ↓
-CheckInCompleted
-    ↓
-元の売上Journal Entry
-    ↓
-会計期間末
+会計期間末（Production決算未確定の場合）
     ↓
 仮売上への振替Journal Entry
+    ↓
+Production決算確定時
+    ↓
+正式な売上への振替Journal Entry
 
-Reservation成立時点では売上を認識しない。
+Check In
+    ↓
+CheckInCompleted（来場実績Factのみ）
+
+Reservation成立時点では売上を認識しない。元の売上Journal Entryの生成条件・タイミングは既存のTicket / Payment / Accountingルールに従い、CheckInCompletedを生成契機にしない。
 
 Check In時点では仮売上への振替を行わない。会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
