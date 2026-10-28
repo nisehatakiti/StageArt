@@ -154,13 +154,9 @@ Actualを独立した正本として二重保存しない。
 
 # Ticket Revenue
 
-Ticket RevenueはCheckInCompletedを契機としてJournal Entryへ変換される。
+CheckInCompletedを契機として売上相当額を仮売上としてJournal Entryへ記録する。Production決算確定時に仮売上を正式な売上へ振り替え、正式売上にはREVENUE TypeのAccountを使用する。
 
-Revenue AccountにはREVENUE TypeのTicket Revenue用Accountを使用する。
-
-Reservation成立時点ではRevenueを認識せず、未収金等の状態をAccounting Domainで扱う。
-
-Check In時点でRevenue Recognitionを行う。
+Reservation成立時点ではRevenueを認識せず、未収金等の状態をAccounting Domainで扱う。仮売上AccountのAccount Typeおよび相手勘定は、関連Account / Journal Entry仕様と整合させて確定し、実装側で推定しない。
 
 ---
 
@@ -176,6 +172,7 @@ Check In時点でRevenue Recognitionを行う。
 - 未払金
 - 公演仕掛金（資産科目。期末に繰り延べる公演原価を管理する）
 - 売上原価（公演決算確定時に公演仕掛金から振り替える費用科目）
+- 仮売上
 - チケット売上
 - 物販売上
 - その他収入
@@ -243,9 +240,11 @@ Business Eventから使用Accountを決定するMappingはAccount本体と分離
 ```text
 CheckInCompleted
     ↓
-Ticket Revenue Recognition
+仮売上記録
     ↓
-Ticket Revenue Account
+Production決算確定
+    ↓
+REVENUE Typeの正式売上Account
 ```
 
 のようなMappingを将来管理できる。
