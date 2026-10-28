@@ -83,23 +83,17 @@ Production Settlementは表示・業務概念であり、独立した会計帳�
 
 # Provisional Ticket Sales / 仮売上
 
-Ticketの売上相当額は**Check In時点で仮売上として記録し、正式な売上への振替はProduction決算確定時に行う**。
+**仮売上への振替は会計期間末に行い、Check In時点では行わない。** 会計期間末時点でProduction決算が未確定の場合、当該Productionに関連する売上残高を仮売上へ振り替える。Production決算確定時に仮売上を正式な売上へ振り替える。
 
-Reservation成立時点では売上相当額を記録せず、未収金等の業務・会計状態を管理する。
+Reservation、Check In、入金等の業務Factと、売上・未収金等の会計仕訳は区別する。
 
 基本Flow：
 
-Reservation成立
+元の売上Journal Entry
     ↓
-未収金等
+会計期間末（Production決算未確定）
     ↓
-来場
-    ↓
-Check In
-    ↓
-CheckInCompleted
-    ↓
-仮売上Journal Entry
+仮売上へ振替
     ↓
 Production決算確定
     ↓
@@ -119,23 +113,15 @@ Reservation成立
     ↓
 Accounts Receivable / 未収金
 
-Check In時点で、未収金をTicket Revenueへ振り替える。
+Check In時点で仮売上への振替を行わない。未収金の消込は実際の入金・決済Factに基づいて処理し、仮売上への振替は会計期間末に行う。
 
 ---
 
 # Provisional Ticket Sales Journal Entry
 
-CheckInCompletedを仮売上記録のBusiness Eventとする。正式な売上への振替はProduction決算確定時に行う。
+会計期間末を仮売上振替の契機とする。CheckInCompletedを仮売上仕訳のBusiness Eventにしない。正式な売上への振替はProduction決算確定時に行う。
 
-例えば3,000円の予約について来場した場合：
-
-Debit
-    未収金等 3,000円
-
-Credit
-    仮売上 3,000円
-
-これは仮売上の概念例である。入金済みの場合の借方勘定、仮売上AccountのAccount Typeおよび正式売上への振替仕訳は、関連Account / Journal Entry仕様と整合させる。
+Check In時点で仮売上振替仕訳は生成しない。会計期間末に元の売上Journal Entryを仮売上へ振り替える仕訳を生成する。具体的な貸借・相手勘定・Account Typeは関連Account / Journal Entry仕様と整合させる。
 
 実際の入金が同時に発生する場合は、決済方法に応じて現金・預金等への消込を同時に行うことができる。
 
@@ -143,7 +129,7 @@ Credit
 
 # No Show
 
-No-ShowはCheck Inが完了していないため、原則として仮売上を記録しない。
+No-ShowはCheck Inが完了していないため、Check Inの有無だけを理由に仮売上を記録しない。仮売上への振替対象は会計期間末時点の売上残高と既存の業務・会計ルールに基づいて判断する。
 
 未収金が存在する場合、その後のキャンセル・免除・その他の調整によって処理する。
 
@@ -177,7 +163,7 @@ Revenue Recognitionと現金・預金の入出金は別概念として扱う。
 
 POSTED Journal Entryは直接変更・削除しない。
 
-Revenue Recognition後のキャンセル、返金、金額修正等はReversalまたはAdjustment Journal Entryとして記録する。
+仮売上振替後のキャンセル、返金、金額修正等はReversalまたはAdjustment Journal Entryとして記録する。
 
 元のJournal Entryとの関連を追跡可能にする。
 
@@ -185,7 +171,7 @@ Revenue Recognition後のキャンセル、返金、金額修正等はReversal�
 
 # Idempotency
 
-同一CheckInCompletedを複数回処理しても、同一Ticket Revenueを二重計上してはならない。
+同一CheckInCompletedを複数回処理しても、受付Factや関連する会計Factを二重生成してはならない。仮売上振替は会計期間末の対象売上Journal Entryを基に一意に行う。
 
 Accounting ProcessingはSource Event ID等を利用してIdempotentに処理する。
 
