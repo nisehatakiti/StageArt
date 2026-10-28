@@ -482,7 +482,7 @@ Productionにおける
 Ticket Revenue：
 
 CheckInCompletedによって確定した
-実際のチケット売上相当Fact。Production決算確定前は仮売上として管理し、正式な売上ではない。
+実際のチケット売上相当Fact。会計期間末時点でProduction決算が未確定の場合、売上残高を仮売上へ振り替える。CheckInCompleted自体は仮売上振替の契機ではない。
 
 基本構造：
 
