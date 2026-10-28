@@ -114,7 +114,7 @@ Budgetには、
 
 # Multiple Budgets
 
-一つのProductionに対して、
+一つのProductionまたはProjectに対して、
 複数のBudgetを保持できる。
 
 例えば、
@@ -183,7 +183,7 @@ ARCHIVEDは、
 
 # Active Budget
 
-一つのProductionについて、
+一つのScope（ProductionまたはProject）について、
 Version 1.0では
 ACTIVEなBudgetを一つに限定する。
 
@@ -728,11 +728,11 @@ ARCHIVEDとして保持する。
 - Version 1.0ではBudgetをProjectまたはProductionに関連付けられる。
 - Productionの予算はProductionに関連付ける。
 - Project Budgetは団体全体の予算として管理できる。Organization Budgetと同義であり、別個のBudget Scopeとして作成しない。
-- 一つのProductionに複数Budgetを保持できる。
+- 一つのProductionまたはProjectに複数Budgetを保持できる。
 - Budgetには簡単な名称を設定できる。
 - 「A会場案」「一日2公演案」などの名称を許可する。
 - BudgetはDRAFT / ACTIVE / ARCHIVEDの状態を持つ。
-- Version 1.0ではProductionごとにACTIVE Budgetを一つとする。
+- Version 1.0ではProductionまたはProjectのScopeごとにACTIVE Budgetを一つとする。
 - Budgetは複数Budgetを比較できる。
 - Budgetは複数のBudget Lineから構成される。
 - Budget LineはAccountを参照する。
@@ -852,7 +852,6 @@ Variance
 - Seat数による自動計画
 - 前回公演実績からのBudget作成
 - Budget / Actual / Variance Dashboard
-- 団体全体のProject Budget（Organization Budgetと同義。別機能ではない）
 - キャッシュフロー予測
 - 損益予測
 - 損益分岐点分析
