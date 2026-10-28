@@ -164,9 +164,9 @@ Expense申請はPrimary ManagerまたはProduction Delegateが承認できる。
 
 承認権限および承認金額変更権限はRole別UIの表示切替だけではなく、BackendのAuthorization / Domain Ruleとして担保する。
 
-承認された時点でExpenseをPOSTEDとして扱い、承認金額を基準として必要なJournal Entryを生成・確定し、Production Actualへ反映する。
+承認者は、Expenseの内容・申請金額・承認金額・対象Production等、承認に必要な業務情報を確認できるものとする。承認操作時には「この内容で承認しますか？」という確認ダイアログを表示する。
 
-承認者は、Expenseの内容・申請金額・承認金額・対象Production等、承認に必要な業務情報を確認できるものとする。
+承認者が確認ダイアログで「YES」を選択した時点でExpenseを承認し、POSTEDとして扱う。同一処理内で承認金額を基準としたJournal Entryを生成・確定し、Production Actualへ反映する。承認後に別の転記確認ダイアログやPosting操作を要求しない。「NO」またはキャンセルの場合は承認・転記を実行せず、申請状態を維持する。
 
 ---
 
@@ -242,7 +242,8 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - 承認者は申請金額を変更し、承認金額を指定できる。
 - 承認金額はProduction / Organizationとして会計・精算対象として認める金額を表す。
 - 承認金額が申請金額と異なる場合、双方を履歴として追跡可能にする。
-- 承認時点で承認金額を基準としてExpenseをPOSTEDとし、Journal Entryへ転記する。
+- 承認時に「この内容で承認しますか？」の確認ダイアログを表示し、YESでExpense承認・POSTED化とJournal Entry転記を同一処理で実行する。
+- NOまたはキャンセルの場合は承認・転記せず、申請状態を維持する。
 - 承認時点で承認金額をProduction Actualへ反映する。
 - 承認後に別途Posting操作を要求しない。
 - Primary ManagerまたはProduction DelegateはExpense申請をREJECTEDにできる。
