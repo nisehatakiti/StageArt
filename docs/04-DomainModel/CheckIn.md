@@ -658,10 +658,7 @@ Accounting Domain：
 
 # Check In and Budget
 
-Check Inによって生成された
-チケット売上相当額は仮売上として記録し、
-将来的にProductionの予実管理へ
-連携できる。
+Payment Factに基づいて計上されたTicket RevenueはJournal Entryを通じてProductionの予実管理へ連携できる。Check In自体が売上や仮売上を生成するわけではない。
 
 基本構造：
 
@@ -669,11 +666,11 @@ Budget
   ↓
 Production
   ↓
-Check In
+Payment Fact
   ↓
-Ticket Revenue
+Ticket Revenue Journal Entry
   ↓
-Journal Entry
+会計期間末の仮売上振替（必要な場合）
   ↓
 Actual
 
