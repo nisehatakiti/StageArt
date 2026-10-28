@@ -24,23 +24,25 @@ Accountは分類マスタ、Budgetは計画、ActualはJournal Entryから算出
 
 チケット売上相当額については、会計仕訳の生成と来場実績の記録を分離し、以下をCanonical Flowとする。
 
+標準の当日精算：
+
 Reservation
     ↓
 Price Snapshot（予約金額の確定。予約成立だけでは仕訳なし）
-    ↓
-当日Check In ──→ CheckInCompleted（来場実績Fact）
-    ↓
-実際に代金を受領した場合：Payment Fact
-    ↓
-入金とTicket Revenueを同時に計上するJournal Entry
-    ↓
+
+当日受付で実際に代金を受領 ──→ Payment Fact ──→ 入金・Ticket Revenueの同時計上
+                │
+                └── Check In ──→ CheckInCompleted（来場実績Fact）
+
+スタッフ事前集金：スタッフが観客から集金しただけでは劇団側の受領・売上成立としない。受付担当者がスタッフから現金を受領し、Reservationの支払済みを確定した時点でPayment Factを記録し、入金とTicket Revenueを同時に計上する。後日のCheckInCompletedは来場記録のみとし、再計上しない。
+
 会計期間末（Production決算未確定の場合）
     ↓
-仮売上への振替Journal Entry
+既存の売上Journal Entryを仮売上へ振替
     ↓
 Production決算確定時
     ↓
-正式な売上への振替Journal Entry
+仮売上を正式な売上へ振替
 
 予約成立時点では売上・入金・未収金を計上しない。CheckInCompleted単独では仕訳を生成せず、実際の代金受領を示すPayment Factを根拠に入金とTicket Revenueを同時に計上する。
 
