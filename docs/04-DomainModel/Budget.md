@@ -878,7 +878,7 @@ Journal Entry
 - BudgetはProductionまたはProject単位で管理できる。
 - 一つのProductionまたはProjectに複数のBudget Scenarioを持てる。
 - Budgetには自由な識別名称を設定できる。
-- ACTIVE BudgetはProductionごとに一つとする。
+- ACTIVE BudgetはScope（ProductionまたはProject）ごとに一つとする。
 - Budget LineはAccountを参照する。
 - BudgetとJournal Entryで同じAccount分類を利用する。
 - ActualはJournal Entryから集計する。
