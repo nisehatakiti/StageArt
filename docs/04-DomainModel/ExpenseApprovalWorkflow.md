@@ -2,7 +2,7 @@
 
 # Domain Model : Expense Approval Workflow
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -51,9 +51,11 @@ Accountingの予算・実績は、一般Memberには公開しない。
 | Budgetを入力・変更 | ○ | ○ | — | × |
 | Actualを見る | ○ | ○ | — | × |
 | 小口立替Expenseを登録 | ○ | ○ | — | ○ |
-| Expense申請を承認 | ○ | ○ | — | × |
+| Expense申請を承認 | ○ | 代理人のみ | ○ | × |
 | Journal Entryを確定 | ○ | × | — | × |
-| Production決算を確定 | ○ | × | ○ | × |
+| Production決算を確定 | ○ | 代理人のみ | ○ | × |
+
+Version 1.3（2026-10-28確定）：Expense申請の承認とProduction決算の確定は、Primary Manager、代理人、会計管理者が実行できる。代理人はPARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つ有効なProduction Delegate、会計管理者はACCOUNTING_MANAGERを持つ有効なProduction Delegateとする。それ以外のRoleのみを持つProduction Delegateは承認・決算確定できない。自己承認の禁止など、別途定める承認上の制約は本権限によって解除しない。
 
 Memberは、自分が登録した小口立替Expenseの申請状態など、当該申請を処理するために必要な情報のみ確認できればよい。
 
@@ -236,9 +238,9 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - Expense登録直後はSUBMITTEDとし、正式なActualへ反映しない。
 - SUBMITTEDのExpenseについて承認可能者へ業務通知を行える。
 - 通知からExpenseの確認・承認・却下へ進められる。
-- Primary ManagerまたはProduction DelegateがExpense申請を承認できる。
-- Production決算の確定権限はPrimary Managerと会計管理者に限る。Production Delegate（公演管理者）単独およびMemberは確定できない。
-- 会計管理者のBudget閲覧・変更、Actual閲覧、Expense登録・承認、Journal Entry確定に関する権限は本表では定義せず、各機能の権限仕様に従う。
+- Primary Manager、代理人、会計管理者がExpense申請を承認できる。
+- Production決算の確定権限はPrimary Manager、代理人、会計管理者とする。それ以外のProduction DelegateおよびMemberは確定できない。
+- 会計管理者のBudget閲覧・変更、Actual閲覧、Expense登録、Journal Entry確定に関する権限は本表では定義せず、各機能の権限仕様に従う。
 - 承認者は申請金額を変更し、承認金額を指定できる。
 - 承認金額はProduction / Organizationとして会計・精算対象として認める金額を表す。
 - 承認金額が申請金額と異なる場合、双方を履歴として追跡可能にする。

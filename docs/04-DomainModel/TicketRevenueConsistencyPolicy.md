@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Ticket Revenue / Accounting
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -116,9 +116,15 @@ Check In時点で仮売上振替仕訳は生成しない。期末の振替仕訳
 
 # No-Show
 
-Reservationが成立していてもCheck Inされなかった場合、原則としてTicket Revenueは認識しない。
+Version 1.2（2026-10-28確定）：
 
-No-ShowとなったReservationについて、未収金をどう処理するかは、キャンセル規則・返金規則・免除規則等に従ってAccounting上で処理する。
+No-Showの対象となるReservationは、代金を受領済みであることを前提とする（TicketConsistencyPolicy「NoShow」）。No-Showに「代金未受領」の入力状態は設けない。
+
+Ticket Revenueは実際に代金を受領した時点で計上する。当該Reservationの入金・Ticket Revenueがまだ計上されていない場合は、No-Showの確定時に、受領した代金として入金とTicket Revenueを同時に計上する。Check In等で既に計上済みの場合は再計上しない。
+
+同一Reservationの入金・Ticket Revenueは、Check InとNo-Showのどちらの経路でも1回だけ計上する。
+
+No-Showになったことだけを理由に、計上済みの売上を取り消さない。キャンセル・返金の扱いは本項の対象外とする。
 
 仮売上への振替は会計期間末に行う。Check Inは仮売上振替の契機ではない。
 

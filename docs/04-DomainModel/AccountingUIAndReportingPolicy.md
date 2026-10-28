@@ -2,7 +2,7 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -177,9 +177,10 @@ Production決算の確定は、チケットバック未払い金を個人ごと�
 Productionの決算確定を実行できる権限は以下とする。
 
 - Primary Manager
-- 会計管理者
+- 会計管理者（ACCOUNTING_MANAGERを持つ有効なProduction Delegate）
+- 代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つ有効なProduction Delegate）
 
-公演管理者単独ではProduction決算を確定できない。
+上記以外のProduction Delegateは、Production決算を確定できない（Version 1.3、2026-10-28確定）。
 
 ---
 
@@ -292,7 +293,7 @@ POSTED済みJournal Entryを直接編集・削除せず、訂正時には赤黒�
 - 総勘定元帳はJournal Entryから生成し、直接編集できない。
 - Production決算は未収金・未払金がすべて解消され、仮売上・公演仕掛金の決算処理を行ったうえで確定可能とする。
 - 会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。Check In時点では仮売上への振替を行わない。
-- Production決算の確定権限はPrimary Managerと会計管理者とする。
+- Production決算の確定権限はPrimary Manager、会計管理者、代理人とする。
 - Production決算確定後は公演会計を完全ロックする。
 - 決算後の修正はProduction決算を開き直さず、Organization Accounting側の調整仕訳で行う。
 - BSをA4一枚程度、資産と負債/純資産の左右2列で出力する。
