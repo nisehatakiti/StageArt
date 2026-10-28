@@ -186,7 +186,7 @@ Ticket取引やCheck Inに関する取消・修正が発生した場合、既存
 
 元の会計Factとの関連を追跡できることを基本とする。
 
-仮売上記録後にCheck Inが無効化された場合も、元のJournal Entryを直接削除せず、仮売上の取消・Reversal / Adjustmentを生成する。
+会計期間末の仮売上振替後に元となる売上取引やCheck Inが無効化された場合も、元のJournal Entryを直接削除せず、関連する仮売上振替および元仕訳を考慮したReversal / Adjustmentを生成する。
 
 ---
 
