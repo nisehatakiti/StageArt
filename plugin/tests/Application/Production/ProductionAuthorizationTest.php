@@ -13,6 +13,7 @@ use StageArt\Application\Production\GetProductionQuery;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionCapability;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\Rehearsal\RehearsalCapability;
@@ -462,5 +463,74 @@ final class ProductionAuthorizationTest extends TestCase
 
         $this->assertFalse($this->authorization->canManageProduction($person, $production));
         $this->assertFalse($this->authorization->canManageProductionDelegates($person, $production));
+    }
+
+    /**
+     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 経費承認 and 決算確定
+     * are open to the PrimaryManager, a 会計管理者 (ACCOUNTING_MANAGER) and a
+     * 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER, both ACTIVE) - and to
+     * no other delegate.
+     */
+    public function test_expense_approval_and_completion_are_open_to_primary_manager_accounting_manager_and_proxy_manager(): void
+    {
+        $production = $this->givenProduction(1);
+        $primaryManager = $this->people->findById($production->primaryManagerPersonId());
+
+        $accountingManager = $this->givenDelegate($production, 2, [RoleKey::accountingManager()]);
+        $proxyManager = $this->givenDelegate($production, 3, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $participantManagerOnly = $this->givenDelegate($production, 4, [RoleKey::participantManager()]);
+        $checkInManager = $this->givenDelegate($production, 5, [RoleKey::checkInManager()]);
+
+        foreach ([AccountingCapability::APPROVE_EXPENSE, ProductionCapability::COMPLETE] as $capability) {
+            $this->assertTrue($this->authorization->hasProductionCapability($primaryManager, $production, $capability), $capability);
+            $this->assertTrue($this->authorization->hasProductionCapability($accountingManager, $production, $capability), $capability);
+            $this->assertTrue($this->authorization->hasProductionCapability($proxyManager, $production, $capability), $capability);
+            $this->assertFalse($this->authorization->hasProductionCapability($participantManagerOnly, $production, $capability), $capability);
+            $this->assertFalse($this->authorization->hasProductionCapability($checkInManager, $production, $capability), $capability);
+        }
+
+        // Only these two: a 代理人 does not gain the rest of 会計担当's
+        // Permission Set, and other Lifecycle transitions stay
+        // PrimaryManager-only.
+        $this->assertFalse($this->authorization->hasProductionCapability($proxyManager, $production, AccountingCapability::MANAGE));
+        $this->assertFalse($this->authorization->hasProductionCapability($proxyManager, $production, SettlementCapability::MANAGE));
+        $this->assertFalse($this->authorization->canManageProduction($proxyManager, $production));
+        $this->assertFalse($this->authorization->canManageProduction($accountingManager, $production));
+    }
+
+    public function test_a_proxy_manager_with_one_role_deactivated_can_no_longer_approve_or_complete(): void
+    {
+        $production = $this->givenProduction(1);
+        $person = $this->givenDelegate($production, 3, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        foreach ($this->delegates->findByProductionId($production->id()) as $delegate) {
+            if ($delegate->role()->equals(RoleKey::rehearsalManager())) {
+                $delegate->deactivate($production->primaryManagerPersonId());
+                $this->delegates->save($delegate);
+            }
+        }
+
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, AccountingCapability::APPROVE_EXPENSE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, ProductionCapability::COMPLETE));
+    }
+
+    /**
+     * @param RoleKey[] $roles
+     */
+    private function givenDelegate(Production $production, int $wordPressUserId, array $roles): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+
+        foreach ($roles as $role) {
+            $this->delegates->save(ProductionDelegate::create(
+                $production->id(),
+                $person->id(),
+                $role,
+                $production->primaryManagerPersonId()
+            ));
+        }
+
+        return $person;
     }
 }

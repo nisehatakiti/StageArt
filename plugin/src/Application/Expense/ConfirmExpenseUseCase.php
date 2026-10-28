@@ -91,8 +91,8 @@ final class ConfirmExpenseUseCase
 
         $productionId = $expense->productionId();
 
-        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new ExpenseAccessDeniedException('Only the PrimaryManager can confirm an Expense.');
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::APPROVE_EXPENSE)) {
+            throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can confirm an Expense.');
         }
 
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);

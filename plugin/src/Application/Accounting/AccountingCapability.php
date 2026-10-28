@@ -18,10 +18,17 @@ namespace StageArt\Application\Accounting;
  * `RolePermissions::MAP` (担当者権限をメンバー管理へ統合 instruction §会計担当),
  * in addition to PrimaryManager (`canForProduction()`'s own
  * PrimaryManager-always-succeeds rule).
+ *
+ * `Expense.Approve` (経費承認) is held by the PrimaryManager, a 会計管理者
+ * (ACCOUNTING_MANAGER) and a 代理人 (PARTICIPANT_MANAGER +
+ * REHEARSAL_MANAGER, see `ProductionAuthorizationService`) - StageArt 統合・
+ * 会計仕様の確定事項 2026-10-28 §2, the same holders as
+ * `ProductionCapability::COMPLETE` (決算確定).
  */
 final class AccountingCapability
 {
     public const MANAGE = 'Accounting.Update';
+    public const APPROVE_EXPENSE = 'Expense.Approve';
 
     private function __construct()
     {

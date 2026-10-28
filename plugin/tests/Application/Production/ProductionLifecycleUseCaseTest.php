@@ -26,8 +26,10 @@ use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionSlug;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Ticket\TicketBackCondition;
 use StageArt\Domain\Ticket\TicketBackMode;
 use StageArt\Domain\Ticket\TicketId;
@@ -63,6 +65,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private InMemoryReservationRepository $reservations;
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
+    private InMemoryProductionDelegateRepository $delegates;
 
     private ActivateProductionUseCase $activate;
     private CompleteProductionUseCase $complete;
@@ -79,11 +82,12 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->reservations = new InMemoryReservationRepository();
         $this->tickets = new InMemoryTicketRepository();
         $this->settlements = new InMemorySettlementRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             new InMemoryParticipantRepository()
         );
 
@@ -289,6 +293,57 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->expectException(ProductionSettlementIncompleteException::class);
         $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+    }
+
+    /**
+     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 決算確定 is open to a
+     * 代理人 and a 会計管理者 as well, under the same settlement guard;
+     * other delegates are still refused.
+     */
+    public function test_a_proxy_manager_or_accounting_manager_can_complete_but_other_delegates_cannot(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $this->givenDelegate($production, 7, [RoleKey::checkInManager()]);
+        $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 7));
+            $this->fail('A CHECKIN_MANAGER must not complete the Production.');
+        } catch (ProductionAccessDeniedException $exception) {
+            $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        }
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8))->status);
+
+        [$other] = $this->givenProduction(11);
+        $this->activate->execute(new ActivateProductionCommand($other->id()->toString(), 11));
+        $this->givenDelegate($other, 12, [RoleKey::accountingManager()]);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($other->id()->toString(), 12))->status);
+    }
+
+    public function test_the_settlement_guard_also_applies_to_a_proxy_manager(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        $this->expectException(ProductionSettlementIncompleteException::class);
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8));
+    }
+
+    /**
+     * @param RoleKey[] $roles
+     */
+    private function givenDelegate(Production $production, int $wordPressUserId, array $roles): void
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+
+        foreach ($roles as $role) {
+            $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $role, $production->primaryManagerPersonId()));
+        }
     }
 
     public function test_complete_succeeds_once_the_member_is_fully_settled(): void

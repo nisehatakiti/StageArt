@@ -70,7 +70,10 @@ use StageArt\Domain\Role\RolePermissions;
  * ("PLANNING → ACTIVE" through "COMPLETED → ARCHIVED"), regardless of
  * any ProductionDelegate Role - the existing PrimaryManager-exclusive
  * canManageProduction() is reused as-is by every Lifecycle Action
- * UseCase rather than adding a redundant method.
+ * UseCase rather than adding a redundant method. The one exception is
+ * ACTIVE → COMPLETED (決算確定), which checks
+ * `ProductionCapability::COMPLETE` instead (see
+ * PROXY_MANAGER_CAPABILITIES).
  */
 final class ProductionAuthorizationService
 {
@@ -203,8 +206,24 @@ final class ProductionAuthorizationService
     public function hasProductionCapability(Person $person, Production $production, string $capability): bool
     {
         return $this->isPrimaryManager($person, $production)
-            || $this->hasProductionPermission($person, $production, Permission::fromString($capability));
+            || $this->hasProductionPermission($person, $production, Permission::fromString($capability))
+            || (in_array($capability, self::PROXY_MANAGER_CAPABILITIES, true) && $this->isProxyManager($person, $production));
     }
+
+    /**
+     * Capabilities a 代理人 (isProxyManager()) holds on top of its two
+     * Roles' own Permission Sets: 経費承認 (`Expense.Approve`) and 決算確定
+     * (`Production.Complete`) - StageArt 統合・会計仕様の確定事項
+     * 2026-10-28 §2 ("Production Delegate（代理人）と会計管理者の両方が実施
+     * 可能"). 代理人 is a combination of Roles, so it cannot be expressed
+     * in the per-Role `RolePermissions::MAP`; 会計管理者 gets them there.
+     *
+     * @var string[]
+     */
+    private const PROXY_MANAGER_CAPABILITIES = [
+        'Expense.Approve',
+        'Production.Complete',
+    ];
 
     public function canReadProduction(Person $person, Production $production): bool
     {

@@ -36,6 +36,7 @@ use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
@@ -60,6 +61,7 @@ final class ExpenseUseCaseTest extends TestCase
     private InMemoryExpenseRepository $expenses;
     private InMemoryJournalEntryRepository $journalEntries;
     private InMemoryParticipantRepository $participants;
+    private InMemoryProductionDelegateRepository $delegates;
 
     private CreateAccountUseCase $createAccount;
     private CreateExpenseUseCase $createExpense;
@@ -78,11 +80,12 @@ final class ExpenseUseCaseTest extends TestCase
         $this->expenses = new InMemoryExpenseRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
         $this->participants = new InMemoryParticipantRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
 
         $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
         $prodAuth = new ProductionAuthorizationService(
             $orgAuth,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             $this->participants
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
@@ -269,5 +272,51 @@ final class ExpenseUseCaseTest extends TestCase
         $this->expectException(ExpenseAccessDeniedException::class);
 
         $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 2, $payableAccountId));
+    }
+
+    /**
+     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 経費承認 is open to a
+     * 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) and a 会計管理者 as
+     * well as the PrimaryManager; any other delegate is refused.
+     */
+    public function test_a_proxy_manager_or_accounting_manager_can_confirm_but_other_delegates_cannot(): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
+
+        $this->givenDelegate($production, $manager, 7, [RoleKey::checkInManager()]);
+        $this->givenDelegate($production, $manager, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegate($production, $manager, 9, [RoleKey::accountingManager()]);
+
+        $first = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 30000],
+        ]));
+        $second = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 12000],
+        ]));
+
+        try {
+            $this->confirmExpense->execute(new ConfirmExpenseCommand($first->id, 7, $payableAccountId));
+            $this->fail('A CHECKIN_MANAGER must not confirm an Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertCount(0, $this->journalEntries->findByProductionId($production->id()));
+        }
+
+        $this->assertSame('CONFIRMED', $this->confirmExpense->execute(new ConfirmExpenseCommand($first->id, 8, $payableAccountId))->status);
+        $this->assertSame('CONFIRMED', $this->confirmExpense->execute(new ConfirmExpenseCommand($second->id, 9, $payableAccountId))->status);
+        $this->assertCount(2, $this->journalEntries->findByProductionId($production->id()));
+    }
+
+    /**
+     * @param RoleKey[] $roles
+     */
+    private function givenDelegate(Production $production, Person $primaryManager, int $wordPressUserId, array $roles): void
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+
+        foreach ($roles as $role) {
+            $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $role, $primaryManager->id()));
+        }
     }
 }

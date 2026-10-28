@@ -16,10 +16,13 @@ use StageArt\Domain\Reservation\ReservationStatus;
 use StageArt\Domain\Settlement\SettlementRepositoryInterface;
 
 /**
- * ACTIVE -> COMPLETED ("精算" -> "決算完了"). PrimaryManager-exclusive per
- * ProductionDelegatePolicy.md ("ACTIVE → COMPLETED: PrimaryManagerのみ、
- * かつ決算完了が必須"). Phase 4 (Check-in/精算/会計連携) fills in the real
- * Guard Production::complete()'s own docblock always pointed to
+ * ACTIVE -> COMPLETED ("精算" -> "決算完了"). Allowed to the holders of
+ * `ProductionCapability::COMPLETE` - PrimaryManager, 会計管理者 and 代理人
+ * (StageArt 統合・会計仕様の確定事項 2026-10-28 §2, superseding
+ * ProductionDelegatePolicy.md's earlier "PrimaryManagerのみ"); the
+ * settlement guard below applies to all of them.
+ *
+ * Phase 4 (Check-in/精算/会計連携) fills in the real Guard Production::complete()'s own docblock always pointed to
  * ("a real computed Guard should replace this once Production Settlement
  * exists") - every member with a confirmed, unsettled Ticket Back amount
  * blocks this transition. Reuses `ProductionSettlementCalculator`
@@ -79,8 +82,8 @@ final class CompleteProductionUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can advance this Production\'s Lifecycle.');
+        if (! $this->authorization->hasProductionCapability($person, $production, ProductionCapability::COMPLETE)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can complete this Production.');
         }
 
         $this->guardSettlementComplete($production, $productionId);

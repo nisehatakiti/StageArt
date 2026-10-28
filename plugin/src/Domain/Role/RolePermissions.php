@@ -132,6 +132,10 @@ final class RolePermissions
         RoleKey::ACCOUNTING_MANAGER => [
             'Accounting.Update',
             'Settlement.Manage',
+            // 経費承認・決算確定 (統合・会計仕様の確定事項 2026-10-28 §2) -
+            // also held by a 代理人, see ProductionAuthorizationService.
+            'Expense.Approve',
+            'Production.Complete',
         ],
     ];
 
