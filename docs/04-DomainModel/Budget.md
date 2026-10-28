@@ -646,22 +646,10 @@ Expense
 
 # Project Accounting
 
-Project単位で、
-複数ProductionのBudget / Actualを
-集計できる。
+Project Budgetは団体全体の予算を表す。
+Project Actualは、団体に属するすべてのJournal Entryを重複なく集計し、Productionに直接紐づく取引と団体共通費用・一般管理費を含める。
 
-例えば、
-
-Project
-  ↓
-Production A
-  ↓
-Production B
-  ↓
-Production C
-
-それぞれのBudget / Actualを
-Project単位で確認できる。
+Project BudgetとProject Actualを比較して団体全体の予実を確認する。Production Budget / Actualは個別公演の予実として別に管理する。団体共通費用をProductionへ按分・配賦しない。
 
 ---
 
