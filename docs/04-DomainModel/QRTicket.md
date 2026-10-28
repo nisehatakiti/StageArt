@@ -774,12 +774,7 @@ QR Check InとManual Check Inを
 Check Inが完了すると、
 CheckInCompletedが発生する。
 
-CheckInCompletedを契機として、
-
-- Audience History
-- Ticket Revenue
-
-をそれぞれのDomainへ連携する。
+CheckInCompletedを契機としてAudience HistoryをHistory Domainへ連携する。Ticket Revenueは実際の代金受領を示すPayment Factに基づいてAccounting Domainへ連携する。通常の当日精算ではPayment FactとCheckInCompletedを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedから再計上しない。
 
 QR Ticket Domainは、
 HistoryやJournal Entryを直接生成・更新しない。
