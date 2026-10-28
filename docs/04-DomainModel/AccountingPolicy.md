@@ -139,7 +139,7 @@ Productionが会計期間をまたいだ場合でも、Journal Dateに従って�
 
 Productionが複数の会計年度にまたがる場合、Production全体を公演終了時点の年度へまとめて転記しない。
 
-各Journal Entryを発生日・Journal Dateに基づいて該当するAccounting Periodへ計上する。
+各Journal Entryを発生日・Journal Dateに基づいて該当するAccounting Periodへ計上する。ただし、Productionが決算未確定の間は、当該Productionの売上相当額は「仮売上」として管理し、正式な売上・損益には含めない。公演原価は公演仕掛金として管理し、売上・原価の双方をProduction決算確定まで持ち越す。
 
 例えば、Productionが2026年度から2027年度にまたがる場合、2026年度末に未収金・未払金が残っていても、その残高をOrganization Accounting上に保持する。
 
@@ -150,6 +150,12 @@ Productionが複数の会計年度にまたがる場合、Production全体を公
 ---
 
 本項の役割分担・集計方針は、[団体会計と公演原価の管理方針](../OrganizationAccountingAndProductionCostPolicy.md)と併せて適用する。
+
+# Provisional Production Sales / 仮売上
+
+Production決算確定前に業務上確定した売上相当額は「仮売上」として管理し、正式な売上・損益に含めない。仮売上は対象Productionおよび元の売上相当Factと関連付け、Production決算確定時に正式な売上へ振り替える。
+
+仮売上のAccount Type、相手勘定および具体的なDebit / Creditは、既存のAccount Master・Journal Entry仕様と整合させる。勘定分類や仕訳方式を本書だけで推定・固定しない。正式な売上への振替はJournal Entryとして記録し、仮売上と正式売上を同時に二重計上しない。
 
 # Production Work in Progress / 公演仕掛金
 
@@ -426,6 +432,9 @@ Mobile / Web UIでAccountingを表示する場合も、OrganizationのAccounting
 - Production終了時に会計データを費目別にまとめてOrganization Accountingへ転記する方式は採用しない。
 - Journal Entryは取引確定時点で計上できる。
 - 予約・依頼時点で金額が確定した会場費・外部スタッフ費・物品購入費等は未払金として計上できる。
+- Production決算確定前の売上相当額は仮売上として管理し、正式な売上・損益に含めない。
+- Production決算確定時に仮売上を正式な売上へ振り替える。
+- Productionが会計期間をまたいでも、仮売上と公演仕掛金をProduction決算確定まで持ち越す。
 - Ticket予約等で受取権利が確定した場合は未収金として計上できる。
 - 実際の入出金時に未収金・未払金を消し込む。
 - 未収金・未払金の差額は新しいJournal Entryとして調整する。
