@@ -204,8 +204,7 @@ Check Inを実行できる。
 二重受付として
 新しいCheck In Factを生成しない。
 
-また、
-CheckInCompletedの重複処理によって受付Factや会計仕訳を二重生成してはならない。仮売上への振替仕訳は会計期間末に別途行う。
+また、CheckInCompletedの重複処理によって受付Factを二重生成してはならない。会計仕訳の重複防止はPayment Factの一意識別情報を基準とし、後日のCheckInCompletedで計上済み取引を再計上しない。仮売上への振替仕訳は会計期間末に別途行う。
 
 ---
 
@@ -761,9 +760,9 @@ Ticket
   ↓
 Reservation
   ↓
-Check In
-  ↓
-Ticket Revenue Recognition
+Check In（来場受付Fact）
+
+Ticket Revenueの計上はPayment Factに基づく別の会計連携であり、Check In自体が売上を生成するわけではない。
 
 Check InはTicketそのものを
 状態変更するものではない。
@@ -934,7 +933,7 @@ Check Inとの関連を追跡する。
 - Check In完了時にReservation StatusをCHECKED_INへ変更する。
 - Check In完了時にCheckInCompletedを発行する。
 - CheckInCompletedをHistory生成の契機として利用できる。
-- CheckInCompletedを来場受付Factの発行契機として利用する。仮売上への振替は会計期間末に行う。
+- CheckInCompletedを来場受付Factとして利用する。売上・入金はPayment Factを根拠として計上し、仮売上への振替は会計期間末に行う。
 - 予約時点ではチケット売上を会計計上しない。
 - Check In完了時点では仮売上へ振り替えない。会計期間末に仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 - 売上金額はReservationの予約時点の取引価格を利用する。
