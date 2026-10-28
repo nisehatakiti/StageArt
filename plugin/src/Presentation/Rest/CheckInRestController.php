@@ -214,8 +214,7 @@ final class CheckInRestController
             $command = new MarkNoShowCommand(
                 (string) $request->get_param('id'),
                 (string) $request->get_param('reservation_id'),
-                get_current_user_id(),
-                $request->get_param('payment_received') === true
+                get_current_user_id()
             );
 
             $this->markNoShow->execute($command);

@@ -336,23 +336,15 @@ final class CheckInTicketRevenueTest extends TestCase
         $this->assertTrue($this->onlyEntry()->isPosted());
     }
 
-    public function test_a_no_show_without_the_money_reaching_the_desk_records_no_cash(): void
+    /**
+     * A NO_SHOW Ticket is paid by definition (TicketConsistencyPolicy.md
+     * "NoShow"), so there is no "unpaid no-show" input to choose.
+     */
+    public function test_a_no_show_records_the_paid_ticket_once(): void
     {
         [, $performance, $ticketId] = $this->givenAccountingProduction();
         $reservation = $this->givenReservation($performance, $ticketId, 2, 3000);
-
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
-
-        $this->assertSame('NO_SHOW', $this->reservations->findById($reservation->id())->status()->toString());
-        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
-        $this->assertCount(0, $this->journalEntries->all());
-    }
-
-    public function test_a_no_show_whose_money_was_handed_to_the_desk_records_it_once(): void
-    {
-        [, $performance, $ticketId] = $this->givenAccountingProduction();
-        $reservation = $this->givenReservation($performance, $ticketId, 2, 3000);
-        $command = new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true);
+        $command = new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1);
 
         $this->markNoShow->execute($command);
 
@@ -360,6 +352,7 @@ final class CheckInTicketRevenueTest extends TestCase
         $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entry->sourceEventType());
         $this->assertSame($reservation->id()->toString(), $entry->sourceEventId());
         $this->assertSame(6000, $this->describeLines($entry)[0][3]);
+        $this->assertSame('NO_SHOW', $this->reservations->findById($reservation->id())->status()->toString());
         $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
 
         try {
@@ -370,6 +363,27 @@ final class CheckInTicketRevenueTest extends TestCase
         }
     }
 
+    /**
+     * Check-in and No-Show are two routes to the same Reservation's one
+     * payment: money taken at a Check-in that was later reversed (not
+     * refunded) is not recorded again when the guest is then declared a
+     * no-show.
+     */
+    public function test_a_no_show_after_a_reversed_check_in_does_not_record_the_payment_again(): void
+    {
+        [, $performance, $ticketId] = $this->givenAccountingProduction();
+        $reservation = $this->givenReservation($performance, $ticketId, 1, 3000);
+
+        $this->checkIn($performance, $reservation);
+        $recorded = $this->onlyEntry();
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertSame('NO_SHOW', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertSame($recorded->id()->toString(), $this->onlyEntry()->id()->toString());
+        $this->assertTrue($this->onlyEntry()->isPosted());
+    }
+
     public function test_nothing_is_recorded_when_accounting_is_disabled(): void
     {
         [$production, $performance, $ticketId] = $this->givenAccountingProduction(false);
@@ -377,7 +391,7 @@ final class CheckInTicketRevenueTest extends TestCase
         $handedOver = $this->givenReservation($performance, $ticketId, 1, 3000);
 
         $this->checkIn($performance, $paid);
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $handedOver->id()->toString(), 1, true));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $handedOver->id()->toString(), 1));
         $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $paid->id()->toString(), 1, true));
 
         $this->assertCount(0, $this->journalEntries->all());

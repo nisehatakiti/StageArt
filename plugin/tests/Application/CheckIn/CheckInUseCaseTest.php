@@ -421,19 +421,16 @@ final class CheckInUseCaseTest extends TestCase
     }
 
     /**
-     * A member who collected the money from the guest hands it to the 受付
-     * when declaring the no-show: Ticket Revenue is recorded when
-     * Accounting is enabled, even though no CheckIn Fact/attendance is
-     * recorded. Without the money reaching the 受付 nothing is recorded
-     * (JournalEntryConsistencyPolicy.md "スタッフ事前集金", see
-     * CheckInTicketRevenueTest).
+     * A NO_SHOW Ticket is paid by definition (TicketConsistencyPolicy.md
+     * "NoShow"): Ticket Revenue is recorded when Accounting is enabled,
+     * even though no CheckIn Fact/attendance is recorded.
      */
-    public function test_mark_no_show_generates_a_posted_journal_entry_when_the_payment_was_received(): void
+    public function test_mark_no_show_generates_a_posted_journal_entry_when_accounting_is_enabled(): void
     {
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId, 2);
 
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
         $entries = $this->journalEntries->all();
         $this->assertCount(1, $entries);
@@ -452,10 +449,10 @@ final class CheckInUseCaseTest extends TestCase
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId);
 
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
     }
 
     /**

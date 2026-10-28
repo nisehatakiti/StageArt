@@ -20,13 +20,12 @@ use StageArt\Domain\Reservation\ReservationRepositoryInterface;
  * it without ever generating a CheckIn Fact (the guest never arrived,
  * per CheckIn.md's own distinction).
  *
- * NO_SHOW still counts as a sale for 販売実績 / Ticket Back (StageArt 予約→
- * 発券→受付Check-in一連接続 instruction). The 入金・Ticket Revenue entry,
- * however, needs the money to have reached the 受付
- * (`MarkNoShowCommand::$paymentReceived`, JournalEntryConsistencyPolicy.md
- * "スタッフ事前集金"): a no-show alone records no cash that was never
- * received. Both go through `CheckInProcessor::processNoShow()` under the
- * Reservation's row lock.
+ * NO_SHOW counts as a sale for 販売実績 / Ticket Back, and a NO_SHOW
+ * Ticket is paid by definition (TicketConsistencyPolicy.md "NoShow"), so
+ * the 入金・Ticket Revenue entry is recorded with it unless this
+ * Reservation's payment is already recorded - see
+ * `CheckInProcessor::processNoShow()`, run under the Reservation's row
+ * lock.
  */
 final class MarkNoShowUseCase
 {
@@ -85,10 +84,8 @@ final class MarkNoShowUseCase
 
         $productionId = $performance->productionId();
 
-        $paymentReceived = $command->paymentReceived;
-
-        $this->transactions->run(function () use ($reservation, $productionId, $requesterId, $paymentReceived): void {
-            $this->processor->processNoShow($this->processor->lock($reservation), $productionId, $requesterId, $paymentReceived);
+        $this->transactions->run(function () use ($reservation, $productionId, $requesterId): void {
+            $this->processor->processNoShow($this->processor->lock($reservation), $productionId, $requesterId);
         });
     }
 }
