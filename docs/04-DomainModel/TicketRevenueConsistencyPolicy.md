@@ -74,7 +74,7 @@ Accounting Domain：
 - Reversal / Adjustment
 - Accounting Period
 
-Ticket Revenueそのものを独立した会計帳簿として保持しない。
+Ticket Revenueそのものを独立した会計帳簿として保持しない。Check Inは来場受付Factであり、仮売上振替は会計期間末に行う。
 
 ---
 
