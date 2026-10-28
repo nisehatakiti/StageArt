@@ -2,7 +2,7 @@
 
 # Domain Model : Project Accounting Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
