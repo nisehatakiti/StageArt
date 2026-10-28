@@ -47,6 +47,8 @@ Organization Accountingは、Journal Entryを正本とする団体全体の会�
 
 Organization Accountingは、特定のProductionだけを対象とするProduction決算とは異なる。
 
+複数Productionに共通する費用および団体全体の一般管理費は、Organization Accountingにのみ計上する。これらをProjectやProductionへ按分・配賦せず、Project Actual / Production Actualにも含めない。ProjectまたはProductionに直接紐づく費用は、該当するScopeに関連付けて集計する。
+
 ---
 
 # Project Accounting
