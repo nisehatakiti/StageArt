@@ -86,6 +86,14 @@ SUBMITTED中のExpenseは申請データとして保持し、正式なAccounting
 
 実際の勘定科目コードや既存会計モデルへの登録方法は、リポジトリ内の既存勘定科目・Journal Entry設計を利用し、同じ科目を重複作成しない。
 
+## Required Account Validation
+
+承認時の仕訳生成に必要なAccount（例：消耗品費、旅費交通費、未払金）が存在しない、またはINACTIVEの場合、システムはAccountを自動作成・再有効化してはならない。承認とJournal Entry生成を中止し、必要な勘定科目が未登録または利用不可であること、および会計管理権限を持つ利用者がAccount設定を確認する必要があることを明確に通知する。
+
+承認処理と仕訳生成は一体の処理として扱うため、必要なAccountの検証に失敗した場合はExpenseを承認済み／POSTEDにせず、Journal Entryも生成せず、Actualにも反映しない。設定を修正した後、承認者が改めて承認操作を実行できるようにする。
+
+同じ検証原則を、保存・転記時にAccountを必要とする他の会計エントリーにも適用する。Accountが未登録またはINACTIVEであることを理由に、別名のAccountを自動生成してはならない。
+
 ---
 
 # Approval Amount and Existing Workflow Compatibility
@@ -108,6 +116,10 @@ SUBMITTED中のExpenseは申請データとして保持し、正式なAccounting
 - 交通費の借方科目は「旅費交通費」とする。
 - 承認時の貸方科目は「未払金」とする。
 - 申請者に仕訳や勘定科目を入力させない。仕訳はシステムが自動生成する。
+- 仕訳生成に必要なAccountが未登録またはINACTIVEの場合、Accountを自動作成・再有効化せず、承認・転記を中止して設定エラーを表示する。
+- 必要なAccountの検証に失敗した場合、Expenseを承認済み／POSTEDにせず、Journal Entry生成およびActual反映を行わない。
+- Accountの設定を修正した後、承認者は改めて承認を実行できる。
+- 保存・転記時に必要なAccountがない場合も、別名Accountを自動生成せず、会計エントリーを確定しない。
 - 申請時点では仕訳を生成せず、正式なActualにも反映しない。
 - 承認時に承認金額に基づく仕訳を自動生成し、Actualへ反映する。
 - 証跡や説明が必要な場合、承認者は理由を明示して差し戻せる。
