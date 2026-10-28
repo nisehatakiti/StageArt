@@ -727,8 +727,7 @@ ARCHIVEDとして保持する。
 - Budgetは実績ではない。
 - Version 1.0ではBudgetをProjectまたはProductionに関連付けられる。
 - Productionの予算はProductionに関連付ける。
-- Projectを横断する計画はProject Budgetとして管理できる。
-- Organization BudgetはVersion 1.0では作成できず、将来機能とする。
+- Project Budgetは団体全体の予算として管理できる。Organization Budgetと同義であり、別個のBudget Scopeとして作成しない。
 - 一つのProductionに複数Budgetを保持できる。
 - Budgetには簡単な名称を設定できる。
 - 「A会場案」「一日2公演案」などの名称を許可する。
