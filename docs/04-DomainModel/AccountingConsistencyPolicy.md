@@ -107,13 +107,21 @@ Reservation成立によって将来受領する権利が発生する場合、そ
 
 標準の当日精算運用では、Reservation成立時点で売上・入金・未収金を計上しない。Check In時に実際に代金を受領した場合、Payment Factに基づいて入金とTicket Revenueを同時に計上する。契約等により予約時点で受取権利が別途確定するケースは例外として扱い、別途定義されたルールに従う。
 
-基本的な考え方：
+標準の当日精算フロー：
 
 Reservation成立
     ↓
-Accounts Receivable / 未収金
+予約Fact / Price Snapshotのみ
+    ↓
+当日受付で実際に代金を受領
+    ↓
+Payment Fact
+    ↓
+入金・Ticket Revenueを同時に計上
 
-Check In時点では仮売上への振替を行わない。標準運用では、当日Check In時に代金を受領した場合、入金とTicket Revenueを同時に計上する。CheckInCompletedだけでは仕訳を生成せず、Payment Factを計上根拠とする。仮売上への振替は会計期間末に行う。
+例外として、契約等により予約時点で受取権利が別途確定する場合に限り、明示された会計ルールに従ってAccounts Receivable / 未収金を計上できる。
+
+Check In時点では仮売上への振替を行わない。CheckInCompletedだけでは仕訳を生成せず、Payment Factを計上根拠とする。仮売上への振替は会計期間末に行う。
 
 ---
 
