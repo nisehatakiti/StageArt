@@ -889,7 +889,7 @@ Journal Entry
 - Budgetは会計Factを生成しない。
 - CheckInCompletedによるTicket RevenueをActualとして集計できる。
 - BudgetはTicketを所有しない。
-- Version 1.0のBudget ScopeはProductionまたはProjectとする。Organization Budgetは将来機能とする。
+- Version 1.0のBudget ScopeはProductionまたはProjectとする。Project Budgetは団体全体の予算を意味し、Organization Budgetと同義とする。
 - 採用されないBudgetも履歴として保持する。
 - 会計管理権限を適切に分離する。
 - Blueprintを唯一の設計基準とする。
