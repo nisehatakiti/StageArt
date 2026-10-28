@@ -257,75 +257,48 @@ BookerとCreatedByは別概念とする。
 
 StageArt V1では、Ticketの決済方法は現金のみ、原則として劇場払いとする。
 
-ただし、劇団スタッフが代理予約を行う際に観客からTicket代金を事前に受領している場合、そのReservationを「支払済（担当者預り）」として登録できる。
+ただし、劇団スタッフが代理予約時に観客からTicket代金を事前に受領している場合、そのReservationを「支払済（担当者預り）」として登録できる。これは観客からスタッフへの支払いが済んでいることを示すが、この段階では劇団側はまだ現金を受領していないため、標準運用上のTicket売上・入金は計上しない。
 
 基本Flow：
 
 ```text
 観客
-  ↓ 現金支払い
+  ↓ 現金支払い（劇団側の売上・入金は未計上）
 劇団スタッフ
   ↓ 代理予約登録
 Reservation
   └─ 支払済（担当者預り）
         ↓
-当日受付
-  └─ 代金済として扱う
+受付担当者がスタッフから現金を受領
         ↓
-Check In
+Reservationの支払済を確定
+        ↓
+Payment Fact
+        ↓
+入金とTicket Revenueを同時に計上
+        ↓
+Check In（来場Fact。売上・入金は再計上しない）
 ```
 
-この場合、受付担当者は当日にTicket代金を再度徴収しない。
+受付担当者がスタッフから現金を実際に受け取り、Reservationを支払済みとして確定した時点で、劇団側の受領が成立する。この受領FactをPayment Factとして記録し、入金とTicket Revenueを同時に計上する。例えば3,000円の場合、決済用Accountに応じた現金等を借方、チケット売上を貸方として記録する。
 
-担当者が預かったTicket代金は、劇団がまだ現金を受領していないため、担当者に対する未収金として管理する。
+受付担当者が現金を受け取る前にCheck Inされた場合は、来場Factのみを記録し、Payment Factが記録されるまで売上・入金を計上しない。逆に受領と売上計上がCheck Inより先に完了している場合、後続のCheck Inで同じTicketの売上・入金を再計上しない。
 
-例えば3,000円のTicket代金を担当者が事前に預かった場合、Check In後のAccounting上は、Ticket Revenueの認識と同時に担当者に対する未収金として保持する。
+会計期間末には、決算未確定Productionに関連する既存の売上Journal Entry残高を仮売上へ振り替える。Production決算確定時には、その仮売上を正式な売上へ振り替える。これらは既存売上の振替処理であり、新たな売上を二重計上する処理ではない。
 
-```text
-担当者未収金 3,000 / Ticket Revenue 3,000
-```
-
-担当者が後日劇団へ現金を清算した時点で、担当者未収金を現金・預金等へ振り替えて消し込む。
-
-この処理は通常の未収金・精算のAccounting Policyに従い、Journal Entryを正本とする。
-
+会計FactはJournal Entryを正本とする。Reservationは支払状態と預り担当者など、業務上必要な情報を保持する。
+ 
 ---
 
 # Staff Settlement and Netting
 
-劇団スタッフが保有するTicket代金の未収金は、同じスタッフに対する劇団側の未払金と最終精算時に相殺できるものとする。
+スタッフが観客から事前に受領し、まだ受付担当者へ引き渡していないTicket代金は、現金の保管・精算状況を追跡するため、担当者別の預り残高として管理できる。この残高は、劇団側が現金を受領したことやTicket売上が成立したことを意味しない。
 
-対象となる未払金には、例えば以下を含む。
+受付担当者がスタッフから現金を実際に受領し、Reservationを支払済みとして確定した時点で、預り残高を精算し、Payment Factに基づいて入金とTicket Revenueを同時に計上する。以後、そのTicket代金をスタッフに対する未収金として残してはならない。
 
-- Ticket Back
-- 承認済み立替経費
-- その他、スタッフに対して確定した未払金
+スタッフに対するTicket Back、承認済み立替経費等の未払金は、Ticket代金の受領・売上計上とは別の会計Factとして管理する。スタッフ預りTicketの支払済み確定を、現金を受領しない相殺だけで代替してはならない。その他の未収金・未払金の相殺を行う場合は、別個の精算FactとJournal Entryに基づき記録する。
 
-例：
-
-```text
-スタッフA
-
-劇団側未払金
-  Ticket Back       20,000
-  立替経費           8,000
-  -----------------------
-  未払合計           28,000
-
-スタッフ側未収金
-  預かりTicket代     15,000
-
-最終精算
-  劇団 → スタッフ      13,000
-```
-
-逆にスタッフ側未収金が未払金を上回る場合は、差額をスタッフから劇団へ精算する。
-
-相殺後の残額のみを実際の現金・預金の精算対象とする。
-
-相殺処理は、未収金・未払金の残高を直接書き換えるのではなく、Accounting DomainのJournal EntryによるSettlement / Nettingとして記録する。
-
-スタッフ別に未収金・未払金の残高を確認でき、最終精算額を明確にできることを基本とする。
+スタッフ別に、未引渡しの預りTicket代金、受付担当者への引渡し履歴、未払金およびその他の精算状況を確認できることを基本とする。
 
 ---
 
@@ -353,25 +326,35 @@ Check In完了後はCHECKED_INとなり、通常のReservation変更を行わな
 
 Reservation DomainはJournal Entryを管理しない。
 
-CheckInCompletedを契機としてTicket Revenue等の会計連携をAccounting Domainへ渡す。
+標準運用ではReservation成立だけで売上・入金・未収金を計上しない。劇団側が実際に代金を受領した時点でPayment Factを記録し、入金とTicket Revenueを同時に計上する。当日支払いでは受付担当者が観客から受領した時点、スタッフ預りでは受付担当者がスタッフから現金を受け取りReservationを支払済みにした時点が該当する。
+
+CheckInCompletedは来場Factを表す。Payment Factに基づく売上・入金が既に計上されている場合、CheckInCompletedによって重複計上してはならない。CheckInCompletedを仮売上振替の契機にも使用しない。
+
+会計期間末に決算未確定Productionの既存売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
 ```text
-Reservation
+Reservation成立
     ↓
-Check In
+Price Snapshot（予約金額の確定。仕訳なし）
     ↓
-CheckInCompleted
+劇団側が実際に代金を受領
     ↓
-Ticket Revenue
+Payment Fact
     ↓
-Accounting Journal Entry
+入金とTicket Revenueを同時計上
+    ↓
+Check In / CheckInCompleted（来場Fact。再計上なし）
+    ↓
+会計期間末に既存売上を仮売上へ振替
+    ↓
+Production決算確定時に正式売上へ振替
 ```
 
 Accounting上の正本はJournal Entry。
 
 Reservationが会計Factを二重管理しない。
 
-スタッフ預りTicketについても、Reservationは支払済状態と預り担当者を業務上参照できる情報を保持し、会計上の未収金残高はJournal Entryを正本として管理する。
+スタッフ預りTicketについて、Reservationは支払済状態と預り担当者を業務上参照できる情報として保持する。会計上の入金・売上および必要な担当者別精算残高は、Journal Entryを正本として管理する。
 
 ---
 
@@ -440,8 +423,8 @@ Production
 
 Reservationは「誰が、どの公演回に、何人で、どのTicketを予約したか」という取引Factを管理する。
 
-通常の予約では劇場で現金を支払い、Check In時に会計処理を行う。
+通常の予約では劇場で現金を支払い、受付担当者が実際に代金を受領した時点で入金と売上を同時に計上する。通常はCheck In受付時の受領となるが、売上計上の根拠はCheckInCompletedではなくPayment Factとする。
 
 劇団スタッフによる代理予約では、スタッフをBookerとして登録でき、観客から事前に受領したTicket代金を「支払済（担当者預り）」として扱える。
 
-担当者預りのTicket代金は担当者に対する未収金として会計管理し、スタッフ側のTicket Back・承認済み立替経費等の未払金と最終精算時に相殺できる。
+スタッフが観客から事前に預かったTicket代金は、受付担当者が現金を受領して支払済みを確定するまでは劇団側の売上・入金として計上しない。受領・売上計上後のスタッフとの精算や、スタッフ側のTicket Back・承認済み立替経費等との相殺は、実際の精算FactとJournal Entryに基づいて管理する。

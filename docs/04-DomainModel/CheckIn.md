@@ -16,8 +16,7 @@ Check Inは、
 Reservationに対する来場受付を表す。
 
 また、Check Inの完了を、
-チケット売上を会計へ認識するための
-Business Eventとして利用する。
+来場受付の完了を示すBusiness Eventとして利用する。仮売上への振替は会計期間末に行い、CheckInCompletedを振替契機にしない。
 
 ---
 
@@ -34,9 +33,13 @@ Check In
 CheckInCompleted
   ├──→ History
   │
-  └──→ Ticket Revenue Recognition
-              ↓
-         Journal Entry
+  └──→ History
+
+会計期間末（Accounting Domain）
+  ↓
+仮売上への振替
+  ↓
+Journal Entry
 
 Check Inは、
 予約そのものではない。
@@ -201,10 +204,7 @@ Check Inを実行できる。
 二重受付として
 新しいCheck In Factを生成しない。
 
-また、
-同一Check InCompletedから
-チケット売上の会計仕訳を
-二重生成してはならない。
+また、CheckInCompletedの重複処理によって受付Factを二重生成してはならない。会計仕訳の重複防止はPayment Factの一意識別情報を基準とし、後日のCheckInCompletedで計上済み取引を再計上しない。仮売上への振替仕訳は会計期間末に別途行う。
 
 ---
 
@@ -438,35 +438,29 @@ Audience History
 
 # Check In and Accounting
 
-CheckInCompletedは、
-チケット売上を会計へ認識するための
-Domain Eventとして利用する。
+CheckInCompletedは来場受付完了を示すDomain Eventであり、それ単独では入金・売上仕訳や仮売上振替仕訳を生成しない。入金・Ticket Revenueの計上根拠は、実際に代金を受領したことを示すPayment Factとする。
+
+標準の当日受付では、受付で代金を受領することとCheck Inが同時に発生するため、Payment Factに基づいて入金とTicket Revenueを同時に計上する。スタッフ事前集金では、受付担当者がスタッフから現金を受領しReservationの支払済みを確定した時点でPayment Factを記録して計上する。後日のCheckInCompletedは来場記録のみとし、再計上しない。
 
 基本Flow：
 
-Check In
+実際の代金受領
   ↓
-CheckInCompleted
+Payment Fact
   ↓
-Ticket Revenue Recognition
-  ↓
-Journal Entry
-  ↓
-Journal Entry Line
+入金・Ticket Revenueの同時計上（Journal Entry / Journal Entry Line）
 
-予約時点では、
-チケット売上を会計へ計上しない。
+会計期間末：決算未確定Productionの既存売上残高を仮売上へ振替
 
-Check Inが完了した時点で、
-対象Ticketの売上を
-会計上の実績として認識する。
+Production決算確定時：仮売上を正式な売上へ振替
+
+予約時点では、標準フローの売上・入金・未収金を計上しない。
 
 ---
 
 # Ticket Revenue Recognition
 
-Ticket Revenue Recognitionは、
-CheckInCompletedを契機として生成される。
+仮売上への振替はCheckInCompletedを契機として生成しない。会計期間末に、決算未確定Productionに関連する売上残高を対象として振替仕訳を生成する。
 
 Revenue Recognitionは、
 Check In Domain自身がJournal Entryを
@@ -478,10 +472,7 @@ CheckInCompleted
 
 というEventを発行する。
 
-Accounting Domainは、
-このEventを購読し、
-対象ReservationのTicket情報をもとに
-チケット売上を会計へ連携する。
+Accounting DomainはCheckInCompletedを受付Factとして利用できるが、このEventを直接の仮売上振替契機にしない。仮売上への振替は会計期間末に行う。
 
 ---
 
@@ -539,8 +530,7 @@ Ticket Price × Guest Count
 # Journal Entry
 
 Accounting Domainは、
-CheckInCompletedを契機として
-Journal Entryを生成できる。
+CheckInCompletedそのものを仮売上振替仕訳の契機としてはならない。会計期間末に、決算未確定Productionの売上残高を仮売上へ振り替える。
 
 例えば、
 
@@ -573,11 +563,15 @@ Journal Entryは、
 
 例えば、
 
+Payment Factに基づく入金・売上計上の例：
+
 Journal Entry
   ↓
 Journal Entry Line
-  ├── 現金等       3,000円
-  └── チケット売上 3,000円
+  ├── 現金等       3,000円（借方）
+  └── チケット売上 3,000円（貸方）
+
+仮売上への振替は、この元の売上Journal Entryを会計期間末に別途振り替える。
 
 貸借は、
 Journal Entry Lineの
@@ -607,56 +601,27 @@ Check InまたはCheckInCompletedとの
 
 # Duplicate Accounting
 
-同一CheckInCompletedを
-複数回処理しても、
-同一のチケット売上を
-二重計上してはならない。
+同一Payment Factを複数回処理して、入金・チケット売上を二重計上してはならない。Accounting DomainはPayment Factの一意識別情報を利用してIdempotentに処理する。
 
-Accounting Domainは、
-CheckInCompletedの識別情報などを利用して
-Idempotentに処理する。
+CheckInCompletedについても受付Factを重複生成してはならないが、これは入金・売上仕訳の正本キーとは別である。スタッフ事前集金フローでは、先行するPayment Factで計上済みのため、後日のCheckInCompletedから新しいJournal Entryを生成しない。
 
-基本構造：
-
-CheckInCompleted
-  ↓
-Accounting Processing
-  ↓
-Journal Entry
-
-すでに処理済みの場合、
-新しいJournal Entryを生成しない。
+会計期間末の仮売上振替は、対象Productionと振替対象の既存売上Journal Entryを基に一意に処理し、同じ残高を重複して振り替えない。
 
 ---
 
 # Accounting Reversal
 
-Check InがREVERSEDとなった場合、
-すでに売上計上されている場合は、
-Accounting Domainへ取消・修正を依頼する。
+Check InがREVERSEDとなった場合、Accounting Domainは来場Factの取消を処理する。ただし、入金・売上仕訳はPayment Factに基づくため、Check Inの取消だけでPayment Factや売上仕訳を自動削除しない。返金・取引取消が実際に発生した場合は、Accounting Domainが関連するPayment Factおよび既存仕訳を確認し、Reversal / Adjustmentを記録する。
 
 基本Flow：
 
-Check In
-  COMPLETED
+Payment Fact → 入金・Ticket Revenueの計上
 
-↓
+CheckInCompleted → 来場受付Fact
 
-CheckInCompleted
+CheckInReversed → 来場受付Factの取消・修正判断
 
-↓
-
-Journal Entry
-  売上計上
-
-↓
-
-Check In
-  REVERSED
-
-↓
-
-Accounting Reversal
+返金・取引取消が発生した場合 → Accounting Reversal / Adjustment
 
 Accounting側の取消方法は、
 Journal Entry Domainのルールに従う。
@@ -692,10 +657,7 @@ Accounting Domain：
 
 # Check In and Budget
 
-Check Inによって生成された
-チケット売上の実績は、
-将来的にProductionの予実管理へ
-連携できる。
+Payment Factに基づいて計上されたTicket RevenueはJournal Entryを通じてProductionの予実管理へ連携できる。Check In自体が売上や仮売上を生成するわけではない。
 
 基本構造：
 
@@ -703,11 +665,11 @@ Budget
   ↓
 Production
   ↓
-Check In
+Payment Fact
   ↓
-Ticket Revenue
+Ticket Revenue Journal Entry
   ↓
-Journal Entry
+会計期間末の仮売上振替（必要な場合）
   ↓
 Actual
 
@@ -769,9 +731,9 @@ Ticket
   ↓
 Reservation
   ↓
-Check In
-  ↓
-Ticket Revenue Recognition
+Check In（来場受付Fact）
+
+Ticket Revenueの計上はPayment Factに基づく別の会計連携であり、Check In自体が売上を生成するわけではない。
 
 Check InはTicketそのものを
 状態変更するものではない。
@@ -942,19 +904,19 @@ Check Inとの関連を追跡する。
 - Check In完了時にReservation StatusをCHECKED_INへ変更する。
 - Check In完了時にCheckInCompletedを発行する。
 - CheckInCompletedをHistory生成の契機として利用できる。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用する。
+- CheckInCompletedを来場受付Factとして利用する。売上・入金はPayment Factを根拠として計上し、仮売上への振替は会計期間末に行う。
 - 予約時点ではチケット売上を会計計上しない。
-- Check In完了時点でチケット売上を会計上の実績として認識する。
+- Check In完了時点では仮売上へ振り替えない。会計期間末に仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 - 売上金額はReservationの予約時点の取引価格を利用する。
 - Ticketの現在価格を過去Reservationの売上計算に利用しない。
 - Guest Countから単純計算して売上金額を再構成しない。
-- Accounting DomainがCheckInCompletedを受け取りJournal Entryを生成する。
+- Accounting DomainはCheckInCompletedを来場受付Factとして参照できる。入金・Ticket Revenueの計上根拠はPayment Factとし、仮売上への振替仕訳は会計期間末に生成する。
 - Check In Domain自身がJournal Entryを直接生成しない。
 - Check In Domain自身が勘定科目を管理しない。
 - Journal Entry LineはAccounting Domainで管理する。
 - Journal Entry Lineは費目ごとに分ける。
 - Journal Entry Lineの貸借はDebit / Credit Flagで管理する。
-- 同一CheckInCompletedから売上仕訳を二重生成しない。
+- 同一Payment Factから入金・売上仕訳を二重生成しない。後日のCheckInCompletedで計上済み取引を再計上しない。
 - Accounting処理はIdempotentに実行する。
 - Check Inを取り消した場合、会計計上済みであればAccounting Domainへ取消・修正を連携する。
 - Check In DomainはJournal Entryを直接変更・削除しない。
@@ -976,17 +938,9 @@ Check Inに関する主なDomain Event：
 - CheckInCompleted
 - CheckInReversed
 
-CheckInCompletedは、
-以下のDomain処理の契機として利用できる。
+CheckInCompletedは来場受付FactとしてHistory等に利用できる。標準の当日受付では代金受領も同時に発生するため、別途記録するPayment Factと関連付けられる。ただし、CheckInCompleted単独を売上認識・仕訳生成の契機にはしない。スタッフ事前集金フローではPayment Factが先行し、後日のCheckInCompletedは来場記録のみとする。
 
-- History
-- Ticket Revenue Recognition
-- Accounting Integration
-
-CheckInReversedは、
-会計計上済みの場合に
-Accounting Domainへ取消・修正処理を
-依頼する契機として利用できる。
+CheckInReversedは来場受付Factの取消・修正判断に利用する。返金や取引取消に伴う会計処理は、実際の返金・取消Factに基づきAccounting Domainで行う。
 
 ---
 
@@ -1024,35 +978,21 @@ Version 1.0では、
 
 # Accounting Design
 
-StageArtでは、
-チケット売上の会計認識を
-Reservation作成時ではなく、
-Check In完了時に行う。
+StageArtでは、Reservationは予約Fact、CheckInCompletedは来場受付Fact、Payment Factは実際の代金受領Factとして区別する。標準の当日受付では代金受領とCheck Inが同時に発生するため、Payment Factに基づいて入金とTicket Revenueを同時に計上する。スタッフ事前集金フローでは受付担当者への現金引き渡しと入金確定時にPayment Factを記録し、後日のCheckInCompletedでは再計上しない。
 
-これにより、
-
-「予約された売上」
-
-と
-
-「実際に来場した公演実績」
-
-を分離する。
-
-CheckInCompletedをAccounting Domainへ連携し、
-Accounting DomainがTicket Revenue Recognitionを行う。
-
-その結果としてJournal Entryを生成する。
+会計期間末には、決算未確定Productionの既存売上残高を仮売上へ振り替える。Production決算確定時に仮売上を正式な売上へ振り替える。これらは既存仕訳の振替であり、新たな売上認識ではない。
 
 基本構造：
 
-CheckInCompleted
+実際の代金受領
   ↓
-Ticket Revenue Recognition
+Payment Fact
   ↓
-Journal Entry
-  ↓
-Journal Entry Line
+入金・Ticket Revenueの同時計上（Journal Entry / Journal Entry Line）
+
+会計期間末：既存売上Journal Entryを仮売上へ振替
+
+Production決算確定時：仮売上を正式な売上へ振替
 
 この仕組みにより、
 公演終了後に、
@@ -1113,12 +1053,14 @@ Accountingの責務を分離する。
 - Guest CountとCheck Inを同行者単位に分解しない。
 - CompanionをVersion 1.0では管理しない。
 - CheckInCompletedをHistory生成の契機として利用する。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用する。
+- CheckInCompletedを来場受付Factとして利用する。売上・入金はPayment Factを根拠として計上し、仮売上への振替は会計期間末に行う。
 - 予約時点ではチケット売上を会計計上しない。
-- Check In完了時点でチケット売上を会計上の実績として認識する。
+- Check In完了時点では仮売上への振替仕訳を生成しない。
+- 会計期間末に、決算未確定Productionの売上残高を仮売上へ振り替える。
+- Production決算確定時に仮売上を正式な売上へ振り替える。
 - Check In DomainとAccounting Domainの責務を分離する。
 - Check In Domainが勘定科目やJournal Entryを直接管理しない。
-- 同一CheckInCompletedから二重仕訳を生成しない。
+- 同一Payment Factから二重仕訳を生成しない。後日のCheckInCompletedで計上済み取引を再計上しない。
 - 会計処理はIdempotentにする。
 - 会計取消はAccounting Domainで処理する。
 - Ticket Revenueを将来の公演予実管理へ連携できる構造とする。

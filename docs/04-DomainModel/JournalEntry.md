@@ -39,18 +39,7 @@ Journal Entryは、
 
 # Accounting Event
 
-Journal Entryは、
-Domain Eventを契機として生成できる。
-
-例えば、
-
-CheckInCompleted
-  ↓
-Ticket Revenue Recognition
-  ↓
-Journal Entry
-
-という流れを取る。
+Journal Entryは、会計上の取引Factを示すDomain Eventを契機として生成できる。チケット売上では、実際の代金受領を示すPayment Factを仕訳生成の正本トリガーとする。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生するため、CheckInCompletedを連携・照合に利用できる。スタッフ預りTicketではPayment Factが先行する場合があり、後続のCheckInCompletedから売上を再計上してはならない。
 
 Journal Entry自身が
 Business Eventを発生させるのではなく、
@@ -535,9 +524,7 @@ Idempotencyを確保する。
 
 # Ticket Revenue
 
-Ticket Revenueは、
-CheckInCompletedを契機として
-Journal Entryへ変換される。
+Ticket RevenueのJournal Entryは、実際の代金受領を示すPayment Factに基づいて生成する。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生する。スタッフ預りTicketでは受付担当者が現金を受領し支払済みを確定した時点のPayment Factで計上し、後続のCheckInCompletedでは再計上しない。
 
 基本Flow：
 
@@ -824,7 +811,7 @@ Organization内部の権限を持つPersonのみが
 - Reversal Journal Entryは元Journal Entryを参照する。
 - 同一Business Eventから会計取引を二重生成しない。
 - Source Event IDなどによってIdempotencyを確保する。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用できる。
+- Ticket Revenue Recognitionの仕訳生成根拠はPayment Factとする。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketでは後続のCheckInCompletedから再計上しない。
 - Ticket Revenueの金額はReservationの取引価格を利用する。
 - Ticketの現在価格から過去の売上金額を再計算しない。
 - Payment Accountは決済手段に応じてAccounting Domainで決定する。
@@ -892,7 +879,7 @@ ActualはJournal Entryから
 を同じProduction単位で比較できる。
 
 また、
-CheckInCompletedをチケット売上認識の起点とすることで、
+実際の代金受領を示すPayment Factをチケット売上認識の起点とし、通常の当日精算では同時に発生するCheckInCompletedを来場記録・照合に利用することで、
 
 Reservation
   ↓
@@ -951,7 +938,7 @@ Journal Entryを会計実績の正本として扱う。
 - 会計Factを物理削除しない。
 - Source Eventとの関連を保持する。
 - 同一Eventから二重仕訳を生成しない。
-- CheckInCompletedをTicket Revenue Recognitionの起点とする。
+- Payment FactをTicket Revenue Recognitionの仕訳生成根拠とする。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketの売上は受付担当者による現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Ticket RevenueはReservationの取引価格を利用する。
 - Ticketの現在価格を過去取引へ遡及させない。
 - Budgetは計画値である。
