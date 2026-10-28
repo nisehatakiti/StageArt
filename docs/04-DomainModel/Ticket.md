@@ -485,7 +485,7 @@ Productionにおける
 Ticket Revenue：
 
 CheckInCompletedによって確定した
-実際のチケット売上Fact。
+実際のチケット売上相当Fact。Production決算確定前は仮売上として管理し、正式な売上ではない。
 
 基本構造：
 
