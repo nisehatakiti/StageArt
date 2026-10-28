@@ -978,12 +978,7 @@ Check InはReservation単位で行う。
 Check Inが完了すると、
 CheckInCompletedを発行する。
 
-CheckInCompletedを契機として、
-
-- Audience History
-- Ticket Revenue
-
-をそれぞれのDomainへ連携する。
+CheckInCompletedを契機としてAudience HistoryをHistory Domainへ連携する。Ticket Revenueは実際の代金受領を示すPayment Factに基づいてAccounting Domainへ連携する。通常の当日精算ではPayment FactとCheckInCompletedを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedから再計上しない。
 
 ReservationはHistoryを直接管理しない。
 
