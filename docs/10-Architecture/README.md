@@ -521,16 +521,15 @@ StageArtにおける重要なDomain Eventである。
 
 Reservation
       ↓
-Check In
+Check In ──→ CheckInCompleted ──→ History ──→ Audience History
+
+実際の代金受領
       ↓
-CheckInCompleted
-      ├──────────────┐
-      ↓              ↓
-History          Accounting
-      ↓              ↓
-Audience        Ticket Revenue
-History             ↓
-                  Journal Entry
+Payment Fact
+      ↓
+Accounting ──→ 入金・Ticket Revenue Journal Entry
+
+標準の当日受付ではPayment FactとCheckInCompletedが同時に発生するため関連付けられる。スタッフ事前集金ではPayment Factが先行し、後日のCheckInCompletedで売上を再計上しない。
 
 Check Inを実行した時点で、
 観劇実績が確定する。
