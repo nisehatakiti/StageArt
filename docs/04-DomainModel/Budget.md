@@ -777,8 +777,8 @@ ARCHIVEDとして保持する。
 - VarianceはBudgetとActualから算出する。
 - Varianceを独立した正本として保存しない。
 - Budgetは会計仕訳を生成しない。
-- Ticket RevenueのActualはJournal Entryから取得する。
-- CheckInCompletedをTicket Revenueの実績認識に利用する。
+- Ticket売上相当額は仮売上を含むJournal Entryから参照できるが、正式な売上ActualはProduction決算確定時の振替後に集計する。
+- CheckInCompletedをTicket売上相当額の仮売上記録に利用する。正式な売上への振替はProduction決算確定時に行う。
 - BudgetはTicketを直接所有しない。
 - BudgetはProduction単位で予実管理できる。
 - Project単位でBudget / Actualを集計できる。
