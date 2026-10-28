@@ -279,10 +279,10 @@ Check In
 
 担当者が預かったTicket代金は、劇団がまだ現金を受領していないため、担当者に対する未収金として管理する。
 
-例えば3,000円のTicket代金を担当者が事前に預かった場合、Check In後のAccounting上は、売上相当額を仮売上として記録するとともに、担当者に対する未収金を保持する。正式な売上への振替はProduction決算確定時に行う。
+例えば3,000円のTicket代金を担当者が事前に預かった場合、担当者に対する未収金は実際の預り・精算Factに基づいて管理する。Check In時点では仮売上へ振り替えず、会計期間末に決算未確定Productionの売上残高を仮売上へ振り替える。
 
 ```text
-担当者未収金 3,000 / 仮売上 3,000（概念例。実際の入金Fact・貸借方向はAccounting仕様に従う）
+担当者未収金の計上・消込は実際の預り・精算Factに従う。仮売上への振替は会計期間末に別途行う。
 ```
 
 担当者が後日劇団へ現金を清算した時点で、担当者未収金を現金・預金等へ振り替えて消し込む。
@@ -353,7 +353,7 @@ Check In完了後はCHECKED_INとなり、通常のReservation変更を行わな
 
 Reservation DomainはJournal Entryを管理しない。
 
-CheckInCompletedを契機としてTicket売上相当額を仮売上としてAccounting Domainへ連携する。正式な売上への振替はProduction決算確定時に行う。
+CheckInCompletedを契機として仮売上仕訳を生成しない。会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
 ```text
 Reservation
@@ -362,11 +362,11 @@ Check In
     ↓
 CheckInCompleted
     ↓
-仮売上
+既存の売上Journal Entry
+    ↓
+会計期間末に仮売上へ振替
     ↓
 Production決算確定時に正式な売上へ振替
-    ↓
-Accounting Journal Entry
 ```
 
 Accounting上の正本はJournal Entry。
