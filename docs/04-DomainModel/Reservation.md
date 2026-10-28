@@ -664,11 +664,7 @@ Check In
   ↓
 CheckInCompleted
 
-CheckInCompletedは、
-Reservation Domainだけで消費するEventではない。
-
-必要な関連Domainが、
-CheckInCompletedを契機として処理を行う。
+CheckInCompletedは、Reservation Domainだけで消費するEventではない。History DomainはこのEventを来場受付Factとして利用できる。Accounting Domainでは、入金・Ticket Revenueの計上根拠をPayment Factとする。通常の当日精算では両Eventを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedで再計上しない。
 
 ---
 
