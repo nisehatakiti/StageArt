@@ -16,11 +16,11 @@ Ticket RevenueとAccounting Domainの責務境界を整理し、Reservation、Ch
 
 # Canonical Revenue Recognition Rule
 
-**Ticket RevenueはCheck In時点で成立・認識する。**
+**Check In時点で売上相当Factを確定するが、正式な売上への認識はProduction決算確定時とする。**
 
 Reservation成立時点では、Ticket Revenueはまだ成立していない。
 
-Reservation成立後、実際の来場が確認されるCheck Inをもって、Ticket RevenueをRevenueとして認識する。
+Reservation成立後、実際の来場が確認されるCheck Inをもって、売上相当額を会計へ連携し「仮売上」として管理する。Production決算確定前は正式な売上・損益として扱わず、Production決算確定時に正式な売上へ振り替える。
 
 基本Flow：
 
@@ -30,9 +30,13 @@ Reservation成立
     ↓
 Check In
     ↓
-Ticket Revenue認識
+売上相当Fact確定
     ↓
-Journal Entry
+仮売上として記録
+    ↓
+Production決算確定
+    ↓
+正式な売上へ振替
 
 したがって、予約済みで未来場のTicketは、Revenueとして認識せず、未収金として扱う。
 
@@ -96,7 +100,7 @@ Reservation成立時点では、Price Snapshotに基づく予約金額を未収�
 
 # Check In and Revenue Recognition
 
-Check Inが正常に完了した時点で、ReservationのPrice Snapshotを基準としてTicket Revenueを認識する。
+Check Inが正常に完了した時点で、ReservationのPrice Snapshotを基準として売上相当Factを確定し、仮売上として会計へ連携する。正式な売上への振替はProduction決算確定時に行う。
 
 基本Flow：
 
@@ -112,7 +116,7 @@ Ticket Revenue Recognition
     ↓
 Journal Entry
 
-Check In時点で未収金が存在する場合は、Ticket Revenueの認識と同時に未収金を売上へ振り替える。
+Check In時点で未収金が存在する場合は、未収金の消込と仮売上の記録を整合させる。Production決算確定までは正式な売上へ振り替えない。
 
 例えば3,000円の予約について来場した場合：
 
@@ -194,13 +198,13 @@ Revenue認識後にCheck Inが無効化された場合も、元のRevenue Journa
 
 # Canonical Decision
 
-Ticket Revenueの認識タイミングは以下を正式仕様とする。
+Ticket Revenueの会計処理は以下を正式仕様とする。
 
-> **Reservation成立時点では未収金。Check In時点でTicket Revenue成立・認識。**
+> **Reservation成立時点では未収金の対象。Check In時点で売上相当Factを確定して仮売上として管理し、Production決算確定時に正式な売上へ振り替える。**
 
-これにより、予約と売上を明確に分離する。
+これにより、予約・来場Fact・正式な売上認識を区別する。
 
-Reservationは「予約された」という事実を管理し、Check Inは「実際に来場した」という事実を管理する。AccountingはCheckInCompletedを契機としてRevenueを認識する。
+Reservationは「予約された」という事実を管理し、Check Inは「実際に来場した」という事実を管理する。AccountingはCheckInCompletedを契機に仮売上を記録し、Production決算確定を契機に正式な売上へ振り替える。
 
 ---
 
@@ -216,4 +220,4 @@ Reservationは「予約された」という事実を管理し、Check Inは「�
 - Project Accounting Policy
 - Production Accounting Policy
 
-特にAccounting PolicyにReservation成立時のTicket Revenue認識が記載されている場合は、本PolicyのCanonical Ruleを優先する。
+特にAccounting PolicyやTicket / Performance DomainにCheckInCompleted時点で正式な売上を認識すると記載されている場合は、本PolicyのCanonical Ruleに従い、Check In時点は仮売上、Production決算確定時点を正式な売上への振替時点とする。
