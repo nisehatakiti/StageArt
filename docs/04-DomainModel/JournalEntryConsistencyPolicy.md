@@ -24,11 +24,15 @@ Accountは分類マスタ、Budgetは計画、ActualはJournal Entryから算出
 
 チケット売上相当額については、会計仕訳の生成と来場実績の記録を分離し、以下をCanonical Flowとする。
 
-Reservation / Payment等の業務Fact
+Reservation
     ↓
-既存のTicket / Payment / Accountingルール
+Price Snapshot（予約金額の確定。予約成立だけでは仕訳なし）
     ↓
-元の売上Journal Entry（該当する場合）
+当日Check In ──→ CheckInCompleted（来場実績Fact）
+    ↓
+実際に代金を受領した場合：Payment Fact
+    ↓
+入金とTicket Revenueを同時に計上するJournal Entry
     ↓
 会計期間末（Production決算未確定の場合）
     ↓
@@ -38,11 +42,7 @@ Production決算確定時
     ↓
 正式な売上への振替Journal Entry
 
-Check In
-    ↓
-CheckInCompleted（来場実績Factのみ）
-
-Reservation成立時点では売上を認識しない。元の売上Journal Entryの生成条件・タイミングは既存のTicket / Payment / Accountingルールに従い、CheckInCompletedを生成契機にしない。
+予約成立時点では売上・入金・未収金を計上しない。CheckInCompleted単独では仕訳を生成せず、実際の代金受領を示すPayment Factを根拠に入金とTicket Revenueを同時に計上する。
 
 Check In時点では仮売上への振替を行わない。会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
@@ -50,9 +50,9 @@ Check In時点では仮売上への振替を行わない。会計期間末に決
 
 # Receivable Before Check In
 
-Reservation成立後、Check In前は未収金として扱う。
+標準の当日精算運用では、Reservation成立後からCheck In前まで、予約があるという理由だけで未収金を計上しない。
 
-未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従う。CheckInCompleted時点では仮売上仕訳を生成せず、会計期間末に仮売上へ振り替える。
+Check In時に実際に代金を受領した場合は、Payment Factに基づき入金とTicket Revenueを同時に計上する。CheckInCompleted単独では仕訳を生成せず、仮売上への振替は会計期間末に行う。
 
 No-Show等の扱いは既存のTicket取引・取消ルールに従う。CheckInCompletedの有無だけを仮売上振替の判定条件にしない。
 
@@ -80,15 +80,12 @@ Journal Entryは複数のJournal Entry Lineから構成される。
 
 # Ticket Revenue Example
 
-Check In時点では仮売上振替仕訳を生成しない。会計期間末の振替仕訳の借方・貸方はAccount / Journal Entry仕様に従う。
+例：当日Check In時に3,000円を現金で受領した場合
 
-Debit
-  決済手段に対応するAsset / Receivable Account 3,000
+Debit：現金 3,000円
+Credit：チケット売上 3,000円
 
-Credit
-  チケット売上 3,000
-
-実際の決済手段が現金、預金、カード等のいずれであるかに応じてDebit側Accountを決定する。
+実際の決済手段に応じてDebit側Accountを選択する。これはPayment Factに基づく入金・売上の同時計上例であり、CheckInCompleted単独では仕訳を生成しない。会計期間末の仮売上振替仕訳は別途生成する。
 
 ---
 
@@ -200,9 +197,7 @@ Original → Reversal → Correctionの履歴を追跡可能にする。
 
 Business EventからJournal Entryを自動生成する処理はIdempotentでなければならない。
 
-特にCheckInCompletedについて、同一Source EventからTicket Revenueを二重計上してはならない。
-
-Source Event ID等を利用して重複生成を防止する。
+CheckInCompletedの再処理で来場Factを重複生成してはならない。入金・売上仕訳はPayment Factを根拠とし、同一Payment FactからTicket Revenueや入金を二重計上してはならない。Source Event ID等を利用して重複生成を防止する。
 
 ---
 
@@ -225,6 +220,6 @@ Journal Entry = 実績Fact
 Actual = Journal Entryからの集計
 ```
 
-チケット売上について、Check Inは来場Factであり仮売上振替の契機ではない。仮売上への振替は会計期間末、正式な売上への振替はProduction決算確定時に行う。
+チケット会計について、予約成立だけでは売上・入金・未収金を計上しない。標準運用では当日Check In時に実際に代金を受領した時点で、Payment Factに基づき入金とTicket Revenueを同時に計上する。CheckInCompleted単独では仕訳を生成しない。仮売上への振替は会計期間末、正式な売上への振替はProduction決算確定時に行う。
 
 これをOrganization / Project / Productionすべての会計Scopeで共通ルールとする。
