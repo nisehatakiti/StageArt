@@ -58,7 +58,7 @@ Check In Domain：
 - Check In Status
 - Check In Operator
 - CheckInCompleted Event
-- Ticket Revenue認識の契機
+- 仮売上の記録契機
 
 Ticket Domain：
 
@@ -69,7 +69,7 @@ Ticket Domain：
 
 Accounting Domain：
 
-- Revenue Recognition
+- 仮売上の記録と正式売上への振替
 - Accounts Receivable / 未収金
 - Accounts Payable / 未払金
 - Journal Entry
@@ -120,7 +120,7 @@ Check In時点で未収金が存在する場合は、未収金の消込と仮売
 
 例えば3,000円の予約について来場した場合：
 
-Ticket Revenue 3,000 / 未収金 3,000
+仮売上 3,000 / 未収金 3,000（概念例。実際の貸借方向・相手勘定はAccount / Journal Entry仕様に従う）
 
 実際にその場で現金・預金等を受領した場合は、Accounting上必要な入金処理を別途行い、未収金を消し込む。
 
@@ -134,7 +134,7 @@ Reservationが成立していてもCheck Inされなかった場合、原則と�
 
 No-ShowとなったReservationについて、未収金をどう処理するかは、キャンセル規則・返金規則・免除規則等に従ってAccounting上で処理する。
 
-Revenue Recognitionは、原則としてCheck Inという来場Factに基づく。
+仮売上の記録は、原則としてCheck Inという来場Factに基づく。正式な売上認識はProduction決算確定時に行う。
 
 ---
 
@@ -192,7 +192,7 @@ Ticket取引やCheck Inに関する取消・修正が発生した場合、既存
 
 元の会計Factとの関連を追跡できることを基本とする。
 
-Revenue認識後にCheck Inが無効化された場合も、元のRevenue Journal Entryを直接削除せず、必要なReversal / Adjustmentを生成する。
+仮売上記録後にCheck Inが無効化された場合も、元のJournal Entryを直接削除せず、仮売上の取消・Reversal / Adjustmentを生成する。
 
 ---
 
