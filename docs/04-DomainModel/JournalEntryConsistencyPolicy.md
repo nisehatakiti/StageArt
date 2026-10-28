@@ -32,9 +32,11 @@ Check In
     ↓
 CheckInCompleted
     ↓
-仮売上記録
+元の売上Journal Entry
     ↓
-Journal Entry
+会計期間末
+    ↓
+仮売上への振替Journal Entry
 
 Reservation成立時点では売上を認識しない。
 
@@ -54,9 +56,9 @@ No-Show等でCheckInCompletedが発生しない場合、通常のTicket Revenue 
 
 # Revenue Recognition
 
-CheckInCompletedは仮売上記録の契機となる。正式な売上への振替はProduction決算確定時に行う。
+仮売上への振替は会計期間末に行う。CheckInCompletedを仮売上仕訳の契機にしない。正式な売上への振替はProduction決算確定時に行う。
 
-一つのCheckInCompletedから、対応する仮売上Journal Entryを高々一件生成する。
+CheckInCompletedから仮売上Journal Entryを直接生成しない。会計期間末の仮売上振替は、対象Productionおよび元の売上Journal Entryを基に一意に生成する。
 
 同一イベントの再処理による二重売上計上を防止する。
 
@@ -74,13 +76,13 @@ Journal Entryは複数のJournal Entry Lineから構成される。
 
 # Ticket Revenue Example
 
-Check In時に3,000円の売上相当額を仮売上として記録する場合、例えば以下のような仕訳を生成する。
+Check In時点では仮売上振替仕訳を生成しない。会計期間末の振替仕訳の借方・貸方はAccount / Journal Entry仕様に従う。
 
 Debit
   決済手段に対応するAsset / Receivable Account 3,000
 
 Credit
-  仮売上 3,000
+  チケット売上 3,000
 
 実際の決済手段が現金、預金、カード等のいずれであるかに応じてDebit側Accountを決定する。
 
