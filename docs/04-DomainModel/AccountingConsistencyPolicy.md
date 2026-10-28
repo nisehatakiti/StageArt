@@ -139,7 +139,7 @@ Check In時点で仮売上振替仕訳は生成しない。会計期間末に元
 
 No-ShowはCheck Inが完了していないため、Check Inの有無だけを理由に仮売上を記録しない。仮売上への振替対象は会計期間末時点の売上残高と既存の業務・会計ルールに基づいて判断する。
 
-Version 1.1（2026-10-28確定）：No-Showの対象Reservationは代金受領済みを前提とし、入金・Ticket RevenueはTicketRevenueConsistencyPolicy「No-Show」に従い、Check InとNo-Showのどちらの経路でも同一Reservationにつき1回だけ計上する。No-Showになったことだけを理由に計上済みの売上を取り消さない。
+Version 1.1（2026-10-28確定）：No-Showの対象Reservationは代金受領済みを前提とし、入金・Ticket Revenueは実際の受領の記録に基づきTicketRevenueConsistencyPolicy「No-Show」に従って計上し、No-Showの確定だけを根拠に計上しない。Check InとNo-Showのどちらの経路でも同一Reservationにつき1回だけ計上する。No-Showになったことだけを理由に計上済みの売上を取り消さない。
 
 No-Showを理由に過去のJournal Entryを直接削除・変更してはならない。
 

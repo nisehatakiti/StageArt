@@ -20,12 +20,10 @@ use StageArt\Domain\Reservation\ReservationRepositoryInterface;
  * it without ever generating a CheckIn Fact (the guest never arrived,
  * per CheckIn.md's own distinction).
  *
- * NO_SHOW counts as a sale for 販売実績 / Ticket Back, and a NO_SHOW
- * Ticket is paid by definition (TicketConsistencyPolicy.md "NoShow"), so
- * the 入金・Ticket Revenue entry is recorded with it unless this
- * Reservation's payment is already recorded - see
- * `CheckInProcessor::processNoShow()`, run under the Reservation's row
- * lock.
+ * NO_SHOW counts as a sale for 販売実績 / Ticket Back, but the no-show
+ * itself records no 入金・Ticket Revenue entry: it is not a record of the
+ * money being received (see `CheckInProcessor::processNoShow()`, run
+ * under the Reservation's row lock).
  */
 final class MarkNoShowUseCase
 {

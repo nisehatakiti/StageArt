@@ -109,23 +109,17 @@ final class CheckInProcessor
 
     /**
      * NO_SHOW never creates a `CheckIn` Fact (the guest never arrived -
-     * see `Reservation::markNoShow()`). A NO_SHOW Ticket is paid by
-     * definition (TicketConsistencyPolicy.md "NoShowは、事前にTicket代金が
-     * 支払済みであることを前提とする"), and declaring it at the 受付 is when
-     * that money reaches the 劇団, so the 入金・売上 entry is recorded here
-     * unless this Reservation's payment is already recorded. There is no
-     * "unpaid no-show" input: the case does not exist in the business flow.
+     * see `Reservation::markNoShow()`), and it records no 入金・売上 either:
+     * a NO_SHOW Ticket is paid by premise (TicketConsistencyPolicy.md
+     * "NoShow"), but declaring the no-show is not a record of that money
+     * being received, and nothing else records it yet. A payment already
+     * recorded for this Reservation (a Check-in that was later reversed
+     * without a refund) is left as it is - never reversed, never repeated.
      */
     public function processNoShow(Reservation $reservation, ProductionId $productionId, PersonId $recordedBy): void
     {
-        $alreadyRecorded = $this->findRecordedTicketPayment($reservation) !== null;
-
         $reservation->markNoShow($recordedBy);
         $this->reservations->save($reservation);
-
-        if (! $alreadyRecorded) {
-            $this->recordTicketPayment($reservation, $productionId, $recordedBy);
-        }
     }
 
     /**

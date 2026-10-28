@@ -337,10 +337,11 @@ final class CheckInTicketRevenueTest extends TestCase
     }
 
     /**
-     * A NO_SHOW Ticket is paid by definition (TicketConsistencyPolicy.md
-     * "NoShow"), so there is no "unpaid no-show" input to choose.
+     * A NO_SHOW Ticket is paid by premise (TicketConsistencyPolicy.md
+     * "NoShow"), but declaring the no-show is not a record of the money
+     * being received, so it records no cash or revenue - nor on a repeat.
      */
-    public function test_a_no_show_records_the_paid_ticket_once(): void
+    public function test_a_no_show_alone_records_no_cash_or_revenue(): void
     {
         [, $performance, $ticketId] = $this->givenAccountingProduction();
         $reservation = $this->givenReservation($performance, $ticketId, 2, 3000);
@@ -348,18 +349,36 @@ final class CheckInTicketRevenueTest extends TestCase
 
         $this->markNoShow->execute($command);
 
-        $entry = $this->onlyEntry();
-        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entry->sourceEventType());
-        $this->assertSame($reservation->id()->toString(), $entry->sourceEventId());
-        $this->assertSame(6000, $this->describeLines($entry)[0][3]);
         $this->assertSame('NO_SHOW', $this->reservations->findById($reservation->id())->status()->toString());
         $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+        $this->assertCount(0, $this->journalEntries->all());
 
         try {
             $this->markNoShow->execute($command);
             $this->fail('A repeated no-show must be refused.');
         } catch (InvalidArgumentException $exception) {
-            $this->assertCount(1, $this->journalEntries->all());
+            $this->assertCount(0, $this->journalEntries->all());
+        }
+    }
+
+    /**
+     * A checked-in guest cannot be turned into a no-show: the request is
+     * refused and the one recorded payment stays as it is.
+     */
+    public function test_a_checked_in_reservation_cannot_become_a_no_show_and_keeps_its_one_entry(): void
+    {
+        [, $performance, $ticketId] = $this->givenAccountingProduction();
+        $reservation = $this->givenReservation($performance, $ticketId, 1, 3000);
+        $this->checkIn($performance, $reservation);
+        $recorded = $this->onlyEntry();
+
+        try {
+            $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('A CHECKED_IN Reservation must not be marked NO_SHOW.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+            $this->assertSame($recorded->id()->toString(), $this->onlyEntry()->id()->toString());
+            $this->assertTrue($this->onlyEntry()->isPosted());
         }
     }
 

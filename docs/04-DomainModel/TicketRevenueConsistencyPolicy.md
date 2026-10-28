@@ -120,7 +120,9 @@ Version 1.2（2026-10-28確定）：
 
 No-Showの対象となるReservationは、代金を受領済みであることを前提とする（TicketConsistencyPolicy「NoShow」）。No-Showに「代金未受領」の入力状態は設けない。
 
-Ticket Revenueは実際に代金を受領した時点で計上する。当該Reservationの入金・Ticket Revenueがまだ計上されていない場合は、No-Showの確定時に、受領した代金として入金とTicket Revenueを同時に計上する。Check In等で既に計上済みの場合は再計上しない。
+Ticket Revenueは実際に代金を受領した時点で、その受領の記録に基づいて計上する。No-Showの確定だけを根拠に、代金を受領済みとして記録・計上してはならない。Check In等で既に計上済みの入金・Ticket Revenueは、No-Showになっても維持し、再計上しない。
+
+事前に受領済みのReservationについて受領を記録する仕組み（担当者預りの受領確定等）は未整備であり、別途定める。それまでの間、No-ShowとなったReservationの代金は、Check In等で既に計上済みのものを除き、会計に計上されない。
 
 同一Reservationの入金・Ticket Revenueは、Check InとNo-Showのどちらの経路でも1回だけ計上する。
 

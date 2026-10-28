@@ -421,26 +421,18 @@ final class CheckInUseCaseTest extends TestCase
     }
 
     /**
-     * A NO_SHOW Ticket is paid by definition (TicketConsistencyPolicy.md
-     * "NoShow"): Ticket Revenue is recorded when Accounting is enabled,
-     * even though no CheckIn Fact/attendance is recorded.
+     * The no-show alone is not a record of the money being received
+     * (統合・会計仕様の確定事項 2026-10-28 §3), so even with Accounting
+     * enabled no Journal Entry is generated - and no CheckIn Fact either.
      */
-    public function test_mark_no_show_generates_a_posted_journal_entry_when_accounting_is_enabled(): void
+    public function test_mark_no_show_generates_no_journal_entry_even_when_accounting_is_enabled(): void
     {
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId, 2);
 
         $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
-        $entries = $this->journalEntries->all();
-        $this->assertCount(1, $entries);
-        $this->assertTrue($entries[0]->isPosted());
-        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entries[0]->sourceEventType());
-
-        $lines = $entries[0]->lines();
-        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
-        $this->assertSame(6000, $debitLine->amount());
-
+        $this->assertCount(0, $this->journalEntries->all());
         $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
     }
 

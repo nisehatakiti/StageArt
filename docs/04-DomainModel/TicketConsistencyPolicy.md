@@ -66,7 +66,7 @@ NoShowとなるReservationは未受付一覧に残っていても、公演開始
 
 受付一覧上では、予約者名の前または備考欄等に「NoShow」と表示して、通常の未受付Reservationと区別する。
 
-NoShowは、事前にTicket代金が支払済みであることを前提とする。このためNoShowに「代金未受領」の入力状態は設けない。入金・Ticket Revenueの計上はTicketRevenueConsistencyPolicy「No-Show」に従い、Check In済みの計上と二重にならないようにする。NoShowになったことだけを理由に売上を取り消さない。
+NoShowは、事前にTicket代金が支払済みであることを前提とする。このためNoShowに「代金未受領」の入力状態は設けない。ただしNoShowの確定は代金受領の記録ではなく、NoShowの確定だけを根拠に入金・Ticket Revenueを計上しない。計上はTicketRevenueConsistencyPolicy「No-Show」に従い、Check In済みの計上と二重にならないようにする。NoShowになったことだけを理由に売上を取り消さない。
 
 NoShowはCHECKED_INとは異なる状態であり、Check In実績を生成しない。
 
