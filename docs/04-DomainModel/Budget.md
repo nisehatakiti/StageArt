@@ -599,26 +599,19 @@ Budget LineのAccountを
 
 # Ticket Actual
 
-Ticket売上のActualは、
-Check InCompletedから
-生成されたJournal Entryを
-Account単位で集計する。
+Ticketに関するActualは、Ticket・Reservation・Payment等の業務Factに対して既存のTicket / Payment / Accountingルールに従って生成されたJournal Entryを、Account単位で集計する。
+
+Actualの正本はJournal Entryであり、CheckInCompletedそのものを売上認識や仮売上振替のトリガーとして扱わない。Check Inは来場実績を表すFactであり、売上認識のタイミングはTicket / Payment / Accountingの各仕様に従う。会計期間末の仮売上振替は、決算未確定Productionの売上残高に対して別途行う。
 
 基本Flow：
 
-Ticket
+Ticket / Reservation / Payment等の業務Fact
   ↓
-Reservation
-  ↓
-Check In
-  ↓
-CheckInCompleted
-  ↓
-Ticket Revenue Recognition
+既存のTicket / Payment / Accountingルール
   ↓
 Journal Entry
   ↓
-Actual
+Account単位でActualを集計
 
 ---
 
