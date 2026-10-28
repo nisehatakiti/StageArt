@@ -75,7 +75,7 @@ Version 1.0では、BudgetをProjectまたはProductionに関連付ける。
 
 公演単位の予算はProductionに紐付け、
 複数のProductionを横断する計画はProjectに紐付ける。
-Organization BudgetはVersion 1.0では作成対象外とし、将来機能とする。
+Project Budgetは団体全体の予算を意味し、Organization Budgetと同義である。別個のOrganization Budget機能は設けない。
 
 基本構造：
 
