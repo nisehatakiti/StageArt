@@ -468,11 +468,7 @@ Ticketの販売・利用に伴う収益を表す。
 Production Domain自身が
 Journal Entryを直接生成することはしない。
 
-Production Domainでは、
-必要なBusiness Eventを発生させる。
-
-Accounting Domainが、
-そのEventを受けてJournal Entryを生成する。
+Production Domainでは、必要なBusiness Eventを発生させる。Ticket Revenueの入金・売上仕訳は、実際の代金受領を示すPayment Factに基づいてAccounting Domainが生成する。CheckInCompletedは通常の当日精算フローで関連付けられる来場受付Eventであり、単独では仕訳生成の根拠としない。
 
 ---
 
