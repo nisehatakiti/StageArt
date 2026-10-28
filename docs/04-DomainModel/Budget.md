@@ -754,9 +754,9 @@ ARCHIVEDとして保持する。
 - 仮売上への振替は会計期間末に行う。CheckInCompletedを仮売上仕訳の契機にしない。正式な売上への振替はProduction決算確定時に行う。
 - BudgetはTicketを直接所有しない。
 - BudgetはProduction単位で予実管理できる。
-- Version 1.0ではProject Budgetを作成し、Project単位の計画を管理できる。
-- Project単位で複数ProductionのActualを集計できる。Project Budgetとの比較では、Projectに直接関連付けられたBudgetと、Projectに直接関連付けられた会計実績を比較する。Production BudgetやProduction ActualをProject Budgetの金額に自動加算・配賦しない。
-- Organization単位では会計実績を集計できるが、Organization Budgetの作成は将来機能とする。
+- Version 1.0ではProject Budgetを団体全体の予算として作成できる。
+- Project Actualは団体に属するすべてのJournal Entryを重複なく集計し、Production Actualおよび団体共通費用を含める。団体共通費用をProductionへ按分・配賦しない。
+- Organization BudgetはProject Budgetと同義であり、別個の予算機能として作成しない。
 - Budgetは適切な会計管理権限を持つPersonのみが管理できる。
 - Organization Administratorは自身のOrganizationについて全権限を持つ。
 - Budgetには監査情報を保持する。
