@@ -81,17 +81,17 @@ Production Settlementは表示・業務概念であり、独立した会計帳�
 
 ---
 
-# Ticket Revenue Recognition
+# Provisional Ticket Sales / 仮売上
 
-Ticket Revenueは**Check In時点で認識する**。
+Ticketの売上相当額は**Check In時点で仮売上として記録し、正式な売上への振替はProduction決算確定時に行う**。
 
-Reservation成立時点ではTicket Revenueを認識しない。
+Reservation成立時点では売上相当額を記録せず、未収金等の業務・会計状態を管理する。
 
 基本Flow：
 
 Reservation成立
     ↓
-未収金
+未収金等
     ↓
 来場
     ↓
@@ -99,9 +99,11 @@ Check In
     ↓
 CheckInCompleted
     ↓
-Ticket Revenue Recognition
+仮売上Journal Entry
     ↓
-Journal Entry
+Production決算確定
+    ↓
+正式な売上へ振替
 
 ---
 
@@ -123,15 +125,17 @@ Check In時点で、未収金をTicket Revenueへ振り替える。
 
 # Provisional Ticket Sales Journal Entry
 
-CheckInCompletedをRevenue RecognitionのBusiness Eventとする。
+CheckInCompletedを仮売上記録のBusiness Eventとする。正式な売上への振替はProduction決算確定時に行う。
 
 例えば3,000円の予約について来場した場合：
 
 Debit
-    未収金 3,000円
+    未収金等 3,000円
 
 Credit
-    チケット売上 3,000円
+    仮売上 3,000円
+
+これは仮売上の概念例である。入金済みの場合の借方勘定、仮売上AccountのAccount Typeおよび正式売上への振替仕訳は、関連Account / Journal Entry仕様と整合させる。
 
 実際の入金が同時に発生する場合は、決済方法に応じて現金・預金等への消込を同時に行うことができる。
 
@@ -139,7 +143,7 @@ Credit
 
 # No Show
 
-No-ShowはCheck Inが完了していないため、原則としてTicket Revenueを認識しない。
+No-ShowはCheck Inが完了していないため、原則として仮売上を記録しない。
 
 未収金が存在する場合、その後のキャンセル・免除・その他の調整によって処理する。
 
