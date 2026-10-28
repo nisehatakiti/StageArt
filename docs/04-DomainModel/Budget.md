@@ -675,13 +675,11 @@ Project単位で確認できる。
 
 # Organization Accounting
 
-Organization単位でも、
-複数Project / Productionの
-Budget / Actualを集計できる。
+Organization単位では、Organizationに属するすべてのJournal Entryを集計し、団体全体のBudget / Actualを確認する。
 
-ただし、
-Budgetは必ず所属する
-Project / ProductionのScopeに従う。
+複数Productionに共通する費用および団体全体の一般管理費は、Organization Accountingの費用として計上する。これらはProjectやProductionへ按分・配賦せず、Project Actual / Production Actualに含めない。特定のProjectまたはProductionに直接紐づく取引のみ、対応するScopeに関連付けて集計する。
+
+Project / Production単位のBudgetとActualは、それぞれのScopeに直接関連付けられた計画・Journal Entryを基に集計する。Organization全体の費用をProject / Productionに配賦する処理を自動生成してはならない。
 
 ---
 
