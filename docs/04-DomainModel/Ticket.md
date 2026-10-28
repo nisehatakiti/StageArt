@@ -464,7 +464,8 @@ Ticketは、
 
 Ticket Revenueは、
 CheckInCompletedによって確定した
-チケット売上の会計連携用Factである。
+チケット売上相当Factである。
+Production決算確定前は仮売上として管理し、正式な売上への振替はAccounting Domainが行う。
 
 具体的な勘定科目やDebit / Creditの処理は、
 Accounting Domainで定義する。
@@ -555,8 +556,9 @@ StatusをCLOSEDとして保持する。
 - TicketそのものをCheck Inしない。
 - Check InはReservation単位で実施する。
 - CheckInCompletedは観劇実績を確定する。
-- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
-- Ticket DomainはJournal Entryを管理しない。
+- CheckInCompletedを契機としてTicket Revenue相当FactをAccounting Domainへ連携する。
+- Production決算確定前は仮売上として管理し、決算確定時に正式な売上へ振り替える。
+- Ticket DomainはJournal Entryを管理しない.
 - Ticket.PriceとTicket Revenueを同一視しない。
 - Ticket RevenueはAccounting Domainで管理する。
 - 過去のReservationから参照されるTicketを物理削除しない。
@@ -613,8 +615,9 @@ Productionに所属するTicketを販売対象として利用する。
 PerformanceごとのTicket Availabilityは、
 将来的に実装する。
 
-Ticketが実際の売上として会計へ連携されるのは、
+Ticketの売上相当Factが会計へ連携されるのは、
 CheckInCompletedが発生した時点である。
+正式な売上への振替はProduction決算確定時に行う。
 
 Ticket.Priceは販売条件であり、
 Ticket Revenueは会計上の売上Factである。
