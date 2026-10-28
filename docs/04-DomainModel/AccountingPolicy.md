@@ -2,7 +2,7 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -148,6 +148,8 @@ Productionが複数の会計年度にまたがる場合、Production全体を公
 これにより、Production AccountingとOrganization Accountingの会計事実を完全に一致させる。
 
 ---
+
+本項の役割分担・集計方針は、[団体会計と公演原価の管理方針](../OrganizationAccountingAndProductionCostPolicy.md)と併せて適用する。
 
 # Production Work in Progress / 公演仕掛金
 
