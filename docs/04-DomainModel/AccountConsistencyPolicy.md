@@ -154,7 +154,7 @@ Actualを独立した正本として二重保存しない。
 
 # Ticket Revenue
 
-CheckInCompletedを契機として売上相当額を仮売上としてJournal Entryへ記録する。Production決算確定時に仮売上を正式な売上へ振り替え、正式売上にはREVENUE TypeのAccountを使用する。
+会計期間末に決算未確定Productionの売上残高を仮売上へ振り替える。CheckInCompletedを契機とした仮売上仕訳は生成しない。Production決算確定時に仮売上を正式な売上へ振り替え、正式売上にはREVENUE TypeのAccountを使用する。
 
 Reservation成立時点ではRevenueを認識せず、未収金等の状態をAccounting Domainで扱う。仮売上AccountのAccount Typeおよび相手勘定は、関連Account / Journal Entry仕様と整合させて確定し、実装側で推定しない。
 
@@ -238,9 +238,9 @@ Business Eventから使用Accountを決定するMappingはAccount本体と分離
 例えば、
 
 ```text
-CheckInCompleted
+会計期間末
     ↓
-仮売上記録
+仮売上へ振替
     ↓
 Production決算確定
     ↓
