@@ -886,7 +886,7 @@ Journal Entry
 - Actualを二重管理しない。
 - Varianceを二重管理しない。
 - Budgetは会計Factを生成しない。
-- CheckInCompletedによるTicket RevenueをActualとして集計できる。
+- Ticket RevenueのActualは既存のTicket / Payment / Accountingルールに従って生成されたJournal Entryから集計する。CheckInCompleted自体を売上認識の契機にしない。
 - BudgetはTicketを所有しない。
 - Version 1.0のBudget ScopeはProductionまたはProjectとする。Project Budgetは団体全体の予算を意味し、Organization Budgetと同義とする。
 - 採用されないBudgetも履歴として保持する。
