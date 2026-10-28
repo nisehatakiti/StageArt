@@ -564,11 +564,15 @@ Journal Entryは、
 
 例えば、
 
+Payment Factに基づく入金・売上計上の例：
+
 Journal Entry
   ↓
 Journal Entry Line
-  ├── 現金等       3,000円
-  └── 仮売上 3,000円
+  ├── 現金等       3,000円（借方）
+  └── チケット売上 3,000円（貸方）
+
+仮売上への振替は、この元の売上Journal Entryを会計期間末に別途振り替える。
 
 貸借は、
 Journal Entry Lineの
@@ -910,7 +914,7 @@ Check Inとの関連を追跡する。
 - 売上金額はReservationの予約時点の取引価格を利用する。
 - Ticketの現在価格を過去Reservationの売上計算に利用しない。
 - Guest Countから単純計算して売上金額を再構成しない。
-- Accounting DomainはCheckInCompletedを来場受付Factとして参照できるが、仮売上への振替仕訳は会計期間末に生成する。
+- Accounting DomainはCheckInCompletedを来場受付Factとして参照できる。入金・Ticket Revenueの計上根拠はPayment Factとし、仮売上への振替仕訳は会計期間末に生成する。
 - Check In Domain自身がJournal Entryを直接生成しない。
 - Check In Domain自身が勘定科目を管理しない。
 - Journal Entry LineはAccounting Domainで管理する。
