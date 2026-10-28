@@ -223,6 +223,16 @@ INACTIVE Accountは新規取引への利用を停止するが、過去のJournal
 
 ---
 
+# Required Account Validation
+
+会計処理で必要となるAccountが未登録、またはINACTIVEの場合、システムはAccountを自動作成・再有効化してはならない。会計エントリーの保存・転記または承認処理を中止し、必要な勘定科目が未登録または利用不可であることを利用者へ明確に通知する。
+
+必要なAccountの検証に失敗した場合、関連する業務処理を部分的に完了させてはならない。たとえばExpense承認では、Expenseの承認済み／POSTED化、Journal Entry生成、Actual反映をいずれも行わない。会計管理権限を持つ利用者がAccount設定を修正した後、元の業務操作を再実行できるようにする。
+
+別名のAccountを自動生成して不足を補うことも禁止する。既存Accountの名称変更や再有効化は、権限を持つ利用者が明示的に設定操作として行う。
+
+---
+
 # Account Change
 
 Account Name、Code、階層等のマスタ情報は変更できる。
