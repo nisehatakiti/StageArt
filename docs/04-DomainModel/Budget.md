@@ -852,8 +852,7 @@ Variance
 - Seat数による自動計画
 - 前回公演実績からのBudget作成
 - Budget / Actual / Variance Dashboard
-- Project Budget
-- Organization Budget
+- 団体全体のProject Budget（Organization Budgetと同義。別機能ではない）
 - キャッシュフロー予測
 - 損益予測
 - 損益分岐点分析
