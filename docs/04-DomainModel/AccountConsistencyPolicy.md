@@ -154,7 +154,7 @@ Actualを独立した正本として二重保存しない。
 
 # Ticket Revenue
 
-会計期間末に決算未確定Productionの売上残高を仮売上へ振り替える。CheckInCompletedを契機とした仮売上仕訳は生成しない。Production決算確定時に仮売上を正式な売上へ振り替え、正式売上にはREVENUE TypeのAccountを使用する。
+Ticket Revenueの入金・売上仕訳はPayment Factに基づいて生成する。CheckInCompleted単独では仕訳を生成しない。会計期間末に決算未確定Productionの既存売上残高を仮売上へ振り替え、Production決算確定時に仮売上を正式な売上へ振り替える。正式売上にはREVENUE TypeのAccountを使用する。
 
 標準の当日精算運用では、Reservation成立時点で売上・入金・未収金を計上しない。実際の代金受領を示すPayment Factに基づき、入金とTicket Revenueを同時に計上する。予約時点で受取権利が別途確定する契約等の例外では、明示された別ルールに従って未収金を扱う。仮売上AccountのAccount Typeおよび相手勘定は、関連Account / Journal Entry仕様と整合させて確定し、実装側で推定しない。
 
