@@ -531,15 +531,7 @@ Accounting ──→ 入金・Ticket Revenue Journal Entry
 
 標準の当日受付ではPayment FactとCheckInCompletedが同時に発生するため関連付けられる。スタッフ事前集金ではPayment Factが先行し、後日のCheckInCompletedで売上を再計上しない。
 
-Check Inを実行した時点で、
-観劇実績が確定する。
-
-CheckInCompletedを契機として、
-
-- Audience History
-- Ticket Revenue
-
-をそれぞれのDomainへ連携する。
+Check Inを実行した時点で、観劇実績が確定する。CheckInCompletedはAudience History生成などの来場記録に利用する。Ticket Revenueの仕訳生成根拠はPayment Factとし、標準の当日受付では同時に発生するCheckInCompletedと関連付けられる。スタッフ事前集金ではPayment Factが先行するため、後日のCheckInCompletedで再計上しない。
 
 ---
 
@@ -551,18 +543,18 @@ Event Handler / Application Processとして実装する。
 例えば、
 
 CheckInCompleted
-
-を受け取って、
-
+    ↓
 History Handler
     ↓
 Audience History
 
+Payment Fact
+    ↓
 Accounting Handler
     ↓
-Ticket Revenue
-    ↓
-Journal Entry
+入金・Ticket Revenue Journal Entry
+
+Accounting HandlerはCheckInCompleted単独では入金・売上仕訳を生成しない。
 
 を実行する。
 
