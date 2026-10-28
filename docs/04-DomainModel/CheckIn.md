@@ -438,24 +438,23 @@ Audience History
 
 # Check In and Accounting
 
-CheckInCompletedは、受付完了というFactを示すDomain Eventである。仮売上への振替は会計期間末に行い、CheckInCompletedを仕訳生成・振替の直接的な契機にしない。
+CheckInCompletedは来場受付完了を示すDomain Eventであり、それ単独では入金・売上仕訳や仮売上振替仕訳を生成しない。入金・Ticket Revenueの計上根拠は、実際に代金を受領したことを示すPayment Factとする。
+
+標準の当日受付では、受付で代金を受領することとCheck Inが同時に発生するため、Payment Factに基づいて入金とTicket Revenueを同時に計上する。スタッフ事前集金では、受付担当者がスタッフから現金を受領しReservationの支払済みを確定した時点でPayment Factを記録して計上する。後日のCheckInCompletedは来場記録のみとし、再計上しない。
 
 基本Flow：
 
-Check In
+実際の代金受領
   ↓
-CheckInCompleted
+Payment Fact
   ↓
-仮売上の記録
-  ↓
-Journal Entry
-  ↓
-Journal Entry Line
+入金・Ticket Revenueの同時計上（Journal Entry / Journal Entry Line）
 
-予約時点では、
-チケット売上を会計へ計上しない。
+会計期間末：決算未確定Productionの既存売上残高を仮売上へ振替
 
-Check Inが完了しても、仮売上への振替仕訳は生成しない。会計期間末に、決算未確定Productionに関連する売上残高を仮売上へ振り替える。Production決算確定時に仮売上を正式な売上へ振り替える。
+Production決算確定時：仮売上を正式な売上へ振替
+
+予約時点では、標準フローの売上・入金・未収金を計上しない。
 
 ---
 
