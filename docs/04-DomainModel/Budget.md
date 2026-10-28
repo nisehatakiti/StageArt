@@ -670,9 +670,9 @@ BudgetのScopeを明確にする。
 Version 1.0では、次の2つのBudget Scopeをサポートする。
 
 - Production Budget：個別公演の計画
-- Project Budget：Projectに属する複数Productionを横断する計画
+- Project Budget：団体全体の計画（Organization Budgetと同義）
 
-Organization BudgetはVersion 1.0ではサポートせず、将来機能とする。
+Project BudgetとOrganization Budgetを別々の予算機能として作成しない。
 
 ---
 
