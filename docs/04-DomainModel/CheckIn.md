@@ -34,7 +34,7 @@ Check In
 CheckInCompleted
   ├──→ History
   │
-  └──→ Ticket Revenue Recognition
+  └──→ 仮売上記録
               ↓
          Journal Entry
 
@@ -577,7 +577,7 @@ Journal Entry
   ↓
 Journal Entry Line
   ├── 現金等       3,000円
-  └── チケット売上 3,000円
+  └── 仮売上 3,000円
 
 貸借は、
 Journal Entry Lineの
@@ -632,7 +632,7 @@ Journal Entry
 # Accounting Reversal
 
 Check InがREVERSEDとなった場合、
-すでに売上計上されている場合は、
+すでに仮売上記録されている場合は、
 Accounting Domainへ取消・修正を依頼する。
 
 基本Flow：
@@ -1046,7 +1046,7 @@ Accounting Domainが仮売上を記録し、Production決算確定時に正式�
 
 CheckInCompleted
   ↓
-Ticket Revenue Recognition
+仮売上記録
   ↓
 Journal Entry
   ↓
@@ -1111,7 +1111,7 @@ Accountingの責務を分離する。
 - Guest CountとCheck Inを同行者単位に分解しない。
 - CompanionをVersion 1.0では管理しない。
 - CheckInCompletedをHistory生成の契機として利用する。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用する。
+- CheckInCompletedを仮売上記録の契機として利用する。
 - 予約時点ではチケット売上を会計計上しない。
 - Check In完了時点でチケット売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
 - Check In DomainとAccounting Domainの責務を分離する。
