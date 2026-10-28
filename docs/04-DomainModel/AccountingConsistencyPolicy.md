@@ -105,7 +105,7 @@ Production決算確定
 
 Reservation成立によって将来受領する権利が発生する場合、その金額を未収金として管理できる。
 
-Reservation成立時点で、未収金に対応する会計処理を行うことができるが、Ticket Revenueはまだ認識しない。
+標準の当日精算運用では、Reservation成立時点で売上・入金・未収金を計上しない。Check In時に実際に代金を受領した場合、Payment Factに基づいて入金とTicket Revenueを同時に計上する。契約等により予約時点で受取権利が別途確定するケースは例外として扱い、別途定義されたルールに従う。
 
 基本的な考え方：
 
@@ -113,7 +113,7 @@ Reservation成立
     ↓
 Accounts Receivable / 未収金
 
-Check In時点で仮売上への振替を行わない。未収金の消込は実際の入金・決済Factに基づいて処理し、仮売上への振替は会計期間末に行う。
+Check In時点では仮売上への振替を行わない。標準運用では、当日Check In時に代金を受領した場合、入金とTicket Revenueを同時に計上する。CheckInCompletedだけでは仕訳を生成せず、Payment Factを計上根拠とする。仮売上への振替は会計期間末に行う。
 
 ---
 
@@ -149,13 +149,7 @@ GuestCountが複数の場合も、予約時点で確定した取引金額を基�
 
 # Payment Timing
 
-Revenue Recognitionと現金・預金の入出金は別概念として扱う。
-
-来場時に支払われる場合は、Revenue Recognitionと入金を同一取引として処理できる。
-
-事前入金がある場合は、Revenue Recognition前の受領として別途管理する必要がある。
-
-決済手段による具体的なAccountの選択はAccounting Account / Payment Domainで定義する。
+Revenue Recognitionと現金・預金の入出金は概念上区別するが、標準の当日精算運用では、Check In時に実際に代金を受領した時点で入金とTicket Revenueを同時に計上する。CheckInCompleted単独ではなく、Payment Factを仕訳生成の根拠とする。事前入金等、入金と売上のタイミングが異なる運用は本標準フローに含めず、採用する場合は別途仕様を定義する。決済手段によるAccountの選択はAccounting Account / Payment Domainに従う。
 
 ---
 
@@ -171,7 +165,7 @@ POSTED Journal Entryは直接変更・削除しない。
 
 # Idempotency
 
-同一CheckInCompletedを複数回処理しても、受付Factや関連する会計Factを二重生成してはならない。仮売上振替は会計期間末の対象売上Journal Entryを基に一意に行う。
+同一CheckInCompletedの再処理で受付Factを重複生成してはならない。入金・売上仕訳はPayment Factを根拠とし、同一Payment Factの再処理で会計Factを二重生成してはならない。仮売上振替は会計期間末の対象売上Journal Entryを基に一意に行う。
 
 Accounting ProcessingはSource Event ID等を利用してIdempotentに処理する。
 
@@ -228,25 +222,29 @@ ProductionがCOMPLETEDになった後に計上漏れ等が判明した場合も�
 ```text
 Reservation
     │
-    ├─ Price Snapshot
-    │
-    └─ 未収金
+    └─ Price Snapshot（予約金額の確定。仕訳なし）
           │
           ▼
-       Check In
+       当日Check In
           │
-          ▼
-   CheckInCompleted
+          ├─ 来場Fact：CheckInCompleted
           │
-          ▼
- Ticket Revenue Recognition
-          │
-          ▼
-    Journal Entry
-          │
-          ├── Organization Scope
-          ├── Project Scope
-          └── Production Scope
+          └─ 実際に代金を受領した場合：Payment Fact
+                    │
+                    ▼
+       入金とTicket Revenueを同時に計上
+                    │
+                    ▼
+               Journal Entry
+                    │
+                    ├── Organization Scope
+                    ├── Project Scope
+                    └── Production Scope
+
+会計期間末（Production決算未確定）
+    → 既存の売上Journal Entryを仮売上へ振替
+Production決算確定
+    → 仮売上を正式な売上へ振替
 ```
 
-このFlowをTicket Revenueに関するCanonical Ruleとする。
+予約成立やCheckInCompleted単独では仕訳を生成しない。標準運用の入金・売上計上は実際の代金受領を示すPayment Factに基づく。
