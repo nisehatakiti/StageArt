@@ -655,11 +655,11 @@ Project BudgetとProject Actualを比較して団体全体の予実を確認す�
 
 # Organization Accounting
 
-Organization単位では、Organizationに属するすべてのJournal Entryを集計し、団体全体のBudget / Actualを確認する。
+Organization Accountingは団体全体の会計実績を集計する。団体全体の予算はProject Budgetとして管理し、Organization Budgetという別個の予算機能は設けない。
 
-複数Productionに共通する費用および団体全体の一般管理費は、Organization Accountingの費用として計上する。これらはProjectやProductionへ按分・配賦せず、Project Actual / Production Actualに含めない。特定のProjectまたはProductionに直接紐づく取引のみ、対応するScopeに関連付けて集計する。
+団体全体のActualには、Productionに直接紐づく取引と団体共通費用・一般管理費の両方を含める。団体共通費用はProductionへ按分・配賦せず、Production Actualにも含めない。
 
-Project / Production単位のBudgetとActualは、それぞれのScopeに直接関連付けられた計画・Journal Entryを基に集計する。Organization全体の費用をProject / Productionに配賦する処理を自動生成してはならない。
+Project Actualは団体に属するJournal Entryを重複なく集計する。Production Actualを再加算したり、仕訳を複製したりして二重計上してはならない。
 
 ---
 
