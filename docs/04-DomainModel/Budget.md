@@ -71,11 +71,11 @@ Variance
 
 # Ownership
 
-Budgetは、
-ProjectまたはProductionに関連付ける。
+Version 1.0では、BudgetをProjectまたはProductionに関連付ける。
 
-公演の予算を管理する場合は、
-Productionに紐付ける。
+公演単位の予算はProductionに紐付け、
+複数のProductionを横断する計画はProjectに紐付ける。
+Organization BudgetはVersion 1.0では作成対象外とし、将来機能とする。
 
 基本構造：
 
@@ -680,18 +680,12 @@ Project / Production単位のBudgetとActualは、それぞれのScopeに直接�
 
 BudgetのScopeを明確にする。
 
-基本的には、
+Version 1.0では、次の2つのBudget Scopeをサポートする。
 
-Production Budget
+- Production Budget：個別公演の計画
+- Project Budget：Projectに属する複数Productionを横断する計画
 
-として公演単位で管理する。
-
-将来的には、
-
-- Project Budget
-- Organization Budget
-
-へ拡張できる構造を持つ。
+Organization BudgetはVersion 1.0ではサポートせず、将来機能とする。
 
 ---
 
@@ -744,8 +738,10 @@ ARCHIVEDとして保持する。
 
 - Budgetは計画を表す。
 - Budgetは実績ではない。
-- BudgetはProjectまたはProductionに関連付ける。
+- Version 1.0ではBudgetをProjectまたはProductionに関連付けられる。
 - Productionの予算はProductionに関連付ける。
+- Projectを横断する計画はProject Budgetとして管理できる。
+- Organization BudgetはVersion 1.0では作成できず、将来機能とする。
 - 一つのProductionに複数Budgetを保持できる。
 - Budgetには簡単な名称を設定できる。
 - 「A会場案」「一日2公演案」などの名称を許可する。
@@ -772,8 +768,9 @@ ARCHIVEDとして保持する。
 - 仮売上への振替は会計期間末に行う。CheckInCompletedを仮売上仕訳の契機にしない。正式な売上への振替はProduction決算確定時に行う。
 - BudgetはTicketを直接所有しない。
 - BudgetはProduction単位で予実管理できる。
-- Project単位でBudget / Actualを集計できる。
-- Organization単位でBudget / Actualを集計できる。
+- Version 1.0ではProject Budgetを作成し、Project単位の計画を管理できる。
+- Project単位で複数ProductionのActualを集計できる。Project Budgetとの比較では、Projectに直接関連付けられたBudgetと、Projectに直接関連付けられた会計実績を比較する。Production BudgetやProduction ActualをProject Budgetの金額に自動加算・配賦しない。
+- Organization単位では会計実績を集計できるが、Organization Budgetの作成は将来機能とする。
 - Budgetは適切な会計管理権限を持つPersonのみが管理できる。
 - Organization Administratorは自身のOrganizationについて全権限を持つ。
 - Budgetには監査情報を保持する。
@@ -893,8 +890,8 @@ Journal Entry
 - Budgetは計画である。
 - Journal Entryは実績である。
 - BudgetとActualを分離する。
-- BudgetはProduction単位で管理できる。
-- 一つのProductionに複数のBudget Scenarioを持てる。
+- BudgetはProductionまたはProject単位で管理できる。
+- 一つのProductionまたはProjectに複数のBudget Scenarioを持てる。
 - Budgetには自由な識別名称を設定できる。
 - ACTIVE BudgetはProductionごとに一つとする。
 - Budget LineはAccountを参照する。
@@ -907,7 +904,7 @@ Journal Entry
 - Budgetは会計Factを生成しない。
 - CheckInCompletedによるTicket RevenueをActualとして集計できる。
 - BudgetはTicketを所有しない。
-- BudgetはProduction / Project / OrganizationのScopeに従う。
+- Version 1.0のBudget ScopeはProductionまたはProjectとする。Organization Budgetは将来機能とする。
 - 採用されないBudgetも履歴として保持する。
 - 会計管理権限を適切に分離する。
 - Blueprintを唯一の設計基準とする。
