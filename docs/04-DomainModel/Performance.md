@@ -517,7 +517,8 @@ CheckInCompletedなどのBusiness Eventを受け取り、
 
 Check Inが完了し、
 CheckInCompletedが発生した時点で、
-チケット売上をAccounting Domainへ連携する。
+売上相当FactをAccounting Domainへ連携して「仮売上」として管理する。
+Production決算確定までは正式な売上・損益に含めず、Production決算確定時に正式な売上へ振り替える。
 
 基本Flow：
 
@@ -531,9 +532,11 @@ Check In
   ↓
 CheckInCompleted
   ↓
-Ticket Revenue
+仮売上
   ↓
-Journal Entry
+Production決算確定
+  ↓
+正式な売上へ振替
 
 具体的な勘定科目やDebit / Creditの処理は、
 Accounting Domainで定義する。
