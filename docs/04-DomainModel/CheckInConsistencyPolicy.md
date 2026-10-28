@@ -156,17 +156,13 @@ History DomainはCheckInCompletedを利用して観劇履歴を生成できる�
 
 Check In DomainはJournal Entryを直接生成・変更・削除しない。
 
-CheckInCompletedを契機としてAccounting DomainがTicket Revenue Recognitionを処理する。
+CheckInCompletedは来場受付FactとしてHistory Domain等に連携する。Ticket Revenueの仕訳生成根拠は実際の代金受領を示すPayment Factとする。標準の当日受付ではPayment FactとCheckInCompletedが同時に発生するため関連付けられるが、スタッフ事前集金ではPayment Factが先行し、後日のCheckInCompletedで再計上しない。
 
 基本構造：
 
-Check In
-    ↓
-CheckInCompleted
-    ↓
-Ticket Revenue Recognition
-    ↓
-Journal Entry
+Check In ──→ CheckInCompleted ──→ Audience History
+
+実際の代金受領 ──→ Payment Fact ──→ Ticket Revenue Journal Entry
 
 ---
 
@@ -182,9 +178,7 @@ GuestCountが複数の場合も、Reservationに記録された実際の取引�
 
 # Accounting Idempotency
 
-同一CheckInCompletedを複数回処理しても、同一Ticket Revenueを二重計上してはならない。
-
-Accounting Domain側でEvent識別情報等を利用して冪等処理する。
+CheckInCompletedの再処理で来場受付Factを重複生成してはならない。売上仕訳の重複防止はPayment Factの一意識別情報を基準とし、同一Payment FactからTicket Revenueを二重計上しない。
 
 ---
 
