@@ -515,10 +515,8 @@ CheckInCompletedなどのBusiness Eventを受け取り、
 チケットを予約した時点では
 正式な会計上の売上として確定しない。
 
-Check Inが完了し、
-CheckInCompletedが発生した時点で、
-売上相当FactをAccounting Domainへ連携して「仮売上」として管理する。
-Production決算確定までは正式な売上・損益に含めず、Production決算確定時に正式な売上へ振り替える。
+Check Inが完了し、CheckInCompletedが発生しても、仮売上への振替仕訳は生成しない。
+会計期間末に、決算未確定Productionに関連する売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
 基本Flow：
 
@@ -532,7 +530,11 @@ Check In
   ↓
 CheckInCompleted
   ↓
-仮売上
+来場Fact（この時点で仮売上仕訳は生成しない）
+
+会計期間末
+  ↓
+仮売上へ振替
   ↓
 Production決算確定
   ↓
