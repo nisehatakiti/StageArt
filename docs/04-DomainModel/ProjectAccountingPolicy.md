@@ -34,6 +34,10 @@ Organization単位では、団体全体の財務状況を確認する。
 
 Organization Accountingは、Journal Entryを正本とする団体全体の会計情報を扱う。
 
+団体会計では、団体全体の財務状況に加え、配下のProductionごとの売上・原価・収支をサマリ表示する。費目別原価および個々の取引明細はProduction Accountingで確認する。Productionごとの集計は同じJournal Entryを参照して行い、Production決算確定時に集計額を別仕訳として二重転記しない。
+
+公演仕掛金と売上原価の振替、費目別原価の保持、団体会計と公演会計の表示責務は、[団体会計と公演原価の管理方針](../OrganizationAccountingAndProductionCostPolicy.md)に従う。
+
 主な用途：
 
 - 現金・預金等の流動資産の確認
