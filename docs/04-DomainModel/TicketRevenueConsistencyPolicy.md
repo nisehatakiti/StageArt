@@ -166,7 +166,7 @@ Budgetは計画値であり、ActualはJournal Entryから算出される実績�
 
 # Idempotency
 
-同一CheckInCompleted Eventの再処理で入金・売上仕訳を生成してはならない。標準運用で入金・売上を計上する根拠は、重複排除可能なPayment Factである。Accounting ProcessingはPayment Fact等の一意識別情報を利用してIdempotentに実行する。
+CheckInCompletedの再処理で来場Factを重複生成してはならない。入金・売上仕訳はPayment Factを根拠とし、同一Payment Factの再処理で二重計上してはならない。Accounting ProcessingはPayment Factの一意識別情報を利用してIdempotentに実行する。
 
 ---
 
