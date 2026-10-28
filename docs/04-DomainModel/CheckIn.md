@@ -16,7 +16,7 @@ Check Inは、
 Reservationに対する来場受付を表す。
 
 また、Check Inの完了を、
-チケット売上を会計へ認識するための
+チケット売上相当額を仮売上として会計へ連携するための
 Business Eventとして利用する。
 
 ---
@@ -203,7 +203,7 @@ Check Inを実行できる。
 
 また、
 同一Check InCompletedから
-チケット売上の会計仕訳を
+仮売上の会計仕訳を
 二重生成してはならない。
 
 ---
@@ -439,7 +439,7 @@ Audience History
 # Check In and Accounting
 
 CheckInCompletedは、
-チケット売上を会計へ認識するための
+チケット売上相当額を仮売上として会計へ連携するための
 Domain Eventとして利用する。
 
 基本Flow：
@@ -448,7 +448,7 @@ Check In
   ↓
 CheckInCompleted
   ↓
-Ticket Revenue Recognition
+仮売上の記録
   ↓
 Journal Entry
   ↓
@@ -458,8 +458,8 @@ Journal Entry Line
 チケット売上を会計へ計上しない。
 
 Check Inが完了した時点で、
-対象Ticketの売上を
-会計上の実績として認識する。
+対象Ticketの売上相当額を
+仮売上として会計上に記録する。正式な売上・損益には含めず、Production決算確定時に正式な売上へ振り替える。
 
 ---
 
@@ -481,7 +481,7 @@ CheckInCompleted
 Accounting Domainは、
 このEventを購読し、
 対象ReservationのTicket情報をもとに
-チケット売上を会計へ連携する。
+チケット売上相当額を仮売上として会計へ連携する。
 
 ---
 
@@ -553,7 +553,7 @@ Ticket Revenue
   現金等       3,000円
 
 貸方：
-  チケット売上 3,000円
+  仮売上 3,000円
 
 という仕訳を生成できる。
 
@@ -693,7 +693,7 @@ Accounting Domain：
 # Check In and Budget
 
 Check Inによって生成された
-チケット売上の実績は、
+チケット売上相当額は仮売上として記録し、
 将来的にProductionの予実管理へ
 連携できる。
 
@@ -942,9 +942,9 @@ Check Inとの関連を追跡する。
 - Check In完了時にReservation StatusをCHECKED_INへ変更する。
 - Check In完了時にCheckInCompletedを発行する。
 - CheckInCompletedをHistory生成の契機として利用できる。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用する。
+- CheckInCompletedを仮売上記録の契機として利用する。
 - 予約時点ではチケット売上を会計計上しない。
-- Check In完了時点でチケット売上を会計上の実績として認識する。
+- Check In完了時点でチケット売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
 - 売上金額はReservationの予約時点の取引価格を利用する。
 - Ticketの現在価格を過去Reservationの売上計算に利用しない。
 - Guest Countから単純計算して売上金額を再構成しない。
@@ -1025,9 +1025,7 @@ Version 1.0では、
 # Accounting Design
 
 StageArtでは、
-チケット売上の会計認識を
-Reservation作成時ではなく、
-Check In完了時に行う。
+チケット売上相当額の会計連携をReservation作成時ではなく、Check In完了時に仮売上として行う。正式な売上への振替はProduction決算確定時に行う。
 
 これにより、
 
@@ -1040,7 +1038,7 @@ Check In完了時に行う。
 を分離する。
 
 CheckInCompletedをAccounting Domainへ連携し、
-Accounting DomainがTicket Revenue Recognitionを行う。
+Accounting Domainが仮売上を記録し、Production決算確定時に正式な売上へ振り替える。
 
 その結果としてJournal Entryを生成する。
 
@@ -1115,7 +1113,7 @@ Accountingの責務を分離する。
 - CheckInCompletedをHistory生成の契機として利用する。
 - CheckInCompletedをTicket Revenue Recognitionの契機として利用する。
 - 予約時点ではチケット売上を会計計上しない。
-- Check In完了時点でチケット売上を会計上の実績として認識する。
+- Check In完了時点でチケット売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
 - Check In DomainとAccounting Domainの責務を分離する。
 - Check In Domainが勘定科目やJournal Entryを直接管理しない。
 - 同一CheckInCompletedから二重仕訳を生成しない。
