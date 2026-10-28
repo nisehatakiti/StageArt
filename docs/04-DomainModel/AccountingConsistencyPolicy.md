@@ -8,7 +8,7 @@ Version : 1.0
 
 # Purpose
 
-Accounting Domainについて、Organization / Project / ProductionのScope、Journal Entry、Reservation、Check In、Ticket Revenueの関係をCanonical仕様として定義する。
+Accounting Domainについて、Organization / Project / ProductionのScope、Journal Entry、Reservation、Check In、仮売上の関係をCanonical仕様として定義する。
 
 ---
 
@@ -121,7 +121,7 @@ Check In時点で、未収金をTicket Revenueへ振り替える。
 
 ---
 
-# Ticket Revenue Journal Entry
+# Provisional Ticket Sales Journal Entry
 
 CheckInCompletedをRevenue RecognitionのBusiness Eventとする。
 
