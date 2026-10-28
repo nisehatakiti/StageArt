@@ -22,7 +22,7 @@ Accountは分類マスタ、Budgetは計画、ActualはJournal Entryから算出
 
 # Canonical Accounting Flow
 
-チケット売上については以下をCanonical Flowとする。
+チケット売上相当額については以下をCanonical Flowとする。
 
 Reservation
     ↓
@@ -32,7 +32,7 @@ Check In
     ↓
 CheckInCompleted
     ↓
-Ticket Revenue Recognition
+仮売上記録
     ↓
 Journal Entry
 
@@ -46,7 +46,7 @@ Reservation成立時点では売上を認識しない。
 
 Reservation成立後、Check In前は未収金として扱う。
 
-未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従うが、Ticket Revenue自体はCheckInCompleted前には認識しない。
+未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従う。CheckInCompleted時点で売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
 
 No-Show等でCheckInCompletedが発生しない場合、通常のTicket Revenue Recognitionを生成しない。
 
