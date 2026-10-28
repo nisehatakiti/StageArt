@@ -700,8 +700,7 @@ Audience History
 
 # Check In and Accounting
 
-CheckInCompletedを契機として、
-チケット売上をAccounting Domainへ連携する。
+通常の当日精算では、Check In時の代金受領とCheckInCompletedが同時に発生するため、Accounting連携の契機として利用できる。ただし会計仕訳は実際の代金受領を示すPayment Factに基づいて生成する。スタッフ預りTicketは受付担当者が現金を受領して支払済みを確定した時点で入金と売上を計上し、後続のCheckInCompletedで再計上しない。
 
 基本Flow：
 
@@ -730,8 +729,7 @@ Journal Entryを管理しない。
 # Ticket Revenue
 
 Ticket Revenueは、
-CheckInCompletedによって確定した
-チケット売上の会計連携用Factである。
+Payment Factによって確定したチケット売上の会計連携用Factである。通常の当日精算ではCheckInCompletedと同時に記録されるが、スタッフ預りTicketでは受付担当者が現金を受領して支払済みを確定した時点で確定する。
 
 Ticket.Priceは販売条件であり、
 Ticket Revenueそのものではない。
@@ -916,7 +914,7 @@ Production権限に従う。
 - ReservationはHistoryを直接管理しない。
 - CheckInCompletedを契機としてHistory DomainがAudience Historyを生成する。
 - Audience HistoryのSubjectはReservation.Bookerである。
-- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、計上根拠はPayment Factとする。スタッフ預りTicketでは現金受領時に計上し、後続のCheckInCompletedで二重計上しない。
 - Reservation DomainはJournal Entryを管理しない。
 - CreatedByはReservation作成後に変更しない。
 - CreatedAtは変更しない。
@@ -1042,7 +1040,7 @@ Reservationの基本責務を
 - Check In時にはPerformanceを検証する。
 - Check In完了時にCheckInCompletedを発行する。
 - CheckInCompletedからAudience Historyを生成する。
-- CheckInCompletedからTicket RevenueをAccountingへ連携する。
+- Payment Factに基づいてTicket RevenueをAccountingへ連携する。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生する。
 - Reservation DomainはHistoryを直接管理しない。
 - Reservation DomainはJournal Entryを管理しない。
 - CANCELLEDのReservationを物理削除しない。
