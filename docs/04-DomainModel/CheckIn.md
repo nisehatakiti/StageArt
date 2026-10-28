@@ -940,7 +940,7 @@ Check Inとの関連を追跡する。
 - 売上金額はReservationの予約時点の取引価格を利用する。
 - Ticketの現在価格を過去Reservationの売上計算に利用しない。
 - Guest Countから単純計算して売上金額を再構成しない。
-- Accounting DomainがCheckInCompletedを受け取りJournal Entryを生成する。
+- Accounting DomainはCheckInCompletedを来場受付Factとして参照できるが、仮売上への振替仕訳は会計期間末に生成する。
 - Check In Domain自身がJournal Entryを直接生成しない。
 - Check In Domain自身が勘定科目を管理しない。
 - Journal Entry LineはAccounting Domainで管理する。
@@ -1102,9 +1102,11 @@ Accountingの責務を分離する。
 - Guest CountとCheck Inを同行者単位に分解しない。
 - CompanionをVersion 1.0では管理しない。
 - CheckInCompletedをHistory生成の契機として利用する。
-- CheckInCompletedを仮売上記録の契機として利用する。
+- CheckInCompletedを来場受付Factの発行契機として利用する。仮売上への振替は会計期間末に行う。
 - 予約時点ではチケット売上を会計計上しない。
-- Check In完了時点でチケット売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
+- Check In完了時点では仮売上への振替仕訳を生成しない。
+- 会計期間末に、決算未確定Productionの売上残高を仮売上へ振り替える。
+- Production決算確定時に仮売上を正式な売上へ振り替える。
 - Check In DomainとAccounting Domainの責務を分離する。
 - Check In Domainが勘定科目やJournal Entryを直接管理しない。
 - 同一CheckInCompletedから二重仕訳を生成しない。
