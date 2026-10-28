@@ -482,7 +482,7 @@ CheckInCompletedは、
 
 # Check In and Accounting
 
-通常の当日精算ではCheck In時の代金受領とCheckInCompletedが同時に発生するため、通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。ただし仕訳の根拠は実際の代金受領を示すPayment Factとする。スタッフ預りTicketは受付担当者が現金を受領し支払済みを確定した時点で計上し、後続のCheckInCompletedで再計上しない。
+通常の当日精算では、受付時の代金受領とCheckInCompletedが同時に発生するため、両者を関連付けてAccounting連携できる。ただし、入金・Ticket Revenue仕訳の根拠は実際の代金受領を示すPayment Factとする。スタッフ預りTicketは、受付担当者が現金を受領しReservationの支払済みを確定した時点でPayment Factを記録して計上し、後続のCheckInCompletedでは再計上しない。
 
 基本的なFlow：
 
@@ -492,19 +492,20 @@ Issued Ticket
   ↓
 Check In
   ↓
-CheckInCompleted
-  ├── History
-  │     └── Audience History
-  │
-  └── Accounting
-        └── Ticket Revenue
+CheckInCompleted ──→ History / Audience History
+
+実際の代金受領
+  ↓
+Payment Fact
+  ↓
+Accounting ──→ 入金・Ticket Revenue
+
+CheckInCompleted単独では仕訳を生成しない。
 
 Performance Domainは、
 仕訳そのものを管理しない。
 
-Accounting Domainが、
-CheckInCompletedなどのBusiness Eventを受け取り、
-必要なJournal Entryを生成する。
+Accounting Domainは、Payment Factに基づいて入金・Ticket RevenueのJournal Entryを生成する。CheckInCompletedは通常フローで関連付けられる来場受付Eventであり、スタッフ預りTicketでは先行するPayment Factによる計上を重複させない。
 
 ---
 
