@@ -811,7 +811,7 @@ Organization内部の権限を持つPersonのみが
 - Reversal Journal Entryは元Journal Entryを参照する。
 - 同一Business Eventから会計取引を二重生成しない。
 - Source Event IDなどによってIdempotencyを確保する。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用できる。
+- Ticket Revenue Recognitionの仕訳生成根拠はPayment Factとする。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketでは後続のCheckInCompletedから再計上しない。
 - Ticket Revenueの金額はReservationの取引価格を利用する。
 - Ticketの現在価格から過去の売上金額を再計算しない。
 - Payment Accountは決済手段に応じてAccounting Domainで決定する。
