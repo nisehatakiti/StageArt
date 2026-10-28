@@ -50,7 +50,7 @@ Reservation成立後、Check In前は未収金として扱う。
 
 未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従う。CheckInCompleted時点では仮売上仕訳を生成せず、会計期間末に仮売上へ振り替える。
 
-No-Show等でCheckInCompletedが発生しない場合、通常のTicket Revenue Recognitionを生成しない。
+No-Show等の扱いは既存のTicket取引・取消ルールに従う。CheckInCompletedの有無だけを仮売上振替の判定条件にしない。
 
 ---
 
