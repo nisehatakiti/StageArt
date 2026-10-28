@@ -40,7 +40,7 @@ CheckInCompleted
 
 Reservation成立時点では売上を認識しない。
 
-来場してCheck Inが完了した時点で売上相当額を仮売上として記録する。正式な売上への振替はProduction決算確定時に行う。
+Check In時点では仮売上への振替を行わない。会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
 ---
 
@@ -48,7 +48,7 @@ Reservation成立時点では売上を認識しない。
 
 Reservation成立後、Check In前は未収金として扱う。
 
-未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従う。CheckInCompleted時点で売上相当額を仮売上として記録し、正式な売上への振替はProduction決算確定時に行う。
+未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従う。CheckInCompleted時点では仮売上仕訳を生成せず、会計期間末に仮売上へ振り替える。
 
 No-Show等でCheckInCompletedが発生しない場合、通常のTicket Revenue Recognitionを生成しない。
 
@@ -221,6 +221,6 @@ Journal Entry = 実績Fact
 Actual = Journal Entryからの集計
 ```
 
-チケット売上については、**予約ではなく来場・Check Inを売上認識の契機とする**。
+チケット売上について、Check Inは来場Factであり仮売上振替の契機ではない。仮売上への振替は会計期間末、正式な売上への振替はProduction決算確定時に行う。
 
 これをOrganization / Project / Productionすべての会計Scopeで共通ルールとする。
