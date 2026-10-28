@@ -271,7 +271,9 @@ final class CheckInUseCaseTest extends TestCase
         $this->assertCount(1, $entries);
         $entry = $entries[0];
         $this->assertTrue($entry->isPosted());
-        $this->assertSame('CheckInCompleted', $entry->sourceEventType());
+        // Keyed by the Reservation that was paid, not by the CheckIn.
+        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entry->sourceEventType());
+        $this->assertSame($reservation->id()->toString(), $entry->sourceEventId());
 
         $lines = $entry->lines();
         $this->assertCount(2, $lines);
@@ -419,23 +421,24 @@ final class CheckInUseCaseTest extends TestCase
     }
 
     /**
-     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
-     * round): "NO_SHOWは...Sales recognition...には含めます" - a member who
-     * already collected payment hand-selling a Ticket still generates
-     * Ticket Revenue when Accounting is enabled, exactly like a real
-     * Check-in would, even though no CheckIn Fact/attendance is recorded.
+     * A member who collected the money from the guest hands it to the 受付
+     * when declaring the no-show: Ticket Revenue is recorded when
+     * Accounting is enabled, even though no CheckIn Fact/attendance is
+     * recorded. Without the money reaching the 受付 nothing is recorded
+     * (JournalEntryConsistencyPolicy.md "スタッフ事前集金", see
+     * CheckInTicketRevenueTest).
      */
-    public function test_mark_no_show_generates_a_posted_journal_entry_when_accounting_is_enabled(): void
+    public function test_mark_no_show_generates_a_posted_journal_entry_when_the_payment_was_received(): void
     {
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId, 2);
 
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
 
         $entries = $this->journalEntries->all();
         $this->assertCount(1, $entries);
         $this->assertTrue($entries[0]->isPosted());
-        $this->assertSame('ReservationNoShow', $entries[0]->sourceEventType());
+        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entries[0]->sourceEventType());
 
         $lines = $entries[0]->lines();
         $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
@@ -449,19 +452,24 @@ final class CheckInUseCaseTest extends TestCase
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId);
 
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
 
         $this->expectException(InvalidArgumentException::class);
-        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
     }
 
-    public function test_reverse_check_in_reverts_reservation_and_generates_a_reversal_journal_entry(): void
+    /**
+     * A Check-in reversal alone leaves the received payment recorded
+     * (CheckIn.md "# Accounting Reversal", see CheckInTicketRevenueTest);
+     * this is the case where the money was also given back.
+     */
+    public function test_reverse_check_in_with_a_refund_reverts_reservation_and_generates_a_reversal_journal_entry(): void
     {
         [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
         $reservation = $this->givenReservedReservation($performance, $ticketId);
         $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
-        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
 
         $refetched = $this->reservations->findById($reservation->id());
         $this->assertSame('RESERVED', $refetched->status()->toString());

@@ -12,6 +12,14 @@ interface ReservationRepositoryInterface
 
     public function findById(ReservationId $id): ?Reservation;
 
+    /**
+     * Same as findById() but row-locks the Reservation until the caller's
+     * transaction ends (SELECT ... FOR UPDATE), so two concurrent
+     * Check-ins / no-shows / reversals of one Reservation run one after
+     * the other and the second sees the first one's result.
+     */
+    public function findByIdForUpdate(ReservationId $id): ?Reservation;
+
     public function findByReservationNumber(ReservationNumber $reservationNumber): ?Reservation;
 
     /**

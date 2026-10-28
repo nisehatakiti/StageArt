@@ -102,10 +102,28 @@ final class CheckInReservationUseCase
 
         $productionId = $performance->productionId();
 
-        $checkIn = $this->transactions->run(
-            fn () => $this->processor->process($reservation, $productionId, $requesterId)
-        );
+        // Re-checked under the row lock: a double click / retry / second
+        // device that passed the checks above at the same time waits for
+        // the first Check-in and then answers 受付済み without a second
+        // CheckIn Fact or 売上 entry.
+        [$checkIn, $locked, $alreadyProcessed] = $this->transactions->run(function () use ($reservation, $productionId, $requesterId): array {
+            $locked = $this->processor->lock($reservation);
 
-        return CheckInResult::fromDomain($checkIn, $reservation);
+            if ($locked->status()->equals(ReservationStatus::fromString(ReservationStatus::CHECKED_IN))) {
+                $existing = $this->checkIns->findLatestByReservationId($locked->id());
+
+                if ($existing !== null && $existing->isCompleted()) {
+                    return [$existing, $locked, true];
+                }
+            }
+
+            if (! $locked->status()->equals(ReservationStatus::fromString(ReservationStatus::RESERVED))) {
+                throw new ReservationNotCheckInEligibleException($locked->status()->toString());
+            }
+
+            return [$this->processor->process($locked, $productionId, $requesterId), $locked, false];
+        });
+
+        return CheckInResult::fromDomain($checkIn, $locked, $alreadyProcessed);
     }
 }

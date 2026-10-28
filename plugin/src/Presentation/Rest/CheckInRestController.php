@@ -214,7 +214,8 @@ final class CheckInRestController
             $command = new MarkNoShowCommand(
                 (string) $request->get_param('id'),
                 (string) $request->get_param('reservation_id'),
-                get_current_user_id()
+                get_current_user_id(),
+                $request->get_param('payment_received') === true
             );
 
             $this->markNoShow->execute($command);
@@ -234,7 +235,8 @@ final class CheckInRestController
             $command = new ReverseCheckInCommand(
                 (string) $request->get_param('id'),
                 (string) $request->get_param('reservation_id'),
-                get_current_user_id()
+                get_current_user_id(),
+                $request->get_param('payment_refunded') === true
             );
 
             $this->reverseCheckIn->execute($command);

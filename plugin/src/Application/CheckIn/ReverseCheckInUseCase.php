@@ -82,14 +82,17 @@ final class ReverseCheckInUseCase
             );
         }
 
-        $checkIn = $this->checkIns->findLatestByReservationId($reservation->id());
+        $paymentRefunded = $command->paymentRefunded;
 
-        if ($checkIn === null || ! $checkIn->isCompleted()) {
-            throw new InvalidArgumentException('This Reservation has no active Check-in to reverse.');
-        }
+        $this->transactions->run(function () use ($reservation, $requesterId, $paymentRefunded): void {
+            $locked = $this->processor->lock($reservation);
+            $checkIn = $this->checkIns->findLatestByReservationId($locked->id());
 
-        $this->transactions->run(function () use ($reservation, $checkIn, $requesterId): void {
-            $this->processor->reverse($reservation, $checkIn, $requesterId);
+            if ($checkIn === null || ! $checkIn->isCompleted()) {
+                throw new InvalidArgumentException('This Reservation has no active Check-in to reverse.');
+            }
+
+            $this->processor->reverse($locked, $checkIn, $requesterId, $paymentRefunded);
         });
     }
 }

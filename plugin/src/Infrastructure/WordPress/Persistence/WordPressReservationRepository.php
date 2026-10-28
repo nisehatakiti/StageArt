@@ -78,6 +78,16 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
         return $row ? $this->hydrate($row) : null;
     }
 
+    public function findByIdForUpdate(ReservationId $id): ?Reservation
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
     public function findByReservationNumber(ReservationNumber $reservationNumber): ?Reservation
     {
         $row = $this->wpdb->get_row(

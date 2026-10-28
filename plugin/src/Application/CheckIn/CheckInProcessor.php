@@ -20,29 +20,42 @@ use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 
 /**
  * The shared "perform one Check-in" core - CheckIn.md's own flow
- * (Reservation.checkIn() -> CheckInCompleted Fact -> conditional Ticket
- * Revenue Recognition) used identically whether the Reservation was
- * resolved via search/QR/number entry (CheckInReservationUseCase) or was
- * just created at the door (CreateWalkUpReservationUseCase) - CheckIn.md
- * "# QR Check In"/"# Manual Selection": "最終的には同じReservationに対する
- * Check Inとして扱う". Callers are responsible for the surrounding
+ * (Reservation.checkIn() -> CheckInCompleted Fact -> 代金受領の計上) used
+ * identically whether the Reservation was resolved via search/QR/number
+ * entry (CheckInReservationUseCase) or was just created at the door
+ * (CreateWalkUpReservationUseCase) - CheckIn.md "# QR Check In"/"# Manual
+ * Selection": "最終的には同じReservationに対するCheck Inとして扱う".
+ * Callers are responsible for the surrounding
  * TransactionManagerInterface::run() - this class only orders the steps
  * within it, so a walk-up Reservation's creation and its immediate
- * Check-in stay one atomic operation.
+ * Check-in stay one atomic operation. Callers that act on an existing
+ * Reservation re-read it through lock() inside that transaction first.
  *
- * Revenue Recognition (TicketRevenueConsistencyPolicy.md): the posted
- * amount is `priceSnapshot() * guestCount()`. `priceSnapshot` itself is
- * still the frozen per-Reservation unit price fixed at booking time -
- * never recomputed from the Ticket's current price - matching the
- * Policy's "Ticketの現在価格を参照して...再計算してはならない" rule. What
- * changed (Phase 0-4統合監査 P1-1) is that this Policy's OTHER explicit
- * rule - "Reservationに記録された実際の取引金額を利用する" - requires the
- * full party amount, not a single unit: a GuestCount=4 booking at 3,000円
- * is a 12,000円 sale, not 3,000円. The prior single-unit amount was a
- * genuine bug, not an intentional simplification.
+ * 入金・Ticket Revenue (TicketRevenueConsistencyPolicy.md "Canonical
+ * Decision", TicketConsistencyPolicy.md): at the 受付 the cash is taken and
+ * the guest is checked in in one step, so that step records the receipt
+ * as 現金 (debit) / チケット売上 (credit). The entry is keyed by the
+ * Reservation (TICKET_PAYMENT_SOURCE), not by the CheckIn: one
+ * Reservation is paid once, so a Check-in that was reversed and done
+ * again, or a retried request, never records it a second time. The
+ * amount is `priceSnapshot() * guestCount()` - the per-Reservation unit
+ * price frozen at booking, never the Ticket's current price, times the
+ * party size ("Reservationに記録された実際の取引金額", Phase 0-4統合監査
+ * P1-1). A 0円 Reservation (招待券) receives no cash, so nothing is
+ * recorded.
  */
 final class CheckInProcessor
 {
+    public const TICKET_PAYMENT_SOURCE = 'TicketPaymentReceived';
+
+    /**
+     * Source events of the entries recorded before the Reservation-keyed
+     * TICKET_PAYMENT_SOURCE existed. Still checked so those payments are
+     * not recorded twice.
+     */
+    private const LEGACY_CHECK_IN_SOURCE = 'CheckInCompleted';
+    private const LEGACY_NO_SHOW_SOURCE = 'ReservationNoShow';
+
     private ReservationRepositoryInterface $reservations;
     private CheckInRepositoryInterface $checkIns;
     private ProductionContextContract $productionContext;
@@ -66,47 +79,65 @@ final class CheckInProcessor
         $this->standardAccounts = $standardAccounts;
     }
 
+    /**
+     * Re-reads the Reservation with a row lock (call inside the
+     * transaction). A second concurrent request for the same Reservation
+     * waits here and then sees the first one's result, instead of both
+     * acting on the RESERVED state they read before the transaction.
+     */
+    public function lock(Reservation $reservation): Reservation
+    {
+        return $this->reservations->findByIdForUpdate($reservation->id()) ?? $reservation;
+    }
+
     public function process(Reservation $reservation, ProductionId $productionId, PersonId $checkedInBy): CheckIn
     {
+        $alreadyRecorded = $this->findRecordedTicketPayment($reservation) !== null;
+
         $reservation->checkIn($checkedInBy);
         $this->reservations->save($reservation);
 
         $checkIn = CheckIn::complete($reservation->id(), $reservation->performanceId(), $checkedInBy);
         $this->checkIns->save($checkIn);
 
-        $this->recognizeRevenueIfAccountingEnabled($reservation, $productionId, $checkedInBy, 'CheckInCompleted', $checkIn->id()->toString());
+        if (! $alreadyRecorded) {
+            $this->recordTicketPayment($reservation, $productionId, $checkedInBy);
+        }
 
         return $checkIn;
     }
 
     /**
-     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
-     * round): "NO_SHOWは...Check-in相当、Sales recognition...には含めます。
-     * ただし、実際の出席人数には含めません" - this scenario is a member who
-     * already collected payment hand-selling a Ticket, so unlike a genuine
-     * unpaid no-show, Revenue must still be recognized exactly as a real
-     * Check-in would (when Accounting is enabled), while never creating a
-     * `CheckIn` Fact (NO_SHOW is not an attendance event - see
-     * `Reservation::markNoShow()`'s own docblock). Keyed by the
-     * Reservation itself rather than a CheckIn id, since no CheckIn record
-     * exists for a no-show.
+     * NO_SHOW never creates a `CheckIn` Fact (the guest never arrived -
+     * see `Reservation::markNoShow()`). It stays a sale for 販売実績 /
+     * Ticket Back (ProductionSettlementCalculator), but the 入金・売上 entry
+     * is recorded only when the 受付 actually received the money
+     * (`$paymentReceived`): a member who collected it from the guest has
+     * not yet handed it to the 劇団 (JournalEntryConsistencyPolicy.md
+     * "スタッフ事前集金"), and a guest who never came has paid nothing.
      */
-    public function processNoShow(Reservation $reservation, ProductionId $productionId, PersonId $recordedBy): void
+    public function processNoShow(Reservation $reservation, ProductionId $productionId, PersonId $recordedBy, bool $paymentReceived): void
     {
+        $alreadyRecorded = $this->findRecordedTicketPayment($reservation) !== null;
+
         $reservation->markNoShow($recordedBy);
         $this->reservations->save($reservation);
 
-        $this->recognizeRevenueIfAccountingEnabled($reservation, $productionId, $recordedBy, 'ReservationNoShow', $reservation->id()->toString());
+        if ($paymentReceived && ! $alreadyRecorded) {
+            $this->recordTicketPayment($reservation, $productionId, $recordedBy);
+        }
     }
 
     /**
      * CheckIn.md "# Check In Reversal"/"# Accounting Reversal": reverts
-     * Reservation to RESERVED and marks the CheckIn REVERSED; if a
-     * Journal Entry was generated for this CheckIn, generates the paired
-     * Reversal Entry via JournalEntry's own Domain reversal mechanism
-     * rather than deleting or editing the original.
+     * Reservation to RESERVED and marks the CheckIn REVERSED. The
+     * reversal is about the 来場 Fact only - the cash received stays
+     * recorded ("Check Inの取消だけでPayment Factや売上仕訳を自動削除しな
+     * い"). Only when the money was actually given back
+     * (`$paymentRefunded`) is the recorded entry reversed, through
+     * JournalEntry's own Reversal (the original is kept and linked).
      */
-    public function reverse(Reservation $reservation, CheckIn $checkIn, PersonId $reversedBy): void
+    public function reverse(Reservation $reservation, CheckIn $checkIn, PersonId $reversedBy, bool $paymentRefunded): void
     {
         $reservation->reverseCheckIn($reversedBy);
         $this->reservations->save($reservation);
@@ -114,7 +145,11 @@ final class CheckInProcessor
         $checkIn->reverse($reversedBy);
         $this->checkIns->save($checkIn);
 
-        $original = $this->journalEntries->findBySourceEvent('CheckInCompleted', $checkIn->id()->toString());
+        if (! $paymentRefunded) {
+            return;
+        }
+
+        $original = $this->findRecordedTicketPayment($reservation);
 
         if ($original !== null && $original->isPosted()) {
             $reversal = JournalEntry::createReversalOf($original, $reversedBy);
@@ -125,30 +160,49 @@ final class CheckInProcessor
         }
     }
 
-    private function recognizeRevenueIfAccountingEnabled(
-        Reservation $reservation,
-        ProductionId $productionId,
-        PersonId $recordedBy,
-        string $sourceEventType,
-        string $sourceEventId
-    ): void {
+    /**
+     * The live (not reversed) 入金・売上 entry of this Reservation, if any:
+     * the Reservation-keyed one, or one recorded before it under the
+     * Fact that triggered it (the latest CheckIn, or the no-show).
+     */
+    private function findRecordedTicketPayment(Reservation $reservation): ?JournalEntry
+    {
+        $reservationId = $reservation->id()->toString();
+
+        $entry = $this->journalEntries->findBySourceEvent(self::TICKET_PAYMENT_SOURCE, $reservationId)
+            ?? $this->journalEntries->findBySourceEvent(self::LEGACY_NO_SHOW_SOURCE, $reservationId);
+
+        if ($entry !== null) {
+            return $entry;
+        }
+
+        $latestCheckIn = $this->checkIns->findLatestByReservationId($reservation->id());
+
+        return $latestCheckIn !== null
+            ? $this->journalEntries->findBySourceEvent(self::LEGACY_CHECK_IN_SOURCE, $latestCheckIn->id()->toString())
+            : null;
+    }
+
+    private function recordTicketPayment(Reservation $reservation, ProductionId $productionId, PersonId $recordedBy): void
+    {
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
 
         if ($organizationId === null || ! $this->organizationContext->isAccountingEnabled($organizationId)) {
             return;
         }
 
-        if ($this->journalEntries->findBySourceEvent($sourceEventType, $sourceEventId) !== null) {
-            // CheckIn.md "# Duplicate Accounting": never generate a
-            // second entry for the same source Fact (CheckInCompleted or,
-            // per this round's NO_SHOW instruction, ReservationNoShow).
+        $amount = $reservation->priceSnapshot() * $reservation->guestCount();
+
+        if ($amount <= 0) {
+            // TicketConsistencyPolicy.md: 招待客等の無料Ticketは、売上・入金の
+            // 計上対象外としてCheck Inできる。 Ticket / Reservation do not
+            // accept a 0円 price yet; this keeps such a Check-in working
+            // (a 0円 JournalEntryLine is refused) once they do.
             return;
         }
 
         $cashAccount = $this->standardAccounts->resolveCashAccount($organizationId);
         $revenueAccount = $this->standardAccounts->resolveTicketRevenueAccount($organizationId);
-
-        $amount = $reservation->priceSnapshot() * $reservation->guestCount();
 
         $journalEntry = JournalEntry::create(
             $organizationId,
@@ -160,19 +214,13 @@ final class CheckInProcessor
                 JournalEntryLine::create($revenueAccount->id(), DebitCredit::credit(), $amount, 'チケット売上'),
             ],
             $recordedBy,
-            $sourceEventType,
-            $sourceEventId
+            self::TICKET_PAYMENT_SOURCE,
+            $reservation->id()->toString()
         );
 
-        // Unlike ConfirmExpenseUseCase's deliberately-DRAFT Expense
-        // entries (a manager reviews and posts them separately), this
-        // entry is posted immediately: Check-in Reversal's own Reversal
-        // mechanism (JournalEntry::createReversalOf()) requires the
-        // original to already be POSTED, and CheckIn.md frames Check-in
-        // -> Revenue Recognition -> Journal Entry as one automatic,
-        // no-manual-review pipeline, not a queued draft awaiting an
-        // accountant's approval. Disclosed as a judgment call - see this
-        // Phase's report.
+        // Posted immediately, unlike an Expense: the cash has been
+        // received, and a later refund needs a POSTED original to reverse
+        // (JournalEntry::createReversalOf()).
         $journalEntry->post($recordedBy);
 
         $this->journalEntries->save($journalEntry);

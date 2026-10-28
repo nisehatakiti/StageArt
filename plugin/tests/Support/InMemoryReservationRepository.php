@@ -25,6 +25,11 @@ final class InMemoryReservationRepository implements ReservationRepositoryInterf
         return $this->reservations[$id->toString()] ?? null;
     }
 
+    public function findByIdForUpdate(ReservationId $id): ?Reservation
+    {
+        return $this->findById($id);
+    }
+
     public function findByReservationNumber(ReservationNumber $reservationNumber): ?Reservation
     {
         foreach ($this->reservations as $reservation) {
