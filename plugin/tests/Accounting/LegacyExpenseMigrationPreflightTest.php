@@ -29,6 +29,9 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
     /** @var FakeWpdb untyped: a failure report is unserialized where the wpdb stub class is not loaded */
     private $wpdb;
     private LegacyExpenseFixture $data;
+
+    /** @var \StageArt\Accounting\LegacyExpenseMigrationOperator a qualifying operator (untyped, like $wpdb) */
+    private $operator;
     private string $log;
 
     protected function setUp(): void
@@ -40,6 +43,7 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
         $this->db = new FakeExpenseMigrationDatabase();
         $this->wpdb = new \wpdb($this->db);
         $d = $this->data = new LegacyExpenseFixture($this->db);
+        $this->operator = $this->data->operator($this->wpdb);
         $d->account('acc-other', 'EXPENSE');
         $d->account('acc-cash', 'ASSET');
 
@@ -143,14 +147,14 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
 
     public function test_the_preview_lists_one_candidate_and_every_uncertain_row_with_its_reason(): void
     {
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $plan = M::preview($this->wpdb);
 
         $this->assertSame(16, $plan['confirmed'], 'Only CONFIRMED rows are read; the unknown status is never selected');
         $this->assertSame(['migratable' => ['journal_entry_id' => 'je-ok', 'amount' => 5000]], $plan['candidates']);
         $this->assertSame($this->expectedReview(), $plan['manual_review']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
     }
 
     public function test_executing_migrates_only_the_safe_row_and_leaves_every_journal_entry_alone(): void
@@ -161,7 +165,7 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
         $linesBefore = $this->db->tables['stageart_expense_lines'];
         $historyBefore = count($this->db->tables['stageart_expense_reviews']);
 
-        $result = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
+        $result = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint'], $this->operator);
 
         $this->assertSame(['migratable'], $result['migrated']);
         $this->assertSame([], $result['failed']);
@@ -193,16 +197,16 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
 
     public function test_a_second_run_changes_nothing_and_reports_the_same_rows_for_review(): void
     {
-        $first = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
-        $afterFirst = $this->db->tables;
+        $first = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint'], $this->operator);
+        $afterFirst = $this->db->businessTables();
 
         $plan = M::preview($this->wpdb);
-        $second = M::execute($this->wpdb, $plan['fingerprint']);
+        $second = M::execute($this->wpdb, $plan['fingerprint'], $this->operator);
 
         $this->assertSame([], $plan['candidates']);
         $this->assertSame([], $second['migrated']);
         $this->assertSame($first['manual_review'], $second['manual_review']);
-        $this->assertSame($afterFirst, $this->db->tables);
+        $this->assertSame($afterFirst, $this->db->businessTables());
     }
 
     /**
@@ -212,7 +216,7 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
      */
     public function test_rows_left_for_review_are_logged_by_id_and_reason_only(): void
     {
-        M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
+        M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint'], $this->operator);
 
         $logged = (string) file_get_contents($this->log);
 

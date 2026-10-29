@@ -45,6 +45,14 @@ use Throwable;
  * row's previous values are known exactly: status CONFIRMED and the
  * workflow columns at their defaults (the classifier migrates nothing
  * else), which is what the runbook's restore step puts back.
+ *
+ * execute() needs an operator (LegacyExpenseMigrationOperator: a
+ * WordPress user holding stageart_manage_accounts, linked to one StageArt
+ * Person) and records each Expense in the operations audit
+ * (LegacyExpenseMigrationAudit, schema 1.45.0): a migrated Expense's
+ * SUCCEEDED row in its own transaction, so a failed audit insert rolls the
+ * migration back; a rolled-back Expense's FAILED row and a refused run's
+ * REFUSED row after the fact, on their own.
  */
 final class LegacyExpenseMigration
 {
@@ -61,11 +69,12 @@ final class LegacyExpenseMigration
     public const FAILED_CHANGED_SINCE_PREVIEW = 'CHANGED_SINCE_PREVIEW';
     public const FAILED_UPDATE = 'UPDATE_FAILED';
     public const FAILED_HISTORY_INSERT = 'HISTORY_INSERT_FAILED';
+    public const FAILED_AUDIT_INSERT = 'AUDIT_INSERT_FAILED';
     public const FAILED_COMMIT = 'COMMIT_FAILED';
     public const FAILED_UNEXPECTED = 'UNEXPECTED_ERROR';
 
-    /** The tables execute() writes; both must support transactions. */
-    private const WRITTEN_TABLES = ['stageart_expenses', 'stageart_expense_reviews'];
+    /** The tables execute() and the restore write; all must support transactions. */
+    private const WRITTEN_TABLES = ['stageart_expenses', 'stageart_expense_reviews', LegacyExpenseMigrationAudit::TABLE];
 
     /**
      * Reads only: nothing is written, locked or logged.
@@ -122,38 +131,67 @@ final class LegacyExpenseMigration
      * is the fingerprint of the plan as it stands now and the written
      * tables are transactional; otherwise nothing is written.
      *
+     * The summary's audit_failures lists the Expense ids ("-" for the run
+     * itself) whose FAILED / REFUSED audit row could not be written.
+     *
      * @param \wpdb $wpdb
      * @return array{
      *     outcome: string,
      *     refused_reason: ?string,
+     *     run_id: string,
      *     migrated: string[],
      *     failed: array<string, string>,
-     *     manual_review: array<string, string>
+     *     manual_review: array<string, string>,
+     *     audit_failures: string[]
      * }
      */
-    public static function execute($wpdb, string $confirmedFingerprint): array
+    public static function execute($wpdb, string $confirmedFingerprint, LegacyExpenseMigrationOperator $operator): array
     {
         $plan = self::preview($wpdb);
-        $summary = ['outcome' => self::OUTCOME_COMPLETED, 'refused_reason' => null, 'migrated' => [], 'failed' => [], 'manual_review' => $plan['manual_review']];
+        $runId = LegacyExpenseMigrationAudit::newRunId();
+        $summary = ['outcome' => self::OUTCOME_COMPLETED, 'refused_reason' => null, 'run_id' => $runId, 'migrated' => [], 'failed' => [], 'manual_review' => $plan['manual_review'], 'audit_failures' => []];
+        $audit = static fn (?string $id, string $outcome, ?string $reason): bool => LegacyExpenseMigrationAudit::record(
+            $wpdb,
+            $runId,
+            LegacyExpenseMigrationAudit::OPERATION_MIGRATION,
+            $id,
+            $outcome,
+            $reason,
+            $operator,
+            $confirmedFingerprint
+        );
 
         if (! $plan['transactional']) {
-            return self::refuse($summary, self::REFUSED_NOT_TRANSACTIONAL);
+            // Not recorded in the audit table: it is one of the tables found unfit.
+            return self::refuse($summary, self::REFUSED_NOT_TRANSACTIONAL, $operator);
         }
 
         if (! hash_equals($plan['fingerprint'], $confirmedFingerprint)) {
-            return self::refuse($summary, self::REFUSED_PLAN_CHANGED);
+            if (! $audit(null, LegacyExpenseMigrationAudit::REFUSED, self::REFUSED_PLAN_CHANGED)) {
+                $summary['audit_failures'][] = '-';
+                error_log(self::LOG_PREFIX . " audit record failed: run {$runId} REFUSED");
+            }
+
+            return self::refuse($summary, self::REFUSED_PLAN_CHANGED, $operator);
         }
 
         $t = self::tables($wpdb);
 
         foreach ($plan['candidates'] as $id => $expected) {
-            $failure = self::migrateOne($wpdb, $t, (string) $id, $expected);
+            $failure = self::migrateOne($wpdb, $t, (string) $id, $expected, $audit);
 
             if ($failure === null) {
                 $summary['migrated'][] = (string) $id;
             } else {
                 $summary['failed'][(string) $id] = $failure;
                 error_log(self::LOG_PREFIX . " failed: {$id}={$failure}");
+
+                // After the ROLLBACK, on its own: it cannot share the
+                // transaction that was undone.
+                if (! $audit((string) $id, LegacyExpenseMigrationAudit::FAILED, $failure)) {
+                    $summary['audit_failures'][] = (string) $id;
+                    error_log(self::LOG_PREFIX . " audit record failed: {$id} FAILED");
+                }
             }
         }
 
@@ -168,11 +206,14 @@ final class LegacyExpenseMigration
         }
 
         error_log(sprintf(
-            '%s completed: migrated=%d failed=%d manual_review=%d',
+            '%s completed: run=%s migrated=%d failed=%d manual_review=%d audit_failures=%d by%s',
             self::LOG_PREFIX,
+            $runId,
             count($summary['migrated']),
             count($summary['failed']),
-            count($summary['manual_review'])
+            count($summary['manual_review']),
+            count($summary['audit_failures']),
+            $operator->describe()
         ));
 
         return $summary;
@@ -185,15 +226,16 @@ final class LegacyExpenseMigration
      * @param \wpdb $wpdb
      * @param array<string, string> $t
      * @param array{journal_entry_id: string, amount: int} $expected
+     * @param callable(?string, string, ?string): bool $audit
      */
-    private static function migrateOne($wpdb, array $t, string $id, array $expected): ?string
+    private static function migrateOne($wpdb, array $t, string $id, array $expected, callable $audit): ?string
     {
         if ($wpdb->query('START TRANSACTION') === false) {
             return self::FAILED_TRANSACTION_START;
         }
 
         try {
-            $failure = self::writeOne($wpdb, $t, $id, $expected);
+            $failure = self::writeOne($wpdb, $t, $id, $expected, $audit);
         } catch (Throwable $exception) {
             $failure = self::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
         }
@@ -213,8 +255,9 @@ final class LegacyExpenseMigration
      * @param \wpdb $wpdb
      * @param array<string, string> $t
      * @param array{journal_entry_id: string, amount: int} $expected
+     * @param callable(?string, string, ?string): bool $audit
      */
-    private static function writeOne($wpdb, array $t, string $id, array $expected): ?string
+    private static function writeOne($wpdb, array $t, string $id, array $expected, callable $audit): ?string
     {
         $expense = $wpdb->get_row(
             $wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE id = %s FOR UPDATE", $id),
@@ -283,7 +326,12 @@ final class LegacyExpenseMigration
             $expense['confirmed_at']
         ));
 
-        return $inserted === 1 ? null : self::FAILED_HISTORY_INSERT;
+        if ($inserted !== 1) {
+            return self::FAILED_HISTORY_INSERT;
+        }
+
+        // In the same transaction: no migration commits without its audit row.
+        return $audit($id, LegacyExpenseMigrationAudit::SUCCEEDED, null) ? null : self::FAILED_AUDIT_INSERT;
     }
 
     /**
@@ -390,9 +438,9 @@ final class LegacyExpenseMigration
      * @param array{outcome: string, refused_reason: ?string, migrated: string[], failed: array<string, string>, manual_review: array<string, string>} $summary
      * @return array{outcome: string, refused_reason: ?string, migrated: string[], failed: array<string, string>, manual_review: array<string, string>}
      */
-    private static function refuse(array $summary, string $reason): array
+    private static function refuse(array $summary, string $reason, LegacyExpenseMigrationOperator $operator): array
     {
-        error_log(self::LOG_PREFIX . " refused: {$reason}; nothing was written");
+        error_log(self::LOG_PREFIX . " refused: {$reason}; no Expense was changed; run={$summary['run_id']} by" . $operator->describe());
 
         return array_merge($summary, ['outcome' => self::OUTCOME_REFUSED, 'refused_reason' => $reason]);
     }

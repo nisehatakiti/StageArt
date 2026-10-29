@@ -10,12 +10,12 @@ use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
 use StageArt\Tests\Support\LegacyExpenseFixture;
 
 /**
- * 修正8 / schema 1.44.0: runs the real SchemaUpgrader::maybeUpgrade() and
- * Installer::install() against a fake $wpdb. Upgrades are not
+ * 修正8 / schema 1.44.0 and 1.45.0: runs the real SchemaUpgrader::maybeUpgrade()
+ * and Installer::install() against a fake $wpdb. Upgrades are not
  * version-by-version: whenever the stored version differs from
  * CURRENT_VERSION the whole Installer runs, so every older install
- * reaches the 1.44.0 expense / notification schema; an install already at
- * 1.44.0 does nothing. The upgrade runs on the first request after a
+ * reaches the 1.44.0 expense / notification schema and the 1.45.0
+ * migration audit table; an install already at 1.45.0 does nothing. The upgrade runs on the first request after a
  * deploy, so it never migrates the legacy CONFIRMED Expenses: that is an
  * operator's explicit step (LegacyExpenseMigration through WP-CLI).
  *
@@ -72,7 +72,7 @@ final class SchemaUpgradePathTest extends TestCase
         foreach ($GLOBALS['wpdb']->callsTo('query') as $args) {
             $sql = (string) $args[0];
 
-            if (str_contains($sql, 'UPDATE wp_stageart_expenses') || str_contains($sql, 'INSERT INTO wp_stageart_expense_reviews') || $sql === 'START TRANSACTION') {
+            if (str_contains($sql, 'UPDATE wp_stageart_expenses') || str_contains($sql, 'INSERT INTO wp_stageart_expense_reviews') || str_contains($sql, 'INSERT INTO wp_stageart_legacy_expense_migration_audit') || $sql === 'START TRANSACTION') {
                 return true;
             }
         }
@@ -80,20 +80,20 @@ final class SchemaUpgradePathTest extends TestCase
         return false;
     }
 
-    public function test_the_current_version_is_1_44_0(): void
+    public function test_the_current_version_is_1_45_0(): void
     {
-        $this->assertSame('1.44.0', SchemaUpgrader::CURRENT_VERSION);
+        $this->assertSame('1.45.0', SchemaUpgrader::CURRENT_VERSION);
     }
 
     /**
      * @dataProvider olderInstalls
      */
-    public function test_every_older_install_gets_the_1_44_0_schema_but_no_data_migration(?string $storedVersion): void
+    public function test_every_older_install_gets_the_1_45_0_schema_but_no_data_migration(?string $storedVersion): void
     {
         $this->upgradeFrom($storedVersion);
 
         $this->assertExpenseSchemaApplied();
-        $this->assertSame('1.44.0', get_option('stageart_db_schema_version'));
+        $this->assertSame('1.45.0', get_option('stageart_db_schema_version'));
     }
 
     /**
@@ -101,12 +101,12 @@ final class SchemaUpgradePathTest extends TestCase
      */
     public static function olderInstalls(): array
     {
-        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0']];
+        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0']];
     }
 
-    public function test_an_install_already_at_1_44_0_runs_nothing(): void
+    public function test_an_install_already_at_1_45_0_runs_nothing(): void
     {
-        $this->upgradeFrom('1.44.0');
+        $this->upgradeFrom('1.45.0');
 
         $this->assertSame([], $GLOBALS['stageart_test_wp']['dbdelta']);
         $this->assertSame([], $GLOBALS['wpdb']->calls);
@@ -124,13 +124,35 @@ final class SchemaUpgradePathTest extends TestCase
         $data = new LegacyExpenseFixture($this->db);
         $data->expense('legacy', 'CONFIRMED', [3000, 2000]);
         $data->entry('je-legacy', 'legacy', 'POSTED', [3000, 2000]);
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $this->upgradeFrom($storedVersion);
 
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
-        $this->assertSame('1.44.0', get_option('stageart_db_schema_version'));
+        $this->assertSame([], $this->db->tables['stageart_legacy_expense_migration_audit']);
+        $this->assertSame('1.45.0', get_option('stageart_db_schema_version'));
+    }
+
+    /**
+     * Required test 11: running the upgrade again - a version mismatch on
+     * another request, or the activation hook - issues the same CREATE
+     * TABLE statements (dbDelta only adds what is missing), writes no row,
+     * and the audit table stays one table.
+     */
+    public function test_upgrading_twice_issues_the_same_schema_and_writes_nothing(): void
+    {
+        $this->upgradeFrom('1.44.0');
+        $first = $GLOBALS['stageart_test_wp']['dbdelta'];
+
+        $GLOBALS['stageart_test_wp']['dbdelta'] = [];
+        $this->upgradeFrom('1.44.0');
+
+        $this->assertSame($first, $GLOBALS['stageart_test_wp']['dbdelta']);
+        $audits = array_filter($first, static fn (string $sql): bool => str_contains($sql, 'CREATE TABLE wp_stageart_legacy_expense_migration_audit'));
+        $this->assertCount(1, $audits);
+        $this->assertFalse($this->expenseMigrationRan());
+        $this->assertSame([], $this->db->transactionLog);
     }
 
     private function assertExpenseSchemaApplied(): void
@@ -154,6 +176,25 @@ final class SchemaUpgradePathTest extends TestCase
         $reviews = (string) $this->createStatementFor('stageart_expense_reviews');
         $this->assertStringContainsString('UNIQUE KEY expense_revision_action (expense_id,revision,action)', $reviews);
         $this->assertStringContainsString('lines_snapshot LONGTEXT NULL', $reviews);
+
+        $audit = (string) $this->createStatementFor('stageart_legacy_expense_migration_audit');
+        foreach ([
+            'id CHAR(36) NOT NULL',
+            'run_id CHAR(36) NOT NULL',
+            'operation VARCHAR(40) NOT NULL',
+            'expense_id CHAR(36) NULL',
+            'outcome VARCHAR(10) NOT NULL',
+            'reason_code VARCHAR(40) NULL',
+            'success_key CHAR(36) NULL',
+            'wp_user_id BIGINT UNSIGNED NOT NULL',
+            'person_id CHAR(36) NOT NULL',
+            'os_user VARCHAR(64) NULL',
+            'acted_at_utc DATETIME NOT NULL',
+            'PRIMARY KEY (id)',
+            'UNIQUE KEY operation_success (operation,success_key)',
+        ] as $fragment) {
+            $this->assertStringContainsString($fragment, $audit);
+        }
 
         $notifications = (string) $this->createStatementFor('stageart_notifications');
         $this->assertStringContainsString('target_type VARCHAR(30) NULL', $notifications);

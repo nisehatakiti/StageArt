@@ -46,9 +46,13 @@ use Throwable;
  * operator's StageArt Person as actor and the time. An Expense with that
  * pair is never migrated again (LegacyExpenseMigrationClassifier).
  *
- * The actor must be a StageArt Person id the caller has established (the
- * WP-CLI script resolves it from the WordPress user given with --user);
- * without one nothing is written - no other id stands in for it.
+ * The actor is a LegacyExpenseMigrationOperator: a WordPress user holding
+ * stageart_manage_accounts, linked to exactly one StageArt Person (the
+ * WP-CLI script resolves it from --user); without one there is no call.
+ * Each listed Expense is also recorded in the operations audit
+ * (LegacyExpenseMigrationAudit, schema 1.45.0): SUCCEEDED in the same
+ * transaction, so a failed audit insert rolls everything back; FAILED
+ * after a rollback and REFUSED for a refused list, on their own.
  */
 final class LegacyExpenseMigrationRestore
 {
@@ -59,7 +63,6 @@ final class LegacyExpenseMigrationRestore
     public const REFUSED_NO_IDS = 'NO_IDS';
     public const REFUSED_NOT_TRANSACTIONAL = LegacyExpenseMigration::REFUSED_NOT_TRANSACTIONAL;
     public const REFUSED_TARGET_MISMATCH = 'TARGET_MISMATCH';
-    public const REFUSED_ACTOR_MISSING = 'ACTOR_MISSING';
     public const REFUSED_REASON_MISSING = 'REASON_MISSING';
     public const REFUSED_REASON_TOO_LONG = 'REASON_TOO_LONG';
 
@@ -77,6 +80,10 @@ final class LegacyExpenseMigrationRestore
     public const FAILED_LOCK = LegacyExpenseMigration::FAILED_LOCK;
     public const FAILED_UPDATE = LegacyExpenseMigration::FAILED_UPDATE;
     public const FAILED_HISTORY_INSERT = LegacyExpenseMigration::FAILED_HISTORY_INSERT;
+    public const FAILED_AUDIT_INSERT = LegacyExpenseMigration::FAILED_AUDIT_INSERT;
+
+    /** The audit reason of the other listed Expenses when the list is refused because of some. */
+    public const RUN_REFUSED = 'RUN_REFUSED';
     public const FAILED_COMMIT = LegacyExpenseMigration::FAILED_COMMIT;
     public const FAILED_UNEXPECTED = LegacyExpenseMigration::FAILED_UNEXPECTED;
 
@@ -103,30 +110,37 @@ final class LegacyExpenseMigrationRestore
     /**
      * @param \wpdb $wpdb
      * @param string[] $ids
-     * @param string $actorPersonId the operator's StageArt Person id, recorded as the actor
+     * @param LegacyExpenseMigrationOperator $operator recorded as the history's actor and in the audit
      * @param string $reason why the migration is undone, stored in the history (never logged)
-     * @param array<string, string|int|null> $operator further operator identifiers, for the
-     *        log only, e.g. ['wp_user' => 12, 'os_user' => 'deploy']
      * @return array{
      *     outcome: string,
      *     reason: ?string,
+     *     run_id: string,
      *     expense_id: ?string,
      *     restored: string[],
-     *     mismatches: array<string, string>
+     *     mismatches: array<string, string>,
+     *     audit_failures: string[]
      * }
      */
-    public static function restore($wpdb, array $ids, string $actorPersonId, string $reason, array $operator = []): array
+    public static function restore($wpdb, array $ids, LegacyExpenseMigrationOperator $operator, string $reason): array
     {
         $ids = self::normalize($ids);
-        $summary = ['outcome' => self::OUTCOME_RESTORED, 'reason' => null, 'expense_id' => null, 'restored' => [], 'mismatches' => []];
+        $runId = LegacyExpenseMigrationAudit::newRunId();
+        $summary = ['outcome' => self::OUTCOME_RESTORED, 'reason' => null, 'run_id' => $runId, 'expense_id' => null, 'restored' => [], 'mismatches' => [], 'audit_failures' => []];
         $reason = trim($reason);
+        $audit = static fn (string $id, string $outcome, ?string $code): bool => LegacyExpenseMigrationAudit::record(
+            $wpdb,
+            $runId,
+            LegacyExpenseMigrationAudit::OPERATION_REVERT,
+            $id,
+            $outcome,
+            $code,
+            $operator
+        );
 
+        // Argument and table problems are logged only: no target was looked at.
         if ($ids === []) {
             return self::refuse($summary, self::REFUSED_NO_IDS);
-        }
-
-        if (! Uuid::isValid($actorPersonId)) {
-            return self::refuse($summary, self::REFUSED_ACTOR_MISSING);
         }
 
         if ($reason === '') {
@@ -146,11 +160,17 @@ final class LegacyExpenseMigrationRestore
         if ($mismatches !== []) {
             $summary['mismatches'] = $mismatches;
 
+            foreach ($ids as $id) {
+                if (! $audit($id, LegacyExpenseMigrationAudit::REFUSED, $mismatches[$id] ?? self::RUN_REFUSED)) {
+                    $summary['audit_failures'][] = $id;
+                }
+            }
+
             return self::refuse($summary, self::REFUSED_TARGET_MISMATCH);
         }
 
         if ($wpdb->query('START TRANSACTION') === false) {
-            return self::rolledBack($summary, null, self::FAILED_TRANSACTION_START);
+            return self::rolledBack($summary, $ids, null, self::FAILED_TRANSACTION_START, $audit);
         }
 
         $t = LegacyExpenseMigration::tables($wpdb);
@@ -166,7 +186,7 @@ final class LegacyExpenseMigrationRestore
         try {
             foreach ($lockOrder as $id) {
                 $current = $id;
-                $failure = self::restoreOne($wpdb, $t, $id, $actorPersonId, $reason, $actedAt);
+                $failure = self::restoreOne($wpdb, $t, $id, $operator, $reason, $actedAt, $audit);
 
                 if ($failure !== null) {
                     break;
@@ -184,17 +204,17 @@ final class LegacyExpenseMigrationRestore
         if ($failure !== null) {
             $wpdb->query('ROLLBACK');
 
-            return self::rolledBack($summary, $current, $failure);
+            return self::rolledBack($summary, $ids, $current, $failure, $audit);
         }
 
         error_log(sprintf(
-            '%s restored to CONFIRMED: %s; recorded %s at %s by person=%s%s',
+            '%s restored to CONFIRMED: %s; recorded %s at %s; run=%s by%s',
             LegacyExpenseMigration::LOG_PREFIX,
             implode(', ', $ids),
             ExpenseReview::MIGRATION_REVERTED,
             $actedAt,
-            $actorPersonId,
-            self::operatorForLog($operator)
+            $runId,
+            $operator->describe()
         ));
 
         return array_merge($summary, ['restored' => $ids]);
@@ -203,8 +223,9 @@ final class LegacyExpenseMigrationRestore
     /**
      * @param \wpdb $wpdb
      * @param array<string, string> $t
+     * @param callable(string, string, ?string): bool $audit
      */
-    private static function restoreOne($wpdb, array $t, string $id, string $actorPersonId, string $reason, string $actedAt): ?string
+    private static function restoreOne($wpdb, array $t, string $id, LegacyExpenseMigrationOperator $operator, string $reason, string $actedAt, callable $audit): ?string
     {
         $expense = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE id = %s FOR UPDATE", $id), ARRAY_A);
         LegacyExpenseMigration::assertLocked($wpdb);
@@ -253,11 +274,16 @@ final class LegacyExpenseMigrationRestore
             $found['amount'],
             (string) json_encode($found['lines'], JSON_UNESCAPED_UNICODE),
             $reason,
-            $actorPersonId,
+            $operator->personId(),
             $actedAt
         ));
 
-        return $inserted === 1 ? null : self::FAILED_HISTORY_INSERT;
+        if ($inserted !== 1) {
+            return self::FAILED_HISTORY_INSERT;
+        }
+
+        // In the same transaction: no revert commits without its audit row.
+        return $audit($id, LegacyExpenseMigrationAudit::SUCCEEDED, null) ? null : self::FAILED_AUDIT_INSERT;
     }
 
     /**
@@ -359,25 +385,6 @@ final class LegacyExpenseMigrationRestore
     }
 
     /**
-     * " wp_user=12 os_user=deploy": identifiers only; other characters are
-     * dropped and a missing value is written as "unknown".
-     *
-     * @param array<string, string|int|null> $operator
-     */
-    private static function operatorForLog(array $operator): string
-    {
-        $pairs = '';
-
-        foreach ($operator as $key => $value) {
-            $key = (string) preg_replace('/[^a-z_]/', '', strtolower((string) $key));
-            $value = substr((string) preg_replace('/[^A-Za-z0-9._@:-]/', '', (string) $value), 0, 64);
-            $pairs .= " {$key}=" . ($value === '' ? 'unknown' : $value);
-        }
-
-        return $pairs;
-    }
-
-    /**
      * @param mixed $a
      * @param mixed $b
      */
@@ -425,18 +432,33 @@ final class LegacyExpenseMigrationRestore
             $pairs[] = "{$id}={$mismatch}";
         }
 
-        error_log(LegacyExpenseMigration::LOG_PREFIX . " restore refused: {$reason}" . ($pairs === [] ? '' : ' (' . implode(', ', $pairs) . ')') . '; nothing was written');
+        error_log(LegacyExpenseMigration::LOG_PREFIX . " restore refused: {$reason}" . ($pairs === [] ? '' : ' (' . implode(', ', $pairs) . ')') . '; no Expense was changed; run=' . $summary['run_id']);
 
         return array_merge($summary, ['outcome' => self::OUTCOME_REFUSED, 'reason' => $reason]);
     }
 
     /**
-     * @param array{outcome: string, reason: ?string, expense_id: ?string, restored: string[], mismatches: array<string, string>} $summary
-     * @return array{outcome: string, reason: ?string, expense_id: ?string, restored: string[], mismatches: array<string, string>}
+     * Logs the rollback and records one FAILED audit row per listed
+     * Expense - its own reason for the one that failed, RUN_ROLLED_BACK for
+     * the others (the run's reason for all when no single Expense failed).
+     *
+     * @param array<string, mixed> $summary
+     * @param string[] $ids
+     * @param callable(string, string, ?string): bool $audit
+     * @return array<string, mixed>
      */
-    private static function rolledBack(array $summary, ?string $id, string $reason): array
+    private static function rolledBack(array $summary, array $ids, ?string $id, string $reason, callable $audit): array
     {
-        error_log(LegacyExpenseMigration::LOG_PREFIX . ' restore rolled back: ' . ($id === null ? $reason : "{$id}={$reason}") . '; nothing was restored');
+        error_log(LegacyExpenseMigration::LOG_PREFIX . ' restore rolled back: ' . ($id === null ? $reason : "{$id}={$reason}") . "; nothing was restored; run={$summary['run_id']}");
+
+        foreach ($ids as $listed) {
+            $code = $id === null || $listed === $id ? $reason : LegacyExpenseMigrationAudit::RUN_ROLLED_BACK;
+
+            if (! $audit($listed, LegacyExpenseMigrationAudit::FAILED, $code)) {
+                $summary['audit_failures'][] = $listed;
+                error_log(LegacyExpenseMigration::LOG_PREFIX . " audit record failed: {$listed} FAILED");
+            }
+        }
 
         return array_merge($summary, ['outcome' => self::OUTCOME_ROLLED_BACK, 'reason' => $reason, 'expense_id' => $id]);
     }

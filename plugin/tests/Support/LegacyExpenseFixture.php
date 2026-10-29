@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
+use StageArt\Accounting\LegacyExpenseMigrationOperator;
+
 /**
  * Builds pre-workflow data in a FakeExpenseMigrationDatabase the way the
  * retired Confirm step left it: Organization "org-1" with Project
@@ -95,6 +97,35 @@ final class LegacyExpenseFixture
                 'id' => "{$id}-line-{$index}", 'journal_entry_id' => $id, 'account_id' => $account, 'debit_credit' => $side, 'amount' => (string) $amount,
             ];
         }
+    }
+
+    /**
+     * A qualifying operator: WordPress user `$wpUserId`, taken to exist and
+     * hold stageart_manage_accounts, linked to Person `$personId`.
+     *
+     * @param \wpdb $wpdb
+     */
+    public function operator($wpdb, int $wpUserId = 7, string $personId = '44444444-4444-4444-8444-444444444444', ?string $osUser = 'deploy'): LegacyExpenseMigrationOperator
+    {
+        $this->db->tables['stageart_people'][] = ['id' => $personId, 'wp_user_id' => (string) $wpUserId];
+        $operator = LegacyExpenseMigrationOperator::resolve($wpdb, $wpUserId, true, true, $osUser);
+
+        if (! $operator instanceof LegacyExpenseMigrationOperator) {
+            throw new \LogicException("The fixture operator was refused: {$operator}");
+        }
+
+        return $operator;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>> the audit rows of `$expenseId` (or of the run-level rows for null)
+     */
+    public function auditOf(?string $expenseId): array
+    {
+        return array_values(array_filter(
+            $this->db->tables['stageart_legacy_expense_migration_audit'],
+            static fn (array $row): bool => $row['expense_id'] === $expenseId
+        ));
     }
 
     /**

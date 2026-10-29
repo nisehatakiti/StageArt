@@ -26,6 +26,9 @@ final class LegacyExpenseMigrationTest extends TestCase
     /** @var FakeWpdb untyped: a failure report is unserialized where the wpdb stub class is not loaded */
     private $wpdb;
     private LegacyExpenseFixture $data;
+
+    /** @var \StageArt\Accounting\LegacyExpenseMigrationOperator a qualifying operator (untyped, like $wpdb) */
+    private $operator;
     private string $log;
 
     protected function setUp(): void
@@ -37,6 +40,7 @@ final class LegacyExpenseMigrationTest extends TestCase
         $this->db = new FakeExpenseMigrationDatabase();
         $this->wpdb = new \wpdb($this->db);
         $this->data = new LegacyExpenseFixture($this->db);
+        $this->operator = $this->data->operator($this->wpdb);
 
         $this->data->expense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
         $this->data->entry('je-ok', 'migratable', 'POSTED', [3000, 2000]);
@@ -62,12 +66,12 @@ final class LegacyExpenseMigrationTest extends TestCase
      */
     private function previewAndExecute(): array
     {
-        return M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
+        return M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint'], $this->operator);
     }
 
     public function test_the_preview_reports_the_plan_and_writes_nothing(): void
     {
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $plan = M::preview($this->wpdb);
 
@@ -77,11 +81,11 @@ final class LegacyExpenseMigrationTest extends TestCase
             'migratable-2' => ['journal_entry_id' => 'je-ok-2', 'amount' => 800],
         ], $plan['candidates']);
         $this->assertSame(['draft-entry' => 'DRAFT_JOURNAL_ENTRY'], $plan['manual_review']);
-        $this->assertSame(['wp_stageart_expenses' => 'InnoDB', 'wp_stageart_expense_reviews' => 'InnoDB'], $plan['storage_engines']);
+        $this->assertSame(['wp_stageart_expenses' => 'InnoDB', 'wp_stageart_expense_reviews' => 'InnoDB', 'wp_stageart_legacy_expense_migration_audit' => 'InnoDB'], $plan['storage_engines']);
         $this->assertTrue($plan['transactional']);
         $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $plan['fingerprint']);
 
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->wpdb->callsTo('query'), 'No statement that could write, lock or open a transaction is sent');
         foreach (['insert', 'update', 'delete'] as $method) {
             $this->assertSame([], $this->wpdb->callsTo($method));
@@ -134,16 +138,16 @@ final class LegacyExpenseMigrationTest extends TestCase
      */
     public function test_execute_without_the_current_fingerprint_writes_nothing(string $fingerprint): void
     {
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
-        $result = M::execute($this->wpdb, $fingerprint);
+        $result = M::execute($this->wpdb, $fingerprint, $this->operator);
 
         $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
         $this->assertSame([], $result['migrated']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
-        $this->assertStringContainsString('refused: PLAN_CHANGED; nothing was written', $this->logged());
+        $this->assertStringContainsString('refused: PLAN_CHANGED; no Expense was changed', $this->logged());
     }
 
     /**
@@ -164,12 +168,12 @@ final class LegacyExpenseMigrationTest extends TestCase
         $fingerprint = M::preview($this->wpdb)['fingerprint'];
         $this->data->expense('late', 'CONFIRMED', [400]);
         $this->data->entry('je-late', 'late', 'POSTED', [400]);
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
-        $result = M::execute($this->wpdb, $fingerprint);
+        $result = M::execute($this->wpdb, $fingerprint, $this->operator);
 
         $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
     }
 
     /**
@@ -178,15 +182,15 @@ final class LegacyExpenseMigrationTest extends TestCase
     public function test_tables_without_transactions_refuse_the_migration(string $table, ?string $engine): void
     {
         $this->db->engines[$table] = $engine;
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $plan = M::preview($this->wpdb);
-        $result = M::execute($this->wpdb, $plan['fingerprint']);
+        $result = M::execute($this->wpdb, $plan['fingerprint'], $this->operator);
 
         $this->assertFalse($plan['transactional']);
         $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame(M::REFUSED_NOT_TRANSACTIONAL, $result['refused_reason']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
     }
 
@@ -222,7 +226,7 @@ final class LegacyExpenseMigrationTest extends TestCase
         $this->assertSame('POSTED', $this->data->expensesById()['migratable-2']['status']);
 
         $this->assertStringContainsString("failed: migratable={$reason}", $this->logged());
-        $this->assertStringContainsString('completed: migrated=1 failed=1 manual_review=1', $this->logged());
+        $this->assertStringContainsString('migrated=1 failed=1 manual_review=1 audit_failures=0 by person=', $this->logged());
     }
 
     /**
@@ -240,13 +244,13 @@ final class LegacyExpenseMigrationTest extends TestCase
     public function test_a_transaction_that_cannot_start_changes_nothing(): void
     {
         $this->db->failures['START'] = true;
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $result = $this->previewAndExecute();
 
         $this->assertSame(['migratable' => M::FAILED_TRANSACTION_START, 'migratable-2' => M::FAILED_TRANSACTION_START], $result['failed']);
         $this->assertSame([], $result['migrated']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
     }
 
     /**
@@ -320,13 +324,13 @@ final class LegacyExpenseMigrationTest extends TestCase
         $this->data->entry('je-ok-reversal', 'migratable', 'REVERSED', [], [
             ['acc-expense', 'CREDIT', 3000], ['acc-expense', 'CREDIT', 2000], ['acc-payable', 'DEBIT', 5000],
         ], ['reversal_of_journal_entry_id' => 'je-ok']);
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
-        $result = M::execute($this->wpdb, $fingerprint);
+        $result = M::execute($this->wpdb, $fingerprint, $this->operator);
 
         $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
     }
 
@@ -394,15 +398,15 @@ final class LegacyExpenseMigrationTest extends TestCase
     public function test_running_again_migrates_nothing_twice(): void
     {
         $this->previewAndExecute();
-        $afterFirst = $this->db->tables;
+        $afterFirst = $this->db->businessTables();
 
         $plan = M::preview($this->wpdb);
-        $second = M::execute($this->wpdb, $plan['fingerprint']);
+        $second = M::execute($this->wpdb, $plan['fingerprint'], $this->operator);
 
         $this->assertSame([], $plan['candidates']);
         $this->assertSame(['draft-entry' => 'DRAFT_JOURNAL_ENTRY'], $plan['manual_review']);
         $this->assertSame([], $second['migrated']);
-        $this->assertSame($afterFirst, $this->db->tables);
+        $this->assertSame($afterFirst, $this->db->businessTables());
         $this->assertCount(1, $this->data->historyOf('migratable'));
     }
 

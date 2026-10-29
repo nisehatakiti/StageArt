@@ -67,6 +67,7 @@ final class AccountingModuleDescriptor implements ModuleDescriptor
             'stageart_expenses',
             'stageart_expense_lines',
             'stageart_expense_reviews',
+            'stageart_legacy_expense_migration_audit',
         ];
     }
 }

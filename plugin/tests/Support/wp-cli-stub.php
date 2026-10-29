@@ -21,6 +21,28 @@ if (! function_exists('get_current_user_id')) {
     }
 }
 
+/*
+ * WordPress users as $GLOBALS['stageart_test_wp']['users'][<id>] =
+ * ['caps' => ['stageart_manage_accounts', ...]]; an id not listed does not exist.
+ */
+if (! function_exists('get_userdata')) {
+    function get_userdata($userId)
+    {
+        $user = $GLOBALS['stageart_test_wp']['users'][(int) $userId] ?? null;
+
+        return $user === null ? false : (object) ['ID' => (int) $userId];
+    }
+}
+
+if (! function_exists('user_can')) {
+    function user_can($user, $capability)
+    {
+        $id = is_object($user) ? (int) $user->ID : (int) $user;
+
+        return in_array($capability, $GLOBALS['stageart_test_wp']['users'][$id]['caps'] ?? [], true);
+    }
+}
+
 if (! class_exists('WP_CLI', false)) {
     class WP_CLI
     {

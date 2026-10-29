@@ -32,6 +32,9 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
     /** @var FakeWpdb untyped: a failure report is unserialized where the wpdb stub class is not loaded */
     private $wpdb;
     private LegacyExpenseFixture $data;
+
+    /** @var \StageArt\Accounting\LegacyExpenseMigrationOperator a qualifying operator (untyped, like $wpdb) */
+    private $operator;
     private string $log;
 
     /** @var array<string, array<int, array<string, mixed>>> the tables before the migration */
@@ -49,6 +52,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->db = new FakeExpenseMigrationDatabase();
         $this->wpdb = new \wpdb($this->db);
         $this->data = new LegacyExpenseFixture($this->db);
+        $this->operator = $this->data->operator($this->wpdb);
 
         $this->data->expense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
         $this->data->entry('je-ok', 'migratable', 'POSTED', [3000, 2000]);
@@ -57,10 +61,10 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->data->expense('draft-entry', 'CONFIRMED', [1000]);
         $this->data->entry('je-draft', 'draft-entry', 'DRAFT', [1000]);
 
-        $this->beforeMigration = $this->db->tables;
-        $result = LegacyExpenseMigration::execute($this->wpdb, LegacyExpenseMigration::preview($this->wpdb)['fingerprint']);
+        $this->beforeMigration = $this->db->businessTables();
+        $result = LegacyExpenseMigration::execute($this->wpdb, LegacyExpenseMigration::preview($this->wpdb)['fingerprint'], $this->operator);
         $this->assertSame(['migratable', 'migratable-2'], $result['migrated']);
-        $this->afterMigration = $this->db->tables;
+        $this->afterMigration = $this->db->businessTables();
 
         $this->db->transactionLog = [];
         $this->db->locks = [];
@@ -84,7 +88,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
      */
     private function restore(array $ids): array
     {
-        return R::restore($this->wpdb, $ids, self::ACTOR, self::REASON, ['wp_user' => 7, 'os_user' => 'deploy']);
+        return R::restore($this->wpdb, $ids, $this->operator, self::REASON);
     }
 
     /**
@@ -123,7 +127,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $result = R::check($this->wpdb, ['migratable', 'draft-entry', 'missing', 'migratable']);
 
         $this->assertSame(['migratable' => null, 'draft-entry' => R::STATE_CHANGED, 'missing' => R::NOT_FOUND], $result);
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
         $this->assertSame([], $this->wpdb->callsTo('query'));
         $this->assertSame([], $this->db->locks);
     }
@@ -171,7 +175,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
     public function test_an_expense_changed_since_the_migration_is_not_restored(string $change, string $reason): void
     {
         $this->change($change);
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $result = $this->restore(['migratable-2', 'migratable']);
 
@@ -179,9 +183,9 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->assertSame(R::REFUSED_TARGET_MISMATCH, $result['reason']);
         $this->assertSame(['migratable' => $reason], $result['mismatches']);
         $this->assertSame([], $result['restored']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
-        $this->assertStringContainsString("restore refused: TARGET_MISMATCH (migratable={$reason}); nothing was written", $this->logged());
+        $this->assertStringContainsString("restore refused: TARGET_MISMATCH (migratable={$reason}); no Expense was changed", $this->logged());
     }
 
     /**
@@ -281,7 +285,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
 
         $this->assertSame(R::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame(['missing' => R::NOT_FOUND], $result['mismatches']);
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
     }
 
     /**
@@ -421,7 +425,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->assertSame(['START', 'ROLLBACK'], $this->db->transactionLog);
         $this->assertSame('POSTED', $this->data->expensesById()['migratable']['status']);
         $this->assertSame(['MIGRATED'], $this->actionsOf('migratable'));
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
         $this->assertStringContainsString('restore rolled back: migratable=HISTORY_INSERT_FAILED; nothing was restored', $this->logged());
     }
 
@@ -435,7 +439,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->restore(['migratable']);
 
         $plan = LegacyExpenseMigration::preview($this->wpdb);
-        $result = LegacyExpenseMigration::execute($this->wpdb, $plan['fingerprint']);
+        $result = LegacyExpenseMigration::execute($this->wpdb, $plan['fingerprint'], $this->operator);
 
         $this->assertSame([], $plan['candidates']);
         $this->assertSame('MIGRATION_REVERTED', $plan['manual_review']['migratable']);
@@ -473,7 +477,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         }
 
         $plan = LegacyExpenseMigration::preview($this->wpdb);
-        LegacyExpenseMigration::execute($this->wpdb, $plan['fingerprint']);
+        LegacyExpenseMigration::execute($this->wpdb, $plan['fingerprint'], $this->operator);
 
         $this->assertArrayNotHasKey('migratable', $plan['candidates']);
         $this->assertSame('HISTORY_INCONSISTENT', $plan['manual_review']['migratable']);
@@ -501,44 +505,42 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
     {
         $this->restore(['migratable']);
         $this->db->transactionLog = [];
-        $before = $this->db->tables;
+        $before = $this->db->businessTables();
 
         $result = $this->restore(['migratable']);
 
         $this->assertSame(R::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame(['migratable' => R::STATE_CHANGED], $result['mismatches']);
-        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
     }
 
     /**
-     * Required test 8: without an established actor, a reason, or with an
-     * over-long reason, nothing is read for writing and nothing is written;
-     * no other id stands in for the actor.
+     * Without a reason, or with an over-long one, nothing is read for
+     * writing and nothing is written. (A restore cannot be called without
+     * an operator at all: see LegacyExpenseMigrationOperatorTest.)
      *
-     * @dataProvider missingOperatorDetails
+     * @dataProvider missingReasons
      */
-    public function test_a_restore_without_its_actor_or_reason_writes_nothing(string $actor, string $reason, string $refusal): void
+    public function test_a_restore_without_a_usable_reason_writes_nothing(string $reason, string $refusal): void
     {
-        $result = R::restore($this->wpdb, ['migratable'], $actor, $reason);
+        $result = R::restore($this->wpdb, ['migratable'], $this->operator, $reason);
 
         $this->assertSame(R::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame($refusal, $result['reason']);
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
         $this->assertSame([], $this->db->locks);
     }
 
     /**
-     * @return array<string, array{string, string, string}>
+     * @return array<string, array{string, string}>
      */
-    public static function missingOperatorDetails(): array
+    public static function missingReasons(): array
     {
         return [
-            'no actor' => ['', self::REASON, R::REFUSED_ACTOR_MISSING],
-            'an actor that is not a Person id' => ['root', self::REASON, R::REFUSED_ACTOR_MISSING],
-            'no reason' => [self::ACTOR, '  ', R::REFUSED_REASON_MISSING],
-            'a reason too long' => [self::ACTOR, str_repeat('理', R::MAX_REASON_LENGTH + 1), R::REFUSED_REASON_TOO_LONG],
+            'no reason' => ['  ', R::REFUSED_REASON_MISSING],
+            'a reason too long' => [str_repeat('理', R::MAX_REASON_LENGTH + 1), R::REFUSED_REASON_TOO_LONG],
         ];
     }
 
@@ -557,7 +559,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->assertSame(R::OUTCOME_ROLLED_BACK, $result['outcome']);
         $this->assertSame($reason, $result['reason']);
         $this->assertSame($transactions, $this->db->transactionLog);
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
         $this->assertStringContainsString('restore rolled back:', $this->logged());
     }
 
@@ -590,7 +592,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
 
         $this->assertSame(R::OUTCOME_REFUSED, $result['outcome']);
         $this->assertSame($reason, $result['reason']);
-        $this->assertSame($this->afterMigration, $this->db->tables);
+        $this->assertSame($this->afterMigration, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
     }
 

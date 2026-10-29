@@ -33,6 +33,7 @@ final class AccountingInstaller
         $expenses = $wpdb->prefix . 'stageart_expenses';
         $expenseLines = $wpdb->prefix . 'stageart_expense_lines';
         $expenseReviews = $wpdb->prefix . 'stageart_expense_reviews';
+        $migrationAudit = $wpdb->prefix . LegacyExpenseMigrationAudit::TABLE;
 
         /*
          * Phase 6.0 Accounting Foundation (Account.md): the会計分類軸
@@ -196,6 +197,34 @@ final class AccountingInstaller
             PRIMARY KEY  (id),
             UNIQUE KEY expense_revision_action (expense_id,revision,action),
             KEY expense_id (expense_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Schema 1.45.0 (ExpenseApprovalWorkflow.md Version 1.9): the
+         * operations audit of the legacy Expense migration and its revert
+         * (LegacyExpenseMigrationAudit), apart from the business history
+         * above. Rows are only ever inserted. success_key is the Expense id
+         * on SUCCEEDED rows and NULL otherwise, so the unique key allows one
+         * successful migration and one successful revert per Expense while
+         * failures and refusals repeat freely. acted_at_utc is UTC.
+         */
+        dbDelta("CREATE TABLE {$migrationAudit} (
+            id CHAR(36) NOT NULL,
+            run_id CHAR(36) NOT NULL,
+            operation VARCHAR(40) NOT NULL,
+            expense_id CHAR(36) NULL,
+            outcome VARCHAR(10) NOT NULL,
+            reason_code VARCHAR(40) NULL,
+            success_key CHAR(36) NULL,
+            plan_fingerprint CHAR(16) NULL,
+            wp_user_id BIGINT UNSIGNED NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            os_user VARCHAR(64) NULL,
+            acted_at_utc DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY operation_success (operation,success_key),
+            KEY expense_id (expense_id),
+            KEY run_id (run_id)
         ) {$charsetCollate};");
 
         // The pre-workflow CONFIRMED Expenses are not migrated here: a

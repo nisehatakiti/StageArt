@@ -28,6 +28,7 @@ final class FakeExpenseMigrationDatabase
         'stageart_productions' => [],
         'stageart_projects' => [],
         'stageart_people' => [],
+        'stageart_legacy_expense_migration_audit' => [],
     ];
 
     /** @var string[] tables (without prefix) Installer should see as already created */
@@ -37,6 +38,7 @@ final class FakeExpenseMigrationDatabase
     public array $engines = [
         'stageart_expenses' => 'InnoDB',
         'stageart_expense_reviews' => 'InnoDB',
+        'stageart_legacy_expense_migration_audit' => 'InnoDB',
     ];
 
     /**
@@ -44,7 +46,9 @@ final class FakeExpenseMigrationDatabase
      * 'UPDATE', 'INSERT' and 'COMMIT' => an Expense id fail that step for
      * that Expense only (the INSERT one also fails the restore's
      * MIGRATION_REVERTED row); 'RESTORE_UPDATE' => an Expense id fails the
-     * restore's UPDATE for it; 'LOCK' => a
+     * restore's UPDATE for it; 'AUDIT' => an Expense id fails its SUCCEEDED
+     * audit row; 'AUDIT_RECORD' => true fails every FAILED / REFUSED audit
+     * row; 'LOCK' => a
      * $locks entry ("journal_entry:<id>" etc.) fails that locking read
      * the way a deadlock does - no row, and $wpdb->last_error set.
      *
@@ -110,8 +114,8 @@ final class FakeExpenseMigrationDatabase
             return $project['organization_id'] ?? null;
         }
 
-        if ($method === 'get_var' && preg_match('/^SELECT id FROM \S+stageart_people WHERE wp_user_id = %d$/', $template)) {
-            return $this->where('stageart_people', ['wp_user_id' => $values[0]])[0]['id'] ?? null;
+        if ($method === 'get_col' && preg_match('/^SELECT id FROM \S+stageart_people WHERE wp_user_id = %d$/', $template)) {
+            return array_column($this->where('stageart_people', ['wp_user_id' => $values[0]]), 'id');
         }
 
         if ($method === 'get_col' && preg_match('/^SELECT id FROM \S+stageart_journal_entries WHERE source_event_type = %s AND source_event_id = %s ORDER BY id$/', $template)) {
@@ -261,6 +265,10 @@ final class FakeExpenseMigrationDatabase
                 return $this->migrateExpense($values);
             }
 
+            if (str_starts_with($template, 'INSERT INTO') && str_contains($template, 'stageart_legacy_expense_migration_audit')) {
+                return $this->insertAudit($template, $values);
+            }
+
             if (str_starts_with($template, 'INSERT INTO') && str_contains($template, 'stageart_expense_reviews')) {
                 return $this->insertReview($values);
             }
@@ -277,6 +285,21 @@ final class FakeExpenseMigrationDatabase
     }
 
     /**
+     * Every table but the operations audit: what "nothing changed" means
+     * for Expenses, history and Journal Entries now that a refused or
+     * failed run still writes its own audit row.
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function businessTables(): array
+    {
+        $tables = $this->tables;
+        unset($tables['stageart_legacy_expense_migration_audit']);
+
+        return $tables;
+    }
+
+    /**
      * Records a locking read; false when $failures['LOCK'] fails it.
      */
     private function lock(string $what, FakeWpdb $wpdb): bool
@@ -290,6 +313,47 @@ final class FakeExpenseMigrationDatabase
         }
 
         return true;
+    }
+
+    /**
+     * Mirrors LegacyExpenseMigrationAudit::record(): the column list and
+     * the placeholders (a literal NULL for a null value) in the template,
+     * and UNIQUE (operation, success_key) as in MySQL - NULL keys repeat.
+     *
+     * @param array<int, mixed> $values
+     * @return int|false
+     */
+    private function insertAudit(string $template, array $values)
+    {
+        if (! preg_match('/\((.+?)\) VALUES \((.+)\)$/', $template, $match)) {
+            return false;
+        }
+
+        $columns = array_map('trim', explode(',', $match[1]));
+        $placeholders = array_map('trim', explode(',', $match[2]));
+        $row = [];
+
+        foreach ($columns as $index => $column) {
+            $row[$column] = $placeholders[$index] === 'NULL' ? null : array_shift($values);
+        }
+
+        if ($row['outcome'] === 'SUCCEEDED' && ($this->failures['AUDIT'] ?? null) === $row['expense_id']) {
+            return false;
+        }
+
+        if ($row['outcome'] !== 'SUCCEEDED' && ! empty($this->failures['AUDIT_RECORD'])) {
+            return false;
+        }
+
+        foreach ($this->tables['stageart_legacy_expense_migration_audit'] as $existing) {
+            if ($row['success_key'] !== null && $existing['operation'] === $row['operation'] && $existing['success_key'] === $row['success_key']) {
+                return false;
+            }
+        }
+
+        $this->tables['stageart_legacy_expense_migration_audit'][] = $row;
+
+        return 1;
     }
 
     /**
