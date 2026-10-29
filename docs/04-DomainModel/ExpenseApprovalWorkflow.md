@@ -444,7 +444,7 @@ Version 1.5。以下は2026-10-26時点のこのブランチの作業ツリー�
 - DRAFT → SUBMITTED → POSTED / REJECTED → 再申請の状態遷移、取り下げ、差し戻し理由の必須化。
 - 承認時のJournal Entry生成（借方は明細の科目、貸方は未払金）と、行ロック・条件付き状態更新・履歴の一意制約・既存仕訳の確認による二重生成の防止。
 - 承認・差し戻しの権限（Primary Manager、代理人、有効なACCOUNTING_MANAGER。Backendの権限 `Expense.Approve`。Version 1.6）、承認可能者への申請通知、本人による承認・差し戻しの禁止（差し戻しはVersion 1.7）、申請回の確認。
-- Schema 1.44.0（申請回等のカラム、Expense Review用テーブル、旧CONFIRMEDの移行）。
+- Schema 1.44.0（申請回等のカラム、Expense Review用テーブル）。旧CONFIRMEDの移行はスキーマ更新から分離し、運用者がWP-CLIで明示的に実行する（2026-10-29）。
 
 未実装・方針との差異（後続実装の対象）：
 
@@ -500,7 +500,9 @@ POSTED済みJournal Entryを直接変更・削除しないという既存のJour
 
 本Workflow以前の確定方式（CONFIRMED。確定時に下書きJournal Entryを作成し、別途Postingを要した）で登録されたExpenseは、旧データとの互換性のため読み取り可能に保つが、新たな状態遷移は行わない（Version 1.3）。
 
-Schema 1.44.0の移行では、CONFIRMEDのうち、POSTED済みのJournal Entryがちょうど1件あり、その金額が明細合計と一致するものだけを、既存Journal Entryを変更せずにPOSTEDへ移行する。
+Schema 1.44.0の移行では、CONFIRMEDのうち、POSTED済みのJournal Entryがちょうど1件あり、その金額が明細合計と一致するものだけを、既存Journal Entryを変更せずにPOSTEDへ移行する。2026-10-29の改訂で、金額に加えて、Journal EntryのOrganization・Production、Accountごとの借方、未払金（LIABILITY）への単一の貸方が旧確定処理の作成した形と一致することも条件とした。
+
+移行はコードの配置やスキーマ更新では実行しない。運用者が事前確認（読み取りのみ）で対象件数・判定不能件数を確認し、承認を得たうえで、事前確認の指紋を指定して実行する。各Expenseは個別のトランザクションで処理し、いずれかの段階で失敗した場合はCONFIRMEDのまま残す。
 
 下書きJournal Entryしかないもの、Journal Entryがない・複数ある・金額が一致しないもの等は自動転記・自動変換せず、個別確認の対象としてCONFIRMEDのまま残す。
 
