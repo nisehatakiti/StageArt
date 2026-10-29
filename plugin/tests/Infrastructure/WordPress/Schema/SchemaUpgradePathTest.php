@@ -7,14 +7,17 @@ namespace StageArt\Tests\Infrastructure\WordPress\Schema;
 use PHPUnit\Framework\TestCase;
 use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
 use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
+use StageArt\Tests\Support\LegacyExpenseFixture;
 
 /**
  * 修正8 / schema 1.44.0: runs the real SchemaUpgrader::maybeUpgrade() and
  * Installer::install() against a fake $wpdb. Upgrades are not
  * version-by-version: whenever the stored version differs from
  * CURRENT_VERSION the whole Installer runs, so every older install
- * reaches the 1.44.0 expense / notification schema and the legacy Expense
- * migration; an install already at 1.44.0 does nothing.
+ * reaches the 1.44.0 expense / notification schema; an install already at
+ * 1.44.0 does nothing. The upgrade runs on the first request after a
+ * deploy, so it never migrates the legacy CONFIRMED Expenses: that is an
+ * operator's explicit step (LegacyExpenseMigration through WP-CLI).
  *
  * The 1.43.0 steps (public page tables, delegate areas) are covered by
  * SchemaUpgrade143PathTest, which belongs with those changes.
@@ -66,6 +69,14 @@ final class SchemaUpgradePathTest extends TestCase
             }
         }
 
+        foreach ($GLOBALS['wpdb']->callsTo('query') as $args) {
+            $sql = (string) $args[0];
+
+            if (str_contains($sql, 'UPDATE wp_stageart_expenses') || str_contains($sql, 'INSERT INTO wp_stageart_expense_reviews') || $sql === 'START TRANSACTION') {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -77,7 +88,7 @@ final class SchemaUpgradePathTest extends TestCase
     /**
      * @dataProvider olderInstalls
      */
-    public function test_every_older_install_gets_the_1_44_0_schema_and_migration(?string $storedVersion): void
+    public function test_every_older_install_gets_the_1_44_0_schema_but_no_data_migration(?string $storedVersion): void
     {
         $this->upgradeFrom($storedVersion);
 
@@ -99,6 +110,27 @@ final class SchemaUpgradePathTest extends TestCase
 
         $this->assertSame([], $GLOBALS['stageart_test_wp']['dbdelta']);
         $this->assertSame([], $GLOBALS['wpdb']->calls);
+    }
+
+    /**
+     * maybeUpgrade() is what every web request runs. Even with a legacy
+     * Expense that the migration would carry over, upgrading leaves it -
+     * and its Journal Entry and history - exactly as it was.
+     *
+     * @dataProvider olderInstalls
+     */
+    public function test_upgrading_on_a_request_leaves_a_migratable_legacy_expense_confirmed(?string $storedVersion): void
+    {
+        $data = new LegacyExpenseFixture($this->db);
+        $data->expense('legacy', 'CONFIRMED', [3000, 2000]);
+        $data->entry('je-legacy', 'legacy', 'POSTED', [3000, 2000]);
+        $before = $this->db->tables;
+
+        $this->upgradeFrom($storedVersion);
+
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
+        $this->assertSame('1.44.0', get_option('stageart_db_schema_version'));
     }
 
     private function assertExpenseSchemaApplied(): void
@@ -127,6 +159,6 @@ final class SchemaUpgradePathTest extends TestCase
         $this->assertStringContainsString('target_type VARCHAR(30) NULL', $notifications);
         $this->assertStringContainsString('target_id CHAR(36) NULL', $notifications);
 
-        $this->assertTrue($this->expenseMigrationRan(), 'The legacy CONFIRMED Expense migration runs as part of the upgrade');
+        $this->assertFalse($this->expenseMigrationRan(), 'The schema upgrade neither reads nor changes the legacy CONFIRMED Expenses');
     }
 }

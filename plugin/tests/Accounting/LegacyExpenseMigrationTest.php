@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace StageArt\Tests\Accounting;
 
 use PHPUnit\Framework\TestCase;
-use StageArt\Accounting\LegacyExpenseMigration;
+use StageArt\Accounting\LegacyExpenseMigration as M;
 use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
 use StageArt\Tests\Support\FakeWpdb;
+use StageArt\Tests\Support\LegacyExpenseFixture;
 
 /**
- * Schema 1.44.0: LegacyExpenseMigration against a fake database -
- * only the safely classifiable CONFIRMED rows change, Journal Entries are
- * never written, and a second run changes nothing.
+ * Schema 1.44.0: LegacyExpenseMigration against a fake database. The
+ * preview only reads; execute() writes only with the preview's
+ * fingerprint on transactional tables, migrates each Expense in its own
+ * transaction and rolls an Expense back to CONFIRMED when any step of it
+ * fails - the UPDATE, the history INSERT or the COMMIT.
  *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
@@ -21,171 +24,297 @@ final class LegacyExpenseMigrationTest extends TestCase
 {
     private FakeExpenseMigrationDatabase $db;
     private FakeWpdb $wpdb;
+    private LegacyExpenseFixture $data;
+    private string $log;
 
     protected function setUp(): void
     {
         require_once __DIR__ . '/../Support/wordpress-stubs.php';
-        // The manual-review summary is error_log()'d; keep it off the
-        // isolated process's stderr, which PHPUnit would treat as an error.
-        ini_set('error_log', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null');
+        $this->log = (string) tempnam(sys_get_temp_dir(), 'stageart-migration-log');
+        ini_set('error_log', $this->log);
 
         $this->db = new FakeExpenseMigrationDatabase();
         $this->wpdb = new \wpdb($this->db);
+        $this->data = new LegacyExpenseFixture($this->db);
 
-        $this->givenConfirmed('migratable', [3000, 2000], [['je-ok', 'POSTED', 5000, 5000]]);
-        $this->givenConfirmed('draft-entry', [1000], [['je-draft', 'DRAFT', 1000, 1000]]);
-        $this->givenConfirmed('no-entry', [1000], []);
-        $this->givenConfirmed('two-entries', [1000], [['je-a', 'POSTED', 1000, 1000], ['je-b', 'POSTED', 1000, 1000]]);
-        $this->givenConfirmed('mismatch', [1000], [['je-mismatch', 'POSTED', 1500, 1500]]);
-        $this->db->tables['stageart_expenses'][] = $this->expenseRow('draft', 'DRAFT');
-        $this->db->tables['stageart_expense_lines'][] = ['id' => 'l-draft', 'expense_id' => 'draft', 'account_id' => 'acc', 'amount' => '700', 'description' => null];
+        $this->data->expense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
+        $this->data->entry('je-ok', 'migratable', 'POSTED', [3000, 2000]);
+        $this->data->expense('migratable-2', 'CONFIRMED', [800]);
+        $this->data->entry('je-ok-2', 'migratable-2', 'POSTED', [800]);
+        $this->data->expense('draft-entry', 'CONFIRMED', [1000]);
+        $this->data->entry('je-draft', 'draft-entry', 'DRAFT', [1000]);
+        $this->data->expense('draft', 'DRAFT', [700]);
     }
 
-    /**
-     * @param int[] $lineAmounts
-     * @param array<int, array{string, string, int, int}> $entries [id, status, debit, credit]
-     */
-    private function givenConfirmed(string $id, array $lineAmounts, array $entries): void
+    protected function tearDown(): void
     {
-        $this->db->tables['stageart_expenses'][] = $this->expenseRow($id, 'CONFIRMED');
+        @unlink($this->log);
+    }
 
-        foreach ($lineAmounts as $index => $amount) {
-            $this->db->tables['stageart_expense_lines'][] = [
-                'id' => "{$id}-line-{$index}",
-                'expense_id' => $id,
-                'account_id' => 'acc-expense',
-                'amount' => (string) $amount,
-                'description' => '小道具',
-            ];
-        }
-
-        foreach ($entries as [$entryId, $status, $debit, $credit]) {
-            $this->db->tables['stageart_journal_entries'][] = [
-                'id' => $entryId,
-                'status' => $status,
-                'production_id' => 'production-1',
-                'source_event_type' => 'ExpenseConfirmed',
-                'source_event_id' => $id,
-            ];
-            $this->db->tables['stageart_journal_entry_lines'][] = ['journal_entry_id' => $entryId, 'debit_credit' => 'DEBIT', 'amount' => (string) $debit];
-            $this->db->tables['stageart_journal_entry_lines'][] = ['journal_entry_id' => $entryId, 'debit_credit' => 'CREDIT', 'amount' => (string) $credit];
-        }
+    private function logged(): string
+    {
+        return (string) file_get_contents($this->log);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{outcome: string, refused_reason: ?string, migrated: string[], failed: array<string, string>, manual_review: array<string, string>}
      */
-    private function expenseRow(string $id, string $status): array
+    private function previewAndExecute(): array
+    {
+        return M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
+    }
+
+    public function test_the_preview_reports_the_plan_and_writes_nothing(): void
+    {
+        $before = $this->db->tables;
+
+        $plan = M::preview($this->wpdb);
+
+        $this->assertSame(3, $plan['confirmed']);
+        $this->assertSame([
+            'migratable' => ['journal_entry_id' => 'je-ok', 'amount' => 5000],
+            'migratable-2' => ['journal_entry_id' => 'je-ok-2', 'amount' => 800],
+        ], $plan['candidates']);
+        $this->assertSame(['draft-entry' => 'DRAFT_JOURNAL_ENTRY'], $plan['manual_review']);
+        $this->assertSame(['wp_stageart_expenses' => 'InnoDB', 'wp_stageart_expense_reviews' => 'InnoDB'], $plan['storage_engines']);
+        $this->assertTrue($plan['transactional']);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $plan['fingerprint']);
+
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->wpdb->callsTo('query'), 'No statement that could write, lock or open a transaction is sent');
+        foreach (['insert', 'update', 'delete'] as $method) {
+            $this->assertSame([], $this->wpdb->callsTo($method));
+        }
+        foreach ($this->wpdb->callsTo('get_row') as $args) {
+            $this->assertStringNotContainsString('FOR UPDATE', (string) $args[0]);
+        }
+        $this->assertSame('', $this->logged());
+        $this->assertSame($plan['fingerprint'], M::preview($this->wpdb)['fingerprint'], 'The same data gives the same fingerprint');
+    }
+
+    public function test_execute_with_the_previewed_fingerprint_migrates_each_candidate_in_its_own_transaction(): void
+    {
+        $before = $this->data->expensesById();
+        $journal = [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']];
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(M::OUTCOME_COMPLETED, $result['outcome']);
+        $this->assertSame(['migratable', 'migratable-2'], $result['migrated']);
+        $this->assertSame([], $result['failed']);
+        $this->assertSame(['START', 'COMMIT', 'START', 'COMMIT'], $this->db->transactionLog);
+        $this->assertFalse($this->db->inTransaction());
+
+        $after = $this->data->expensesById();
+        $this->assertSame(array_merge($before['migratable'], [
+            'status' => 'POSTED', 'revision' => 1, 'submitted_by' => 'creator', 'submitted_at' => '2026-09-01 10:00:00',
+            'requested_amount' => 5000, 'approved_amount' => 5000, 'approved_by' => 'manager', 'approved_at' => '2026-09-02 11:00:00',
+            'posted_journal_entry_id' => 'je-ok',
+        ]), $after['migratable']);
+        $this->assertSame($before['draft-entry'], $after['draft-entry']);
+        $this->assertSame($before['draft'], $after['draft']);
+
+        $history = $this->data->historyOf('migratable');
+        $this->assertCount(1, $history);
+        $this->assertSame(['MIGRATED', 1, 5000, 5000, 'manager', '2026-09-02 11:00:00'], [
+            $history[0]['action'], $history[0]['revision'], $history[0]['requested_amount'], $history[0]['approved_amount'],
+            $history[0]['actor_person_id'], $history[0]['acted_at'],
+        ]);
+        $this->assertSame(
+            [['account_id' => 'acc-expense', 'amount' => 3000, 'description' => '小道具'], ['account_id' => 'acc-expense', 'amount' => 2000, 'description' => '小道具']],
+            json_decode($history[0]['lines_snapshot'], true)
+        );
+
+        $this->assertSame($journal, [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']]);
+    }
+
+    /**
+     * @dataProvider wrongFingerprints
+     */
+    public function test_execute_without_the_current_fingerprint_writes_nothing(string $fingerprint): void
+    {
+        $before = $this->db->tables;
+
+        $result = M::execute($this->wpdb, $fingerprint);
+
+        $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
+        $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
+        $this->assertSame([], $result['migrated']);
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
+        $this->assertStringContainsString('refused: PLAN_CHANGED; nothing was written', $this->logged());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function wrongFingerprints(): array
+    {
+        return ['empty' => [''], 'another plan' => ['0123456789abcdef']];
+    }
+
+    /**
+     * Data that changes after the preview - here another Expense becoming
+     * migratable - changes the fingerprint, so the approved plan is not
+     * what would run and nothing is written.
+     */
+    public function test_a_plan_that_changed_since_the_preview_is_refused(): void
+    {
+        $fingerprint = M::preview($this->wpdb)['fingerprint'];
+        $this->data->expense('late', 'CONFIRMED', [400]);
+        $this->data->entry('je-late', 'late', 'POSTED', [400]);
+        $before = $this->db->tables;
+
+        $result = M::execute($this->wpdb, $fingerprint);
+
+        $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
+        $this->assertSame($before, $this->db->tables);
+    }
+
+    /**
+     * @dataProvider nonTransactionalEngines
+     */
+    public function test_tables_without_transactions_refuse_the_migration(string $table, ?string $engine): void
+    {
+        $this->db->engines[$table] = $engine;
+        $before = $this->db->tables;
+
+        $plan = M::preview($this->wpdb);
+        $result = M::execute($this->wpdb, $plan['fingerprint']);
+
+        $this->assertFalse($plan['transactional']);
+        $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
+        $this->assertSame(M::REFUSED_NOT_TRANSACTIONAL, $result['refused_reason']);
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * @return array<string, array{string, ?string}>
+     */
+    public static function nonTransactionalEngines(): array
     {
         return [
-            'id' => $id,
-            'production_id' => 'production-1',
-            'payer_person_id' => null,
-            'status' => $status,
-            'created_by' => 'creator',
-            'created_at' => '2026-09-01 10:00:00',
-            'updated_by' => 'creator',
-            'updated_at' => '2026-09-01 10:00:00',
-            'confirmed_by' => $status === 'CONFIRMED' ? 'manager' : null,
-            'confirmed_at' => $status === 'CONFIRMED' ? '2026-09-02 11:00:00' : null,
+            'MyISAM expenses' => ['stageart_expenses', 'MyISAM'],
+            'MyISAM history' => ['stageart_expense_reviews', 'MyISAM'],
+            'engine unknown' => ['stageart_expenses', null],
         ];
     }
 
     /**
-     * @return array{migrated: string[], manual_review: array<string, string>}
+     * @dataProvider failingSteps
      */
-    private function migrate(): array
+    public function test_a_failing_step_rolls_that_expense_back_and_is_logged(string $step, string $reason, array $transactions): void
     {
-        return LegacyExpenseMigration::run(
-            $this->wpdb,
-            'wp_stageart_expenses',
-            'wp_stageart_expense_lines',
-            'wp_stageart_expense_reviews',
-            'wp_stageart_journal_entries',
-            'wp_stageart_journal_entry_lines'
-        );
+        $this->db->failures[$step] = 'migratable';
+        $before = $this->data->expensesById();
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(M::OUTCOME_COMPLETED, $result['outcome']);
+        $this->assertSame(['migratable' => $reason], $result['failed']);
+        $this->assertSame(['migratable-2'], $result['migrated'], 'The other Expense still migrates in its own transaction');
+        $this->assertSame($transactions, $this->db->transactionLog);
+
+        $this->assertSame($before['migratable'], $this->data->expensesById()['migratable'], 'Still CONFIRMED, every column as before');
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame('POSTED', $this->data->expensesById()['migratable-2']['status']);
+
+        $this->assertStringContainsString("failed: migratable={$reason}", $this->logged());
+        $this->assertStringContainsString('completed: migrated=1 failed=1 manual_review=1', $this->logged());
     }
 
     /**
-     * @return array<string, array<string, mixed>>
+     * @return array<string, array{string, string, string[]}>
      */
-    private function expensesById(): array
+    public static function failingSteps(): array
     {
-        $byId = [];
-        foreach ($this->db->tables['stageart_expenses'] as $row) {
-            $byId[$row['id']] = $row;
-        }
-
-        return $byId;
+        return [
+            'status update' => ['UPDATE', M::FAILED_UPDATE, ['START', 'ROLLBACK', 'START', 'COMMIT']],
+            'history insert after the update' => ['INSERT', M::FAILED_HISTORY_INSERT, ['START', 'ROLLBACK', 'START', 'COMMIT']],
+            'commit' => ['COMMIT', M::FAILED_COMMIT, ['START', 'COMMIT', 'ROLLBACK', 'START', 'COMMIT']],
+        ];
     }
 
-    public function test_only_the_confirmed_expense_with_one_matching_posted_entry_becomes_posted(): void
+    public function test_a_transaction_that_cannot_start_changes_nothing(): void
     {
-        $before = $this->expensesById();
-        $entriesBefore = [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']];
+        $this->db->failures['START'] = true;
+        $before = $this->db->tables;
 
-        $summary = $this->migrate();
+        $result = $this->previewAndExecute();
 
-        $this->assertSame(['migratable'], $summary['migrated']);
-        $this->assertSame([
-            'draft-entry' => 'DRAFT_JOURNAL_ENTRY',
-            'no-entry' => 'NO_JOURNAL_ENTRY',
-            'two-entries' => 'MULTIPLE_JOURNAL_ENTRIES',
-            'mismatch' => 'AMOUNT_MISMATCH',
-        ], $summary['manual_review']);
-
-        $after = $this->expensesById();
-        $migrated = $after['migratable'];
-        $this->assertSame('POSTED', $migrated['status']);
-        $this->assertSame(1, $migrated['revision']);
-        $this->assertSame(5000, $migrated['requested_amount']);
-        $this->assertSame(5000, $migrated['approved_amount']);
-        $this->assertSame('manager', $migrated['approved_by']);
-        $this->assertSame('2026-09-02 11:00:00', $migrated['approved_at']);
-        $this->assertSame('creator', $migrated['submitted_by']);
-        $this->assertSame('je-ok', $migrated['posted_journal_entry_id']);
-
-        foreach (['draft', 'draft-entry', 'no-entry', 'two-entries', 'mismatch'] as $untouched) {
-            $this->assertSame($before[$untouched], $after[$untouched], "{$untouched} must be left exactly as it was");
-        }
-
-        $this->assertSame($entriesBefore, [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']], 'No Journal Entry is written');
-
-        $this->assertCount(1, $this->db->tables['stageart_expense_reviews']);
-        $review = $this->db->tables['stageart_expense_reviews'][0];
-        $this->assertSame(['migratable', 1, 'MIGRATED', 5000, 5000, 'manager'], [
-            $review['expense_id'], $review['revision'], $review['action'], $review['requested_amount'], $review['approved_amount'], $review['actor_person_id'],
-        ]);
-        $this->assertSame(
-            [['account_id' => 'acc-expense', 'amount' => 3000, 'description' => '小道具'], ['account_id' => 'acc-expense', 'amount' => 2000, 'description' => '小道具']],
-            json_decode($review['lines_snapshot'], true)
-        );
+        $this->assertSame(['migratable' => M::FAILED_TRANSACTION_START, 'migratable-2' => M::FAILED_TRANSACTION_START], $result['failed']);
+        $this->assertSame([], $result['migrated']);
+        $this->assertSame($before, $this->db->tables);
     }
 
-    public function test_running_again_changes_nothing(): void
+    /**
+     * Each Expense is classified again once locked: one whose Journal
+     * Entry another session reversed after the preview is rolled back and
+     * left CONFIRMED.
+     */
+    public function test_an_expense_that_changed_before_it_was_locked_is_left_confirmed(): void
     {
-        $this->migrate();
+        $this->db->onLock = static function (string $id, array &$tables): void {
+            if ($id !== 'migratable') {
+                return;
+            }
+
+            foreach ($tables['stageart_journal_entries'] as $index => $entry) {
+                if ($entry['id'] === 'je-ok') {
+                    $tables['stageart_journal_entries'][$index]['status'] = 'REVERSED';
+                }
+            }
+        };
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(['migratable' => M::FAILED_CHANGED_SINCE_PREVIEW], $result['failed']);
+        $this->assertSame('CONFIRMED', $this->data->expensesById()['migratable']['status']);
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame(['migratable-2'], $result['migrated']);
+    }
+
+    public function test_running_again_migrates_nothing_twice(): void
+    {
+        $this->previewAndExecute();
         $afterFirst = $this->db->tables;
 
-        $summary = $this->migrate();
+        $plan = M::preview($this->wpdb);
+        $second = M::execute($this->wpdb, $plan['fingerprint']);
 
-        $this->assertSame([], $summary['migrated']);
+        $this->assertSame([], $plan['candidates']);
+        $this->assertSame(['draft-entry' => 'DRAFT_JOURNAL_ENTRY'], $plan['manual_review']);
+        $this->assertSame([], $second['migrated']);
         $this->assertSame($afterFirst, $this->db->tables);
+        $this->assertCount(1, $this->data->historyOf('migratable'));
     }
 
     public function test_no_journal_entry_table_is_ever_written(): void
     {
-        $this->migrate();
-        $this->migrate();
+        $this->previewAndExecute();
+        $this->previewAndExecute();
 
         foreach ($this->db->queries as $sql) {
             $this->assertStringNotContainsString('stageart_journal_entr', $sql, $sql);
         }
 
         foreach (['insert', 'update', 'delete'] as $method) {
-            foreach ($this->wpdb->callsTo($method) as $args) {
-                $this->assertStringNotContainsString('stageart_journal_entr', (string) $args[0]);
-            }
+            $this->assertSame([], $this->wpdb->callsTo($method));
+        }
+    }
+
+    public function test_the_log_carries_ids_and_reason_codes_only(): void
+    {
+        $this->db->failures['INSERT'] = 'migratable';
+
+        $this->previewAndExecute();
+
+        $logged = $this->logged();
+        $this->assertStringContainsString('left CONFIRMED for manual review: draft-entry=DRAFT_JOURNAL_ENTRY', $logged);
+
+        foreach (['creator', 'manager', 'payer', '5000', '3000', '800', '小道具', 'acc-'] as $content) {
+            $this->assertStringNotContainsString($content, $logged);
         }
     }
 }

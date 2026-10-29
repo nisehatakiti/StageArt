@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace StageArt\Tests\Accounting;
 
 use PHPUnit\Framework\TestCase;
-use StageArt\Accounting\LegacyExpenseMigration;
+use StageArt\Accounting\LegacyExpenseMigration as M;
 use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
 use StageArt\Tests\Support\FakeWpdb;
+use StageArt\Tests\Support\LegacyExpenseFixture;
 
 /**
  * Schema 1.44.0 pre-flight: one database holding every kind of row a
- * real install may have when the migration first runs - a migratable
+ * real install may have when the migration is first run - a migratable
  * legacy Expense, the usual legacy one whose Journal Entry was never
  * posted, rows already migrated or approved through the workflow, and
- * rows with missing or inconsistent data - checked for what changes
- * (status, amounts, history) and what must not (Journal Entries, Lines,
- * every row not migrated), on the first and on a second run.
+ * rows with missing or inconsistent data or Journal Entries - checked
+ * for what the preview reports, what execute() changes (status, amounts,
+ * history) and what it must not (Journal Entries, Lines, every row not
+ * migrated), on the first and on a second run.
  *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
@@ -25,6 +27,7 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
 {
     private FakeExpenseMigrationDatabase $db;
     private FakeWpdb $wpdb;
+    private LegacyExpenseFixture $data;
     private string $log;
 
     protected function setUp(): void
@@ -35,22 +38,25 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
 
         $this->db = new FakeExpenseMigrationDatabase();
         $this->wpdb = new \wpdb($this->db);
+        $d = $this->data = new LegacyExpenseFixture($this->db);
+        $d->account('acc-other', 'EXPENSE');
+        $d->account('acc-cash', 'ASSET');
 
-        // Carried over: one POSTED, balanced entry equal to the Lines.
-        $this->givenExpense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
-        $this->givenEntry('je-ok', 'migratable', 'POSTED', [['DEBIT', 5000], ['CREDIT', 5000]]);
+        // Carried over: one POSTED entry exactly as the Confirm step built it.
+        $d->expense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
+        $d->entry('je-ok', 'migratable', 'POSTED', [3000, 2000]);
 
         // The usual legacy row: the Confirm step left its entry DRAFT.
-        $this->givenExpense('entry-not-posted', 'CONFIRMED', [1200]);
-        $this->givenEntry('je-draft', 'entry-not-posted', 'DRAFT', [['DEBIT', 1200], ['CREDIT', 1200]]);
+        $d->expense('entry-not-posted', 'CONFIRMED', [1200]);
+        $d->entry('je-draft', 'entry-not-posted', 'DRAFT', [1200]);
 
-        $this->givenExpense('no-entry', 'CONFIRMED', [800]);
+        $d->expense('no-entry', 'CONFIRMED', [800]);
 
         // Already carried over by an earlier run.
-        $this->givenExpense('already-migrated', 'POSTED', [900], [
+        $d->expense('already-migrated', 'POSTED', [900], [
             'revision' => 1, 'requested_amount' => 900, 'approved_amount' => 900, 'posted_journal_entry_id' => 'je-old',
         ]);
-        $this->givenEntry('je-old', 'already-migrated', 'POSTED', [['DEBIT', 900], ['CREDIT', 900]]);
+        $d->entry('je-old', 'already-migrated', 'POSTED', [900]);
         $this->db->tables['stageart_expense_reviews'][] = [
             'id' => 'review-old', 'expense_id' => 'already-migrated', 'revision' => 1, 'action' => 'MIGRATED',
             'requested_amount' => 900, 'approved_amount' => 900, 'lines_snapshot' => '[]', 'reason' => null,
@@ -58,31 +64,48 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
         ];
 
         // Approved through the new workflow (its entry is not "ExpenseConfirmed").
-        $this->givenExpense('workflow-posted', 'POSTED', [600], ['posted_journal_entry_id' => 'je-workflow']);
-        $this->givenEntry('je-workflow', 'workflow-posted', 'POSTED', [['DEBIT', 600], ['CREDIT', 600]], 'ExpenseApproved');
-        $this->givenExpense('workflow-submitted', 'SUBMITTED', [400]);
-        $this->givenExpense('draft', 'DRAFT', [700]);
+        $d->expense('workflow-posted', 'POSTED', [600], ['posted_journal_entry_id' => 'je-workflow']);
+        $d->entry('je-workflow', 'workflow-posted', 'POSTED', [600], null, ['source_event_type' => 'ExpenseApproved']);
+        $d->expense('workflow-submitted', 'SUBMITTED', [400]);
+        $d->expense('draft', 'DRAFT', [700]);
 
-        // Missing or inconsistent data.
-        $this->givenExpense('no-confirmer', 'CONFIRMED', [500], ['confirmed_by' => null]);
-        $this->givenEntry('je-no-confirmer', 'no-confirmer', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]]);
-        $this->givenExpense('no-lines', 'CONFIRMED', []);
-        $this->givenEntry('je-no-lines', 'no-lines', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]]);
-        $this->givenExpense('entry-without-production', 'CONFIRMED', [500]);
-        $this->givenEntry('je-no-production', 'entry-without-production', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]], 'ExpenseConfirmed', null);
-        $this->givenExpense('entry-without-lines', 'CONFIRMED', [500]);
-        $this->givenEntry('je-no-lines-of-its-own', 'entry-without-lines', 'POSTED', []);
-        $this->givenExpense('entry-unbalanced', 'CONFIRMED', [500]);
-        $this->givenEntry('je-unbalanced', 'entry-unbalanced', 'POSTED', [['DEBIT', 500], ['CREDIT', 400]]);
-        $this->givenExpense('entry-reversed', 'CONFIRMED', [500]);
-        $this->givenEntry('je-reversed', 'entry-reversed', 'REVERSED', [['DEBIT', 500], ['CREDIT', 500]]);
-        $this->givenExpense('two-entries', 'CONFIRMED', [500]);
-        $this->givenEntry('je-two-a', 'two-entries', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]]);
-        $this->givenEntry('je-two-b', 'two-entries', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]]);
-        $this->givenExpense('amount-differs', 'CONFIRMED', [500]);
-        $this->givenEntry('je-amount', 'amount-differs', 'POSTED', [['DEBIT', 550], ['CREDIT', 550]]);
-        $this->givenExpense('unknown-status', 'APPROVED', [500]);
-        $this->givenEntry('je-unknown', 'unknown-status', 'POSTED', [['DEBIT', 500], ['CREDIT', 500]]);
+        // Missing or inconsistent Expense data.
+        $d->expense('no-confirmer', 'CONFIRMED', [500], ['confirmed_by' => null]);
+        $d->entry('je-no-confirmer', 'no-confirmer', 'POSTED', [500]);
+        $d->expense('no-lines', 'CONFIRMED', []);
+        $d->entry('je-no-lines', 'no-lines', 'POSTED', [500]);
+        $d->expense('stray-history', 'CONFIRMED', [500]);
+        $d->entry('je-stray', 'stray-history', 'POSTED', [500]);
+        $this->db->tables['stageart_expense_reviews'][] = [
+            'id' => 'review-stray', 'expense_id' => 'stray-history', 'revision' => 1, 'action' => 'MIGRATED',
+            'requested_amount' => 500, 'approved_amount' => 500, 'lines_snapshot' => '[]', 'reason' => null,
+            'actor_person_id' => 'manager', 'acted_at' => '2026-09-02 11:00:00',
+        ];
+        $d->expense('orphan-production', 'CONFIRMED', [500], ['production_id' => 'production-gone']);
+        $d->entry('je-orphan', 'orphan-production', 'POSTED', [500], null, ['production_id' => 'production-gone']);
+        $d->expense('unknown-status', 'APPROVED', [500]);
+        $d->entry('je-unknown', 'unknown-status', 'POSTED', [500]);
+
+        // Journal Entries that are not what the Confirm step built.
+        $d->expense('entry-without-production', 'CONFIRMED', [500]);
+        $d->entry('je-no-production', 'entry-without-production', 'POSTED', [500], null, ['production_id' => null]);
+        $d->expense('entry-other-organization', 'CONFIRMED', [500]);
+        $d->entry('je-other-org', 'entry-other-organization', 'POSTED', [500], null, ['organization_id' => 'org-2']);
+        $d->expense('entry-without-lines', 'CONFIRMED', [500]);
+        $d->entry('je-no-lines-of-its-own', 'entry-without-lines', 'POSTED', [], []);
+        $d->expense('entry-unbalanced', 'CONFIRMED', [500]);
+        $d->entry('je-unbalanced', 'entry-unbalanced', 'POSTED', [], [['acc-expense', 'DEBIT', 500], ['acc-payable', 'CREDIT', 400]]);
+        $d->expense('entry-reversed', 'CONFIRMED', [500]);
+        $d->entry('je-reversed', 'entry-reversed', 'REVERSED', [500]);
+        $d->expense('two-entries', 'CONFIRMED', [500]);
+        $d->entry('je-two-a', 'two-entries', 'POSTED', [500]);
+        $d->entry('je-two-b', 'two-entries', 'POSTED', [500]);
+        $d->expense('amount-differs', 'CONFIRMED', [500]);
+        $d->entry('je-amount', 'amount-differs', 'POSTED', [550]);
+        $d->expense('debit-on-another-account', 'CONFIRMED', [500]);
+        $d->entry('je-other-debit', 'debit-on-another-account', 'POSTED', [], [['acc-other', 'DEBIT', 500], ['acc-payable', 'CREDIT', 500]]);
+        $d->expense('credit-not-payable', 'CONFIRMED', [500]);
+        $d->entry('je-cash', 'credit-not-payable', 'POSTED', [], [['acc-expense', 'DEBIT', 500], ['acc-cash', 'CREDIT', 500]]);
     }
 
     protected function tearDown(): void
@@ -91,153 +114,91 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
     }
 
     /**
-     * @param int[] $lineAmounts
-     * @param array<string, mixed> $overrides
+     * @return array<string, string>
      */
-    private function givenExpense(string $id, string $status, array $lineAmounts, array $overrides = []): void
+    private function expectedReview(): array
     {
-        $legacy = in_array($status, ['CONFIRMED', 'APPROVED'], true);
-        $this->db->tables['stageart_expenses'][] = array_merge([
-            'id' => $id,
-            'production_id' => 'production-1',
-            'payer_person_id' => null,
-            'status' => $status,
-            'revision' => 0,
-            'requested_amount' => null,
-            'approved_amount' => null,
-            'posted_journal_entry_id' => null,
-            'created_by' => 'creator',
-            'created_at' => '2026-09-01 10:00:00',
-            'updated_by' => 'creator',
-            'updated_at' => '2026-09-01 10:00:00',
-            'confirmed_by' => $legacy ? 'manager' : null,
-            'confirmed_at' => $legacy ? '2026-09-02 11:00:00' : null,
-        ], $overrides);
-
-        foreach ($lineAmounts as $index => $amount) {
-            $this->db->tables['stageart_expense_lines'][] = [
-                'id' => "{$id}-line-{$index}", 'expense_id' => $id, 'account_id' => 'acc-expense', 'amount' => (string) $amount, 'description' => null,
-            ];
-        }
-    }
-
-    /**
-     * @param array<int, array{string, int}> $lines [debit_credit, amount]
-     */
-    private function givenEntry(string $id, string $expenseId, string $status, array $lines, string $sourceEventType = 'ExpenseConfirmed', ?string $productionId = 'production-1'): void
-    {
-        $this->db->tables['stageart_journal_entries'][] = [
-            'id' => $id, 'status' => $status, 'production_id' => $productionId, 'source_event_type' => $sourceEventType, 'source_event_id' => $expenseId,
-        ];
-
-        foreach ($lines as [$side, $amount]) {
-            $this->db->tables['stageart_journal_entry_lines'][] = ['journal_entry_id' => $id, 'debit_credit' => $side, 'amount' => (string) $amount];
-        }
-    }
-
-    /**
-     * @return array{migrated: string[], manual_review: array<string, string>}
-     */
-    private function migrate(): array
-    {
-        return LegacyExpenseMigration::run(
-            $this->wpdb,
-            'wp_stageart_expenses',
-            'wp_stageart_expense_lines',
-            'wp_stageart_expense_reviews',
-            'wp_stageart_journal_entries',
-            'wp_stageart_journal_entry_lines'
-        );
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function expensesById(): array
-    {
-        return array_column($this->db->tables['stageart_expenses'], null, 'id');
-    }
-
-    /**
-     * Journal Entry count and the DEBIT / CREDIT totals per Production.
-     *
-     * @return array{entries: int, lines: int, debit: int, credit: int}
-     */
-    private function journalTotals(): array
-    {
-        $lines = $this->db->tables['stageart_journal_entry_lines'];
-        $sum = static fn (string $side): int => array_sum(array_map(
-            static fn (array $line): int => $line['debit_credit'] === $side ? (int) $line['amount'] : 0,
-            $lines
-        ));
-
-        return [
-            'entries' => count($this->db->tables['stageart_journal_entries']),
-            'lines' => count($this->db->tables['stageart_journal_entry_lines']),
-            'debit' => $sum('DEBIT'),
-            'credit' => $sum('CREDIT'),
-        ];
-    }
-
-    public function test_the_first_run_migrates_only_the_safe_row_and_leaves_every_journal_entry_alone(): void
-    {
-        $before = $this->expensesById();
-        $journalBefore = [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']];
-        $linesBefore = $this->db->tables['stageart_expense_lines'];
-        $this->assertSame(['entries' => 14, 'lines' => 26, 'debit' => 12250, 'credit' => 12150], $this->journalTotals());
-
-        $summary = $this->migrate();
-
-        $this->assertSame(['migratable'], $summary['migrated']);
-        $this->assertSame([
+        $expected = [
             'entry-not-posted' => 'DRAFT_JOURNAL_ENTRY',
             'no-entry' => 'NO_JOURNAL_ENTRY',
             'no-confirmer' => 'MISSING_CONFIRMATION',
             'no-lines' => 'NO_LINES',
+            'stray-history' => 'HISTORY_EXISTS',
+            'orphan-production' => 'ORGANIZATION_UNKNOWN',
             'entry-without-production' => 'PRODUCTION_MISMATCH',
+            'entry-other-organization' => 'ORGANIZATION_MISMATCH',
             'entry-without-lines' => 'UNBALANCED_JOURNAL_ENTRY',
             'entry-unbalanced' => 'UNBALANCED_JOURNAL_ENTRY',
             'entry-reversed' => 'REVERSED_JOURNAL_ENTRY',
             'two-entries' => 'MULTIPLE_JOURNAL_ENTRIES',
             'amount-differs' => 'AMOUNT_MISMATCH',
-        ], $summary['manual_review'], 'Unknown statuses are never read: only CONFIRMED rows are selected.');
+            'debit-on-another-account' => 'DEBIT_LINES_MISMATCH',
+            'credit-not-payable' => 'PAYABLE_ACCOUNT_INVALID',
+        ];
+        ksort($expected);
 
-        $after = $this->expensesById();
+        return $expected;
+    }
+
+    public function test_the_preview_lists_one_candidate_and_every_uncertain_row_with_its_reason(): void
+    {
+        $before = $this->db->tables;
+
+        $plan = M::preview($this->wpdb);
+
+        $this->assertSame(16, $plan['confirmed'], 'Only CONFIRMED rows are read; the unknown status is never selected');
+        $this->assertSame(['migratable' => ['journal_entry_id' => 'je-ok', 'amount' => 5000]], $plan['candidates']);
+        $this->assertSame($this->expectedReview(), $plan['manual_review']);
+        $this->assertSame($before, $this->db->tables);
+    }
+
+    public function test_executing_migrates_only_the_safe_row_and_leaves_every_journal_entry_alone(): void
+    {
+        $before = $this->data->expensesById();
+        $journalBefore = [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']];
+        $totalsBefore = $this->data->journalTotals();
+        $linesBefore = $this->db->tables['stageart_expense_lines'];
+        $historyBefore = count($this->db->tables['stageart_expense_reviews']);
+
+        $result = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
+
+        $this->assertSame(['migratable'], $result['migrated']);
+        $this->assertSame([], $result['failed']);
+        $this->assertSame($this->expectedReview(), $result['manual_review']);
+
+        $after = $this->data->expensesById();
         $this->assertSame(array_merge($before['migratable'], [
             'status' => 'POSTED',
             'revision' => 1,
-            'requested_amount' => 5000,
-            'approved_amount' => 5000,
-            'posted_journal_entry_id' => 'je-ok',
             'submitted_by' => 'creator',
             'submitted_at' => '2026-09-01 10:00:00',
+            'requested_amount' => 5000,
+            'approved_amount' => 5000,
             'approved_by' => 'manager',
             'approved_at' => '2026-09-02 11:00:00',
+            'posted_journal_entry_id' => 'je-ok',
         ]), $after['migratable'], 'Only the workflow columns change; the payer, creator and confirmation stay.');
 
         unset($before['migratable'], $after['migratable']);
         $this->assertSame($before, $after, 'Every other row is left exactly as it was.');
 
         $this->assertSame($journalBefore, [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']]);
-        $this->assertSame(['entries' => 14, 'lines' => 26, 'debit' => 12250, 'credit' => 12150], $this->journalTotals());
+        $this->assertSame($totalsBefore, $this->data->journalTotals(), 'Entry count, line count and DEBIT / CREDIT totals are unchanged');
         $this->assertSame($linesBefore, $this->db->tables['stageart_expense_lines']);
 
-        $migratedHistory = array_values(array_filter($this->db->tables['stageart_expense_reviews'], static fn (array $r): bool => $r['expense_id'] === 'migratable'));
-        $this->assertCount(1, $migratedHistory);
-        $this->assertSame(['MIGRATED', 1, 5000, 5000, 'manager'], [
-            $migratedHistory[0]['action'], $migratedHistory[0]['revision'], $migratedHistory[0]['requested_amount'],
-            $migratedHistory[0]['approved_amount'], $migratedHistory[0]['actor_person_id'],
-        ]);
-        $this->assertCount(2, $this->db->tables['stageart_expense_reviews'], 'The already-migrated row gets no second history entry.');
+        $this->assertCount(1, $this->data->historyOf('migratable'));
+        $this->assertCount($historyBefore + 1, $this->db->tables['stageart_expense_reviews'], 'Only the migrated row gets a history entry.');
     }
 
     public function test_a_second_run_changes_nothing_and_reports_the_same_rows_for_review(): void
     {
-        $first = $this->migrate();
+        $first = M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
         $afterFirst = $this->db->tables;
 
-        $second = $this->migrate();
+        $plan = M::preview($this->wpdb);
+        $second = M::execute($this->wpdb, $plan['fingerprint']);
 
+        $this->assertSame([], $plan['candidates']);
         $this->assertSame([], $second['migrated']);
         $this->assertSame($first['manual_review'], $second['manual_review']);
         $this->assertSame($afterFirst, $this->db->tables);
@@ -250,18 +211,17 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
      */
     public function test_rows_left_for_review_are_logged_by_id_and_reason_only(): void
     {
-        $this->migrate();
+        M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint']);
 
         $logged = (string) file_get_contents($this->log);
 
         $this->assertStringContainsString(
-            '[StageArt Schema 1.44.0] Expenses left CONFIRMED for manual review: entry-not-posted=DRAFT_JOURNAL_ENTRY, no-entry=NO_JOURNAL_ENTRY,',
+            '[StageArt legacy expense migration] left CONFIRMED for manual review: amount-differs=AMOUNT_MISMATCH, credit-not-payable=PAYABLE_ACCOUNT_INVALID,',
             $logged
         );
         $this->assertSame(1, substr_count($logged, 'manual review'));
-        $this->assertStringNotContainsString('migratable', $logged);
 
-        foreach (['creator', 'manager', 'payer', '5000', '1200'] as $content) {
+        foreach (['creator', 'manager', 'payer', '5000', '1200', '小道具', 'acc-'] as $content) {
             $this->assertStringNotContainsString($content, $logged);
         }
     }

@@ -9,6 +9,11 @@ namespace StageArt\Tests\Support;
  * expense migration reads and writes, answering exactly the prepared
  * statements LegacyExpenseMigration and Installer issue. Also answers
  * Installer's "SHOW TABLES LIKE" from $existingTables.
+ *
+ * Transactions behave like InnoDB's for the migration's purposes: START
+ * TRANSACTION snapshots every table, ROLLBACK restores the snapshot,
+ * COMMIT keeps the changes. $failures makes one step fail the way
+ * $wpdb reports it (query() returning false), to test the rollbacks.
  */
 final class FakeExpenseMigrationDatabase
 {
@@ -19,13 +24,49 @@ final class FakeExpenseMigrationDatabase
         'stageart_expense_reviews' => [],
         'stageart_journal_entries' => [],
         'stageart_journal_entry_lines' => [],
+        'stageart_accounts' => [],
+        'stageart_productions' => [],
+        'stageart_projects' => [],
     ];
 
     /** @var string[] tables (without prefix) Installer should see as already created */
     public array $existingTables = [];
 
+    /** @var array<string, ?string> table name (without prefix) => storage engine information_schema reports */
+    public array $engines = [
+        'stageart_expenses' => 'InnoDB',
+        'stageart_expense_reviews' => 'InnoDB',
+    ];
+
+    /**
+     * Steps to fail: 'START' => true fails every START TRANSACTION;
+     * 'UPDATE', 'INSERT' and 'COMMIT' => an Expense id fail that step for
+     * that Expense only.
+     *
+     * @var array<string, mixed>
+     */
+    public array $failures = [];
+
     /** @var string[] every raw (unprepared or prepared) query string sent to query() */
     public array $queries = [];
+
+    /**
+     * Called with the Expense id and the tables (by reference) just
+     * before SELECT ... FOR UPDATE answers - stands in for another
+     * session committing a change between the preview and the lock.
+     *
+     * @var (callable(string, array): void)|null
+     */
+    public $onLock = null;
+
+    /** @var array<string, array<int, array<string, mixed>>>|null the tables as they were at START TRANSACTION */
+    private ?array $snapshot = null;
+
+    /** The Expense the open transaction locked with SELECT ... FOR UPDATE. */
+    private ?string $locked = null;
+
+    /** @var string[] "START", "COMMIT", "ROLLBACK" in the order they were issued */
+    public array $transactionLog = [];
 
     /**
      * @param array<int, mixed> $args
@@ -42,6 +83,47 @@ final class FakeExpenseMigrationDatabase
             $table = (string) $values[0];
 
             return in_array(substr($table, strlen($wpdb->prefix)), $this->existingTables, true) ? $table : null;
+        }
+
+        if ($method === 'get_var' && str_starts_with($template, 'SELECT ENGINE FROM information_schema.TABLES')) {
+            return $this->engines[substr((string) $values[0], strlen($wpdb->prefix))] ?? null;
+        }
+
+        if ($method === 'get_var' && preg_match('/^SELECT pj\.organization_id FROM \S+stageart_productions p JOIN \S+stageart_projects pj ON pj\.id = p\.project_id WHERE p\.id = %s$/', $template)) {
+            $production = $this->where('stageart_productions', ['id' => $values[0]])[0] ?? null;
+            $project = $production ? ($this->where('stageart_projects', ['id' => $production['project_id']])[0] ?? null) : null;
+
+            return $project['organization_id'] ?? null;
+        }
+
+        if ($method === 'get_var' && preg_match('/^SELECT COUNT\(\*\) FROM \S+stageart_expense_reviews WHERE expense_id = %s$/', $template)) {
+            return (string) count($this->where('stageart_expense_reviews', ['expense_id' => $values[0]]));
+        }
+
+        if ($method === 'get_row') {
+            if (preg_match('/^SELECT \* FROM \S+stageart_expenses WHERE id = %s FOR UPDATE$/', $template)) {
+                $this->locked = (string) $values[0];
+
+                if ($this->onLock !== null) {
+                    // A change another session committed: in the live tables
+                    // and in what a ROLLBACK here would restore.
+                    ($this->onLock)($this->locked, $this->tables);
+
+                    if ($this->snapshot !== null) {
+                        ($this->onLock)($this->locked, $this->snapshot);
+                    }
+                }
+
+                return $this->where('stageart_expenses', ['id' => $values[0]])[0] ?? null;
+            }
+
+            if (preg_match('/^SELECT id, organization_id, type FROM \S+stageart_accounts WHERE id = %s$/', $template)) {
+                $account = $this->where('stageart_accounts', ['id' => $values[0]])[0] ?? null;
+
+                return $account === null ? null : ['id' => $account['id'], 'organization_id' => $account['organization_id'], 'type' => $account['type']];
+            }
+
+            return null;
         }
 
         if ($method === 'get_results') {
@@ -67,11 +149,49 @@ final class FakeExpenseMigrationDatabase
         if ($method === 'query') {
             $this->queries[] = $sql;
 
+            if ($sql === 'START TRANSACTION') {
+                $this->transactionLog[] = 'START';
+
+                if (! empty($this->failures['START'])) {
+                    return false;
+                }
+
+                $this->snapshot = $this->tables;
+
+                return 0;
+            }
+
+            if ($sql === 'COMMIT') {
+                $this->transactionLog[] = 'COMMIT';
+
+                if (($this->failures['COMMIT'] ?? null) === $this->locked) {
+                    return false;
+                }
+
+                $this->snapshot = null;
+                $this->locked = null;
+
+                return 0;
+            }
+
+            if ($sql === 'ROLLBACK') {
+                $this->transactionLog[] = 'ROLLBACK';
+
+                if ($this->snapshot !== null) {
+                    $this->tables = $this->snapshot;
+                }
+
+                $this->snapshot = null;
+                $this->locked = null;
+
+                return 0;
+            }
+
             if (str_starts_with($template, 'UPDATE ') && str_contains($template, 'stageart_expenses SET status = %s')) {
                 return $this->migrateExpense($values);
             }
 
-            if (str_starts_with($template, 'INSERT IGNORE INTO') && str_contains($template, 'stageart_expense_reviews')) {
+            if (str_starts_with($template, 'INSERT INTO') && str_contains($template, 'stageart_expense_reviews')) {
                 return $this->insertReview($values);
             }
 
@@ -79,6 +199,11 @@ final class FakeExpenseMigrationDatabase
         }
 
         return FakeWpdbDefault::VALUE;
+    }
+
+    public function inTransaction(): bool
+    {
+        return $this->snapshot !== null;
     }
 
     /**
@@ -99,16 +224,22 @@ final class FakeExpenseMigrationDatabase
     }
 
     /**
-     * Mirrors LegacyExpenseMigration's UPDATE ... WHERE id = %s AND status = %s.
+     * Mirrors LegacyExpenseMigration's UPDATE ... WHERE id = %s AND
+     * status = %s AND revision = 0 AND posted_journal_entry_id IS NULL.
      *
      * @param array<int, mixed> $values
+     * @return int|false
      */
-    private function migrateExpense(array $values): int
+    private function migrateExpense(array $values)
     {
         [$status, $revision, $submittedBy, $submittedAt, $requested, $approved, $approvedBy, $approvedAt, $journalEntryId, $id, $expected] = $values;
 
+        if (($this->failures['UPDATE'] ?? null) === $id) {
+            return false;
+        }
+
         foreach ($this->tables['stageart_expenses'] as $index => $row) {
-            if ($row['id'] === $id && $row['status'] === $expected) {
+            if ($row['id'] === $id && $row['status'] === $expected && (int) ($row['revision'] ?? 0) === 0 && ($row['posted_journal_entry_id'] ?? null) === null) {
                 $this->tables['stageart_expenses'][$index] = array_merge($row, [
                     'status' => $status,
                     'revision' => $revision,
@@ -129,17 +260,23 @@ final class FakeExpenseMigrationDatabase
     }
 
     /**
-     * INSERT IGNORE against UNIQUE (expense_id, revision, action).
+     * Plain INSERT against UNIQUE (expense_id, revision, action): a
+     * duplicate is an error, as in MySQL.
      *
      * @param array<int, mixed> $values
+     * @return int|false
      */
-    private function insertReview(array $values): int
+    private function insertReview(array $values)
     {
         [$id, $expenseId, $revision, $action, $requested, $approved, $snapshot, $actor, $actedAt] = $values;
 
+        if (($this->failures['INSERT'] ?? null) === $expenseId) {
+            return false;
+        }
+
         foreach ($this->tables['stageart_expense_reviews'] as $row) {
             if ($row['expense_id'] === $expenseId && (int) $row['revision'] === (int) $revision && $row['action'] === $action) {
-                return 0;
+                return false;
             }
         }
 

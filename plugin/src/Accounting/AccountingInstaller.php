@@ -198,6 +198,9 @@ final class AccountingInstaller
             KEY expense_id (expense_id)
         ) {$charsetCollate};");
 
-        LegacyExpenseMigration::run($wpdb, $expenses, $expenseLines, $expenseReviews, $journalEntries, $journalEntryLines);
+        // The pre-workflow CONFIRMED Expenses are not migrated here: a
+        // schema upgrade runs on the first request after a deploy, and
+        // changing Expenses must be an operator's explicit, previewed step
+        // (LegacyExpenseMigration, run through WP-CLI).
     }
 }
