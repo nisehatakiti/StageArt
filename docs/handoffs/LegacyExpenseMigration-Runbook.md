@@ -1,6 +1,6 @@
 # 旧形式Expense移行（Schema 1.44.0）運用手順案
 
-作成日: 2026-10-29（同日改訂：部分復旧の保留と競合条件・監査性の整理。それ以前の改訂：コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加。再改訂：仕訳のロック、部分復旧の条件確認とスクリプト化）
+作成日: 2026-10-29（同日改訂：移行取消の履歴（仕様書Version 1.8）、再移行の禁止、実行者の記録。それ以前の改訂：部分復旧の保留と競合条件・監査性の整理、コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加。再改訂：仕訳のロック、部分復旧の条件確認とスクリプト化）
 対象ブランチ: `integrate/expense-approval-20261029`
 対象コード:
 - `plugin/src/Accounting/LegacyExpenseMigration.php`（事前確認・実行）
@@ -128,7 +128,7 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 |---|---|---|
 | 1 | 確認者・確認日時のいずれかがない | `MISSING_CONFIRMATION` |
 | 2 | 申請回が0でない、またはワークフロー用の列（申請者・金額・承認・差し戻し・仕訳ID）のいずれかに値がある | `WORKFLOW_COLUMNS_SET` |
-| 3 | 申請・承認履歴が既にある | `HISTORY_EXISTS` |
+| 3 | 申請・承認履歴が既にある。移行取消済み（`MIGRATED`と`MIGRATION_REVERTED`が申請回1に1件ずつ）なら`MIGRATION_REVERTED`、移行に関する履歴が矛盾していれば`HISTORY_INCONSISTENT`、それ以外の履歴なら`HISTORY_EXISTS` | `MIGRATION_REVERTED`・`HISTORY_INCONSISTENT`・`HISTORY_EXISTS` |
 | 4 | 明細がない | `NO_LINES` |
 | 5 | 明細のAccountがない、または金額が0以下 | `INVALID_EXPENSE_LINE` |
 | 6 | 対象の仕訳がない | `NO_JOURNAL_ENTRY` |
@@ -253,18 +253,18 @@ SELECT e.id FROM wp_stageart_expenses e
 
 ## 8. 復旧手順案
 
-### 8.1 部分復旧：移行した行だけを戻す
-
-> **保留（2026-10-29）：** 現在の部分復旧は、復旧時に`MIGRATED`の履歴を**削除**する。これは仕様書`ExpenseApprovalWorkflow.md`の「申請・承認履歴は追記専用とし、過去の履歴を上書き・削除しない」（Version 1.3）、およびスキーマの設計（`stageart_expense_reviews`は追記のみ）と衝突する。8.4の選択肢から方針が決まるまで、`restore`は実行しない。`check`（読み取りのみ）は実行してよい。移行の結果に問題があり復旧が必要になった場合は、8.2の全体復旧を検討する。
+### 8.1 部分復旧：移行した行だけを戻す（移行取消）
 
 **条件：** 移行の結果に問題があり、仕訳やほかのデータには問題がない場合（例：移行対象の判断を誤った）。仕訳は変更していないため、戻す必要はない。配置後に書き込まれたほかのデータは残る。
 
-**方針：**
+**方針（仕様書Version 1.8）：**
 
 - 移行**後に別の処理で変更された行は戻さない。** 移行が書いた値と`MIGRATED`の履歴がそのまま残っている行だけを戻す。
 - 指定したIDのうち1件でも条件に合わなければ、**どの行も更新せずに停止する。**
-- 復旧は1つのトランザクションで行い、途中で失敗すれば全体をロールバックする。
+- **履歴は削除しない。** `MIGRATED`の行は残し、同じ申請回1の行として`MIGRATION_REVERTED`（移行取消）を追記する。状態を戻す更新と履歴の追記は1つのトランザクションで行い、どちらかが失敗すれば全体をロールバックする。
+- 移行取消したExpenseは、**再び移行しない**（事前確認で`MIGRATION_REVERTED`として判定不能の一覧に出る）。再移行の操作はない。
 - 仕訳は変更しない（読むだけで、ロックもしない）。
+- 実行者は、StageArtのPersonに結び付いたWordPressユーザーとして特定できる場合に限り記録する。特定できなければ何も書き込まない（「実行者の識別」参照）。
 
 **復旧できる条件（すべて満たす行だけ）：**
 
@@ -277,53 +277,93 @@ SELECT e.id FROM wp_stageart_expenses e
 | 明細が`MIGRATED`履歴の明細スナップショットと同じで、合計が金額と一致する | `LINES_CHANGED` |
 | 仕訳IDが、そのExpenseの`ExpenseConfirmed`の仕訳を指している | `JOURNAL_ENTRY_MISMATCH` |
 
+移行取消した行はCONFIRMEDに戻っているため、もう一度指定すると`STATE_CHANGED`で拒否される（二重の取消は起きない。`(expense_id, revision, action)`の一意制約でも防がれる）。
+
+**`MIGRATION_REVERTED`の行に記録する値：**
+
+| 列 | 値 |
+|---|---|
+| `expense_id` | 対象のExpense ID |
+| `revision` | 1（`MIGRATED`と同じ申請回） |
+| `action` | `MIGRATION_REVERTED` |
+| `requested_amount`・`approved_amount` | 取り消した時点の金額（移行が書いた金額） |
+| `lines_snapshot` | 取り消した時点の明細 |
+| `reason` | 運用者が指定した取消理由（500文字以内。必須） |
+| `actor_person_id` | 実行した運用者のStageArt Person ID |
+| `acted_at` | 実行日時（サーバーのPHPの時刻。ほかの履歴と同じ形式） |
+
+取消前の状態は、`MIGRATED`の行（移行時の値）とExpenseの元の値（第5節）で分かり、取消後の状態は第5節の「移行前」と同じである。仕訳IDは`source_event`（`ExpenseConfirmed`・Expense ID）から分かる。
+
+#### 実行者の識別
+
+| 識別情報 | 取得方法 | 記録先 | 取得できない場合 |
+|---|---|---|---|
+| StageArt Person ID（**必須**） | WP-CLIの`--user=<ログイン名>`で指定したWordPressユーザーに結び付いたPerson（`stageart_people.wp_user_id`） | 履歴の`actor_person_id`、ログ、出力 | 復旧しない（`--user`がない、Personに結び付いていない）。ほかのIDで代用しない |
+| WordPressユーザーID | WP-CLIの現在のユーザー | ログ、出力 | `--user`がなければ上と同じく復旧しない |
+| OSのアカウント | PHPのposix拡張があれば実効ユーザー名、なければ環境変数`USER`/`USERNAME`（`env:`を付けて区別） | ログ、出力のみ | `unknown`と記録して続行する（必須ではない） |
+| 実行日時・対象ID・操作 | 処理内で決まる | 履歴（`acted_at`・`expense_id`・`action`）、ログ | — |
+
+**限界：**
+
+- `--user`はWP-CLIを実行できる者なら任意に指定できる。認証ではなく、**申告された運用者**の記録である。WP-CLIを実行できるサーバー権限の管理と、作業記録（誰が承認し、誰が実行したか）との照合が必要である。
+- 環境変数のOSユーザーは実行者が書き換えられる。posix拡張がない環境では、OSアカウントを確実には特定できない。
+- OSアカウントとWordPressユーザーIDはDBの履歴には残らず、PHPエラーログとWP-CLIの出力にだけ残る。DBに残すには列の追加（スキーマ変更）が必要で、今回は行っていない。ログの出力先と保持期間は未確認である。
+- 実行者に特定の権限（例：組織のOwner）があるかは確認しない。誰が実行してよいかは運用で決め、作業記録に残す。
+- 取消理由は自由記述で、ログと出力には出さない（DBの履歴にだけ残る）。個人情報を書かない。
+
 #### 手順（スクリプトを使う）
 
-1. **確認（読み取りのみ）：** 戻す候補のIDを指定して確認する。各IDに`RESTORABLE`または理由コードが表示される。
+1. **確認（読み取りのみ）：** 戻す候補のIDを指定して確認する。各IDに`RESTORABLE`または理由コードが表示される。`--user`は不要。
 
    ```
    wp eval-file plugin/scripts/legacy_expense_migration_restore.php check <ID>,<ID>,... --path=<wordpress-root>
    ```
 
 2. 理由コードが出たIDは、復旧の対象から外すか、個別に調査する（自動では直さない）。対象から外した後、もう一度確認する。
-3. 確認結果、対象ID、理由を記録し、承認を得る。
+3. 確認結果、対象ID、取消理由、実行者（WordPressのログイン名）を記録し、承認を得る。
 4. 復旧の直前にバックアップを取得する（工程3と同じ方法）。
-5. **確認前の値を記録する（読み取りのみ）：**
+5. **復旧前の値を記録する（読み取りのみ）：**
 
    ```sql
    SELECT id, status, revision, requested_amount, approved_amount, posted_journal_entry_id, updated_at
      FROM wp_stageart_expenses WHERE id IN (<ID一覧>);
-   SELECT expense_id, revision, action FROM wp_stageart_expense_reviews WHERE expense_id IN (<ID一覧>);
+   SELECT expense_id, revision, action, acted_at FROM wp_stageart_expense_reviews
+    WHERE expense_id IN (<ID一覧>) ORDER BY expense_id, acted_at;          -- 各IDにMIGRATEDが1件だけ
    SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;
+   SELECT action, COUNT(*) FROM wp_stageart_expense_reviews GROUP BY action;
    SELECT COUNT(*) FROM wp_stageart_journal_entries;
    SELECT debit_credit, COUNT(*), SUM(amount) FROM wp_stageart_journal_entry_lines GROUP BY debit_credit;
    ```
 
-6. **復旧：**
+6. **復旧（運用者自身のWordPressユーザーで実行する）：**
 
    ```
-   wp eval-file plugin/scripts/legacy_expense_migration_restore.php restore <ID>,<ID>,... --path=<wordpress-root>
+   wp --user=<運用者のログイン名> eval-file plugin/scripts/legacy_expense_migration_restore.php restore <ID>,<ID>,... "<取消理由>" --path=<wordpress-root>
    ```
 
-   スクリプトは次の順で処理する。
-   1. 書き込み対象テーブルがInnoDBでなければ拒否する（`NOT_TRANSACTIONAL`）。
-   2. 全IDを確認し、1件でも条件に合わなければ何も書き込まずに拒否する（`Refused (TARGET_MISMATCH)`。ログに`<ID>=<理由>`を記録する）。
-   3. `START TRANSACTION`。ID順に、Expenseの行を`FOR UPDATE`でロックし、履歴と明細を`FOR UPDATE`で読み、**ロックした値でもう一度確認**する。確認の後に別の処理が変更していれば、全体をロールバックする（下記「競合条件」参照）。
-   4. 状態を戻す。`UPDATE`の`WHERE`にも上表の条件を入れ、更新件数が1件でなければ全体をロールバックする。
-   5. その行の`MIGRATED`履歴を、履歴のIDを指定して削除する。削除件数が1件でなければ全体をロールバックする。
-   6. 全IDが終わったら`COMMIT`する。COMMITが失敗した場合もロールバックする。
+   出力の`Operator: person=... wp_user=... os_user=...`を作業記録に残す。スクリプトは次の順で処理する。
+   1. 取消理由がなければ停止する。`--user`がない、またはPersonに結び付いていなければ停止する（どれも何も書き込まない）。
+   2. 書き込み対象テーブルがInnoDBでなければ拒否する（`NOT_TRANSACTIONAL`）。
+   3. 全IDを確認し、1件でも条件に合わなければ何も書き込まずに拒否する（`Refused (TARGET_MISMATCH)`。行ごとに`Not restorable: <ID>=<理由>`を表示し、ログにも記録する）。
+   4. `START TRANSACTION`。ID順に、Expenseの行を`FOR UPDATE`でロックし、履歴と明細を`FOR UPDATE`で読み、**ロックした値でもう一度確認**する。確認の後に別の処理が変更していれば、全体をロールバックする（下記「競合条件」）。
+   5. 状態を戻す。`UPDATE`の`WHERE`にも上表の条件を入れ、更新件数が1件でなければ全体をロールバックする。
+   6. `MIGRATION_REVERTED`の履歴を追加する（通常の`INSERT`）。追加件数が1件でなければ全体をロールバックする。
+   7. 全IDが終わったら`COMMIT`する。COMMITが失敗した場合もロールバックする。
 
-   | 失敗の理由コード | 意味 |
+   | 失敗・拒否の理由コード | 意味 |
    |---|---|
+   | `ACTOR_MISSING` | 実行者のPerson IDがない、またはPerson IDの形式でない（スクリプトはこの前に停止する） |
+   | `REASON_MISSING`・`REASON_TOO_LONG` | 取消理由がない、または500文字を超える |
+   | `NOT_TRANSACTIONAL`・`TARGET_MISMATCH` | 上記2・3 |
    | `TRANSACTION_START_FAILED` | トランザクションを開始できなかった |
    | `LOCK_FAILED` | ロックが失敗した（デッドロック、ロック待ちのタイムアウト等） |
    | 上表の理由コード | ロックした後の確認で、条件に合わなくなっていた |
    | `UPDATE_FAILED` | 状態の更新が失敗した、または更新件数が1件でなかった |
-   | `HISTORY_DELETE_FAILED` | 履歴の削除が失敗した、または削除件数が1件でなかった |
+   | `HISTORY_INSERT_FAILED` | 移行取消の履歴の追加が失敗した（状態の更新も巻き戻す） |
    | `COMMIT_FAILED` | COMMITが失敗した |
    | `UNEXPECTED_ERROR` | 上記以外の例外 |
 
-   失敗した場合は`Rolled back (<理由> at <ID>) - nothing was restored.`と表示し、どの行も戻らない。
+   失敗した場合は`Rolled back (<理由> at <ID>) - nothing was restored.`と表示し、どの行も戻らず、履歴も追加されない。
 
 7. **復旧後の確認（読み取りのみ）：**
 
@@ -334,21 +374,36 @@ SELECT e.id FROM wp_stageart_expenses e
       AND NOT (status = 'CONFIRMED' AND revision = 0 AND submitted_by IS NULL AND submitted_at IS NULL
                AND requested_amount IS NULL AND approved_amount IS NULL AND approved_by IS NULL
                AND approved_at IS NULL AND posted_journal_entry_id IS NULL);              -- 0件
-   SELECT COUNT(*) FROM wp_stageart_expense_reviews WHERE expense_id IN (<ID一覧>);        -- 0
-   SELECT COUNT(*) FROM wp_stageart_journal_entries;                                     -- 手順5と同じ
+
+   -- 監査記録：各IDにMIGRATEDとMIGRATION_REVERTEDが1件ずつ（申請回1）、移行取消が後
+   SELECT expense_id, revision, action, actor_person_id, acted_at FROM wp_stageart_expense_reviews
+    WHERE expense_id IN (<ID一覧>) ORDER BY expense_id, acted_at;
+   SELECT expense_id FROM wp_stageart_expense_reviews
+    WHERE expense_id IN (<ID一覧>)
+    GROUP BY expense_id
+   HAVING COUNT(*) <> 2 OR SUM(action = 'MIGRATED') <> 1 OR SUM(action = 'MIGRATION_REVERTED') <> 1;  -- 0件
+
+   -- 移行取消の行の実行者が、出力のperson=と同じ
+   SELECT DISTINCT actor_person_id FROM wp_stageart_expense_reviews
+    WHERE expense_id IN (<ID一覧>) AND action = 'MIGRATION_REVERTED';
+
+   SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;        -- POSTEDが対象数だけ減り、CONFIRMEDが同数増える
+   SELECT action, COUNT(*) FROM wp_stageart_expense_reviews GROUP BY action;  -- MIGRATION_REVERTEDだけが対象数だけ増える
+   SELECT COUNT(*) FROM wp_stageart_journal_entries;                         -- 手順5と同じ
    SELECT debit_credit, COUNT(*), SUM(amount) FROM wp_stageart_journal_entry_lines GROUP BY debit_credit;  -- 手順5と同じ
    ```
 
-   あわせて`SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;`を実行し、手順5と比べてPOSTEDが対象IDの数だけ減り、CONFIRMEDが同じ数だけ増え、ほかの状態が変わっていないことを確認する。
+   最後に移行の事前確認を実行し、対象IDが候補に含まれず、判定不能の一覧に`<ID>=MIGRATION_REVERTED`として出ることを確認する。
 
 - 戻した行の値は、移行前（第5節の表）と同じになる。`updated_at`は移行でも復旧でも変更しない。
-- 戻した後、事前確認を実行すると、同じ行が再び候補として表示される。運用者が実行しない限り、再移行はされない。
+- 取消理由はDBの履歴にだけ残る。ログでは`restored to CONFIRMED: <ID一覧>; recorded MIGRATION_REVERTED at <日時> by person=<ID> wp_user=<ID> os_user=<名前>`の形で記録される。
 
 #### 復旧できない場合
 
 - **確認で理由コードが出た行**（移行後に申請・承認・差し戻し、明細の変更、履歴の追加などがあった行）は、部分復旧の対象にしない。その後の操作を無視して移行前の状態に戻すと、操作の結果が失われるためである。行ごとに、その後の操作の内容を確認し、対処（戻さない、業務上の訂正を行う、全体復旧を検討する）を個別に決めて承認を得る。
-- **復旧が失敗してロールバックされた場合**は、どの行も変わっていない。理由コードを記録し、`check`からやり直す。ロックの失敗は、利用の少ない時間帯に再実行すれば解消することがある。
-- **WP-CLIが使えない場合**は、スクリプトを使わずにSQLで戻さない。上表の条件のうち、明細スナップショットとの比較はSQLで正確に行いにくいため、手作業のSQLでは「移行後に変更された行を戻さない」ことを保証できない。WP-CLIを用意するか、8.2の全体復旧を検討する。
+- **復旧が失敗してロールバックされた場合**は、どの行も変わっておらず、履歴も追加されていない。理由コードを記録し、`check`からやり直す。ロックの失敗は、利用の少ない時間帯に再実行すれば解消することがある。
+- **実行者を特定できない場合**（`--user`の運用者がStageArtのPersonに結び付いていない等）は、復旧しない。結び付いた運用者が実行する。
+- **WP-CLIが使えない場合**は、スクリプトを使わずにSQLで戻さない。明細スナップショットとの比較と、同じトランザクションでの履歴の追記を手作業で正確に行うことは難しく、「移行後に変更された行を戻さない」「履歴を必ず残す」ことを保証できない。WP-CLIを用意するか、8.2の全体復旧を検討する。
 
 #### 競合条件（確認からCOMMITまで）
 
@@ -367,6 +422,7 @@ SELECT e.id FROM wp_stageart_expenses e
 - **転記・チケット入金・取消**は仕訳だけを書き込み、Expenseをロックしない。復旧は仕訳をロックしないため、互いに待たない。
 - **ロックの順序：** 復旧は、ID順にExpense→履歴→明細の順でロックする（ID順は今回追加）。指定の順序が違う2つの復旧が同時に動いても、逆順にロックすることはない。
 - **ギャップロック：** 履歴と明細のロックは、`expense_id`の非一意インデックスに対してギャップロックを伴う。COMMITまでの間、ほかのExpenseの履歴の追加（承認・差し戻し）が待たされることがある。待っている側は自分のExpenseのロックを持つが、そのExpenseはSUBMITTEDで、復旧の対象にはならない。そのため循環は生じないと評価している（推論）。
+- **移行取消の履歴の追加：** 追加する行の`expense_id`は、復旧側が`FOR UPDATE`でロックした範囲の中にある。そのため、自分のロックでは待たないと評価している（推論）。同じExpenseの履歴をほかの処理が同時に追加することは、Expenseの行のロックで防がれる。
 - デッドロックやロック待ちのタイムアウトが起きた場合は`LOCK_FAILED`として全体をロールバックする。InnoDBが復旧側のトランザクションを取り消した場合も、その後の書き込みは行わない（各ロックの直後にエラーを確認する）。
 
 保証の範囲：アプリケーションの処理との競合については、上記の確認とロックで整合性を保てる。DBを直接操作した場合（仕訳の`source_event`の書き換えや削除など）は対象外である。
@@ -387,42 +443,20 @@ SELECT e.id FROM wp_stageart_expenses e
 - 1.44.0より前のコードは、DRAFTとCONFIRMED以外の状態を読めない。配置後に申請・承認・差し戻しされたExpense（SUBMITTED / POSTED / REJECTED）があると、旧コードでは読めなくなる。
 - そのため、コードを戻す場合は8.2の全体復旧が必要になる。工程1のバックアップから復元し、配置後に書き込まれたデータの扱いを事前に確認する。
 - 旧コードのスキーマバージョンは1.44.0と異なるため、旧コードの配置後の最初のリクエストで旧Installerが実行され、バージョンが旧値に戻る。追加された列とテーブルは削除されない（dbDeltaは削除しない）。
+- **移行取消の後に、このブランチのVersion 1.8より前のコードへ戻す場合：** それより前のコードは`MIGRATION_REVERTED`の種別を知らず、その履歴を持つExpenseを読み込むと例外になり、APIで表示できなくなる。移行取消を実行した後は、Version 1.8より前のコードへ戻さない。戻す必要がある場合は、8.2の全体復旧で移行取消の前の状態に戻すことを含めて検討する。
 
-### 8.4 復旧の記録と監査性（未決定）
+### 8.4 復旧の記録と監査性（決定済み：案A）
 
-**現状：** 復旧は`MIGRATED`の履歴を削除する。復旧の後、DBには「移行された」ことも「戻された」ことも残らない。経緯を追えるのは、PHPエラーログ（`restored to CONFIRMED: <ID>`）、WP-CLIの出力、運用者の作業記録、実行前のバックアップだけである。ログの出力先と保持期間は未確認。
+2026-10-29に案A（移行取消を履歴の新しい種別として追記する）が承認され、仕様書Version 1.8として実装した。それまでの「`MIGRATED`の行を削除する」方式はコードから取り除いた（復旧処理に`DELETE`はない。テストで確認）。
 
-**既存の履歴モデルに残せるか（コードで確認）：**
+**変更点（コードで確認）：**
 
-- `ExpenseReview`の操作種別は`SUBMITTED`・`WITHDRAWN`・`APPROVED`・`REJECTED`・`MIGRATED`に限られ、DBから読み込むときにも検証する。知らない種別の行が1件でもあると、そのExpenseは読み込みで例外になり、API・画面で表示できなくなる。
-- 既存の種別を流用すると、意味が違う記録になる（例：`WITHDRAWN`は申請者による取り下げ）。
-- そのため、**履歴モデルを変えずに、既存の履歴へ復旧の記録を安全に残すことはできない。**
+- `ExpenseReview`の種別に`MIGRATION_REVERTED`を追加した。DBから読み込むときの検証も通るため、移行取消した行も通常どおり読み込め、APIの`reviews`には`MIGRATED`・`MIGRATION_REVERTED`が日時順（`acted_at`、`revision`の順）で並ぶ。
+- 業務上の操作（申請・取り下げ・承認・差し戻し）は`MIGRATION_REVERTED`を記録しない。記録するのは部分復旧だけである。CONFIRMEDのExpenseは、もともと業務上の操作の対象ではない（Domainで拒否）。
+- 移行の判定は、件数ではなく履歴の種別と申請回を見る。`MIGRATED`と`MIGRATION_REVERTED`が申請回1に1件ずつだけある行は`MIGRATION_REVERTED`、そのほか移行に関する履歴が含まれる行は`HISTORY_INCONSISTENT`、移行に関係しない履歴だけの行は従来どおり`HISTORY_EXISTS`として、どれも移行しない（第4節の判定3）。
+- **スキーマの変更はない。** `action`列はVARCHAR(20)で、`MIGRATION_REVERTED`（18文字）が収まる。列の種類の制約（ENUM・CHECK）はない。一意制約`(expense_id, revision, action)`はそのまま使える。スキーマのバージョンは1.44.0のままで、元の作業ツリーの未統合の変更とのスキーマ番号の調整は、今回の変更では生じない（取り込み時に1.45.0以上にする必要は、従来どおり残る）。
 
-**記録できる項目（既存の列で表せるもの）：**
-
-| 項目 | 列 | 注意点 |
-|---|---|---|
-| 対象ID | `expense_id` | |
-| 実行日時 | `acted_at` | |
-| 復旧前の金額 | `requested_amount`・`approved_amount` | |
-| 復旧前の明細 | `lines_snapshot` | |
-| 復旧理由 | `reason` | 運用者の自由記述。個人情報を書かない運用が必要 |
-| 実行者 | `actor_person_id`（必須） | WP-CLIの実行者はStageArtのPersonと結び付いていない。実行者のPerson IDを引数で受け取る、または確認者等で代用するかを決める必要がある |
-| 復旧前の仕訳ID | 列がない | `source_event`（`ExpenseConfirmed`・Expense ID）から導けるため、記録しなくても追跡はできる |
-| 復旧後の値 | 列がない | 移行前と同じ（第5節の表）で一意に決まる |
-
-**選択肢：**
-
-| 案 | 内容 | 影響 |
-|---|---|---|
-| A. 復旧の種別を追加する | `MIGRATED`の行を残し、同じ申請回に`MIGRATION_REVERTED`（仮称。列の上限20文字以内）の行を追加する。状態の更新と同じトランザクションで追加する | 仕様書の改訂（操作種別の追加。Version 1.8相当）、`ExpenseReview`の種別の追加、APIの履歴表示（画面の表示名）。スキーマ変更は不要（`action`はVARCHAR(20)）。一意制約により二重の復旧も防げる。`MIGRATED`の行が残るため、復旧した行は`HISTORY_EXISTS`で再移行の対象外になる。再移行を認めるかの決定が必要 |
-| B. 別の監査テーブルを作る | 移行・復旧の操作を記録するテーブルを追加し、復旧と同じトランザクションで書き込む | スキーマ1.45.0以上への更新、`AccountingInstaller`・スキーマのテスト・モジュールのテーブル一覧の変更。元の作業ツリーの未統合の変更もスキーマ番号を上げる予定のため、番号の調整が必要。履歴の削除をやめるかは別途決める |
-| C. 部分復旧を行わない | 復旧が必要な場合は8.2の全体復旧に限る。または、移行した行はそのまま残し、業務上の訂正（既存の取消の原則）で対処する | コード変更は不要（`restore`を使わない、または削除する）。全体復旧ではバックアップの後に書き込まれたデータが失われる |
-| D. 現状のまま（削除）とし、記録は運用で残す | ログ・出力・作業記録を保管する | 仕様書の追記専用の原則の例外を、明示的に承認する必要がある |
-
-どの案でも、状態の更新と記録の追加（または削除）は1つのトランザクションで行える（A・Bは既存のトランザクション内で`INSERT`を追加するだけで、失敗時は全体をロールバックする）。部分的にしか実行されない状態は生じない。
-
-**推奨（判断材料）：** 監査の観点ではAが最も小さい変更で追記専用の原則を守れるが、仕様の改訂と再移行の扱いの決定が必要である。決定までは、Cの運用（`restore`を実行しない）とする。
+**画面：** このブランチには、Expenseの履歴を表示する画面がない（モバイル・Webのコードで履歴を参照する箇所はない。コードで確認）。APIの`reviews`は種別の文字列をそのまま返すため、将来の画面では`MIGRATED`・`MIGRATION_REVERTED`の表示名を用意する必要がある。元の作業ツリーにある未統合の画面（「旧形式（確認待ち）」の表示）が履歴を表示するかは未確認である。
 
 ## 9. 残る制約と、実施前に確認すること
 
@@ -430,7 +464,7 @@ SELECT e.id FROM wp_stageart_expenses e
 - 本番・開発のサーバーで、WP-CLIが使えるかを確認していない。開発環境ではSeedDataの手順でWP-CLIを使っている。
 - PHPエラーログの出力先を確認していない。
 - 仕訳と仕訳明細は、再判定の前に主キーでロックする（3.1）。ロックの実動作、デッドロックの有無、ギャップロックによる待ちの程度は、実MySQLで確認する必要がある。実行は利用の少ない時間帯に行う。
-- 部分復旧（8.1）は、履歴の追記専用の原則と衝突するため保留とした（8.4）。
+- 部分復旧（8.1）は、履歴を削除せず`MIGRATION_REVERTED`を追記する（仕様書Version 1.8、8.4）。実行者は`--user`で申告されたWordPressユーザーのPersonとして記録され、認証ではない（8.1「実行者の識別」）。
 - 部分復旧の条件（8.1）は、移行が書いた値と履歴が残っていることを確かめるものである。別の処理が移行と同じ値を書き直した場合は区別できない（その場合、戻しても失われる情報はない）。
 - 指紋はSHA-256の先頭16桁で、事前確認の内容が変わっていないことを確かめるためのものである。認証の仕組みではない。
 
@@ -440,8 +474,9 @@ SELECT e.id FROM wp_stageart_expenses e
 |---|---|
 | `LegacyExpenseMigrationClassifierTest` | 判定条件ごとの結果（仕訳のOrganization・Accountごとの借方・貸方・Account・行の形式を含む） |
 | `LegacyExpenseMigrationTest` | 事前確認が書き込まないこと、指紋の一致・不一致、InnoDB以外での拒否、1件ごとのトランザクション、状態の更新・履歴の追加・COMMIT・開始の失敗時のロールバックとログ、ロック後の再判定、再実行で二重移行・二重履歴がないこと、仕訳への書き込みがないこと、ログの内容。ロックの順序と対象（Expense→仕訳（主キー）→仕訳の明細、事前確認ではロックしない）、事前確認の後に仕訳が取り消された場合の拒否、ロック直前に仕訳の明細が変わった場合にCONFIRMEDのまま残ること、各ロックの失敗時のロールバック |
-| `LegacyExpenseMigrationRestoreTest` | 部分復旧の確認が書き込まないこと、ID順のロック、確認の後に履歴・明細が変わった場合の全体のロールバック、明細のロック失敗時のロールバック、復旧後に履歴から移行の記録が消えること（現状の確認）、正常な復旧で対象だけが移行前と同じ値に戻り、仕訳が変わらないこと、移行後に変更された行（状態・申請回・差し戻し・金額・承認者・申請者・仕訳・履歴・明細）の拒否、1件でも不一致があれば全体を拒否すること、ロック直前の変更や各段階の失敗で全体がロールバックされること、InnoDB以外とID未指定での拒否、仕訳をロック・変更しないこと、ログの内容 |
-| `LegacyExpenseMigrationRestoreScriptTest` | 部分復旧スクリプトの確認・復旧・拒否、引数の誤り、WP-CLI以外での無動作、出力の内容 |
+| `LegacyExpenseMigrationRestoreTest` | 部分復旧の確認が書き込まないこと、ID順のロック、確認の後に履歴・明細が変わった場合の全体のロールバック、明細のロック失敗時のロールバック、`MIGRATED`の行が残り`MIGRATION_REVERTED`が同じトランザクションで追記されること（記録する値を含む）、履歴の追記の失敗で状態の更新もロールバックされること、移行取消したExpenseが再び候補にならないこと、移行の履歴が矛盾する場合に判定不能になること、移行取消した行の二重の取消の拒否、実行者・取消理由がない場合の拒否、`DELETE`を発行しないこと、正常な復旧で対象だけが移行前と同じ値に戻り、仕訳が変わらないこと、移行後に変更された行（状態・申請回・差し戻し・金額・承認者・申請者・仕訳・履歴・明細）の拒否、1件でも不一致があれば全体を拒否すること、ロック直前の変更や各段階の失敗で全体がロールバックされること、InnoDB以外とID未指定での拒否、仕訳をロック・変更しないこと、ログの内容 |
+| `LegacyExpenseMigrationRestoreScriptTest` | 部分復旧スクリプトの確認・復旧・拒否、`--user`がない・Personに結び付いていない・取消理由がない場合の停止、実行者の記録と出力、引数の誤り、WP-CLI以外での無動作、出力に取消理由が出ないこと |
+| `WordPressExpenseRepositoryTest` | `MIGRATED`と`MIGRATION_REVERTED`を持つExpenseが読み込め、APIの結果に日時順で両方が出ること |
 | `LegacyExpenseMigrationPreflightTest` | 本番で想定される行の種類を1つのDBに入れた場合の、事前確認の結果、実行の前後での状態・金額・仕訳の件数と合計、再実行、ログの内容 |
 | `LegacyExpenseMigrationScriptTest` | WP-CLIスクリプトの事前確認・実行・拒否、スキーマが古い場合の停止、WP-CLI以外での無動作、出力の内容 |
 | `SchemaUpgradePathTest` | スキーマ更新（通常のリクエスト）では移行が実行されず、Expenseが変わらないこと |
