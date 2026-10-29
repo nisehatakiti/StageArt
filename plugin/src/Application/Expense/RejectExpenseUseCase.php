@@ -11,13 +11,16 @@ use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\Expense\Expense;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
+use StageArt\Domain\Expense\ExpenseSelfApprovalException;
 
 /**
  * ExpenseApprovalWorkflow.md "Rejection": SUBMITTED -> REJECTED with a
  * required reason, kept in the Expense's history. Rejecting needs the
  * same Capability as approving (`Expense.Approve`: PrimaryManager,
  * 会計管理者 or 代理人),
- * checked here in the Backend rather than only by hiding UI. No Journal
+ * checked here in the Backend rather than only by hiding UI. As with
+ * approving, nobody rejects an Expense they submitted, created or are
+ * to be reimbursed for (refused as access denied). No Journal
  * Entry is involved, so rejecting is allowed whether or not the
  * Organization has accounting enabled. The Expense row is locked for the
  * transaction; the applicant is notified after the commit.
@@ -70,7 +73,12 @@ final class RejectExpenseUseCase
                 throw new ExpenseNotFoundException($command->expenseId);
             }
 
-            $locked->reject($requesterId, $command->reason);
+            try {
+                $locked->reject($requesterId, $command->reason);
+            } catch (ExpenseSelfApprovalException $exception) {
+                throw new ExpenseAccessDeniedException($exception->getMessage());
+            }
+
             $this->expenses->save($locked);
 
             return $locked;

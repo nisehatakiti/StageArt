@@ -285,6 +285,7 @@ final class Expense
     public function reject(PersonId $rejectedBy, string $reason): void
     {
         $this->assertStatus([ExpenseStatus::SUBMITTED], 'Only a SUBMITTED Expense can be rejected.');
+        $this->assertNotOwnExpense($rejectedBy, 'rejected');
 
         $reason = trim($reason);
 
@@ -318,11 +319,7 @@ final class Expense
             );
         }
 
-        if ($this->isOwnExpense($approver)) {
-            throw new ExpenseSelfApprovalException(
-                'An Expense cannot be approved by the Person who submitted or created it, or who is to be reimbursed for it.'
-            );
-        }
+        $this->assertNotOwnExpense($approver, 'approved');
 
         $requested = (int) $this->requestedAmount;
 
@@ -382,13 +379,27 @@ final class Expense
 
     /**
      * True when `$person` submitted, created, or is to be reimbursed for
-     * this Expense - the people who may not approve it.
+     * this Expense - the people who may neither approve nor reject it.
      */
     public function isOwnExpense(PersonId $person): bool
     {
         return $this->createdBy->equals($person)
             || ($this->submittedBy !== null && $this->submittedBy->equals($person))
             || ($this->payerPersonId !== null && $this->payerPersonId->equals($person));
+    }
+
+    /**
+     * Approving and rejecting are the reviewer's decisions and share one
+     * rule: nobody decides on their own Expense, whatever Role they hold.
+     * The applicant's own steps (withdraw, resubmit) are not reviews.
+     */
+    private function assertNotOwnExpense(PersonId $reviewer, string $decision): void
+    {
+        if ($this->isOwnExpense($reviewer)) {
+            throw new ExpenseSelfApprovalException(
+                "An Expense cannot be {$decision} by the Person who submitted or created it, or who is to be reimbursed for it."
+            );
+        }
     }
 
     private function startSubmissionRevision(PersonId $submittedBy): void

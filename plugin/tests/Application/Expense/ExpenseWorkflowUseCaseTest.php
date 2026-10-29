@@ -884,6 +884,74 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         ];
     }
 
+    /**
+     * 自己却下の禁止 (Version 1.7): an approver may not reject an Expense
+     * they created and submitted, nor one that reimburses them - whether
+     * PrimaryManager, 会計管理者 or 代理人. The refusal is access denied and
+     * leaves the Expense, its history, the Journal and the notifications
+     * as they were; another approver still rejects it.
+     *
+     * @dataProvider selfRejections
+     */
+    public function test_no_approver_can_reject_an_expense_they_submitted_or_are_reimbursed_by(int $reviewer, bool $asPayer): void
+    {
+        $id = $asPayer
+            ? $this->submittedBy(3, [5000], $this->person[$reviewer]->id()->toString())
+            : $this->submittedBy($reviewer);
+        $entries = count($this->journalEntries->all());
+        $notified = $this->notified();
+
+        try {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, $reviewer, '不備あり'));
+            $this->fail('Rejecting one\'s own Expense must be refused.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $expense = $this->expenses->findById(ExpenseId::fromString($id));
+            $this->assertSame(ExpenseStatus::SUBMITTED, $expense->status()->toString());
+            $this->assertNull($expense->rejectedBy());
+            $this->assertNull($expense->rejectionReason());
+            $this->assertSame([ExpenseReview::SUBMITTED], array_map(static fn (ExpenseReview $review): string => $review->action(), $expense->reviews()));
+        }
+
+        $this->assertCount($entries, $this->journalEntries->all());
+        $this->assertSame($notified, $this->notified());
+
+        $this->assertSame(ExpenseStatus::REJECTED, $this->rejectExpense->execute(new RejectExpenseCommand($id, 7, '不備あり'))->status);
+    }
+
+    /**
+     * @return array<string, array{int, bool}>
+     */
+    public static function selfRejections(): array
+    {
+        return [
+            'primary manager submits' => [1, false],
+            'primary manager is reimbursed' => [1, true],
+            'accounting manager submits' => [4, false],
+            'accounting manager is reimbursed' => [4, true],
+            'proxy manager submits' => [8, false],
+            'proxy manager is reimbursed' => [8, true],
+        ];
+    }
+
+    /**
+     * The ban covers deciding on one's own Expense, not the applicant's
+     * own steps: an approver who submitted an Expense still withdraws it,
+     * and resubmits it once someone else has rejected it.
+     */
+    public function test_an_approver_still_withdraws_and_resubmits_their_own_expense(): void
+    {
+        $id = $this->submittedBy(8);
+
+        $this->assertSame(ExpenseStatus::DRAFT, $this->applicantTransitions->withdraw(new ExpenseTransitionCommand($id, 8))->status);
+        $this->applicantTransitions->submit(new ExpenseTransitionCommand($id, 8));
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '金額を確認してください'));
+
+        $result = $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($id, 8));
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $result->status);
+        $this->assertSame(3, $result->revision);
+    }
+
     public function test_a_draft_or_posted_expense_cannot_be_rejected(): void
     {
         $draft = $this->draftBy(2);

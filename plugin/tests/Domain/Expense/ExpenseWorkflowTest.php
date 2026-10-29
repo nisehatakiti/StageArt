@@ -209,6 +209,36 @@ final class ExpenseWorkflowTest extends TestCase
         }
     }
 
+    /**
+     * Rejecting follows the same rule as approving: the creator, the
+     * submitter and the payer may not reject the Expense, and the
+     * refusal leaves it SUBMITTED with no new review entry.
+     */
+    public function test_nobody_rejects_an_expense_they_created_submitted_or_are_reimbursed_by(): void
+    {
+        $payer = PersonId::generate();
+        $submitter = PersonId::generate();
+        $cases = ['creator' => $this->applicant, 'submitter' => $submitter, 'payer' => $payer];
+
+        foreach ($cases as $case => $person) {
+            $expense = $this->draft([5000], $payer);
+            $expense->submit($submitter);
+
+            try {
+                $expense->reject($person, '不備あり');
+                $this->fail("The {$case} must not reject the Expense.");
+            } catch (ExpenseSelfApprovalException $exception) {
+                $this->assertSame(ExpenseStatus::SUBMITTED, $expense->status()->toString(), $case);
+                $this->assertNull($expense->rejectedBy(), $case);
+                $this->assertNull($expense->rejectionReason(), $case);
+                $this->assertSame(['1:SUBMITTED'], $this->actions($expense), $case);
+            }
+
+            $expense->reject($this->approver, '不備あり');
+            $this->assertSame(ExpenseStatus::REJECTED, $expense->status()->toString(), $case);
+        }
+    }
+
     public function test_approval_of_a_revision_other_than_the_current_one_is_refused(): void
     {
         $expense = $this->submitted([5000]);
