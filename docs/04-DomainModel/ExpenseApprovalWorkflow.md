@@ -504,6 +504,8 @@ Schema 1.44.0の移行では、CONFIRMEDのうち、POSTED済みのJournal Entry
 
 下書きJournal Entryしかないもの、Journal Entryがない・複数ある・金額が一致しないもの等は自動転記・自動変換せず、個別確認の対象としてCONFIRMEDのまま残す。
 
+本番移行の判定条件・事前確認・バックアップ・復旧の手順案は`docs/handoffs/LegacyExpenseMigration-Runbook.md`に記載する（2026-10-29。本番での実施は別途承認を得る）。
+
 旧確定APIは呼び出し元の移行確認まで削除せず、新しいCONFIRMEDを作らないよう明示的に拒否する。
 
 ---
