@@ -25,6 +25,20 @@ use Throwable;
  * Expense passes check(); it then restores them all in one transaction,
  * checking each again once its row is locked, and rolls everything back
  * when any step fails. No Journal Entry is read for update or written.
+ *
+ * Inside the transaction, each Expense row is locked, then its history
+ * and its lines, Expenses in id order. The history and lines are read
+ * with locking reads so that, under REPEATABLE READ, the check sees
+ * their current rows rather than the snapshot taken at the first
+ * Expense; the application writes both only after updating the Expense
+ * row (WordPressExpenseRepository::save()), which waits for the first
+ * lock. The Journal Entry is read without a lock: the check uses only
+ * its source event, which nothing changes after creation, and no
+ * Journal Entry row is ever deleted.
+ *
+ * NOTE: deleting the MIGRATED row conflicts with the append-only history
+ * rule (ExpenseApprovalWorkflow.md, Version 1.3: 過去の履歴を上書き・削除
+ * しない). The runbook holds the partial restore until that is decided.
  */
 final class LegacyExpenseMigrationRestore
 {
@@ -110,8 +124,13 @@ final class LegacyExpenseMigrationRestore
         $current = null;
         $failure = null;
 
+        // One lock order for every run, so two overlapping restores wait
+        // for each other instead of deadlocking.
+        $lockOrder = $ids;
+        sort($lockOrder, SORT_STRING);
+
         try {
-            foreach ($ids as $id) {
+            foreach ($lockOrder as $id) {
                 $current = $id;
                 $failure = self::restoreOne($wpdb, $t, $id);
 
@@ -249,7 +268,11 @@ final class LegacyExpenseMigrationRestore
             return $no(self::HISTORY_MISMATCH);
         }
 
-        $lines = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$t['lines']} WHERE expense_id = %s", $id), ARRAY_A) ?: [];
+        $lines = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$t['lines']} WHERE expense_id = %s{$forUpdate}", $id), ARRAY_A) ?: [];
+
+        if ($lock) {
+            LegacyExpenseMigration::assertLocked($wpdb);
+        }
         $snapshot = json_decode((string) ($migrated['lines_snapshot'] ?? ''), true);
         $current = array_map(
             static fn (array $line): array => [

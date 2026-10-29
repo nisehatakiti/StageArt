@@ -53,7 +53,7 @@ final class FakeExpenseMigrationDatabase
     /**
      * Every locking read (SELECT ... FOR UPDATE) in the order issued:
      * "expense:<id>", "journal_entry:<id>", "journal_entry_lines:<entry id>",
-     * "expense_reviews:<expense id>".
+     * "expense_reviews:<expense id>", "expense_lines:<expense id>".
      *
      * @var string[]
      */
@@ -172,7 +172,11 @@ final class FakeExpenseMigrationDatabase
                 return $this->where('stageart_expenses', ['status' => $values[0]]);
             }
 
-            if (preg_match('/^SELECT \* FROM \S+stageart_expense_lines WHERE expense_id = %s$/', $template)) {
+            if (preg_match('/^SELECT \* FROM \S+stageart_expense_lines WHERE expense_id = %s( FOR UPDATE)?$/', $template, $match)) {
+                if (isset($match[1]) && ! $this->lock("expense_lines:{$values[0]}", $wpdb)) {
+                    return null;
+                }
+
                 return $this->where('stageart_expense_lines', ['expense_id' => $values[0]]);
             }
 

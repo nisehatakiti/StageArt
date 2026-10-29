@@ -138,7 +138,10 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         $this->assertSame(['START', 'COMMIT'], $this->db->transactionLog);
         $this->assertEquals($this->beforeMigration['stageart_expenses'], $this->db->tables['stageart_expenses']);
         $this->assertSame([], $this->db->tables['stageart_expense_reviews']);
-        $this->assertSame(['expense:migratable', 'expense_reviews:migratable', 'expense:migratable-2', 'expense_reviews:migratable-2'], $this->db->locks);
+        $this->assertSame([
+            'expense:migratable', 'expense_reviews:migratable', 'expense_lines:migratable',
+            'expense:migratable-2', 'expense_reviews:migratable-2', 'expense_lines:migratable-2',
+        ], $this->db->locks);
     }
 
     /**
@@ -291,6 +294,90 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
     }
 
     /**
+     * History or lines another session changed after the check, while
+     * the restore was already holding an earlier Expense: the locked
+     * re-check sees the current rows and rolls everything back.
+     *
+     * @dataProvider changesAfterTheCheck
+     */
+    public function test_history_or_lines_changed_after_the_check_roll_the_whole_restore_back(string $change, string $reason): void
+    {
+        $this->db->onLock = static function (string $id, array &$tables) use ($change): void {
+            if ($id !== 'migratable-2') {
+                return;
+            }
+
+            if ($change === 'history') {
+                $tables['stageart_expense_reviews'][] = [
+                    'id' => 'later', 'expense_id' => 'migratable-2', 'revision' => 2, 'action' => 'SUBMITTED',
+                    'requested_amount' => 800, 'approved_amount' => null, 'lines_snapshot' => '[]', 'actor_person_id' => 'creator', 'acted_at' => '2026-11-01 10:00:00',
+                ];
+
+                return;
+            }
+
+            foreach ($tables['stageart_expense_lines'] as $index => $row) {
+                if ($row['expense_id'] === 'migratable-2') {
+                    $tables['stageart_expense_lines'][$index]['amount'] = '900';
+                }
+            }
+        };
+
+        $result = R::restore($this->wpdb, ['migratable', 'migratable-2']);
+
+        $this->assertSame(R::OUTCOME_ROLLED_BACK, $result['outcome']);
+        $this->assertSame($reason, $result['reason']);
+        $this->assertSame('migratable-2', $result['expense_id']);
+        $this->assertSame(['START', 'ROLLBACK'], $this->db->transactionLog);
+        $this->assertSame('POSTED', $this->data->expensesById()['migratable']['status']);
+        $this->assertCount(1, $this->data->historyOf('migratable'));
+        $this->assertSame('POSTED', $this->data->expensesById()['migratable-2']['status']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function changesAfterTheCheck(): array
+    {
+        return [
+            'a history row added' => ['history', R::HISTORY_MISMATCH],
+            'a line amount changed' => ['lines', R::LINES_CHANGED],
+        ];
+    }
+
+    /**
+     * Whatever order the operator lists them in, Expenses are locked in
+     * id order, so two overlapping restores cannot lock in opposite orders.
+     */
+    public function test_expenses_are_locked_in_id_order(): void
+    {
+        $result = R::restore($this->wpdb, ['migratable-2', 'migratable']);
+
+        $this->assertSame(R::OUTCOME_RESTORED, $result['outcome']);
+        $this->assertSame(['migratable-2', 'migratable'], $result['restored']);
+        $expenseLocks = array_values(array_filter($this->db->locks, static fn (string $lock): bool => str_starts_with($lock, 'expense:')));
+        $this->assertSame(['expense:migratable', 'expense:migratable-2'], $expenseLocks);
+    }
+
+    /**
+     * The restore as it stands: the MIGRATED row is deleted, so the
+     * history itself no longer shows that the Expense was migrated and
+     * put back - only the log and the operator's records do. This pins
+     * the current behaviour that conflicts with the append-only history
+     * rule; see the runbook's 8.1 hold.
+     */
+    public function test_after_a_restore_the_history_no_longer_shows_the_migration_only_the_log_does(): void
+    {
+        $migratedRow = $this->data->historyOf('migratable')[0];
+
+        R::restore($this->wpdb, ['migratable']);
+
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertStringContainsString('restored to CONFIRMED: migratable', $this->logged());
+        $this->assertStringNotContainsString((string) $migratedRow['id'], $this->logged());
+    }
+
+    /**
      * @dataProvider failingSteps
      *
      * @param array<string, mixed> $failures
@@ -318,6 +405,7 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
             'the transaction does not start' => [['START' => true], R::FAILED_TRANSACTION_START, ['START']],
             'the expense lock' => [['LOCK' => 'expense:migratable-2'], R::FAILED_LOCK, ['START', 'ROLLBACK']],
             'the history lock' => [['LOCK' => 'expense_reviews:migratable'], R::FAILED_LOCK, ['START', 'ROLLBACK']],
+            'the lines lock' => [['LOCK' => 'expense_lines:migratable-2'], R::FAILED_LOCK, ['START', 'ROLLBACK']],
             'the update' => [['RESTORE_UPDATE' => 'migratable-2'], R::FAILED_UPDATE, ['START', 'ROLLBACK']],
             'the history delete' => [['DELETE' => 'migratable-2'], R::FAILED_HISTORY_DELETE, ['START', 'ROLLBACK']],
             'the commit' => [['COMMIT' => 'migratable-2'], R::FAILED_COMMIT, ['START', 'COMMIT', 'ROLLBACK']],
