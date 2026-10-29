@@ -1,11 +1,13 @@
-# 旧形式Expense移行（Schema 1.44.0）運用手順案
+# 旧形式Expense移行（Schema 1.44.0・1.45.0）運用手順案
 
-作成日: 2026-10-29（同日改訂：移行取消の履歴（仕様書Version 1.8）、再移行の禁止、実行者の記録。それ以前の改訂：部分復旧の保留と競合条件・監査性の整理、コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加。再改訂：仕訳のロック、部分復旧の条件確認とスクリプト化）
+作成日: 2026-10-29（同日改訂：実行権限と運用監査テーブル（仕様書Version 1.9、Schema 1.45.0）。それ以前の改訂：移行取消の履歴（仕様書Version 1.8）、再移行の禁止、実行者の記録。それ以前の改訂：部分復旧の保留と競合条件・監査性の整理、コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加。再改訂：仕訳のロック、部分復旧の条件確認とスクリプト化）
 対象ブランチ: `integrate/expense-approval-20261029`
 対象コード:
 - `plugin/src/Accounting/LegacyExpenseMigration.php`（事前確認・実行）
 - `plugin/src/Accounting/LegacyExpenseMigrationClassifier.php`（判定）
 - `plugin/src/Accounting/LegacyExpenseMigrationRestore.php`（部分復旧の確認・実行）
+- `plugin/src/Accounting/LegacyExpenseMigrationOperator.php`（実行者の確認）
+- `plugin/src/Accounting/LegacyExpenseMigrationAudit.php`（運用監査の記録）
 - `plugin/scripts/legacy_expense_migration.php`（移行をWP-CLIから実行するスクリプト）
 - `plugin/scripts/legacy_expense_migration_restore.php`（部分復旧をWP-CLIから実行するスクリプト）
 
@@ -19,7 +21,7 @@
 
 | 工程 | 実行のきっかけ | Expenseのデータ |
 |---|---|---|
-| コード配置・スキーマ更新（1.44.0） | 配置後の最初のWebリクエスト（`SchemaUpgrader::maybeUpgrade()`） | **変更しない**（列とテーブルの追加のみ） |
+| コード配置・スキーマ更新（1.44.0の列・テーブル、1.45.0の監査テーブル） | 配置後の最初のWebリクエスト（`SchemaUpgrader::maybeUpgrade()`） | **変更しない**（列とテーブルの追加のみ） |
 | 事前確認（preview） | 運用者がWP-CLIで実行 | 読み取りのみ |
 | 移行の実行（execute） | 運用者がWP-CLIで、事前確認の指紋（fingerprint）を指定して実行 | 候補だけをPOSTEDへ |
 
@@ -33,12 +35,13 @@
 # 事前確認（何も書き込まない）
 wp eval-file plugin/scripts/legacy_expense_migration.php --path=<wordpress-root>
 
-# 実行（事前確認の内容の承認後、バックアップ取得後に限る）
-wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> --path=<wordpress-root>
+# 実行（事前確認の内容の承認後、バックアップ取得後に限る。運用者自身のWordPressユーザーで）
+wp --user=<運用者のログイン名> eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> --path=<wordpress-root>
 ```
 
 - スクリプトのパスは、サーバー上に配置されたプラグイン内のパスに置き換える。
-- スキーマのバージョンが1.44.0未満の場合は、どちらのモードもExpenseを読まずに停止する。
+- スキーマのバージョンが1.45.0未満の場合は、どちらのモードもExpenseを読まずに停止する（監査テーブルが必要なため）。
+- 実行には、`stageart_manage_accounts`を持ち、StageArtのPersonに結び付いたWordPressユーザーを`--user`で指定する（3.2）。
 
 ## 2. 事前確認モード（preview）の動作
 
@@ -80,6 +83,7 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 | `CHANGED_SINCE_PREVIEW` | ロック後の再判定で移行できなくなっていた（行が消えた、Journal Entryが取り消された等） |
 | `UPDATE_FAILED` | 状態の更新が失敗した、または更新件数が1件でなかった |
 | `HISTORY_INSERT_FAILED` | 履歴の追加が失敗した（状態の更新も巻き戻す） |
+| `AUDIT_INSERT_FAILED` | 監査テーブルへの成功の記録が失敗した（状態の更新・履歴の追加も巻き戻す。3.2） |
 | `COMMIT_FAILED` | COMMITが失敗した |
 | `UNEXPECTED_ERROR` | 上記以外の例外 |
 
@@ -111,6 +115,99 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 - 主キーでのロックの前に行う、IDの検索はロックしない。REPEATABLE READでは、検索の後に別のセッションが同じExpenseの`ExpenseConfirmed`の仕訳を**新しく追加**した場合、それを見落とす可能性がある。アプリケーションにはその処理がないため、起こりうるのはDBを直接操作した場合に限られる。
 - 明細の`FOR UPDATE`は、`journal_entry_id`の非一意インデックスに対してギャップロックを伴う。COMMITまでの短い間、隣り合う値への明細の追加が待たされることがある。実行は利用の少ない時間帯に行う。
 - ロック・デッドロック・タイムアウトの実際の動作は、偽のDBでは確認できない。テストで確認したのは、ロックの順序・対象と、ロック失敗時のロールバックだけである。
+
+### 3.2 実行権限と運用監査（Schema 1.45.0、仕様書Version 1.9）
+
+**実行権限：** 移行の実行（`execute`）と移行取消（`restore`）は、WP-CLIの`--user`で指定したWordPressユーザーが次のすべてを満たす場合だけ行える。事前確認（`preview`）と取消の確認（`check`）は読み取りだけなので、権限を確認しない。
+
+| 確認（この順） | 満たさない場合の理由コード |
+|---|---|
+| `--user`が指定されている（現在のユーザーIDが1以上） | `OPERATOR_NOT_GIVEN` |
+| WordPressがそのユーザーを知っている（`get_userdata()`） | `OPERATOR_UNKNOWN_USER` |
+| System Administrator権限`stageart_manage_accounts`を持つ（`user_can()`。`stageart_admin`ロールとWordPressの`administrator`ロールに付与されている） | `OPERATOR_NOT_PERMITTED` |
+| そのユーザーに結び付いたPerson（`stageart_people.wp_user_id`）がある | `OPERATOR_NO_PERSON` |
+| 結び付いたPersonが1件だけ（DBの一意制約で通常は起きない） | `OPERATOR_AMBIGUOUS_PERSON` |
+| PersonのIDが正しい形式（UUID） | `OPERATOR_INVALID_PERSON` |
+
+満たさない場合、スクリプトは`Refused (<理由コード>) ... Nothing was written.`と表示して終了する。Expense・履歴・仕訳だけでなく、監査テーブルにも書き込まない（記録する実行者を特定できないため）。通常の経費の申請・承認・編集等の権限は変更していない。
+
+`--user`は実行するユーザーの**指定であって認証ではない**。WP-CLIを実行できる者は、任意のユーザーを指定できる。権限の確認は、指定できるユーザーを権限者に限定するものであり、操作した本人を証明しない。WP-CLIを実行できるサーバー上のアカウントの管理と、作業記録との照合が引き続き必要である。
+
+**監査テーブル`wp_stageart_legacy_expense_migration_audit`：** 業務の履歴（`stageart_expense_reviews`）とは別に、移行と移行取消の運用記録を追記する。
+
+| 列 | 内容 |
+|---|---|
+| `id` | 監査レコードID（UUID） |
+| `run_id` | 実行ID。1回の`execute`・`restore`で共通 |
+| `operation` | `LEGACY_EXPENSE_MIGRATION`（移行）・`LEGACY_EXPENSE_MIGRATION_REVERT`（移行取消） |
+| `expense_id` | 対象のExpense ID。実行全体の記録（移行の`PLAN_CHANGED`）ではNULL |
+| `outcome` | `SUCCEEDED`・`FAILED`（ロールバックした）・`REFUSED`（何もしなかった） |
+| `reason_code` | 失敗・拒否の理由コード。成功ではNULL |
+| `success_key` | 成功の行だけExpense ID（一意制約用）。それ以外はNULL |
+| `plan_fingerprint` | 移行の実行で指定された指紋（16桁の16進数に整えたもの） |
+| `wp_user_id` | WordPressユーザーID |
+| `person_id` | StageArtのPerson ID |
+| `os_user` | OSアカウント。posix拡張があれば実効ユーザー名、なければ環境変数（`env:`付き）、取得できなければNULL |
+| `acted_at_utc` | 実行日時（UTC。PHPの`gmdate()`） |
+
+一意制約`(operation, success_key)`により、1件のExpenseについて成功した移行と成功した移行取消は、それぞれ1件までしか記録されない（失敗・拒否の行は何度でも記録できる）。
+
+**何をいつ記録するか：**
+
+| 場面 | 記録 | トランザクション |
+|---|---|---|
+| 移行に成功したExpense | `SUCCEEDED`（Expenseごと） | そのExpenseの状態の更新・`MIGRATED`履歴の追加と同じトランザクション。監査の追加に失敗すると`AUDIT_INSERT_FAILED`で全部戻る |
+| 移行でロールバックしたExpense | `FAILED`と理由コード | ロールバックの後に単独で |
+| 指紋が一致しない（`PLAN_CHANGED`） | `REFUSED`（`expense_id`はNULL） | 単独で |
+| 移行取消に成功した一覧 | `SUCCEEDED`（Expenseごと） | 一覧全体の1つのトランザクション。どれか1件の監査の追加に失敗すると、全件が戻る |
+| 移行取消でロールバックした一覧 | 一覧の全件に`FAILED`。原因のExpenseはその理由コード、ほかは`RUN_ROLLED_BACK`（開始・COMMITの失敗は全件がその理由コード） | ロールバックの後に単独で |
+| 移行取消の一覧が条件に合わない（`TARGET_MISMATCH`） | 一覧の全件に`REFUSED`。条件に合わない行はその理由コード、ほかは`RUN_REFUSED` | 単独で |
+| 運用者を特定できない・権限がない、取消理由がない、IDがない、テーブルがInnoDBでない | 記録しない（ログと出力だけ） | — |
+
+単独で書く記録（`FAILED`・`REFUSED`）は、取り消されるトランザクションに含められない。この記録自体に失敗した場合は、出力に`The audit row could not be written: <ID>`と表示し、ログに`audit record failed`を残し、スクリプトは失敗として終了する。この場合、DBには失敗の記録が残らない（ログにだけ残る）。
+
+**確認SQL（読み取りのみ）：**
+
+```sql
+-- 1回の実行の記録（出力の Run: <ID> を指定）
+SELECT operation, expense_id, outcome, reason_code, wp_user_id, person_id, os_user, acted_at_utc
+  FROM wp_stageart_legacy_expense_migration_audit WHERE run_id = '<実行ID>' ORDER BY acted_at_utc, expense_id;
+
+-- 成功した移行の件数が、MIGRATED履歴の件数と一致する
+SELECT (SELECT COUNT(*) FROM wp_stageart_legacy_expense_migration_audit
+         WHERE operation = 'LEGACY_EXPENSE_MIGRATION' AND outcome = 'SUCCEEDED') AS audit_migrated,
+       (SELECT COUNT(*) FROM wp_stageart_expense_reviews WHERE action = 'MIGRATED') AS history_migrated;
+
+-- 成功した移行取消の件数が、MIGRATION_REVERTED履歴の件数と一致する
+SELECT (SELECT COUNT(*) FROM wp_stageart_legacy_expense_migration_audit
+         WHERE operation = 'LEGACY_EXPENSE_MIGRATION_REVERT' AND outcome = 'SUCCEEDED') AS audit_reverted,
+       (SELECT COUNT(*) FROM wp_stageart_expense_reviews WHERE action = 'MIGRATION_REVERTED') AS history_reverted;
+
+-- MIGRATED履歴があるのに、成功の監査記録がないExpense（Schema 1.45.0より前の移行など）
+SELECT r.expense_id FROM wp_stageart_expense_reviews r
+  LEFT JOIN wp_stageart_legacy_expense_migration_audit a
+    ON a.operation = 'LEGACY_EXPENSE_MIGRATION' AND a.success_key = r.expense_id
+ WHERE r.action = 'MIGRATED' AND a.id IS NULL;                       -- 新しい構成での移行なら0件
+
+-- 失敗・拒否の一覧
+SELECT run_id, operation, expense_id, outcome, reason_code, acted_at_utc
+  FROM wp_stageart_legacy_expense_migration_audit WHERE outcome <> 'SUCCEEDED' ORDER BY acted_at_utc;
+```
+
+**DBの監査記録で証明できること・できないこと：**
+
+| 事項 | DBで証明できるか | 補足 |
+|---|---|---|
+| どのExpenseを、どの操作で、いつ（UTC）、どの実行で処理したか、結果と理由 | できる（成功は確実。失敗・拒否は記録に成功した場合） | 成功は状態の変更と同じトランザクション |
+| 指定されたWordPressユーザー・Person・OSアカウント | できる | ただし申告されたもの |
+| 指定されたユーザーが、実行の時点で権限を持っていたこと | 間接的に（権限がなければ記録されない） | 実行の後に権限が外されても、記録からは分からない |
+| 操作した本人が、そのユーザー本人であること | **できない** | `--user`は認証ではない |
+| 記録が改ざんされていないこと | **できない** | StageArtは追記だけを行うが、DBを直接操作できる者は変更できる |
+| 承認の記録（誰が承認したか、承認番号） | **できない** | 作業記録で残す |
+| Schema 1.45.0より前に行われた移行・移行取消 | **できない** | 監査テーブルがなかった |
+| 監査記録の追加に失敗した失敗・拒否 | **できない** | ログにだけ残る（ログの出力先と保持期間は未確認） |
+
+PHPエラーログとWP-CLIの出力にも、実行ID・Person ID・WordPressユーザーID・OSアカウントが残る。ただしログの出力先と保持期間は未確認であり、監査記録の正本はDBの監査テーブルとする。WP-CLIの出力は作業記録として保存する。
 
 ## 4. 判定条件（仕訳の整合性を含む）
 
@@ -189,11 +286,12 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 ### 工程1：コード配置（スキーマ更新のみ）
 
 1. 配置前のプラグインコードと、DBのバックアップを取得する（工程3と同じ方法）。
-2. コードを配置する。最初のリクエストでスキーマが1.44.0になる。Expenseのデータは変わらない。
+2. コードを配置する。最初のリクエストでスキーマが1.45.0になる（1.44.0の列・テーブルと1.45.0の監査テーブル）。Expenseのデータは変わらない。
 3. 確認する（読み取りのみ）。
 
 ```sql
-SELECT option_value FROM wp_options WHERE option_name = 'stageart_db_schema_version';  -- 1.44.0
+SELECT option_value FROM wp_options WHERE option_name = 'stageart_db_schema_version';  -- 1.45.0
+SELECT COUNT(*) FROM wp_stageart_legacy_expense_migration_audit;                     -- 0（テーブルがあること）
 SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;                    -- 配置前と同じ
 SELECT COUNT(*) FROM wp_stageart_expense_reviews WHERE action = 'MIGRATED';           -- 0
 ```
@@ -231,8 +329,8 @@ SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES
 
 ### 工程5：実行
 
-1. `execute <指紋>`で実行し、出力を保存する。
-2. `Refused`が出た場合は何も書き込まれていない。理由を確認して報告する。
+1. `wp --user=<運用者のログイン名> ... execute <指紋>`で実行し、出力（`Operator:`・`Run:`の行を含む）を保存する。
+2. `Refused`が出た場合、Expenseは変更されていない。運用者の確認で拒否された場合は監査テーブルにも何も書かれず、指紋の不一致では`REFUSED`の監査記録が1件残る。理由を確認して報告する。
 3. `Rolled back`の警告が出た行はCONFIRMEDのままである。理由コードを記録して報告する。
 
 ### 工程6：移行後の確認
@@ -248,6 +346,8 @@ SELECT e.id FROM wp_stageart_expenses e
   LEFT JOIN wp_stageart_journal_entries j ON j.id = e.posted_journal_entry_id
  WHERE e.status <> 'POSTED' OR j.source_event_type IS NULL OR j.source_event_type <> 'ExpenseConfirmed';  -- 0件
 ```
+
+あわせて、3.2の確認SQLで、出力の実行IDの記録を確認する（移行したExpenseごとに`SUCCEEDED`が1件、失敗したExpenseごとに`FAILED`が1件、運用者が出力の`Operator:`と同じ）。出力に`The audit row could not be written`があれば報告する。
 
 最後に事前確認を再度実行し、候補が0件で、判定不能の一覧が工程2と同じであることを確認する。
 
@@ -296,20 +396,7 @@ SELECT e.id FROM wp_stageart_expenses e
 
 #### 実行者の識別
 
-| 識別情報 | 取得方法 | 記録先 | 取得できない場合 |
-|---|---|---|---|
-| StageArt Person ID（**必須**） | WP-CLIの`--user=<ログイン名>`で指定したWordPressユーザーに結び付いたPerson（`stageart_people.wp_user_id`） | 履歴の`actor_person_id`、ログ、出力 | 復旧しない（`--user`がない、Personに結び付いていない）。ほかのIDで代用しない |
-| WordPressユーザーID | WP-CLIの現在のユーザー | ログ、出力 | `--user`がなければ上と同じく復旧しない |
-| OSのアカウント | PHPのposix拡張があれば実効ユーザー名、なければ環境変数`USER`/`USERNAME`（`env:`を付けて区別） | ログ、出力のみ | `unknown`と記録して続行する（必須ではない） |
-| 実行日時・対象ID・操作 | 処理内で決まる | 履歴（`acted_at`・`expense_id`・`action`）、ログ | — |
-
-**限界：**
-
-- `--user`はWP-CLIを実行できる者なら任意に指定できる。認証ではなく、**申告された運用者**の記録である。WP-CLIを実行できるサーバー権限の管理と、作業記録（誰が承認し、誰が実行したか）との照合が必要である。
-- 環境変数のOSユーザーは実行者が書き換えられる。posix拡張がない環境では、OSアカウントを確実には特定できない。
-- OSアカウントとWordPressユーザーIDはDBの履歴には残らず、PHPエラーログとWP-CLIの出力にだけ残る。DBに残すには列の追加（スキーマ変更）が必要で、今回は行っていない。ログの出力先と保持期間は未確認である。
-- 実行者に特定の権限があるかは確認しない（`--user`にはどのWordPressユーザーでも指定できる）。確認の方法は8.5で提案する（推奨：System Administrator権限`stageart_manage_accounts`の確認）。決まるまでは、誰が実行してよいかを運用で決め、作業記録に残す。
-- 取消理由は自由記述で、ログと出力には出さない（DBの履歴にだけ残る）。個人情報を書かない。
+実行者の確認（`stageart_manage_accounts`とPersonの結び付き）と、監査テーブルへの記録は3.2に記載する。移行取消の履歴（`MIGRATION_REVERTED`）の`actor_person_id`には、3.2で確認した運用者のPersonが入る。取消理由は業務の履歴の`reason`にだけ残り、ログ・出力・監査テーブルには出さない。個人情報を書かない。
 
 #### 手順（スクリプトを使う）
 
@@ -342,7 +429,7 @@ SELECT e.id FROM wp_stageart_expenses e
    ```
 
    出力の`Operator: person=... wp_user=... os_user=...`を作業記録に残す。スクリプトは次の順で処理する。
-   1. 取消理由がなければ停止する。`--user`がない、またはPersonに結び付いていなければ停止する（どれも何も書き込まない）。
+   1. 取消理由がなければ停止する。運用者が3.2の条件（`stageart_manage_accounts`、Personがちょうど1件）を満たさなければ停止する（どれも何も書き込まない。監査テーブルにも書かない）。
    2. 書き込み対象テーブルがInnoDBでなければ拒否する（`NOT_TRANSACTIONAL`）。
    3. 全IDを確認し、1件でも条件に合わなければ何も書き込まずに拒否する（`Refused (TARGET_MISMATCH)`。行ごとに`Not restorable: <ID>=<理由>`を表示し、ログにも記録する）。
    4. `START TRANSACTION`。ID順に、Expenseの行を`FOR UPDATE`でロックし、履歴と明細を`FOR UPDATE`で読み、**ロックした値でもう一度確認**する。確認の後に別の処理が変更していれば、全体をロールバックする（下記「競合条件」）。
@@ -360,6 +447,7 @@ SELECT e.id FROM wp_stageart_expenses e
    | 上表の理由コード | ロックした後の確認で、条件に合わなくなっていた |
    | `UPDATE_FAILED` | 状態の更新が失敗した、または更新件数が1件でなかった |
    | `HISTORY_INSERT_FAILED` | 移行取消の履歴の追加が失敗した（状態の更新も巻き戻す） |
+   | `AUDIT_INSERT_FAILED` | 監査テーブルへの成功の記録が失敗した（一覧の全件を巻き戻す） |
    | `COMMIT_FAILED` | COMMITが失敗した |
    | `UNEXPECTED_ERROR` | 上記以外の例外 |
 
@@ -402,7 +490,7 @@ SELECT e.id FROM wp_stageart_expenses e
 
 - **確認で理由コードが出た行**（移行後に申請・承認・差し戻し、明細の変更、履歴の追加などがあった行）は、部分復旧の対象にしない。その後の操作を無視して移行前の状態に戻すと、操作の結果が失われるためである。行ごとに、その後の操作の内容を確認し、対処（戻さない、業務上の訂正を行う、全体復旧を検討する）を個別に決めて承認を得る。
 - **復旧が失敗してロールバックされた場合**は、どの行も変わっておらず、履歴も追加されていない。理由コードを記録し、`check`からやり直す。ロックの失敗は、利用の少ない時間帯に再実行すれば解消することがある。
-- **実行者を特定できない場合**（`--user`の運用者がStageArtのPersonに結び付いていない等）は、復旧しない。結び付いた運用者が実行する。
+- **実行者を特定できない、または権限がない場合**（`--user`がない、`stageart_manage_accounts`がない、Personに結び付いていない・複数ある等）は、復旧しない。条件を満たす運用者が実行する。
 - **WP-CLIが使えない場合**は、スクリプトを使わずにSQLで戻さない。明細スナップショットとの比較と、同じトランザクションでの履歴の追記を手作業で正確に行うことは難しく、「移行後に変更された行を戻さない」「履歴を必ず残す」ことを保証できない。WP-CLIを用意するか、8.2の全体復旧を検討する。
 
 #### 競合条件（確認からCOMMITまで）
@@ -444,6 +532,7 @@ SELECT e.id FROM wp_stageart_expenses e
 - そのため、コードを戻す場合は8.2の全体復旧が必要になる。工程1のバックアップから復元し、配置後に書き込まれたデータの扱いを事前に確認する。
 - 旧コードのスキーマバージョンは1.44.0と異なるため、旧コードの配置後の最初のリクエストで旧Installerが実行され、バージョンが旧値に戻る。追加された列とテーブルは削除されない（dbDeltaは削除しない）。
 - **移行取消の後に、このブランチのVersion 1.8より前のコードへ戻す場合：** それより前のコードは`MIGRATION_REVERTED`の種別を知らず、その履歴を持つExpenseを読み込むと例外になり、APIで表示できなくなる。移行取消を実行した後は、Version 1.8より前のコードへ戻さない。戻す必要がある場合は、8.2の全体復旧で移行取消の前の状態に戻すことを含めて検討する。
+- **Schema 1.45.0より前のコードへ戻す場合：** 監査テーブルは残る（dbDeltaは削除しない）。旧いコードは監査テーブルを読み書きしないため、業務の動作には影響しないが、その間に移行・移行取消を行うと監査記録が残らない（旧いスクリプトは権限も確認しない）。コードを戻している間は、移行・移行取消を行わない。
 
 ### 8.4 復旧の記録と監査性（決定済み：案A）
 
@@ -454,44 +543,17 @@ SELECT e.id FROM wp_stageart_expenses e
 - `ExpenseReview`の種別に`MIGRATION_REVERTED`を追加した。DBから読み込むときの検証も通るため、移行取消した行も通常どおり読み込め、APIの`reviews`には`MIGRATED`・`MIGRATION_REVERTED`が日時順（`acted_at`、`revision`の順）で並ぶ。
 - 業務上の操作（申請・取り下げ・承認・差し戻し）は`MIGRATION_REVERTED`を記録しない。記録するのは部分復旧だけである。CONFIRMEDのExpenseは、もともと業務上の操作の対象ではない（Domainで拒否）。
 - 移行の判定は、件数ではなく履歴の種別と申請回を見る。`MIGRATED`と`MIGRATION_REVERTED`が申請回1に1件ずつだけある行は`MIGRATION_REVERTED`、そのほか移行に関する履歴が含まれる行は`HISTORY_INCONSISTENT`、移行に関係しない履歴だけの行は従来どおり`HISTORY_EXISTS`として、どれも移行しない（第4節の判定3）。
-- **スキーマの変更はない。** `action`列はVARCHAR(20)で、`MIGRATION_REVERTED`（18文字）が収まる。列の種類の制約（ENUM・CHECK）はない。一意制約`(expense_id, revision, action)`はそのまま使える。スキーマのバージョンは1.44.0のままで、元の作業ツリーの未統合の変更とのスキーマ番号の調整は、今回の変更では生じない（取り込み時に1.45.0以上にする必要は、従来どおり残る）。
+- **スキーマの変更はない。** `action`列はVARCHAR(20)で、`MIGRATION_REVERTED`（18文字）が収まる。列の種類の制約（ENUM・CHECK）はない。一意制約`(expense_id, revision, action)`はそのまま使える。（Version 1.8の時点ではスキーマは1.44.0のままだった。その後、Version 1.9の監査テーブルで1.45.0に上げた。スキーマ番号の調整は第9節。）
 
 **画面：** このブランチには、Expenseの履歴を表示する画面がない（モバイル・Webのコードで履歴を参照する箇所はない。コードで確認）。APIの`reviews`は種別の文字列をそのまま返すため、将来の画面では`MIGRATED`・`MIGRATION_REVERTED`の表示名を用意する必要がある。元の作業ツリーにある未統合の画面（「旧形式（確認待ち）」の表示）が履歴を表示するかは未確認である。
 
-### 8.5 監査性の限界と実行者の権限（未決定）
+### 8.5 監査性と実行者の権限（Version 1.9で実装）
 
-2026-10-29のPush前レビューで、コードを読んで整理した。対策は実装していない。
+2026-10-29のPush前レビューで挙げた選択肢のうち、P1（System Administrator権限`stageart_manage_accounts`の確認）とL2（運用操作の監査テーブル）を実装した。内容は3.2に記載する。
 
-**DBの履歴だけで証明できること・できないこと：**
-
-| 事項 | DBの履歴で証明できるか | 根拠・補足 |
-|---|---|---|
-| 移行取消したExpenseのID、取消の日時 | できる | `MIGRATION_REVERTED`の`expense_id`・`acted_at` |
-| 取消時点の金額・明細、取消理由 | できる | 同じ行の`requested_amount`・`approved_amount`・`lines_snapshot`・`reason` |
-| 移行と移行取消の順序、移行の履歴が消されていないこと | できる（アプリケーションの範囲で） | 両方の行が残る。アプリケーションに履歴を削除・更新する処理はない。DBを直接操作した改ざんは検出できない |
-| 取消を記録したStageArt Person | できる | `actor_person_id` |
-| そのPersonが本当に操作した本人であること | **できない** | `--user`は申告であり、認証ではない |
-| WP-CLIを実行したOSアカウント、WordPressユーザーID | **できない** | ログと出力にだけ残る。ログの出力先と保持期間は未確認 |
-| 実行者が取消の権限を持っていたこと | **できない** | 権限を確認していない |
-| 承認の記録（誰が承認したか） | **できない** | 運用の作業記録に頼る |
-| 移行を実行した者と日時 | **できない** | `MIGRATED`の`actor_person_id`・`acted_at`は旧確定の確認者・確認日時で、移行の実行者・実行日時ではない。移行の実行者はログにも記録していない（ログには時刻と件数・IDだけが残る） |
-
-**実行者の権限確認の提案：**
-
-| 案 | 内容 | 影響 |
-|---|---|---|
-| P1（推奨） | `--user`のWordPressユーザーが、既存のSystem Administrator権限`stageart_manage_accounts`（`AccountManagementAdminPage::CAPABILITY`。`stageart_admin`ロールとWordPressの`administrator`ロールに付与）を持つことを、移行の実行と移行取消の両方で確認する。持たなければ何も書き込まない | スクリプトに`user_can()`の確認を追加するだけで、スキーマ変更は不要。`SystemAdministrationPolicy.md`の「System Administratorによる管理操作」とも合う。`--user`の申告そのものは防げない |
-| P2 | 運用で管理する（実行できるのはサーバーの特定のアカウントだけにし、作業記録と照合する） | コード変更は不要。技術的な強制はない |
-
-**監査記録の不足を解消する選択肢（スキーマ変更を伴うものを含む。実装していない）：**
-
-| 案 | 内容 | 影響 |
-|---|---|---|
-| L1 | 移行の実行（`execute`）でも`--user`の運用者を必須にし、Person ID・WordPressユーザーID・OSアカウントをログと出力に残す | スキーマ変更は不要。ログに頼る点は変わらない。移行の手順（工程5）の変更が必要 |
-| L2 | 運用操作の監査テーブル（`SystemAdministrationPolicy.md`のAudit Log）を作り、移行・移行取消の実行者・WordPressユーザー・OSアカウント・日時・対象ID・承認番号を、同じトランザクションで記録する | スキーマ1.45.0以上への更新、Installerとスキーマのテスト、モジュールのテーブル一覧の変更。元の作業ツリーの未統合の変更とスキーマ番号の調整が必要。Audit Logの仕様（参照権限、改ざん防止）の決定が必要 |
-| L3 | `stageart_expense_reviews`にOSアカウント等の列を追加する | スキーマ変更が必要。業務の履歴に運用の情報が混ざる。推奨しない |
-
-当面は、移行・移行取消のたびに、作業記録（承認番号、承認者、実行者、実行日時、WP-CLIの出力全体）を保存する運用で補う。
+- 移行の実行者も記録するようになった（以前は記録していなかった）。業務の履歴の`MIGRATED`の操作者・操作日時は、旧確定の確認者・確認日時のままで、実行した運用者と日時は監査テーブルで確認する。
+- 実装しなかったもの：L3（業務の履歴への列の追加）。業務の履歴に運用の情報を混ぜないため。
+- 残る限界：`--user`は認証ではないこと、DBを直接操作した改ざんは防げないこと、単独で書く失敗・拒否の記録は、その書き込み自体が失敗するとログにだけ残ること（3.2の表）。
 
 ## 9. 残る制約と、実施前に確認すること
 
@@ -499,7 +561,9 @@ SELECT e.id FROM wp_stageart_expenses e
 - 本番・開発のサーバーで、WP-CLIが使えるかを確認していない。開発環境ではSeedDataの手順でWP-CLIを使っている。
 - PHPエラーログの出力先と保持期間を確認していない。実行者のOSアカウントとWordPressユーザーIDはログと出力にだけ残るため、ログが失われると追跡できない（8.5）。
 - 仕訳と仕訳明細は、再判定の前に主キーでロックする（3.1）。ロックの実動作、デッドロックの有無、ギャップロックによる待ちの程度は、実MySQLで確認する必要がある。実行は利用の少ない時間帯に行う。
-- 部分復旧（8.1）は、履歴を削除せず`MIGRATION_REVERTED`を追記する（仕様書Version 1.8、8.4）。実行者は`--user`で申告されたWordPressユーザーのPersonとして記録され、認証ではない（8.1「実行者の識別」）。実行者の権限は確認していない。移行の実行者は記録していない（8.5）。
+- 部分復旧（8.1）は、履歴を削除せず`MIGRATION_REVERTED`を追記する（仕様書Version 1.8、8.4）。
+- 移行・移行取消の実行者は`stageart_manage_accounts`を持つWordPressユーザーに限り、監査テーブルに記録する（仕様書Version 1.9、3.2）。`--user`は認証ではなく、監査記録はDBを直接操作した改ざんを防がない。
+- スキーマ番号：このブランチの1.44.0（Expenseの申請回等の列・申請履歴）は、元の作業ツリーの未統合の1.44.0（申請履歴に加えて公開ページ・代理人の担当範囲のテーブル）と内容が違う。このブランチは監査テーブルで1.45.0に上げた。元の作業ツリーの変更を取り込むときは、1.46.0以上にするか、取り込みと同時に1つの番号にまとめる必要がある。スキーマ更新は「保存された番号と異なれば全体を再実行する」方式で、dbDeltaは既存の列・テーブルを削除しないため、番号の順序よりも「内容が違うのに同じ番号を使わない」ことが重要である。
 - 部分復旧の条件（8.1）は、移行が書いた値と履歴が残っていることを確かめるものである。別の処理が移行と同じ値を書き直した場合は区別できない（その場合、戻しても失われる情報はない）。
 - 指紋はSHA-256の先頭16桁で、事前確認の内容が変わっていないことを確かめるためのものである。認証の仕組みではない。
 
@@ -511,6 +575,8 @@ SELECT e.id FROM wp_stageart_expenses e
 | `LegacyExpenseMigrationTest` | 事前確認が書き込まないこと、指紋の一致・不一致、InnoDB以外での拒否、1件ごとのトランザクション、状態の更新・履歴の追加・COMMIT・開始の失敗時のロールバックとログ、ロック後の再判定、再実行で二重移行・二重履歴がないこと、仕訳への書き込みがないこと、ログの内容。ロックの順序と対象（Expense→仕訳（主キー）→仕訳の明細、事前確認ではロックしない）、事前確認の後に仕訳が取り消された場合の拒否、ロック直前に仕訳の明細が変わった場合にCONFIRMEDのまま残ること、各ロックの失敗時のロールバック |
 | `LegacyExpenseMigrationRestoreTest` | 部分復旧の確認が書き込まないこと、ID順のロック、確認の後に履歴・明細が変わった場合の全体のロールバック、明細のロック失敗時のロールバック、`MIGRATED`の行が残り`MIGRATION_REVERTED`が同じトランザクションで追記されること（記録する値を含む）、履歴の追記の失敗で状態の更新もロールバックされること、移行取消したExpenseが再び候補にならないこと、移行の履歴が矛盾する場合に判定不能になること、移行取消した行の二重の取消の拒否、実行者・取消理由がない場合の拒否、`DELETE`を発行しないこと、正常な復旧で対象だけが移行前と同じ値に戻り、仕訳が変わらないこと、移行後に変更された行（状態・申請回・差し戻し・金額・承認者・申請者・仕訳・履歴・明細）の拒否、1件でも不一致があれば全体を拒否すること、ロック直前の変更や各段階の失敗で全体がロールバックされること、InnoDB以外とID未指定での拒否、仕訳をロック・変更しないこと、ログの内容 |
 | `LegacyExpenseMigrationRestoreScriptTest` | 部分復旧スクリプトの確認・復旧・拒否、`--user`がない・Personに結び付いていない・取消理由がない場合の停止、実行者の記録と出力、引数の誤り、WP-CLI以外での無動作、出力に取消理由が出ないこと |
+| `LegacyExpenseMigrationOperatorTest` | 実行者の確認（ユーザーの指定なし・不明・権限なし・Personなし・複数・不正なID）、権限名がSystem Administratorのものと同じこと、OSアカウントの整形 |
+| `LegacyExpenseMigrationAuditTest` | 移行・移行取消の成功・失敗・拒否の監査記録（項目・実行ID・UTCの日時）、監査の追加の失敗で状態の更新と履歴が巻き戻ること、失敗の記録が書けない場合の報告、InnoDB以外と引数の誤りでは記録しないこと、一意制約による二重の成功記録の拒否、再実行で記録が増えないこと、移行取消後の再移行の禁止、仕訳を変更しないこと |
 | `WordPressExpenseRepositoryTest` | `MIGRATED`と`MIGRATION_REVERTED`を持つExpenseが読み込め、APIの結果に日時順で両方が出ること |
 | `LegacyExpenseMigrationPreflightTest` | 本番で想定される行の種類を1つのDBに入れた場合の、事前確認の結果、実行の前後での状態・金額・仕訳の件数と合計、再実行、ログの内容 |
 | `LegacyExpenseMigrationScriptTest` | WP-CLIスクリプトの事前確認・実行・拒否、スキーマが古い場合の停止、WP-CLI以外での無動作、出力の内容 |

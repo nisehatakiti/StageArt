@@ -2,7 +2,8 @@
 
 作成日: 2026-10-29
 対象ブランチ: `integrate/expense-approval-20261029`
-関連: `docs/handoffs/LegacyExpenseMigration-Runbook.md`、`docs/04-DomainModel/ExpenseApprovalWorkflow.md`（Version 1.8）
+関連: `docs/handoffs/LegacyExpenseMigration-Runbook.md`、`docs/04-DomainModel/ExpenseApprovalWorkflow.md`（Version 1.9）
+改訂: 2026-10-29（実行権限と監査テーブルの検証を4.7に追加）
 
 本書は計画であり、実施を承認するものではない。作成時点で、どのDBにも接続していない。各工程は、環境と工程ごとに承認を得てから行う。本番環境では実施しない。
 
@@ -24,7 +25,7 @@
 
 | 確認 | 方法 | 偽DB | 実MySQL |
 |---|---|---|---|
-| WP-CLIが使えること | `wp --info`、`wp core version`、`wp eval 'echo get_option("stageart_db_schema_version");'`（1.44.0） | 対象外 | 未確認 |
+| WP-CLIが使えること | `wp --info`、`wp core version`、`wp eval 'echo get_option("stageart_db_schema_version");'`（1.45.0） | 対象外 | 未確認 |
 | スクリプトが配置されていること | `wp eval-file <plugin>/scripts/legacy_expense_migration.php`（事前確認だけ） | スクリプトのテストで確認 | 未確認 |
 | ストレージエンジン | `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'wp_stageart_%';`と、事前確認の出力が一致すること | 値を与えた場合の判定（InnoDB以外・不明で拒否）だけを確認 | 未確認 |
 | 分離レベル等 | `SELECT @@transaction_isolation, @@autocommit, @@innodb_lock_wait_timeout, @@innodb_rollback_on_timeout;`（MariaDB・5.7は`@@tx_isolation`） | 対象外 | 未確認 |
@@ -105,6 +106,20 @@ DBに2つのセッション（mysqlクライアント）を開き、片方でロ
 | 失敗後に事前確認からやり直せる | 失敗した行が再び候補に出て、原因を取り除いた後に移行できる | 確認済み | 未確認 |
 | 全体復旧 | 1節のダンプから復元し、工程2の件数に戻ること | 対象外 | 未確認 |
 | 移行取消の後に旧いコードへ戻さないこと | 検証しない（Runbook 8.3の注意事項） | 対象外 | 検証しない |
+
+### 4.7 実行権限と監査テーブル（Schema 1.45.0、仕様書Version 1.9）
+
+| 確認 | 方法 | 偽DB | 実MySQL |
+|---|---|---|---|
+| スキーマ更新で監査テーブルが作られる | 1.44.0（または1.43.0）の状態から配置し、`SHOW CREATE TABLE wp_stageart_legacy_expense_migration_audit`で列・主キー・一意制約`operation_success`・インデックスを確認する。エンジンがInnoDBであること | dbDeltaに渡す文を確認 | 未確認 |
+| スキーマ更新を繰り返しても変わらない | 保存されたバージョンを1.44.0に戻して再度リクエストし、`SHOW CREATE TABLE`と行数が同じこと | 同じ文が出ることを確認 | 未確認（dbDeltaの実際の差分） |
+| 一意制約が、NULLの`success_key`を重複させてよい | 失敗・拒否の行が同じ操作で複数入ること、成功の行は同じExpenseで2件目が拒否されること（4.2のトリガーとは別に、検証環境でだけ手作業のINSERTで確認） | 偽DBで同じ規則を模した | 未確認（MySQL・MariaDBの一意制約の実際の動作） |
+| 権限のないユーザーでは何も書かない | `stageart_manage_accounts`を持たないユーザー、Personに結び付いていないユーザー、存在しないログイン名、`--user`なしで`execute`・`restore`を実行し、全テーブルの`CHECKSUM TABLE`（監査テーブルを含む）が同じこと | 確認済み（`get_userdata()`・`user_can()`を模した） | 未確認（WP-CLIの`--user`、存在しないユーザーでのWP-CLI自体の動作） |
+| 権限のあるユーザーで記録される | `stageart_admin`ロールのユーザーと`administrator`ロールのユーザーで実行し、`wp_user_id`・`person_id`・`os_user`・`acted_at_utc`を確認する。`acted_at_utc`が`UTC_TIMESTAMP()`と数秒以内であること | 確認済み | 未確認（`os_user`の実際の値、時刻） |
+| 監査の追加の失敗で、状態の更新と履歴も戻る | 検証環境だけで、監査テーブルに特定のExpense IDの`SUCCEEDED`を拒否する`BEFORE INSERT`トリガーを作る。移行ではそのExpenseがCONFIRMEDのまま`AUDIT_INSERT_FAILED`、移行取消では一覧の全件が戻ること。その後に`FAILED`の行が残ること | 確認済み | 未確認 |
+| 失敗の記録が書けない場合の報告 | 同様のトリガーで`FAILED`・`REFUSED`の行を拒否し、出力に`The audit row could not be written`、ログに`audit record failed`が出て、スクリプトが失敗で終わること | 確認済み | 未確認 |
+| 監査記録と業務の履歴の件数が一致する | Runbook 3.2の確認SQL | 確認済み | 未確認 |
+| 業務の履歴と監査記録が混ざらない | `stageart_expense_reviews`に運用の行がなく、`MIGRATED`の`actor_person_id`が旧確定の確認者のままであること | 確認済み | 未確認 |
 
 ## 5. 結果の記録
 
