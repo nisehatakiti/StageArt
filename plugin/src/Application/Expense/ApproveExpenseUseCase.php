@@ -46,6 +46,9 @@ use StageArt\Domain\Person\PersonId;
  * - the Expense save is conditional on the SUBMITTED status / revision it
  *   was loaded with, and the history refuses a second APPROVED entry for
  *   the same revision.
+ * Approving needs `Expense.Approve` - PrimaryManager, 会計管理者 or 代理人
+ * (StageArt 統合・会計仕様の確定事項 2026-10-28 §2) - and never lets
+ * anyone approve their own Expense (Expense::resolveApprovedAmount()).
  * Any failure throws inside the transaction, so the Journal Entry and the
  * Expense are written together or not at all. The applicant is notified
  * only after the commit.
@@ -106,8 +109,8 @@ final class ApproveExpenseUseCase
 
         $productionId = $expense->productionId();
 
-        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new ExpenseAccessDeniedException('Only the PrimaryManager or an Accounting Manager can approve an Expense.');
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::APPROVE_EXPENSE)) {
+            throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can approve an Expense.');
         }
 
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);

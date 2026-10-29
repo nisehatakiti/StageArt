@@ -332,6 +332,42 @@ final class ExpenseUseCaseTest extends TestCase
         $this->assertSame($all, $this->listedIds($production, 4));
     }
 
+    /**
+     * A 代理人 approves Expenses (`Expense.Approve`), so it lists and reads
+     * every Expense of the Production like the PrimaryManager and the
+     * 会計管理者 do. Holding only one of its two Roles, or one of them no
+     * longer ACTIVE, leaves a Delegate with its own Expenses only.
+     */
+    public function test_a_proxy_manager_sees_every_expense_but_a_partial_proxy_only_their_own(): void
+    {
+        [$production, $own, $others] = $this->givenTwoMembersExpenses();
+        $organization = $this->organizations->findById($this->projects->findById($production->projectId())->organizationId());
+        $all = [$own, $others];
+        sort($all);
+
+        $proxy = $this->givenProductionPerson($organization, $production, 8, RoleKey::participantManager());
+        $this->delegates->save(ProductionDelegate::create($production->id(), $proxy->id(), RoleKey::rehearsalManager(), $production->primaryManagerPersonId()));
+        $this->givenProductionPerson($organization, $production, 9, RoleKey::participantManager());
+        $former = $this->givenProductionPerson($organization, $production, 10, RoleKey::participantManager());
+        $rehearsal = ProductionDelegate::create($production->id(), $former->id(), RoleKey::rehearsalManager(), $production->primaryManagerPersonId());
+        $rehearsal->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($rehearsal);
+
+        $this->assertSame($all, $this->listedIds($production, 8));
+        $this->assertSame($others, $this->getExpense->execute(new GetExpenseQuery($others, 8))->id);
+
+        foreach ([9, 10] as $partial) {
+            $this->assertSame([], $this->listedIds($production, $partial), "user {$partial}");
+
+            try {
+                $this->getExpense->execute(new GetExpenseQuery($others, $partial));
+                $this->fail("User {$partial} must not read another member's Expense.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function test_general_member_lists_only_their_own_expenses(): void
     {
         [$production, $own, $others] = $this->givenTwoMembersExpenses();

@@ -82,7 +82,13 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  * WordPress user ids: 1 = PrimaryManager, 2 = applicant (Cast
  * Participant), 3 = another Cast Participant, 4 = ACCOUNTING_MANAGER,
  * 5 = TICKET_MANAGER, 6 = Organization member outside the Production,
- * 7 = a second ACCOUNTING_MANAGER.
+ * 7 = a second ACCOUNTING_MANAGER, 8 = 代理人 (ACTIVE PARTICIPANT_MANAGER
+ * + REHEARSAL_MANAGER), 9 = PARTICIPANT_MANAGER only, 10 = a former 代理人
+ * whose REHEARSAL_MANAGER Role was deactivated.
+ *
+ * Approving and rejecting need `Expense.Approve` - PrimaryManager,
+ * 会計管理者 and 代理人 (StageArt 統合・会計仕様の確定事項 2026-10-28 §2) -
+ * and the same people are the approvers the submission is announced to.
  */
 final class ExpenseWorkflowUseCaseTest extends TestCase
 {
@@ -203,6 +209,9 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->givenPerson(5, RoleKey::ticketManager());
         $this->givenPerson(6, null, false);
         $this->givenPerson(7, RoleKey::accountingManager());
+        $this->givenDelegatePerson(8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegatePerson(9, [RoleKey::participantManager()]);
+        $this->givenDelegatePerson(10, [RoleKey::participantManager(), RoleKey::rehearsalManager()], true);
 
         $this->expenseAccountId = $this->createAccount->execute(
             new CreateAccountCommand(1, $this->organization->id()->toString(), '消耗品費', AccountType::EXPENSE)
@@ -229,6 +238,34 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             ));
         } else {
             $this->delegates->save(ProductionDelegate::create($this->production->id(), $person->id(), $delegateRole, $this->production->primaryManagerPersonId()));
+        }
+
+        return $person;
+    }
+
+    /**
+     * An Organization MEMBER who is an ACTIVE Delegate of this Production
+     * with every given Role; with $deactivateLast the last Role is then
+     * deactivated, leaving the others ACTIVE.
+     *
+     * @param RoleKey[] $roles
+     */
+    private function givenDelegatePerson(int $wordPressUserId, array $roles, bool $deactivateLast = false): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+        $this->person[$wordPressUserId] = $person;
+        $this->memberships->save(Membership::create($this->organization->id(), $person->id(), RoleKey::member()));
+
+        $delegate = null;
+        foreach ($roles as $role) {
+            $delegate = ProductionDelegate::create($this->production->id(), $person->id(), $role, $this->production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
+        }
+
+        if ($deactivateLast && $delegate !== null) {
+            $delegate->deactivate($this->production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
         }
 
         return $person;
@@ -310,7 +347,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $notified = $this->notified();
         sort($notified);
-        $this->assertSame(['1:expense_submitted', '4:expense_submitted', '7:expense_submitted'], $notified);
+        $this->assertSame(['1:expense_submitted', '4:expense_submitted', '7:expense_submitted', '8:expense_submitted'], $notified);
 
         $payload = $this->notifications->sent()[0]['payload'];
         $this->assertSame('expense', $payload['target_type']);
@@ -327,7 +364,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $notified = $this->notified();
         sort($notified);
-        $this->assertSame(['1:expense_submitted', '7:expense_submitted'], $notified);
+        $this->assertSame(['1:expense_submitted', '7:expense_submitted', '8:expense_submitted'], $notified);
     }
 
     /**
@@ -486,7 +523,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
      */
     public static function approvers(): array
     {
-        return ['primary manager' => [1], 'accounting manager' => [4]];
+        return ['primary manager' => [1], 'accounting manager' => [4], 'proxy manager' => [8]];
     }
 
     public function test_the_approved_amount_reaches_actual_only_once_approved(): void
@@ -573,6 +610,8 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             'payer approves' => ['payer approves', 4, null, 1, ExpenseAccessDeniedException::class],
             'another member' => ['another member', 3, null, 1, ExpenseAccessDeniedException::class],
             'ticket manager' => ['ticket manager', 5, null, 1, ExpenseAccessDeniedException::class],
+            'participant manager only' => ['participant manager only', 9, null, 1, ExpenseAccessDeniedException::class],
+            'proxy with a deactivated role' => ['proxy with a deactivated role', 10, null, 1, ExpenseAccessDeniedException::class],
             'outsider' => ['outsider', 6, null, 1, ExpenseAccessDeniedException::class],
             'the applicant' => ['the applicant', 2, null, 1, ExpenseAccessDeniedException::class],
         ];
@@ -591,6 +630,58 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $this->approveExpense->execute(new ApproveExpenseCommand($id, 7, 1));
         $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+    }
+
+    /**
+     * 自己承認の禁止 applies to every approver: neither the PrimaryManager
+     * nor a 代理人 may approve an Expense they submitted, and a 代理人 may
+     * not approve one that reimburses them. Nothing is posted or announced
+     * as approved; another approver still can.
+     */
+    public function test_no_approver_can_approve_an_expense_they_submitted_or_are_reimbursed_by(): void
+    {
+        $cases = [
+            'primary manager submits' => [$this->submittedBy(1), 1],
+            'proxy manager submits' => [$this->submittedBy(8), 8],
+            'proxy manager is reimbursed' => [$this->submittedBy(3, [5000], $this->person[8]->id()->toString()), 8],
+        ];
+
+        foreach ($cases as $case => [$id, $approver]) {
+            try {
+                $this->approveExpense->execute(new ApproveExpenseCommand($id, $approver, 1));
+                $this->fail("{$case}: self-approval must be refused.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id), $case);
+            }
+        }
+
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertSame([], array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved')));
+
+        foreach ($cases as [$id]) {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        }
+        $this->assertCount(3, $this->approvalEntries());
+    }
+
+    /**
+     * Approval rights add nothing else: a 代理人 can approve, but cannot edit
+     * someone else's Expense the way the PrimaryManager / 会計管理者 can
+     * (`Accounting.Update`).
+     */
+    public function test_a_proxy_manager_cannot_edit_someone_elses_expense(): void
+    {
+        $id = $this->draftBy(2);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 8, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 9000],
+            ]));
+            $this->fail('A proxy manager must not edit another member\'s Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($id))->totalAmount());
+        }
     }
 
     public function test_approving_content_edited_after_review_is_refused_with_a_conflict(): void
@@ -783,7 +874,14 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
      */
     public static function nonApprovers(): array
     {
-        return ['the applicant' => [2], 'another member' => [3], 'ticket manager' => [5], 'outsider' => [6]];
+        return [
+            'the applicant' => [2],
+            'another member' => [3],
+            'ticket manager' => [5],
+            'outsider' => [6],
+            'participant manager only' => [9],
+            'proxy with a deactivated role' => [10],
+        ];
     }
 
     public function test_a_draft_or_posted_expense_cannot_be_rejected(): void
@@ -821,7 +919,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         );
 
         $resubmitNotices = array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_submitted'));
-        $this->assertCount(6, $resubmitNotices, 'Approvers 1, 4 and 7 are told about the submission and again about the resubmission.');
+        $this->assertCount(8, $resubmitNotices, 'Approvers 1, 4, 7 and 8 are told about the submission and again about the resubmission.');
 
         $this->assertSame(4600, $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 2))->approvedAmount);
     }
@@ -833,19 +931,24 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $directory = new CoreProductionCapabilityDirectoryAdapter($prodAuth, $this->productions, $this->delegates, $this->people);
         $authorization = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
 
-        $listed = array_map(
-            static fn (PersonId $id): string => $id->toString(),
-            $directory->personIdsWithProductionCapability($this->production->id(), AccountingCapability::MANAGE)
-        );
-
-        foreach ($this->person as $wordPressUserId => $person) {
-            $this->assertSame(
-                $authorization->canForProduction($person->id(), $this->production->id(), AccountingCapability::MANAGE),
-                in_array($person->id()->toString(), $listed, true),
-                "user {$wordPressUserId}"
+        foreach ([AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8], AccountingCapability::MANAGE => [1, 4, 7]] as $capability => $expected) {
+            $listed = array_map(
+                static fn (PersonId $id): string => $id->toString(),
+                $directory->personIdsWithProductionCapability($this->production->id(), $capability)
             );
-        }
 
-        $this->assertCount(3, $listed);
+            foreach ($this->person as $wordPressUserId => $person) {
+                $this->assertSame(
+                    $authorization->canForProduction($person->id(), $this->production->id(), $capability),
+                    in_array($person->id()->toString(), $listed, true),
+                    "{$capability}: user {$wordPressUserId}"
+                );
+            }
+
+            $expectedIds = array_map(fn (int $user): string => $this->person[$user]->id()->toString(), $expected);
+            sort($expectedIds);
+            sort($listed);
+            $this->assertSame($expectedIds, $listed, $capability);
+        }
     }
 }

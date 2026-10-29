@@ -53,8 +53,8 @@ final class ConfirmExpenseUseCase
             throw new ExpenseNotFoundException($command->expenseId);
         }
 
-        if (! $this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::MANAGE)) {
-            throw new ExpenseAccessDeniedException('Only the PrimaryManager or an Accounting Manager can confirm an Expense.');
+        if (! $this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::APPROVE_EXPENSE)) {
+            throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can confirm an Expense.');
         }
 
         throw new ExpenseOperationRetiredException(

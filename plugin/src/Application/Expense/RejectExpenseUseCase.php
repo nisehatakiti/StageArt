@@ -15,7 +15,8 @@ use StageArt\Domain\Expense\ExpenseRepositoryInterface;
 /**
  * ExpenseApprovalWorkflow.md "Rejection": SUBMITTED -> REJECTED with a
  * required reason, kept in the Expense's history. Rejecting needs the
- * same Capability as approving (PrimaryManager or Accounting Manager),
+ * same Capability as approving (`Expense.Approve`: PrimaryManager,
+ * 会計管理者 or 代理人),
  * checked here in the Backend rather than only by hiding UI. No Journal
  * Entry is involved, so rejecting is allowed whether or not the
  * Organization has accounting enabled. The Expense row is locked for the
@@ -58,8 +59,8 @@ final class RejectExpenseUseCase
             throw new ExpenseNotFoundException($command->expenseId);
         }
 
-        if (! $this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::MANAGE)) {
-            throw new ExpenseAccessDeniedException('Only the PrimaryManager or an Accounting Manager can reject an Expense.');
+        if (! $this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::APPROVE_EXPENSE)) {
+            throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can reject an Expense.');
         }
 
         $rejected = $this->transactions->run(function () use ($expenseId, $command, $requesterId): Expense {

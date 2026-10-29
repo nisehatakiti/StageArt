@@ -17,8 +17,9 @@ use StageArt\Domain\Production\ProductionId;
 
 /**
  * ExpenseApprovalWorkflow.md "Accounting Visibility" + the confirmed J3
- * decision: the PrimaryManager and an ACCOUNTING_MANAGER Delegate
- * (`Accounting.Update`) see every Expense of the Production; any other
+ * decision: whoever may approve the Production's Expenses
+ * (`Expense.Approve` - the PrimaryManager, an ACCOUNTING_MANAGER Delegate
+ * and a 代理人) sees every Expense of the Production; any other
  * Production Member sees only the Expenses they registered themselves
  * ("Memberは、自分が登録した小口立替Expenseの申請状態など...のみ確認でき
  * ればよい"). Anyone outside the Production is refused.
@@ -70,7 +71,7 @@ final class ListExpensesUseCase
 
         $expenses = $this->expenses->findByProductionId($productionId);
 
-        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::APPROVE_EXPENSE)) {
             if (! $this->membership->isProductionMember($requesterId, $productionId)) {
                 throw new ExpenseAccessDeniedException('Only members of this Production can view its Expenses.');
             }

@@ -13,8 +13,10 @@ use StageArt\Domain\Expense\ExpenseRepositoryInterface;
 
 /**
  * ExpenseApprovalWorkflow.md "Accounting Visibility" + the confirmed J3
- * decision: the PrimaryManager and an ACCOUNTING_MANAGER Delegate
- * (`Accounting.Update`) may read any Expense of the Production; any other
+ * decision: whoever may approve the Production's Expenses
+ * (`Expense.Approve` - the PrimaryManager, an ACCOUNTING_MANAGER Delegate
+ * and a 代理人, who has to read what they approve) may read any Expense of
+ * the Production; any other
  * Production Member may read only an Expense they registered themselves.
  * Checked here on its own, independently of ListExpensesUseCase's
  * filtering, so a guessed or copied Expense id cannot bypass it.
@@ -59,7 +61,7 @@ final class GetExpenseUseCase
 
         $productionId = $expense->productionId();
 
-        if ($this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
+        if ($this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::APPROVE_EXPENSE)) {
             return ExpenseResult::fromDomain($expense);
         }
 
@@ -67,7 +69,7 @@ final class GetExpenseUseCase
             || ! $expense->createdBy()->equals($requesterId)
         ) {
             throw new ExpenseAccessDeniedException(
-                'Only the PrimaryManager, an Accounting Manager or the Expense\'s own creator can view this Expense.'
+                'Only the Expense\'s approvers or its own creator can view this Expense.'
             );
         }
 

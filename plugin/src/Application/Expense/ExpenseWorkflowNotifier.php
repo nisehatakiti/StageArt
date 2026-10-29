@@ -13,7 +13,9 @@ use StageArt\Domain\Person\PersonId;
 
 /**
  * ExpenseApprovalWorkflow.md "Approval Notification": a SUBMITTED
- * Expense is announced to everyone who may approve it, through the same
+ * Expense is announced to everyone who may approve it (`Expense.Approve`,
+ * the check ApproveExpenseUseCase makes) except anyone it is their own
+ * Expense for, through the same
  * NotificationContract the attendance notifications use; the
  * notification carries the Expense as its target so the app can open it
  * directly. The applicant hears back when it is approved or rejected.
@@ -55,7 +57,7 @@ final class ExpenseWorkflowNotifier
             number_format((int) $expense->requestedAmount())
         );
 
-        foreach ($this->capabilityDirectory->personIdsWithProductionCapability($expense->productionId(), AccountingCapability::MANAGE) as $approver) {
+        foreach ($this->capabilityDirectory->personIdsWithProductionCapability($expense->productionId(), AccountingCapability::APPROVE_EXPENSE) as $approver) {
             if (! $expense->isOwnExpense($approver)) {
                 $this->send($approver, self::TYPE_SUBMITTED, $expense, $message);
             }
