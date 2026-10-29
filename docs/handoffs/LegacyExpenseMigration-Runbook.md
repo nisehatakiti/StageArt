@@ -1,11 +1,13 @@
 # 旧形式Expense移行（Schema 1.44.0）運用手順案
 
-作成日: 2026-10-29（同日改訂：コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加）
+作成日: 2026-10-29（同日改訂：コード配置とデータ移行の分離、トランザクション化、仕訳の整合性判定の追加。再改訂：仕訳のロック、部分復旧の条件確認とスクリプト化）
 対象ブランチ: `integrate/expense-approval-20261029`
 対象コード:
 - `plugin/src/Accounting/LegacyExpenseMigration.php`（事前確認・実行）
 - `plugin/src/Accounting/LegacyExpenseMigrationClassifier.php`（判定）
-- `plugin/scripts/legacy_expense_migration.php`（WP-CLIから実行するスクリプト）
+- `plugin/src/Accounting/LegacyExpenseMigrationRestore.php`（部分復旧の確認・実行）
+- `plugin/scripts/legacy_expense_migration.php`（移行をWP-CLIから実行するスクリプト）
+- `plugin/scripts/legacy_expense_migration_restore.php`（部分復旧をWP-CLIから実行するスクリプト）
 
 仕様: `docs/04-DomainModel/ExpenseApprovalWorkflow.md`「Legacy CONFIRMED Expense」
 
@@ -62,16 +64,19 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 拒否しなかった場合は、候補の**1件ごとに独立したトランザクション**で処理する。
 
 1. `START TRANSACTION`
-2. 対象Expenseを`SELECT ... FOR UPDATE`でロックし、明細・Journal Entry・Account・履歴を読み直して**再判定**する。事前確認と結果が違えば中止する。
-3. 状態を更新する。条件は`status = 'CONFIRMED' AND revision = 0 AND posted_journal_entry_id IS NULL`で、更新件数が1件でなければ中止する。
-4. `MIGRATED`の履歴を追加する（通常のINSERT。一意制約違反も失敗として扱う）。
-5. `COMMIT`
+2. 対象Expenseを`SELECT ... FOR UPDATE`でロックする。
+3. 対象のJournal Entryを主キーで`SELECT ... FOR UPDATE`し、続けてその明細を`SELECT ... FOR UPDATE`でロックする（3.1参照）。
+4. ロックした値で、明細・Journal Entry・Account・履歴を読み直して**再判定**する。事前確認と結果が違えば中止する。
+5. 状態を更新する。条件は`status = 'CONFIRMED' AND revision = 0 AND posted_journal_entry_id IS NULL`で、更新件数が1件でなければ中止する。
+6. `MIGRATED`の履歴を追加する（通常のINSERT。一意制約違反も失敗として扱う）。
+7. `COMMIT`
 
 いずれかの段階で失敗すると、そのExpenseは`ROLLBACK`してCONFIRMEDのまま残し、次の候補へ進む。
 
 | 失敗の理由コード | 意味 |
 |---|---|
 | `TRANSACTION_START_FAILED` | トランザクションを開始できなかった |
+| `LOCK_FAILED` | Expense・Journal Entry・その明細のロックが失敗した（デッドロック、ロック待ちのタイムアウト等。`$wpdb->last_error`で判定） |
 | `CHANGED_SINCE_PREVIEW` | ロック後の再判定で移行できなくなっていた（行が消えた、Journal Entryが取り消された等） |
 | `UPDATE_FAILED` | 状態の更新が失敗した、または更新件数が1件でなかった |
 | `HISTORY_INSERT_FAILED` | 履歴の追加が失敗した（状態の更新も巻き戻す） |
@@ -82,6 +87,30 @@ wp eval-file plugin/scripts/legacy_expense_migration.php execute <fingerprint> -
 - 終了時には、件数の要約（`completed: migrated=N failed=N manual_review=N`）と、判定不能の一覧（`left CONFIRMED for manual review: <ID>=<理由>, ...`）をログに記録する。
 - ログに出るのはID・件数・理由コードだけである（テストで確認済み）。
 - 失敗した行は再判定の対象として残るので、原因を確認して承認を得たうえで、事前確認からやり直せる。
+
+### 3.1 仕訳の同時変更への対策
+
+**調査結果（コードで確認）：**
+
+- 仕訳を書き込む処理は`WordPressJournalEntryRepository::save()`だけで、仕訳の行を`UPDATE`（または`INSERT`）した後に、明細を`DELETE`・`INSERT`する。仕訳を読むときに`FOR UPDATE`は使っていない。
+- 既存の仕訳を変更する処理は、転記（`PostJournalEntryUseCase`：DRAFT→POSTED）と取消（`CheckInProcessor::reverse()`：チケット入金の仕訳だけ）の2つ。どちらもアプリケーション層の1つのトランザクション内で行い、Expenseの行はロックしない。`ExpenseConfirmed`の仕訳を取り消す処理は、現在のコードにはない。
+- 承認（`ApproveExpenseUseCase`）は、Expenseを`FOR UPDATE`でロックしてから新しい仕訳を作る。ロックの順序はExpense→仕訳である。
+- `stageart_journal_entries`には`source_event_type`・`source_event_id`のインデックスがない。この条件で`FOR UPDATE`すると、InnoDBでは全行を走査してロックするため、ほかの仕訳の書き込みをすべて止めてしまう。
+
+**対策（実装済み）：**
+
+- 仕訳は、ロックせずに`source_event`で**IDだけを探し**、そのIDを**主キーで**`FOR UPDATE`する。ロックするのは対象の仕訳の行だけになる。続けて、その仕訳の明細を`journal_entry_id`で`FOR UPDATE`する。
+- ロックの順序は**Expense → 仕訳 → 仕訳の明細**で、承認の順序（Expense→仕訳）や`save()`の順序（仕訳→明細）と同じ向きになる。仕訳を書き込む処理はExpenseをロックしないため、アプリケーションのロックとの間で循環は生じない（コードからの推論で、実MySQLでは未確認）。
+- 再判定はロックした後の値で行う。ロックはCOMMITまたはROLLBACKまで続くため、再判定からCOMMITまでの間に、アプリケーションが対象の仕訳や明細を変更することはできない（`save()`は最初の`UPDATE`で待つ）。
+- ロック後に仕訳がなくなっていた、または別のExpenseに付け替えられていた場合は、その仕訳を除いて判定し、移行しない（`CHANGED_SINCE_PREVIEW`）。
+- ロックが失敗した場合は`LOCK_FAILED`としてロールバックする。InnoDBはデッドロックを検出すると、片方のトランザクションを取り消す。移行が取り消された場合は、そのExpenseがCONFIRMEDのまま残る。
+
+**限界：**
+
+- アカウント（`stageart_accounts`）、Production・Project、Expenseの明細はロックしない。Expenseの明細は、Expenseの行のロックで守られる（`WordPressExpenseRepository::save()`は明細より先にExpenseの行を更新する。コードで確認）。Accountを変更する処理は有効・無効の切り替えだけで、種別とOrganizationは変更できない（`Account`のコードで確認）。有効・無効は判定に使っていない。
+- 主キーでのロックの前に行う、IDの検索はロックしない。REPEATABLE READでは、検索の後に別のセッションが同じExpenseの`ExpenseConfirmed`の仕訳を**新しく追加**した場合、それを見落とす可能性がある。アプリケーションにはその処理がないため、起こりうるのはDBを直接操作した場合に限られる。
+- 明細の`FOR UPDATE`は、`journal_entry_id`の非一意インデックスに対してギャップロックを伴う。COMMITまでの短い間、隣り合う値への明細の追加が待たされることがある。実行は利用の少ない時間帯に行う。
+- ロック・デッドロック・タイムアウトの実際の動作は、偽のDBでは確認できない。テストで確認したのは、ロックの順序・対象と、ロック失敗時のロールバックだけである。
 
 ## 4. 判定条件（仕訳の整合性を含む）
 
@@ -228,34 +257,100 @@ SELECT e.id FROM wp_stageart_expenses e
 
 **条件：** 移行の結果に問題があり、仕訳やほかのデータには問題がない場合（例：移行対象の判断を誤った）。仕訳は変更していないため、戻す必要はない。配置後に書き込まれたほかのデータは残る。
 
-```sql
--- 対象の確認：MIGRATED履歴だけを持ち、その後に操作されていない行
-SELECT e.id FROM wp_stageart_expenses e
-  JOIN wp_stageart_expense_reviews r ON r.expense_id = e.id AND r.action = 'MIGRATED' AND r.revision = 1
- WHERE e.status = 'POSTED' AND e.revision = 1
-   AND NOT EXISTS (SELECT 1 FROM wp_stageart_expense_reviews o WHERE o.expense_id = e.id AND o.action <> 'MIGRATED');
+**方針：**
 
--- 戻す（承認後、復旧直前のバックアップ取得後に、1つのトランザクションで）
--- <ID一覧> は上のSELECTで確認し、承認を得たIDに限る
-START TRANSACTION;
-UPDATE wp_stageart_expenses
-   SET status = 'CONFIRMED', revision = 0, submitted_by = NULL, submitted_at = NULL,
-       requested_amount = NULL, approved_amount = NULL, approved_by = NULL, approved_at = NULL,
-       posted_journal_entry_id = NULL
- WHERE id IN (<ID一覧>) AND status = 'POSTED' AND revision = 1;
-DELETE FROM wp_stageart_expense_reviews
- WHERE expense_id IN (<ID一覧>) AND action = 'MIGRATED' AND revision = 1;
--- 2つの文の件数がどちらもIDの数と一致することを確認してからCOMMIT。一致しなければROLLBACK
-COMMIT;
-```
+- 移行**後に別の処理で変更された行は戻さない。** 移行が書いた値と`MIGRATED`の履歴がそのまま残っている行だけを戻す。
+- 指定したIDのうち1件でも条件に合わなければ、**どの行も更新せずに停止する。**
+- 復旧は1つのトランザクションで行い、途中で失敗すれば全体をロールバックする。
+- 仕訳は変更しない（読むだけで、ロックもしない）。
 
-- 戻した行の値は、移行前（第5節の表）と同じになる。
+**復旧できる条件（すべて満たす行だけ）：**
+
+| 確認内容 | 満たさない場合の理由コード |
+|---|---|
+| 行が存在する | `NOT_FOUND` |
+| `status = 'POSTED'`、`revision = 1`、仕訳IDがある、差し戻しの列（`rejected_by`・`rejected_at`・`rejection_reason`）がNULL | `STATE_CHANGED` |
+| 申請額＝承認額、`submitted_by/at`＝`created_by/at`、`approved_by/at`＝`confirmed_by/at`（移行が書いた値のまま） | `MODIFIED_SINCE_MIGRATION` |
+| 履歴がちょうど1件で、それが`MIGRATED`・申請回1・金額が一致・実行者が確認者 | `HISTORY_MISMATCH` |
+| 明細が`MIGRATED`履歴の明細スナップショットと同じで、合計が金額と一致する | `LINES_CHANGED` |
+| 仕訳IDが、そのExpenseの`ExpenseConfirmed`の仕訳を指している | `JOURNAL_ENTRY_MISMATCH` |
+
+#### 手順（スクリプトを使う）
+
+1. **確認（読み取りのみ）：** 戻す候補のIDを指定して確認する。各IDに`RESTORABLE`または理由コードが表示される。
+
+   ```
+   wp eval-file plugin/scripts/legacy_expense_migration_restore.php check <ID>,<ID>,... --path=<wordpress-root>
+   ```
+
+2. 理由コードが出たIDは、復旧の対象から外すか、個別に調査する（自動では直さない）。対象から外した後、もう一度確認する。
+3. 確認結果、対象ID、理由を記録し、承認を得る。
+4. 復旧の直前にバックアップを取得する（工程3と同じ方法）。
+5. **確認前の値を記録する（読み取りのみ）：**
+
+   ```sql
+   SELECT id, status, revision, requested_amount, approved_amount, posted_journal_entry_id, updated_at
+     FROM wp_stageart_expenses WHERE id IN (<ID一覧>);
+   SELECT expense_id, revision, action FROM wp_stageart_expense_reviews WHERE expense_id IN (<ID一覧>);
+   SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;
+   SELECT COUNT(*) FROM wp_stageart_journal_entries;
+   SELECT debit_credit, COUNT(*), SUM(amount) FROM wp_stageart_journal_entry_lines GROUP BY debit_credit;
+   ```
+
+6. **復旧：**
+
+   ```
+   wp eval-file plugin/scripts/legacy_expense_migration_restore.php restore <ID>,<ID>,... --path=<wordpress-root>
+   ```
+
+   スクリプトは次の順で処理する。
+   1. 書き込み対象テーブルがInnoDBでなければ拒否する（`NOT_TRANSACTIONAL`）。
+   2. 全IDを確認し、1件でも条件に合わなければ何も書き込まずに拒否する（`Refused (TARGET_MISMATCH)`。ログに`<ID>=<理由>`を記録する）。
+   3. `START TRANSACTION`。IDごとに、Expenseの行を`FOR UPDATE`でロックし、履歴を`FOR UPDATE`で読み、**ロックした値でもう一度確認**する。確認の後に別の処理が変更していれば、全体をロールバックする。
+   4. 状態を戻す。`UPDATE`の`WHERE`にも上表の条件を入れ、更新件数が1件でなければ全体をロールバックする。
+   5. その行の`MIGRATED`履歴を、履歴のIDを指定して削除する。削除件数が1件でなければ全体をロールバックする。
+   6. 全IDが終わったら`COMMIT`する。COMMITが失敗した場合もロールバックする。
+
+   | 失敗の理由コード | 意味 |
+   |---|---|
+   | `TRANSACTION_START_FAILED` | トランザクションを開始できなかった |
+   | `LOCK_FAILED` | ロックが失敗した（デッドロック、ロック待ちのタイムアウト等） |
+   | 上表の理由コード | ロックした後の確認で、条件に合わなくなっていた |
+   | `UPDATE_FAILED` | 状態の更新が失敗した、または更新件数が1件でなかった |
+   | `HISTORY_DELETE_FAILED` | 履歴の削除が失敗した、または削除件数が1件でなかった |
+   | `COMMIT_FAILED` | COMMITが失敗した |
+   | `UNEXPECTED_ERROR` | 上記以外の例外 |
+
+   失敗した場合は`Rolled back (<理由> at <ID>) - nothing was restored.`と表示し、どの行も戻らない。
+
+7. **復旧後の確認（読み取りのみ）：**
+
+   ```sql
+   -- 対象の行がCONFIRMEDで、ワークフロー用の列が初期値に戻っている
+   SELECT id FROM wp_stageart_expenses
+    WHERE id IN (<ID一覧>)
+      AND NOT (status = 'CONFIRMED' AND revision = 0 AND submitted_by IS NULL AND submitted_at IS NULL
+               AND requested_amount IS NULL AND approved_amount IS NULL AND approved_by IS NULL
+               AND approved_at IS NULL AND posted_journal_entry_id IS NULL);              -- 0件
+   SELECT COUNT(*) FROM wp_stageart_expense_reviews WHERE expense_id IN (<ID一覧>);        -- 0
+   SELECT COUNT(*) FROM wp_stageart_journal_entries;                                     -- 手順5と同じ
+   SELECT debit_credit, COUNT(*), SUM(amount) FROM wp_stageart_journal_entry_lines GROUP BY debit_credit;  -- 手順5と同じ
+   ```
+
+   あわせて`SELECT status, COUNT(*) FROM wp_stageart_expenses GROUP BY status;`を実行し、手順5と比べてPOSTEDが対象IDの数だけ減り、CONFIRMEDが同じ数だけ増え、ほかの状態が変わっていないことを確認する。
+
+- 戻した行の値は、移行前（第5節の表）と同じになる。`updated_at`は移行でも復旧でも変更しない。
 - 戻した後、事前確認を実行すると、同じ行が再び候補として表示される。運用者が実行しない限り、再移行はされない。
-- MIGRATED以外の履歴を持つ行（将来、支払処理などで操作された行）は、このSQLでは戻らない。個別に判断する。
+
+#### 復旧できない場合
+
+- **確認で理由コードが出た行**（移行後に申請・承認・差し戻し、明細の変更、履歴の追加などがあった行）は、部分復旧の対象にしない。その後の操作を無視して移行前の状態に戻すと、操作の結果が失われるためである。行ごとに、その後の操作の内容を確認し、対処（戻さない、業務上の訂正を行う、全体復旧を検討する）を個別に決めて承認を得る。
+- **復旧が失敗してロールバックされた場合**は、どの行も変わっていない。理由コードを記録し、`check`からやり直す。ロックの失敗は、利用の少ない時間帯に再実行すれば解消することがある。
+- **WP-CLIが使えない場合**は、スクリプトを使わずにSQLで戻さない。上表の条件のうち、明細スナップショットとの比較はSQLで正確に行いにくいため、手作業のSQLでは「移行後に変更された行を戻さない」ことを保証できない。WP-CLIを用意するか、8.2の全体復旧を検討する。
 
 ### 8.2 全体復旧：バックアップから復元する
 
-**条件：** 部分復旧では対処できない場合。例：移行以外のデータにも影響がある、原因が特定できない、8.1のSQLの件数が一致しない。
+**条件：** 部分復旧では対処できない場合。例：移行以外のデータにも影響がある、原因が特定できない、8.1のスクリプトが`RESTORABLE`以外を返す行があり、個別の対処が決まらない。
 
 1. サービスへの書き込みを止める（メンテナンス）。
 2. 復元前の状態のダンプを追加で取得する（調査用）。
@@ -275,7 +370,8 @@ COMMIT;
 - テストは偽のDB（`FakeExpenseMigrationDatabase`）で行い、実際のMySQLでは実行していない。InnoDBでのロック・ロールバックの実動作、`information_schema`の値、WP-CLIからの実行は、承認を得た環境で確認する必要がある。
 - 本番・開発のサーバーで、WP-CLIが使えるかを確認していない。開発環境ではSeedDataの手順でWP-CLIを使っている。
 - PHPエラーログの出力先を確認していない。
-- 仕訳と仕訳明細の読み取りはロックしない（Expenseの行だけをロックする）。ロック後の再判定とCOMMITの間に、別の操作で仕訳が取り消される可能性は残る。実行は利用の少ない時間帯に行う。
+- 仕訳と仕訳明細は、再判定の前に主キーでロックする（3.1）。ロックの実動作、デッドロックの有無、ギャップロックによる待ちの程度は、実MySQLで確認する必要がある。実行は利用の少ない時間帯に行う。
+- 部分復旧の条件（8.1）は、移行が書いた値と履歴が残っていることを確かめるものである。別の処理が移行と同じ値を書き直した場合は区別できない（その場合、戻しても失われる情報はない）。
 - 指紋はSHA-256の先頭16桁で、事前確認の内容が変わっていないことを確かめるためのものである。認証の仕組みではない。
 
 ## 10. テストで確認した範囲
@@ -283,7 +379,9 @@ COMMIT;
 | テスト | 確認内容 |
 |---|---|
 | `LegacyExpenseMigrationClassifierTest` | 判定条件ごとの結果（仕訳のOrganization・Accountごとの借方・貸方・Account・行の形式を含む） |
-| `LegacyExpenseMigrationTest` | 事前確認が書き込まないこと、指紋の一致・不一致、InnoDB以外での拒否、1件ごとのトランザクション、状態の更新・履歴の追加・COMMIT・開始の失敗時のロールバックとログ、ロック後の再判定、再実行で二重移行・二重履歴がないこと、仕訳への書き込みがないこと、ログの内容 |
+| `LegacyExpenseMigrationTest` | 事前確認が書き込まないこと、指紋の一致・不一致、InnoDB以外での拒否、1件ごとのトランザクション、状態の更新・履歴の追加・COMMIT・開始の失敗時のロールバックとログ、ロック後の再判定、再実行で二重移行・二重履歴がないこと、仕訳への書き込みがないこと、ログの内容。ロックの順序と対象（Expense→仕訳（主キー）→仕訳の明細、事前確認ではロックしない）、事前確認の後に仕訳が取り消された場合の拒否、ロック直前に仕訳の明細が変わった場合にCONFIRMEDのまま残ること、各ロックの失敗時のロールバック |
+| `LegacyExpenseMigrationRestoreTest` | 部分復旧の確認が書き込まないこと、正常な復旧で対象だけが移行前と同じ値に戻り、仕訳が変わらないこと、移行後に変更された行（状態・申請回・差し戻し・金額・承認者・申請者・仕訳・履歴・明細）の拒否、1件でも不一致があれば全体を拒否すること、ロック直前の変更や各段階の失敗で全体がロールバックされること、InnoDB以外とID未指定での拒否、仕訳をロック・変更しないこと、ログの内容 |
+| `LegacyExpenseMigrationRestoreScriptTest` | 部分復旧スクリプトの確認・復旧・拒否、引数の誤り、WP-CLI以外での無動作、出力の内容 |
 | `LegacyExpenseMigrationPreflightTest` | 本番で想定される行の種類を1つのDBに入れた場合の、事前確認の結果、実行の前後での状態・金額・仕訳の件数と合計、再実行、ログの内容 |
 | `LegacyExpenseMigrationScriptTest` | WP-CLIスクリプトの事前確認・実行・拒否、スキーマが古い場合の停止、WP-CLI以外での無動作、出力の内容 |
 | `SchemaUpgradePathTest` | スキーマ更新（通常のリクエスト）では移行が実行されず、Expenseが変わらないこと |
