@@ -225,6 +225,18 @@ final class ProductionAuthorizationService
         'Production.Complete',
     ];
 
+    /**
+     * Whether this Person holds the right to complete the Production
+     * (ACTIVE -> COMPLETED): PrimaryManager, 会計管理者 or 代理人, exactly
+     * what `CompleteProductionUseCase` checks. It says nothing about the
+     * Production's status or its settlement, which the completion itself
+     * still guards.
+     */
+    public function canCompleteProduction(Person $person, Production $production): bool
+    {
+        return $this->hasProductionCapability($person, $production, ProductionCapability::COMPLETE);
+    }
+
     public function canReadProduction(Person $person, Production $production): bool
     {
         return $this->isPrimaryManager($person, $production)

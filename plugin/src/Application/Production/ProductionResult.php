@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Application\Production;
 
 use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 
 final class ProductionResult
@@ -23,6 +24,7 @@ final class ProductionResult
     public ?string $delegateRole;
     /** @var string[] */
     public array $delegateRoles;
+    public bool $canComplete;
     public ?string $description;
     public ?string $descriptionPublishedAt;
     public ?string $flyerUrl;
@@ -54,6 +56,7 @@ final class ProductionResult
         bool $isPrimaryManager,
         ?string $delegateRole,
         array $delegateRoles,
+        bool $canComplete,
         ?string $description,
         ?string $descriptionPublishedAt,
         ?string $flyerUrl,
@@ -84,6 +87,7 @@ final class ProductionResult
         $this->isPrimaryManager = $isPrimaryManager;
         $this->delegateRole = $delegateRole;
         $this->delegateRoles = $delegateRoles;
+        $this->canComplete = $canComplete;
         $this->description = $description;
         $this->descriptionPublishedAt = $descriptionPublishedAt;
         $this->flyerUrl = $flyerUrl;
@@ -107,12 +111,19 @@ final class ProductionResult
      *        requesting Person holds on this Production (§4 複数Role対応) - used for
      *        delegateRoles only. $activeDelegate (singular) keeps its pre-existing,
      *        unchanged first-match meaning for the legacy delegateRole field.
+     * @param bool $mayComplete `ProductionAuthorizationService::canCompleteProduction()`
+     *        for the requesting Person. can_complete is true only while the
+     *        Production is also ACTIVE, the one status it can be completed
+     *        from; an unsettled Ticket Back still refuses the completion
+     *        itself (CompleteProductionUseCase), which this flag does not
+     *        compute.
      */
     public static function fromDomain(
         Production $production,
         bool $isPrimaryManager,
         ?ProductionDelegate $activeDelegate,
-        array $activeDelegates = []
+        array $activeDelegates = [],
+        bool $mayComplete = false
     ): self {
         return new self(
             $production->id()->toString(),
@@ -131,6 +142,7 @@ final class ProductionResult
                 static fn (ProductionDelegate $delegate): string => $delegate->role()->toString(),
                 $activeDelegates
             ),
+            $mayComplete && $production->status()->equals(ProductionStatus::fromString(ProductionStatus::ACTIVE)),
             $production->description(),
             $production->descriptionPublishedAt()?->format(DATE_ATOM),
             $production->flyerUrl(),
@@ -169,6 +181,7 @@ final class ProductionResult
             'is_primary_manager' => $this->isPrimaryManager,
             'delegate_role' => $this->delegateRole,
             'delegate_roles' => $this->delegateRoles,
+            'can_complete' => $this->canComplete,
             'description' => $this->description,
             'description_published_at' => $this->descriptionPublishedAt,
             'flyer_url' => $this->flyerUrl,

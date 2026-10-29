@@ -104,7 +104,8 @@ final class ChangePrimaryManagerUseCase
             $production,
             $requester->id()->equals($newPrimaryManagerPersonId),
             $this->authorization->activeDelegateFor($requester, $production),
-            $this->authorization->activeDelegatesFor($requester, $production)
+            $this->authorization->activeDelegatesFor($requester, $production),
+            $this->authorization->canCompleteProduction($requester, $production)
         );
     }
 }

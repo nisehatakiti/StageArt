@@ -42,7 +42,8 @@ final class GetProductionUseCase
             $production,
             $this->authorization->isPrimaryManager($person, $production),
             $this->authorization->activeDelegateFor($person, $production),
-            $this->authorization->activeDelegatesFor($person, $production)
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
     }
 }

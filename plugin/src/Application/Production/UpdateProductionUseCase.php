@@ -151,7 +151,8 @@ final class UpdateProductionUseCase
             $production,
             true,
             $this->authorization->activeDelegateFor($person, $production),
-            $this->authorization->activeDelegatesFor($person, $production)
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
     }
 

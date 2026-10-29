@@ -82,7 +82,7 @@ final class CompleteProductionUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->hasProductionCapability($person, $production, ProductionCapability::COMPLETE)) {
+        if (! $this->authorization->canCompleteProduction($person, $production)) {
             throw new ProductionAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can complete this Production.');
         }
 
@@ -104,9 +104,10 @@ final class CompleteProductionUseCase
 
         return ProductionResult::fromDomain(
             $production,
-            true,
+            $this->authorization->isPrimaryManager($person, $production),
             $this->authorization->activeDelegateFor($person, $production),
-            $this->authorization->activeDelegatesFor($person, $production)
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
     }
 

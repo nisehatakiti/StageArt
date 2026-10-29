@@ -15,6 +15,8 @@ use StageArt\Application\Production\CancelProductionCommand;
 use StageArt\Application\Production\CancelProductionUseCase;
 use StageArt\Application\Production\CompleteProductionCommand;
 use StageArt\Application\Production\CompleteProductionUseCase;
+use StageArt\Application\Production\GetProductionQuery;
+use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionSettlementIncompleteException;
@@ -71,6 +73,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private CompleteProductionUseCase $complete;
     private ArchiveProductionUseCase $archive;
     private CancelProductionUseCase $cancel;
+    private GetProductionUseCase $get;
 
     protected function setUp(): void
     {
@@ -103,6 +106,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         );
         $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization);
         $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization);
+        $this->get = new GetProductionUseCase($this->productions, $productionAuthorization);
     }
 
     /**
@@ -334,16 +338,67 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     }
 
     /**
-     * @param RoleKey[] $roles
+     * can_complete in the Production response follows the same right
+     * CompleteProductionUseCase checks - PrimaryManager, 会計管理者 and an
+     * active 代理人, nobody else - and is true only while the Production
+     * is ACTIVE. The other lifecycle actions stay PrimaryManager-only.
      */
-    private function givenDelegate(Production $production, int $wordPressUserId, array $roles): void
+    public function test_can_complete_follows_the_completion_right_and_the_active_status(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $id = $production->id()->toString();
+        $proxyRoles = $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegate($production, 9, [RoleKey::accountingManager()]);
+        $this->givenDelegate($production, 7, [RoleKey::checkInManager()]);
+        $this->givenDelegate($production, 10, [RoleKey::participantManager()]);
+
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 1))->canComplete, 'A PLANNING Production cannot be completed.');
+
+        $this->activate->execute(new ActivateProductionCommand($id, 1));
+
+        foreach ([1 => true, 8 => true, 9 => true, 7 => false, 10 => false] as $user => $expected) {
+            $result = $this->get->execute(new GetProductionQuery($id, $user));
+            $this->assertSame($expected, $result->canComplete, "can_complete for user {$user}");
+            $this->assertSame($expected, $result->toArray()['can_complete']);
+        }
+
+        foreach ([8, 9] as $delegateUser) {
+            try {
+                $this->cancel->execute(new CancelProductionCommand($id, $delegateUser));
+                $this->fail("User {$delegateUser} must not cancel the Production.");
+            } catch (ProductionAccessDeniedException $exception) {
+                $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+            }
+        }
+
+        $proxyRoles[1]->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($proxyRoles[1]);
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 8))->canComplete, 'A proxy with a deactivated Role is no longer a proxy.');
+
+        $completed = $this->complete->execute(new CompleteProductionCommand($id, 9));
+        $this->assertSame('COMPLETED', $completed->status);
+        $this->assertFalse($completed->isPrimaryManager, 'The accounting manager who completed it is not the PrimaryManager.');
+        $this->assertFalse($completed->canComplete);
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 1))->canComplete);
+    }
+
+    /**
+     * @param RoleKey[] $roles
+     * @return ProductionDelegate[]
+     */
+    private function givenDelegate(Production $production, int $wordPressUserId, array $roles): array
     {
         $person = Person::create($wordPressUserId);
         $this->people->save($person);
 
+        $delegates = [];
         foreach ($roles as $role) {
-            $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $role, $production->primaryManagerPersonId()));
+            $delegate = ProductionDelegate::create($production->id(), $person->id(), $role, $production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
+            $delegates[] = $delegate;
         }
+
+        return $delegates;
     }
 
     public function test_complete_succeeds_once_the_member_is_fully_settled(): void

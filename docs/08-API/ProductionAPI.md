@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -120,6 +120,14 @@ GET /api/v1/productions/{productionId}
 - PrimaryManager
 - ProductionDelegates
 - DelegateRole
+
+Productionのレスポンス（取得・一覧・各状態変更の結果）は、要求者について `can_complete`（boolean）を含む（Version 4.1、2026-10-29）。
+
+- 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。
+- 公演完了の権限を持つのは、Primary Manager、会計管理者（ACCOUNTING_MANAGER）、代理人（有効なPARTICIPANT_MANAGERとREHEARSAL_MANAGERを同時に持つProduction Delegate）である（ExpenseApprovalWorkflow「決算確定」）。判定は公演完了APIと同じ認可処理による。
+- 精算が完了していない等、公演完了時の制約は `can_complete` では判定しない。trueでも、公演完了APIはそれらの制約により拒否しうる。
+- 公演開始・アーカイブ・中止等、他の状態変更の権限は `can_complete` に含まれず、従来どおりPrimary Managerのみである。
+- 画面は、公演完了の操作の表示を `can_complete` で判定する。
 
 Production APIは関連Resourceを集約して返却する。
 
