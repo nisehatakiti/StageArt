@@ -27,6 +27,7 @@ final class FakeExpenseMigrationDatabase
         'stageart_accounts' => [],
         'stageart_productions' => [],
         'stageart_projects' => [],
+        'stageart_people' => [],
     ];
 
     /** @var string[] tables (without prefix) Installer should see as already created */
@@ -41,8 +42,9 @@ final class FakeExpenseMigrationDatabase
     /**
      * Steps to fail: 'START' => true fails every START TRANSACTION;
      * 'UPDATE', 'INSERT' and 'COMMIT' => an Expense id fail that step for
-     * that Expense only; 'RESTORE_UPDATE' and 'DELETE' => an Expense id
-     * fail the restore's UPDATE / history DELETE for it; 'LOCK' => a
+     * that Expense only (the INSERT one also fails the restore's
+     * MIGRATION_REVERTED row); 'RESTORE_UPDATE' => an Expense id fails the
+     * restore's UPDATE for it; 'LOCK' => a
      * $locks entry ("journal_entry:<id>" etc.) fails that locking read
      * the way a deadlock does - no row, and $wpdb->last_error set.
      *
@@ -108,8 +110,8 @@ final class FakeExpenseMigrationDatabase
             return $project['organization_id'] ?? null;
         }
 
-        if ($method === 'get_var' && preg_match('/^SELECT COUNT\(\*\) FROM \S+stageart_expense_reviews WHERE expense_id = %s$/', $template)) {
-            return (string) count($this->where('stageart_expense_reviews', ['expense_id' => $values[0]]));
+        if ($method === 'get_var' && preg_match('/^SELECT id FROM \S+stageart_people WHERE wp_user_id = %d$/', $template)) {
+            return $this->where('stageart_people', ['wp_user_id' => $values[0]])[0]['id'] ?? null;
         }
 
         if ($method === 'get_col' && preg_match('/^SELECT id FROM \S+stageart_journal_entries WHERE source_event_type = %s AND source_event_id = %s ORDER BY id$/', $template)) {
@@ -192,6 +194,13 @@ final class FakeExpenseMigrationDatabase
                 return $this->where('stageart_journal_entry_lines', ['journal_entry_id' => $values[0]]);
             }
 
+            if (preg_match('/^SELECT action, revision FROM \S+stageart_expense_reviews WHERE expense_id = %s$/', $template)) {
+                return array_map(
+                    static fn (array $row): array => ['action' => $row['action'], 'revision' => (string) $row['revision']],
+                    $this->where('stageart_expense_reviews', ['expense_id' => $values[0]])
+                );
+            }
+
             if (preg_match('/^SELECT \* FROM \S+stageart_expense_reviews WHERE expense_id = %s( FOR UPDATE)?$/', $template, $match)) {
                 if (isset($match[1]) && ! $this->lock("expense_reviews:{$values[0]}", $wpdb)) {
                     return null;
@@ -246,10 +255,6 @@ final class FakeExpenseMigrationDatabase
 
             if (str_starts_with($template, 'UPDATE ') && str_contains($template, 'stageart_expenses SET status = %s, revision = 0,')) {
                 return $this->restoreExpense($values);
-            }
-
-            if (str_starts_with($template, 'DELETE FROM') && str_contains($template, 'stageart_expense_reviews')) {
-                return $this->deleteReview($values);
             }
 
             if (str_starts_with($template, 'UPDATE ') && str_contains($template, 'stageart_expenses SET status = %s')) {
@@ -331,30 +336,6 @@ final class FakeExpenseMigrationDatabase
     }
 
     /**
-     * @param array<int, mixed> $values
-     * @return int|false
-     */
-    private function deleteReview(array $values)
-    {
-        [$id, $expenseId, $action] = $values;
-
-        if (($this->failures['DELETE'] ?? null) === $expenseId) {
-            return false;
-        }
-
-        foreach ($this->tables['stageart_expense_reviews'] as $index => $row) {
-            if ($row['id'] === $id && $row['expense_id'] === $expenseId && $row['action'] === $action && (int) $row['revision'] === 1) {
-                unset($this->tables['stageart_expense_reviews'][$index]);
-                $this->tables['stageart_expense_reviews'] = array_values($this->tables['stageart_expense_reviews']);
-
-                return 1;
-            }
-        }
-
-        return 0;
-    }
-
-    /**
      * @param array<string, mixed> $conditions
      * @return array<int, array<string, mixed>>
      */
@@ -409,14 +390,20 @@ final class FakeExpenseMigrationDatabase
 
     /**
      * Plain INSERT against UNIQUE (expense_id, revision, action): a
-     * duplicate is an error, as in MySQL.
+     * duplicate is an error, as in MySQL. The migration's INSERT has a
+     * literal NULL reason (9 values), the restore's binds one (10).
      *
      * @param array<int, mixed> $values
      * @return int|false
      */
     private function insertReview(array $values)
     {
-        [$id, $expenseId, $revision, $action, $requested, $approved, $snapshot, $actor, $actedAt] = $values;
+        if (count($values) === 10) {
+            [$id, $expenseId, $revision, $action, $requested, $approved, $snapshot, $reason, $actor, $actedAt] = $values;
+        } else {
+            [$id, $expenseId, $revision, $action, $requested, $approved, $snapshot, $actor, $actedAt] = $values;
+            $reason = null;
+        }
 
         if (($this->failures['INSERT'] ?? null) === $expenseId) {
             return false;
@@ -436,6 +423,7 @@ final class FakeExpenseMigrationDatabase
             'requested_amount' => $requested,
             'approved_amount' => $approved,
             'lines_snapshot' => $snapshot,
+            'reason' => $reason,
             'actor_person_id' => $actor,
             'acted_at' => $actedAt,
         ];

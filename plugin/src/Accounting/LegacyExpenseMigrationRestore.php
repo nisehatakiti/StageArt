@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace StageArt\Accounting;
 
+use DateTimeImmutable;
+use StageArt\Domain\Expense\ExpenseReview;
+use StageArt\Domain\Shared\Uuid;
 use Throwable;
 
 /**
@@ -36,9 +39,16 @@ use Throwable;
  * its source event, which nothing changes after creation, and no
  * Journal Entry row is ever deleted.
  *
- * NOTE: deleting the MIGRATED row conflicts with the append-only history
- * rule (ExpenseApprovalWorkflow.md, Version 1.3: 過去の履歴を上書き・削除
- * しない). The runbook holds the partial restore until that is decided.
+ * The history stays append-only (ExpenseApprovalWorkflow.md Version 1.8):
+ * the MIGRATED row is kept and a MIGRATION_REVERTED row is added for the
+ * same revision, in the same transaction as the Expense update, holding
+ * the amounts and lines being undone, the operator's reason, the
+ * operator's StageArt Person as actor and the time. An Expense with that
+ * pair is never migrated again (LegacyExpenseMigrationClassifier).
+ *
+ * The actor must be a StageArt Person id the caller has established (the
+ * WP-CLI script resolves it from the WordPress user given with --user);
+ * without one nothing is written - no other id stands in for it.
  */
 final class LegacyExpenseMigrationRestore
 {
@@ -49,6 +59,12 @@ final class LegacyExpenseMigrationRestore
     public const REFUSED_NO_IDS = 'NO_IDS';
     public const REFUSED_NOT_TRANSACTIONAL = LegacyExpenseMigration::REFUSED_NOT_TRANSACTIONAL;
     public const REFUSED_TARGET_MISMATCH = 'TARGET_MISMATCH';
+    public const REFUSED_ACTOR_MISSING = 'ACTOR_MISSING';
+    public const REFUSED_REASON_MISSING = 'REASON_MISSING';
+    public const REFUSED_REASON_TOO_LONG = 'REASON_TOO_LONG';
+
+    /** The longest restore reason accepted, in characters. */
+    public const MAX_REASON_LENGTH = 500;
 
     public const NOT_FOUND = 'NOT_FOUND';
     public const STATE_CHANGED = 'STATE_CHANGED';
@@ -60,7 +76,7 @@ final class LegacyExpenseMigrationRestore
     public const FAILED_TRANSACTION_START = LegacyExpenseMigration::FAILED_TRANSACTION_START;
     public const FAILED_LOCK = LegacyExpenseMigration::FAILED_LOCK;
     public const FAILED_UPDATE = LegacyExpenseMigration::FAILED_UPDATE;
-    public const FAILED_HISTORY_DELETE = 'HISTORY_DELETE_FAILED';
+    public const FAILED_HISTORY_INSERT = LegacyExpenseMigration::FAILED_HISTORY_INSERT;
     public const FAILED_COMMIT = LegacyExpenseMigration::FAILED_COMMIT;
     public const FAILED_UNEXPECTED = LegacyExpenseMigration::FAILED_UNEXPECTED;
 
@@ -87,6 +103,10 @@ final class LegacyExpenseMigrationRestore
     /**
      * @param \wpdb $wpdb
      * @param string[] $ids
+     * @param string $actorPersonId the operator's StageArt Person id, recorded as the actor
+     * @param string $reason why the migration is undone, stored in the history (never logged)
+     * @param array<string, string|int|null> $operator further operator identifiers, for the
+     *        log only, e.g. ['wp_user' => 12, 'os_user' => 'deploy']
      * @return array{
      *     outcome: string,
      *     reason: ?string,
@@ -95,13 +115,26 @@ final class LegacyExpenseMigrationRestore
      *     mismatches: array<string, string>
      * }
      */
-    public static function restore($wpdb, array $ids): array
+    public static function restore($wpdb, array $ids, string $actorPersonId, string $reason, array $operator = []): array
     {
         $ids = self::normalize($ids);
         $summary = ['outcome' => self::OUTCOME_RESTORED, 'reason' => null, 'expense_id' => null, 'restored' => [], 'mismatches' => []];
+        $reason = trim($reason);
 
         if ($ids === []) {
             return self::refuse($summary, self::REFUSED_NO_IDS);
+        }
+
+        if (! Uuid::isValid($actorPersonId)) {
+            return self::refuse($summary, self::REFUSED_ACTOR_MISSING);
+        }
+
+        if ($reason === '') {
+            return self::refuse($summary, self::REFUSED_REASON_MISSING);
+        }
+
+        if (mb_strlen($reason) > self::MAX_REASON_LENGTH) {
+            return self::refuse($summary, self::REFUSED_REASON_TOO_LONG);
         }
 
         if (! LegacyExpenseMigration::isTransactional(LegacyExpenseMigration::storageEngines($wpdb))) {
@@ -123,6 +156,7 @@ final class LegacyExpenseMigrationRestore
         $t = LegacyExpenseMigration::tables($wpdb);
         $current = null;
         $failure = null;
+        $actedAt = (new DateTimeImmutable())->format('Y-m-d H:i:s');
 
         // One lock order for every run, so two overlapping restores wait
         // for each other instead of deadlocking.
@@ -132,7 +166,7 @@ final class LegacyExpenseMigrationRestore
         try {
             foreach ($lockOrder as $id) {
                 $current = $id;
-                $failure = self::restoreOne($wpdb, $t, $id);
+                $failure = self::restoreOne($wpdb, $t, $id, $actorPersonId, $reason, $actedAt);
 
                 if ($failure !== null) {
                     break;
@@ -153,7 +187,15 @@ final class LegacyExpenseMigrationRestore
             return self::rolledBack($summary, $current, $failure);
         }
 
-        error_log(LegacyExpenseMigration::LOG_PREFIX . ' restored to CONFIRMED: ' . implode(', ', $ids));
+        error_log(sprintf(
+            '%s restored to CONFIRMED: %s; recorded %s at %s by person=%s%s',
+            LegacyExpenseMigration::LOG_PREFIX,
+            implode(', ', $ids),
+            ExpenseReview::MIGRATION_REVERTED,
+            $actedAt,
+            $actorPersonId,
+            self::operatorForLog($operator)
+        ));
 
         return array_merge($summary, ['restored' => $ids]);
     }
@@ -162,7 +204,7 @@ final class LegacyExpenseMigrationRestore
      * @param \wpdb $wpdb
      * @param array<string, string> $t
      */
-    private static function restoreOne($wpdb, array $t, string $id): ?string
+    private static function restoreOne($wpdb, array $t, string $id, string $actorPersonId, string $reason, string $actedAt): ?string
     {
         $expense = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE id = %s FOR UPDATE", $id), ARRAY_A);
         LegacyExpenseMigration::assertLocked($wpdb);
@@ -196,14 +238,26 @@ final class LegacyExpenseMigrationRestore
             return self::FAILED_UPDATE;
         }
 
-        $deleted = $wpdb->query($wpdb->prepare(
-            "DELETE FROM {$t['reviews']} WHERE id = %s AND expense_id = %s AND action = %s AND revision = 1",
-            $found['review_id'],
+        // Appended next to the MIGRATED row, never replacing it. A plain
+        // INSERT: the unique (expense_id, revision, action) key makes a
+        // second revert of the same migration an error.
+        $inserted = $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$t['reviews']}
+                (id, expense_id, revision, action, requested_amount, approved_amount, lines_snapshot, reason, actor_person_id, acted_at)
+            VALUES (%s, %s, %d, %s, %d, %d, %s, %s, %s, %s)",
+            Uuid::generate(),
             $id,
-            'MIGRATED'
+            1,
+            ExpenseReview::MIGRATION_REVERTED,
+            $found['amount'],
+            $found['amount'],
+            (string) json_encode($found['lines'], JSON_UNESCAPED_UNICODE),
+            $reason,
+            $actorPersonId,
+            $actedAt
         ));
 
-        return $deleted === 1 ? null : self::FAILED_HISTORY_DELETE;
+        return $inserted === 1 ? null : self::FAILED_HISTORY_INSERT;
     }
 
     /**
@@ -212,11 +266,11 @@ final class LegacyExpenseMigrationRestore
      * @param \wpdb $wpdb
      * @param array<string, string> $t
      * @param array<string, mixed>|null $expense
-     * @return array{reason: ?string, review_id: ?string, journal_entry_id: ?string, amount: ?int}
+     * @return array{reason: ?string, journal_entry_id: ?string, amount: ?int, lines: array<int, array{account_id: string, amount: int, description: ?string}>}
      */
     private static function inspect($wpdb, array $t, string $id, ?array $expense, bool $lock): array
     {
-        $no = static fn (string $reason): array => ['reason' => $reason, 'review_id' => null, 'journal_entry_id' => null, 'amount' => null];
+        $no = static fn (string $reason): array => ['reason' => $reason, 'journal_entry_id' => null, 'amount' => null, 'lines' => []];
 
         if ($expense === null) {
             return $no(self::NOT_FOUND);
@@ -301,7 +355,26 @@ final class LegacyExpenseMigrationRestore
             return $no(self::JOURNAL_ENTRY_MISMATCH);
         }
 
-        return ['reason' => null, 'review_id' => (string) $migrated['id'], 'journal_entry_id' => $journalEntryId, 'amount' => $amount];
+        return ['reason' => null, 'journal_entry_id' => $journalEntryId, 'amount' => $amount, 'lines' => $current];
+    }
+
+    /**
+     * " wp_user=12 os_user=deploy": identifiers only; other characters are
+     * dropped and a missing value is written as "unknown".
+     *
+     * @param array<string, string|int|null> $operator
+     */
+    private static function operatorForLog(array $operator): string
+    {
+        $pairs = '';
+
+        foreach ($operator as $key => $value) {
+            $key = (string) preg_replace('/[^a-z_]/', '', strtolower((string) $key));
+            $value = substr((string) preg_replace('/[^A-Za-z0-9._@:-]/', '', (string) $value), 0, 64);
+            $pairs .= " {$key}=" . ($value === '' ? 'unknown' : $value);
+        }
+
+        return $pairs;
     }
 
     /**

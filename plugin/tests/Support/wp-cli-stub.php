@@ -13,6 +13,14 @@ if (! defined('WP_CLI')) {
     define('WP_CLI', true);
 }
 
+if (! function_exists('get_current_user_id')) {
+    /** The user WP-CLI's --user would set: $GLOBALS['stageart_test_wp']['current_user'], or 0. */
+    function get_current_user_id()
+    {
+        return (int) ($GLOBALS['stageart_test_wp']['current_user'] ?? 0);
+    }
+}
+
 if (! class_exists('WP_CLI', false)) {
     class WP_CLI
     {

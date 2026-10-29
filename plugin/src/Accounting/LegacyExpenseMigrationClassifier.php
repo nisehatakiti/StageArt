@@ -22,6 +22,12 @@ namespace StageArt\Accounting;
  * untouched). DRAFT stays DRAFT. Everything else is left exactly as it
  * is for a person to review, with the first failed check as its reason:
  * no Journal Entry is posted, created or corrected by the migration.
+ *
+ * An Expense whose migration was undone (a MIGRATED entry followed by a
+ * MIGRATION_REVERTED one, ExpenseApprovalWorkflow.md Version 1.8) is never
+ * migrated again; any other history that mentions the migration - a
+ * MIGRATED entry on a CONFIRMED row, a revert without a migration, either
+ * of them twice - is inconsistent and left for review.
  */
 final class LegacyExpenseMigrationClassifier
 {
@@ -34,6 +40,8 @@ final class LegacyExpenseMigrationClassifier
     public const REASON_MISSING_CONFIRMATION = 'MISSING_CONFIRMATION';
     public const REASON_WORKFLOW_COLUMNS_SET = 'WORKFLOW_COLUMNS_SET';
     public const REASON_HISTORY_EXISTS = 'HISTORY_EXISTS';
+    public const REASON_MIGRATION_REVERTED = 'MIGRATION_REVERTED';
+    public const REASON_HISTORY_INCONSISTENT = 'HISTORY_INCONSISTENT';
     public const REASON_NO_LINES = 'NO_LINES';
     public const REASON_INVALID_EXPENSE_LINE = 'INVALID_EXPENSE_LINE';
     public const REASON_NO_JOURNAL_ENTRY = 'NO_JOURNAL_ENTRY';
@@ -60,15 +68,47 @@ final class LegacyExpenseMigrationClassifier
     ];
 
     /**
+     * Why an Expense with this history is not migrated, or null when it
+     * has none.
+     *
+     * @param array<int, array<string, mixed>> $history
+     */
+    private static function historyReason(array $history): ?string
+    {
+        if ($history === []) {
+            return null;
+        }
+
+        $migrations = array_values(array_filter($history, static fn (array $row): bool => in_array($row['action'] ?? null, ['MIGRATED', 'MIGRATION_REVERTED'], true)));
+
+        if ($migrations === []) {
+            return self::REASON_HISTORY_EXISTS;
+        }
+
+        $byAction = [];
+
+        foreach ($migrations as $row) {
+            $byAction[(string) $row['action']][] = (int) ($row['revision'] ?? -1);
+        }
+
+        $undone = count($history) === 2
+            && ($byAction['MIGRATED'] ?? []) === [1]
+            && ($byAction['MIGRATION_REVERTED'] ?? []) === [1];
+
+        return $undone ? self::REASON_MIGRATION_REVERTED : self::REASON_HISTORY_INCONSISTENT;
+    }
+
+    /**
      * @param array<string, mixed> $expense row of stageart_expenses
      * @param array<int, array<string, mixed>> $lines rows of stageart_expense_lines for it
      * @param array<int, array<string, mixed>> $journalEntries every stageart_journal_entries row
      *        with source_event_type 'ExpenseConfirmed' and source_event_id = the Expense id, each
      *        with a 'lines' key holding its stageart_journal_entry_lines rows
-     * @param array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history_count: int} $context
+     * @param array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history: array<int, array{action: string, revision: int}>} $context
      *        the Organization of the Expense's Production (null when the Production or its
      *        Project is missing), the stageart_accounts rows (by id) of every Account the
-     *        Journal Entry lines use, and how many stageart_expense_reviews rows the Expense has
+     *        Journal Entry lines use, and the action and revision of each of the Expense's
+     *        stageart_expense_reviews rows
      * @return array{decision: string, reason: ?string, journal_entry_id: ?string, amount: ?int}
      */
     public static function classify(array $expense, array $lines, array $journalEntries, array $context): array
@@ -101,8 +141,10 @@ final class LegacyExpenseMigrationClassifier
             }
         }
 
-        if ((int) ($context['history_count'] ?? 0) !== 0) {
-            return self::manual(self::REASON_HISTORY_EXISTS);
+        $history = self::historyReason($context['history'] ?? []);
+
+        if ($history !== null) {
+            return self::manual($history);
         }
 
         if (count($lines) === 0) {

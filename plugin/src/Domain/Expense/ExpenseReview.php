@@ -25,9 +25,18 @@ final class ExpenseReview
     public const WITHDRAWN = 'WITHDRAWN';
     public const APPROVED = 'APPROVED';
     public const REJECTED = 'REJECTED';
+    /** Schema 1.44.0: a pre-workflow CONFIRMED Expense carried over to POSTED (LegacyExpenseMigration). */
     public const MIGRATED = 'MIGRATED';
 
-    private const VALID_ACTIONS = [self::SUBMITTED, self::WITHDRAWN, self::APPROVED, self::REJECTED, self::MIGRATED];
+    /**
+     * That carry-over undone by an operator (LegacyExpenseMigrationRestore,
+     * ExpenseApprovalWorkflow.md Version 1.8): the Expense is CONFIRMED
+     * again, the MIGRATED entry stays, and the Expense is never migrated
+     * again. Not a business step - written only by the restore.
+     */
+    public const MIGRATION_REVERTED = 'MIGRATION_REVERTED';
+
+    private const VALID_ACTIONS = [self::SUBMITTED, self::WITHDRAWN, self::APPROVED, self::REJECTED, self::MIGRATED, self::MIGRATION_REVERTED];
 
     private ExpenseId $expenseId;
     private int $revision;

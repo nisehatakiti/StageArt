@@ -361,12 +361,15 @@ final class LegacyExpenseMigration
             (string) ($expense['production_id'] ?? '')
         ));
 
-        $historyCount = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reviews']} WHERE expense_id = %s", $id));
+        $history = array_map(
+            static fn (array $row): array => ['action' => (string) $row['action'], 'revision' => (int) $row['revision']],
+            $wpdb->get_results($wpdb->prepare("SELECT action, revision FROM {$t['reviews']} WHERE expense_id = %s", $id), ARRAY_A) ?: []
+        );
 
         return LegacyExpenseMigrationClassifier::classify($expense, $lines, $entries, [
             'organization_id' => $organizationId === null ? null : (string) $organizationId,
             'accounts' => $accounts,
-            'history_count' => (int) $historyCount,
+            'history' => $history,
         ]);
     }
 

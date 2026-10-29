@@ -7,10 +7,12 @@ namespace StageArt\Tests\Infrastructure\WordPress\Persistence;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use StageArt\Application\Expense\ExpenseResult;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Expense\Expense;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseLine;
+use StageArt\Domain\Expense\ExpenseLineId;
 use StageArt\Domain\Expense\ExpenseStateConflictException;
 use StageArt\Domain\Expense\ExpenseStatus;
 use StageArt\Domain\JournalEntry\DebitCredit;
@@ -221,6 +223,59 @@ final class WordPressExpenseRepositoryTest extends TestCase
         $this->assertNull($expense->requestedAmount());
         $this->assertNull($expense->postedJournalEntryId());
         $this->assertSame(ExpenseStatus::CONFIRMED, $expense->persistedStatus());
+    }
+
+    /**
+     * Version 1.8: an Expense whose legacy migration was undone loads with
+     * both history entries - MIGRATED and MIGRATION_REVERTED - read in time
+     * order, and the API result lists both.
+     */
+    public function test_a_reverted_migration_loads_with_both_history_entries_in_time_order(): void
+    {
+        $id = ExpenseId::generate()->toString();
+        $person = PersonId::generate()->toString();
+        $operator = PersonId::generate()->toString();
+        $account = AccountId::generate()->toString();
+        $snapshot = (string) json_encode([['account_id' => $account, 'amount' => 5000, 'description' => '小道具']], JSON_UNESCAPED_UNICODE);
+        $reviewSql = null;
+
+        $wpdb = new \wpdb(static function (string $method, array $args) use ($id, $person, $operator, $account, $snapshot, &$reviewSql) {
+            $sql = (string) ($args[0] ?? '');
+
+            if ($method === 'get_row') {
+                return [
+                    'id' => $id, 'production_id' => ProductionId::generate()->toString(), 'payer_person_id' => null,
+                    'status' => 'CONFIRMED', 'created_by' => $person, 'created_at' => '2026-09-01 10:00:00',
+                    'updated_by' => $person, 'updated_at' => '2026-09-01 10:00:00',
+                    'confirmed_by' => $person, 'confirmed_at' => '2026-09-02 10:00:00', 'revision' => '0',
+                ];
+            }
+
+            if ($method === 'get_results' && str_contains($sql, 'stageart_expense_reviews')) {
+                $reviewSql = $sql;
+
+                return [
+                    ['revision' => '1', 'action' => 'MIGRATED', 'requested_amount' => '5000', 'approved_amount' => '5000', 'lines_snapshot' => $snapshot, 'reason' => null, 'actor_person_id' => $person, 'acted_at' => '2026-09-02 10:00:00'],
+                    ['revision' => '1', 'action' => 'MIGRATION_REVERTED', 'requested_amount' => '5000', 'approved_amount' => '5000', 'lines_snapshot' => $snapshot, 'reason' => '判断誤り', 'actor_person_id' => $operator, 'acted_at' => '2026-11-01 09:00:00'],
+                ];
+            }
+
+            if ($method === 'get_results') {
+                return [['id' => ExpenseLineId::generate()->toString(), 'account_id' => $account, 'amount' => '5000', 'description' => '小道具']];
+            }
+
+            return FakeWpdbDefault::VALUE;
+        });
+
+        $expense = (new WordPressExpenseRepository($wpdb))->findById(ExpenseId::fromString($id));
+        $reviews = ExpenseResult::fromDomain($expense)->toArray()['reviews'];
+
+        $this->assertStringContainsString('ORDER BY acted_at ASC, revision ASC', (string) $reviewSql);
+        $this->assertSame(ExpenseStatus::CONFIRMED, $expense->status()->toString());
+        $this->assertSame(['MIGRATED', 'MIGRATION_REVERTED'], array_column($reviews, 'action'));
+        $this->assertSame([$person, $operator], array_column($reviews, 'actor_person_id'));
+        $this->assertSame([null, '判断誤り'], array_column($reviews, 'reason'));
+        $this->assertSame([5000, 5000], array_column($reviews, 'requested_amount'));
     }
 
     /**

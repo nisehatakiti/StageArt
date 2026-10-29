@@ -79,7 +79,7 @@ final class LegacyExpenseMigrationClassifierTest extends TestCase
 
     /**
      * @param array<string, mixed> $overrides
-     * @return array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history_count: int}
+     * @return array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history: array<int, array{action: string, revision: int}>}
      */
     private function context(array $overrides = []): array
     {
@@ -93,7 +93,7 @@ final class LegacyExpenseMigrationClassifierTest extends TestCase
                 'foreign-payable' => ['id' => 'foreign-payable', 'organization_id' => 'other-organization', 'type' => 'LIABILITY'],
                 'cash' => ['id' => 'cash', 'organization_id' => self::ORGANIZATION_ID, 'type' => 'ASSET'],
             ],
-            'history_count' => 0,
+            'history' => [],
         ], $overrides);
     }
 
@@ -150,7 +150,7 @@ final class LegacyExpenseMigrationClassifierTest extends TestCase
      * @param array<string, mixed> $expense
      * @param array<int, array<string, mixed>> $lines
      * @param array<int, array<string, mixed>> $entries
-     * @param array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history_count: int} $context
+     * @param array{organization_id: ?string, accounts: array<string, array<string, mixed>>, history: array<int, array{action: string, revision: int}>} $context
      */
     public function test_anything_uncertain_is_left_for_manual_review(array $expense, array $lines, array $entries, array $context, string $reason): void
     {
@@ -171,6 +171,7 @@ final class LegacyExpenseMigrationClassifierTest extends TestCase
         $l = $this->lines();
         $c = $this->context();
         $line = static fn (string $account, string $side, $amount): array => ['account_id' => $account, 'debit_credit' => $side, 'amount' => $amount];
+        $h = static fn (string $action, int $revision): array => ['action' => $action, 'revision' => $revision];
 
         return [
             'confirmed with only a DRAFT entry' => [$e, $l, [$this->entry(['status' => 'DRAFT'])], $c, C::REASON_DRAFT_JOURNAL_ENTRY],
@@ -193,7 +194,19 @@ final class LegacyExpenseMigrationClassifierTest extends TestCase
             'already linked to a journal entry' => [$this->expense(['posted_journal_entry_id' => 'je-1']), $l, [$this->entry()], $c, C::REASON_WORKFLOW_COLUMNS_SET],
             'approver already set' => [$this->expense(['approved_by' => 'someone']), $l, [$this->entry()], $c, C::REASON_WORKFLOW_COLUMNS_SET],
             'rejection already recorded' => [$this->expense(['rejection_reason' => 'x']), $l, [$this->entry()], $c, C::REASON_WORKFLOW_COLUMNS_SET],
-            'history already exists' => [$e, $l, [$this->entry()], $this->context(['history_count' => 1]), C::REASON_HISTORY_EXISTS],
+            'history already exists' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('SUBMITTED', 1)]]), C::REASON_HISTORY_EXISTS],
+
+            // a migration undone by the partial restore is never migrated again (Version 1.8)
+            'migration reverted' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1), $h('MIGRATION_REVERTED', 1)]]), C::REASON_MIGRATION_REVERTED],
+            'migration reverted, listed the other way round' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATION_REVERTED', 1), $h('MIGRATED', 1)]]), C::REASON_MIGRATION_REVERTED],
+
+            // history that mentions the migration but does not add up
+            'migrated but still CONFIRMED' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1)]]), C::REASON_HISTORY_INCONSISTENT],
+            'reverted without a migration' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATION_REVERTED', 1)]]), C::REASON_HISTORY_INCONSISTENT],
+            'migrated twice, reverted once' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1), $h('MIGRATED', 2), $h('MIGRATION_REVERTED', 1)]]), C::REASON_HISTORY_INCONSISTENT],
+            'reverted twice' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1), $h('MIGRATION_REVERTED', 1), $h('MIGRATED', 2), $h('MIGRATION_REVERTED', 2)]]), C::REASON_HISTORY_INCONSISTENT],
+            'revert for another revision' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1), $h('MIGRATION_REVERTED', 2)]]), C::REASON_HISTORY_INCONSISTENT],
+            'reverted, then other history' => [$e, $l, [$this->entry()], $this->context(['history' => [$h('MIGRATED', 1), $h('MIGRATION_REVERTED', 1), $h('SUBMITTED', 1)]]), C::REASON_HISTORY_INCONSISTENT],
             'expense line without an amount' => [$e, [['account_id' => 'acc', 'amount' => null]], [$this->entry()], $c, C::REASON_INVALID_EXPENSE_LINE],
             'expense line without an account' => [$e, [['account_id' => '', 'amount' => '5000']], [$this->entry()], $c, C::REASON_INVALID_EXPENSE_LINE],
 

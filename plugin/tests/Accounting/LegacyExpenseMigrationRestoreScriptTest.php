@@ -11,8 +11,10 @@ use StageArt\Tests\Support\LegacyExpenseFixture;
 
 /**
  * plugin/scripts/legacy_expense_migration_restore.php, the operator's way
- * to run the runbook's partial restore: "check" reads only, "restore"
- * restores the listed Expenses or none, only through WP-CLI.
+ * to run the runbook's partial restore: "check" reads only; "restore"
+ * restores the listed Expenses or none, records MIGRATION_REVERTED with
+ * the StageArt Person of the WordPress user WP-CLI runs as (--user), and
+ * writes nothing when that Person or the reason is missing.
  *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
@@ -21,9 +23,13 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
 {
     private const SCRIPT = __DIR__ . '/../../scripts/legacy_expense_migration_restore.php';
 
+    private const OPERATOR_WP_USER = 7;
+    private const OPERATOR_PERSON = '44444444-4444-4444-8444-444444444444';
+    private const REASON = '移行対象の判断誤りのため（承認番号 R-1）';
+
     private FakeExpenseMigrationDatabase $db;
 
-    private function given(bool $cli = true): void
+    private function given(bool $cli = true, ?int $wpUser = self::OPERATOR_WP_USER): void
     {
         require_once __DIR__ . '/../Support/wordpress-stubs.php';
 
@@ -35,6 +41,9 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $this->db = new FakeExpenseMigrationDatabase();
         $GLOBALS['wpdb'] = new \wpdb($this->db);
         update_option('stageart_db_schema_version', '1.44.0');
+        $GLOBALS['stageart_test_wp']['current_user'] = $wpUser ?? 0;
+
+        $this->db->tables['stageart_people'][] = ['id' => self::OPERATOR_PERSON, 'wp_user_id' => (string) self::OPERATOR_WP_USER];
 
         $data = new LegacyExpenseFixture($this->db);
         $data->expense('migratable', 'CONFIRMED', [3000, 2000], ['payer_person_id' => 'payer']);
@@ -72,9 +81,17 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         return array_column($this->db->tables['stageart_expenses'], 'status', 'id')[$id];
     }
 
+    /**
+     * @return string[]
+     */
+    private function actionsOf(string $id): array
+    {
+        return array_column(array_filter($this->db->tables['stageart_expense_reviews'], static fn (array $r): bool => $r['expense_id'] === $id), 'action');
+    }
+
     public function test_check_lists_each_expense_and_writes_nothing(): void
     {
-        $this->given();
+        $this->given(true, null);
         $before = $this->db->tables;
 
         $this->runScript(['check', 'migratable, missing']);
@@ -89,16 +106,41 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $this->assertSame([], $this->db->transactionLog);
     }
 
-    public function test_restore_restores_only_the_listed_expenses(): void
+    public function test_restore_restores_only_the_listed_expenses_and_records_the_operator(): void
     {
         $this->given();
 
-        $this->runScript(['restore', 'migratable']);
+        $this->runScript(['restore', 'migratable', self::REASON]);
 
         $output = $this->output();
-        $this->assertSame('success: Restored to CONFIRMED: 1', end($output));
+        $this->assertContains('line: Operator: person=' . self::OPERATOR_PERSON . ' wp_user=7 os_user=' . $this->osUserShown(), $output);
+        $this->assertSame('success: Restored to CONFIRMED, MIGRATION_REVERTED recorded: 1', end($output));
         $this->assertSame('CONFIRMED', $this->status('migratable'));
         $this->assertSame('POSTED', $this->status('migratable-2'));
+        $this->assertSame(['MIGRATED', 'MIGRATION_REVERTED'], $this->actionsOf('migratable'));
+
+        $reverted = array_values(array_filter($this->db->tables['stageart_expense_reviews'], static fn (array $r): bool => $r['action'] === 'MIGRATION_REVERTED'))[0];
+        $this->assertSame(self::OPERATOR_PERSON, $reverted['actor_person_id']);
+        $this->assertSame(self::REASON, $reverted['reason']);
+    }
+
+    /**
+     * What the script prints for the OS account on this machine: the posix
+     * name, else "env:" and the environment's, else "unknown".
+     */
+    private function osUserShown(): string
+    {
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $pw = posix_getpwuid(posix_geteuid());
+
+            if (is_array($pw) && ($pw['name'] ?? '') !== '') {
+                return (string) $pw['name'];
+            }
+        }
+
+        $env = getenv('USER') ?: getenv('USERNAME');
+
+        return $env === false || $env === '' ? 'unknown' : "env:{$env}";
     }
 
     public function test_a_list_with_an_unrestorable_expense_restores_none(): void
@@ -106,12 +148,58 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $this->given();
         $before = $this->db->tables;
 
-        $this->runScript(['restore', 'migratable,missing']);
+        $this->runScript(['restore', 'migratable,missing', self::REASON]);
 
         $output = $this->output();
+        $this->assertContains('warning: Not restorable: missing=NOT_FOUND', $output);
         $this->assertSame('error: Refused (TARGET_MISMATCH) - nothing was written.', end($output));
         $this->assertSame($before, $this->db->tables);
         $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * Required test 8: an operator StageArt cannot identify is refused -
+     * no other id is used as the actor.
+     *
+     * @dataProvider unidentifiedOperators
+     */
+    public function test_a_restore_by_an_unidentified_operator_writes_nothing(?int $wpUser, bool $linked, string $error): void
+    {
+        $this->given(true, $wpUser);
+
+        if (! $linked) {
+            $this->db->tables['stageart_people'] = [];
+        }
+
+        $before = $this->db->tables;
+
+        $this->runScript(['restore', 'migratable', self::REASON]);
+
+        $this->assertSame(["error: {$error}"], $this->output());
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * @return array<string, array{?int, bool, string}>
+     */
+    public static function unidentifiedOperators(): array
+    {
+        return [
+            'no --user' => [null, true, 'restore must run as the operator\'s WordPress user: add --user=<operator-login>. Nothing was written.'],
+            'a WordPress user without a StageArt Person' => [self::OPERATOR_WP_USER, false, 'WordPress user 7 is not linked to a StageArt Person; the restore cannot record its actor. Nothing was written.'],
+        ];
+    }
+
+    public function test_a_restore_without_a_reason_writes_nothing(): void
+    {
+        $this->given();
+        $before = $this->db->tables;
+
+        $this->runScript(['restore', 'migratable', '   ']);
+
+        $this->assertSame(['error: restore needs the reason as its third argument (stored in the history; do not include personal information).'], $this->output());
+        $this->assertSame($before, $this->db->tables);
     }
 
     /**
@@ -126,7 +214,7 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
 
         $this->runScript($args);
 
-        $this->assertSame(['error: Use: check <id>[,<id>...] or restore <id>[,<id>...]'], $this->output());
+        $this->assertSame(['error: Use: check <id>[,<id>...] or restore <id>[,<id>...] "<reason>" (restore with --user=<operator-login>)'], $this->output());
         $this->assertSame([], $GLOBALS['wpdb']->calls);
     }
 
@@ -149,21 +237,21 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $before = $this->db->tables;
 
         $this->expectOutputString("Run this through WP-CLI (wp eval-file).\n");
-        $this->runScript(['restore', 'migratable']);
+        $this->runScript(['restore', 'migratable', self::REASON]);
 
         $this->assertSame($before, $this->db->tables);
     }
 
-    public function test_the_output_carries_ids_and_reason_codes_only(): void
+    public function test_the_output_carries_ids_codes_and_operator_identifiers_only(): void
     {
         $this->given();
 
         $this->runScript(['check', 'migratable,migratable-2']);
-        $this->runScript(['restore', 'migratable,migratable-2']);
+        $this->runScript(['restore', 'migratable,migratable-2', self::REASON]);
 
         $printed = implode("\n", $this->output());
 
-        foreach (['creator', 'manager', 'payer', '5000', '3000', '小道具'] as $content) {
+        foreach (['creator', 'manager', 'payer', '5000', '3000', '小道具', self::REASON, '判断誤り'] as $content) {
             $this->assertStringNotContainsString($content, $printed);
         }
     }

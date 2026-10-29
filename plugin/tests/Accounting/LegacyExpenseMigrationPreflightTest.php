@@ -124,7 +124,7 @@ final class LegacyExpenseMigrationPreflightTest extends TestCase
             'no-entry' => 'NO_JOURNAL_ENTRY',
             'no-confirmer' => 'MISSING_CONFIRMATION',
             'no-lines' => 'NO_LINES',
-            'stray-history' => 'HISTORY_EXISTS',
+            'stray-history' => 'HISTORY_INCONSISTENT', // MIGRATED history on a CONFIRMED row (Version 1.8)
             'orphan-production' => 'ORGANIZATION_UNKNOWN',
             'entry-without-production' => 'PRODUCTION_MISMATCH',
             'entry-other-organization' => 'ORGANIZATION_MISMATCH',
