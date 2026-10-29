@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Accounting
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -218,6 +218,8 @@ Productionが複数会計年度にまたがる場合でも、Production全体を
 # Settlement and Closing
 
 Productionの決算完了は、Productionに必要な未収金・未払金・返金・調整等の処理が完了した状態を意味する。
+
+ここでいう未収金は会計上計上された未収金である。チケット管理上の未収金（関係者予約の「代済み」）は会計上の未収金と連動させないため、決算確定条件に含めない（TicketConsistencyPolicy「関係者予約・代済み・無料招待券」、2026-10-29確定）。
 
 Productionの決算完了とOrganizationのAccounting Period Closeは別概念である。
 

@@ -2,7 +2,7 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.3
+Version : 1.4
 
 ---
 
@@ -113,7 +113,7 @@ Production Accountingは、Production固有の別Journal帳簿ではない。
 
 Productionの精算では、Productionに関連する未収金・未払金を確認し、必要な入金・支払・キャンセル・免除・差額調整等を行う。
 
-最終的に未処理の未収金・未払金が残っていないことを確認できる状態を、Productionの決算完了条件の基本とする。
+最終的に未処理の未収金・未払金が残っていないことを確認できる状態を、Productionの決算完了条件の基本とする。ここでいう未収金に、チケット管理上の未収金（関係者予約の「代済み」）は含めない（TicketConsistencyPolicy「関係者予約・代済み・無料招待券」、2026-10-29確定）。
 
 未収金を免除等によって消す場合も、単純な残高削除ではなく、調整として履歴を残す。
 

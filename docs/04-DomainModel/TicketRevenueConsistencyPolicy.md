@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Ticket Revenue / Accounting
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -122,7 +122,9 @@ No-Showの対象となるReservationは、代金を受領済みであること�
 
 Ticket Revenueは実際に代金を受領した時点で、その受領の記録に基づいて計上する。No-Showの確定だけを根拠に、代金を受領済みとして記録・計上してはならない。Check In等で既に計上済みの入金・Ticket Revenueは、No-Showになっても維持し、再計上しない。
 
-事前に受領済みのReservationについて受領を記録する仕組み（担当者預りの受領確定等）は未整備であり、別途定める。それまでの間、No-ShowとなったReservationの代金は、Check In等で既に計上済みのものを除き、会計に計上されない。
+事前に受領済みのReservationの受領は、TicketConsistencyPolicy「入金記録」で記録する（Version 1.3、2026-10-29確定）。入金記録には対象Reservation、金額、受領日時、操作者を含め、入金とTicket Revenueはその入金記録に基づいてReservation単位で一度だけ計上する。
+
+未実装範囲：入金記録のエンティティ・登録API・登録権限は2026-10-29時点で未実装である。それまでの間、No-ShowとなったReservationの代金は、Check In等で既に計上済みのものを除き、会計に計上されない。No-Showの確定を入金記録の代用にしてはならない。入金記録の実装時は、Check In時の計上と同じReservation単位の重複防止に接続し、Check Inと入金記録の両方で同一Reservationが二重に計上されないようにする。
 
 同一Reservationの入金・Ticket Revenueは、Check InとNo-Showのどちらの経路でも1回だけ計上する。
 
