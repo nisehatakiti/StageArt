@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Accounting;
 
+use RuntimeException;
 use StageArt\Domain\Shared\Uuid;
 use Throwable;
 
@@ -27,6 +28,17 @@ use Throwable;
  *   added, and any failure - including the COMMIT - rolls that Expense
  *   back to CONFIRMED and is logged as "<expense id>=<reason code>".
  *
+ * Locks, in this order, until the Expense's COMMIT or ROLLBACK: the
+ * Expense row, then its Journal Entry row (by primary key), then that
+ * entry's lines. The classification after the locks reads them as they
+ * now are, and no one can reverse or rewrite the entry before the COMMIT:
+ * WordPressJournalEntryRepository::save() updates the entry row before
+ * its lines, so it waits for the second lock. The order is the one an
+ * approval uses (Expense, then Journal Entry), and nothing that writes a
+ * Journal Entry locks an Expense, so the locks do not form a cycle with
+ * the application's. A lock that fails (deadlock, lock wait timeout)
+ * rolls the Expense back as LOCK_FAILED.
+ *
  * Only CONFIRMED rows are read, every UPDATE is conditional on the row
  * still being CONFIRMED with untouched workflow columns, and no Journal
  * Entry is ever written, so running it again changes nothing. A migrated
@@ -45,6 +57,7 @@ final class LegacyExpenseMigration
     public const REFUSED_PLAN_CHANGED = 'PLAN_CHANGED';
 
     public const FAILED_TRANSACTION_START = 'TRANSACTION_START_FAILED';
+    public const FAILED_LOCK = 'LOCK_FAILED';
     public const FAILED_CHANGED_SINCE_PREVIEW = 'CHANGED_SINCE_PREVIEW';
     public const FAILED_UPDATE = 'UPDATE_FAILED';
     public const FAILED_HISTORY_INSERT = 'HISTORY_INSERT_FAILED';
@@ -92,22 +105,14 @@ final class LegacyExpenseMigration
         ksort($candidates);
         ksort($manual);
 
-        $engines = [];
-
-        foreach (self::WRITTEN_TABLES as $table) {
-            $engine = $wpdb->get_var($wpdb->prepare(
-                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
-                $wpdb->prefix . $table
-            ));
-            $engines[$wpdb->prefix . $table] = $engine === null ? null : (string) $engine;
-        }
+        $engines = self::storageEngines($wpdb);
 
         return [
             'confirmed' => count($rows),
             'candidates' => $candidates,
             'manual_review' => $manual,
             'storage_engines' => $engines,
-            'transactional' => array_filter($engines, static fn (?string $e): bool => $e === null || strcasecmp($e, 'InnoDB') !== 0) === [],
+            'transactional' => self::isTransactional($engines),
             'fingerprint' => substr(hash('sha256', (string) json_encode([$candidates, $manual])), 0, 16),
         ];
     }
@@ -190,7 +195,7 @@ final class LegacyExpenseMigration
         try {
             $failure = self::writeOne($wpdb, $t, $id, $expected);
         } catch (Throwable $exception) {
-            $failure = self::FAILED_UNEXPECTED;
+            $failure = self::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
         }
 
         if ($failure === null && $wpdb->query('COMMIT') === false) {
@@ -215,13 +220,14 @@ final class LegacyExpenseMigration
             $wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE id = %s FOR UPDATE", $id),
             ARRAY_A
         );
+        self::assertLocked($wpdb);
 
         if (! is_array($expense)) {
             return self::FAILED_CHANGED_SINCE_PREVIEW;
         }
 
         $lines = self::linesOf($wpdb, $t, $id);
-        $decision = self::classifyRow($wpdb, $t, $expense, $lines);
+        $decision = self::classifyRow($wpdb, $t, $expense, $lines, true);
 
         if (
             $decision['decision'] !== LegacyExpenseMigrationClassifier::MIGRATE_TO_POSTED
@@ -289,28 +295,50 @@ final class LegacyExpenseMigration
      * @param array<int, array<string, mixed>>|null $lines
      * @return array{decision: string, reason: ?string, journal_entry_id: ?string, amount: ?int}
      */
-    private static function classifyRow($wpdb, array $t, array $expense, ?array $lines = null): array
+    private static function classifyRow($wpdb, array $t, array $expense, ?array $lines = null, bool $lock = false): array
     {
         $id = (string) $expense['id'];
         $lines ??= self::linesOf($wpdb, $t, $id);
+        $forUpdate = $lock ? ' FOR UPDATE' : '';
 
-        $entries = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM {$t['journal_entries']} WHERE source_event_type = %s AND source_event_id = %s",
-                'ExpenseConfirmed',
-                $id
-            ),
-            ARRAY_A
-        ) ?: [];
+        // Found by source event without a lock - no index covers those
+        // columns, so a locking read there would lock every Journal Entry -
+        // then each read, and while migrating locked, by its primary key.
+        $entryIds = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$t['journal_entries']} WHERE source_event_type = %s AND source_event_id = %s ORDER BY id",
+            'ExpenseConfirmed',
+            $id
+        )) ?: [];
 
+        $entries = [];
         $accounts = [];
 
-        foreach ($entries as $index => $entry) {
-            $entryLines = $wpdb->get_results(
-                $wpdb->prepare("SELECT * FROM {$t['journal_entry_lines']} WHERE journal_entry_id = %s", $entry['id']),
+        foreach ($entryIds as $entryId) {
+            $entry = $wpdb->get_row(
+                $wpdb->prepare("SELECT * FROM {$t['journal_entries']} WHERE id = %s{$forUpdate}", (string) $entryId),
+                ARRAY_A
+            );
+
+            if ($lock) {
+                self::assertLocked($wpdb);
+            }
+
+            if (! is_array($entry) || $entry['source_event_type'] !== 'ExpenseConfirmed' || (string) $entry['source_event_id'] !== $id) {
+                // Removed, or pointed elsewhere, since it was found.
+                continue;
+            }
+
+            $entry['lines'] = $wpdb->get_results(
+                $wpdb->prepare("SELECT * FROM {$t['journal_entry_lines']} WHERE journal_entry_id = %s{$forUpdate}", $entry['id']),
                 ARRAY_A
             ) ?: [];
-            $entries[$index]['lines'] = $entryLines;
+
+            if ($lock) {
+                self::assertLocked($wpdb);
+            }
+
+            $entries[] = $entry;
+            $entryLines = $entry['lines'];
 
             foreach ($entryLines as $entryLine) {
                 $accountId = (string) ($entryLine['account_id'] ?? '');
@@ -367,10 +395,65 @@ final class LegacyExpenseMigration
     }
 
     /**
+     * The storage engine information_schema reports for each table the
+     * migration and its restore write (null when it reports none).
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param \wpdb $wpdb
+     * @return array<string, ?string>
+     */
+    public static function storageEngines($wpdb): array
+    {
+        $engines = [];
+
+        foreach (self::WRITTEN_TABLES as $table) {
+            $engine = $wpdb->get_var($wpdb->prepare(
+                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $wpdb->prefix . $table
+            ));
+            $engines[$wpdb->prefix . $table] = $engine === null ? null : (string) $engine;
+        }
+
+        return $engines;
+    }
+
+    /**
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param array<string, ?string> $engines
+     */
+    public static function isTransactional(array $engines): bool
+    {
+        return array_filter($engines, static fn (?string $e): bool => $e === null || strcasecmp($e, 'InnoDB') !== 0) === [];
+    }
+
+    /**
+     * A locking read that failed - a deadlock or a lock wait timeout -
+     * leaves its error in $wpdb->last_error (a missing row does not).
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param \wpdb $wpdb
+     */
+    public static function assertLocked($wpdb): void
+    {
+        if (isset($wpdb->last_error) && (string) $wpdb->last_error !== '') {
+            throw new RuntimeException(self::FAILED_LOCK);
+        }
+    }
+
+    /**
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function isLockFailure(Throwable $exception): bool
+    {
+        return $exception instanceof RuntimeException && $exception->getMessage() === self::FAILED_LOCK;
+    }
+
+    /**
+     * @internal shared with LegacyExpenseMigrationRestore
      * @param \wpdb $wpdb
      * @return array<string, string>
      */
-    private static function tables($wpdb): array
+    public static function tables($wpdb): array
     {
         $p = $wpdb->prefix;
 

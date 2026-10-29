@@ -19,6 +19,9 @@ class FakeWpdb
 {
     public string $prefix = 'wp_';
 
+    /** As in wpdb: the last query's error, cleared before each query. A responder may set it. */
+    public string $last_error = '';
+
     /** @var array<int, array{method: string, args: array<int, mixed>}> */
     public array $calls = [];
 
@@ -134,6 +137,7 @@ class FakeWpdb
     private function respond(string $method, array $args, $default)
     {
         $this->calls[] = ['method' => $method, 'args' => $args];
+        $this->last_error = '';
 
         if ($this->responder === null) {
             return $default;

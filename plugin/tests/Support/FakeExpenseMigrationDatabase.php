@@ -41,11 +41,23 @@ final class FakeExpenseMigrationDatabase
     /**
      * Steps to fail: 'START' => true fails every START TRANSACTION;
      * 'UPDATE', 'INSERT' and 'COMMIT' => an Expense id fail that step for
-     * that Expense only.
+     * that Expense only; 'RESTORE_UPDATE' and 'DELETE' => an Expense id
+     * fail the restore's UPDATE / history DELETE for it; 'LOCK' => a
+     * $locks entry ("journal_entry:<id>" etc.) fails that locking read
+     * the way a deadlock does - no row, and $wpdb->last_error set.
      *
      * @var array<string, mixed>
      */
     public array $failures = [];
+
+    /**
+     * Every locking read (SELECT ... FOR UPDATE) in the order issued:
+     * "expense:<id>", "journal_entry:<id>", "journal_entry_lines:<entry id>",
+     * "expense_reviews:<expense id>".
+     *
+     * @var string[]
+     */
+    public array $locks = [];
 
     /** @var string[] every raw (unprepared or prepared) query string sent to query() */
     public array $queries = [];
@@ -100,9 +112,38 @@ final class FakeExpenseMigrationDatabase
             return (string) count($this->where('stageart_expense_reviews', ['expense_id' => $values[0]]));
         }
 
+        if ($method === 'get_col' && preg_match('/^SELECT id FROM \S+stageart_journal_entries WHERE source_event_type = %s AND source_event_id = %s ORDER BY id$/', $template)) {
+            $ids = array_column($this->where('stageart_journal_entries', ['source_event_type' => $values[0], 'source_event_id' => $values[1]]), 'id');
+            sort($ids);
+
+            return $ids;
+        }
+
         if ($method === 'get_row') {
+            if (preg_match('/^SELECT \* FROM \S+stageart_expenses WHERE id = %s$/', $template)) {
+                return $this->where('stageart_expenses', ['id' => $values[0]])[0] ?? null;
+            }
+
+            if (preg_match('/^SELECT \* FROM \S+stageart_journal_entries WHERE id = %s( FOR UPDATE)?$/', $template, $match)) {
+                if (isset($match[1]) && ! $this->lock("journal_entry:{$values[0]}", $wpdb)) {
+                    return null;
+                }
+
+                return $this->where('stageart_journal_entries', ['id' => $values[0]])[0] ?? null;
+            }
+
+            if (preg_match('/^SELECT id, source_event_type, source_event_id FROM \S+stageart_journal_entries WHERE id = %s$/', $template)) {
+                $entry = $this->where('stageart_journal_entries', ['id' => $values[0]])[0] ?? null;
+
+                return $entry === null ? null : ['id' => $entry['id'], 'source_event_type' => $entry['source_event_type'], 'source_event_id' => $entry['source_event_id']];
+            }
+
             if (preg_match('/^SELECT \* FROM \S+stageart_expenses WHERE id = %s FOR UPDATE$/', $template)) {
                 $this->locked = (string) $values[0];
+
+                if (! $this->lock("expense:{$values[0]}", $wpdb)) {
+                    return null;
+                }
 
                 if ($this->onLock !== null) {
                     // A change another session committed: in the live tables
@@ -139,8 +180,20 @@ final class FakeExpenseMigrationDatabase
                 return $this->where('stageart_journal_entries', ['source_event_type' => $values[0], 'source_event_id' => $values[1]]);
             }
 
-            if (preg_match('/^SELECT \* FROM \S+stageart_journal_entry_lines WHERE journal_entry_id = %s$/', $template)) {
+            if (preg_match('/^SELECT \* FROM \S+stageart_journal_entry_lines WHERE journal_entry_id = %s( FOR UPDATE)?$/', $template, $match)) {
+                if (isset($match[1]) && ! $this->lock("journal_entry_lines:{$values[0]}", $wpdb)) {
+                    return null;
+                }
+
                 return $this->where('stageart_journal_entry_lines', ['journal_entry_id' => $values[0]]);
+            }
+
+            if (preg_match('/^SELECT \* FROM \S+stageart_expense_reviews WHERE expense_id = %s( FOR UPDATE)?$/', $template, $match)) {
+                if (isset($match[1]) && ! $this->lock("expense_reviews:{$values[0]}", $wpdb)) {
+                    return null;
+                }
+
+                return $this->where('stageart_expense_reviews', ['expense_id' => $values[0]]);
             }
 
             return [];
@@ -187,6 +240,14 @@ final class FakeExpenseMigrationDatabase
                 return 0;
             }
 
+            if (str_starts_with($template, 'UPDATE ') && str_contains($template, 'stageart_expenses SET status = %s, revision = 0,')) {
+                return $this->restoreExpense($values);
+            }
+
+            if (str_starts_with($template, 'DELETE FROM') && str_contains($template, 'stageart_expense_reviews')) {
+                return $this->deleteReview($values);
+            }
+
             if (str_starts_with($template, 'UPDATE ') && str_contains($template, 'stageart_expenses SET status = %s')) {
                 return $this->migrateExpense($values);
             }
@@ -204,6 +265,89 @@ final class FakeExpenseMigrationDatabase
     public function inTransaction(): bool
     {
         return $this->snapshot !== null;
+    }
+
+    /**
+     * Records a locking read; false when $failures['LOCK'] fails it.
+     */
+    private function lock(string $what, FakeWpdb $wpdb): bool
+    {
+        $this->locks[] = $what;
+
+        if (($this->failures['LOCK'] ?? null) === $what) {
+            $wpdb->last_error = 'Deadlock found when trying to get lock; try restarting transaction';
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Mirrors LegacyExpenseMigrationRestore's UPDATE: only a row still as
+     * the migration left it is put back.
+     *
+     * @param array<int, mixed> $values
+     * @return int|false
+     */
+    private function restoreExpense(array $values)
+    {
+        [$status, $id, $expected, $journalEntryId, $requested, $approved] = $values;
+
+        if (($this->failures['RESTORE_UPDATE'] ?? null) === $id) {
+            return false;
+        }
+
+        foreach ($this->tables['stageart_expenses'] as $index => $row) {
+            if (
+                $row['id'] === $id && $row['status'] === $expected && (int) $row['revision'] === 1
+                && ($row['posted_journal_entry_id'] ?? null) === $journalEntryId
+                && (int) $row['requested_amount'] === (int) $requested && (int) $row['approved_amount'] === (int) $approved
+                && $row['submitted_by'] === $row['created_by'] && $row['submitted_at'] === $row['created_at']
+                && $row['approved_by'] === $row['confirmed_by'] && $row['approved_at'] === $row['confirmed_at']
+                && $row['rejected_by'] === null && $row['rejected_at'] === null && $row['rejection_reason'] === null
+            ) {
+                $this->tables['stageart_expenses'][$index] = array_merge($row, [
+                    'status' => $status,
+                    'revision' => 0,
+                    'submitted_by' => null,
+                    'submitted_at' => null,
+                    'requested_amount' => null,
+                    'approved_amount' => null,
+                    'approved_by' => null,
+                    'approved_at' => null,
+                    'posted_journal_entry_id' => null,
+                ]);
+
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     * @return int|false
+     */
+    private function deleteReview(array $values)
+    {
+        [$id, $expenseId, $action] = $values;
+
+        if (($this->failures['DELETE'] ?? null) === $expenseId) {
+            return false;
+        }
+
+        foreach ($this->tables['stageart_expense_reviews'] as $index => $row) {
+            if ($row['id'] === $id && $row['expense_id'] === $expenseId && $row['action'] === $action && (int) $row['revision'] === 1) {
+                unset($this->tables['stageart_expense_reviews'][$index]);
+                $this->tables['stageart_expense_reviews'] = array_values($this->tables['stageart_expense_reviews']);
+
+                return 1;
+            }
+        }
+
+        return 0;
     }
 
     /**

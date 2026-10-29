@@ -23,7 +23,8 @@ use StageArt\Tests\Support\LegacyExpenseFixture;
 final class LegacyExpenseMigrationTest extends TestCase
 {
     private FakeExpenseMigrationDatabase $db;
-    private FakeWpdb $wpdb;
+    /** @var FakeWpdb untyped: a failure report is unserialized where the wpdb stub class is not loaded */
+    private $wpdb;
     private LegacyExpenseFixture $data;
     private string $log;
 
@@ -273,6 +274,121 @@ final class LegacyExpenseMigrationTest extends TestCase
         $this->assertSame('CONFIRMED', $this->data->expensesById()['migratable']['status']);
         $this->assertSame([], $this->data->historyOf('migratable'));
         $this->assertSame(['migratable-2'], $result['migrated']);
+    }
+
+    /**
+     * Locked in the order an approval locks (Expense, then Journal
+     * Entry), the entry by its primary key - never by source event, which
+     * no index covers - and its lines after it. The preview locks nothing.
+     */
+    public function test_each_expense_its_journal_entry_and_the_entry_lines_are_locked_in_that_order(): void
+    {
+        M::preview($this->wpdb);
+        $this->assertSame([], $this->db->locks);
+
+        $this->previewAndExecute();
+
+        $this->assertSame([
+            'expense:migratable', 'journal_entry:je-ok', 'journal_entry_lines:je-ok',
+            'expense:migratable-2', 'journal_entry:je-ok-2', 'journal_entry_lines:je-ok-2',
+        ], $this->db->locks);
+
+        foreach ($this->wpdb->calls as $call) {
+            $sql = (string) ($call['args'][0] ?? '');
+
+            if (str_contains($sql, 'source_event_type')) {
+                $this->assertStringNotContainsString('FOR UPDATE', $sql);
+            }
+        }
+    }
+
+    /**
+     * A Journal Entry reversed between the preview and the run - the
+     * original marked REVERSED and its reversal record added, as
+     * JournalEntry's Reversal does - changes the plan, so nothing is
+     * written.
+     */
+    public function test_a_journal_entry_reversed_after_the_preview_refuses_the_run(): void
+    {
+        $fingerprint = M::preview($this->wpdb)['fingerprint'];
+
+        foreach ($this->db->tables['stageart_journal_entries'] as $index => $entry) {
+            if ($entry['id'] === 'je-ok') {
+                $this->db->tables['stageart_journal_entries'][$index]['status'] = 'REVERSED';
+            }
+        }
+        $this->data->entry('je-ok-reversal', 'migratable', 'REVERSED', [], [
+            ['acc-expense', 'CREDIT', 3000], ['acc-expense', 'CREDIT', 2000], ['acc-payable', 'DEBIT', 5000],
+        ], ['reversal_of_journal_entry_id' => 'je-ok']);
+        $before = $this->db->tables;
+
+        $result = M::execute($this->wpdb, $fingerprint);
+
+        $this->assertSame(M::OUTCOME_REFUSED, $result['outcome']);
+        $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * Another session rewrote the entry's lines just before the lock: the
+     * locked lines no longer match the Expense, so it stays CONFIRMED with
+     * no history, and the entry is left as that session wrote it.
+     */
+    public function test_journal_lines_changed_before_the_lock_leave_the_expense_confirmed(): void
+    {
+        $this->db->onLock = static function (string $id, array &$tables): void {
+            if ($id !== 'migratable') {
+                return;
+            }
+
+            foreach ($tables['stageart_journal_entry_lines'] as $index => $line) {
+                if ($line['journal_entry_id'] === 'je-ok' && $line['debit_credit'] === 'DEBIT') {
+                    $tables['stageart_journal_entry_lines'][$index]['account_id'] = 'acc-other';
+                }
+            }
+        };
+
+        $result = $this->previewAndExecute();
+        $journalAfter = [$this->db->tables['stageart_journal_entries'], $this->db->tables['stageart_journal_entry_lines']];
+
+        $this->assertSame(['migratable' => M::FAILED_CHANGED_SINCE_PREVIEW], $result['failed']);
+        $expense = $this->data->expensesById()['migratable'];
+        $this->assertSame('CONFIRMED', $expense['status']);
+        $this->assertNull($expense['posted_journal_entry_id']);
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame(['migratable-2'], $result['migrated']);
+        $this->assertContains('acc-other', array_column($journalAfter[1], 'account_id'));
+    }
+
+    /**
+     * @dataProvider failedLocks
+     */
+    public function test_a_lock_that_fails_rolls_that_expense_back_and_is_logged(string $lock): void
+    {
+        $this->db->failures['LOCK'] = $lock;
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(['migratable' => M::FAILED_LOCK], $result['failed']);
+        $this->assertSame(['migratable-2'], $result['migrated']);
+        $this->assertSame('CONFIRMED', $this->data->expensesById()['migratable']['status']);
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame(['START', 'ROLLBACK', 'START', 'COMMIT'], $this->db->transactionLog);
+        $this->assertStringContainsString('failed: migratable=LOCK_FAILED', $this->logged());
+        $this->assertStringNotContainsString('Deadlock', $this->logged());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function failedLocks(): array
+    {
+        return [
+            'the expense' => ['expense:migratable'],
+            'the journal entry' => ['journal_entry:je-ok'],
+            'the journal entry lines' => ['journal_entry_lines:je-ok'],
+        ];
     }
 
     public function test_running_again_migrates_nothing_twice(): void

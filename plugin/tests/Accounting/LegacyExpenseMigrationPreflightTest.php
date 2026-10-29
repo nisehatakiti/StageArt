@@ -26,7 +26,8 @@ use StageArt\Tests\Support\LegacyExpenseFixture;
 final class LegacyExpenseMigrationPreflightTest extends TestCase
 {
     private FakeExpenseMigrationDatabase $db;
-    private FakeWpdb $wpdb;
+    /** @var FakeWpdb untyped: a failure report is unserialized where the wpdb stub class is not loaded */
+    private $wpdb;
     private LegacyExpenseFixture $data;
     private string $log;
 
