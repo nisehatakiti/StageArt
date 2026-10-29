@@ -15,12 +15,17 @@ use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
 use StageArt\Application\Budget\GetBudgetUseCase;
 use StageArt\Application\Budget\ListBudgetsUseCase;
+use StageArt\Application\Accounting\StandardPayableAccountResolver;
 use StageArt\Application\Budget\UpdateBudgetUseCase;
+use StageArt\Application\Expense\ApplicantExpenseTransitionUseCase;
+use StageArt\Application\Expense\ApproveExpenseUseCase;
 use StageArt\Application\Expense\ConfirmExpenseUseCase;
 use StageArt\Application\Expense\CreateExpenseUseCase;
 use StageArt\Application\Expense\ExpenseLineFactory;
+use StageArt\Application\Expense\ExpenseWorkflowNotifier;
 use StageArt\Application\Expense\GetExpenseUseCase;
 use StageArt\Application\Expense\ListExpensesUseCase;
+use StageArt\Application\Expense\RejectExpenseUseCase;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
@@ -31,7 +36,9 @@ use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\NotificationContract;
 use StageArt\Core\Contract\OrganizationContextContract;
+use StageArt\Core\Contract\ProductionCapabilityDirectoryContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
@@ -77,7 +84,9 @@ final class AccountingModuleBootstrap
         IdentityContract $identity,
         AuthorizationContract $authorization,
         MembershipContract $membership,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        NotificationContract $notifications,
+        ProductionCapabilityDirectoryContract $capabilityDirectory
     ) {
         $budgetLineFactory = new BudgetLineFactory($accounts);
         $expenseLineFactory = new ExpenseLineFactory($accounts);
@@ -132,17 +141,30 @@ final class AccountingModuleBootstrap
             $expenseLineFactory,
             $transactions
         );
-        $confirmExpense = new ConfirmExpenseUseCase(
+        $confirmExpense = new ConfirmExpenseUseCase($expenses, $identity, $authorization);
+        $expenseNotifier = new ExpenseWorkflowNotifier($notifications, $capabilityDirectory, $productionContext);
+        $applicantExpenseTransitions = new ApplicantExpenseTransitionUseCase(
             $expenses,
-            $productionContext,
-            $accounts,
+            $identity,
+            $membership,
+            $transactions,
+            $expenseNotifier
+        );
+        $approveExpense = new ApproveExpenseUseCase(
+            $expenses,
             $journalEntries,
+            $accounts,
+            new StandardPayableAccountResolver($accounts),
+            $productionContext,
+            $organizationContext,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $expenseNotifier
         );
-        $getExpense = new GetExpenseUseCase($expenses, $identity, $membership);
-        $listExpenses = new ListExpensesUseCase($expenses, $productionContext, $membership, $identity);
+        $rejectExpense = new RejectExpenseUseCase($expenses, $identity, $authorization, $transactions, $expenseNotifier);
+        $getExpense = new GetExpenseUseCase($expenses, $identity, $membership, $authorization);
+        $listExpenses = new ListExpensesUseCase($expenses, $productionContext, $membership, $identity, $authorization);
 
         $listJournalEntries = new ListJournalEntriesUseCase($journalEntries, $productionContext, $identity, $authorization);
         $postJournalEntry = new PostJournalEntryUseCase(
@@ -181,7 +203,10 @@ final class AccountingModuleBootstrap
                 $updateExpense,
                 $confirmExpense,
                 $getExpense,
-                $listExpenses
+                $listExpenses,
+                $applicantExpenseTransitions,
+                $approveExpense,
+                $rejectExpense
             ),
             new JournalEntryRestController($listJournalEntries, $postJournalEntry),
             new ProductionAccountingRestController(

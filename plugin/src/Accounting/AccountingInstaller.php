@@ -32,6 +32,7 @@ final class AccountingInstaller
         $journalEntryLines = $wpdb->prefix . 'stageart_journal_entry_lines';
         $expenses = $wpdb->prefix . 'stageart_expenses';
         $expenseLines = $wpdb->prefix . 'stageart_expense_lines';
+        $expenseReviews = $wpdb->prefix . 'stageart_expense_reviews';
 
         /*
          * Phase 6.0 Accounting Foundation (Account.md): the会計分類軸
@@ -126,10 +127,16 @@ final class AccountingInstaller
         ) {$charsetCollate};");
 
         /*
-         * Expense.md: Aggregate Root for confirmed-support input side of
-         * accounting, feeding Journal Entry generation on Confirm (see
-         * ConfirmExpenseUseCase). Receipt (0..1) is not implemented this
-         * Phase - no receipt_id column exists yet (disclosed Open Item).
+         * Expense.md: Aggregate Root for the input side of accounting.
+         * Receipt (0..1) is not implemented - no receipt_id column exists
+         * yet (disclosed Open Item).
+         *
+         * Schema 1.44.0 (修正8, ExpenseApprovalWorkflow.md): the approval
+         * workflow columns. revision is the submission revision an
+         * approval must name; requested_amount / approved_amount are
+         * totals; posted_journal_entry_id is unique so one Journal Entry
+         * can never be attached to two Expenses. confirmed_by /
+         * confirmed_at stay for pre-workflow CONFIRMED rows.
          */
         dbDelta("CREATE TABLE {$expenses} (
             id CHAR(36) NOT NULL,
@@ -142,8 +149,21 @@ final class AccountingInstaller
             updated_at DATETIME NOT NULL,
             confirmed_by CHAR(36) NULL,
             confirmed_at DATETIME NULL,
+            revision INT NOT NULL DEFAULT 0,
+            submitted_by CHAR(36) NULL,
+            submitted_at DATETIME NULL,
+            requested_amount BIGINT NULL,
+            approved_amount BIGINT NULL,
+            approved_by CHAR(36) NULL,
+            approved_at DATETIME NULL,
+            rejected_by CHAR(36) NULL,
+            rejected_at DATETIME NULL,
+            rejection_reason TEXT NULL,
+            posted_journal_entry_id CHAR(36) NULL,
             PRIMARY KEY  (id),
-            KEY production_id (production_id)
+            KEY production_id (production_id),
+            KEY production_status (production_id,status),
+            UNIQUE KEY posted_journal_entry_id (posted_journal_entry_id)
         ) {$charsetCollate};");
 
         dbDelta("CREATE TABLE {$expenseLines} (
@@ -155,5 +175,29 @@ final class AccountingInstaller
             PRIMARY KEY  (id),
             KEY expense_id (expense_id)
         ) {$charsetCollate};");
+
+        /*
+         * Schema 1.44.0 (修正8): append-only 申請・承認履歴 (Domain\Expense\
+         * ExpenseReview). Rows are only ever inserted. The unique key
+         * means one submission revision is approved or rejected at most
+         * once, even if two requests race past the row lock.
+         */
+        dbDelta("CREATE TABLE {$expenseReviews} (
+            id CHAR(36) NOT NULL,
+            expense_id CHAR(36) NOT NULL,
+            revision INT NOT NULL,
+            action VARCHAR(20) NOT NULL,
+            requested_amount BIGINT NULL,
+            approved_amount BIGINT NULL,
+            lines_snapshot LONGTEXT NULL,
+            reason TEXT NULL,
+            actor_person_id CHAR(36) NOT NULL,
+            acted_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY expense_revision_action (expense_id,revision,action),
+            KEY expense_id (expense_id)
+        ) {$charsetCollate};");
+
+        LegacyExpenseMigration::run($wpdb, $expenses, $expenseLines, $expenseReviews, $journalEntries, $journalEntryLines);
     }
 }

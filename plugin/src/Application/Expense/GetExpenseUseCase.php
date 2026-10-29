@@ -4,36 +4,43 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Expense;
 
+use StageArt\Application\Accounting\AccountingCapability;
+use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
 
 /**
- * Read is Production-Member-wide, not management-only: Expense.md frames
- * Expense as a shared, current record of "現場で発生した支出", not a
- * private management ledger (unlike raw Journal Entry detail - see
- * ListJournalEntriesUseCase's docblock for that distinction).
+ * ExpenseApprovalWorkflow.md "Accounting Visibility" + the confirmed J3
+ * decision: the PrimaryManager and an ACCOUNTING_MANAGER Delegate
+ * (`Accounting.Update`) may read any Expense of the Production; any other
+ * Production Member may read only an Expense they registered themselves.
+ * Checked here on its own, independently of ListExpensesUseCase's
+ * filtering, so a guessed or copied Expense id cannot bypass it.
  *
  * StageArt Core/Module Architecture Phase 2: depends only on Core
- * Contracts (Identity/Membership) - the Expense's own productionId is
- * enough to check membership against, no `ProductionRepositoryInterface`
- * lookup is needed here.
+ * Contracts (Identity/Membership/Authorization) - the Expense's own
+ * productionId is enough to check against, no
+ * `ProductionRepositoryInterface` lookup is needed here.
  */
 final class GetExpenseUseCase
 {
     private ExpenseRepositoryInterface $expenses;
     private IdentityContract $identity;
     private MembershipContract $membership;
+    private AuthorizationContract $authorization;
 
     public function __construct(
         ExpenseRepositoryInterface $expenses,
         IdentityContract $identity,
-        MembershipContract $membership
+        MembershipContract $membership,
+        AuthorizationContract $authorization
     ) {
         $this->expenses = $expenses;
         $this->identity = $identity;
         $this->membership = $membership;
+        $this->authorization = $authorization;
     }
 
     public function execute(GetExpenseQuery $query): ExpenseResult
@@ -50,8 +57,18 @@ final class GetExpenseUseCase
             throw new ExpenseNotFoundException($query->expenseId);
         }
 
-        if (! $this->membership->isProductionMember($requesterId, $expense->productionId())) {
-            throw new ExpenseAccessDeniedException('Only members of this Production can view this Expense.');
+        $productionId = $expense->productionId();
+
+        if ($this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
+            return ExpenseResult::fromDomain($expense);
+        }
+
+        if (! $this->membership->isProductionMember($requesterId, $productionId)
+            || ! $expense->createdBy()->equals($requesterId)
+        ) {
+            throw new ExpenseAccessDeniedException(
+                'Only the PrimaryManager, an Accounting Manager or the Expense\'s own creator can view this Expense.'
+            );
         }
 
         return ExpenseResult::fromDomain($expense);

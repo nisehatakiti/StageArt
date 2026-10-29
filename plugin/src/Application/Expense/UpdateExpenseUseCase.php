@@ -10,11 +10,15 @@ use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Expense\Expense;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
+use StageArt\Domain\Expense\ExpenseStatus;
+use StageArt\Domain\Person\PersonId;
 
 /**
- * DRAFT-only (Expense::replaceLines() enforces this). Editable by the
+ * DRAFT, SUBMITTED or REJECTED only (Expense::replaceLines() enforces
+ * this); a SUBMITTED or REJECTED Expense only by its applicant. A DRAFT is editable by the
  * Expense's own creator, or by whoever can manage this Production's
  * accounting (PrimaryManager) - Expense.md does not explicitly state
  * who may edit a DRAFT Expense besides "who confirms it", so this
@@ -67,13 +71,7 @@ final class UpdateExpenseUseCase
         }
 
         $productionId = $expense->productionId();
-        $isOwnDraft = $expense->createdBy()->equals($requesterId);
-
-        if (! $isOwnDraft && ! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new ExpenseAccessDeniedException(
-                'Only the Expense\'s own creator or the PrimaryManager can update this Expense.'
-            );
-        }
+        $this->assertMayEdit($expense, $requesterId);
 
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
 
@@ -83,11 +81,48 @@ final class UpdateExpenseUseCase
 
         $lines = $this->lineFactory->build($command->lines, $organizationId);
 
-        $this->transactions->run(function () use ($expense, $lines, $requesterId): void {
-            $expense->replaceLines($lines, $requesterId);
-            $this->expenses->save($expense);
+        // Re-read under a row lock: an approval or a status change that
+        // happened since the read above is seen here (and the save stays
+        // conditional on what this read found).
+        $updated = $this->transactions->run(function () use ($expense, $lines, $requesterId, $command): Expense {
+            $locked = $this->expenses->findByIdForUpdate($expense->id());
+
+            if (! $locked) {
+                throw new ExpenseNotFoundException($command->expenseId);
+            }
+
+            $this->assertMayEdit($locked, $requesterId);
+            $locked->replaceLines($lines, $requesterId);
+            $this->expenses->save($locked);
+
+            return $locked;
         });
 
-        return ExpenseResult::fromDomain($expense);
+        return ExpenseResult::fromDomain($updated);
+    }
+
+    /**
+     * Once submitted, the content is the applicant's application: only
+     * the applicant edits it (SUBMITTED before approval, or REJECTED
+     * before 再申請). The manager override applies to DRAFT only, so an
+     * approver can never change an application they then approve.
+     */
+    private function assertMayEdit(Expense $expense, PersonId $requesterId): void
+    {
+        $isOwnExpense = $expense->createdBy()->equals($requesterId);
+
+        if (! $expense->status()->is(ExpenseStatus::DRAFT)) {
+            if (! $isOwnExpense) {
+                throw new ExpenseAccessDeniedException('Only the Expense\'s own applicant can update a submitted or rejected Expense.');
+            }
+
+            return;
+        }
+
+        if (! $isOwnExpense && ! $this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::MANAGE)) {
+            throw new ExpenseAccessDeniedException(
+                'Only the Expense\'s own creator, the PrimaryManager or an Accounting Manager can update this Expense.'
+            );
+        }
     }
 }
