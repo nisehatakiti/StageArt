@@ -2,7 +2,7 @@
 
 # Domain Model : Expense Approval Workflow
 
-Version : 1.6
+Version : 1.7
 
 ---
 
@@ -15,6 +15,8 @@ Version 1.4では、一般Memberの経費区分と承認時の仕訳、差し戻
 Version 1.5では、承認権限（Primary Managerと有効なACCOUNTING_MANAGERに限定）、必要な勘定科目がない場合の扱い（自動作成せず拒否）、支払先（初期実装では申請者本人）、支払記録の取消（初期実装では設けない）、領収書のDB保存の禁止と保存期間の扱い、初期実装の画面範囲、予算対実績の分離を確定した。実装済みの事実と今後の実装方針は「Implementation Status」で区別する。
 
 Version 1.6では、2026-10-28確定事項に従い、Expense申請の承認・差し戻しとProduction決算の確定の権限者に代理人を加え（Primary Manager・代理人・会計管理者）、承認可能者への通知にも同じ条件を適用した。支払済みにする操作の権限は変更しない。
+
+Version 1.7では、2026-10-29確定事項に従い、本人による承認の禁止を差し戻しにも適用した。申請者・作成者・立替払いを受ける者は、Primary Manager・代理人・会計管理者のいずれであっても、当該Expenseを承認も差し戻しもできない。申請者本人による取り下げ・編集・再申請はこの禁止の対象外とする。
 
 本Workflowは、一般Memberが日常的な小口支出を登録できるようにしつつ、承認前の申請を正式なAccounting Actualへ反映させないための最小限の業務フローを定義する。
 
@@ -62,7 +64,7 @@ Accountingの予算・実績は、一般Memberには公開しない。
 | Journal Entryを確定 | ○ | × | × |
 | Production決算を確定（Version 1.6） | ○ | 代理人・ACCOUNTING_MANAGER | × |
 
-Version 1.6（2026-10-28確定事項の反映）：Expense申請の承認・差し戻しとProduction決算の確定は、Primary Manager、代理人、会計管理者が実行できる。代理人はPARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持ち、その両方が有効（ACTIVE）なProduction Delegate、会計管理者は有効なACCOUNTING_MANAGERを持つProduction Delegateとする。それ以外のRoleのみを持つProduction Delegateは承認・差し戻し・決算確定できない。判定はBackendの権限 `Expense.Approve` / `Production.Complete` で行い、承認・差し戻しの通知先（承認可能者）にも同じ条件を用いる。承認者は、当該Expenseの申請者・作成者・立替払いを受ける者のいずれでもあってはならない（自己承認の禁止、「Approval」参照）。この制約はPrimary Manager・代理人・会計管理者のいずれにも適用する。承認・差し戻しの権限は、承認のために当該ProductionのExpenseを閲覧することを含むが、Budgetの入力・変更、他者のExpenseの編集、支払済みにする操作等、他の会計権限を付与しない。
+Version 1.6（2026-10-28確定事項の反映）：Expense申請の承認・差し戻しとProduction決算の確定は、Primary Manager、代理人、会計管理者が実行できる。代理人はPARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持ち、その両方が有効（ACTIVE）なProduction Delegate、会計管理者は有効なACCOUNTING_MANAGERを持つProduction Delegateとする。それ以外のRoleのみを持つProduction Delegateは承認・差し戻し・決算確定できない。判定はBackendの権限 `Expense.Approve` / `Production.Complete` で行い、承認・差し戻しの通知先（承認可能者）にも同じ条件を用いる。承認・差し戻しを行う者は、当該Expenseの申請者・作成者・立替払いを受ける者のいずれでもあってはならない（本人による承認・差し戻しの禁止、「Approval」「Return for Correction」参照。差し戻しはVersion 1.7で追加）。この制約はPrimary Manager・代理人・会計管理者のいずれにも適用する。承認・差し戻しの権限は、承認のために当該ProductionのExpenseを閲覧することを含むが、Budgetの入力・変更、他者のExpenseの編集、支払済みにする操作等、他の会計権限を付与しない。
 
 「ACCOUNTING_MANAGERのみ」は、対象Productionで有効（ACTIVE）なACCOUNTING_MANAGERのRoleを持つProduction Delegateを指す。Production Delegateであることだけでは、Expenseの承認・差し戻し・支払の権限を持たない（Version 1.5）。
 
@@ -259,7 +261,7 @@ Role別の表示制御だけに依存せず、承認可否はBackendのAuthoriza
 
 Expense申請は、Primary Manager、代理人、または対象Productionで有効なACCOUNTING_MANAGERのRoleを持つProduction Delegateが承認できる。Production Delegateであることだけでは承認権限を持たない（Version 1.5。代理人はVersion 1.6で追加）。
 
-Primary Managerしか承認権限者がいないProductionで、Primary Manager自身が申請者となる場合は、自己承認の禁止により承認できない。この場合は、別の承認権限者（ACCOUNTING_MANAGERまたは代理人）を任命する必要がある。代理人・会計管理者が自身の申請を承認できないことも同様である。
+Primary Managerしか承認権限者がいないProductionで、Primary Manager自身が申請者となる場合は、自己承認の禁止により承認できない。この場合は、別の承認権限者（ACCOUNTING_MANAGERまたは代理人）を任命する必要がある。代理人・会計管理者が自身の申請を承認できないことも同様である。差し戻しについても同様に、自身の申請を差し戻すことはできない（Version 1.7）。
 
 承認者は申請金額を確認し、必要に応じて承認金額を変更した上で承認できる。
 
@@ -270,6 +272,7 @@ Primary Managerしか承認権限者がいないProductionで、Primary Manager�
 Version 1.3（修正8で確定）：
 
 - 承認者は、当該Expenseの申請者（submitted_by）・作成者（created_by）・立替払いを受ける者（payer_person_id）のいずれでもあってはならない（自己承認の禁止）。API側で検証する。
+- Version 1.7：差し戻しにも同じ禁止を同じ判定で適用する（「Return for Correction」）。
 - 承認者が確認した申請回（revision）と承認時点の申請回が異なる場合、古い内容を承認せず拒否する（409 Conflict）。
 - 会計が有効でないOrganizationでは、承認・転記を拒否する。
 - 承認時のJournal Entryは、借方を各明細の科目（承認金額が申請金額と異なる単一明細では当該明細の科目に承認金額）、貸方を未払金（LIABILITY）とする。一般Memberの経費区分付き申請では、借方を経費区分から決まる科目（物品購入：消耗品費、交通費：旅費交通費）とする（Version 1.4、「Member Submission and Expense Category」）。未払金はOrganizationの有効な既存Accountを再利用する。利用者に借方・貸方を入力させない。
@@ -284,7 +287,7 @@ Version 1.3（修正8で確定）：
 
 Primary Manager、代理人、または対象Productionで有効なACCOUNTING_MANAGERのRoleを持つProduction Delegateは、Expense申請を差し戻しできる（Version 1.5で権限者を明確化し、Version 1.6で代理人を追加）。
 
-要確認（Version 1.6時点）：自己承認の禁止は承認について定めており、差し戻しについては定めていない。現在のAPIは、申請者・作成者・立替払いを受ける者が承認権限者である場合に、その者による差し戻しを拒否しない（画面では自分の申請に承認・差し戻しの操作を表示しない）。差し戻しにも同じ禁止を適用するかは別途定める。
+Version 1.7（2026-10-29確定）：差し戻しを行う者は、当該Expenseの申請者（submitted_by）・作成者（created_by）・立替払いを受ける者（payer_person_id）のいずれでもあってはならない（本人による差し戻しの禁止）。判定は承認と共通であり、Primary Manager・代理人・会計管理者のいずれにも適用する。API側で検証し、拒否した場合は権限エラー（403）とし、Expenseの状態・履歴・Journal Entry・通知を変更しない。申請者本人による取り下げ・編集・再申請は承認者の判断ではないため、この禁止の対象外とする。画面は自分の申請に承認・差し戻しの操作を表示しない（APIと同じ判定）。
 
 差し戻されたExpenseは内部状態REJECTEDとして履歴を保持する。REJECTEDは、申請者が修正して再申請できる「差し戻し」を表し、終端の「却下」ではない。画面表示と通知では「差し戻し」と表示する（Version 1.4）。
 
@@ -348,7 +351,7 @@ Version 1.5（確定）：初期実装では、Expenseの支払先・精算対�
 
 - 作成時に任意で指定でき、更新では変更できない。
 - 値の検証はIDの形式のみで、対象Productionのメンバーであるかは検証していない。
-- 自己承認の禁止の判定と、申請通知の送付先からの除外に用いる。
+- 本人による承認・差し戻しの禁止の判定と、申請通知の送付先からの除外に用いる。
 - 受取人として指定された者は、作成者でない限り当該Expenseを閲覧できない。
 
 将来、申請者以外を支払先にできるようにする場合の課題（未決）：
@@ -440,7 +443,7 @@ Version 1.5。以下は2026-10-26時点のこのブランチの作業ツリー�
 
 - DRAFT → SUBMITTED → POSTED / REJECTED → 再申請の状態遷移、取り下げ、差し戻し理由の必須化。
 - 承認時のJournal Entry生成（借方は明細の科目、貸方は未払金）と、行ロック・条件付き状態更新・履歴の一意制約・既存仕訳の確認による二重生成の防止。
-- 承認・差し戻しの権限（Primary Manager、代理人、有効なACCOUNTING_MANAGER。Backendの権限 `Expense.Approve`。Version 1.6）、承認可能者への申請通知、自己承認の禁止、申請回の確認。
+- 承認・差し戻しの権限（Primary Manager、代理人、有効なACCOUNTING_MANAGER。Backendの権限 `Expense.Approve`。Version 1.6）、承認可能者への申請通知、本人による承認・差し戻しの禁止（差し戻しはVersion 1.7）、申請回の確認。
 - Schema 1.44.0（申請回等のカラム、Expense Review用テーブル、旧CONFIRMEDの移行）。
 
 未実装・方針との差異（後続実装の対象）：
@@ -534,7 +537,7 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - SUBMITTEDのExpenseについて承認可能者へ業務通知を行える。
 - 通知からExpenseの確認・承認・差し戻しへ進められる。
 - Primary Manager、代理人、または対象Productionで有効なACCOUNTING_MANAGERのProduction DelegateがExpense申請を承認・差し戻しできる。それ以外のProduction Delegateであることだけでは承認できない（Version 1.6）。
-- 申請者・作成者・受取人による自己承認は禁止する。Primary Manager・代理人・会計管理者のいずれにも適用する。承認権限者が自分しかいない場合に自身が申請したExpenseは、別の承認権限者の任命が必要となる。
+- 申請者・作成者・受取人による承認・差し戻しは禁止する（差し戻しはVersion 1.7）。Primary Manager・代理人・会計管理者のいずれにも適用する。承認権限者が自分しかいない場合に自身が申請したExpenseは、別の承認権限者の任命が必要となる。
 - Production決算の確定権限はPrimary Manager、代理人、会計管理者とする。それ以外のProduction DelegateおよびMemberは確定できない（Version 1.6）。
 - 会計管理者のBudget閲覧・変更、Actual閲覧、Expense登録、Journal Entry確定に関する権限は本表では定義せず、各機能の権限仕様に従う。
 - 承認者は申請金額を変更し、承認金額を指定できる。
