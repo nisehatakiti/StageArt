@@ -25,12 +25,17 @@ use StageArt\Domain\Production\ProductionId;
  *     +----withdraw------+
  *
  * - DRAFT is an unsubmitted 下書き. Creating an Expense never submits it.
- * - The applicant may edit a SUBMITTED Expense before approval; each such
- *   edit is a new submission revision with its own requested amount.
- * - Approval takes the whole Expense's approved total. With more than one
- *   Line a changed total is refused, because no rule says how to spread
- *   it over the Lines. 0 is never an approved amount.
- * - The approver must not be the submitter, the creator, or the payer.
+ * - The Lines change only while DRAFT, SUBMITTED (before approval; each
+ *   such edit is a new submission revision with its own requested amount)
+ *   or REJECTED (before 再申請). Once submitted, only the applicant edits
+ *   them (UpdateExpenseUseCase decides who may edit).
+ * - Approval approves the application as submitted (ExpenseApprovalWorkflow.md
+ *   Version 1.10): the approved amount always equals the requested amount,
+ *   which must still be the Lines' total. No approver raises or lowers it,
+ *   on one Line or several, and approving changes no Line; an Expense in
+ *   doubt is returned for correction (差し戻し) instead.
+ * - The approver or rejecter must not be the submitter, the creator, or
+ *   the payer.
  * - CONFIRMED (the old Confirm step's status) loads, but every
  *   transition out of it is refused.
  *
@@ -368,7 +373,7 @@ final class Expense
      */
     public function confirm(PersonId $confirmedBy): void
     {
-        $this->assertStatus([ExpenseStatus::DRAFT], 'Expense Lines can only be changed while the Expense is DRAFT.');
+        $this->assertStatus([ExpenseStatus::DRAFT], 'Only a DRAFT Expense could be confirmed (pre-workflow Confirm step).');
 
         if (count($this->lines) === 0) {
             throw new InvalidArgumentException('An Expense must have at least one Expense Line before it can be confirmed.');
