@@ -49,15 +49,16 @@ use Throwable;
  * The actor is a LegacyExpenseMigrationOperator: a WordPress user holding
  * stageart_manage_accounts, linked to exactly one StageArt Person (the
  * WP-CLI script resolves it from --user); without one there is no call.
- * Each listed Expense is also recorded in the operations audit
- * (LegacyExpenseMigrationAudit, schema 1.45.0): SUCCEEDED in the same
- * transaction, so a failed audit insert rolls everything back; FAILED
- * after a rollback and REFUSED for a refused list, on their own. The run
- * then gets its own row (expense_id NULL), last and on its own:
- * SUCCEEDED, FAILED with the rollback's reason, or REFUSED with
- * TARGET_MISMATCH. Missing ids or reason and tables without transactions
- * are refused before any target is looked at and recorded nowhere but
- * the log.
+ * The run is recorded in the operations audit (LegacyExpenseMigrationAudit,
+ * schema 1.45.0): a STARTED run row first, before any target is looked at
+ * - when it cannot be written nothing is done (AUDIT_START_FAILED) - then
+ * each listed Expense: SUCCEEDED in the same transaction, so a failed
+ * audit insert rolls everything back; FAILED after a rollback and REFUSED
+ * for a refused list, on their own. The run then gets its outcome row
+ * (expense_id NULL), last and on its own: SUCCEEDED, FAILED with the
+ * rollback's reason, or REFUSED with TARGET_MISMATCH. Missing ids or
+ * reason and tables without transactions are refused before the run
+ * starts and recorded nowhere but the log.
  */
 final class LegacyExpenseMigrationRestore
 {
@@ -70,6 +71,7 @@ final class LegacyExpenseMigrationRestore
     public const REFUSED_TARGET_MISMATCH = 'TARGET_MISMATCH';
     public const REFUSED_REASON_MISSING = 'REASON_MISSING';
     public const REFUSED_REASON_TOO_LONG = 'REASON_TOO_LONG';
+    public const REFUSED_AUDIT_START_FAILED = LegacyExpenseMigration::REFUSED_AUDIT_START_FAILED;
 
     /** The longest restore reason accepted, in characters. */
     public const MAX_REASON_LENGTH = 500;
@@ -168,6 +170,14 @@ final class LegacyExpenseMigrationRestore
 
         if (! LegacyExpenseMigration::isTransactional(LegacyExpenseMigration::storageEngines($wpdb))) {
             return self::refuse($summary, self::REFUSED_NOT_TRANSACTIONAL);
+        }
+
+        // Nothing is written before the run is on record: a run that could
+        // not be recorded does not start, and gets no outcome row either.
+        if (! $recordRun(LegacyExpenseMigrationAudit::STARTED, null)) {
+            $summary['audit_failures'][] = '-';
+
+            return self::refuse($summary, self::REFUSED_AUDIT_START_FAILED);
         }
 
         $mismatches = array_filter(self::check($wpdb, $ids), static fn (?string $reason): bool => $reason !== null);

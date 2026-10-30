@@ -123,10 +123,11 @@ final class LegacyExpenseMigrationScriptTest extends TestCase
         $this->assertSame('CONFIRMED', array_column($this->db->tables['stageart_expenses'], 'status', 'id')['entry-not-posted']);
 
         $audit = $this->db->tables['stageart_legacy_expense_migration_audit'];
-        $this->assertCount(3, $audit);
-        $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'migratable', 'SUCCEEDED', 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
-        $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'entry-not-posted', 'SKIPPED'], [$audit[1]['operation'], $audit[1]['expense_id'], $audit[1]['outcome']]);
-        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', $audit[0]['run_id']], [$audit[2]['operation'], $audit[2]['expense_id'], $audit[2]['outcome'], $audit[2]['run_id']]);
+        $this->assertCount(4, $audit);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'STARTED', 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'migratable', 'SUCCEEDED', 7, self::PERSON, $audit[0]['run_id']], [$audit[1]['operation'], $audit[1]['expense_id'], $audit[1]['outcome'], $audit[1]['wp_user_id'], $audit[1]['person_id'], $audit[1]['run_id']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'entry-not-posted', 'SKIPPED'], [$audit[2]['operation'], $audit[2]['expense_id'], $audit[2]['outcome']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', $audit[0]['run_id']], [$audit[3]['operation'], $audit[3]['expense_id'], $audit[3]['outcome'], $audit[3]['run_id']]);
         $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
         $this->assertContains('line: Operator: person=' . self::PERSON . ' wp_user=7 os_user=' . (LegacyExpenseMigrationOperator::detectOsUser() === null ? 'unknown' : (string) preg_replace('/[^A-Za-z0-9._@:-]/', '', (string) LegacyExpenseMigrationOperator::detectOsUser())), $output);
     }
@@ -149,9 +150,32 @@ final class LegacyExpenseMigrationScriptTest extends TestCase
         $this->assertContains('line: Migrated: 0', $output);
         $this->assertSame('success: Migration finished.', end($output));
         $audit = $this->db->tables['stageart_legacy_expense_migration_audit'];
-        $this->assertCount(1, $audit);
-        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', 'NO_CANDIDATES', 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['reason_code'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
+        $this->assertCount(2, $audit);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'STARTED', null, 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['reason_code'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', 'NO_CANDIDATES', 7, self::PERSON, $audit[0]['run_id']], [$audit[1]['operation'], $audit[1]['expense_id'], $audit[1]['outcome'], $audit[1]['reason_code'], $audit[1]['wp_user_id'], $audit[1]['person_id'], $audit[1]['run_id']]);
         $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
+    }
+
+    /**
+     * 2026-10-30: when the STARTED row cannot be written the script stops
+     * with an error before anything is migrated.
+     */
+    public function test_an_unwritable_start_ends_the_script_before_any_migration(): void
+    {
+        $this->given();
+        $this->runScript([]);
+        $fingerprint = $this->fingerprint();
+        \WP_CLI::$output = [];
+        $this->db->failures['AUDIT_RUN_START'] = true;
+        $before = $this->db->tables;
+
+        $this->runScript(['execute', $fingerprint]);
+
+        $output = $this->output();
+        $this->assertContains('warning: The audit row could not be written: -', $output);
+        $this->assertSame('error: Refused (AUDIT_START_FAILED) - no Expense was changed.', end($output));
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame([], $this->db->transactionLog);
     }
 
     public function test_an_unwritable_run_row_ends_the_script_in_an_error(): void

@@ -48,8 +48,11 @@ use Throwable;
  *
  * execute() needs an operator (LegacyExpenseMigrationOperator: a
  * WordPress user holding stageart_manage_accounts, linked to one StageArt
- * Person) and records each Expense in the operations audit
- * (LegacyExpenseMigrationAudit, schema 1.45.0): a migrated Expense's
+ * Person) and records the run in the operations audit
+ * (LegacyExpenseMigrationAudit, schema 1.45.0): first a STARTED run row -
+ * once the tables are found transactional, before anything else is
+ * written; when it cannot be written the run stops there
+ * (AUDIT_START_FAILED) - then each Expense: a migrated Expense's
  * SUCCEEDED row in its own transaction, so a failed audit insert rolls the
  * migration back; a rolled-back Expense's FAILED row and a manual-review
  * Expense's SKIPPED row after the fact, on their own; and, last, the
@@ -65,6 +68,8 @@ final class LegacyExpenseMigration
 
     public const REFUSED_NOT_TRANSACTIONAL = 'NOT_TRANSACTIONAL';
     public const REFUSED_PLAN_CHANGED = 'PLAN_CHANGED';
+    /** The STARTED run row could not be written, so nothing was done. */
+    public const REFUSED_AUDIT_START_FAILED = 'AUDIT_START_FAILED';
 
     public const FAILED_TRANSACTION_START = 'TRANSACTION_START_FAILED';
     public const FAILED_LOCK = 'LOCK_FAILED';
@@ -162,18 +167,28 @@ final class LegacyExpenseMigration
             $operator,
             $confirmedFingerprint
         );
-        // The run row (expense_id NULL), last and on its own; "-" stands
-        // for it in audit_failures.
-        $recordRun = static function (string $outcome, ?string $reason) use (&$summary, $wpdb, $runId, $operator, $confirmedFingerprint): void {
-            if (! LegacyExpenseMigrationAudit::record($wpdb, $runId, LegacyExpenseMigrationAudit::OPERATION_MIGRATION_RUN, null, $outcome, $reason, $operator, $confirmedFingerprint)) {
-                $summary['audit_failures'][] = '-';
-                error_log(self::LOG_PREFIX . " audit record failed: run {$runId} {$outcome}");
+        // The run rows (expense_id NULL), STARTED first and the outcome
+        // last, each on its own; "-" stands for them in audit_failures.
+        $recordRun = static function (string $outcome, ?string $reason) use (&$summary, $wpdb, $runId, $operator, $confirmedFingerprint): bool {
+            if (LegacyExpenseMigrationAudit::record($wpdb, $runId, LegacyExpenseMigrationAudit::OPERATION_MIGRATION_RUN, null, $outcome, $reason, $operator, $confirmedFingerprint)) {
+                return true;
             }
+
+            $summary['audit_failures'][] = '-';
+            error_log(self::LOG_PREFIX . " audit record failed: run {$runId} {$outcome}");
+
+            return false;
         };
 
         if (! $plan['transactional']) {
             // Not recorded in the audit table: it is one of the tables found unfit.
             return self::refuse($summary, self::REFUSED_NOT_TRANSACTIONAL, $operator);
+        }
+
+        // Nothing is written before the run is on record: a run that could
+        // not be recorded does not start, and gets no outcome row either.
+        if (! $recordRun(LegacyExpenseMigrationAudit::STARTED, null)) {
+            return self::refuse($summary, self::REFUSED_AUDIT_START_FAILED, $operator);
         }
 
         if (! hash_equals($plan['fingerprint'], $confirmedFingerprint)) {

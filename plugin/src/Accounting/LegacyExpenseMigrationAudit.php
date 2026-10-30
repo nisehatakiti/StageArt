@@ -27,13 +27,23 @@ use StageArt\Domain\Shared\Uuid;
  * - SKIPPED (migration only) is an Expense the run left CONFIRMED for
  *   manual review, with the classifier's reason, inserted on its own.
  *
- * Each run also ends with one run row (2026-10-30): expense_id and
- * success_key NULL, its own operation (OPERATION_MIGRATION_RUN /
+ * Each run also has two run rows (2026-10-30): expense_id and success_key
+ * NULL, their own operation (OPERATION_MIGRATION_RUN /
  * OPERATION_REVERT_RUN, so counting an operation's per-Expense rows never
- * counts it) and the run's outcome - SUCCEEDED (a migration with no
- * candidate too, reason NO_CANDIDATES), PARTIAL, FAILED or REFUSED. It is
- * inserted on its own after everything else, so it records who ran what
- * and when even when no Expense was touched.
+ * counts them):
+ *
+ * - STARTED, once the operator, the arguments and the tables have been
+ *   checked and before anything else is written. A run whose STARTED row
+ *   cannot be written does not start (AUDIT_START_FAILED).
+ * - the outcome, last - SUCCEEDED (a migration with no candidate too,
+ *   reason NO_CANDIDATES), PARTIAL, FAILED or REFUSED - so who ran what
+ *   and when is on record even when no Expense was touched. When it
+ *   cannot be written, what was committed stays committed.
+ *
+ * A STARTED row without an outcome row is a run whose end was not seen:
+ * the process was killed, or its outcome row could not be written. It is
+ * neither a success nor a failure, and nothing in StageArt completes,
+ * changes or removes it (Runbook 3.2 "未終了の実行").
  *
  * Every row carries the run it belongs to, the operator (WordPress user,
  * StageArt Person, OS account when known) and the time in UTC. A run
@@ -63,6 +73,8 @@ final class LegacyExpenseMigrationAudit
     public const SKIPPED = 'SKIPPED';
     /** A run row only: some Expenses migrated, some rolled back. */
     public const PARTIAL = 'PARTIAL';
+    /** A run row only: the run began; its outcome row follows when it ends. */
+    public const STARTED = 'STARTED';
 
     /** The reason given to the other Expenses of a revert run rolled back because of one of them. */
     public const RUN_ROLLED_BACK = 'RUN_ROLLED_BACK';

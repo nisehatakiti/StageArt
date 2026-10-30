@@ -136,6 +136,30 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $this->assertCount(1, $audit);
         $this->assertSame(['migratable', 'SUCCEEDED', self::OPERATOR_WP_USER, self::OPERATOR_PERSON], [$audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
         $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
+
+        // 2026-10-30: the run's start and end around it.
+        $run = array_values(array_filter($this->db->tables['stageart_legacy_expense_migration_audit'], static fn (array $r): bool => $r['operation'] === 'LEGACY_EXPENSE_MIGRATION_REVERT_RUN' && $r['run_id'] === $audit[0]['run_id']));
+        $this->assertSame(['STARTED', 'SUCCEEDED'], array_column($run, 'outcome'));
+    }
+
+    /**
+     * 2026-10-30: when the STARTED row cannot be written the script stops
+     * with an error before anything is restored.
+     */
+    public function test_an_unwritable_start_ends_the_script_before_any_restore(): void
+    {
+        $this->given();
+        $this->db->failures['AUDIT_RUN_START'] = true;
+        $before = $this->db->tables;
+        $transactions = $this->db->transactionLog;
+
+        $this->runScript(['restore', 'migratable', self::REASON]);
+
+        $output = $this->output();
+        $this->assertContains('warning: The audit row could not be written: -', $output);
+        $this->assertSame('error: Refused (AUDIT_START_FAILED) - no Expense was changed.', end($output));
+        $this->assertSame($before, $this->db->tables);
+        $this->assertSame($transactions, $this->db->transactionLog);
     }
 
     /**

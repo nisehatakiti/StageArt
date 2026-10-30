@@ -48,8 +48,10 @@ final class FakeExpenseMigrationDatabase
      * MIGRATION_REVERTED row); 'RESTORE_UPDATE' => an Expense id fails the
      * restore's UPDATE for it; 'AUDIT' => an Expense id fails its SUCCEEDED
      * audit row; 'AUDIT_RECORD' => true fails every audit row that is not
-     * SUCCEEDED (FAILED / REFUSED / SKIPPED, and such run rows);
-     * 'AUDIT_RUN' => true fails every run row (expense_id NULL); 'LOCK' => a
+     * SUCCEEDED or STARTED (FAILED / REFUSED / SKIPPED, and such outcome
+     * run rows); 'AUDIT_RUN' => true fails every outcome run row (expense_id
+     * NULL, not STARTED); 'AUDIT_RUN_START' => true fails every STARTED run
+     * row; 'LOCK' => a
      * $locks entry ("journal_entry:<id>" etc.) fails that locking read
      * the way a deadlock does - no row, and $wpdb->last_error set.
      *
@@ -342,11 +344,17 @@ final class FakeExpenseMigrationDatabase
             return false;
         }
 
-        if ($row['expense_id'] === null && ! empty($this->failures['AUDIT_RUN'])) {
+        $started = $row['expense_id'] === null && $row['outcome'] === 'STARTED';
+
+        if ($started && ! empty($this->failures['AUDIT_RUN_START'])) {
             return false;
         }
 
-        if ($row['outcome'] !== 'SUCCEEDED' && ! empty($this->failures['AUDIT_RECORD'])) {
+        if ($row['expense_id'] === null && ! $started && ! empty($this->failures['AUDIT_RUN'])) {
+            return false;
+        }
+
+        if ($row['outcome'] !== 'SUCCEEDED' && ! $started && ! empty($this->failures['AUDIT_RECORD'])) {
             return false;
         }
 
