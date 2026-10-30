@@ -18,7 +18,8 @@ use StageArt\Domain\Person\PersonId;
  * Expense for, through the same
  * NotificationContract the attendance notifications use; the
  * notification carries the Expense as its target so the app can open it
- * directly. The applicant hears back when it is approved or rejected.
+ * directly. The applicant hears back when it is approved or returned for
+ * correction (差し戻し - internally REJECTED).
  *
  * Callers invoke these only after their transaction has committed, so a
  * rolled-back change is never announced. Delivery failures are already
@@ -52,7 +53,7 @@ final class ExpenseWorkflowNotifier
     public function submitted(Expense $expense): void
     {
         $message = sprintf(
-            '「%s」で経費申請（%s円）が提出されました。内容を確認し、承認または却下してください。',
+            '「%s」で経費申請（%s円）が提出されました。内容を確認し、承認または差し戻しをしてください。',
             $this->productionName($expense),
             number_format((int) $expense->requestedAmount())
         );
@@ -76,10 +77,16 @@ final class ExpenseWorkflowNotifier
         $this->send($this->applicant($expense), self::TYPE_APPROVED, $expense, $message);
     }
 
+    /**
+     * REJECTED is a return for correction, not a final refusal
+     * (ExpenseApprovalWorkflow.md Version 1.4): the applicant is told it was
+     * 差し戻し and can fix and resubmit it. The type key stays
+     * expense_rejected, after the internal status.
+     */
     public function rejected(Expense $expense): void
     {
         $message = sprintf(
-            '「%s」の経費申請（%s円）が却下されました。理由：%s',
+            '「%s」の経費申請（%s円）が差し戻されました。内容を修正して再申請してください。理由：%s',
             $this->productionName($expense),
             number_format((int) $expense->requestedAmount()),
             (string) $expense->rejectionReason()

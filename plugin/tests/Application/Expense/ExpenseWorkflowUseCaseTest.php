@@ -864,6 +864,31 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->assertSame(0, $this->notifications->sentInsideTransaction());
     }
 
+    /**
+     * Version 1.4: REJECTED is shown as 差し戻し - a return for correction
+     * the applicant can resubmit - never as 却下 (a final refusal), in the
+     * applicant's notice and in the approvers' request to act.
+     */
+    public function test_notifications_call_a_return_for_correction_sashimodoshi_not_kyakka(): void
+    {
+        $id = $this->submittedBy(2, [4200]);
+        $submitted = $this->notifications->sent()[0]['payload']['message'];
+
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '金額を確認してください'));
+
+        $returned = $this->notifications->sent()[count($this->notifications->sent()) - 1];
+        $this->assertSame('expense_rejected', $returned['type']);
+        $this->assertSame(
+            '「Autumn Play」の経費申請（4,200円）が差し戻されました。内容を修正して再申請してください。理由：金額を確認してください',
+            $returned['payload']['message']
+        );
+        $this->assertStringContainsString('承認または差し戻しをしてください', $submitted);
+
+        foreach ($this->notifications->sent() as $sent) {
+            $this->assertStringNotContainsString('却下', $sent['payload']['message']);
+        }
+    }
+
     public function test_reject_without_a_reason_is_refused_and_changes_nothing(): void
     {
         $id = $this->submittedBy(2);
