@@ -24,10 +24,23 @@ use StageArt\Domain\Shared\Uuid;
  *   cannot share a transaction that is being undone. When such a row
  *   cannot be written, the failure is still logged and reported, and the
  *   run ends in an error.
+ * - SKIPPED (migration only) is an Expense the run left CONFIRMED for
+ *   manual review, with the classifier's reason, inserted on its own.
+ *
+ * Each run also ends with one run row (2026-10-30): expense_id and
+ * success_key NULL, its own operation (OPERATION_MIGRATION_RUN /
+ * OPERATION_REVERT_RUN, so counting an operation's per-Expense rows never
+ * counts it) and the run's outcome - SUCCEEDED (a migration with no
+ * candidate too, reason NO_CANDIDATES), PARTIAL, FAILED or REFUSED. It is
+ * inserted on its own after everything else, so it records who ran what
+ * and when even when no Expense was touched.
  *
  * Every row carries the run it belongs to, the operator (WordPress user,
  * StageArt Person, OS account when known) and the time in UTC. A run
- * refused before an operator is established writes nothing here.
+ * refused before an operator is established, or before any target was
+ * looked at (missing arguments, tables without transactions), writes
+ * nothing here. The WordPress user is the one --user named, not an
+ * authenticated person.
  *
  * This is an audit trail kept by the application, not tamper-proof
  * storage: anyone with direct database access can change it.
@@ -39,16 +52,41 @@ final class LegacyExpenseMigrationAudit
     public const OPERATION_MIGRATION = 'LEGACY_EXPENSE_MIGRATION';
     public const OPERATION_REVERT = 'LEGACY_EXPENSE_MIGRATION_REVERT';
 
+    /** The run rows' operations: one row per run, expense_id NULL. */
+    public const OPERATION_MIGRATION_RUN = 'LEGACY_EXPENSE_MIGRATION_RUN';
+    public const OPERATION_REVERT_RUN = 'LEGACY_EXPENSE_MIGRATION_REVERT_RUN';
+
     public const SUCCEEDED = 'SUCCEEDED';
     public const FAILED = 'FAILED';
     public const REFUSED = 'REFUSED';
+    /** A migration Expense left for manual review. */
+    public const SKIPPED = 'SKIPPED';
+    /** A run row only: some Expenses migrated, some rolled back. */
+    public const PARTIAL = 'PARTIAL';
 
     /** The reason given to the other Expenses of a revert run rolled back because of one of them. */
     public const RUN_ROLLED_BACK = 'RUN_ROLLED_BACK';
 
+    /** A migration run row's reason when the plan had no candidate. */
+    public const NO_CANDIDATES = 'NO_CANDIDATES';
+
     public static function newRunId(): string
     {
         return Uuid::generate();
+    }
+
+    /**
+     * A finished run's outcome from its Expenses' results: SUCCEEDED when
+     * none failed (also when there was none), FAILED when none succeeded,
+     * PARTIAL otherwise.
+     */
+    public static function runOutcome(int $succeeded, int $failed): string
+    {
+        if ($failed === 0) {
+            return self::SUCCEEDED;
+        }
+
+        return $succeeded === 0 ? self::FAILED : self::PARTIAL;
     }
 
     /**

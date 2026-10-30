@@ -123,10 +123,50 @@ final class LegacyExpenseMigrationScriptTest extends TestCase
         $this->assertSame('CONFIRMED', array_column($this->db->tables['stageart_expenses'], 'status', 'id')['entry-not-posted']);
 
         $audit = $this->db->tables['stageart_legacy_expense_migration_audit'];
-        $this->assertCount(1, $audit);
+        $this->assertCount(3, $audit);
         $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'migratable', 'SUCCEEDED', 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'entry-not-posted', 'SKIPPED'], [$audit[1]['operation'], $audit[1]['expense_id'], $audit[1]['outcome']]);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', $audit[0]['run_id']], [$audit[2]['operation'], $audit[2]['expense_id'], $audit[2]['outcome'], $audit[2]['run_id']]);
         $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
         $this->assertContains('line: Operator: person=' . self::PERSON . ' wp_user=7 os_user=' . (LegacyExpenseMigrationOperator::detectOsUser() === null ? 'unknown' : (string) preg_replace('/[^A-Za-z0-9._@:-]/', '', (string) LegacyExpenseMigrationOperator::detectOsUser())), $output);
+    }
+
+    /**
+     * 2026-10-30: a run with no candidate finishes normally and leaves its
+     * run row - who ran it and when - in the audit table.
+     */
+    public function test_execute_with_no_candidate_records_the_run(): void
+    {
+        $this->given();
+        $this->db->tables['stageart_expenses'] = [];
+        $this->runScript([]);
+        $fingerprint = $this->fingerprint();
+        \WP_CLI::$output = [];
+
+        $this->runScript(['execute', $fingerprint]);
+
+        $output = $this->output();
+        $this->assertContains('line: Migrated: 0', $output);
+        $this->assertSame('success: Migration finished.', end($output));
+        $audit = $this->db->tables['stageart_legacy_expense_migration_audit'];
+        $this->assertCount(1, $audit);
+        $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', 'NO_CANDIDATES', 7, self::PERSON], [$audit[0]['operation'], $audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['reason_code'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
+        $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
+    }
+
+    public function test_an_unwritable_run_row_ends_the_script_in_an_error(): void
+    {
+        $this->given();
+        $this->runScript([]);
+        $fingerprint = $this->fingerprint();
+        \WP_CLI::$output = [];
+        $this->db->failures['AUDIT_RUN'] = true;
+
+        $this->runScript(['execute', $fingerprint]);
+
+        $output = $this->output();
+        $this->assertContains('warning: The audit row could not be written: -', $output);
+        $this->assertSame('error: 0 Expense(s) failed and were rolled back; 1 audit row(s) could not be written.', end($output));
     }
 
     /**

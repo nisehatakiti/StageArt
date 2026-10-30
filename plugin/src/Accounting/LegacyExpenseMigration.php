@@ -51,8 +51,10 @@ use Throwable;
  * Person) and records each Expense in the operations audit
  * (LegacyExpenseMigrationAudit, schema 1.45.0): a migrated Expense's
  * SUCCEEDED row in its own transaction, so a failed audit insert rolls the
- * migration back; a rolled-back Expense's FAILED row and a refused run's
- * REFUSED row after the fact, on their own.
+ * migration back; a rolled-back Expense's FAILED row and a manual-review
+ * Expense's SKIPPED row after the fact, on their own; and, last, the
+ * run's own row (SUCCEEDED - also with no candidate -, PARTIAL, FAILED,
+ * or REFUSED for a changed plan).
  */
 final class LegacyExpenseMigration
 {
@@ -132,7 +134,7 @@ final class LegacyExpenseMigration
      * tables are transactional; otherwise nothing is written.
      *
      * The summary's audit_failures lists the Expense ids ("-" for the run
-     * itself) whose FAILED / REFUSED audit row could not be written.
+     * row) whose FAILED / SKIPPED / run audit row could not be written.
      *
      * @param \wpdb $wpdb
      * @return array{
@@ -160,6 +162,14 @@ final class LegacyExpenseMigration
             $operator,
             $confirmedFingerprint
         );
+        // The run row (expense_id NULL), last and on its own; "-" stands
+        // for it in audit_failures.
+        $recordRun = static function (string $outcome, ?string $reason) use (&$summary, $wpdb, $runId, $operator, $confirmedFingerprint): void {
+            if (! LegacyExpenseMigrationAudit::record($wpdb, $runId, LegacyExpenseMigrationAudit::OPERATION_MIGRATION_RUN, null, $outcome, $reason, $operator, $confirmedFingerprint)) {
+                $summary['audit_failures'][] = '-';
+                error_log(self::LOG_PREFIX . " audit record failed: run {$runId} {$outcome}");
+            }
+        };
 
         if (! $plan['transactional']) {
             // Not recorded in the audit table: it is one of the tables found unfit.
@@ -167,10 +177,7 @@ final class LegacyExpenseMigration
         }
 
         if (! hash_equals($plan['fingerprint'], $confirmedFingerprint)) {
-            if (! $audit(null, LegacyExpenseMigrationAudit::REFUSED, self::REFUSED_PLAN_CHANGED)) {
-                $summary['audit_failures'][] = '-';
-                error_log(self::LOG_PREFIX . " audit record failed: run {$runId} REFUSED");
-            }
+            $recordRun(LegacyExpenseMigrationAudit::REFUSED, self::REFUSED_PLAN_CHANGED);
 
             return self::refuse($summary, self::REFUSED_PLAN_CHANGED, $operator);
         }
@@ -203,6 +210,21 @@ final class LegacyExpenseMigration
             }
 
             error_log(self::LOG_PREFIX . ' left CONFIRMED for manual review: ' . implode(', ', $pairs));
+        }
+
+        // Nothing is written to these Expenses; the rows say this run saw
+        // and left them.
+        foreach ($summary['manual_review'] as $id => $reason) {
+            if (! $audit((string) $id, LegacyExpenseMigrationAudit::SKIPPED, $reason)) {
+                $summary['audit_failures'][] = (string) $id;
+                error_log(self::LOG_PREFIX . " audit record failed: {$id} SKIPPED");
+            }
+        }
+
+        if ($plan['candidates'] === []) {
+            $recordRun(LegacyExpenseMigrationAudit::SUCCEEDED, LegacyExpenseMigrationAudit::NO_CANDIDATES);
+        } else {
+            $recordRun(LegacyExpenseMigrationAudit::runOutcome(count($summary['migrated']), count($summary['failed'])), null);
         }
 
         error_log(sprintf(

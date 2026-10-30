@@ -52,7 +52,12 @@ use Throwable;
  * Each listed Expense is also recorded in the operations audit
  * (LegacyExpenseMigrationAudit, schema 1.45.0): SUCCEEDED in the same
  * transaction, so a failed audit insert rolls everything back; FAILED
- * after a rollback and REFUSED for a refused list, on their own.
+ * after a rollback and REFUSED for a refused list, on their own. The run
+ * then gets its own row (expense_id NULL), last and on its own:
+ * SUCCEEDED, FAILED with the rollback's reason, or REFUSED with
+ * TARGET_MISMATCH. Missing ids or reason and tables without transactions
+ * are refused before any target is looked at and recorded nowhere but
+ * the log.
  */
 final class LegacyExpenseMigrationRestore
 {
@@ -137,6 +142,16 @@ final class LegacyExpenseMigrationRestore
             $code,
             $operator
         );
+        // The run row (expense_id NULL); "-" stands for it in audit_failures.
+        $recordRun = static function (string $outcome, ?string $code) use ($wpdb, $runId, $operator): bool {
+            if (LegacyExpenseMigrationAudit::record($wpdb, $runId, LegacyExpenseMigrationAudit::OPERATION_REVERT_RUN, null, $outcome, $code, $operator)) {
+                return true;
+            }
+
+            error_log(LegacyExpenseMigration::LOG_PREFIX . " audit record failed: run {$runId} {$outcome}");
+
+            return false;
+        };
 
         // Argument and table problems are logged only: no target was looked at.
         if ($ids === []) {
@@ -166,11 +181,15 @@ final class LegacyExpenseMigrationRestore
                 }
             }
 
+            if (! $recordRun(LegacyExpenseMigrationAudit::REFUSED, self::REFUSED_TARGET_MISMATCH)) {
+                $summary['audit_failures'][] = '-';
+            }
+
             return self::refuse($summary, self::REFUSED_TARGET_MISMATCH);
         }
 
         if ($wpdb->query('START TRANSACTION') === false) {
-            return self::rolledBack($summary, $ids, null, self::FAILED_TRANSACTION_START, $audit);
+            return self::rolledBack($summary, $ids, null, self::FAILED_TRANSACTION_START, $audit, $recordRun);
         }
 
         $t = LegacyExpenseMigration::tables($wpdb);
@@ -204,7 +223,11 @@ final class LegacyExpenseMigrationRestore
         if ($failure !== null) {
             $wpdb->query('ROLLBACK');
 
-            return self::rolledBack($summary, $ids, $current, $failure, $audit);
+            return self::rolledBack($summary, $ids, $current, $failure, $audit, $recordRun);
+        }
+
+        if (! $recordRun(LegacyExpenseMigrationAudit::SUCCEEDED, null)) {
+            $summary['audit_failures'][] = '-';
         }
 
         error_log(sprintf(
@@ -440,14 +463,16 @@ final class LegacyExpenseMigrationRestore
     /**
      * Logs the rollback and records one FAILED audit row per listed
      * Expense - its own reason for the one that failed, RUN_ROLLED_BACK for
-     * the others (the run's reason for all when no single Expense failed).
+     * the others (the run's reason for all when no single Expense failed) -
+     * then the run row, FAILED with that reason.
      *
      * @param array<string, mixed> $summary
      * @param string[] $ids
      * @param callable(string, string, ?string): bool $audit
+     * @param callable(string, ?string): bool $recordRun
      * @return array<string, mixed>
      */
-    private static function rolledBack(array $summary, array $ids, ?string $id, string $reason, callable $audit): array
+    private static function rolledBack(array $summary, array $ids, ?string $id, string $reason, callable $audit, callable $recordRun): array
     {
         error_log(LegacyExpenseMigration::LOG_PREFIX . ' restore rolled back: ' . ($id === null ? $reason : "{$id}={$reason}") . "; nothing was restored; run={$summary['run_id']}");
 
@@ -458,6 +483,10 @@ final class LegacyExpenseMigrationRestore
                 $summary['audit_failures'][] = $listed;
                 error_log(LegacyExpenseMigration::LOG_PREFIX . " audit record failed: {$listed} FAILED");
             }
+        }
+
+        if (! $recordRun(LegacyExpenseMigrationAudit::FAILED, $reason)) {
+            $summary['audit_failures'][] = '-';
         }
 
         return array_merge($summary, ['outcome' => self::OUTCOME_ROLLED_BACK, 'reason' => $reason, 'expense_id' => $id]);

@@ -91,7 +91,8 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
     /**
      * Required tests 4 and 10: each migrated Expense has one SUCCEEDED row
      * naming the operation, the Expense, the run, the operator and the
-     * time in UTC; Expenses left for review have none.
+     * time in UTC; an Expense left for review has a SKIPPED row with its
+     * reason; the run ends with its own row (2026-10-30).
      */
     public function test_each_migrated_expense_is_recorded_with_its_operator_and_time(): void
     {
@@ -103,6 +104,8 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
         $this->assertSame([
             ['operation' => A::OPERATION_MIGRATION, 'expense_id' => 'migratable', 'outcome' => A::SUCCEEDED, 'reason_code' => null, 'success_key' => 'migratable', 'wp_user_id' => 7, 'person_id' => self::PERSON, 'os_user' => 'deploy'],
             ['operation' => A::OPERATION_MIGRATION, 'expense_id' => 'migratable-2', 'outcome' => A::SUCCEEDED, 'reason_code' => null, 'success_key' => 'migratable-2', 'wp_user_id' => 7, 'person_id' => self::PERSON, 'os_user' => 'deploy'],
+            ['operation' => A::OPERATION_MIGRATION, 'expense_id' => 'draft-entry', 'outcome' => A::SKIPPED, 'reason_code' => 'DRAFT_JOURNAL_ENTRY', 'success_key' => null, 'wp_user_id' => 7, 'person_id' => self::PERSON, 'os_user' => 'deploy'],
+            ['operation' => A::OPERATION_MIGRATION_RUN, 'expense_id' => null, 'outcome' => A::SUCCEEDED, 'reason_code' => null, 'success_key' => null, 'wp_user_id' => 7, 'person_id' => self::PERSON, 'os_user' => 'deploy'],
         ], $this->auditColumns(['operation', 'expense_id', 'outcome', 'reason_code', 'success_key', 'wp_user_id', 'person_id', 'os_user']));
 
         foreach ($this->audit() as $row) {
@@ -112,8 +115,9 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
             $this->assertLessThanOrEqual($after, $row['acted_at_utc']);
         }
 
-        $this->assertNotSame($this->audit()[0]['id'], $this->audit()[1]['id']);
-        $this->assertSame([], $this->data->auditOf('draft-entry'));
+        $this->assertCount(4, array_unique(array_column($this->audit(), 'id')));
+        $this->assertSame('CONFIRMED', $this->data->expensesById()['draft-entry']['status']);
+        $this->assertSame([], $this->data->historyOf('draft-entry'));
 
         // The business history is untouched by the audit: still one MIGRATED row, actor the confirmer.
         $this->assertSame(['MIGRATED'], array_column($this->data->historyOf('migratable'), 'action'));
@@ -173,7 +177,8 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
 
     /**
      * When even the FAILED row cannot be written, the run still reports it
-     * (audit_failures, the log) - nothing is silently lost.
+     * (audit_failures, the log) - nothing is silently lost. The same goes
+     * for the SKIPPED row and the run's own row ("-").
      */
     public function test_an_unwritable_failure_record_is_reported(): void
     {
@@ -182,10 +187,14 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
 
         $result = $this->migrate();
 
-        $this->assertSame(['migratable'], $result['audit_failures']);
+        $this->assertSame(['migratable', 'draft-entry', '-'], $result['audit_failures']);
         $this->assertSame([], $this->data->auditOf('migratable'));
-        $this->assertStringContainsString('audit record failed: migratable FAILED', (string) file_get_contents($this->log));
-        $this->assertStringContainsString('audit_failures=1', (string) file_get_contents($this->log));
+        $this->assertSame([], $this->data->auditOf(null));
+        $log = (string) file_get_contents($this->log);
+        $this->assertStringContainsString('audit record failed: migratable FAILED', $log);
+        $this->assertStringContainsString('audit record failed: draft-entry SKIPPED', $log);
+        $this->assertStringContainsString("audit record failed: run {$result['run_id']} PARTIAL", $log);
+        $this->assertStringContainsString('audit_failures=3', $log);
     }
 
     public function test_a_refused_run_is_recorded_once_for_the_run_and_changes_no_expense(): void
@@ -197,7 +206,7 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
         $this->assertSame(M::REFUSED_PLAN_CHANGED, $result['refused_reason']);
         $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([[
-            'run_id' => $result['run_id'], 'operation' => A::OPERATION_MIGRATION, 'expense_id' => null, 'outcome' => A::REFUSED,
+            'run_id' => $result['run_id'], 'operation' => A::OPERATION_MIGRATION_RUN, 'expense_id' => null, 'outcome' => A::REFUSED,
             'reason_code' => M::REFUSED_PLAN_CHANGED, 'plan_fingerprint' => '0123456789abcdef', 'person_id' => self::PERSON,
         ]], $this->auditColumns(['run_id', 'operation', 'expense_id', 'outcome', 'reason_code', 'plan_fingerprint', 'person_id']));
     }
@@ -217,9 +226,10 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
     }
 
     /**
-     * Required test 6: a second run migrates nothing and records nothing
-     * new; and should an Expense already have a SUCCEEDED migration row,
-     * the unique key refuses a second one, rolling that migration back.
+     * Required test 6: a second run migrates nothing and records no new
+     * success - only that it ran (its SKIPPED row and its run row, with no
+     * candidate); and should an Expense already have a SUCCEEDED migration
+     * row, the unique key refuses a second one, rolling that migration back.
      */
     public function test_no_expense_is_recorded_or_migrated_twice(): void
     {
@@ -229,7 +239,13 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
         $second = $this->migrate();
 
         $this->assertSame([], $second['migrated']);
-        $this->assertSame($afterFirst, $this->db->tables);
+        $this->assertSame($afterFirst['stageart_expenses'], $this->db->tables['stageart_expenses']);
+        $this->assertSame($afterFirst['stageart_expense_reviews'], $this->db->tables['stageart_expense_reviews']);
+        $added = array_slice($this->audit(), count($afterFirst['stageart_legacy_expense_migration_audit']));
+        $this->assertSame([
+            [A::OPERATION_MIGRATION, 'draft-entry', A::SKIPPED, 'DRAFT_JOURNAL_ENTRY', $second['run_id']],
+            [A::OPERATION_MIGRATION_RUN, null, A::SUCCEEDED, A::NO_CANDIDATES, $second['run_id']],
+        ], array_map(static fn (array $r): array => [$r['operation'], $r['expense_id'], $r['outcome'], $r['reason_code'], $r['run_id']], $added));
     }
 
     public function test_the_unique_key_refuses_a_second_success_row_for_the_same_expense(): void
@@ -370,5 +386,218 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
             $this->assertStringNotContainsString('DELETE', $sql);
             $this->assertDoesNotMatchRegularExpression('/^\s*UPDATE \S+stageart_(expense_reviews|legacy_expense_migration_audit)/', $sql);
         }
+    }
+
+    // --- run rows (2026-10-30) ---------------------------------------------
+
+    /**
+     * @param string $operation
+     * @return array<int, array<string, mixed>>
+     */
+    private function runRows(string $operation): array
+    {
+        return array_values(array_filter($this->audit(), static fn (array $r): bool => $r['operation'] === $operation));
+    }
+
+    /**
+     * A run with nothing to migrate still records who ran it, when, as
+     * which run, against which plan - and nothing else.
+     */
+    public function test_a_run_with_no_candidate_is_still_recorded(): void
+    {
+        $this->db->tables['stageart_expenses'] = [];
+        $plan = M::preview($this->wpdb);
+        $before = gmdate('Y-m-d H:i:s');
+
+        $result = M::execute($this->wpdb, $plan['fingerprint'], $this->operator);
+
+        $this->assertSame(M::OUTCOME_COMPLETED, $result['outcome']);
+        $this->assertSame([], $result['migrated']);
+        $this->assertSame([], $result['audit_failures']);
+        $this->assertCount(1, $this->audit());
+        $row = $this->audit()[0];
+        $this->assertSame(
+            [A::OPERATION_MIGRATION_RUN, $result['run_id'], null, A::SUCCEEDED, A::NO_CANDIDATES, null, $plan['fingerprint'], 7, self::PERSON, 'deploy'],
+            [$row['operation'], $row['run_id'], $row['expense_id'], $row['outcome'], $row['reason_code'], $row['success_key'], $row['plan_fingerprint'], $row['wp_user_id'], $row['person_id'], $row['os_user']]
+        );
+        $this->assertGreaterThanOrEqual($before, $row['acted_at_utc']);
+        $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * Only candidates for manual review: they are SKIPPED, the run row says
+     * there was no candidate, and nothing is written to them.
+     */
+    public function test_a_run_with_only_manual_review_records_them_and_the_run(): void
+    {
+        $this->db->tables['stageart_expenses'] = array_values(array_filter($this->db->tables['stageart_expenses'], static fn (array $e): bool => $e['id'] === 'draft-entry'));
+        $before = $this->db->businessTables();
+
+        $result = $this->migrate();
+
+        $this->assertSame($before, $this->db->businessTables());
+        $this->assertSame([
+            [A::OPERATION_MIGRATION, 'draft-entry', A::SKIPPED, 'DRAFT_JOURNAL_ENTRY'],
+            [A::OPERATION_MIGRATION_RUN, null, A::SUCCEEDED, A::NO_CANDIDATES],
+        ], array_map(static fn (array $r): array => [$r['operation'], $r['expense_id'], $r['outcome'], $r['reason_code']], $this->audit()));
+        $this->assertSame([$result['run_id']], array_values(array_unique(array_column($this->audit(), 'run_id'))));
+    }
+
+    /**
+     * Run rows have no success_key, so every run is recorded: the unique
+     * key never refuses one.
+     */
+    public function test_every_run_gets_its_own_run_row(): void
+    {
+        $first = $this->migrate();
+        $second = $this->migrate();
+        $third = $this->migrate();
+
+        $this->assertSame(
+            [[$first['run_id'], A::SUCCEEDED, null], [$second['run_id'], A::SUCCEEDED, A::NO_CANDIDATES], [$third['run_id'], A::SUCCEEDED, A::NO_CANDIDATES]],
+            array_map(static fn (array $r): array => [$r['run_id'], $r['outcome'], $r['reason_code']], $this->runRows(A::OPERATION_MIGRATION_RUN))
+        );
+        $this->assertSame([[], [], []], [$first['audit_failures'], $second['audit_failures'], $third['audit_failures']]);
+    }
+
+    /**
+     * The run row is the last row of its run and sums its Expenses up.
+     *
+     * @dataProvider runOutcomes
+     *
+     * @param mixed $value
+     * @param string[] $migrated
+     */
+    public function test_the_run_row_sums_the_run_up(string $step, $value, array $migrated, string $outcome): void
+    {
+        $this->db->failures[$step] = $value;
+
+        $result = $this->migrate();
+
+        $this->assertSame($migrated, $result['migrated']);
+        $last = $this->audit()[count($this->audit()) - 1];
+        $this->assertSame([A::OPERATION_MIGRATION_RUN, null, $outcome, null, $result['run_id']], [$last['operation'], $last['expense_id'], $last['outcome'], $last['reason_code'], $last['run_id']]);
+        $this->assertCount(1, $this->runRows(A::OPERATION_MIGRATION_RUN));
+    }
+
+    /**
+     * @return array<string, array{string, mixed, string[], string}>
+     */
+    public static function runOutcomes(): array
+    {
+        return [
+            'one of two rolled back' => ['UPDATE', 'migratable', ['migratable-2'], A::PARTIAL],
+            'every one rolled back' => ['START', true, [], A::FAILED],
+            'none rolled back' => ['UPDATE', 'no-such-expense', ['migratable', 'migratable-2'], A::SUCCEEDED],
+        ];
+    }
+
+    public function test_run_outcome_rules(): void
+    {
+        $this->assertSame(
+            [A::SUCCEEDED, A::SUCCEEDED, A::PARTIAL, A::FAILED],
+            [A::runOutcome(0, 0), A::runOutcome(3, 0), A::runOutcome(2, 1), A::runOutcome(0, 2)]
+        );
+    }
+
+    /**
+     * An unwritable run row does not undo the committed migrations; it is
+     * reported as "-" and logged.
+     */
+    public function test_an_unwritable_run_row_is_reported(): void
+    {
+        $this->db->failures['AUDIT_RUN'] = true;
+
+        $result = $this->migrate();
+
+        $this->assertSame(['migratable', 'migratable-2'], $result['migrated']);
+        $this->assertSame(['-'], $result['audit_failures']);
+        $this->assertSame('POSTED', $this->data->expensesById()['migratable']['status']);
+        $this->assertSame([], $this->runRows(A::OPERATION_MIGRATION_RUN));
+        $this->assertStringContainsString("audit record failed: run {$result['run_id']} SUCCEEDED", (string) file_get_contents($this->log));
+    }
+
+    /**
+     * Runbook 3.2's count check: the SUCCEEDED rows of an operation still
+     * match its history rows - run rows and SKIPPED rows do not count.
+     */
+    public function test_success_counts_still_match_the_history(): void
+    {
+        $this->migrate();
+        $this->migrate();
+        R::restore($this->wpdb, ['migratable'], $this->operator, '判断誤り');
+        $this->migrate();
+
+        $count = fn (string $operation): int => count(array_filter($this->audit(), static fn (array $r): bool => $r['operation'] === $operation && $r['outcome'] === A::SUCCEEDED));
+        $history = fn (string $action): int => count(array_filter($this->db->tables['stageart_expense_reviews'], static fn (array $r): bool => $r['action'] === $action));
+
+        $this->assertSame(2, $count(A::OPERATION_MIGRATION));
+        $this->assertSame($history('MIGRATED'), $count(A::OPERATION_MIGRATION));
+        $this->assertSame(1, $count(A::OPERATION_REVERT));
+        $this->assertSame($history('MIGRATION_REVERTED'), $count(A::OPERATION_REVERT));
+        $this->assertCount(3, $this->runRows(A::OPERATION_MIGRATION_RUN));
+        $this->assertCount(1, $this->runRows(A::OPERATION_REVERT_RUN));
+    }
+
+    public function test_a_revert_ends_with_its_run_row(): void
+    {
+        $this->migrate();
+
+        $result = R::restore($this->wpdb, ['migratable-2', 'migratable'], $this->operator, '判断誤り');
+
+        $last = $this->audit()[count($this->audit()) - 1];
+        $this->assertSame(
+            [A::OPERATION_REVERT_RUN, $result['run_id'], null, A::SUCCEEDED, null, null, null, 7, self::PERSON],
+            [$last['operation'], $last['run_id'], $last['expense_id'], $last['outcome'], $last['reason_code'], $last['success_key'], $last['plan_fingerprint'], $last['wp_user_id'], $last['person_id']]
+        );
+        $this->assertSame([], $result['audit_failures']);
+    }
+
+    public function test_a_rolled_back_revert_has_a_failed_run_row(): void
+    {
+        $this->migrate();
+        $this->db->failures['AUDIT'] = 'migratable-2';
+
+        $result = R::restore($this->wpdb, ['migratable', 'migratable-2'], $this->operator, '判断誤り');
+
+        $this->assertSame(
+            [[$result['run_id'], A::FAILED, R::FAILED_AUDIT_INSERT]],
+            array_map(static fn (array $r): array => [$r['run_id'], $r['outcome'], $r['reason_code']], $this->runRows(A::OPERATION_REVERT_RUN))
+        );
+    }
+
+    public function test_a_refused_revert_list_has_a_refused_run_row(): void
+    {
+        $this->migrate();
+
+        $result = R::restore($this->wpdb, ['migratable', 'draft-entry'], $this->operator, '判断誤り');
+
+        $this->assertSame(
+            [[$result['run_id'], A::REFUSED, R::REFUSED_TARGET_MISMATCH]],
+            array_map(static fn (array $r): array => [$r['run_id'], $r['outcome'], $r['reason_code']], $this->runRows(A::OPERATION_REVERT_RUN))
+        );
+    }
+
+    public function test_a_revert_refused_for_its_arguments_has_no_run_row(): void
+    {
+        $this->migrate();
+
+        R::restore($this->wpdb, [], $this->operator, '判断誤り');
+        R::restore($this->wpdb, ['migratable'], $this->operator, '');
+
+        $this->assertSame([], $this->runRows(A::OPERATION_REVERT_RUN));
+    }
+
+    public function test_an_unwritable_revert_run_row_is_reported_but_the_revert_stays(): void
+    {
+        $this->migrate();
+        $this->db->failures['AUDIT_RUN'] = true;
+
+        $result = R::restore($this->wpdb, ['migratable'], $this->operator, '判断誤り');
+
+        $this->assertSame(R::OUTCOME_RESTORED, $result['outcome']);
+        $this->assertSame(['-'], $result['audit_failures']);
+        $this->assertSame('CONFIRMED', $this->data->expensesById()['migratable']['status']);
+        $this->assertStringContainsString("audit record failed: run {$result['run_id']} SUCCEEDED", (string) file_get_contents($this->log));
     }
 }
