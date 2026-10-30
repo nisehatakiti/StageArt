@@ -261,27 +261,43 @@ final class ExpenseRestController
      * Body: { revision: int (required - the submission revision the
      * approver reviewed), approved_amount?: int }.
      *
+     * Both must be whole numbers - a JSON integer or a string of digits;
+     * 100.5, 1.0, 1e3 and the like are refused (422) rather than truncated.
+     * Their range (a positive amount, the current revision) is the Use
+     * Case's and the Domain's to check.
+     *
      * @return WP_REST_Response|WP_Error
      */
     public function approve(WP_REST_Request $request)
     {
-        $revision = $request->get_param('revision');
+        $revisionParam = $request->get_param('revision');
 
-        if (! is_numeric($revision)) {
+        if ($revisionParam === null || $revisionParam === '') {
             return new WP_Error('stageart_expense_invalid', 'revision (the submission revision being approved) is required.', ['status' => 422]);
         }
 
-        $approvedAmount = $request->get_param('approved_amount');
+        $revision = self::integerOrNull($revisionParam);
 
-        if ($approvedAmount !== null && $approvedAmount !== '' && ! is_numeric($approvedAmount)) {
-            return new WP_Error('stageart_expense_invalid', 'approved_amount must be an integer.', ['status' => 422]);
+        if ($revision === null) {
+            return new WP_Error('stageart_expense_invalid', 'revision must be an integer.', ['status' => 422]);
+        }
+
+        $amountParam = $request->get_param('approved_amount');
+        $approvedAmount = null;
+
+        if ($amountParam !== null && $amountParam !== '') {
+            $approvedAmount = self::integerOrNull($amountParam);
+
+            if ($approvedAmount === null) {
+                return new WP_Error('stageart_expense_invalid', 'approved_amount must be an integer.', ['status' => 422]);
+            }
         }
 
         return $this->respond(fn (): ExpenseResult => $this->approveExpense->execute(new ApproveExpenseCommand(
             (string) $request->get_param('id'),
             get_current_user_id(),
-            (int) $revision,
-            $approvedAmount === null || $approvedAmount === '' ? null : (int) $approvedAmount
+            $revision,
+            $approvedAmount
         )));
     }
 
@@ -352,6 +368,30 @@ final class ExpenseRestController
         }
 
         throw $exception;
+    }
+
+    /**
+     * The integer a request parameter holds, or null when it holds anything
+     * else. Accepted: a PHP int (a JSON integer) and a string of an optional
+     * minus sign and digits without a leading zero, within the int range.
+     * Refused: floats - even 100.0 -, exponents, signs other than a single
+     * minus, whitespace, booleans and arrays.
+     *
+     * @param mixed $value
+     */
+    private static function integerOrNull($value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (! is_string($value) || preg_match('/^-?(0|[1-9][0-9]*)$/D', $value) !== 1) {
+            return null;
+        }
+
+        $integer = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $integer === false ? null : $integer;
     }
 
     /**
