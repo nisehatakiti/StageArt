@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
+require_once __DIR__ . '/fake-mysqli.php';
+
 /**
  * A FakeWpdb responder holding the handful of tables the schema 1.44.0
  * expense migration reads and writes, answering exactly the prepared
@@ -53,7 +55,12 @@ final class FakeExpenseMigrationDatabase
      * NULL, not STARTED); 'AUDIT_RUN_START' => true fails every STARTED run
      * row; 'LOCK' => a
      * $locks entry ("journal_entry:<id>" etc.) fails that locking read
-     * the way a deadlock does - no row, and $wpdb->last_error set.
+     * the way MySQL does - no row, $wpdb->last_error set and the
+     * connection's error number (FakeMysqli) readable through $wpdb->dbh.
+     * 'LOCK_ERRNO' picks that number: 1213 (deadlock, the default), 1205
+     * (lock wait timeout) or any other; 0 for an error that is not
+     * MySQL's; 'NO_CONNECTION' leaves $wpdb->dbh null (connection lost);
+     * 'CLOSED' makes reading the number throw, as a closed handle does.
      *
      * @var array<string, mixed>
      */
@@ -310,7 +317,14 @@ final class FakeExpenseMigrationDatabase
         $this->locks[] = $what;
 
         if (($this->failures['LOCK'] ?? null) === $what) {
-            $wpdb->last_error = 'Deadlock found when trying to get lock; try restarting transaction';
+            $errno = array_key_exists('LOCK_ERRNO', $this->failures) ? $this->failures['LOCK_ERRNO'] : 1213;
+            $wpdb->last_error = [
+                1213 => 'Deadlock found when trying to get lock; try restarting transaction',
+                1205 => 'Lock wait timeout exceeded; try restarting transaction',
+                'NO_CONNECTION' => 'Unable to retrieve the error message from the database server',
+            ][$errno] ?? 'Some other database error';
+            $wpdb->dbh = $errno === 'NO_CONNECTION' ? null : FakeMysqli::handle();
+            FakeMysqli::$errno = $errno === 'CLOSED' ? new \Error('mysqli object is already closed') : (is_int($errno) ? $errno : 0);
 
             return false;
         }

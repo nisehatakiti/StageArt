@@ -211,6 +211,7 @@ final class LegacyExpenseMigrationRestore
         $t = LegacyExpenseMigration::tables($wpdb);
         $current = null;
         $failure = null;
+        $dbError = null;
         $actedAt = (new DateTimeImmutable())->format('Y-m-d H:i:s');
 
         // One lock order for every run, so two overlapping restores wait
@@ -228,7 +229,8 @@ final class LegacyExpenseMigrationRestore
                 }
             }
         } catch (Throwable $exception) {
-            $failure = LegacyExpenseMigration::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
+            $failure = LegacyExpenseMigration::failureOf($exception);
+            $dbError = LegacyExpenseMigration::logDetailOf($exception);
         }
 
         if ($failure === null && $wpdb->query('COMMIT') === false) {
@@ -239,7 +241,7 @@ final class LegacyExpenseMigrationRestore
         if ($failure !== null) {
             $wpdb->query('ROLLBACK');
 
-            return self::rolledBack($summary, $ids, $current, $failure, $audit, $recordRun);
+            return self::rolledBack($summary, $ids, $current, $failure, $audit, $recordRun, $dbError);
         }
 
         if (! $recordRun(LegacyExpenseMigrationAudit::SUCCEEDED, null)) {
@@ -486,11 +488,12 @@ final class LegacyExpenseMigrationRestore
      * @param string[] $ids
      * @param callable(string, string, ?string): bool $audit
      * @param callable(string, ?string): bool $recordRun
+     * @param ?string $dbError the MySQL error number for the log ("mysql_errno=1213"), when a query failed
      * @return array<string, mixed>
      */
-    private static function rolledBack(array $summary, array $ids, ?string $id, string $reason, callable $audit, callable $recordRun): array
+    private static function rolledBack(array $summary, array $ids, ?string $id, string $reason, callable $audit, callable $recordRun, ?string $dbError = null): array
     {
-        error_log(LegacyExpenseMigration::LOG_PREFIX . ' restore rolled back: ' . ($id === null ? $reason : "{$id}={$reason}") . "; nothing was restored; run={$summary['run_id']}");
+        error_log(LegacyExpenseMigration::LOG_PREFIX . ' restore rolled back: ' . ($id === null ? $reason : "{$id}={$reason}") . ($dbError === null ? '' : " {$dbError}") . "; nothing was restored; run={$summary['run_id']}");
 
         foreach ($ids as $listed) {
             $code = $id === null || $listed === $id ? $reason : LegacyExpenseMigrationAudit::RUN_ROLLED_BACK;

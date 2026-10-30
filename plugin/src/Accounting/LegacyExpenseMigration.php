@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace StageArt\Accounting;
 
-use RuntimeException;
 use StageArt\Domain\Shared\Uuid;
 use Throwable;
 
@@ -37,7 +36,9 @@ use Throwable;
  * approval uses (Expense, then Journal Entry), and nothing that writes a
  * Journal Entry locks an Expense, so the locks do not form a cycle with
  * the application's. A lock that fails (deadlock, lock wait timeout)
- * rolls the Expense back as LOCK_FAILED.
+ * rolls the Expense back as LOCK_FAILED; any other database error there
+ * as UNEXPECTED_ERROR (2026-10-30). Either way the MySQL error number is
+ * logged ("mysql_errno=1205"), not recorded in the audit table.
  *
  * Only CONFIRMED rows are read, every UPDATE is conditional on the row
  * still being CONFIRMED with untouched workflow columns, and no Journal
@@ -210,13 +211,14 @@ final class LegacyExpenseMigration
         $t = self::tables($wpdb);
 
         foreach ($plan['candidates'] as $id => $expected) {
-            $failure = self::migrateOne($wpdb, $t, (string) $id, $expected, $audit);
+            $dbError = null;
+            $failure = self::migrateOne($wpdb, $t, (string) $id, $expected, $audit, $dbError);
 
             if ($failure === null) {
                 $summary['migrated'][] = (string) $id;
             } else {
                 $summary['failed'][(string) $id] = $failure;
-                error_log(self::LOG_PREFIX . " failed: {$id}={$failure}");
+                error_log(self::LOG_PREFIX . " failed: {$id}={$failure}" . ($dbError === null ? '' : " {$dbError}"));
 
                 // After the ROLLBACK, on its own: it cannot share the
                 // transaction that was undone.
@@ -274,8 +276,9 @@ final class LegacyExpenseMigration
      * @param array<string, string> $t
      * @param array{journal_entry_id: string, amount: int} $expected
      * @param callable(?string, string, ?string): bool $audit
+     * @param ?string $dbError set to the MySQL error number for the log ("mysql_errno=1213") when a query failed
      */
-    private static function migrateOne($wpdb, array $t, string $id, array $expected, callable $audit): ?string
+    private static function migrateOne($wpdb, array $t, string $id, array $expected, callable $audit, ?string &$dbError = null): ?string
     {
         if ($wpdb->query('START TRANSACTION') === false) {
             return self::FAILED_TRANSACTION_START;
@@ -284,7 +287,8 @@ final class LegacyExpenseMigration
         try {
             $failure = self::writeOne($wpdb, $t, $id, $expected, $audit);
         } catch (Throwable $exception) {
-            $failure = self::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
+            $failure = self::failureOf($exception);
+            $dbError = self::logDetailOf($exception);
         }
 
         if ($failure === null && $wpdb->query('COMMIT') === false) {
@@ -525,25 +529,53 @@ final class LegacyExpenseMigration
     }
 
     /**
-     * A locking read that failed - a deadlock or a lock wait timeout -
-     * leaves its error in $wpdb->last_error (a missing row does not).
+     * A locking read that failed leaves its error in $wpdb->last_error (a
+     * missing row does not). Called right after it, before any other
+     * query: the exception carries the connection's MySQL error number,
+     * which tells a deadlock or a lock wait timeout from anything else.
      *
      * @internal shared with LegacyExpenseMigrationRestore
      * @param \wpdb $wpdb
+     * @throws LegacyExpenseMigrationDatabaseError
      */
     public static function assertLocked($wpdb): void
     {
         if (isset($wpdb->last_error) && (string) $wpdb->last_error !== '') {
-            throw new RuntimeException(self::FAILED_LOCK);
+            throw LegacyExpenseMigrationDatabaseError::fromWpdb($wpdb);
         }
     }
 
     /**
+     * Only MySQL 1205 (lock wait timeout) and 1213 (deadlock); never a
+     * failure whose error number could not be read.
+     *
      * @internal shared with LegacyExpenseMigrationRestore
      */
     public static function isLockFailure(Throwable $exception): bool
     {
-        return $exception instanceof RuntimeException && $exception->getMessage() === self::FAILED_LOCK;
+        return $exception instanceof LegacyExpenseMigrationDatabaseError && $exception->isLockFailure();
+    }
+
+    /**
+     * The reason code of a transaction ended by an exception: LOCK_FAILED
+     * for a lock failure, UNEXPECTED_ERROR for any other.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function failureOf(Throwable $exception): string
+    {
+        return self::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
+    }
+
+    /**
+     * "mysql_errno=<n>" (or "mysql_errno=unknown") for a database error,
+     * null for any other exception: what the log line adds to the reason.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function logDetailOf(Throwable $exception): ?string
+    {
+        return $exception instanceof LegacyExpenseMigrationDatabaseError ? $exception->logDetail() : null;
     }
 
     /**

@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * The MySQL error number of a failed query, for the tests that run the
+ * legacy Expense migration against FakeExpenseMigrationDatabase (2026-10-30).
+ * LegacyExpenseMigrationDatabaseError reads it with mysqli_errno($wpdb->dbh)
+ * from namespace StageArt\Accounting; the function defined here in that
+ * namespace answers instead of the extension's, with FakeMysqli::$errno.
+ * Load it only from @runInSeparateProcess tests. Where the mysqli
+ * extension is not loaded, an empty global `mysqli` class stands in for
+ * the handle's type.
+ */
+
+namespace {
+    if (! class_exists('mysqli', false)) {
+        class mysqli
+        {
+        }
+    }
+}
+
+namespace StageArt\Tests\Support {
+    final class FakeMysqli
+    {
+        /** What mysqli_errno() returns, or the Throwable it throws (a closed handle). */
+        public static $errno = 0;
+
+        /** A mysqli handle that is never connected. */
+        public static function handle(): \mysqli
+        {
+            return extension_loaded('mysqli') ? mysqli_init() : new \mysqli();
+        }
+    }
+}
+
+namespace StageArt\Accounting {
+    if (! function_exists(__NAMESPACE__ . '\\mysqli_errno')) {
+        function mysqli_errno($mysql): int
+        {
+            $errno = \StageArt\Tests\Support\FakeMysqli::$errno;
+
+            if ($errno instanceof \Throwable) {
+                throw $errno;
+            }
+
+            return (int) $errno;
+        }
+    }
+}

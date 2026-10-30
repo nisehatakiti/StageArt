@@ -22,6 +22,14 @@ class FakeWpdb
     /** As in wpdb: the last query's error, cleared before each query. A responder may set it. */
     public string $last_error = '';
 
+    /**
+     * As in wpdb (protected there, read through its __get): the mysqli
+     * connection, or null when there is none. A responder may set it.
+     *
+     * @var \mysqli|null
+     */
+    public $dbh = null;
+
     /** @var array<int, array{method: string, args: array<int, mixed>}> */
     public array $calls = [];
 
