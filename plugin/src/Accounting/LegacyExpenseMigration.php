@@ -141,7 +141,13 @@ final class LegacyExpenseMigration
      * The summary's audit_failures lists the Expense ids ("-" for the run
      * row) whose FAILED / SKIPPED / run audit row could not be written.
      *
+     * `$onStarted` gets the Run ID once the STARTED row is committed and
+     * before any Expense is written, so the operator has it on record even
+     * if the process is killed later; a run whose STARTED row could not be
+     * written never calls it.
+     *
      * @param \wpdb $wpdb
+     * @param (callable(string): void)|null $onStarted
      * @return array{
      *     outcome: string,
      *     refused_reason: ?string,
@@ -152,7 +158,7 @@ final class LegacyExpenseMigration
      *     audit_failures: string[]
      * }
      */
-    public static function execute($wpdb, string $confirmedFingerprint, LegacyExpenseMigrationOperator $operator): array
+    public static function execute($wpdb, string $confirmedFingerprint, LegacyExpenseMigrationOperator $operator, ?callable $onStarted = null): array
     {
         $plan = self::preview($wpdb);
         $runId = LegacyExpenseMigrationAudit::newRunId();
@@ -189,6 +195,10 @@ final class LegacyExpenseMigration
         // not be recorded does not start, and gets no outcome row either.
         if (! $recordRun(LegacyExpenseMigrationAudit::STARTED, null)) {
             return self::refuse($summary, self::REFUSED_AUDIT_START_FAILED, $operator);
+        }
+
+        if ($onStarted !== null) {
+            $onStarted($runId);
         }
 
         if (! hash_equals($plan['fingerprint'], $confirmedFingerprint)) {

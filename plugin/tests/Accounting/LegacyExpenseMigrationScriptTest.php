@@ -128,7 +128,11 @@ final class LegacyExpenseMigrationScriptTest extends TestCase
         $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'migratable', 'SUCCEEDED', 7, self::PERSON, $audit[0]['run_id']], [$audit[1]['operation'], $audit[1]['expense_id'], $audit[1]['outcome'], $audit[1]['wp_user_id'], $audit[1]['person_id'], $audit[1]['run_id']]);
         $this->assertSame(['LEGACY_EXPENSE_MIGRATION', 'entry-not-posted', 'SKIPPED'], [$audit[2]['operation'], $audit[2]['expense_id'], $audit[2]['outcome']]);
         $this->assertSame(['LEGACY_EXPENSE_MIGRATION_RUN', null, 'SUCCEEDED', $audit[0]['run_id']], [$audit[3]['operation'], $audit[3]['expense_id'], $audit[3]['outcome'], $audit[3]['run_id']]);
-        $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
+        // 2026-10-30: once, right after the operator - before the work's output.
+        $this->assertSame(["line: Run: {$audit[0]['run_id']}"], array_values(preg_grep('/^line: Run:/', $output)));
+        $runAt = array_search("line: Run: {$audit[0]['run_id']}", $output, true);
+        $this->assertStringStartsWith('line: Operator:', $output[$runAt - 1]);
+        $this->assertSame('line: Migrated: 1', $output[$runAt + 1]);
         $this->assertContains('line: Operator: person=' . self::PERSON . ' wp_user=7 os_user=' . (LegacyExpenseMigrationOperator::detectOsUser() === null ? 'unknown' : (string) preg_replace('/[^A-Za-z0-9._@:-]/', '', (string) LegacyExpenseMigrationOperator::detectOsUser())), $output);
     }
 
@@ -174,6 +178,7 @@ final class LegacyExpenseMigrationScriptTest extends TestCase
         $output = $this->output();
         $this->assertContains('warning: The audit row could not be written: -', $output);
         $this->assertSame('error: Refused (AUDIT_START_FAILED) - no Expense was changed.', end($output));
+        $this->assertSame([], preg_grep('/^line: Run:/', $output), 'No Run ID: no run is on record.');
         $this->assertSame($before, $this->db->tables);
         $this->assertSame([], $this->db->transactionLog);
     }

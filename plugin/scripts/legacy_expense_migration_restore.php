@@ -92,9 +92,11 @@ if ($stageartMode === 'check') {
 
 WP_CLI::line('Operator:' . $stageartOperator->describe());
 
-$stageartResult = LegacyExpenseMigrationRestore::restore($wpdb, $stageartIds, $stageartOperator, $stageartReason);
-
-WP_CLI::line("Run: {$stageartResult['run_id']}");
+// The Run ID as soon as the run is on record (its STARTED row), not at
+// the end: a killed run still leaves it in the operator's output.
+$stageartResult = LegacyExpenseMigrationRestore::restore($wpdb, $stageartIds, $stageartOperator, $stageartReason, static function (string $runId): void {
+    WP_CLI::line("Run: {$runId}");
+});
 
 foreach ($stageartResult['audit_failures'] as $stageartId) {
     WP_CLI::warning("The audit row could not be written: {$stageartId}");

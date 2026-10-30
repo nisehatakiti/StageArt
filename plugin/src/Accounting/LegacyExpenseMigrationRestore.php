@@ -119,6 +119,8 @@ final class LegacyExpenseMigrationRestore
      * @param string[] $ids
      * @param LegacyExpenseMigrationOperator $operator recorded as the history's actor and in the audit
      * @param string $reason why the migration is undone, stored in the history (never logged)
+     * @param (callable(string): void)|null $onStarted gets the Run ID once the STARTED row is
+     *        committed and before any target is looked at; never called when that row could not be written
      * @return array{
      *     outcome: string,
      *     reason: ?string,
@@ -129,7 +131,7 @@ final class LegacyExpenseMigrationRestore
      *     audit_failures: string[]
      * }
      */
-    public static function restore($wpdb, array $ids, LegacyExpenseMigrationOperator $operator, string $reason): array
+    public static function restore($wpdb, array $ids, LegacyExpenseMigrationOperator $operator, string $reason, ?callable $onStarted = null): array
     {
         $ids = self::normalize($ids);
         $runId = LegacyExpenseMigrationAudit::newRunId();
@@ -178,6 +180,10 @@ final class LegacyExpenseMigrationRestore
             $summary['audit_failures'][] = '-';
 
             return self::refuse($summary, self::REFUSED_AUDIT_START_FAILED);
+        }
+
+        if ($onStarted !== null) {
+            $onStarted($runId);
         }
 
         $mismatches = array_filter(self::check($wpdb, $ids), static fn (?string $reason): bool => $reason !== null);

@@ -135,7 +135,10 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $audit = array_values(array_filter($this->db->tables['stageart_legacy_expense_migration_audit'], static fn (array $r): bool => $r['operation'] === 'LEGACY_EXPENSE_MIGRATION_REVERT'));
         $this->assertCount(1, $audit);
         $this->assertSame(['migratable', 'SUCCEEDED', self::OPERATOR_WP_USER, self::OPERATOR_PERSON], [$audit[0]['expense_id'], $audit[0]['outcome'], $audit[0]['wp_user_id'], $audit[0]['person_id']]);
-        $this->assertContains("line: Run: {$audit[0]['run_id']}", $output);
+        // 2026-10-30: once, right after the operator - before the work's output.
+        $this->assertSame(["line: Run: {$audit[0]['run_id']}"], array_values(preg_grep('/^line: Run:/', $output)));
+        $runAt = array_search("line: Run: {$audit[0]['run_id']}", $output, true);
+        $this->assertStringStartsWith('line: Operator:', $output[$runAt - 1]);
 
         // 2026-10-30: the run's start and end around it.
         $run = array_values(array_filter($this->db->tables['stageart_legacy_expense_migration_audit'], static fn (array $r): bool => $r['operation'] === 'LEGACY_EXPENSE_MIGRATION_REVERT_RUN' && $r['run_id'] === $audit[0]['run_id']));
@@ -158,6 +161,7 @@ final class LegacyExpenseMigrationRestoreScriptTest extends TestCase
         $output = $this->output();
         $this->assertContains('warning: The audit row could not be written: -', $output);
         $this->assertSame('error: Refused (AUDIT_START_FAILED) - no Expense was changed.', end($output));
+        $this->assertSame([], preg_grep('/^line: Run:/', $output), 'No Run ID: no run is on record.');
         $this->assertSame($before, $this->db->tables);
         $this->assertSame($transactions, $this->db->transactionLog);
     }

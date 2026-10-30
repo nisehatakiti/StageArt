@@ -629,11 +629,11 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
      *
      * @return array<string, mixed>
      */
-    private function runKind(string $kind): array
+    private function runKind(string $kind, ?callable $onStarted = null): array
     {
         return $kind === 'migration'
-            ? $this->migrate()
-            : R::restore($this->wpdb, ['migratable', 'migratable-2'], $this->operator, '判断誤り');
+            ? M::execute($this->wpdb, M::preview($this->wpdb)['fingerprint'], $this->operator, $onStarted)
+            : R::restore($this->wpdb, ['migratable', 'migratable-2'], $this->operator, '判断誤り', $onStarted);
     }
 
     private function prepareKind(string $kind): string
@@ -694,6 +694,60 @@ final class LegacyExpenseMigrationAuditTest extends TestCase
         $this->assertSame($before, $this->db->tables, 'Not an Expense, a history row or an audit row.');
         $this->assertSame($transactions, $this->db->transactionLog, 'No transaction was started.');
         $this->assertStringContainsString("audit record failed: run {$result['run_id']} STARTED", (string) file_get_contents($this->log));
+    }
+
+    /**
+     * 2026-10-30 (MySQL verification): the Run ID is handed out once the
+     * STARTED row is on record and before any work - what the script
+     * prints then is all a killed run leaves in the operator's output.
+     *
+     * @dataProvider kinds
+     */
+    public function test_the_run_id_is_handed_out_once_the_start_is_recorded(string $kind): void
+    {
+        $operation = $this->prepareKind($kind);
+        $before = $this->db->businessTables();
+        $transactions = $this->db->transactionLog;
+        $seen = [];
+        $db = $this->db;
+        $onStarted = function (string $runId) use (&$seen, $db, $operation): void {
+            $start = array_values(array_filter($db->tables['stageart_legacy_expense_migration_audit'], static fn (array $r): bool => $r['run_id'] === $runId));
+            $seen[] = [
+                'run_id' => $runId,
+                'rows' => array_map(static fn (array $r): array => [$r['operation'], $r['expense_id'], $r['outcome']], $start),
+                'business' => $db->businessTables(),
+                'transactions' => $db->transactionLog,
+            ];
+        };
+
+        $result = $this->runKind($kind, $onStarted);
+
+        $this->assertCount(1, $seen, 'Handed out once.');
+        $this->assertSame($result['run_id'], $seen[0]['run_id']);
+        $this->assertSame([[$operation, null, A::STARTED]], $seen[0]['rows'], 'The STARTED row, and nothing else of the run, is on record.');
+        $this->assertSame($before, $seen[0]['business'], 'No Expense or history was changed yet.');
+        $this->assertSame($transactions, $seen[0]['transactions'], 'No transaction was started yet.');
+        $this->assertNotSame($before, $this->db->businessTables(), 'The run then did its work.');
+    }
+
+    /**
+     * No Run ID is handed out for a run whose STARTED row could not be
+     * written: there is no run on record to look up.
+     *
+     * @dataProvider kinds
+     */
+    public function test_no_run_id_is_handed_out_when_the_start_is_not_recorded(string $kind): void
+    {
+        $this->prepareKind($kind);
+        $this->db->failures['AUDIT_RUN_START'] = true;
+        $calls = 0;
+
+        $result = $this->runKind($kind, static function () use (&$calls): void {
+            $calls++;
+        });
+
+        $this->assertSame(M::REFUSED_AUDIT_START_FAILED, $result[$kind === 'migration' ? 'refused_reason' : 'reason']);
+        $this->assertSame(0, $calls);
     }
 
     /**
