@@ -68,6 +68,10 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  *
  * WordPress user 1 is the PrimaryManager (an approver), 2 the applicant.
  *
+ * Also PATCH /expenses/{id} (Version 1.11): only the applicant edits the
+ * Expense - anyone else, the PrimaryManager included, gets 403 - and a
+ * POSTED Expense is not edited even by the applicant (409).
+ *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
@@ -77,6 +81,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
     private InMemoryJournalEntryRepository $journalEntries;
     private ExpenseRestController $controller;
     private string $expenseId;
+    private string $expenseAccountId;
 
     protected function setUp(): void
     {
@@ -110,7 +115,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
 
         $this->controller = new ExpenseRestController(
             $createExpense,
-            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorization, $lineFactory, $transactions),
+            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions),
             new ConfirmExpenseUseCase($this->expenses, $identity, $authorization),
             new GetExpenseUseCase($this->expenses, $identity, $membership, $authorization),
             new ListExpensesUseCase($this->expenses, $productionContext, $membership, $identity, $authorization),
@@ -147,7 +152,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
         $memberships->save(Membership::create($organization->id(), $applicant->id(), RoleKey::member()));
         $participants->save(Participant::create($production->id(), ParticipantSubjectType::person(), $applicant->id()->toString(), ParticipantType::cast()));
 
-        $expenseAccountId = (new CreateAccountUseCase($accounts, $organizationContext, $identity, $authorization))->execute(
+        $expenseAccountId = $this->expenseAccountId = (new CreateAccountUseCase($accounts, $organizationContext, $identity, $authorization))->execute(
             new CreateAccountCommand(1, $organization->id()->toString(), '消耗品費', AccountType::EXPENSE)
         )->id;
 
@@ -362,5 +367,53 @@ final class ExpenseRestControllerApproveTest extends TestCase
             'revision zero' => [0, null, 409],
             'negative revision' => ['-1', null, 409],
         ];
+    }
+
+    // --- edit: the applicant only (Version 1.11) ---------------------------
+
+    /**
+     * @return \WP_REST_Response|\WP_Error
+     */
+    private function update(int $wordPressUserId, int $amount)
+    {
+        $GLOBALS['stageart_test_wp']['current_user'] = $wordPressUserId;
+
+        return $this->controller->update(new \WP_REST_Request([
+            'id' => $this->expenseId,
+            'lines' => [['account_id' => $this->expenseAccountId, 'amount' => $amount]],
+        ]));
+    }
+
+    public function test_the_primary_manager_cannot_edit_the_applicants_expense(): void
+    {
+        $before = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
+        $revision = $before->revision();
+
+        $response = $this->update(1, 4800);
+
+        $this->assertInstanceOf(\WP_Error::class, $response);
+        $this->assertSame(['status' => 403], $response->get_error_data(), $response->get_error_message());
+        $after = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
+        $this->assertSame([ExpenseStatus::SUBMITTED, $revision, 5000], [$after->status()->toString(), $after->revision(), $after->totalAmount()]);
+    }
+
+    public function test_the_applicant_edits_their_submitted_expense_as_a_new_revision(): void
+    {
+        $response = $this->update(2, 4800);
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $this->assertSame(200, $response->get_status());
+        $this->assertSame([ExpenseStatus::SUBMITTED, 2, 4800], [$response->get_data()['status'], $response->get_data()['revision'], $response->get_data()['requested_amount']]);
+    }
+
+    public function test_a_posted_expense_is_not_edited_even_by_the_applicant(): void
+    {
+        $this->assertInstanceOf(\WP_REST_Response::class, $this->approve(['revision' => 1]));
+
+        $response = $this->update(2, 4800);
+
+        $this->assertInstanceOf(\WP_Error::class, $response);
+        $this->assertSame(['status' => 409], $response->get_error_data(), $response->get_error_message());
+        $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($this->expenseId))->totalAmount());
     }
 }

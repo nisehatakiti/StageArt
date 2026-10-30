@@ -46,7 +46,7 @@ pattern:
 | `Expense\CreateExpenseUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
 | `Expense\ListExpensesUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract`, `AuthorizationContract` (every Expense of the Production with `Expense.Approve`; otherwise a Production member sees only the Expenses they created) |
 | `Expense\GetExpenseUseCase` | `IdentityContract`, `MembershipContract`, `AuthorizationContract` (an approver with `Expense.Approve`, or the Expense's own creator while a member) |
-| `Expense\UpdateExpenseUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| `Expense\UpdateExpenseUseCase` | `ProductionContextContract`, `IdentityContract` (the applicant only - the requester's Person ID must be the Expense's creator's; no Capability is consulted, ExpenseApprovalWorkflow.md Version 1.11) |
 | `Expense\ConfirmExpenseUseCase` (retired: refuses every request, REST 410) | `IdentityContract`, `AuthorizationContract` |
 | `Expense\ApplicantExpenseTransitionUseCase` (submit / withdraw / resubmit) | `IdentityContract`, `MembershipContract`, plus `ExpenseWorkflowNotifier` |
 | `Expense\ApproveExpenseUseCase` | `ProductionContextContract`, `OrganizationContextContract` (`isAccountingEnabled()`), `IdentityContract`, `AuthorizationContract` (`Expense.Approve`), plus `StandardPayableAccountResolver` and `ExpenseWorkflowNotifier` |

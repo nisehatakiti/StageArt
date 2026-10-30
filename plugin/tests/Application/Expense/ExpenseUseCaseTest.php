@@ -106,7 +106,7 @@ final class ExpenseUseCaseTest extends TestCase
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membershipContract, $identity, $lineFactory, $transactions);
         $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract, $authorizationContract);
         $this->listExpenses = new ListExpensesUseCase($this->expenses, $productionContext, $membershipContract, $identity, $authorizationContract);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions);
         $this->confirmExpense = new ConfirmExpenseUseCase($this->expenses, $identity, $authorizationContract);
     }
 
@@ -206,7 +206,7 @@ final class ExpenseUseCaseTest extends TestCase
         $this->assertSame(15000, $result->totalAmount);
     }
 
-    public function test_update_expense_rejected_for_non_creator_non_manager(): void
+    public function test_update_expense_rejected_for_non_creator(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);

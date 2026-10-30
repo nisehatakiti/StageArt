@@ -156,7 +156,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorization);
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membership, $identity, $lineFactory, $this->transactions);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorization, $lineFactory, $this->transactions);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $this->transactions);
         $this->applicantTransitions = new ApplicantExpenseTransitionUseCase($this->expenses, $identity, $membership, $this->transactions, $notifier);
         $this->approveExpense = new ApproveExpenseUseCase(
             $this->expenses,
@@ -471,15 +471,179 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         }
     }
 
-    public function test_a_manager_can_still_edit_someone_elses_draft(): void
-    {
-        $id = $this->draftBy(2, [5000]);
+    // --- edit: the applicant only (Version 1.11) ---------------------------
 
-        $result = $this->updateExpense->execute(new UpdateExpenseCommand($id, 4, [
+    /**
+     * An Expense of WordPress user 2 in the given status: DRAFT, SUBMITTED
+     * (revision 1), REJECTED (returned by the PrimaryManager) or POSTED
+     * (approved by the PrimaryManager).
+     */
+    private function expenseOfTheApplicantIn(string $status): string
+    {
+        if ($status === ExpenseStatus::DRAFT) {
+            return $this->draftBy(2, [5000]);
+        }
+
+        $id = $this->submittedBy(2, [5000]);
+
+        if ($status === ExpenseStatus::REJECTED) {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '領収書の金額を確認してください'));
+        } elseif ($status === ExpenseStatus::POSTED) {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+        }
+
+        $this->assertSame($status, $this->status($id));
+
+        return $id;
+    }
+
+    /**
+     * What an edit must not change when it is refused.
+     *
+     * @return array<string, mixed>
+     */
+    private function editableState(string $expenseId): array
+    {
+        $expense = $this->expenses->findById(ExpenseId::fromString($expenseId));
+
+        return [
+            'status' => $expense->status()->toString(),
+            'revision' => $expense->revision(),
+            'requested' => $expense->requestedAmount(),
+            'lines' => array_map(static fn ($line): int => $line->amount(), $expense->lines()),
+            'reviews' => count($expense->reviews()),
+            'updated_by' => $expense->updatedBy()->toString(),
+        ];
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function editableStatuses(): array
+    {
+        return [
+            'DRAFT' => [ExpenseStatus::DRAFT],
+            'SUBMITTED' => [ExpenseStatus::SUBMITTED],
+            'REJECTED' => [ExpenseStatus::REJECTED],
+        ];
+    }
+
+    /**
+     * The applicant edits their own Expense in each editable status. A
+     * SUBMITTED edit still opens a new submission revision with the new
+     * requested amount; a DRAFT or REJECTED edit does not.
+     *
+     * @dataProvider editableStatuses
+     */
+    public function test_the_applicant_edits_their_own_expense(string $status): void
+    {
+        $id = $this->expenseOfTheApplicantIn($status);
+        $before = $this->editableState($id);
+
+        $result = $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
             ['account_id' => $this->expenseAccountId, 'amount' => 4800],
         ]));
 
+        $this->assertSame($status, $result->status);
         $this->assertSame(4800, $result->totalAmount);
+
+        if ($status === ExpenseStatus::SUBMITTED) {
+            $this->assertSame($before['revision'] + 1, $result->revision);
+            $this->assertSame(4800, $result->requestedAmount);
+        } else {
+            $this->assertSame($before['revision'], $result->revision);
+            $this->assertSame($before['requested'], $result->requestedAmount);
+        }
+    }
+
+    /**
+     * Everybody but the applicant, Role or not: the PrimaryManager and the
+     * 会計管理者 (both hold `Accounting.Update`), a 代理人, other Delegates,
+     * another member and an outsider.
+     *
+     * @return array<string, array{int}>
+     */
+    public static function everybodyButTheApplicant(): array
+    {
+        return [
+            'primary manager (Accounting.Update)' => [1],
+            'another member' => [3],
+            'accounting manager (Accounting.Update)' => [4],
+            'ticket manager' => [5],
+            'outsider' => [6],
+            'another accounting manager (Accounting.Update)' => [7],
+            'proxy manager (代理人)' => [8],
+            'participant manager only' => [9],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string, int}>
+     */
+    public static function othersInEachEditableStatus(): array
+    {
+        $cases = [];
+
+        foreach (self::editableStatuses() as $statusLabel => [$status]) {
+            foreach (self::everybodyButTheApplicant() as $personLabel => [$wordPressUserId]) {
+                $cases["{$statusLabel} by {$personLabel}"] = [$status, $wordPressUserId];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Version 1.11: the requester's Person ID must be the applicant's. No
+     * Role - `Accounting.Update`, PrimaryManager, 会計管理者, 代理人 - lets
+     * anyone else edit, in any editable status; the refusal is access
+     * denied (403) and changes nothing.
+     *
+     * @dataProvider othersInEachEditableStatus
+     */
+    public function test_nobody_but_the_applicant_edits_an_expense(string $status, int $wordPressUserId): void
+    {
+        $id = $this->expenseOfTheApplicantIn($status);
+        $before = $this->editableState($id);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 1],
+            ]));
+            $this->fail('Only the applicant may edit the Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame($before, $this->editableState($id));
+        }
+    }
+
+    /**
+     * POSTED is never edited, not even by the applicant (a state conflict,
+     * 409); anyone else is refused as access denied first.
+     */
+    public function test_a_posted_expense_is_not_edited_even_by_the_applicant(): void
+    {
+        $id = $this->expenseOfTheApplicantIn(ExpenseStatus::POSTED);
+        $before = $this->editableState($id);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+            ]));
+            $this->fail('A POSTED Expense must not be edited.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertSame($before, $this->editableState($id));
+        }
+
+        foreach (self::everybodyButTheApplicant() as [$wordPressUserId]) {
+            try {
+                $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                    ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+                ]));
+                $this->fail('Only the applicant gets past the identity check.');
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame($before, $this->editableState($id));
+            }
+        }
     }
 
     // --- approve ---------------------------------------------------------
@@ -691,8 +855,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
     /**
      * Approval rights add nothing else: a 代理人 can approve, but cannot edit
-     * someone else's Expense the way the PrimaryManager / 会計管理者 can
-     * (`Accounting.Update`).
+     * someone else's Expense - nobody but the applicant can (Version 1.11).
      */
     public function test_a_proxy_manager_cannot_edit_someone_elses_expense(): void
     {

@@ -137,7 +137,6 @@ final class AccountingModuleBootstrap
             $expenses,
             $productionContext,
             $identity,
-            $authorization,
             $expenseLineFactory,
             $transactions
         );

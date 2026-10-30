@@ -28,6 +28,8 @@ Version 1.10では、2026-10-30の指示に従い、承認金額は申請金額�
 
 Version 1.10の補足（2026-10-30）：旧形式移行・移行取消の運用監査に、実行開始の記録（`STARTED`）を加えた。開始の記録を書けない実行は業務処理を始めない。開始の記録だけが残り終了の記録がない実行は「開始後、終了を確認できない実行」として扱い、成功・失敗と推定しない。あわせて、差し戻しの通知の文言を「却下」から「差し戻し」に改めた（Version 1.4の表示方針への適合。業務上の操作の仕様は変更しない）。
 
+Version 1.11では、2026-10-30の指示に従い、Expenseを編集できる者を申請者本人に限った。判定はロール権限ではなく、Expenseの申請者（作成者）のPerson IDと操作者のPerson IDの一致で行う。Primary Manager・会計管理者・代理人等、`Accounting.Update`その他の管理権限を持つ者も、DRAFTを含め他人のExpenseを編集できない（Version 1.3の「DRAFTについては会計権限保持者も編集できる」を置き換える）。承認・差し戻しの権限は変更しない。
+
 本Workflowは、一般Memberが日常的な小口支出を登録できるようにしつつ、承認前の申請を正式なAccounting Actualへ反映させないための最小限の業務フローを定義する。
 
 StageArtは会計業務を複雑化させないことを基本とし、承認済みExpenseは承認時点で直ちに会計へ転記する。
@@ -155,7 +157,15 @@ Version 1.3（修正8で確定）：
 - 新規登録したExpenseはDRAFT（申請前の下書き）とし、自動でSUBMITTEDにしない。申請者が明示的に申請した時点でSUBMITTEDとなる。
 - 申請・取り下げ・再申請は申請者本人（Expenseの作成者で、Productionのメンバーであり続けている者）のみが行える。
 - 申請者は承認前のSUBMITTEDのExpenseを編集・取り下げ（DRAFTへ戻す）できる。承認前の編集は新しい申請回（revision）として扱い、申請金額を更新する。
-- SUBMITTED / REJECTEDのExpenseを編集できるのは申請者本人のみとし、会計権限保持者が他人の申請内容を承認前に書き換えることはできない。DRAFTについては従来どおり会計権限保持者も編集できる。
+- SUBMITTED / REJECTEDのExpenseを編集できるのは申請者本人のみとし、会計権限保持者が他人の申請内容を承認前に書き換えることはできない。~~DRAFTについては従来どおり会計権限保持者も編集できる。~~（Version 1.11で廃止。下記）
+
+Version 1.11（2026-10-30確定）：Expenseの編集（明細・金額の変更）は、状態にかかわらず申請者本人だけが行える。
+
+- 判定は、Expenseの申請者（作成者、`created_by`）のPerson IDと、操作者のPerson IDが一致するかどうかで行う。ロール権限による例外は設けない。Primary Manager、会計管理者（ACCOUNTING_MANAGER）、代理人、その他`Accounting.Update`等の管理権限を持つ者であっても、他人のExpenseは編集できない。
+- 編集できる状態はDRAFT・SUBMITTED（承認前）・REJECTED（再申請前）とする。SUBMITTEDの編集は従来どおり新しい申請回（revision）として扱い、申請金額を更新する。
+- POSTEDは申請者本人であっても編集できない（状態の競合、409）。旧形式のCONFIRMEDも編集できない。
+- 申請者本人以外による編集は、状態にかかわらず権限エラー（403）とし、Expense・履歴を変更しない。判定はBackend（`UpdateExpenseUseCase`）で行い、画面は申請者本人以外に編集の操作を表示しない。
+- 承認・差し戻しの権限（`Expense.Approve`）と本人による承認・差し戻しの禁止は変更しない。
 
 ---
 
@@ -456,7 +466,7 @@ Version 1.5で作成し、2026-10-30に更新した。以下は2026-10-30時点�
 - DRAFT → SUBMITTED → POSTED / REJECTED → 再申請の状態遷移、取り下げ、差し戻し理由の必須化。
 - 承認時のJournal Entry生成（借方は明細の科目、貸方は未払金）と、行ロック・条件付き状態更新・履歴の一意制約・既存仕訳の確認による二重生成の防止。
 - 承認・差し戻しの権限（Primary Manager、代理人、有効なACCOUNTING_MANAGER。Backendの権限 `Expense.Approve`。Version 1.6）、承認可能者への申請通知、本人による承認・差し戻しの禁止（差し戻しはVersion 1.7）、申請回の確認。
-- Schema 1.44.0（申請回等のカラム、Expense Review用テーブル）。旧CONFIRMEDの移行はスキーマ更新から分離し、運用者がWP-CLIで明示的に実行する（2026-10-29）。移行取消の履歴（MIGRATION_REVERTED）はVersion 1.8で追加した。履歴の`action`列（VARCHAR(20)）に収まるため、スキーマの変更はない。Schema 1.45.0（Version 1.9）で、旧形式移行の監査テーブル（`stageart_legacy_expense_migration_audit`）を追加した。2026-10-30に、実行行と手動確認の記録、実行開始の記録（`STARTED`）を同じテーブルに追加した（スキーマの変更なし）。差し戻しの通知の文言を「差し戻されました」に改めた。承認APIの申請回・承認金額の整数検証（小数・指数表記の拒否）を実装した。Version 1.10：承認金額と申請金額の一致をDomain（`Expense::resolveApprovedAmount()`。不一致は`ExpenseApprovedAmountMismatchException`）とUse Case（Journal Entryの作成）で担保し、単一明細の承認金額の変更（減額・増額）を廃止した。
+- Schema 1.44.0（申請回等のカラム、Expense Review用テーブル）。旧CONFIRMEDの移行はスキーマ更新から分離し、運用者がWP-CLIで明示的に実行する（2026-10-29）。移行取消の履歴（MIGRATION_REVERTED）はVersion 1.8で追加した。履歴の`action`列（VARCHAR(20)）に収まるため、スキーマの変更はない。Schema 1.45.0（Version 1.9）で、旧形式移行の監査テーブル（`stageart_legacy_expense_migration_audit`）を追加した。2026-10-30に、実行行と手動確認の記録、実行開始の記録（`STARTED`）を同じテーブルに追加した（スキーマの変更なし）。差し戻しの通知の文言を「差し戻されました」に改めた。承認APIの申請回・承認金額の整数検証（小数・指数表記の拒否）を実装した。Version 1.10：承認金額と申請金額の一致をDomain（`Expense::resolveApprovedAmount()`。不一致は`ExpenseApprovedAmountMismatchException`）とUse Case（Journal Entryの作成）で担保し、単一明細の承認金額の変更（減額・増額）を廃止した。Version 1.11：Expenseの編集を申請者本人（Person IDの一致）に限り、`Accounting.Update`による他人のDRAFTの編集を廃止した（`UpdateExpenseUseCase`は権限の判定を使わない）。
 
 未実装・方針との差異（後続実装の対象）：
 

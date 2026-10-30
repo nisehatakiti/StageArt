@@ -27,8 +27,9 @@ use StageArt\Domain\Production\ProductionId;
  * - DRAFT is an unsubmitted 下書き. Creating an Expense never submits it.
  * - The Lines change only while DRAFT, SUBMITTED (before approval; each
  *   such edit is a new submission revision with its own requested amount)
- *   or REJECTED (before 再申請). Once submitted, only the applicant edits
- *   them (UpdateExpenseUseCase decides who may edit).
+ *   or REJECTED (before 再申請), and only by the applicant - whatever Role
+ *   anyone else holds (Version 1.11; UpdateExpenseUseCase compares the
+ *   Person IDs).
  * - Approval approves the application as submitted (ExpenseApprovalWorkflow.md
  *   Version 1.10): the approved amount always equals the requested amount,
  *   which must still be the Lines' total. No approver raises or lowers it,
