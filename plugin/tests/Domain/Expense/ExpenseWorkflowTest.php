@@ -9,6 +9,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Expense\Expense;
+use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseLine;
 use StageArt\Domain\Expense\ExpenseReview;
@@ -121,31 +122,107 @@ final class ExpenseWorkflowTest extends TestCase
         $this->assertSame(['1:SUBMITTED', '1:APPROVED'], $this->actions($expense));
     }
 
-    public function test_a_single_line_expense_can_be_approved_for_a_changed_total_and_keeps_both_amounts(): void
+    public function test_a_single_line_expense_is_approved_for_exactly_its_requested_amount(): void
     {
         $expense = $this->submitted([5000]);
 
-        $expense->approve($this->approver, 2500, 1, JournalEntryId::generate());
+        $expense->approve($this->approver, 5000, 1, JournalEntryId::generate());
 
-        $this->assertSame(2500, $expense->approvedAmount());
-        $this->assertSame(5000, $expense->requestedAmount());
+        $this->assertSame(5000, $expense->approvedAmount());
         $approval = $expense->reviews()[1];
-        $this->assertSame(5000, $approval->requestedAmount());
-        $this->assertSame(2500, $approval->approvedAmount());
+        $this->assertSame([ExpenseReview::APPROVED, 5000, 5000], [$approval->action(), $approval->requestedAmount(), $approval->approvedAmount()]);
         $this->assertSame(5000, $approval->linesSnapshot()[0]['amount']);
     }
 
-    public function test_a_multi_line_expense_cannot_be_approved_for_a_changed_total(): void
+    /**
+     * Version 1.10: an approver can neither raise nor lower the amount, on
+     * one Line or several; nothing changes and the Expense stays SUBMITTED,
+     * to be returned for correction instead.
+     *
+     * @dataProvider otherAmounts
+     *
+     * @param int[] $lines
+     */
+    public function test_an_approval_for_any_other_amount_is_refused(array $lines, int $amount): void
     {
-        $expense = $this->submitted([3000, 2000]);
+        $expense = $this->submitted($lines);
+        $reviews = $this->actions($expense);
 
-        try {
-            $expense->approve($this->approver, 4000, 1, JournalEntryId::generate());
-            $this->fail('A changed total on a multi-line Expense must be refused.');
-        } catch (InvalidArgumentException $exception) {
-            $this->assertSame(ExpenseStatus::SUBMITTED, $expense->status()->toString());
-            $this->assertNull($expense->approvedAmount());
+        foreach ([
+            'resolve' => fn () => $expense->resolveApprovedAmount($this->approver, $amount, 1),
+            'approve' => fn () => $expense->approve($this->approver, $amount, 1, JournalEntryId::generate()),
+        ] as $step => $call) {
+            try {
+                $call();
+                $this->fail("{$step} for {$amount} must be refused.");
+            } catch (ExpenseApprovedAmountMismatchException $exception) {
+                $this->assertInstanceOf(InvalidArgumentException::class, $exception, 'Reported as invalid input (422).');
+            }
         }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $expense->status()->toString());
+        $this->assertNull($expense->approvedAmount());
+        $this->assertNull($expense->approvedBy());
+        $this->assertNull($expense->postedJournalEntryId());
+        $this->assertSame($reviews, $this->actions($expense));
+        $this->assertSame(array_sum($lines), $expense->requestedAmount());
+        $this->assertSame($lines, array_map(static fn (ExpenseLine $line): int => $line->amount(), $expense->lines()));
+    }
+
+    /**
+     * @return array<string, array{int[], int}>
+     */
+    public static function otherAmounts(): array
+    {
+        return [
+            'one line, one yen more' => [[5000], 5001],
+            'one line, one yen less' => [[5000], 4999],
+            'one line, half' => [[5000], 2500],
+            'several lines, one yen more' => [[3000, 2000], 5001],
+            'several lines, one yen less' => [[3000, 2000], 4999],
+            'several lines, one Line\'s amount' => [[3000, 2000], 3000],
+        ];
+    }
+
+    /**
+     * An Expense whose stored requested amount no longer equals its Lines'
+     * total (only possible through data written outside the workflow) is
+     * not approved, whatever amount is given.
+     *
+     * @dataProvider approvalInputs
+     */
+    public function test_an_expense_whose_lines_no_longer_match_the_requested_amount_is_not_approved(?int $amount): void
+    {
+        $submitted = $this->submitted([3000, 2000]);
+        $expense = Expense::reconstitute(
+            $submitted->id(),
+            $submitted->productionId(),
+            null,
+            ExpenseStatus::fromString(ExpenseStatus::SUBMITTED),
+            [ExpenseLine::create(AccountId::generate(), 3000), ExpenseLine::create(AccountId::generate(), 2500)],
+            $this->applicant,
+            new DateTimeImmutable(),
+            $this->applicant,
+            new DateTimeImmutable(),
+            null,
+            null,
+            1,
+            $this->applicant,
+            new DateTimeImmutable(),
+            5000
+        );
+
+        $this->expectException(ExpenseApprovedAmountMismatchException::class);
+
+        $expense->approve($this->approver, $amount, 1, JournalEntryId::generate());
+    }
+
+    /**
+     * @return array<string, array{?int}>
+     */
+    public static function approvalInputs(): array
+    {
+        return ['no amount' => [null], 'the requested amount' => [5000], 'the Lines\' total' => [5500]];
     }
 
     public function test_a_multi_line_expense_can_be_approved_for_exactly_its_requested_total(): void

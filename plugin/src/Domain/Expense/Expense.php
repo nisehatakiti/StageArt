@@ -303,11 +303,16 @@ final class Expense
 
     /**
      * Validates an approval without changing anything and returns the
-     * approved total it would post: the requested amount when
-     * `$approvedAmount` is null. `$expectedRevision` is the submission
-     * revision the approver reviewed; an Expense edited since then is not
-     * approved (修正8 §6.5). The Application layer calls this before
-     * building the Journal Entry, then approve() with the same values.
+     * approved total it would post, which is always the requested amount
+     * (ExpenseApprovalWorkflow.md Version 1.10): `$approvedAmount` is
+     * either null (approve as requested) or that same amount; any other
+     * amount - higher, lower, on one Line or several - is refused, and an
+     * Expense in doubt is returned for correction instead. The requested
+     * amount must also still be the Lines' total, so no changed Line is
+     * approved. `$expectedRevision` is the submission revision the
+     * approver reviewed; an Expense edited since then is not approved
+     * (修正8 §6.5). The Application layer calls this before building the
+     * Journal Entry, then approve() with the same values.
      */
     public function resolveApprovedAmount(PersonId $approver, ?int $approvedAmount, int $expectedRevision): int
     {
@@ -323,21 +328,19 @@ final class Expense
 
         $requested = (int) $this->requestedAmount;
 
-        if ($approvedAmount === null) {
-            return $requested;
-        }
-
-        if ($approvedAmount <= 0) {
-            throw new InvalidArgumentException('The approved amount must be a positive integer.');
-        }
-
-        if ($approvedAmount !== $requested && count($this->lines) > 1) {
-            throw new InvalidArgumentException(
-                'The approved amount of an Expense with more than one Line cannot differ from the requested amount.'
+        if ($requested <= 0 || $requested !== $this->totalAmount()) {
+            throw new ExpenseApprovedAmountMismatchException(
+                'The requested amount no longer matches the Expense Lines, so it cannot be approved; return it for correction.'
             );
         }
 
-        return $approvedAmount;
+        if ($approvedAmount !== null && $approvedAmount !== $requested) {
+            throw new ExpenseApprovedAmountMismatchException(
+                "The approved amount must equal the requested amount ({$requested}); an approver cannot change it. Return the Expense for correction instead."
+            );
+        }
+
+        return $requested;
     }
 
     /**

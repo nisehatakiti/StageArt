@@ -61,9 +61,10 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  * PATCH /expenses/{id}/approve: revision and approved_amount must be whole
  * numbers. A JSON integer or a string of digits is accepted as before; a
  * fraction, an exponent or any other text is refused with 422 before the
- * Use Case runs, instead of being truncated to an integer. The range
- * checks stay with the Domain (amount 1 yen or more -> 422, a stale
- * revision -> 409).
+ * Use Case runs, instead of being truncated to an integer. The amount
+ * checks stay with the Domain: since Version 1.10 the approved amount
+ * must equal the requested one (any other -> 422; omitted, null or empty
+ * means "as requested"); a stale revision -> 409.
  *
  * WordPress user 1 is the PrimaryManager (an approver), 2 the applicant.
  *
@@ -219,10 +220,8 @@ final class ExpenseRestControllerApproveTest extends TestCase
             'JSON integer revision, null amount' => [1, null, 5000],
             'JSON integer revision, empty amount' => [1, '', 5000],
             'string revision' => ['1', 'absent', 5000],
-            'JSON integer amount' => [1, 2500, 2500],
-            'string amount' => ['1', '2500', 2500],
-            'the whole requested amount' => [1, 5000, 5000],
-            'one yen' => [1, '1', 1],
+            'JSON integer amount equal to the requested' => [1, 5000, 5000],
+            'string amount equal to the requested' => ['1', '5000', 5000],
         ];
     }
 
@@ -303,7 +302,39 @@ final class ExpenseRestControllerApproveTest extends TestCase
         }
     }
 
-    // --- the Domain's range checks are unchanged ---------------------------
+    // --- the Domain's checks -----------------------------------------------
+
+    /**
+     * Version 1.10: a whole number other than the requested 5,000 is
+     * refused (422) by the Domain, reached through the Use Case.
+     *
+     * @dataProvider otherAmounts
+     *
+     * @param mixed $amount
+     */
+    public function test_an_amount_other_than_the_requested_is_refused($amount): void
+    {
+        $response = $this->approve(['revision' => 1, 'approved_amount' => $amount]);
+
+        $this->assertRefusedWith(422, $response);
+        $this->assertSame('stageart_expense_invalid', $response->get_error_code());
+        $this->assertStringContainsString('must equal the requested amount (5000)', $response->get_error_message());
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function otherAmounts(): array
+    {
+        return [
+            'one yen more' => [5001],
+            'one yen less' => [4999],
+            'string one yen more' => ['5001'],
+            'string one yen less' => ['4999'],
+            'half' => [2500],
+            'one yen' => ['1'],
+        ];
+    }
 
     /**
      * @dataProvider outOfRange

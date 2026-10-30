@@ -16,6 +16,7 @@ use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\Expense\Expense;
+use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseRepositoryInterface;
 use StageArt\Domain\Expense\ExpenseSelfApprovalException;
@@ -32,9 +33,11 @@ use StageArt\Domain\Person\PersonId;
  * Expense posts it - one Journal Entry for the approved total, created
  * already POSTED, with no separate Post step.
  *
- * Debit: each Expense Line's own Account and amount when the approved
- * total equals the requested one, or the single Line's Account for a
- * changed total (Expense refuses a changed total on several Lines).
+ * Debit: each Expense Line's own Account and amount; the approved total
+ * is always the requested one and the Lines' total
+ * (ExpenseApprovalWorkflow.md Version 1.10 - an approver cannot change
+ * the amount; Expense::resolveApprovedAmount() refuses it, and the Journal
+ * Entry is built only for an unchanged total).
  * Credit: 未払金 (StandardPayableAccountResolver).
  *
  * One Expense can never produce two Journal Entries:
@@ -164,15 +167,16 @@ final class ApproveExpenseUseCase
             }
         }
 
-        if ($amount === (int) $expense->requestedAmount()) {
-            $debitLines = array_map(
-                static fn ($line): JournalEntryLine => JournalEntryLine::create($line->accountId(), DebitCredit::debit(), $line->amount(), $line->description()),
-                $expense->lines()
-            );
-        } else {
-            $line = $expense->lines()[array_key_first($expense->lines())];
-            $debitLines = [JournalEntryLine::create($line->accountId(), DebitCredit::debit(), $amount, $line->description())];
+        // Never posted for any other total than the one requested and the
+        // Lines' own (Version 1.10), whoever calls this Use Case.
+        if ($amount !== (int) $expense->requestedAmount() || $amount !== $expense->totalAmount()) {
+            throw new ExpenseApprovedAmountMismatchException('An Expense can only be posted for its requested amount, which must equal the total of its Lines.');
         }
+
+        $debitLines = array_map(
+            static fn ($line): JournalEntryLine => JournalEntryLine::create($line->accountId(), DebitCredit::debit(), $line->amount(), $line->description()),
+            $expense->lines()
+        );
 
         $payable = $this->payableAccounts->resolvePayableAccount($organizationId);
         $creditLine = JournalEntryLine::create($payable->id(), DebitCredit::credit(), $amount, '未払金（承認済み経費）');

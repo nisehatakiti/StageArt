@@ -39,6 +39,7 @@ use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\Account;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountType;
+use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
 use StageArt\Domain\Expense\ExpenseId;
 use StageArt\Domain\Expense\ExpenseReview;
 use StageArt\Domain\Expense\ExpenseStateConflictException;
@@ -531,13 +532,13 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $id = $this->submittedBy(2, [5000]);
 
         $before = $this->summary->execute(new GetProductionAccountingSummaryQuery($this->production->id()->toString(), 1))->toArray();
-        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1, 3000));
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1, 5000));
         $after = $this->summary->execute(new GetProductionAccountingSummaryQuery($this->production->id()->toString(), 1))->toArray();
 
         $this->assertFalse($before['has_actual'], 'A SUBMITTED Expense is not part of Actual.');
         $this->assertSame(0, $before['total_actual']);
         $this->assertTrue($after['has_actual']);
-        $this->assertSame(-3000, $after['total_actual'], 'Actual reflects the approved amount, not the requested 5,000.');
+        $this->assertSame(-5000, $after['total_actual'], 'Actual reflects the approved amount, which is the requested one (Version 1.10).');
     }
 
     public function test_approval_reuses_the_organizations_active_unpaid_expenses_account(): void
@@ -559,19 +560,32 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         ));
     }
 
-    public function test_a_single_line_expense_is_approved_for_a_reduced_total_and_both_amounts_are_kept(): void
+    /**
+     * Version 1.10: approving with the requested amount given explicitly
+     * posts exactly as approving without one - every Line at its own
+     * amount, the total to 未払金.
+     *
+     * @dataProvider requestedAmountInputs
+     */
+    public function test_an_expense_is_approved_for_exactly_its_requested_amount(?int $amount): void
     {
-        $id = $this->submittedBy(2, [5000]);
+        $id = $this->submittedBy(2, [3000, 2000]);
 
-        $result = $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, 2500));
+        $result = $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, $amount));
 
-        $this->assertSame(5000, $result->requestedAmount);
-        $this->assertSame(2500, $result->approvedAmount);
-        foreach ($this->approvalEntries()[0]->lines() as $line) {
-            $this->assertSame(2500, $line->amount());
-        }
+        $this->assertSame([5000, 5000], [$result->requestedAmount, $result->approvedAmount]);
+        $amounts = array_map(static fn ($line): array => [$line->debitCredit()->toString(), $line->amount()], $this->approvalEntries()[0]->lines());
+        $this->assertSame([['DEBIT', 3000], ['DEBIT', 2000], ['CREDIT', 5000]], $amounts);
         $approval = $result->reviews[1];
-        $this->assertSame([ExpenseReview::APPROVED, 5000, 2500], [$approval['action'], $approval['requested_amount'], $approval['approved_amount']]);
+        $this->assertSame([ExpenseReview::APPROVED, 5000, 5000], [$approval['action'], $approval['requested_amount'], $approval['approved_amount']]);
+    }
+
+    /**
+     * @return array<string, array{?int}>
+     */
+    public static function requestedAmountInputs(): array
+    {
+        return ['the requested amount' => [5000], 'no amount (approve as requested)' => [null]];
     }
 
     /**
@@ -581,7 +595,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
      */
     public function test_refused_approvals_change_nothing(string $case, int $wordPressUserId, ?int $amount, int $revision, string $expected): void
     {
-        $id = $case === 'multi-line changed total'
+        $id = str_starts_with($case, 'multi-line')
             ? $this->submittedBy(2, [3000, 2000])
             : ($case === 'payer approves' ? $this->submittedBy(3, [5000], $this->person[4]->id()->toString()) : $this->submittedBy(2));
 
@@ -595,6 +609,10 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
         $this->assertSame([], $this->approvalEntries());
         $this->assertSame([], array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved')));
+        $expense = $this->expenses->findById(ExpenseId::fromString($id));
+        $this->assertSame([ExpenseReview::SUBMITTED], array_map(static fn (ExpenseReview $r): string => $r->action(), $expense->reviews()));
+        $this->assertSame(5000, $expense->requestedAmount());
+        $this->assertNull($expense->approvedAmount());
     }
 
     /**
@@ -603,9 +621,15 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     public static function refusedApprovals(): array
     {
         return [
-            'zero amount' => ['zero amount', 1, 0, 1, InvalidArgumentException::class],
-            'negative amount' => ['negative amount', 1, -1, 1, InvalidArgumentException::class],
-            'multi-line changed total' => ['multi-line changed total', 1, 4000, 1, InvalidArgumentException::class],
+            'zero amount' => ['zero amount', 1, 0, 1, ExpenseApprovedAmountMismatchException::class],
+            'negative amount' => ['negative amount', 1, -1, 1, ExpenseApprovedAmountMismatchException::class],
+            // Version 1.10: the approved amount must equal the requested 5,000.
+            'one yen more' => ['one yen more', 1, 5001, 1, ExpenseApprovedAmountMismatchException::class],
+            'one yen less' => ['one yen less', 1, 4999, 1, ExpenseApprovedAmountMismatchException::class],
+            'half' => ['half', 4, 2500, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line changed total' => ['multi-line changed total', 1, 4000, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line one yen more' => ['multi-line one yen more', 1, 5001, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line one yen less' => ['multi-line one yen less', 8, 4999, 1, ExpenseApprovedAmountMismatchException::class],
             'stale revision' => ['stale revision', 1, null, 2, ExpenseStateConflictException::class],
             'payer approves' => ['payer approves', 4, null, 1, ExpenseAccessDeniedException::class],
             'another member' => ['another member', 3, null, 1, ExpenseAccessDeniedException::class],
@@ -790,13 +814,13 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     {
         $id = $this->submittedBy(2, [5000]);
 
-        $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, 4000));
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, 5000));
 
         $last = $this->notifications->sent()[count($this->notifications->sent()) - 1];
         $this->assertSame($this->person[2]->id()->toString(), $last['person_id']);
         $this->assertSame('expense_approved', $last['type']);
         $this->assertSame($id, $last['payload']['target_id']);
-        $this->assertStringContainsString('申請額 5,000円 / 承認額 4,000円', $last['payload']['message']);
+        $this->assertStringContainsString('申請額 5,000円 / 承認額 5,000円', $last['payload']['message']);
         $this->assertSame(0, $this->notifications->sentInsideTransaction());
     }
 

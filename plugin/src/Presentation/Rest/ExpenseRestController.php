@@ -263,8 +263,10 @@ final class ExpenseRestController
      *
      * Both must be whole numbers - a JSON integer or a string of digits;
      * 100.5, 1.0, 1e3 and the like are refused (422) rather than truncated.
-     * Their range (a positive amount, the current revision) is the Use
-     * Case's and the Domain's to check.
+     * Their values are the Use Case's and the Domain's to check: the
+     * approved amount must equal the requested one (ExpenseApprovalWorkflow.md
+     * Version 1.10 - any other is refused with 422; omitted, null or empty
+     * approves as requested), and the revision must be the current one.
      *
      * @return WP_REST_Response|WP_Error
      */
