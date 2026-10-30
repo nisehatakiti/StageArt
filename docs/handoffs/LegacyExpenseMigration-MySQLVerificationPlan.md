@@ -3,7 +3,7 @@
 作成日: 2026-10-29
 対象ブランチ: `integrate/expense-approval-20261029`
 関連: `docs/handoffs/LegacyExpenseMigration-Runbook.md`、`docs/04-DomainModel/ExpenseApprovalWorkflow.md`（Version 1.9）
-改訂: 2026-10-29（実行権限と監査テーブルの検証を4.7に追加）
+改訂: 2026-10-29（実行権限と監査テーブルの検証を4.7に追加）、2026-10-30（実行行・手動確認の記録の検証を4.7に追加）
 
 本書は計画であり、実施を承認するものではない。作成時点で、どのDBにも接続していない。各工程は、環境と工程ごとに承認を得てから行う。本番環境では実施しない。
 
@@ -120,6 +120,11 @@ DBに2つのセッション（mysqlクライアント）を開き、片方でロ
 | 失敗の記録が書けない場合の報告 | 同様のトリガーで`FAILED`・`REFUSED`の行を拒否し、出力に`The audit row could not be written`、ログに`audit record failed`が出て、スクリプトが失敗で終わること | 確認済み | 未確認 |
 | 監査記録と業務の履歴の件数が一致する | Runbook 3.2の確認SQL | 確認済み | 未確認 |
 | 業務の履歴と監査記録が混ざらない | `stageart_expense_reviews`に運用の行がなく、`MIGRATED`の`actor_person_id`が旧確定の確認者のままであること | 確認済み | 未確認 |
+| 候補0件の実行が記録される（2026-10-30） | 候補が0件の状態で`execute`を実行し、`operation = 'LEGACY_EXPENSE_MIGRATION_RUN'`の行が1件、`expense_id`・`success_key`がNULL、`outcome`が`SUCCEEDED`、`reason_code`が`NO_CANDIDATES`、運用者の列が埋まっていること。もう一度実行し、実行行が2件になること（一意制約で拒否されない） | 確認済み | 未確認（NULLを含む一意制約の実際の動作） |
+| 実行行の結果 | 部分成功（4.2のトリガーで1件だけ失敗させる）で`PARTIAL`、全件失敗で`FAILED`、移行取消の成功・ロールバック・一覧の不一致で`SUCCEEDED`・`FAILED`・`REFUSED`（`TARGET_MISMATCH`）になること。実行行がその実行の最後の行であること（`acted_at_utc`が同じ実行のほかの行以上） | 確認済み | 未確認（秒単位の時刻で順序が同じになる場合の扱い） |
+| 手動確認の記録 | 判定不能のExpenseがある状態で実行し、`SKIPPED`の行が判定不能の件数だけあり、理由コードが事前確認の出力と同じで、Expenseと業務の履歴が変わらないこと | 確認済み | 未確認 |
+| 実行行の記録の失敗 | 検証環境だけで、`expense_id IS NULL`の行を拒否する`BEFORE INSERT`トリガーを作る。出力に`The audit row could not be written: -`が出てスクリプトが失敗で終わり、COMMITした移行は戻らないこと | 確認済み | 未確認 |
+| 操作種別の長さ | `LEGACY_EXPENSE_MIGRATION_REVERT_RUN`（35文字）が`VARCHAR(40)`に切り捨てなく入ること（`SELECT LENGTH(operation)`）。SQLモードがstrictでない場合、切り捨ては警告だけになるため、SQLモードも記録する | 文字数を確認済み | 未確認 |
 
 ## 5. 結果の記録
 
