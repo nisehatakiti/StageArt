@@ -165,7 +165,7 @@ Accounting routes present and byte-identical to before this refactor.
 ## Expense approval workflow (2026-10-30, `integrate/expense-approval-20261029`)
 
 Business rules: `docs/04-DomainModel/ExpenseApprovalWorkflow.md`
-(Version 1.10). What it added to this Module's boundary:
+(Version 1.11). What it added to this Module's boundary:
 
 - **UseCases:** `Expense\ApplicantExpenseTransitionUseCase` (submit /
   withdraw / resubmit), `Expense\ApproveExpenseUseCase` (approval posts
