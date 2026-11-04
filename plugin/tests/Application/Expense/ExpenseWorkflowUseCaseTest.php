@@ -30,6 +30,7 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
@@ -60,6 +61,11 @@ use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Infrastructure\WordPress\Persistence\TransactionFailedException;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
+use StageArt\Tests\Support\FakeMysqli;
+use StageArt\Tests\Support\FakeWpdb;
+use StageArt\Tests\Support\FakeWpdbDefault;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
@@ -113,6 +119,8 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     private ApproveExpenseUseCase $approveExpense;
     private RejectExpenseUseCase $rejectExpense;
     private GetProductionAccountingSummaryUseCase $summary;
+    /** @var callable(TransactionManagerInterface): ApproveExpenseUseCase */
+    private $approveWith;
 
     private Organization $organization;
     private Production $production;
@@ -158,7 +166,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membership, $identity, $lineFactory, $this->transactions);
         $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $this->transactions);
         $this->applicantTransitions = new ApplicantExpenseTransitionUseCase($this->expenses, $identity, $membership, $this->transactions, $notifier);
-        $this->approveExpense = new ApproveExpenseUseCase(
+        $this->approveWith = fn (TransactionManagerInterface $transactions): ApproveExpenseUseCase => new ApproveExpenseUseCase(
             $this->expenses,
             $this->journalEntries,
             $this->accounts,
@@ -167,9 +175,10 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             $organizationContext,
             $identity,
             $authorization,
-            $this->transactions,
+            $transactions,
             $notifier
         );
+        $this->approveExpense = ($this->approveWith)($this->transactions);
         $this->rejectExpense = new RejectExpenseUseCase($this->expenses, $identity, $authorization, $this->transactions, $notifier);
         $this->summary = new GetProductionAccountingSummaryUseCase(
             new InMemoryBudgetRepository(),
@@ -971,6 +980,215 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
         $this->assertCount(1, $this->approvalEntries());
+    }
+
+    // --- approval on the real WordPressTransactionManager (PR #6 review F1)
+
+    /**
+     * ApproveExpenseUseCase on the real WordPressTransactionManager, over a
+     * $wpdb that acts like InnoDB for the in-memory repositories: START
+     * TRANSACTION takes a snapshot of the Expenses and Journal Entries,
+     * ROLLBACK restores it, and a connection lost before COMMIT is rolled
+     * back by the server (after which $wpdb reconnects, so the repeated
+     * COMMIT "succeeds" on another thread). $failing names the statements
+     * that fail. Only for @runInSeparateProcess tests (wordpress-stubs).
+     *
+     * @param string[] $failing
+     * @return array{0: ApproveExpenseUseCase, 1: FakeWpdb}
+     */
+    private function approveOnWordPressTransactions(array $failing = [], bool $reconnectAtCommit = false): array
+    {
+        require_once __DIR__ . '/../../Support/wordpress-stubs.php';
+        require_once __DIR__ . '/../../Support/fake-mysqli.php';
+        FakeMysqli::$threadId = 41;
+        $snapshot = null;
+
+        $restore = function (?array $taken): void {
+            if ($taken !== null) {
+                $this->expenses->restore($taken[0]);
+                $this->journalEntries->restore($taken[1]);
+            }
+        };
+
+        $wpdb = new \wpdb(function (string $method, array $args, FakeWpdb $db) use (&$snapshot, $failing, $reconnectAtCommit, $restore) {
+            if ($method !== 'query') {
+                return FakeWpdbDefault::VALUE;
+            }
+
+            $sql = (string) $args[0];
+
+            if (in_array($sql, $failing, true)) {
+                $db->last_error = "Simulated {$sql} failure";
+
+                return false;
+            }
+
+            if ($sql === 'START TRANSACTION') {
+                $snapshot = [$this->expenses->snapshot(), $this->journalEntries->snapshot()];
+            } elseif ($sql === 'COMMIT') {
+                if ($reconnectAtCommit) {
+                    $restore($snapshot);
+                    FakeMysqli::$threadId = 42;
+                }
+
+                $snapshot = null;
+            } elseif ($sql === 'ROLLBACK') {
+                $restore($snapshot);
+                $snapshot = null;
+            }
+
+            return 0;
+        });
+        $wpdb->dbh = FakeMysqli::handle();
+
+        return [($this->approveWith)(new WordPressTransactionManager($wpdb)), $wpdb];
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function transactionStatements(FakeWpdb $wpdb): array
+    {
+        return array_map(static fn (array $args): string => (string) $args[0], $wpdb->callsTo('query'));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_an_approval_commits_the_expense_with_its_journal_entry(): void
+    {
+        $id = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+
+        $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        $this->assertCount(1, $this->approvalEntries());
+        $this->assertSame('2:expense_approved', $this->notified()[count($this->notified()) - 1]);
+        $this->assertSame(['START TRANSACTION', 'COMMIT'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_start_approves_nothing(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['START TRANSACTION']);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('An approval outside a transaction must not run.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('START TRANSACTION failed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['START TRANSACTION'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_commit_leaves_no_journal_entry_and_no_posted_expense(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['COMMIT']);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed COMMIT must not be reported as an approval.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('COMMIT failed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent(), 'Nobody is told of an approval that did not commit.');
+        $this->assertSame(['START TRANSACTION', 'COMMIT', 'ROLLBACK'], self::transactionStatements($wpdb));
+
+        [$retry] = $this->approveOnWordPressTransactions();
+        $retry->execute(new ApproveExpenseCommand($id, 1, 1));
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        $this->assertCount(1, $this->approvalEntries());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_commit_lost_to_a_reconnect_is_not_an_approval(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve] = $this->approveOnWordPressTransactions([], true);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A COMMIT on a new connection must not be reported as an approval.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('connection changed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_expense_write_rolls_the_journal_entry_back(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries(), 'The Journal Entry saved first must be rolled back too.');
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_rollback_keeps_the_write_failure_and_notifies_nobody(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve] = $this->approveOnWordPressTransactions(['ROLLBACK']);
+        $this->journalEntries->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed ROLLBACK must not be swallowed.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('ROLLBACK failed', $exception->getMessage());
+            $this->assertInstanceOf(\RuntimeException::class, $exception->getPrevious());
+            $this->assertSame('Simulated JournalEntry save failure.', $exception->getPrevious()->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
     }
 
     public function test_the_applicant_is_notified_of_the_approval_after_the_commit(): void

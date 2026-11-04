@@ -8,7 +8,8 @@ declare(strict_types=1);
  * LegacyExpenseMigrationDatabaseError reads it with mysqli_errno($wpdb->dbh)
  * from namespace StageArt\Accounting; the function defined here in that
  * namespace answers instead of the extension's, with FakeMysqli::$errno.
- * Load it only from @runInSeparateProcess tests. Where the mysqli
+ * Likewise mysqli_thread_id() for WordPressTransactionManager's connection
+ * check, with FakeMysqli::$threadId (PR #6 review F1). Load it only from @runInSeparateProcess tests. Where the mysqli
  * extension is not loaded, an empty global `mysqli` class stands in for
  * the handle's type.
  */
@@ -26,6 +27,13 @@ namespace StageArt\Tests\Support {
     {
         /** What mysqli_errno() returns, or the Throwable it throws (a closed handle). */
         public static $errno = 0;
+
+        /**
+         * What mysqli_thread_id() returns, or the Throwable it throws, for
+         * WordPressTransactionManager (namespace
+         * StageArt\Infrastructure\WordPress\Persistence). 0 means unknown.
+         */
+        public static $threadId = 0;
 
         /** A mysqli handle that is never connected. */
         public static function handle(): \mysqli
@@ -46,6 +54,21 @@ namespace StageArt\Accounting {
             }
 
             return (int) $errno;
+        }
+    }
+}
+
+namespace StageArt\Infrastructure\WordPress\Persistence {
+    if (! function_exists(__NAMESPACE__ . '\\mysqli_thread_id')) {
+        function mysqli_thread_id($mysql): int
+        {
+            $threadId = \StageArt\Tests\Support\FakeMysqli::$threadId;
+
+            if ($threadId instanceof \Throwable) {
+                throw $threadId;
+            }
+
+            return (int) $threadId;
         }
     }
 }
