@@ -2,7 +2,9 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.3
+Version : 1.4
+
+Version 1.4（2026-10-30）：立替経費の承認で承認金額を修正する手順を削除した。承認金額は申請金額と一致しなければならない（`ExpenseApprovalWorkflow.md` Version 1.10）。
 
 ---
 
@@ -41,9 +43,7 @@ YES
 ```text
 立替金申請
     ↓
-承認者が内容を確認
-    ↓
-必要に応じて承認金額を修正
+承認者が内容を確認（金額は変更しない。疑義があれば差し戻し）
     ↓
 「この内容で承認しますか？」
     ↓

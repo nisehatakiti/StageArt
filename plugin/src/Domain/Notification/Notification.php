@@ -46,6 +46,13 @@ final class Notification
      * new coupling, just a new opaque string the Module happens to send.
      */
     private ?string $rehearsalId;
+    /**
+     * Generic deep-link target a Module attaches (修正8: an Expense
+     * awaiting approval). Opaque to Core, like rehearsalId: Core never
+     * interprets either value, the app maps target_type to a screen.
+     */
+    private ?string $targetType;
+    private ?string $targetId;
     private ?DateTimeImmutable $readAt;
     private DateTimeImmutable $createdAt;
 
@@ -57,7 +64,9 @@ final class Notification
         ?ProductionId $productionId,
         ?string $rehearsalId,
         ?DateTimeImmutable $readAt,
-        DateTimeImmutable $createdAt
+        DateTimeImmutable $createdAt,
+        ?string $targetType = null,
+        ?string $targetId = null
     ) {
         $this->id = $id;
         $this->personId = $personId;
@@ -65,6 +74,8 @@ final class Notification
         $this->message = $message;
         $this->productionId = $productionId;
         $this->rehearsalId = $rehearsalId;
+        $this->targetType = $targetType;
+        $this->targetId = $targetId;
         $this->readAt = $readAt;
         $this->createdAt = $createdAt;
     }
@@ -74,9 +85,11 @@ final class Notification
         string $type,
         string $message,
         ?ProductionId $productionId,
-        ?string $rehearsalId = null
+        ?string $rehearsalId = null,
+        ?string $targetType = null,
+        ?string $targetId = null
     ): self {
-        return new self(NotificationId::generate(), $personId, $type, $message, $productionId, $rehearsalId, null, new DateTimeImmutable());
+        return new self(NotificationId::generate(), $personId, $type, $message, $productionId, $rehearsalId, null, new DateTimeImmutable(), $targetType, $targetId);
     }
 
     public static function reconstitute(
@@ -87,9 +100,11 @@ final class Notification
         ?ProductionId $productionId,
         ?DateTimeImmutable $readAt,
         DateTimeImmutable $createdAt,
-        ?string $rehearsalId = null
+        ?string $rehearsalId = null,
+        ?string $targetType = null,
+        ?string $targetId = null
     ): self {
-        return new self($id, $personId, $type, $message, $productionId, $rehearsalId, $readAt, $createdAt);
+        return new self($id, $personId, $type, $message, $productionId, $rehearsalId, $readAt, $createdAt, $targetType, $targetId);
     }
 
     /** Idempotent by design, matching `NotificationReadState`'s own
@@ -135,6 +150,16 @@ final class Notification
     public function rehearsalId(): ?string
     {
         return $this->rehearsalId;
+    }
+
+    public function targetType(): ?string
+    {
+        return $this->targetType;
+    }
+
+    public function targetId(): ?string
+    {
+        return $this->targetId;
     }
 
     public function readAt(): ?DateTimeImmutable

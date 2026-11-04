@@ -1,0 +1,601 @@
+<?php
+
+declare(strict_types=1);
+
+namespace StageArt\Accounting;
+
+use StageArt\Domain\Shared\Uuid;
+use Throwable;
+
+/**
+ * Schema 1.44.0 (修正8): carries pre-workflow CONFIRMED Expenses over to
+ * the approval workflow, following LegacyExpenseMigrationClassifier's
+ * decision for each one.
+ *
+ * Deliberately not part of the schema upgrade: deploying the code and
+ * upgrading the schema never changes an Expense. An operator runs
+ * plugin/scripts/legacy_expense_migration.php through WP-CLI
+ * (docs/handoffs/LegacyExpenseMigration-Runbook.md):
+ *
+ * - preview() only reads. It lists the candidates and the rows left for
+ *   review with their reasons, reports whether the written tables are
+ *   transactional, and returns a fingerprint of that plan.
+ * - execute() writes only when given the fingerprint of the plan it
+ *   finds itself, i.e. the operator confirmed exactly what will change.
+ *   Each Expense is migrated in its own transaction: the row is locked
+ *   and classified again, its status updated and its MIGRATED history
+ *   added, and any failure - including the COMMIT - rolls that Expense
+ *   back to CONFIRMED and is logged as "<expense id>=<reason code>".
+ *
+ * Locks, in this order, until the Expense's COMMIT or ROLLBACK: the
+ * Expense row, then its Journal Entry row (by primary key), then that
+ * entry's lines. The classification after the locks reads them as they
+ * now are, and no one can reverse or rewrite the entry before the COMMIT:
+ * WordPressJournalEntryRepository::save() updates the entry row before
+ * its lines, so it waits for the second lock. The order is the one an
+ * approval uses (Expense, then Journal Entry), and nothing that writes a
+ * Journal Entry locks an Expense, so the locks do not form a cycle with
+ * the application's. A lock that fails (deadlock, lock wait timeout)
+ * rolls the Expense back as LOCK_FAILED; any other database error there
+ * as UNEXPECTED_ERROR (2026-10-30). Either way the MySQL error number is
+ * logged ("mysql_errno=1205"), not recorded in the audit table.
+ *
+ * Only CONFIRMED rows are read, every UPDATE is conditional on the row
+ * still being CONFIRMED with untouched workflow columns, and no Journal
+ * Entry is ever written, so running it again changes nothing. A migrated
+ * row's previous values are known exactly: status CONFIRMED and the
+ * workflow columns at their defaults (the classifier migrates nothing
+ * else), which is what the runbook's restore step puts back.
+ *
+ * execute() needs an operator (LegacyExpenseMigrationOperator: a
+ * WordPress user holding stageart_manage_accounts, linked to one StageArt
+ * Person) and records the run in the operations audit
+ * (LegacyExpenseMigrationAudit, schema 1.45.0): first a STARTED run row -
+ * once the tables are found transactional, before anything else is
+ * written; when it cannot be written the run stops there
+ * (AUDIT_START_FAILED) - then each Expense: a migrated Expense's
+ * SUCCEEDED row in its own transaction, so a failed audit insert rolls the
+ * migration back; a rolled-back Expense's FAILED row and a manual-review
+ * Expense's SKIPPED row after the fact, on their own; and, last, the
+ * run's own row (SUCCEEDED - also with no candidate -, PARTIAL, FAILED,
+ * or REFUSED for a changed plan).
+ */
+final class LegacyExpenseMigration
+{
+    public const LOG_PREFIX = '[StageArt legacy expense migration]';
+
+    public const OUTCOME_COMPLETED = 'COMPLETED';
+    public const OUTCOME_REFUSED = 'REFUSED';
+
+    public const REFUSED_NOT_TRANSACTIONAL = 'NOT_TRANSACTIONAL';
+    public const REFUSED_PLAN_CHANGED = 'PLAN_CHANGED';
+    /** The STARTED run row could not be written, so nothing was done. */
+    public const REFUSED_AUDIT_START_FAILED = 'AUDIT_START_FAILED';
+
+    public const FAILED_TRANSACTION_START = 'TRANSACTION_START_FAILED';
+    public const FAILED_LOCK = 'LOCK_FAILED';
+    public const FAILED_CHANGED_SINCE_PREVIEW = 'CHANGED_SINCE_PREVIEW';
+    public const FAILED_UPDATE = 'UPDATE_FAILED';
+    public const FAILED_HISTORY_INSERT = 'HISTORY_INSERT_FAILED';
+    public const FAILED_AUDIT_INSERT = 'AUDIT_INSERT_FAILED';
+    public const FAILED_COMMIT = 'COMMIT_FAILED';
+    public const FAILED_UNEXPECTED = 'UNEXPECTED_ERROR';
+
+    /** The tables execute() and the restore write; all must support transactions. */
+    private const WRITTEN_TABLES = ['stageart_expenses', 'stageart_expense_reviews', LegacyExpenseMigrationAudit::TABLE];
+
+    /**
+     * Reads only: nothing is written, locked or logged.
+     *
+     * @param \wpdb $wpdb
+     * @return array{
+     *     confirmed: int,
+     *     candidates: array<string, array{journal_entry_id: string, amount: int}>,
+     *     manual_review: array<string, string>,
+     *     storage_engines: array<string, ?string>,
+     *     transactional: bool,
+     *     fingerprint: string
+     * }
+     */
+    public static function preview($wpdb): array
+    {
+        $t = self::tables($wpdb);
+        $candidates = [];
+        $manual = [];
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE status = %s", 'CONFIRMED'),
+            ARRAY_A
+        ) ?: [];
+
+        foreach ($rows as $expense) {
+            $id = (string) $expense['id'];
+            $decision = self::classifyRow($wpdb, $t, $expense);
+
+            if ($decision['decision'] === LegacyExpenseMigrationClassifier::MIGRATE_TO_POSTED) {
+                $candidates[$id] = ['journal_entry_id' => (string) $decision['journal_entry_id'], 'amount' => (int) $decision['amount']];
+            } elseif ($decision['decision'] === LegacyExpenseMigrationClassifier::MANUAL_REVIEW) {
+                $manual[$id] = (string) $decision['reason'];
+            }
+        }
+
+        ksort($candidates);
+        ksort($manual);
+
+        $engines = self::storageEngines($wpdb);
+
+        return [
+            'confirmed' => count($rows),
+            'candidates' => $candidates,
+            'manual_review' => $manual,
+            'storage_engines' => $engines,
+            'transactional' => self::isTransactional($engines),
+            'fingerprint' => substr(hash('sha256', (string) json_encode([$candidates, $manual])), 0, 16),
+        ];
+    }
+
+    /**
+     * Migrates the previewed candidates, but only when `$confirmedFingerprint`
+     * is the fingerprint of the plan as it stands now and the written
+     * tables are transactional; otherwise nothing is written.
+     *
+     * The summary's audit_failures lists the Expense ids ("-" for the run
+     * row) whose FAILED / SKIPPED / run audit row could not be written.
+     *
+     * `$onStarted` gets the Run ID once the STARTED row is committed and
+     * before any Expense is written, so the operator has it on record even
+     * if the process is killed later; a run whose STARTED row could not be
+     * written never calls it.
+     *
+     * @param \wpdb $wpdb
+     * @param (callable(string): void)|null $onStarted
+     * @return array{
+     *     outcome: string,
+     *     refused_reason: ?string,
+     *     run_id: string,
+     *     migrated: string[],
+     *     failed: array<string, string>,
+     *     manual_review: array<string, string>,
+     *     audit_failures: string[]
+     * }
+     */
+    public static function execute($wpdb, string $confirmedFingerprint, LegacyExpenseMigrationOperator $operator, ?callable $onStarted = null): array
+    {
+        $plan = self::preview($wpdb);
+        $runId = LegacyExpenseMigrationAudit::newRunId();
+        $summary = ['outcome' => self::OUTCOME_COMPLETED, 'refused_reason' => null, 'run_id' => $runId, 'migrated' => [], 'failed' => [], 'manual_review' => $plan['manual_review'], 'audit_failures' => []];
+        $audit = static fn (?string $id, string $outcome, ?string $reason): bool => LegacyExpenseMigrationAudit::record(
+            $wpdb,
+            $runId,
+            LegacyExpenseMigrationAudit::OPERATION_MIGRATION,
+            $id,
+            $outcome,
+            $reason,
+            $operator,
+            $confirmedFingerprint
+        );
+        // The run rows (expense_id NULL), STARTED first and the outcome
+        // last, each on its own; "-" stands for them in audit_failures.
+        $recordRun = static function (string $outcome, ?string $reason) use (&$summary, $wpdb, $runId, $operator, $confirmedFingerprint): bool {
+            if (LegacyExpenseMigrationAudit::record($wpdb, $runId, LegacyExpenseMigrationAudit::OPERATION_MIGRATION_RUN, null, $outcome, $reason, $operator, $confirmedFingerprint)) {
+                return true;
+            }
+
+            $summary['audit_failures'][] = '-';
+            error_log(self::LOG_PREFIX . " audit record failed: run {$runId} {$outcome}");
+
+            return false;
+        };
+
+        if (! $plan['transactional']) {
+            // Not recorded in the audit table: it is one of the tables found unfit.
+            return self::refuse($summary, self::REFUSED_NOT_TRANSACTIONAL, $operator);
+        }
+
+        // Nothing is written before the run is on record: a run that could
+        // not be recorded does not start, and gets no outcome row either.
+        if (! $recordRun(LegacyExpenseMigrationAudit::STARTED, null)) {
+            return self::refuse($summary, self::REFUSED_AUDIT_START_FAILED, $operator);
+        }
+
+        if ($onStarted !== null) {
+            $onStarted($runId);
+        }
+
+        if (! hash_equals($plan['fingerprint'], $confirmedFingerprint)) {
+            $recordRun(LegacyExpenseMigrationAudit::REFUSED, self::REFUSED_PLAN_CHANGED);
+
+            return self::refuse($summary, self::REFUSED_PLAN_CHANGED, $operator);
+        }
+
+        $t = self::tables($wpdb);
+
+        foreach ($plan['candidates'] as $id => $expected) {
+            $dbError = null;
+            $failure = self::migrateOne($wpdb, $t, (string) $id, $expected, $audit, $dbError);
+
+            if ($failure === null) {
+                $summary['migrated'][] = (string) $id;
+            } else {
+                $summary['failed'][(string) $id] = $failure;
+                error_log(self::LOG_PREFIX . " failed: {$id}={$failure}" . ($dbError === null ? '' : " {$dbError}"));
+
+                // After the ROLLBACK, on its own: it cannot share the
+                // transaction that was undone.
+                if (! $audit((string) $id, LegacyExpenseMigrationAudit::FAILED, $failure)) {
+                    $summary['audit_failures'][] = (string) $id;
+                    error_log(self::LOG_PREFIX . " audit record failed: {$id} FAILED");
+                }
+            }
+        }
+
+        if ($summary['manual_review'] !== []) {
+            $pairs = [];
+
+            foreach ($summary['manual_review'] as $id => $reason) {
+                $pairs[] = "{$id}={$reason}";
+            }
+
+            error_log(self::LOG_PREFIX . ' left CONFIRMED for manual review: ' . implode(', ', $pairs));
+        }
+
+        // Nothing is written to these Expenses; the rows say this run saw
+        // and left them.
+        foreach ($summary['manual_review'] as $id => $reason) {
+            if (! $audit((string) $id, LegacyExpenseMigrationAudit::SKIPPED, $reason)) {
+                $summary['audit_failures'][] = (string) $id;
+                error_log(self::LOG_PREFIX . " audit record failed: {$id} SKIPPED");
+            }
+        }
+
+        if ($plan['candidates'] === []) {
+            $recordRun(LegacyExpenseMigrationAudit::SUCCEEDED, LegacyExpenseMigrationAudit::NO_CANDIDATES);
+        } else {
+            $recordRun(LegacyExpenseMigrationAudit::runOutcome(count($summary['migrated']), count($summary['failed'])), null);
+        }
+
+        error_log(sprintf(
+            '%s completed: run=%s migrated=%d failed=%d manual_review=%d audit_failures=%d by%s',
+            self::LOG_PREFIX,
+            $runId,
+            count($summary['migrated']),
+            count($summary['failed']),
+            count($summary['manual_review']),
+            count($summary['audit_failures']),
+            $operator->describe()
+        ));
+
+        return $summary;
+    }
+
+    /**
+     * One Expense, one transaction. Returns null once committed, or the
+     * reason it was rolled back.
+     *
+     * @param \wpdb $wpdb
+     * @param array<string, string> $t
+     * @param array{journal_entry_id: string, amount: int} $expected
+     * @param callable(?string, string, ?string): bool $audit
+     * @param ?string $dbError set to the MySQL error number for the log ("mysql_errno=1213") when a query failed
+     */
+    private static function migrateOne($wpdb, array $t, string $id, array $expected, callable $audit, ?string &$dbError = null): ?string
+    {
+        if ($wpdb->query('START TRANSACTION') === false) {
+            return self::FAILED_TRANSACTION_START;
+        }
+
+        try {
+            $failure = self::writeOne($wpdb, $t, $id, $expected, $audit);
+        } catch (Throwable $exception) {
+            $failure = self::failureOf($exception);
+            $dbError = self::logDetailOf($exception);
+        }
+
+        if ($failure === null && $wpdb->query('COMMIT') === false) {
+            $failure = self::FAILED_COMMIT;
+        }
+
+        if ($failure !== null) {
+            $wpdb->query('ROLLBACK');
+        }
+
+        return $failure;
+    }
+
+    /**
+     * @param \wpdb $wpdb
+     * @param array<string, string> $t
+     * @param array{journal_entry_id: string, amount: int} $expected
+     * @param callable(?string, string, ?string): bool $audit
+     */
+    private static function writeOne($wpdb, array $t, string $id, array $expected, callable $audit): ?string
+    {
+        $expense = $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM {$t['expenses']} WHERE id = %s FOR UPDATE", $id),
+            ARRAY_A
+        );
+        self::assertLocked($wpdb);
+
+        if (! is_array($expense)) {
+            return self::FAILED_CHANGED_SINCE_PREVIEW;
+        }
+
+        $lines = self::linesOf($wpdb, $t, $id);
+        $decision = self::classifyRow($wpdb, $t, $expense, $lines, true);
+
+        if (
+            $decision['decision'] !== LegacyExpenseMigrationClassifier::MIGRATE_TO_POSTED
+            || $decision['journal_entry_id'] !== $expected['journal_entry_id']
+            || $decision['amount'] !== $expected['amount']
+        ) {
+            return self::FAILED_CHANGED_SINCE_PREVIEW;
+        }
+
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$t['expenses']} SET status = %s, revision = %d, submitted_by = %s, submitted_at = %s,
+                requested_amount = %d, approved_amount = %d, approved_by = %s, approved_at = %s,
+                posted_journal_entry_id = %s
+            WHERE id = %s AND status = %s AND revision = 0 AND posted_journal_entry_id IS NULL",
+            'POSTED',
+            1,
+            $expense['created_by'],
+            $expense['created_at'],
+            $expected['amount'],
+            $expected['amount'],
+            $expense['confirmed_by'],
+            $expense['confirmed_at'],
+            $expected['journal_entry_id'],
+            $id,
+            'CONFIRMED'
+        ));
+
+        if ($updated !== 1) {
+            return self::FAILED_UPDATE;
+        }
+
+        $snapshot = array_map(
+            static fn (array $line): array => [
+                'account_id' => (string) $line['account_id'],
+                'amount' => (int) $line['amount'],
+                'description' => $line['description'] ?? null,
+            ],
+            $lines
+        );
+
+        $inserted = $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$t['reviews']}
+                (id, expense_id, revision, action, requested_amount, approved_amount, lines_snapshot, reason, actor_person_id, acted_at)
+            VALUES (%s, %s, %d, %s, %d, %d, %s, NULL, %s, %s)",
+            Uuid::generate(),
+            $id,
+            1,
+            'MIGRATED',
+            $expected['amount'],
+            $expected['amount'],
+            (string) json_encode($snapshot, JSON_UNESCAPED_UNICODE),
+            $expense['confirmed_by'],
+            $expense['confirmed_at']
+        ));
+
+        if ($inserted !== 1) {
+            return self::FAILED_HISTORY_INSERT;
+        }
+
+        // In the same transaction: no migration commits without its audit row.
+        return $audit($id, LegacyExpenseMigrationAudit::SUCCEEDED, null) ? null : self::FAILED_AUDIT_INSERT;
+    }
+
+    /**
+     * Gathers everything the classifier needs for one Expense row.
+     *
+     * @param \wpdb $wpdb
+     * @param array<string, string> $t
+     * @param array<string, mixed> $expense
+     * @param array<int, array<string, mixed>>|null $lines
+     * @return array{decision: string, reason: ?string, journal_entry_id: ?string, amount: ?int}
+     */
+    private static function classifyRow($wpdb, array $t, array $expense, ?array $lines = null, bool $lock = false): array
+    {
+        $id = (string) $expense['id'];
+        $lines ??= self::linesOf($wpdb, $t, $id);
+        $forUpdate = $lock ? ' FOR UPDATE' : '';
+
+        // Found by source event without a lock - no index covers those
+        // columns, so a locking read there would lock every Journal Entry -
+        // then each read, and while migrating locked, by its primary key.
+        $entryIds = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$t['journal_entries']} WHERE source_event_type = %s AND source_event_id = %s ORDER BY id",
+            'ExpenseConfirmed',
+            $id
+        )) ?: [];
+
+        $entries = [];
+        $accounts = [];
+
+        foreach ($entryIds as $entryId) {
+            $entry = $wpdb->get_row(
+                $wpdb->prepare("SELECT * FROM {$t['journal_entries']} WHERE id = %s{$forUpdate}", (string) $entryId),
+                ARRAY_A
+            );
+
+            if ($lock) {
+                self::assertLocked($wpdb);
+            }
+
+            if (! is_array($entry) || $entry['source_event_type'] !== 'ExpenseConfirmed' || (string) $entry['source_event_id'] !== $id) {
+                // Removed, or pointed elsewhere, since it was found.
+                continue;
+            }
+
+            $entry['lines'] = $wpdb->get_results(
+                $wpdb->prepare("SELECT * FROM {$t['journal_entry_lines']} WHERE journal_entry_id = %s{$forUpdate}", $entry['id']),
+                ARRAY_A
+            ) ?: [];
+
+            if ($lock) {
+                self::assertLocked($wpdb);
+            }
+
+            $entries[] = $entry;
+            $entryLines = $entry['lines'];
+
+            foreach ($entryLines as $entryLine) {
+                $accountId = (string) ($entryLine['account_id'] ?? '');
+
+                if ($accountId !== '' && ! array_key_exists($accountId, $accounts)) {
+                    $account = $wpdb->get_row(
+                        $wpdb->prepare("SELECT id, organization_id, type FROM {$t['accounts']} WHERE id = %s", $accountId),
+                        ARRAY_A
+                    );
+
+                    if (is_array($account)) {
+                        $accounts[$accountId] = $account;
+                    }
+                }
+            }
+        }
+
+        $organizationId = $wpdb->get_var($wpdb->prepare(
+            "SELECT pj.organization_id FROM {$t['productions']} p JOIN {$t['projects']} pj ON pj.id = p.project_id WHERE p.id = %s",
+            (string) ($expense['production_id'] ?? '')
+        ));
+
+        $history = array_map(
+            static fn (array $row): array => ['action' => (string) $row['action'], 'revision' => (int) $row['revision']],
+            $wpdb->get_results($wpdb->prepare("SELECT action, revision FROM {$t['reviews']} WHERE expense_id = %s", $id), ARRAY_A) ?: []
+        );
+
+        return LegacyExpenseMigrationClassifier::classify($expense, $lines, $entries, [
+            'organization_id' => $organizationId === null ? null : (string) $organizationId,
+            'accounts' => $accounts,
+            'history' => $history,
+        ]);
+    }
+
+    /**
+     * @param \wpdb $wpdb
+     * @param array<string, string> $t
+     * @return array<int, array<string, mixed>>
+     */
+    private static function linesOf($wpdb, array $t, string $id): array
+    {
+        return $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$t['lines']} WHERE expense_id = %s", $id),
+            ARRAY_A
+        ) ?: [];
+    }
+
+    /**
+     * @param array{outcome: string, refused_reason: ?string, migrated: string[], failed: array<string, string>, manual_review: array<string, string>} $summary
+     * @return array{outcome: string, refused_reason: ?string, migrated: string[], failed: array<string, string>, manual_review: array<string, string>}
+     */
+    private static function refuse(array $summary, string $reason, LegacyExpenseMigrationOperator $operator): array
+    {
+        error_log(self::LOG_PREFIX . " refused: {$reason}; no Expense was changed; run={$summary['run_id']} by" . $operator->describe());
+
+        return array_merge($summary, ['outcome' => self::OUTCOME_REFUSED, 'refused_reason' => $reason]);
+    }
+
+    /**
+     * The storage engine information_schema reports for each table the
+     * migration and its restore write (null when it reports none).
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param \wpdb $wpdb
+     * @return array<string, ?string>
+     */
+    public static function storageEngines($wpdb): array
+    {
+        $engines = [];
+
+        foreach (self::WRITTEN_TABLES as $table) {
+            $engine = $wpdb->get_var($wpdb->prepare(
+                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $wpdb->prefix . $table
+            ));
+            $engines[$wpdb->prefix . $table] = $engine === null ? null : (string) $engine;
+        }
+
+        return $engines;
+    }
+
+    /**
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param array<string, ?string> $engines
+     */
+    public static function isTransactional(array $engines): bool
+    {
+        return array_filter($engines, static fn (?string $e): bool => $e === null || strcasecmp($e, 'InnoDB') !== 0) === [];
+    }
+
+    /**
+     * A locking read that failed leaves its error in $wpdb->last_error (a
+     * missing row does not). Called right after it, before any other
+     * query: the exception carries the connection's MySQL error number,
+     * which tells a deadlock or a lock wait timeout from anything else.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param \wpdb $wpdb
+     * @throws LegacyExpenseMigrationDatabaseError
+     */
+    public static function assertLocked($wpdb): void
+    {
+        if (isset($wpdb->last_error) && (string) $wpdb->last_error !== '') {
+            throw LegacyExpenseMigrationDatabaseError::fromWpdb($wpdb);
+        }
+    }
+
+    /**
+     * Only MySQL 1205 (lock wait timeout) and 1213 (deadlock); never a
+     * failure whose error number could not be read.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function isLockFailure(Throwable $exception): bool
+    {
+        return $exception instanceof LegacyExpenseMigrationDatabaseError && $exception->isLockFailure();
+    }
+
+    /**
+     * The reason code of a transaction ended by an exception: LOCK_FAILED
+     * for a lock failure, UNEXPECTED_ERROR for any other.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function failureOf(Throwable $exception): string
+    {
+        return self::isLockFailure($exception) ? self::FAILED_LOCK : self::FAILED_UNEXPECTED;
+    }
+
+    /**
+     * "mysql_errno=<n>" (or "mysql_errno=unknown") for a database error,
+     * null for any other exception: what the log line adds to the reason.
+     *
+     * @internal shared with LegacyExpenseMigrationRestore
+     */
+    public static function logDetailOf(Throwable $exception): ?string
+    {
+        return $exception instanceof LegacyExpenseMigrationDatabaseError ? $exception->logDetail() : null;
+    }
+
+    /**
+     * @internal shared with LegacyExpenseMigrationRestore
+     * @param \wpdb $wpdb
+     * @return array<string, string>
+     */
+    public static function tables($wpdb): array
+    {
+        $p = $wpdb->prefix;
+
+        return [
+            'expenses' => "{$p}stageart_expenses",
+            'lines' => "{$p}stageart_expense_lines",
+            'reviews' => "{$p}stageart_expense_reviews",
+            'journal_entries' => "{$p}stageart_journal_entries",
+            'journal_entry_lines' => "{$p}stageart_journal_entry_lines",
+            'accounts' => "{$p}stageart_accounts",
+            'productions' => "{$p}stageart_productions",
+            'projects' => "{$p}stageart_projects",
+        ];
+    }
+}
