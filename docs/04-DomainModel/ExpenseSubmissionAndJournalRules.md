@@ -2,7 +2,9 @@
 
 # Domain Model : Expense Submission and Journal Rules
 
-Version : 1.0
+Version : 1.1
+
+Version 1.1（2026-10-30）：承認金額は申請金額と一致しなければならないとした（`ExpenseApprovalWorkflow.md` Version 1.10）。
 
 Status : Confirmed policy supplement to `ExpenseApprovalWorkflow.md`
 
@@ -100,9 +102,7 @@ SUBMITTED中のExpenseは申請データとして保持し、正式なAccounting
 
 申請金額と承認金額の扱い、承認者の権限、承認後の訂正は `ExpenseApprovalWorkflow.md` の定義に従う。
 
-承認金額を申請金額と異なる額に変更する既存仕様がある場合、その差額の履歴を保持し、ActualとJournal Entryには承認金額のみを反映する。
-
-ただし、現在の実装に明細配分等の未定義ルールを理由として金額変更を拒否する制約がある場合は、その制約と本書・既存仕様の差を実装前に報告すること。仕様間の不一致を推測で解消したり、会計上の配分ルールを独自に作ったりしない。
+承認金額は申請金額と完全に一致しなければならない（`ExpenseApprovalWorkflow.md` Version 1.10）。承認者は単一明細・複数明細のいずれでも金額を変更できず、疑義がある場合は差し戻す。ActualとJournal Entryには申請金額（＝承認金額）を、明細の科目と金額のまま反映する。明細への配分規則は不要になった。
 
 ---
 

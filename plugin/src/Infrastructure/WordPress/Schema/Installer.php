@@ -508,6 +508,8 @@ final class Installer
             message TEXT NOT NULL,
             production_id CHAR(36) NULL,
             rehearsal_id CHAR(36) NULL,
+            target_type VARCHAR(30) NULL,
+            target_id CHAR(36) NULL,
             read_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY  (id),

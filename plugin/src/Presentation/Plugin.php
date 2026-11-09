@@ -22,6 +22,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
 use StageArt\Infrastructure\WordPress\Notification\WordPressEmailNotificationAdapter;
@@ -817,7 +818,9 @@ final class Plugin
             $identityContract,
             $authorizationContract,
             $membershipContract,
-            $transactions
+            $transactions,
+            $notificationContract,
+            new CoreProductionCapabilityDirectoryAdapter($productionAuthorization, $productions, $productionDelegates, $people)
         );
 
         // StageArt Core/Module Architecture Phase 4 (Check-in/精算/

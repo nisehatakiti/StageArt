@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
+use RuntimeException;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\JournalEntry\DebitCredit;
 use StageArt\Domain\JournalEntry\JournalEntry;
@@ -36,7 +38,9 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         $row = [
             'organization_id' => $entry->organizationId()->toString(),
             'production_id' => $entry->productionId() !== null ? $entry->productionId()->toString() : null,
-            'journal_date' => $entry->journalDate()->format('Y-m-d H:i:s'),
+            // Stored as UTC whatever zone the instant carries or PHP defaults
+            // to (AccountingDate: the JST date is derived, never stored).
+            'journal_date' => $entry->journalDate()->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'description' => $entry->description(),
             'status' => $entry->status()->toString(),
             'source_event_type' => $entry->sourceEventType(),
@@ -54,14 +58,22 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             $this->wpdb->prepare("SELECT id FROM {$this->table} WHERE id = %s", $entry->id()->toString())
         );
 
+        // A failed write must throw so the surrounding transaction rolls
+        // back (修正8: an approval never leaves an Expense POSTED without
+        // its Journal Entry, or the reverse) - $wpdb itself only returns
+        // false.
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $entry->id()->toString()]);
+            $result = $this->wpdb->update($this->table, $row, ['id' => $entry->id()->toString()]);
         } else {
             $row['id'] = $entry->id()->toString();
             $row['created_by'] = $entry->createdBy()->toString();
             $row['created_at'] = $entry->createdAt()->format('Y-m-d H:i:s');
 
-            $this->wpdb->insert($this->table, $row);
+            $result = $this->wpdb->insert($this->table, $row);
+        }
+
+        if ($result === false) {
+            throw new RuntimeException('Failed to save JournalEntry.');
         }
 
         $this->syncLines($entry);
@@ -69,10 +81,12 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
 
     private function syncLines(JournalEntry $entry): void
     {
-        $this->wpdb->delete($this->linesTable, ['journal_entry_id' => $entry->id()->toString()]);
+        if ($this->wpdb->delete($this->linesTable, ['journal_entry_id' => $entry->id()->toString()]) === false) {
+            throw new RuntimeException('Failed to replace JournalEntry Lines.');
+        }
 
         foreach ($entry->lines() as $line) {
-            $this->wpdb->insert($this->linesTable, [
+            $result = $this->wpdb->insert($this->linesTable, [
                 'id' => $line->id()->toString(),
                 'journal_entry_id' => $entry->id()->toString(),
                 'account_id' => $line->accountId()->toString(),
@@ -80,6 +94,10 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
                 'amount' => $line->amount(),
                 'description' => $line->description(),
             ]);
+
+            if ($result === false) {
+                throw new RuntimeException('Failed to insert JournalEntry Line.');
+            }
         }
     }
 
@@ -225,7 +243,7 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             JournalEntryId::fromString($row['id']),
             OrganizationId::fromString($row['organization_id']),
             $row['production_id'] !== null ? ProductionId::fromString($row['production_id']) : null,
-            new DateTimeImmutable($row['journal_date']),
+            new DateTimeImmutable($row['journal_date'], new DateTimeZone('UTC')),
             $row['description'],
             JournalEntryStatus::fromString($row['status']),
             $row['source_event_type'],

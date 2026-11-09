@@ -2,7 +2,7 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.4
+Version : 1.5
 
 ---
 
@@ -135,7 +135,7 @@ Productionが会計期間をまたいだ場合でも、Journal Dateに従って�
 
 Productionが複数の会計年度にまたがる場合、Production全体を公演終了時点の年度へまとめて転記しない。
 
-各Journal Entryを発生日・Journal Dateに基づいて該当するAccounting Periodへ計上する。Productionが会計期間末時点で決算未確定の場合、当該Productionに関連する売上残高を期末に「仮売上」へ振り替える。Check In時点では仮売上への振替を行わない。仮売上は正式な売上・損益に含めず、Production決算確定時に正式な売上へ振り替える。公演原価は同じ期末処理で公演仕掛金として管理し、Production決算確定時に売上原価へ振り替える。
+各Journal Entryを発生日・Journal Dateに基づいて該当するAccounting Periodへ計上する。会計期間・月次・年度の判定に用いる日付は、Journal Dateを日本時間（JST）に変換した暦日（仕訳日）とする（JournalEntry.md「Journal Date」Version 1.1）。Productionが会計期間末時点で決算未確定の場合、当該Productionに関連する売上残高を期末に「仮売上」へ振り替える。Check In時点では仮売上への振替を行わない。仮売上は正式な売上・損益に含めず、Production決算確定時に正式な売上へ振り替える。公演原価は同じ期末処理で公演仕掛金として管理し、Production決算確定時に売上原価へ振り替える。
 
 例えば、Productionが2026年度から2027年度にまたがる場合、2026年度末に未収金・未払金が残っていても、その残高をOrganization Accounting上に保持する。
 

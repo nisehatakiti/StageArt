@@ -43,9 +43,15 @@ pattern:
 | `Budget\CreateBudgetUseCase`, `UpdateBudgetUseCase` | `ProductionContextContract` (incl. `getProductionOrganizationId()`), `IdentityContract`, `AuthorizationContract` |
 | `Budget\GetBudgetUseCase`, `ActivateBudgetUseCase` | `IdentityContract`, `AuthorizationContract` (the Budget's own `productionId()` is enough - no Production lookup needed) |
 | `Budget\ListBudgetsUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
-| `Expense\CreateExpenseUseCase`, `ListExpensesUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
-| `Expense\GetExpenseUseCase` | `IdentityContract`, `MembershipContract` |
-| `Expense\UpdateExpenseUseCase`, `ConfirmExpenseUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| `Expense\CreateExpenseUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
+| `Expense\ListExpensesUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract`, `AuthorizationContract` (every Expense of the Production with `Expense.Approve`; otherwise a Production member sees only the Expenses they created) |
+| `Expense\GetExpenseUseCase` | `IdentityContract`, `MembershipContract`, `AuthorizationContract` (an approver with `Expense.Approve`, or the Expense's own creator while a member) |
+| `Expense\UpdateExpenseUseCase` | `ProductionContextContract`, `IdentityContract` (the applicant only - the requester's Person ID must be the Expense's creator's; no Capability is consulted, ExpenseApprovalWorkflow.md Version 1.11) |
+| `Expense\ConfirmExpenseUseCase` (retired: refuses every request, REST 410) | `IdentityContract`, `AuthorizationContract` |
+| `Expense\ApplicantExpenseTransitionUseCase` (submit / withdraw / resubmit) | `IdentityContract`, `MembershipContract`, plus `ExpenseWorkflowNotifier` |
+| `Expense\ApproveExpenseUseCase` | `ProductionContextContract`, `OrganizationContextContract` (`isAccountingEnabled()`), `IdentityContract`, `AuthorizationContract` (`Expense.Approve`), plus `StandardPayableAccountResolver` and `ExpenseWorkflowNotifier` |
+| `Expense\RejectExpenseUseCase` | `IdentityContract`, `AuthorizationContract` (`Expense.Approve`), plus `ExpenseWorkflowNotifier` |
+| `Expense\ExpenseWorkflowNotifier` (not a UseCase: the notifications of the three above) | `NotificationContract`, `ProductionCapabilityDirectoryContract`, `ProductionContextContract` |
 | `JournalEntry\ListJournalEntriesUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
 | `ProductionAccounting\GetProductionAccountingSummaryUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
 | `Account\CreateAccountUseCase` | `OrganizationContextContract`, `IdentityContract`, `AuthorizationContract` (`OrganizationCapability::OWNER`) |
@@ -110,7 +116,10 @@ Verified two ways:
 
 `stageart_accounts`, `stageart_budgets`, `stageart_budget_lines`,
 `stageart_journal_entries`, `stageart_journal_entry_lines`,
-`stageart_expenses`, `stageart_expense_lines` - owned and migrated by
+`stageart_expenses`, `stageart_expense_lines` (and, since the Expense
+approval workflow, `stageart_expense_reviews` and
+`stageart_legacy_expense_migration_audit` - see "Expense approval
+workflow") - owned and migrated by
 `AccountingInstaller` (`plugin/src/Accounting/`), extracted verbatim
 (byte-identical SQL) from Core's previously-monolithic installer, called
 from Core's `Installer::install()` exactly as `RehearsalInstaller` is.
@@ -140,7 +149,9 @@ Accounting routes present and byte-identical to before this refactor.
   `version()`, `requiredContracts()` (`ProductionContextContract`,
   `OrganizationContextContract`, `IdentityContract`,
   `AuthorizationContract`, `MembershipContract` - `NotificationContract`
-  deliberately omitted, since no Accounting UseCase currently calls it),
+  was deliberately omitted then, since no Accounting UseCase called it;
+  the Expense approval workflow added it and
+  `ProductionCapabilityDirectoryContract`, see below),
   `ownedTables()`. Registers into `Core\Module\ModuleRegistry` alongside
   `RehearsalModuleDescriptor`. Phase 4 §2's audit found
   `requiredContracts()` had drifted out of sync with
@@ -148,7 +159,44 @@ Accounting routes present and byte-identical to before this refactor.
   `OrganizationContextContract`, added when `CreateAccountUseCase`/
   `ListAccountsUseCase` were migrated) - corrected by re-deriving the
   list from the Bootstrap's real dependencies rather than assumption.
-- `AccountingInstaller` - owns this Module's 7 tables' migration.
+- `AccountingInstaller` - owns this Module's tables' migration (7 tables
+  at Phase 3; 9 since the Expense approval workflow, see below).
+
+## Expense approval workflow (2026-10-30, `integrate/expense-approval-20261029`)
+
+Business rules: `docs/04-DomainModel/ExpenseApprovalWorkflow.md`
+(Version 1.11). What it added to this Module's boundary:
+
+- **UseCases:** `Expense\ApplicantExpenseTransitionUseCase` (submit /
+  withdraw / resubmit), `Expense\ApproveExpenseUseCase` (approval posts
+  one Journal Entry) and `Expense\RejectExpenseUseCase` (差し戻し), all
+  constructed in `AccountingModuleBootstrap` and called by
+  `ExpenseRestController` (`PATCH /expenses/{id}/submit`, `withdraw`,
+  `resubmit`, `approve`, `reject`). `ConfirmExpenseUseCase` stays wired
+  but refuses every request (410). As of 2026-10-30 the Bootstrap
+  constructs 21 UseCases in total.
+- **Contracts:** `AccountingModuleBootstrap` and
+  `AccountingModuleDescriptor::requiredContracts()` now also take
+  `NotificationContract` (the workflow notifications, sent after the
+  commit) and `ProductionCapabilityDirectoryContract` (who may approve a
+  Production's Expenses, for the submission notification; Core's
+  `CoreProductionCapabilityDirectoryAdapter` provides it).
+- **Capability:** `AccountingCapability::APPROVE_EXPENSE`
+  (`Expense.Approve`: the PrimaryManager, a proxy (代理人) or an ACTIVE
+  ACCOUNTING_MANAGER Delegate) for approving, rejecting and seeing every
+  Expense of a Production.
+- **Tables** (`ownedTables()`): `stageart_expense_reviews` (schema
+  1.44.0: the append-only 申請・承認履歴, with the approval workflow
+  columns added to `stageart_expenses`) and
+  `stageart_legacy_expense_migration_audit` (schema 1.45.0: the
+  operations audit of the legacy Expense migration and its revert).
+- **Operator tools, not UseCases:** `Accounting\LegacyExpenseMigration`,
+  `LegacyExpenseMigrationRestore`, `LegacyExpenseMigrationAudit`,
+  `LegacyExpenseMigrationClassifier`, `LegacyExpenseMigrationOperator`
+  and `LegacyExpenseMigrationDatabaseError`, run only through WP-CLI
+  (`plugin/scripts/legacy_expense_migration*.php`), never by a schema
+  upgrade or a web request. See
+  `docs/handoffs/LegacyExpenseMigration-Runbook.md`.
 
 ## Core -> Accounting reverse dependency (Phase 4 §2 investigation)
 

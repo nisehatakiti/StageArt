@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\JournalEntry;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Account\CreateAccountCommand;
@@ -13,6 +14,7 @@ use StageArt\Application\Expense\ConfirmExpenseUseCase;
 use StageArt\Application\Expense\CreateExpenseCommand;
 use StageArt\Application\Expense\CreateExpenseUseCase;
 use StageArt\Application\Expense\ExpenseLineFactory;
+use StageArt\Application\Expense\ExpenseOperationRetiredException;
 use StageArt\Application\JournalEntry\JournalEntryAccessDeniedException;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\ListProductionJournalEntriesQuery;
@@ -26,7 +28,12 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountType;
+use StageArt\Domain\Expense\ExpenseId;
+use StageArt\Domain\JournalEntry\DebitCredit;
+use StageArt\Domain\JournalEntry\JournalEntry;
+use StageArt\Domain\JournalEntry\JournalEntryLine;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Organization\Organization;
@@ -109,15 +116,7 @@ final class JournalEntryUseCaseTest extends TestCase
             new ExpenseLineFactory($this->accounts),
             $transactions
         );
-        $this->confirmExpense = new ConfirmExpenseUseCase(
-            $this->expenses,
-            $productionContext,
-            $this->accounts,
-            $this->journalEntries,
-            $identity,
-            $authorizationContract,
-            $transactions
-        );
+        $this->confirmExpense = new ConfirmExpenseUseCase($this->expenses, $identity, $authorizationContract);
         $this->postJournalEntry = new PostJournalEntryUseCase($this->journalEntries, $productionContext, $identity, $authorizationContract, $transactions);
         $this->listJournalEntries = new ListJournalEntriesUseCase($this->journalEntries, $productionContext, $identity, $authorizationContract);
     }
@@ -172,7 +171,32 @@ final class JournalEntryUseCaseTest extends TestCase
         return [$expenseAccountId, $payableAccountId];
     }
 
-    public function test_confirming_expense_creates_draft_journal_entry(): void
+    /**
+     * A DRAFT Journal Entry like the ones the retired Confirm step left
+     * behind ("ExpenseConfirmed"); PostJournalEntryUseCase still posts
+     * these.
+     */
+    private function givenLegacyDraftJournalEntry(Production $production, string $expenseAccountId, string $payableAccountId): JournalEntry
+    {
+        $entry = JournalEntry::create(
+            $this->projects->findById($production->projectId())->organizationId(),
+            $production->id(),
+            new DateTimeImmutable(),
+            'Expense Confirmed (legacy)',
+            [
+                JournalEntryLine::create(AccountId::fromString($expenseAccountId), DebitCredit::debit(), 45000),
+                JournalEntryLine::create(AccountId::fromString($payableAccountId), DebitCredit::credit(), 45000),
+            ],
+            $production->primaryManagerPersonId(),
+            'ExpenseConfirmed',
+            ExpenseId::generate()->toString()
+        );
+        $this->journalEntries->save($entry);
+
+        return $entry;
+    }
+
+    public function test_the_retired_confirm_step_creates_no_journal_entry(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
@@ -180,37 +204,13 @@ final class JournalEntryUseCaseTest extends TestCase
         $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 45000],
         ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
 
-        $entries = $this->listJournalEntries->execute(new ListProductionJournalEntriesQuery($production->id()->toString(), 1));
-
-        $this->assertCount(1, $entries);
-        $this->assertSame('DRAFT', $entries[0]->status);
-        $this->assertCount(2, $entries[0]->lines);
-
-        $debitLine = $entries[0]->lines[0];
-        $creditLine = $entries[0]->lines[1];
-        $this->assertSame('DEBIT', $debitLine->debitCredit);
-        $this->assertSame($expenseAccountId, $debitLine->accountId);
-        $this->assertSame(45000, $debitLine->amount);
-        $this->assertSame('CREDIT', $creditLine->debitCredit);
-        $this->assertSame($payableAccountId, $creditLine->accountId);
-        $this->assertSame(45000, $creditLine->amount);
-    }
-
-    public function test_confirm_rejects_a_non_liability_payable_account(): void
-    {
-        [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
-        [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
-
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
-            ['account_id' => $expenseAccountId, 'amount' => 45000],
-        ]));
-
-        $this->expectException(InvalidArgumentException::class);
-
-        // Passing the EXPENSE account itself as the payable account (should be LIABILITY).
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $expenseAccountId));
+        try {
+            $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
+            $this->fail('Confirm is retired and must be refused.');
+        } catch (ExpenseOperationRetiredException $exception) {
+            $this->assertSame([], $this->listJournalEntries->execute(new ListProductionJournalEntriesQuery($production->id()->toString(), 1)));
+        }
     }
 
     public function test_post_transitions_draft_entry_to_posted(): void
@@ -218,11 +218,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
-            ['account_id' => $expenseAccountId, 'amount' => 45000],
-        ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
-        $entry = $this->journalEntries->findByProductionId($production->id())[0];
+        $entry = $this->givenLegacyDraftJournalEntry($production, $expenseAccountId, $payableAccountId);
 
         $result = $this->postJournalEntry->execute(new PostJournalEntryCommand($entry->id()->toString(), 1));
 
@@ -234,11 +230,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
-            ['account_id' => $expenseAccountId, 'amount' => 45000],
-        ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
-        $entry = $this->journalEntries->findByProductionId($production->id())[0];
+        $entry = $this->givenLegacyDraftJournalEntry($production, $expenseAccountId, $payableAccountId);
         $this->postJournalEntry->execute(new PostJournalEntryCommand($entry->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
@@ -251,11 +243,7 @@ final class JournalEntryUseCaseTest extends TestCase
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
 
-        $expense = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
-            ['account_id' => $expenseAccountId, 'amount' => 45000],
-        ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
-        $entry = $this->journalEntries->findByProductionId($production->id())[0];
+        $entry = $this->givenLegacyDraftJournalEntry($production, $expenseAccountId, $payableAccountId);
 
         $this->expectException(JournalEntryAccessDeniedException::class);
 

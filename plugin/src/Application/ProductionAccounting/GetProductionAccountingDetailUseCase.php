@@ -127,7 +127,8 @@ final class GetProductionAccountingDetailUseCase
 
                 $transactions[] = [
                     'journal_entry_id' => $entry->id()->toString(),
-                    'journal_date' => $entry->journalDate()->format('Y-m-d'),
+                    // The 仕訳日 in JST (AccountingDate), not the UTC date of the stored instant.
+                    'journal_date' => $entry->accountingDate(),
                     'description' => $entry->description(),
                     'account_id' => $account->id()->toString(),
                     'account_name' => $account->name(),
