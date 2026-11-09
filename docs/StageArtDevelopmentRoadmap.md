@@ -50,7 +50,7 @@ StageArtの完成像は、団体の設立・メンバー管理から、公演企
 | Project・公演管理 | 実装済み・未検証／要調査 | Coreの主要Domain。公演CRUD・参加者管理等の実装記録あり | 最新コード・UI・テスト・Devの一体確認 |
 | 稽古・予定管理 | 実装済み・未検証 | Rehearsal ModuleはBackend/Web、Contract・Package境界の整備記録あり | 通知配送・Google Calendar・実運用シナリオ確認 |
 | チケット・予約・受付 | 仕様確定・未着手 | 新StageArtのPerformance & Ticket ModuleはBlueprint上、実装未開始 | PerformanceSessionからCheckInまでの実装計画・着手 |
-| 会計・予算・実績・精算 | 開発中 | Account/Budget/Expense/Journal Entryの基本実装とModule境界あり。PR #6は経費申請・承認・旧形式移行のBackend変更 | PR #6のマージ前最終確認後、UI・予算実績・支払精算を順次実装 |
+| 会計・予算・実績・精算 | 開発中 | PR #6のN1・N2/F5・N4・N5・N6/F6まで対応。Head 271df867。PHPUnit 1,970件合格、実MySQL検証済み。PR未マージ・Dev未変更 | マージ判断に必要な残存リスク・仕様判断を確認。その後、会計UI・Budget・Actual・支払精算へ |
 | 公開ページ・広報 | 実装済み・未検証／要調査 | Web βの基本表示・検索等の実装記録あり。Confirmed Blueprintとの差分が残る | 公開URL・公開制御・ページ構成・配信基盤の統合計画 |
 | 内部ポータル・通知・文書 | 一部実装／要調査 | Home Dashboard・通知・お知らせ等の実装記録あり。Document/Drive等は確認が必要 | 通知契約・配送、文書共有、権限別導線の確認 |
 | アンケート | 仕様確定・未着手 | 公演別ページ自動生成、管理者による設問設定、終演後メール送信の要求あり | Survey Blueprintの正本化・API/UI/メール実装 |
@@ -160,13 +160,13 @@ StageArtの完成像は、団体の設立・メンバー管理から、公演企
 | 項目 | 状態 | 備考 |
 |---|---|---|
 | 仕様 | 一部確定／設計中 | Account/JournalEntry/Budget/Expense等のBlueprintあり。締め・期またぎ等に未確定事項 |
-| Backend | 開発中 | Account/Budget/Expense/Journal Entryの基盤とExpense承認ワークフロー |
-| API | 一部／開発中 | PR #6のExpense API変更を含む。全会計APIの完成を意味しない |
+| Backend | 実装済み・PRレビュー待ち | Account/Budget/Expense/Journal Entryの基盤とExpense承認ワークフロー。PR #6 head 271df867でN1/N2/F5/N4/N5/N6/F6対応済み |
+| API | 実装済み・未統合 | Expense APIの入力検証・不正UUID応答・accounting_date追加をPR #6で対応。会計領域全API・画面との一体受入は未完了 |
 | Web UI | 未完了／要調査 | PR #6はBackend only。会計Web UIは別タスク |
-| DB | 開発中 | PR #6 head schema 1.45.0、Dev schema 1.44.0というPR説明時点の差分 |
-| テスト | 開発中 | PR #6説明ではPHPUnit 1,970 tests / 6,071 assertions / 2 skips PASS |
-| Dev | 未反映 | PR #6のマージ・DB更新・デプロイは未実施 |
-| 本番準備 | 未完了 | MySQL 2013、MySQL 8/MariaDB、Production実データ等に未検証事項 |
+| DB | 今回変更なし | 今回の271df86ではSchema・Version・Table定義の変更なし。PR全体のschema 1.45.0 / Dev 1.44.0という既存比較は維持。Dev専用4テーブルはPR対象外 |
+| テスト | 検証済み（PR内） | PHPUnit 1,970 tests / 6,071 assertions / 2 skips PASS。PHP lint 1,292 files・0 errors、diff check clean。実MySQL 5.7.44検証も報告済み |
+| Dev | 未反映 | Claude Code報告でDev未接続・未変更。Schema比較はDev 1.44.0のまま。PR未マージ・デプロイ未実施 |
+| 本番準備 | 未完了 | MySQL error 2013は未再現・未検証。MySQL 8/MariaDB・Production実データUpgradeも未検証。F2-F4/F7-F10は未対応で仕様判断が必要 |
 
 **会計実用化の業務フロー**:
 
@@ -177,14 +177,21 @@ StageArtの完成像は、団体の設立・メンバー管理から、公演企
 - PR #6は経費申請・承認・差し戻し・再申請、承認と仕訳の同一トランザクション、旧形式Expenseの移行・復旧・監査を扱うBackend PR。
 - PR #6に会計Web UI、予算・実績画面、支払・精算の完成は含まれない。
 - 月次・年度締め、会計期間・期またぎ、仕掛品、公演決算の実運用仕様・実装は未完了または要調査。
-- Organization Timezoneを会計に適用する場合の扱いは未確定。PR #6のN1は会計日付をJST基準とする方針。
+- Organization Timezoneを会計に適用する場合の扱いは未確定。PR #6のN1では、当面すべてのOrganizationでJSTを使用。journal_dateはUTC時刻のまま保存し、その瞬間のJST日付をaccounting_dateとして期間・月次・年次判定に使う。APIにはaccounting_dateを追加。
+- Expense承認時の仕訳日は承認時刻と同じ瞬間を使用。Expenseに支出日フィールドがないため、支出日基準ではない。支出日を使う場合は別途仕様決定が必要。
+- 通知失敗はコミット済みの申請・承認・差し戻しをHTTP 500にしない。失敗は通知種別・Expense IDのみを記録し、通知先ごとに失敗を分離。
+- 金額は整数（JSON integerまたは数字文字列）に限定し、小数は切り捨てず422で拒否。明細型・整数範囲・差し戻し理由型も検証。
+- N4のテストで他Organizationの勘定科目、無効化後の勘定科目、他Production/OrganizationのPrimaryManager、Production権限のないOrganization Ownerによる操作を拒否。
 
 **次アクション**:
-1. PR #6のレビュー指摘・検証結果を最新headで確認する。
-2. マージ可否を判断する前に、未検証事項とDev DB差分の扱いを明文化する。
-3. マージ・Dev更新は別途明示承認を得て実施する。
-4. 会計UIを予算・経費申請・承認・仕訳・実績対比の順に実装する。
-5. 支払・立替精算・Production Settlement・公演決算を後続タスクとして設計・実装する。
+1. PR #6の最新headは `271df86751a26a042bac2a6da8c4e5393d3a5fd3`。PRはOpen・未マージ、38 commits / 101 files、mergeable=true / clean、CI checks 0（CI未設定）。Baseは `feature/user-account-identity` @ `48b0b5aa0a869dd7112a9c51f6434446210b5514`。
+2. 今回の追加コミットはSchema変更なし。Dev接続・変更なし。Devは1.44.0、PR全体は1.45.0の比較が引き続き記録されている。Dev専用4テーブルはPRから参照されていない。
+3. マージ判断時に確認する事項：MySQL 2013を未検証として許容するか、`accounting_date`追加・小数金額拒否・会計詳細の日付表示変更を受け入れるか、Dev専用4機能をDev更新後どう統合するか。
+4. BudgetLineFactoryにも小数切り捨て問題がある可能性が指摘されているが、未テスト・今回の範囲外。別タスクとして検証する。
+5. MySQL 8/MariaDBとProduction実データUpgradeは未検証。月次・年次締め、会計期間、期またぎ仕掛品は未実装。F2-F4/F7-F10は仕様判断待ち。
+6. マージ・Dev更新は別途明示承認を得て実施する。
+7. 会計UIを予算・経費申請・承認・仕訳・実績対比の順に実装する。
+8. 支払・立替精算・Production Settlement・公演決算を後続タスクとして設計・実装する。
 
 ### 4.7 公開ページ・広報
 
@@ -449,6 +456,7 @@ StageArtの完成像は、団体の設立・メンバー管理から、公演企
 | 日付 | 変更 |
 |---|---|
 | 2026-11-09 | 全体ロードマップ初版を作成。機能領域別のレイヤー進捗、PR #6の状態、全体フェーズ、完成判定基準、継続的な更新ルールを定義 |
+| 2026-11-09 | PR #6のClaude Code最終報告（head 271df867）を反映。N1/N2/F5/N4/N5/N6/F6、1,970 PHPUnit PASS、実MySQL検証、Schema変更なし、Dev未変更、残存リスク・仕様判断事項を記録 |
 
 ---
 
