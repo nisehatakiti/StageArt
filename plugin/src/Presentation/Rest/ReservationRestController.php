@@ -112,12 +112,20 @@ final class ReservationRestController
     }
 
     /**
+     * PR #7 review: who made the Reservation is decided here, from the
+     * authenticated WordPress user - a staff member booking on someone's
+     * behalf while logged in - never from the request. This route is
+     * public, so a `requested_by_word_press_user_id` in the body is
+     * ignored: anyone could otherwise record any user as the creator.
+     * Without a login the Reservation has no creator, the self-service
+     * case.
+     *
      * @return WP_REST_Response|WP_Error
      */
     public function create(WP_REST_Request $request)
     {
         try {
-            $requestedBy = $request->get_param('requested_by_word_press_user_id');
+            $currentUser = get_current_user_id();
 
             $command = new CreateReservationCommand(
                 (string) $request->get_param('id'),
@@ -125,7 +133,7 @@ final class ReservationRestController
                 (string) $request->get_param('booker_name'),
                 (string) $request->get_param('booker_email'),
                 (int) $request->get_param('guest_count'),
-                $requestedBy !== null && $requestedBy !== '' ? (int) $requestedBy : null
+                $currentUser > 0 ? $currentUser : null
             );
 
             return new WP_REST_Response($this->createReservation->execute($command)->toArray(), 201);

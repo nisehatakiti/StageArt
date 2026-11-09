@@ -32,4 +32,15 @@ interface ReservationRepositoryInterface
      * @return Reservation[]
      */
     public function findByIds(array $ids): array;
+
+    /**
+     * The Performance's Reservations read with row locks - call inside a
+     * transaction, after locking the Performance. A locking read always
+     * sees the latest committed rows, not the transaction's snapshot, so
+     * a Reservation another request has just committed is counted (PR #7
+     * review).
+     *
+     * @return Reservation[]
+     */
+    public function findByPerformanceIdForUpdate(PerformanceId $performanceId): array;
 }

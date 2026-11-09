@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Infrastructure\WordPress\Schema;
 
+use RuntimeException;
 use StageArt\Accounting\AccountingInstaller;
 use StageArt\CheckIn\CheckInInstaller;
 use StageArt\Performance\PerformanceInstaller;
@@ -653,7 +654,10 @@ final class Installer
      */
     private static function applyColumnNullabilityFixups($wpdb, string $organizationSns): void
     {
-        $wpdb->query("ALTER TABLE {$organizationSns} MODIFY profile_url VARCHAR(500) NULL");
+        // A failure throws, so SchemaUpgrader keeps the stored version (PR #7 review).
+        if ($wpdb->query("ALTER TABLE {$organizationSns} MODIFY profile_url VARCHAR(500) NULL") === false) {
+            throw new RuntimeException("Schema statement failed on {$organizationSns}: " . (string) ($wpdb->last_error ?? ''));
+        }
     }
 
     private static function installAdminConsoleRole(): void

@@ -14,6 +14,14 @@ interface PerformanceRepositoryInterface
     public function findById(PerformanceId $id): ?Performance;
 
     /**
+     * The Performance read with a row lock - call inside a transaction.
+     * Everything that takes seats from the Performance (a Reservation, a
+     * walk-up sale) locks it first, so two of them never check its
+     * remaining capacity at the same time (PR #7 review).
+     */
+    public function findByIdForUpdate(PerformanceId $id): ?Performance;
+
+    /**
      * @return Performance[]
      */
     public function findByProductionId(ProductionId $productionId): array;

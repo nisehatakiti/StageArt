@@ -108,6 +108,16 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    public function findByPerformanceIdForUpdate(PerformanceId $performanceId): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE performance_id = %s ORDER BY created_at ASC FOR UPDATE", $performanceId->toString()),
+            ARRAY_A
+        );
+
+        return array_map([$this, 'hydrate'], $rows ?: []);
+    }
+
     public function findByIds(array $ids): array
     {
         if ($ids === []) {

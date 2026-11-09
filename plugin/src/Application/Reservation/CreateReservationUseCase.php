@@ -47,6 +47,7 @@ final class CreateReservationUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private TransactionManagerInterface $transactions;
+    private PerformanceCapacityGuard $capacity;
 
     public function __construct(
         PerformanceRepositoryInterface $performances,
@@ -64,6 +65,7 @@ final class CreateReservationUseCase
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->transactions = $transactions;
+        $this->capacity = new PerformanceCapacityGuard($performances, $reservations);
     }
 
     public function execute(CreateReservationCommand $command): PublicReservationResult
@@ -130,7 +132,8 @@ final class CreateReservationUseCase
             throw new InvalidArgumentException('Guest count must be a positive integer.');
         }
 
-        // 8. Capacity確認
+        // 8. Capacity確認 - an early answer only; it is checked again under
+        // the Performance lock before saving (PerformanceCapacityGuard).
         $existingReservations = $this->reservations->findByPerformanceId($performanceId);
         $occupied = array_sum(array_map(
             static fn (Reservation $r): int => $r->occupiesCapacity() ? $r->guestCount() : 0,
@@ -148,6 +151,8 @@ final class CreateReservationUseCase
 
         // 11-13. Reservation生成 / Issued Ticket生成 / Transaction内で保存
         $reservation = $this->transactions->run(function () use ($performanceId, $ticketId, $command, $ticket, $createdBy): Reservation {
+            $this->capacity->lockAndReserve($performanceId, $command->guestCount);
+
             $reservation = Reservation::create(
                 $performanceId,
                 $ticketId,

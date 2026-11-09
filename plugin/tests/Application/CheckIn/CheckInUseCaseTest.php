@@ -170,7 +170,7 @@ final class CheckInUseCaseTest extends TestCase
             $this->walkUpIdempotencyStore,
             $transactions
         );
-        $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization);
+        $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization, $membership);
         $this->decreaseGuestCount = new DecreaseReservationGuestCountUseCase(
             $this->reservations,
             $this->performances,
@@ -720,13 +720,102 @@ final class CheckInUseCaseTest extends TestCase
 
     public function test_change_attribution_updates_the_reservation(): void
     {
-        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
         $reservation = $this->givenReservedReservation($performance, $ticketId);
         $member = Person::create(3);
         $this->people->save($member);
+        // PR #7 review: the attributed Person must belong to the Production.
+        $this->givenProductionMember($production, $member);
 
         $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $member->id()->toString(), 1));
 
         $this->assertSame($member->id()->toString(), $result->attributedPersonId);
+    }
+
+    private function givenProductionMember(Production $production, Person $person): void
+    {
+        $this->participants->save(\StageArt\Domain\Participant\Participant::create(
+            $production->id(),
+            \StageArt\Domain\Participant\ParticipantSubjectType::person(),
+            $person->id()->toString(),
+            \StageArt\Domain\Participant\ParticipantType::cast()
+        ));
+    }
+
+    // --- PR #7 review item 6: attribution stays inside the Production -----
+
+    public function test_change_attribution_refuses_a_person_outside_the_production(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $outsider = Person::create(50);
+        $this->people->save($outsider);
+
+        try {
+            $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $outsider->id()->toString(), 1));
+            $this->fail('An outsider was accepted as the attributed Person');
+        } catch (AttributedPersonNotProductionMemberException $exception) {
+            $this->assertNull($this->reservations->findById($reservation->id())->attributedPersonId(), 'The Reservation is unchanged');
+        }
+    }
+
+    public function test_change_attribution_refuses_a_member_of_another_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $otherProduction = Production::create($production->projectId(), new ProductionName('Other Show'), \StageArt\Domain\Person\PersonId::generate());
+        $this->productions->save($otherProduction);
+        $otherMember = Person::create(51);
+        $this->people->save($otherMember);
+        $this->givenProductionMember($otherProduction, $otherMember);
+
+        $this->expectException(AttributedPersonNotProductionMemberException::class);
+        $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $otherMember->id()->toString(), 1));
+    }
+
+    public function test_change_attribution_can_still_be_cleared(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $reservation->changeAttribution($production->primaryManagerPersonId(), $production->primaryManagerPersonId());
+        $this->reservations->save($reservation);
+
+        $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), null, 1));
+
+        $this->assertNull($result->attributedPersonId);
+    }
+
+    // --- PR #7 review item 4: the walk-up sale re-checks capacity under the Performance lock
+
+    public function test_walk_up_rechecks_capacity_after_taking_the_performance_lock(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false, 2);
+        $this->givenReservedReservation($performance, $ticketId, 1);
+        // Another sale for the last seat commits while this one waits for the lock.
+        $this->performances->onLock = function () use ($performance, $ticketId): void {
+            $this->givenReservedReservation($performance, $ticketId, 1);
+        };
+
+        try {
+            $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 1, null, 1, 'last-seat'
+            ));
+            $this->fail('The Performance was overbooked');
+        } catch (\StageArt\Application\Reservation\CapacityExceededException $exception) {
+            $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()), 'Only the concurrent sale was kept');
+            $this->assertSame(1, $this->performances->lockCount);
+        }
+    }
+
+    public function test_walk_up_within_capacity_takes_the_performance_lock_once(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false, 2);
+
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2, null, 1, 'two-seats'
+        ));
+
+        $this->assertSame(1, $this->performances->lockCount);
+        $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Performance;
 
+use RuntimeException;
+
 /**
  * StageArt Core/Module Architecture (docs/architecture/
  * WordPressPluginModuleBoundary.md): the Performance Module's own table,
@@ -39,6 +41,9 @@ final class PerformanceInstaller
         ) {$charsetCollate};");
         // Existing rows with no end time are auto-calculable; rows with an
         // existing end time remain manual overrides.
-        $wpdb->query("UPDATE {$performances} SET end_time_customized = 0 WHERE end_time IS NULL");
+        // A failure throws, so SchemaUpgrader keeps the stored version (PR #7 review).
+        if ($wpdb->query("UPDATE {$performances} SET end_time_customized = 0 WHERE end_time IS NULL") === false) {
+            throw new RuntimeException('Performance schema statement failed: ' . (string) ($wpdb->last_error ?? ''));
+        }
     }
 }

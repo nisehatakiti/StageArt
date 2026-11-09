@@ -25,6 +25,23 @@ final class InMemoryPerformanceRepository implements PerformanceRepositoryInterf
         return $this->performances[$id->toString()] ?? null;
     }
 
+    /** @var int how often findByIdForUpdate() was called */
+    public int $lockCount = 0;
+
+    /** @var callable(PerformanceId): void|null runs when the lock is taken - a test's stand-in for a request that committed just before */
+    public $onLock = null;
+
+    public function findByIdForUpdate(PerformanceId $id): ?Performance
+    {
+        $this->lockCount++;
+
+        if ($this->onLock !== null) {
+            ($this->onLock)($id);
+        }
+
+        return $this->findById($id);
+    }
+
     public function findByProductionId(ProductionId $productionId): array
     {
         return array_values(array_filter(

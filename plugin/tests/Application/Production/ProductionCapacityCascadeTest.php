@@ -239,6 +239,11 @@ final class ProductionCapacityCascadeTest extends TestCase
                 return $this->delegate->findById($id);
             }
 
+            public function findByIdForUpdate(\StageArt\Domain\Performance\PerformanceId $id): ?Performance
+            {
+                return $this->delegate->findByIdForUpdate($id);
+            }
+
             public function findByProductionId(\StageArt\Domain\Production\ProductionId $productionId): array
             {
                 return $this->delegate->findByProductionId($productionId);

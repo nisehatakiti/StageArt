@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Rehearsal;
 
+use RuntimeException;
+
 /**
  * StageArt Core/Module Architecture Phase 3 (docs/architecture/
  * WordPressPluginModuleBoundary.md): Database Ownership made concrete -
@@ -135,7 +137,7 @@ final class RehearsalInstaller
          * closes that gap; MODIFY to an already-matching definition is a
          * harmless no-op on repeated runs.
          */
-        $wpdb->query("ALTER TABLE {$scheduleComments} MODIFY rehearsal_id CHAR(36) NULL");
+        self::statement($wpdb, "ALTER TABLE {$scheduleComments} MODIFY rehearsal_id CHAR(36) NULL");
 
         /*
          * Timetable.md: Timetable's parent is Rehearsal, not Production
@@ -179,17 +181,17 @@ final class RehearsalInstaller
         $existingIndexes = $wpdb->get_col("SHOW INDEX FROM {$timetables}", 2);
 
         if (in_array('rehearsal_id', $existingIndexes, true) && ! in_array('rehearsal_version', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} DROP INDEX rehearsal_id");
+            self::statement($wpdb, "ALTER TABLE {$timetables} DROP INDEX rehearsal_id");
         }
 
         $existingIndexes = $wpdb->get_col("SHOW INDEX FROM {$timetables}", 2);
 
         if (! in_array('rehearsal_version', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} ADD UNIQUE KEY rehearsal_version (rehearsal_id, version)");
+            self::statement($wpdb, "ALTER TABLE {$timetables} ADD UNIQUE KEY rehearsal_version (rehearsal_id, version)");
         }
 
         if (! in_array('rehearsal_id', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} ADD KEY rehearsal_id (rehearsal_id)");
+            self::statement($wpdb, "ALTER TABLE {$timetables} ADD KEY rehearsal_id (rehearsal_id)");
         }
 
         dbDelta("CREATE TABLE {$timetableItems} (
@@ -246,5 +248,18 @@ final class RehearsalInstaller
             PRIMARY KEY  (id),
             KEY production_id (production_id)
         ) {$charsetCollate};");
+    }
+
+    /**
+     * A failed ALTER throws, so SchemaUpgrader keeps the stored schema
+     * version and the upgrade runs again (PR #7 review).
+     *
+     * @param \wpdb $wpdb
+     */
+    private static function statement($wpdb, string $sql): void
+    {
+        if ($wpdb->query($sql) === false) {
+            throw new RuntimeException('Rehearsal schema statement failed: ' . (string) ($wpdb->last_error ?? ''));
+        }
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use RuntimeException;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Budget\Budget;
 use StageArt\Domain\Budget\BudgetId;
@@ -52,14 +53,20 @@ final class WordPressBudgetRepository implements BudgetRepositoryInterface
             $this->wpdb->prepare("SELECT id FROM {$this->table} WHERE id = %s", $budget->id()->toString())
         );
 
+        // A failed write must throw so the surrounding transaction rolls
+        // back (PR #7 review) - $wpdb itself only returns false.
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $budget->id()->toString()]);
+            $result = $this->wpdb->update($this->table, $row, ['id' => $budget->id()->toString()]);
         } else {
             $row['id'] = $budget->id()->toString();
             $row['created_by'] = $budget->createdBy()->toString();
             $row['created_at'] = $budget->createdAt()->format('Y-m-d H:i:s');
 
-            $this->wpdb->insert($this->table, $row);
+            $result = $this->wpdb->insert($this->table, $row);
+        }
+
+        if ($result === false) {
+            throw new RuntimeException('Failed to save Budget.');
         }
 
         $this->syncLines($budget);
@@ -67,16 +74,22 @@ final class WordPressBudgetRepository implements BudgetRepositoryInterface
 
     private function syncLines(Budget $budget): void
     {
-        $this->wpdb->delete($this->linesTable, ['budget_id' => $budget->id()->toString()]);
+        if ($this->wpdb->delete($this->linesTable, ['budget_id' => $budget->id()->toString()]) === false) {
+            throw new RuntimeException('Failed to replace Budget Lines.');
+        }
 
         foreach ($budget->lines() as $line) {
-            $this->wpdb->insert($this->linesTable, [
+            $result = $this->wpdb->insert($this->linesTable, [
                 'id' => $line->id()->toString(),
                 'budget_id' => $budget->id()->toString(),
                 'account_id' => $line->accountId()->toString(),
                 'amount' => $line->amount(),
                 'notes' => $line->notes(),
             ]);
+
+            if ($result === false) {
+                throw new RuntimeException('Failed to insert Budget Line.');
+            }
         }
     }
 

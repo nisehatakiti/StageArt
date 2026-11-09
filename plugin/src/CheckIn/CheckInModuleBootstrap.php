@@ -103,7 +103,7 @@ final class CheckInModuleBootstrap
             $walkUpIdempotencyStore,
             $transactions
         );
-        $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization);
+        $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization, $membership);
         $decreaseGuestCount = new DecreaseReservationGuestCountUseCase($reservations, $performances, $identity, $authorization, $transactions);
 
         $this->restControllers = [

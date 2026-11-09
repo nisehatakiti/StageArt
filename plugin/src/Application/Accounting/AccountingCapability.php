@@ -24,11 +24,20 @@ namespace StageArt\Application\Accounting;
  * REHEARSAL_MANAGER, see `ProductionAuthorizationService`) - StageArt 統合・
  * 会計仕様の確定事項 2026-10-28 §2, the same holders as
  * `ProductionCapability::COMPLETE` (決算確定).
+ *
+ * `Budget.Activate` (Budgetの確定) is the PrimaryManager's alone
+ * (ProductionDelegatePolicy.md: "ProductionDelegateはBudget確定および決算完了の
+ * 確定権限を持たない", Business Rules "Budget確定...はPrimaryManagerのみが
+ * 行う"). No Role's Permission Set and no 代理人 rule grants it, so
+ * `canForProduction()` succeeds only through its PrimaryManager rule -
+ * unlike `Accounting.Update`, which a 会計管理者 holds for entering Budget
+ * data (PR #7 review).
  */
 final class AccountingCapability
 {
     public const MANAGE = 'Accounting.Update';
     public const APPROVE_EXPENSE = 'Expense.Approve';
+    public const ACTIVATE_BUDGET = 'Budget.Activate';
 
     private function __construct()
     {

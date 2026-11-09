@@ -49,6 +49,11 @@ final class InMemoryReservationRepository implements ReservationRepositoryInterf
         ));
     }
 
+    public function findByPerformanceIdForUpdate(PerformanceId $performanceId): array
+    {
+        return $this->findByPerformanceId($performanceId);
+    }
+
     public function findByIds(array $ids): array
     {
         $wanted = array_map(static fn (ReservationId $id): string => $id->toString(), $ids);

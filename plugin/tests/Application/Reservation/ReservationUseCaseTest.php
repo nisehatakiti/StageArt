@@ -552,4 +552,64 @@ final class ReservationUseCaseTest extends TestCase
         $this->expectException(ReservationAccessDeniedException::class);
         $this->listReservations->execute(new ListReservationsForPerformanceQuery($performance->id()->toString(), 99));
     }
+
+    // --- PR #7 review item 4: capacity is checked again under the Performance lock
+
+    public function test_a_booking_rechecks_capacity_after_taking_the_performance_lock(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'), 3);
+        $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        // Another booking for the last seat commits while this one waits for the lock.
+        $this->performances->onLock = function () use ($performance, $ticketId): void {
+            $this->performances->onLock = null;
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'B', 'b@example.com', 1));
+        };
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'C', 'c@example.com', 1));
+            $this->fail('The Performance was overbooked');
+        } catch (CapacityExceededException $exception) {
+            $seats = array_sum(array_map(static fn ($r): int => $r->guestCount(), $this->reservations->findByPerformanceId($performance->id())));
+            $this->assertSame(3, $seats, 'Exactly the capacity is booked');
+            $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()), 'Nothing was saved for the refused booking');
+        }
+    }
+
+    public function test_the_performance_lock_is_taken_inside_the_transaction_that_saves_the_booking(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $transactions = new class () implements \StageArt\Application\Shared\TransactionManagerInterface {
+            public int $depth = 0;
+
+            public function run(callable $operation)
+            {
+                $this->depth++;
+
+                try {
+                    return $operation();
+                } finally {
+                    $this->depth--;
+                }
+            }
+        };
+        $depthAtLock = null;
+        $this->performances->onLock = static function () use ($transactions, &$depthAtLock): void {
+            $depthAtLock = $transactions->depth;
+        };
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $createReservation = new CreateReservationUseCase(
+            $this->performances,
+            $this->tickets,
+            $this->reservations,
+            $this->issuedTickets,
+            $productionContext,
+            new CoreIdentityAdapter($this->people),
+            $transactions
+        );
+
+        $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+
+        $this->assertSame(1, $depthAtLock, 'Locked inside the transaction, so the lock is held until the booking is saved');
+        $this->assertSame(1, $this->performances->lockCount);
+    }
 }

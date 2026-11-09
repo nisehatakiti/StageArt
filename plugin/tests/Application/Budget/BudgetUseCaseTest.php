@@ -61,6 +61,8 @@ final class BudgetUseCaseTest extends TestCase
     private UpdateBudgetUseCase $updateBudget;
     private ActivateBudgetUseCase $activateBudget;
 
+    private InMemoryProductionDelegateRepository $delegates;
+
     protected function setUp(): void
     {
         $this->organizations = new InMemoryOrganizationRepository();
@@ -72,9 +74,10 @@ final class BudgetUseCaseTest extends TestCase
         $this->budgets = new InMemoryBudgetRepository();
 
         $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
+        $this->delegates = new InMemoryProductionDelegateRepository();
         $this->prodAuth = new ProductionAuthorizationService(
             $orgAuth,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             new InMemoryParticipantRepository()
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
@@ -237,5 +240,67 @@ final class BudgetUseCaseTest extends TestCase
         $this->expectException(BudgetAccessDeniedException::class);
 
         $this->getBudget->execute(new GetBudgetQuery($budget->id, 3));
+    }
+
+    // --- PR #7 review item 8: Budget確定 is the PrimaryManager's alone ------
+
+    /**
+     * ProductionDelegatePolicy.md: a ProductionDelegate may enter accounting
+     * data, Budgets included, but "ProductionDelegateはBudget確定および決算完了の
+     * 確定権限を持たない".
+     *
+     * @dataProvider delegatesWhoMayNotActivate
+     *
+     * @param string[] $roles
+     */
+    public function test_a_delegate_cannot_activate_a_budget(array $roles): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        $accountId = $this->createExpenseAccount($organization);
+        $delegate = Person::create(7);
+        $this->people->save($delegate);
+        foreach ($roles as $role) {
+            $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $delegate->id(), RoleKey::fromString($role), $manager->id()));
+        }
+        $budget = $this->createBudget->execute(new CreateBudgetCommand(1, $production->id()->toString(), 'A案', [
+            ['account_id' => $accountId, 'amount' => 200000],
+        ]));
+
+        try {
+            $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 7));
+            $this->fail('A ProductionDelegate activated a Budget');
+        } catch (BudgetAccessDeniedException $exception) {
+            $this->assertSame('DRAFT', $this->getBudget->execute(new GetBudgetQuery($budget->id, 1))->status);
+        }
+    }
+
+    /**
+     * @return array<string, array{string[]}>
+     */
+    public static function delegatesWhoMayNotActivate(): array
+    {
+        return [
+            '会計管理者 (ACCOUNTING_MANAGER)' => [['ACCOUNTING_MANAGER']],
+            '代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER)' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER']],
+            '代理人 and 会計管理者 together' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER', 'ACCOUNTING_MANAGER']],
+        ];
+    }
+
+    public function test_an_accounting_manager_still_enters_the_budget_the_primary_manager_activates(): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        $accountId = $this->createExpenseAccount($organization);
+        $accountingManager = Person::create(7);
+        $this->people->save($accountingManager);
+        $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $accountingManager->id(), RoleKey::accountingManager(), $manager->id()));
+
+        $budget = $this->createBudget->execute(new CreateBudgetCommand(7, $production->id()->toString(), 'A案', [
+            ['account_id' => $accountId, 'amount' => 200000],
+        ]));
+        $this->updateBudget->execute(new UpdateBudgetCommand($budget->id, 7, 'A案（改）', [
+            ['account_id' => $accountId, 'amount' => 250000],
+        ]));
+
+        $this->assertSame('ACTIVE', $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 1))->status);
     }
 }

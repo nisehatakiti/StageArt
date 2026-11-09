@@ -7,6 +7,7 @@ namespace StageArt\Application\CheckIn;
 use InvalidArgumentException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
 use StageArt\Application\Reservation\CapacityExceededException;
+use StageArt\Application\Reservation\PerformanceCapacityGuard;
 use StageArt\Application\Reservation\PerformanceAlreadyStartedException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\Ticket\TicketNotFoundException;
@@ -68,6 +69,7 @@ final class CreateWalkUpReservationUseCase
     private CheckInProcessor $processor;
     private WalkUpIdempotencyStoreInterface $idempotencyStore;
     private TransactionManagerInterface $transactions;
+    private PerformanceCapacityGuard $capacity;
 
     public function __construct(
         PerformanceRepositoryInterface $performances,
@@ -93,6 +95,7 @@ final class CreateWalkUpReservationUseCase
         $this->processor = $processor;
         $this->idempotencyStore = $idempotencyStore;
         $this->transactions = $transactions;
+        $this->capacity = new PerformanceCapacityGuard($performances, $reservations);
     }
 
     public function execute(CreateWalkUpReservationCommand $command): CheckInResult
@@ -137,6 +140,8 @@ final class CreateWalkUpReservationUseCase
             throw new PerformanceAlreadyStartedException('sold as a walk-up ticket');
         }
 
+        // An early answer only; checked again under the Performance lock
+        // before the sale is saved (PerformanceCapacityGuard).
         $existingReservations = $this->reservations->findByPerformanceId($performanceId);
         $occupied = array_sum(array_map(
             static fn (Reservation $r): int => $r->occupiesCapacity() ? $r->guestCount() : 0,
@@ -157,6 +162,8 @@ final class CreateWalkUpReservationUseCase
 
         try {
             $bundle = $this->transactions->run(function () use ($performanceId, $ticketId, $command, $ticket, $requesterId, $attributedPersonId, $performance) {
+                $this->capacity->lockAndReserve($performanceId, $command->guestCount);
+
                 $reservation = Reservation::create(
                     $performanceId,
                     $ticketId,

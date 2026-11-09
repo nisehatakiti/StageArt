@@ -94,6 +94,7 @@ final class CheckInTicketRevenueTest extends TestCase
     private MarkNoShowUseCase $markNoShow;
     private ReverseCheckInUseCase $reverseCheckIn;
     private CreateWalkUpReservationUseCase $createWalkUp;
+    private \StageArt\Core\Contract\AuthorizationContract $authorization;
 
     protected function setUp(): void
     {
@@ -120,6 +121,7 @@ final class CheckInTicketRevenueTest extends TestCase
         $this->identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $this->authorization = $authorization;
 
         $this->createTicket = new CreateTicketUseCase($this->productionContext, $this->tickets, $this->identity, $authorization);
         $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $this->identity, $authorization);
@@ -213,6 +215,58 @@ final class CheckInTicketRevenueTest extends TestCase
         $this->checkIn($performance, $reservation);
 
         $this->assertSame(2500, $this->describeLines($this->onlyEntry())[0][3]);
+    }
+
+    /**
+     * PR #7 review - GuestCount and Price Snapshot checked against
+     * Reservation.md "Price Snapshot" (a Reservation keeps the price it was
+     * booked at; a later Ticket price change never touches it) and
+     * TicketRevenueConsistencyPolicy.md "Ticket Amount Source" / CheckIn.md
+     * "Revenue and Guest Count" (the amount is the one fixed at booking,
+     * never rebuilt from the current Ticket price), through the real public
+     * booking and Ticket edit Use Cases: three seats at 3,000円, the price
+     * raised to 3,500円 mid-sale, then two seats more.
+     */
+    public function test_multi_seat_reservations_across_a_mid_sale_price_change_are_recorded_at_their_own_booking_price(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenAccountingProduction();
+        $createReservation = new \StageArt\Application\Reservation\CreateReservationUseCase(
+            $this->performances,
+            $this->tickets,
+            $this->reservations,
+            $this->issuedTickets,
+            $this->productionContext,
+            $this->identity,
+            new InMemoryTransactionManager()
+        );
+        $updateTicket = new \StageArt\Application\Ticket\UpdateTicketUseCase($this->tickets, $this->productionContext, $this->identity, $this->authorization);
+        $book = fn (int $guests): string => $createReservation->execute(new \StageArt\Application\Reservation\CreateReservationCommand(
+            $performance->id()->toString(), $ticketId, '架空の予約者', 'booker@example.com', $guests
+        ))->reservationNumber;
+
+        $before = $book(3);
+        $updateTicket->execute(new \StageArt\Application\Ticket\UpdateTicketCommand($ticketId, 1, '一般', 3500, null));
+        $after = $book(2);
+
+        $first = $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($before));
+        $second = $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($after));
+        $this->assertSame([3, 3000], [$first->guestCount(), $first->priceSnapshot()], 'The earlier booking keeps its price');
+        $this->assertSame([2, 3500], [$second->guestCount(), $second->priceSnapshot()]);
+        $this->assertSame(5, $this->issuedTickets->findByReservationId($first->id())->guestCount() + $this->issuedTickets->findByReservationId($second->id())->guestCount(), 'One Issued Ticket per Reservation, covering every seat');
+
+        $this->checkIn($performance, $first);
+        $this->checkIn($performance, $second);
+
+        $revenue = [];
+        foreach ($this->journalEntries->all() as $entry) {
+            $revenue[$entry->sourceEventId()] = $this->describeLines($entry)[1][3];
+        }
+        $this->assertSame(
+            [$first->id()->toString() => 9000, $second->id()->toString() => 7000],
+            $revenue,
+            'Each Reservation at its own booking price for all its seats'
+        );
+        $this->assertSame(16000, array_sum($revenue), 'Not the current 3,500円 for all five seats (17,500円)');
     }
 
     public function test_repeating_the_check_in_records_the_payment_once(): void

@@ -74,6 +74,16 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
         return $row ? $this->hydrate($row) : null;
     }
 
+    public function findByIdForUpdate(PerformanceId $id): ?Performance
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
     public function findByProductionId(ProductionId $productionId): array
     {
         $rows = $this->wpdb->get_results(

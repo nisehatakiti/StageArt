@@ -947,6 +947,52 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         }
     }
 
+    /**
+     * PR #7 review item 7: two approvers approve the same Expense at once.
+     * Both read it SUBMITTED before their transactions; the competing
+     * approval commits while this request waits for the row lock. The
+     * locked re-read inside the transaction sees it POSTED, so this request
+     * is refused and only one Journal Entry exists.
+     */
+    public function test_a_concurrent_second_approval_posts_no_second_journal_entry(): void
+    {
+        $id = $this->submittedBy(2);
+        $competing = $this->approveExpense;
+        $stored = $this->transactions;
+        $commitsFirstWhileWaitingForTheLock = new class ($stored, function () use ($competing, $id): void {
+            $competing->execute(new ApproveExpenseCommand($id, 1, 1));
+        }) implements TransactionManagerInterface {
+            private TransactionManagerInterface $inner;
+            /** @var callable|null */
+            private $competing;
+
+            public function __construct(TransactionManagerInterface $inner, callable $competing)
+            {
+                $this->inner = $inner;
+                $this->competing = $competing;
+            }
+
+            public function run(callable $operation)
+            {
+                if ($this->competing !== null) {
+                    $competing = $this->competing;
+                    $this->competing = null;
+                    $competing();
+                }
+
+                return $this->inner->run($operation);
+            }
+        };
+
+        try {
+            ($this->approveWith)($commitsFirstWhileWaitingForTheLock)->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->fail('The Expense was approved twice.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertCount(1, $this->approvalEntries(), 'Exactly one Journal Entry');
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        }
+    }
+
     public function test_a_failed_journal_entry_write_rolls_everything_back_and_notifies_nobody(): void
     {
         $id = $this->submittedBy(2);
