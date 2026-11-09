@@ -12,6 +12,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
 use StageArt\Tests\Support\FakeMysqli;
 use StageArt\Tests\Support\FakeWpdb;
 use StageArt\Tests\Support\FakeWpdbDefault;
+use Throwable;
 
 /**
  * PR #6 review F1: WordPressTransactionManager checks every START
@@ -29,6 +30,17 @@ final class WordPressTransactionManagerTest extends TestCase
     /** @var int|null the connection's thread id once COMMIT has run (a reconnect) */
     private ?int $threadAfterCommit = null;
 
+    /** @var array<int, array{0: string, 1: mixed}> each statement with the reconnect_retries in force when it was sent */
+    private array $retriesSeen = [];
+
+    /** @var mixed what reconnect_retries held while the operation ran */
+    private $retriesInOperation = 'not run';
+
+    private bool $closeThrows = false;
+
+    /** @var mixed what db_connect() reports */
+    private $reconnectResult = true;
+
     protected function setUp(): void
     {
         require_once __DIR__ . '/../../../Support/wordpress-stubs.php';
@@ -39,11 +51,20 @@ final class WordPressTransactionManagerTest extends TestCase
     private function wpdb(): FakeWpdb
     {
         $wpdb = new \wpdb(function (string $method, array $args, FakeWpdb $db) {
+            if ($method === 'close' && $this->closeThrows) {
+                throw new Error('mysqli object is already closed');
+            }
+
+            if ($method === 'db_connect') {
+                return $this->reconnectResult;
+            }
+
             if ($method !== 'query') {
                 return FakeWpdbDefault::VALUE;
             }
 
             $sql = (string) $args[0];
+            $this->retriesSeen[] = [$sql, $db->reconnect_retries ?? 'absent'];
 
             if ($sql === 'COMMIT' && $this->threadAfterCommit !== null) {
                 FakeMysqli::$threadId = $this->threadAfterCommit;
@@ -68,6 +89,38 @@ final class WordPressTransactionManagerTest extends TestCase
     private static function statements(FakeWpdb $wpdb): array
     {
         return array_map(static fn (array $args): string => (string) $args[0], $wpdb->callsTo('query'));
+    }
+
+    /**
+     * Every $wpdb call in order: "query:<sql>", "close", "db_connect".
+     *
+     * @return string[]
+     */
+    private static function sequence(FakeWpdb $wpdb): array
+    {
+        return array_map(
+            static fn (array $call): string => $call['method'] === 'query' ? 'query:' . $call['args'][0] : $call['method'],
+            $wpdb->calls
+        );
+    }
+
+    /**
+     * Runs $operation (recording reconnect_retries inside it) and returns
+     * what it threw, or null.
+     */
+    private function runRecording(FakeWpdb $wpdb, callable $operation): ?Throwable
+    {
+        try {
+            (new WordPressTransactionManager($wpdb))->run(function () use ($wpdb, $operation) {
+                $this->retriesInOperation = $wpdb->reconnect_retries ?? 'absent';
+
+                return $operation();
+            });
+        } catch (Throwable $exception) {
+            return $exception;
+        }
+
+        return null;
     }
 
     public function test_a_successful_operation_is_committed_and_its_result_returned(): void
@@ -227,5 +280,152 @@ final class WordPressTransactionManagerTest extends TestCase
 
         $this->assertSame('done', (new WordPressTransactionManager($wpdb))->run(static fn (): string => 'done'));
         $this->assertSame(['START TRANSACTION', 'COMMIT'], self::statements($wpdb));
+    }
+
+    /**
+     * MySQL 5.7.44 (2026-11-09): a connection lost inside the transaction
+     * was replaced by wpdb, and the statements after it were autocommitted
+     * on the new one. While the transaction is open wpdb must not
+     * reconnect; its own setting comes back afterwards.
+     */
+    public function test_reconnecting_is_off_from_start_to_commit_and_restored_after(): void
+    {
+        $wpdb = $this->wpdb();
+        $wpdb->reconnect_retries = 3;
+
+        $this->assertNull($this->runRecording($wpdb, static fn (): string => 'done'));
+
+        $this->assertSame(0, $this->retriesInOperation);
+        $this->assertSame([['START TRANSACTION', 3], ['COMMIT', 0]], $this->retriesSeen, 'START may still reconnect: no transaction is open yet.');
+        $this->assertSame(3, $wpdb->reconnect_retries);
+    }
+
+    /**
+     * @dataProvider failingRuns
+     * @param array<string, string> $failing
+     * @param class-string $expected
+     */
+    public function test_reconnecting_is_restored_whatever_ends_the_transaction(array $failing, ?int $threadAfterCommit, bool $operationThrows, string $expected): void
+    {
+        $this->failing = $failing;
+        if ($threadAfterCommit !== null) {
+            FakeMysqli::$threadId = 41;
+            $this->threadAfterCommit = $threadAfterCommit;
+        }
+        $wpdb = $this->wpdb();
+        $wpdb->reconnect_retries = 7;
+
+        $thrown = $this->runRecording($wpdb, static function () use ($operationThrows): string {
+            if ($operationThrows) {
+                throw new LogicException('Simulated write failure.');
+            }
+
+            return 'written';
+        });
+
+        $this->assertInstanceOf($expected, $thrown);
+        $this->assertSame(0, $this->retriesInOperation);
+        $this->assertSame(7, $wpdb->reconnect_retries);
+        foreach (array_slice($this->retriesSeen, 1) as [$sql, $retries]) {
+            $this->assertSame(0, $retries, "{$sql} must not reconnect either.");
+        }
+    }
+
+    /**
+     * @return array<string, array{array<string, string>, ?int, bool, class-string}>
+     */
+    public static function failingRuns(): array
+    {
+        return [
+            'operation throws' => [[], null, true, LogicException::class],
+            'commit fails' => [['COMMIT' => 'Commit error'], null, false, TransactionFailedException::class],
+            'commit on another connection' => [[], 42, false, TransactionFailedException::class],
+            'operation and rollback fail' => [['ROLLBACK' => 'Rollback error'], null, true, TransactionFailedException::class],
+            'commit and rollback fail' => [['COMMIT' => 'Commit error', 'ROLLBACK' => 'Rollback error'], null, false, TransactionFailedException::class],
+        ];
+    }
+
+    public function test_a_failed_start_leaves_reconnecting_untouched(): void
+    {
+        $this->failing = ['START TRANSACTION' => 'MySQL server has gone away'];
+        $wpdb = $this->wpdb();
+
+        $this->assertInstanceOf(TransactionFailedException::class, $this->runRecording($wpdb, static fn (): string => 'done'));
+
+        $this->assertSame('not run', $this->retriesInOperation);
+        $this->assertSame(5, $wpdb->reconnect_retries);
+    }
+
+    /**
+     * MySQL 5.7.44: after a failed ROLLBACK the connection still held the
+     * open transaction, which the next START TRANSACTION on it would have
+     * committed. It is closed (MySQL then discards the transaction) and a
+     * fresh one opened for the rest of the request - never reused.
+     */
+    public function test_a_failed_rollback_closes_the_connection_and_opens_a_fresh_one(): void
+    {
+        $this->failing = ['ROLLBACK' => 'Lost connection to MySQL server during query'];
+        $wpdb = $this->wpdb();
+        $original = new LogicException('Simulated write failure.');
+
+        $thrown = $this->runRecording($wpdb, static function () use ($original): void {
+            throw $original;
+        });
+
+        $this->assertInstanceOf(TransactionFailedException::class, $thrown);
+        $this->assertSame($original, $thrown->getPrevious());
+        $this->assertStringContainsString('the connection was closed', $thrown->getMessage());
+        $this->assertSame(['query:START TRANSACTION', 'query:ROLLBACK', 'close', 'db_connect'], self::sequence($wpdb));
+        $this->assertSame([[false]], $wpdb->callsTo('db_connect'), 'Reopened without bailing.');
+    }
+
+    public function test_a_successful_rollback_keeps_the_connection(): void
+    {
+        $wpdb = $this->wpdb();
+
+        $this->runRecording($wpdb, static function (): void {
+            throw new LogicException('Simulated write failure.');
+        });
+
+        $this->assertSame(['query:START TRANSACTION', 'query:ROLLBACK'], self::sequence($wpdb));
+    }
+
+    /**
+     * A handle that cannot be closed, or a reconnect that fails, does not
+     * hide the ROLLBACK failure or the original one.
+     */
+    public function test_a_connection_that_cannot_be_replaced_still_reports_the_rollback_failure(): void
+    {
+        $this->failing = ['ROLLBACK' => 'Rollback error'];
+        $this->closeThrows = true;
+        $this->reconnectResult = false;
+        $wpdb = $this->wpdb();
+        $original = new LogicException('Simulated write failure.');
+
+        $thrown = $this->runRecording($wpdb, static function () use ($original): void {
+            throw $original;
+        });
+
+        $this->assertInstanceOf(TransactionFailedException::class, $thrown);
+        $this->assertSame($original, $thrown->getPrevious());
+        $this->assertSame(5, $wpdb->reconnect_retries);
+    }
+
+    /**
+     * A $wpdb replacement without reconnect_retries (a db.php drop-in) is
+     * left as it is; the COMMIT connection check still applies.
+     */
+    public function test_a_wpdb_without_reconnect_retries_runs_with_the_connection_check_only(): void
+    {
+        FakeMysqli::$threadId = 41;
+        $this->threadAfterCommit = 42;
+        $wpdb = $this->wpdb();
+        unset($wpdb->reconnect_retries);
+
+        $thrown = $this->runRecording($wpdb, static fn (): string => 'written');
+
+        $this->assertInstanceOf(TransactionFailedException::class, $thrown);
+        $this->assertStringContainsString('connection changed', $thrown->getMessage());
+        $this->assertFalse(isset($wpdb->reconnect_retries), 'Nothing was added to it.');
     }
 }

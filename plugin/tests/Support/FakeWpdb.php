@@ -30,6 +30,14 @@ class FakeWpdb
      */
     public $dbh = null;
 
+    /**
+     * As in wpdb (protected there, read and written through its __get /
+     * __set): how often a lost connection is reconnected.
+     *
+     * @var int|null
+     */
+    public $reconnect_retries = 5;
+
     /** @var array<int, array{method: string, args: array<int, mixed>}> */
     public array $calls = [];
 
@@ -84,6 +92,18 @@ class FakeWpdb
     public function esc_like(string $text): string
     {
         return $text;
+    }
+
+    /** As in wpdb: closes the connection; recorded, true unless the responder says otherwise. */
+    public function close()
+    {
+        return $this->respond('close', [], true);
+    }
+
+    /** As in wpdb: opens a new connection; recorded, true unless the responder says otherwise. */
+    public function db_connect($allow_bail = true)
+    {
+        return $this->respond('db_connect', [$allow_bail], true);
     }
 
     public function query($sql)

@@ -11,7 +11,8 @@ use Throwable;
  * WordPressTransactionManager could not start, commit or roll back a
  * transaction, so nothing the operation wrote can be taken as committed.
  * A failed ROLLBACK keeps the failure that made it necessary as the
- * previous exception (and in the message), so neither is lost.
+ * previous exception (and in the message), so neither is lost; the
+ * connection it failed on has been closed by then.
  */
 final class TransactionFailedException extends RuntimeException
 {
@@ -40,7 +41,7 @@ final class TransactionFailedException extends RuntimeException
     public static function rollbackFailed(string $databaseError, Throwable $cause): self
     {
         return new self(
-            'ROLLBACK failed' . self::detail($databaseError) . ' after: ' . get_class($cause) . ': ' . $cause->getMessage(),
+            'ROLLBACK failed' . self::detail($databaseError) . '; the connection was closed. After: ' . get_class($cause) . ': ' . $cause->getMessage(),
             0,
             $cause
         );

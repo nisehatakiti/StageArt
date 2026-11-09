@@ -121,6 +121,8 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     private GetProductionAccountingSummaryUseCase $summary;
     /** @var callable(TransactionManagerInterface): ApproveExpenseUseCase */
     private $approveWith;
+    /** @var array<int, mixed> reconnect_retries in force at each COMMIT of approveOnWordPressTransactions() */
+    private array $retriesAtCommit = [];
 
     private Organization $organization;
     private Production $production;
@@ -990,8 +992,11 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
      * TRANSACTION takes a snapshot of the Expenses and Journal Entries,
      * ROLLBACK restores it, and a connection lost before COMMIT is rolled
      * back by the server (after which $wpdb reconnects, so the repeated
-     * COMMIT "succeeds" on another thread). $failing names the statements
-     * that fail. Only for @runInSeparateProcess tests (wordpress-stubs).
+     * COMMIT "succeeds" on another thread). Closing the connection also
+     * makes the server discard the open transaction. $failing names the
+     * statements that fail. reconnect_retries at each COMMIT is recorded in
+     * $this->retriesAtCommit. Only for @runInSeparateProcess tests
+     * (wordpress-stubs).
      *
      * @param string[] $failing
      * @return array{0: ApproveExpenseUseCase, 1: FakeWpdb}
@@ -1011,6 +1016,13 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         };
 
         $wpdb = new \wpdb(function (string $method, array $args, FakeWpdb $db) use (&$snapshot, $failing, $reconnectAtCommit, $restore) {
+            if ($method === 'close') {
+                $restore($snapshot);
+                $snapshot = null;
+
+                return true;
+            }
+
             if ($method !== 'query') {
                 return FakeWpdbDefault::VALUE;
             }
@@ -1026,6 +1038,8 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             if ($sql === 'START TRANSACTION') {
                 $snapshot = [$this->expenses->snapshot(), $this->journalEntries->snapshot()];
             } elseif ($sql === 'COMMIT') {
+                $this->retriesAtCommit[] = $db->reconnect_retries;
+
                 if ($reconnectAtCommit) {
                     $restore($snapshot);
                     FakeMysqli::$threadId = 42;
@@ -1174,7 +1188,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     {
         $id = $this->submittedBy(2);
         $sentBefore = count($this->notifications->sent());
-        [$approve] = $this->approveOnWordPressTransactions(['ROLLBACK']);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['ROLLBACK']);
         $this->journalEntries->failNextSave();
 
         try {
@@ -1189,6 +1203,67 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
         $this->assertSame([], $this->approvalEntries());
         $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['query', 'query', 'close', 'db_connect'], array_column($wpdb->calls, 'method'), 'The connection is closed and replaced.');
+    }
+
+    /**
+     * MySQL 5.7.44 (2026-11-09): the Journal Entry is written first; when
+     * the Expense write then fails and so does the ROLLBACK, the connection
+     * still holds the Journal Entry. Closing it discards that transaction,
+     * so no Journal Entry is left for an Expense that was not approved.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_rollback_leaves_no_journal_entry_behind(): void
+    {
+        $id = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['ROLLBACK']);
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed ROLLBACK must not be swallowed.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getPrevious()->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries(), 'The Journal Entry written before the failure went with the closed connection.');
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::transactionStatements($wpdb));
+        $this->assertSame([[false]], $wpdb->callsTo('db_connect'));
+    }
+
+    /**
+     * MySQL 5.7.44 (2026-11-09): with wpdb free to reconnect, a connection
+     * lost before the Expense UPDATE left the Expense POSTED without its
+     * Journal Entry. The approval runs with reconnecting off, and the
+     * setting is back afterwards, approved or not.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_an_approval_runs_without_reconnecting(): void
+    {
+        $approved = $this->submittedBy(2);
+        $refused = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+        $wpdb->reconnect_retries = 4;
+
+        $approve->execute(new ApproveExpenseCommand($approved, 1, 1));
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($refused, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame([0], $this->retriesAtCommit, 'The approval\'s COMMIT ran with reconnecting off.');
+        $this->assertSame(4, $wpdb->reconnect_retries, 'Restored after the commit and after the rollback.');
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($approved));
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($refused));
     }
 
     public function test_the_applicant_is_notified_of_the_approval_after_the_commit(): void
