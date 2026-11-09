@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use RuntimeException;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\JournalEntry\DebitCredit;
@@ -37,7 +38,9 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         $row = [
             'organization_id' => $entry->organizationId()->toString(),
             'production_id' => $entry->productionId() !== null ? $entry->productionId()->toString() : null,
-            'journal_date' => $entry->journalDate()->format('Y-m-d H:i:s'),
+            // Stored as UTC whatever zone the instant carries or PHP defaults
+            // to (AccountingDate: the JST date is derived, never stored).
+            'journal_date' => $entry->journalDate()->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'description' => $entry->description(),
             'status' => $entry->status()->toString(),
             'source_event_type' => $entry->sourceEventType(),
@@ -240,7 +243,7 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             JournalEntryId::fromString($row['id']),
             OrganizationId::fromString($row['organization_id']),
             $row['production_id'] !== null ? ProductionId::fromString($row['production_id']) : null,
-            new DateTimeImmutable($row['journal_date']),
+            new DateTimeImmutable($row['journal_date'], new DateTimeZone('UTC')),
             $row['description'],
             JournalEntryStatus::fromString($row['status']),
             $row['source_event_type'],

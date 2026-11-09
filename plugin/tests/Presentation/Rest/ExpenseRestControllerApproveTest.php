@@ -72,6 +72,10 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  * Expense - anyone else, the PrimaryManager included, gets 403 - and a
  * POSTED Expense is not edited even by the applicant (409).
  *
+ * PR #6 review N5 / N6: an id that is not a UUID, and lines or a reason that
+ * are malformed, are refused with 422 on every Expense route - never a 500,
+ * and never coerced (100.9 is not truncated to 100).
+ *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
@@ -82,6 +86,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
     private ExpenseRestController $controller;
     private string $expenseId;
     private string $expenseAccountId;
+    private string $productionId;
 
     protected function setUp(): void
     {
@@ -146,6 +151,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
         $projects->save($project);
         $production = Production::create($project->id(), new ProductionName('Autumn Play'), $manager->id());
         $productions->save($production);
+        $this->productionId = $production->id()->toString();
 
         $applicant = Person::create(2);
         $people->save($applicant);
@@ -415,5 +421,157 @@ final class ExpenseRestControllerApproveTest extends TestCase
         $this->assertInstanceOf(\WP_Error::class, $response);
         $this->assertSame(['status' => 409], $response->get_error_data(), $response->get_error_message());
         $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($this->expenseId))->totalAmount());
+    }
+
+    // --- N5: an id that is not a UUID --------------------------------------
+
+    /**
+     * @dataProvider routesTakingAnId
+     */
+    public function test_an_id_that_is_not_a_uuid_is_refused_with_422(string $route, array $body): void
+    {
+        $GLOBALS['stageart_test_wp']['current_user'] = $route === 'approve' || $route === 'reject' ? 1 : 2;
+
+        $response = $this->controller->{$route}(new \WP_REST_Request(['id' => 'not-a-uuid'] + $body));
+
+        $this->assertInstanceOf(\WP_Error::class, $response);
+        $this->assertSame('stageart_expense_invalid', $response->get_error_code());
+        $this->assertSame(['status' => 422], $response->get_error_data());
+    }
+
+    /**
+     * @return array<string, array{string, array<string, mixed>}>
+     */
+    public static function routesTakingAnId(): array
+    {
+        return [
+            'GET /expenses/{id}' => ['get', []],
+            'PUT /expenses/{id}' => ['update', ['lines' => [['account_id' => '00000000-0000-4000-8000-000000000000', 'amount' => 1000]]]],
+            'PATCH submit' => ['submit', []],
+            'PATCH withdraw' => ['withdraw', []],
+            'PATCH resubmit' => ['resubmit', []],
+            'PATCH approve' => ['approve', ['revision' => 1]],
+            'PATCH reject' => ['reject', ['reason' => '確認のため']],
+        ];
+    }
+
+    // --- N6: malformed lines and reasons -------------------------------------
+
+    /**
+     * @return \WP_REST_Response|\WP_Error
+     */
+    private function create(array $lines)
+    {
+        $GLOBALS['stageart_test_wp']['current_user'] = 2;
+
+        return $this->controller->create(new \WP_REST_Request(['id' => $this->productionId, 'lines' => $lines]));
+    }
+
+    /**
+     * @dataProvider malformedLines
+     *
+     * @param mixed $line
+     */
+    public function test_malformed_lines_are_refused_with_422_on_create_and_update($line, string $message): void
+    {
+        $lines = is_array($line) && array_key_exists('extra', $line)
+            ? array_map(fn ($l) => $this->withAccount($l), $line['extra'])
+            : [$this->withAccount($line)];
+        $before = count($this->expenses->findByProductionId(\StageArt\Domain\Production\ProductionId::fromString($this->productionId)));
+
+        $created = $this->create($lines);
+
+        $this->assertInstanceOf(\WP_Error::class, $created);
+        $this->assertSame(['status' => 422], $created->get_error_data(), $created->get_error_message());
+        $this->assertStringContainsString($message, $created->get_error_message());
+        $this->assertCount($before, $this->expenses->findByProductionId(\StageArt\Domain\Production\ProductionId::fromString($this->productionId)), 'Nothing was created');
+
+        $GLOBALS['stageart_test_wp']['current_user'] = 2;
+        $updated = $this->controller->update(new \WP_REST_Request(['id' => $this->expenseId, 'lines' => $lines]));
+
+        $this->assertInstanceOf(\WP_Error::class, $updated);
+        $this->assertSame(['status' => 422], $updated->get_error_data(), $updated->get_error_message());
+        $after = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
+        $this->assertSame([1, 5000], [$after->revision(), $after->totalAmount()], 'The Expense is unchanged');
+    }
+
+    /**
+     * @param mixed $line
+     * @return mixed
+     */
+    private function withAccount($line)
+    {
+        if (is_array($line) && in_array($line['account_id'] ?? null, ['ACCOUNT', '__ACCOUNT__'], true)) {
+            $line['account_id'] = $this->expenseAccountId;
+        }
+
+        return $line;
+    }
+
+    /**
+     * @return array<string, array{mixed, string}>
+     */
+    public static function malformedLines(): array
+    {
+        return [
+            'a line that is not an object' => ['5000', 'must be an object'],
+            'a fraction' => [['account_id' => 'ACCOUNT', 'amount' => 100.9], 'whole number'],
+            'a fraction as text' => [['account_id' => 'ACCOUNT', 'amount' => '100.9'], 'whole number'],
+            'a whole float' => [['account_id' => 'ACCOUNT', 'amount' => 1000.0], 'whole number'],
+            'an exponent' => [['account_id' => 'ACCOUNT', 'amount' => '1e3'], 'whole number'],
+            'text' => [['account_id' => 'ACCOUNT', 'amount' => 'abc'], 'whole number'],
+            'a boolean' => [['account_id' => 'ACCOUNT', 'amount' => true], 'whole number'],
+            'beyond the integer range' => [['account_id' => 'ACCOUNT', 'amount' => '99999999999999999999'], 'whole number'],
+            'zero' => [['account_id' => 'ACCOUNT', 'amount' => 0], 'positive'],
+            'negative' => [['account_id' => 'ACCOUNT', 'amount' => '-5'], 'positive'],
+            'an account id that is not text' => [['account_id' => ['x'], 'amount' => 1000], 'account_id must be a string'],
+            'a description that is not text' => [['account_id' => 'ACCOUNT', 'amount' => 1000, 'description' => ['x']], 'description must be a string'],
+            'a total beyond the integer range' => [['extra' => [
+                ['account_id' => '__ACCOUNT__', 'amount' => PHP_INT_MAX],
+                ['account_id' => '__ACCOUNT__', 'amount' => 1],
+            ]], 'too large'],
+        ];
+    }
+
+    public function test_whole_numbers_as_integers_or_digit_strings_are_still_accepted(): void
+    {
+        $created = $this->create([
+            ['account_id' => $this->expenseAccountId, 'amount' => 1200],
+            ['account_id' => $this->expenseAccountId, 'amount' => '800', 'description' => '架空の小道具'],
+        ]);
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $created);
+        $this->assertSame(201, $created->get_status());
+        $this->assertSame(2000, $created->get_data()['total_amount']);
+    }
+
+    /**
+     * @dataProvider reasonsThatAreNotText
+     *
+     * @param mixed $reason
+     */
+    public function test_a_reason_that_is_not_text_is_refused_with_422($reason): void
+    {
+        $GLOBALS['stageart_test_wp']['current_user'] = 1;
+
+        $response = $this->controller->reject(new \WP_REST_Request(['id' => $this->expenseId, 'reason' => $reason]));
+
+        $this->assertInstanceOf(\WP_Error::class, $response);
+        $this->assertSame(['status' => 422], $response->get_error_data(), $response->get_error_message());
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status());
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function reasonsThatAreNotText(): array
+    {
+        return [
+            'an array' => [['不備']],
+            'a number' => [5],
+            'a boolean' => [true],
+            'missing' => [null],
+            'blank' => ['   '],
+        ];
     }
 }

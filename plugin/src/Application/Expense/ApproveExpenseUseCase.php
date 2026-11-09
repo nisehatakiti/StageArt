@@ -143,10 +143,13 @@ final class ApproveExpenseUseCase
                 throw new ExpenseStateConflictException('This Expense has already been posted.');
             }
 
-            $journalEntry = $this->buildPostedJournalEntry($locked, $amount, $organizationId, $requesterId);
+            // One instant for the Journal Date and approved_at, so the 仕訳日
+            // (its JST date, AccountingDate) is the approval date.
+            $approvedAt = new DateTimeImmutable();
+            $journalEntry = $this->buildPostedJournalEntry($locked, $amount, $organizationId, $requesterId, $approvedAt);
             $this->journalEntries->save($journalEntry);
 
-            $locked->approve($requesterId, $command->approvedAmount, $command->expectedRevision, $journalEntry->id());
+            $locked->approve($requesterId, $command->approvedAmount, $command->expectedRevision, $journalEntry->id(), $approvedAt);
             $this->expenses->save($locked);
 
             return $locked;
@@ -157,7 +160,7 @@ final class ApproveExpenseUseCase
         return ExpenseResult::fromDomain($approved);
     }
 
-    private function buildPostedJournalEntry(Expense $expense, int $amount, OrganizationId $organizationId, PersonId $approver): JournalEntry
+    private function buildPostedJournalEntry(Expense $expense, int $amount, OrganizationId $organizationId, PersonId $approver, DateTimeImmutable $journalDate): JournalEntry
     {
         foreach ($expense->lines() as $line) {
             $account = $this->accounts->findById($line->accountId());
@@ -184,7 +187,7 @@ final class ApproveExpenseUseCase
         $journalEntry = JournalEntry::create(
             $organizationId,
             $expense->productionId(),
-            new DateTimeImmutable(),
+            $journalDate,
             "Expense Approved ({$expense->id()->toString()})",
             [...$debitLines, $creditLine],
             $approver,

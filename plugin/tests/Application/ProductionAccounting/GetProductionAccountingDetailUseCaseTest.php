@@ -153,6 +153,43 @@ final class GetProductionAccountingDetailUseCaseTest extends TestCase
         );
     }
 
+    /**
+     * PR #6 review N1: the transactions are listed - and ordered - by their
+     * 仕訳日 in JST, not by the UTC date of the stored instant, across a
+     * day, a month, the Japanese fiscal year and a calendar year; the
+     * totals still take every entry once.
+     */
+    public function test_transactions_carry_the_jst_date_across_day_month_and_year_boundaries(): void
+    {
+        $entries = [
+            '2026-12-31T15:00:00+00:00' => 700,  // 2027-01-01 00:00 JST
+            '2026-03-31T14:59:59+00:00' => 100,  // 2026-03-31 23:59:59 JST
+            '2026-03-31T15:00:00+00:00' => 200,  // 2026-04-01 00:00 JST
+            '2026-04-30T15:30:00+00:00' => 300,  // 2026-05-01 00:30 JST
+            '2026-12-31T14:59:59+00:00' => 600,  // 2026-12-31 23:59:59 JST
+        ];
+        foreach ($entries as $instant => $amount) {
+            $this->givenPostedEntry($instant, "N1 {$amount}", [
+                [$this->consumables, DebitCredit::debit(), $amount],
+                [$this->payable, DebitCredit::credit(), $amount],
+            ]);
+        }
+
+        $result = $this->getDetail->execute($this->query(1))->toArray();
+
+        $this->assertSame(
+            [
+                ['2026-03-31', 100],
+                ['2026-04-01', 200],
+                ['2026-05-01', 300],
+                ['2026-12-31', 600],
+                ['2027-01-01', 700],
+            ],
+            array_map(static fn (array $t): array => [$t['journal_date'], $t['expense']], $result['transactions'])
+        );
+        $this->assertSame([['消耗品費', 1900]], array_map(static fn (array $c): array => [$c['name'], $c['actual']], $result['categories']));
+    }
+
     public function test_budget_is_null_without_an_active_budget_and_a_draft_budget_is_ignored(): void
     {
         $this->budgets->save(Budget::create($this->production->id(), 'Draft', [BudgetLine::create($this->venue->id(), 90000)], $this->manager->id()));

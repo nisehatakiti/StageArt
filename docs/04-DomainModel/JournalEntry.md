@@ -2,7 +2,7 @@
 
 # Domain Model : Journal Entry
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -181,6 +181,22 @@ Ticket RevenueのJournal Dateを
 
 具体的な会計期間ルールは、
 Accounting Domainで定義する。
+
+## 日本時間（JST）基準（Version 1.1）
+
+会計上の日付は日本時間（JST、Asia/Tokyo）を基準とする。
+DateTime.md「Version 1.0では日本時間(JST)を標準とする」に従う。
+
+- Journal Dateは日時（時点）として保持する。DBには既存の他の日時と同じくUTCで保存し（`journal_date` DATETIME。保存方式は変更しない）、保存時・読込時ともにUTCとして扱う。
+- 仕訳日・取引日（会計上の日付）は、Journal DateをJSTに変換した暦日（YYYY-MM-DD）とする。UTCの日付部分をそのまま日付として扱ってはならない。
+  - 例：2026-03-31 14:59:59 UTC は 2026-03-31 23:59:59 JST であり、仕訳日は2026-03-31。
+  - 例：2026-03-31 15:00:00 UTC は 2026-04-01 00:00:00 JST であり、仕訳日は2026-04-01。
+- 会計期間の判定、月次集計、年度集計は、仕訳日（JSTの暦日）に基づいて行う。月はJSTの暦月とする。会計年度の開始月・締め処理は会計期間の仕様で定める（未確定）が、その判定にもJSTの仕訳日を用いる。
+- 日時（Journal Date、Created At等）と日付（仕訳日）を区別する。
+  - Journal Entry APIの`journal_date`は時点（ISO 8601、UTC表記）、`accounting_date`は仕訳日（YYYY-MM-DD、JST）とする。
+  - 公演会計の取引明細の`journal_date`は仕訳日（YYYY-MM-DD、JST）とする。
+- 現在の実装で自動作成する仕訳のJournal Dateは、その取引が発生した時点（Check In処理、経費の承認、会計機能の有効化）とする。経費承認の仕訳のJournal DateはExpenseの承認日時（approved_at）と同じ時点とし、仕訳日は承認日（JST）となる。
+- Organization Timezone（OrganizationSetupPolicy.md）を会計に適用する場合の扱いは、Timezone関連の詳細設計で定める。それまでは全OrganizationでJSTを用いる。
 
 ---
 

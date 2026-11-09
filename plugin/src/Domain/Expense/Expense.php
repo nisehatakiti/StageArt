@@ -352,16 +352,18 @@ final class Expense
     /**
      * SUBMITTED -> POSTED. Approval and posting are one step
      * (ExpenseApprovalWorkflow.md "Posting Rule"), so the caller passes
-     * the already-posted Journal Entry built for the approved amount.
+     * the already-posted Journal Entry built for the approved amount, and
+     * the instant that entry carries as its Journal Date: the approval and
+     * its 仕訳日 then fall on the same JST date (PR #6 review N1).
      */
-    public function approve(PersonId $approver, ?int $approvedAmount, int $expectedRevision, JournalEntryId $postedJournalEntryId): void
+    public function approve(PersonId $approver, ?int $approvedAmount, int $expectedRevision, JournalEntryId $postedJournalEntryId, ?DateTimeImmutable $approvedAt = null): void
     {
         $amount = $this->resolveApprovedAmount($approver, $approvedAmount, $expectedRevision);
 
         $this->status = ExpenseStatus::fromString(ExpenseStatus::POSTED);
         $this->approvedAmount = $amount;
         $this->approvedBy = $approver;
-        $this->approvedAt = new DateTimeImmutable();
+        $this->approvedAt = $approvedAt ?? new DateTimeImmutable();
         $this->postedJournalEntryId = $postedJournalEntryId;
         $this->record(ExpenseReview::APPROVED, $this->requestedAmount, $amount, null, $approver);
         $this->touch($approver);

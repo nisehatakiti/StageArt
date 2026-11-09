@@ -184,6 +184,10 @@ final class ExpenseRestController
             return new WP_Error('stageart_expense_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            // An id that is not a UUID is a malformed request (422), as on
+            // every other Expense route - not a 500 (PR #6 review N5).
+            return new WP_Error('stageart_expense_invalid', $exception->getMessage(), ['status' => 422]);
         }
     }
 
@@ -304,16 +308,25 @@ final class ExpenseRestController
     }
 
     /**
-     * Body: { reason: string (required) }.
+     * Body: { reason: string (required) }. A reason that is not text (an
+     * array, a number, a boolean) is refused (422) rather than recorded as
+     * "Array" or "1" (PR #6 review N6/F6); a missing or blank one is the
+     * Domain's to refuse (422).
      *
      * @return WP_REST_Response|WP_Error
      */
     public function reject(WP_REST_Request $request)
     {
+        $reason = $request->get_param('reason');
+
+        if ($reason !== null && ! is_string($reason)) {
+            return new WP_Error('stageart_expense_invalid', 'reason must be a string.', ['status' => 422]);
+        }
+
         return $this->respond(fn (): ExpenseResult => $this->rejectExpense->execute(new RejectExpenseCommand(
             (string) $request->get_param('id'),
             get_current_user_id(),
-            (string) $request->get_param('reason')
+            (string) $reason
         )));
     }
 

@@ -40,11 +40,14 @@ use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Account\Account;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountType;
+use StageArt\Domain\Expense\Expense;
 use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
 use StageArt\Domain\Expense\ExpenseId;
+use StageArt\Domain\Expense\ExpenseLine;
 use StageArt\Domain\Expense\ExpenseReview;
 use StageArt\Domain\Expense\ExpenseStateConflictException;
 use StageArt\Domain\Expense\ExpenseStatus;
+use StageArt\Domain\JournalEntry\AccountingDate;
 use StageArt\Domain\JournalEntry\DebitCredit;
 use StageArt\Domain\JournalEntry\JournalEntry;
 use StageArt\Domain\JournalEntry\JournalEntryLine;
@@ -1264,6 +1267,187 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->assertSame(4, $wpdb->reconnect_retries, 'Restored after the commit and after the rollback.');
         $this->assertSame(ExpenseStatus::POSTED, $this->status($approved));
         $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($refused));
+    }
+
+    /**
+     * PR #6 review N1: the approval's Journal Entry carries the instant the
+     * Expense was approved at, so its 仕訳日 (the JST date) is the approval
+     * date even for an approval at JST midnight.
+     */
+    public function test_the_approval_journal_date_is_the_approval_instant(): void
+    {
+        $id = $this->submittedBy(2);
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        $expense = $this->expenses->findById(ExpenseId::fromString($id));
+        [$entry] = $this->approvalEntries();
+        $this->assertEquals($expense->approvedAt(), $entry->journalDate(), 'the same instant, to the microsecond');
+        $this->assertSame(AccountingDate::of($expense->approvedAt()), $entry->accountingDate());
+    }
+
+    /**
+     * PR #6 review N2/F5: a notification that fails after the commit is
+     * logged, and the submission, approval or return for correction it was
+     * about is still reported as done - not as an error a retry would turn
+     * into a 409 for a change that is already committed.
+     */
+    public function test_a_failing_notification_never_fails_the_committed_operation(): void
+    {
+        $log = (string) tempnam(sys_get_temp_dir(), 'stageart-notification-log');
+        ini_set('error_log', $log);
+        $this->notifications->failAll();
+
+        try {
+            $approved = $this->draftBy(2);
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->applicantTransitions->submit(new ExpenseTransitionCommand($approved, 2))->status);
+            $this->assertSame(ExpenseStatus::POSTED, $this->approveExpense->execute(new ApproveExpenseCommand($approved, 1, 1))->status);
+
+            $returned = $this->draftBy(2);
+            $this->applicantTransitions->submit(new ExpenseTransitionCommand($returned, 2));
+            $this->assertSame(ExpenseStatus::REJECTED, $this->rejectExpense->execute(new RejectExpenseCommand($returned, 1, '領収書を添付してください'))->status);
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($returned, 2))->status);
+
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($approved));
+            $this->assertCount(1, $this->approvalEntries(), 'The approval and its Journal Entry stay committed');
+            $this->assertSame([], $this->notifications->sent());
+            $logged = (string) file_get_contents($log);
+            foreach (['expense_submitted', 'expense_approved', 'expense_rejected'] as $type) {
+                $this->assertStringContainsString("{$type} for expense", $logged);
+            }
+        } finally {
+            ini_restore('error_log');
+            @unlink($log);
+        }
+    }
+
+    // --- PR #6 review N4: other Organizations, other Productions, inactive Accounts
+
+    private function givenAccountOfAnotherOrganization(): string
+    {
+        $other = Organization::create(new OrganizationName('Other Co'));
+        $other->enableAccounting();
+        $this->organizations->save($other);
+        $account = Account::create($other->id(), '消耗品費', AccountType::fromString(AccountType::EXPENSE));
+        $this->accounts->save($account);
+
+        return $account->id()->toString();
+    }
+
+    public function test_an_account_of_another_organization_is_refused_on_create_and_update(): void
+    {
+        $foreign = $this->givenAccountOfAnotherOrganization();
+
+        try {
+            $this->createExpense->execute(new CreateExpenseCommand(2, $this->production->id()->toString(), [['account_id' => $foreign, 'amount' => 1000]]));
+            $this->fail('An Account of another Organization must be refused.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("Production's own Organization", $exception->getMessage());
+        }
+        $this->assertSame([], $this->expenses->findByProductionId($this->production->id()), 'Nothing was created');
+
+        $id = $this->draftBy(2);
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [['account_id' => $foreign, 'amount' => 1000]]));
+            $this->fail('An Account of another Organization must be refused.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("Production's own Organization", $exception->getMessage());
+        }
+        $lines = $this->expenses->findById(ExpenseId::fromString($id))->lines();
+        $this->assertSame($this->expenseAccountId, $lines[0]->accountId()->toString(), 'Lines unchanged');
+    }
+
+    /**
+     * A line can only name another Organization's Account when it was
+     * written some other way (old data, a direct write); approving refuses
+     * to post it all the same.
+     */
+    public function test_a_line_with_another_organizations_account_is_never_posted(): void
+    {
+        $foreign = $this->givenAccountOfAnotherOrganization();
+        $expense = Expense::create($this->production->id(), [ExpenseLine::create(AccountId::fromString($foreign), 5000)], $this->person[2]->id());
+        $expense->submit($this->person[2]->id());
+        $this->expenses->save($expense);
+        $id = $expense->id()->toString();
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('Another Organization\'s Account must not be posted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("active Account of the Production's own Organization", $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+    }
+
+    public function test_an_account_deactivated_after_submission_is_not_posted(): void
+    {
+        $id = $this->submittedBy(2);
+        $account = $this->accounts->findById(AccountId::fromString($this->expenseAccountId));
+        $account->deactivate();
+        $this->accounts->save($account);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('An inactive Account must not be posted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('active Account', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertSame([], array_values(array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved'))));
+    }
+
+    /**
+     * Expense.Approve is a right on one Production: being PrimaryManager of
+     * another Production - in this Organization or another one - or an
+     * OWNER of the Organization without a role in this Production gives
+     * none of it (ExpenseApprovalWorkflow.md Version 1.6).
+     */
+    public function test_managers_of_another_production_or_organization_cannot_approve_or_reject(): void
+    {
+        $id = $this->submittedBy(2);
+
+        $otherProductionManager = Person::create(12);
+        $this->people->save($otherProductionManager);
+        $this->memberships->save(Membership::create($this->organization->id(), $otherProductionManager->id(), RoleKey::member()));
+        $sameOrgProject = Project::create($this->organization->id(), 'Winter Season');
+        $this->projects->save($sameOrgProject);
+        $this->productions->save(Production::create($sameOrgProject->id(), new ProductionName('Winter Play'), $otherProductionManager->id()));
+
+        $otherOrganization = Organization::create(new OrganizationName('Other Co'));
+        $otherOrganization->enableAccounting();
+        $this->organizations->save($otherOrganization);
+        $otherOwner = Person::create(13);
+        $this->people->save($otherOwner);
+        $this->memberships->save(Membership::createOwnerMembership($otherOrganization->id(), $otherOwner->id()));
+        $otherProject = Project::create($otherOrganization->id(), 'Other Season');
+        $this->projects->save($otherProject);
+        $this->productions->save(Production::create($otherProject->id(), new ProductionName('Other Play'), $otherOwner->id()));
+
+        $coOwner = Person::create(14);
+        $this->people->save($coOwner);
+        $this->memberships->save(Membership::createOwnerMembership($this->organization->id(), $coOwner->id()));
+
+        foreach ([12 => 'PrimaryManager of another Production', 13 => 'owner and PrimaryManager in another Organization', 14 => 'Organization OWNER without a role in this Production'] as $user => $who) {
+            foreach (['approve', 'reject'] as $action) {
+                try {
+                    if ($action === 'approve') {
+                        $this->approveExpense->execute(new ApproveExpenseCommand($id, $user, 1));
+                    } else {
+                        $this->rejectExpense->execute(new RejectExpenseCommand($id, $user, '確認のため'));
+                    }
+                    $this->fail("{$who} must not {$action}.");
+                } catch (ExpenseAccessDeniedException $exception) {
+                    $this->addToAssertionCount(1);
+                }
+            }
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
     }
 
     public function test_the_applicant_is_notified_of_the_approval_after_the_commit(): void

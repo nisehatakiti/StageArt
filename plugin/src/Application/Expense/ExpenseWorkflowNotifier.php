@@ -10,6 +10,7 @@ use StageArt\Core\Contract\ProductionCapabilityDirectoryContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Expense\Expense;
 use StageArt\Domain\Person\PersonId;
+use Throwable;
 
 /**
  * ExpenseApprovalWorkflow.md "Approval Notification": a SUBMITTED
@@ -23,7 +24,13 @@ use StageArt\Domain\Person\PersonId;
  *
  * Callers invoke these only after their transaction has committed, so a
  * rolled-back change is never announced. Delivery failures are already
- * contained by the dispatcher and never undo the change.
+ * contained by the dispatcher and never undo the change; so is anything
+ * else that fails here - looking up the approvers or the Production name,
+ * or storing the notification (PR #6 review N2/F5): it is logged with the
+ * notification type and the Expense id only, and the committed operation
+ * is still reported as done rather than as a 500 that a retry would turn
+ * into a 409. The notification is an entry point, not the approval itself
+ * (ExpenseApprovalWorkflow.md "Approval Notification").
  */
 final class ExpenseWorkflowNotifier
 {
@@ -52,6 +59,44 @@ final class ExpenseWorkflowNotifier
      */
     public function submitted(Expense $expense): void
     {
+        $this->contained(self::TYPE_SUBMITTED, $expense, function (Expense $expense): void {
+            $this->sendSubmitted($expense);
+        });
+    }
+
+    public function approved(Expense $expense): void
+    {
+        $this->contained(self::TYPE_APPROVED, $expense, function (Expense $expense): void {
+            $this->sendApproved($expense);
+        });
+    }
+
+    public function rejected(Expense $expense): void
+    {
+        $this->contained(self::TYPE_REJECTED, $expense, function (Expense $expense): void {
+            $this->sendRejected($expense);
+        });
+    }
+
+    /**
+     * @param callable(Expense): void $notify
+     */
+    private function contained(string $type, Expense $expense, callable $notify): void
+    {
+        try {
+            $notify($expense);
+        } catch (Throwable $exception) {
+            error_log(sprintf(
+                '[StageArt expense notification] %s for expense %s not sent: %s',
+                $type,
+                $expense->id()->toString(),
+                get_class($exception)
+            ));
+        }
+    }
+
+    private function sendSubmitted(Expense $expense): void
+    {
         $message = sprintf(
             '「%s」で経費申請（%s円）が提出されました。内容を確認し、承認または差し戻しをしてください。',
             $this->productionName($expense),
@@ -60,12 +105,15 @@ final class ExpenseWorkflowNotifier
 
         foreach ($this->capabilityDirectory->personIdsWithProductionCapability($expense->productionId(), AccountingCapability::APPROVE_EXPENSE) as $approver) {
             if (! $expense->isOwnExpense($approver)) {
-                $this->send($approver, self::TYPE_SUBMITTED, $expense, $message);
+                // One approver's failure does not keep the others from hearing of it.
+                $this->contained(self::TYPE_SUBMITTED, $expense, function (Expense $expense) use ($approver, $message): void {
+                    $this->send($approver, self::TYPE_SUBMITTED, $expense, $message);
+                });
             }
         }
     }
 
-    public function approved(Expense $expense): void
+    private function sendApproved(Expense $expense): void
     {
         $message = sprintf(
             '「%s」の経費申請が承認されました（申請額 %s円 / 承認額 %s円）。',
@@ -83,7 +131,7 @@ final class ExpenseWorkflowNotifier
      * 差し戻し and can fix and resubmit it. The type key stays
      * expense_rejected, after the internal status.
      */
-    public function rejected(Expense $expense): void
+    private function sendRejected(Expense $expense): void
     {
         $message = sprintf(
             '「%s」の経費申請（%s円）が差し戻されました。内容を修正して再申請してください。理由：%s',
