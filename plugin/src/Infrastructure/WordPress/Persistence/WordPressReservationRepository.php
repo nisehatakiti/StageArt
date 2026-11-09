@@ -84,6 +84,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
             ARRAY_A
         );
+        $this->assertLockingReadSucceeded('Failed to lock the Reservation.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -114,8 +115,24 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE performance_id = %s ORDER BY created_at ASC FOR UPDATE", $performanceId->toString()),
             ARRAY_A
         );
+        $this->assertLockingReadSucceeded('Failed to lock the Reservations of the Performance.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
+    }
+
+    /**
+     * PR #7 review: $wpdb answers a failed read (a lock wait timeout, a
+     * deadlock, a lost connection) with no rows, the same as a read that
+     * found none - only $wpdb->last_error, cleared before every query,
+     * tells them apart. A locking read that failed must not be taken for
+     * "no Reservations": the capacity check would count no seats taken.
+     * Throwing rolls the surrounding transaction back.
+     */
+    private function assertLockingReadSucceeded(string $message): void
+    {
+        if ((string) $this->wpdb->last_error !== '') {
+            throw new RuntimeException($message . ' ' . $this->wpdb->last_error);
+        }
     }
 
     public function findByIds(array $ids): array

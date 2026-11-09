@@ -575,6 +575,117 @@ final class ReservationUseCaseTest extends TestCase
         }
     }
 
+    // --- a failed locking read never books (PR #7 follow-up review) ------
+
+    /**
+     * The booking's own repositories and transaction manager on a FakeWpdb
+     * whose responder decides each answer. Only for @runInSeparateProcess
+     * tests (wordpress-stubs).
+     *
+     * @param callable(string, array<int, mixed>, \StageArt\Tests\Support\FakeWpdb): mixed $responder
+     * @return array{0: CreateReservationUseCase, 1: \StageArt\Tests\Support\FakeWpdb}
+     */
+    private function createReservationOnWordPress(callable $responder, bool $wordPressPerformances): array
+    {
+        require_once __DIR__ . '/../../Support/wordpress-stubs.php';
+        $wpdb = new \wpdb($responder);
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+
+        return [new CreateReservationUseCase(
+            $wordPressPerformances ? new \StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository($wpdb) : $this->performances,
+            $this->tickets,
+            new \StageArt\Infrastructure\WordPress\Persistence\WordPressReservationRepository($wpdb),
+            new \StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository($wpdb),
+            $productionContext,
+            new CoreIdentityAdapter($this->people),
+            new \StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager($wpdb)
+        ), $wpdb];
+    }
+
+    /**
+     * @param \StageArt\Tests\Support\FakeWpdb $wpdb
+     */
+    private function assertRolledBackWithNothingSaved($wpdb): void
+    {
+        $this->assertSame(
+            ['START TRANSACTION', 'ROLLBACK'],
+            array_map(static fn (array $args): string => (string) $args[0], $wpdb->callsTo('query')),
+            'Rolled back, never committed'
+        );
+        $this->assertSame([], $wpdb->callsTo('insert'), 'No Reservation and no Issued Ticket written');
+        $this->assertSame([], $wpdb->callsTo('update'));
+    }
+
+    /**
+     * The seats-taken count under the lock fails (lock wait timeout):
+     * $wpdb gives no rows, which must not be counted as no seats taken.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_a_failed_locking_read_of_the_reservations_books_nothing_and_rolls_back(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'), 3);
+        [$createReservation, $wpdb] = $this->createReservationOnWordPress(static function (string $method, array $args, \StageArt\Tests\Support\FakeWpdb $db) {
+            if ($method === 'get_results' && str_contains((string) $args[0], 'FOR UPDATE')) {
+                $db->last_error = 'Lock wait timeout exceeded; try restarting transaction';
+
+                return [];
+            }
+
+            return \StageArt\Tests\Support\FakeWpdbDefault::VALUE;
+        }, false);
+
+        try {
+            $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+            $this->fail('A booking was made without knowing the seats taken');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringStartsWith('Failed to lock the Reservations of the Performance.', $exception->getMessage());
+        }
+
+        $this->assertRolledBackWithNothingSaved($wpdb);
+    }
+
+    /**
+     * The Performance row lock fails: not reported as a missing
+     * Performance, and nothing is booked without the lock.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_a_failed_locking_read_of_the_performance_books_nothing_and_rolls_back(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'), 3);
+        require_once __DIR__ . '/../../Support/wordpress-stubs.php';
+        $stored = new \wpdb();
+        (new \StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository($stored))->save($performance);
+        $row = $stored->callsTo('insert')[0][1];
+
+        [$createReservation, $wpdb] = $this->createReservationOnWordPress(static function (string $method, array $args, \StageArt\Tests\Support\FakeWpdb $db) use ($row) {
+            if ($method === 'get_row' && str_contains((string) $args[0], 'wp_stageart_performances')) {
+                if (str_contains((string) $args[0], 'FOR UPDATE')) {
+                    $db->last_error = 'Deadlock found when trying to get lock; try restarting transaction';
+
+                    return null;
+                }
+
+                return $row;
+            }
+
+            return \StageArt\Tests\Support\FakeWpdbDefault::VALUE;
+        }, true);
+
+        try {
+            $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+            $this->fail('A booking was made without the Performance lock');
+        } catch (\RuntimeException $exception) {
+            $this->assertNotInstanceOf(\StageArt\Application\Performance\PerformanceNotFoundException::class, $exception);
+            $this->assertStringStartsWith('Failed to lock the Performance.', $exception->getMessage());
+        }
+
+        $this->assertRolledBackWithNothingSaved($wpdb);
+    }
+
     public function test_the_performance_lock_is_taken_inside_the_transaction_that_saves_the_booking(): void
     {
         [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));

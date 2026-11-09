@@ -40,6 +40,8 @@ final class PerformanceCapacityGuard
      *
      * @throws PerformanceNotFoundException when it no longer exists
      * @throws CapacityExceededException when $guestCount more seats do not fit
+     * @throws \RuntimeException when a locking read fails (the repositories
+     *         never report a failed read as no rows)
      */
     public function lockAndReserve(PerformanceId $performanceId, int $guestCount): Performance
     {

@@ -81,6 +81,13 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             ARRAY_A
         );
 
+        // A failed read also returns no row; only last_error (cleared
+        // before every query) tells it from a missing Performance. It must
+        // not be reported as "not found", nor go on without the lock.
+        if ((string) $this->wpdb->last_error !== '') {
+            throw new RuntimeException('Failed to lock the Performance. ' . $this->wpdb->last_error);
+        }
+
         return $row ? $this->hydrate($row) : null;
     }
 
