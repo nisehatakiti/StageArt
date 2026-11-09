@@ -28,6 +28,9 @@ use Throwable;
  * Expense passes check(); it then restores them all in one transaction,
  * checking each again once its row is locked, and rolls everything back
  * when any step fails. No Journal Entry is read for update or written.
+ * A lost connection is never replaced inside that transaction - the run
+ * ends with wpdb's database connection error instead - and a COMMIT on
+ * another connection is a failed COMMIT (LegacyExpenseMigrationTransaction).
  *
  * Inside the transaction, each Expense row is locked, then its history
  * and its lines, Expenses in id order. The history and lines are read
@@ -204,7 +207,13 @@ final class LegacyExpenseMigrationRestore
             return self::refuse($summary, self::REFUSED_TARGET_MISMATCH);
         }
 
-        if ($wpdb->query('START TRANSACTION') === false) {
+        // Without $wpdb reconnecting, and a COMMIT on another connection is
+        // a failed COMMIT (LegacyExpenseMigrationTransaction, PR #6 review
+        // N3): the Expenses, their MIGRATION_REVERTED rows and their
+        // SUCCEEDED audit rows are committed together or not at all.
+        $transaction = LegacyExpenseMigrationTransaction::begin($wpdb);
+
+        if ($transaction === null) {
             return self::rolledBack($summary, $ids, null, self::FAILED_TRANSACTION_START, $audit, $recordRun);
         }
 
@@ -220,27 +229,33 @@ final class LegacyExpenseMigrationRestore
         sort($lockOrder, SORT_STRING);
 
         try {
-            foreach ($lockOrder as $id) {
-                $current = $id;
-                $failure = self::restoreOne($wpdb, $t, $id, $operator, $reason, $actedAt, $audit);
+            try {
+                foreach ($lockOrder as $id) {
+                    $current = $id;
+                    $failure = self::restoreOne($wpdb, $t, $id, $operator, $reason, $actedAt, $audit);
 
-                if ($failure !== null) {
-                    break;
+                    if ($failure !== null) {
+                        break;
+                    }
                 }
+            } catch (Throwable $exception) {
+                $failure = LegacyExpenseMigration::failureOf($exception);
+                $dbError = LegacyExpenseMigration::logDetailOf($exception);
             }
-        } catch (Throwable $exception) {
-            $failure = LegacyExpenseMigration::failureOf($exception);
-            $dbError = LegacyExpenseMigration::logDetailOf($exception);
-        }
 
-        if ($failure === null && $wpdb->query('COMMIT') === false) {
-            $current = null;
-            $failure = self::FAILED_COMMIT;
+            if ($failure === null && ! $transaction->commit()) {
+                $current = null;
+                $failure = self::FAILED_COMMIT;
+            }
+
+            if ($failure !== null && ! $transaction->rollBack()) {
+                error_log(LegacyExpenseMigration::LOG_PREFIX . " rollback failed: restore run {$runId}; the connection was closed and replaced");
+            }
+        } finally {
+            $transaction->end();
         }
 
         if ($failure !== null) {
-            $wpdb->query('ROLLBACK');
-
             return self::rolledBack($summary, $ids, $current, $failure, $audit, $recordRun, $dbError);
         }
 

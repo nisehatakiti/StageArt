@@ -25,7 +25,10 @@ use Throwable;
  *   Each Expense is migrated in its own transaction: the row is locked
  *   and classified again, its status updated and its MIGRATED history
  *   added, and any failure - including the COMMIT - rolls that Expense
- *   back to CONFIRMED and is logged as "<expense id>=<reason code>".
+ *   back to CONFIRMED and is logged as "<expense id>=<reason code>". A
+ *   lost connection is never replaced inside that transaction - the run
+ *   ends with wpdb's database connection error instead - and a COMMIT on
+ *   another connection is a failed COMMIT (LegacyExpenseMigrationTransaction).
  *
  * Locks, in this order, until the Expense's COMMIT or ROLLBACK: the
  * Expense row, then its Journal Entry row (by primary key), then that
@@ -270,7 +273,12 @@ final class LegacyExpenseMigration
 
     /**
      * One Expense, one transaction. Returns null once committed, or the
-     * reason it was rolled back.
+     * reason it was rolled back. The transaction runs without $wpdb
+     * reconnecting, and a COMMIT that did not happen on the transaction's
+     * own connection is a failed COMMIT (LegacyExpenseMigrationTransaction,
+     * PR #6 review N3), so an Expense is only ever counted - and audited -
+     * as migrated when its status change, history and SUCCEEDED row were
+     * committed together.
      *
      * @param \wpdb $wpdb
      * @param array<string, string> $t
@@ -280,23 +288,29 @@ final class LegacyExpenseMigration
      */
     private static function migrateOne($wpdb, array $t, string $id, array $expected, callable $audit, ?string &$dbError = null): ?string
     {
-        if ($wpdb->query('START TRANSACTION') === false) {
+        $transaction = LegacyExpenseMigrationTransaction::begin($wpdb);
+
+        if ($transaction === null) {
             return self::FAILED_TRANSACTION_START;
         }
 
         try {
-            $failure = self::writeOne($wpdb, $t, $id, $expected, $audit);
-        } catch (Throwable $exception) {
-            $failure = self::failureOf($exception);
-            $dbError = self::logDetailOf($exception);
-        }
+            try {
+                $failure = self::writeOne($wpdb, $t, $id, $expected, $audit);
+            } catch (Throwable $exception) {
+                $failure = self::failureOf($exception);
+                $dbError = self::logDetailOf($exception);
+            }
 
-        if ($failure === null && $wpdb->query('COMMIT') === false) {
-            $failure = self::FAILED_COMMIT;
-        }
+            if ($failure === null && ! $transaction->commit()) {
+                $failure = self::FAILED_COMMIT;
+            }
 
-        if ($failure !== null) {
-            $wpdb->query('ROLLBACK');
+            if ($failure !== null && ! $transaction->rollBack()) {
+                error_log(self::LOG_PREFIX . " rollback failed: {$id}; the connection was closed and replaced");
+            }
+        } finally {
+            $transaction->end();
         }
 
         return $failure;

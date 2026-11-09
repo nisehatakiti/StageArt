@@ -61,6 +61,12 @@ final class FakeExpenseMigrationDatabase
      * (lock wait timeout) or any other; 0 for an error that is not
      * MySQL's; 'NO_CONNECTION' leaves $wpdb->dbh null (connection lost);
      * 'CLOSED' makes reading the number throw, as a closed handle does.
+     * 'ROLLBACK' => an Expense id (the one locked last) fails that ROLLBACK:
+     * the transaction stays open until the connection is closed.
+     * 'RECONNECT_AT_COMMIT' => an Expense id: the connection was lost
+     * before that COMMIT, so the server rolled the transaction back, and
+     * wpdb repeats the COMMIT on a new connection, where it "succeeds" -
+     * FakeMysqli::$threadId changes to $threadAfterReconnect (PR #6 N3).
      *
      * @var array<string, mixed>
      */
@@ -93,8 +99,14 @@ final class FakeExpenseMigrationDatabase
     /** The Expense the open transaction locked with SELECT ... FOR UPDATE. */
     private ?string $locked = null;
 
-    /** @var string[] "START", "COMMIT", "ROLLBACK" in the order they were issued */
+    /** @var string[] "START", "COMMIT", "ROLLBACK", "CLOSE", "CONNECT" in the order they were issued */
     public array $transactionLog = [];
+
+    /** @var array<int, array{0: string, 1: mixed}> each START / COMMIT / ROLLBACK with $wpdb->reconnect_retries at the time */
+    public array $reconnectRetries = [];
+
+    /** The thread id a 'RECONNECT_AT_COMMIT' COMMIT reports afterwards. */
+    public int $threadAfterReconnect = 42;
 
     /**
      * @param array<int, mixed> $args
@@ -226,8 +238,32 @@ final class FakeExpenseMigrationDatabase
             return [];
         }
 
+        // Closing the connection makes the server discard an open transaction.
+        if ($method === 'close') {
+            $this->transactionLog[] = 'CLOSE';
+
+            if ($this->snapshot !== null) {
+                $this->tables = $this->snapshot;
+            }
+
+            $this->snapshot = null;
+            $this->locked = null;
+
+            return true;
+        }
+
+        if ($method === 'db_connect') {
+            $this->transactionLog[] = 'CONNECT';
+
+            return true;
+        }
+
         if ($method === 'query') {
             $this->queries[] = $sql;
+
+            if (in_array($sql, ['START TRANSACTION', 'COMMIT', 'ROLLBACK'], true)) {
+                $this->reconnectRetries[] = [$sql, $wpdb->reconnect_retries ?? 'absent'];
+            }
 
             if ($sql === 'START TRANSACTION') {
                 $this->transactionLog[] = 'START';
@@ -248,6 +284,14 @@ final class FakeExpenseMigrationDatabase
                     return false;
                 }
 
+                if (isset($this->failures['RECONNECT_AT_COMMIT']) && $this->failures['RECONNECT_AT_COMMIT'] === $this->locked) {
+                    if ($this->snapshot !== null) {
+                        $this->tables = $this->snapshot;
+                    }
+
+                    FakeMysqli::$threadId = $this->threadAfterReconnect;
+                }
+
                 $this->snapshot = null;
                 $this->locked = null;
 
@@ -256,6 +300,10 @@ final class FakeExpenseMigrationDatabase
 
             if ($sql === 'ROLLBACK') {
                 $this->transactionLog[] = 'ROLLBACK';
+
+                if (isset($this->failures['ROLLBACK']) && $this->failures['ROLLBACK'] === $this->locked) {
+                    return false;
+                }
 
                 if ($this->snapshot !== null) {
                     $this->tables = $this->snapshot;

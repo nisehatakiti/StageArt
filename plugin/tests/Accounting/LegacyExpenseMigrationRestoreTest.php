@@ -7,7 +7,9 @@ namespace StageArt\Tests\Accounting;
 use PHPUnit\Framework\TestCase;
 use StageArt\Accounting\LegacyExpenseMigration;
 use StageArt\Accounting\LegacyExpenseMigrationRestore as R;
+use StageArt\Accounting\LegacyExpenseMigrationAudit as A;
 use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
+use StageArt\Tests\Support\FakeMysqli;
 use StageArt\Tests\Support\FakeWpdb;
 use StageArt\Tests\Support\LegacyExpenseFixture;
 
@@ -638,5 +640,77 @@ final class LegacyExpenseMigrationRestoreTest extends TestCase
         }
 
         $this->assertStringContainsString('by person=' . self::ACTOR . ' wp_user=7 os_user=deploy', $logged);
+    }
+
+    // --- PR #6 review N3 (the migration's failure reproduced on MySQL 5.7.44, 2026-11-09)
+
+    /**
+     * @return array<int, array{0: string, 1: ?string}> the Expense's audit rows of this restore run as [outcome, reason code]
+     */
+    private function restoreAuditOf(string $expenseId, string $runId): array
+    {
+        return array_values(array_map(
+            static fn (array $row): array => [$row['outcome'], $row['reason_code']],
+            array_filter($this->data->auditOf($expenseId), static fn (array $row): bool => $row['run_id'] === $runId)
+        ));
+    }
+
+    /**
+     * A COMMIT that wpdb repeated on a new connection after losing the
+     * restore's own is a failed COMMIT: nothing is reported restored, the
+     * Expenses stay POSTED with their MIGRATED history only, and their
+     * audit rows say FAILED - never SUCCEEDED.
+     */
+    public function test_a_commit_on_another_connection_rolls_the_whole_restore_back(): void
+    {
+        require_once __DIR__ . '/../Support/fake-mysqli.php';
+        $this->wpdb->dbh = FakeMysqli::handle();
+        FakeMysqli::$threadId = 41;
+        $this->db->failures['RECONNECT_AT_COMMIT'] = 'migratable-2';
+
+        $result = $this->restore(['migratable', 'migratable-2']);
+
+        $this->assertSame(R::OUTCOME_ROLLED_BACK, $result['outcome']);
+        $this->assertSame(R::FAILED_COMMIT, $result['reason']);
+        $this->assertSame([], $result['restored']);
+        $this->assertSame(['START', 'COMMIT', 'ROLLBACK'], $this->db->transactionLog);
+        $this->assertSame($this->afterMigration, $this->db->businessTables(), 'Still exactly as the migration left them');
+        $this->assertSame(['MIGRATED'], $this->actionsOf('migratable'));
+        foreach (['migratable', 'migratable-2'] as $id) {
+            $this->assertSame([[A::FAILED, R::FAILED_COMMIT]], $this->restoreAuditOf($id, $result['run_id']));
+        }
+    }
+
+    /**
+     * A ROLLBACK that fails closes the connection, so the half-done
+     * restore it holds is discarded rather than committed by whatever
+     * starts a transaction next; the FAILED rows go through a fresh
+     * connection.
+     */
+    public function test_a_failed_rollback_replaces_the_connection_and_restores_nothing(): void
+    {
+        $this->db->failures['INSERT'] = 'migratable-2';
+        $this->db->failures['ROLLBACK'] = 'migratable-2';
+
+        $result = $this->restore(['migratable', 'migratable-2']);
+
+        $this->assertSame(R::OUTCOME_ROLLED_BACK, $result['outcome']);
+        $this->assertSame(R::FAILED_HISTORY_INSERT, $result['reason']);
+        $this->assertSame(['START', 'ROLLBACK', 'CLOSE', 'CONNECT'], $this->db->transactionLog);
+        $this->assertSame($this->afterMigration, $this->db->businessTables(), 'migratable, restored first, went with the closed connection');
+        $this->assertStringContainsString('rollback failed: restore run ' . $result['run_id'], $this->logged());
+        $this->assertSame([[A::FAILED, R::FAILED_HISTORY_INSERT]], $this->restoreAuditOf('migratable-2', $result['run_id']));
+    }
+
+    public function test_the_restore_runs_without_reconnecting(): void
+    {
+        $this->wpdb->reconnect_retries = 5;
+        $this->db->reconnectRetries = [];
+
+        $result = $this->restore(['migratable']);
+
+        $this->assertSame(R::OUTCOME_RESTORED, $result['outcome']);
+        $this->assertSame([['START TRANSACTION', 5], ['COMMIT', 0]], $this->db->reconnectRetries);
+        $this->assertSame(5, $this->wpdb->reconnect_retries);
     }
 }

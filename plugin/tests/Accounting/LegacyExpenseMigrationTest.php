@@ -6,7 +6,9 @@ namespace StageArt\Tests\Accounting;
 
 use PHPUnit\Framework\TestCase;
 use StageArt\Accounting\LegacyExpenseMigration as M;
+use StageArt\Accounting\LegacyExpenseMigrationAudit as A;
 use StageArt\Tests\Support\FakeExpenseMigrationDatabase;
+use StageArt\Tests\Support\FakeMysqli;
 use StageArt\Tests\Support\FakeWpdb;
 use StageArt\Tests\Support\LegacyExpenseFixture;
 
@@ -436,5 +438,107 @@ final class LegacyExpenseMigrationTest extends TestCase
         foreach (['creator', 'manager', 'payer', '5000', '3000', '800', '小道具', 'acc-'] as $content) {
             $this->assertStringNotContainsString($content, $logged);
         }
+    }
+
+    // --- PR #6 review N3 (reproduced on MySQL 5.7.44, 2026-11-09)
+
+    /**
+     * @return array<int, array{0: string, 1: ?string}> the Expense's audit rows as [outcome, reason code]
+     */
+    private function auditOutcomes(string $expenseId): array
+    {
+        return array_map(static fn (array $row): array => [$row['outcome'], $row['reason_code']], $this->data->auditOf($expenseId));
+    }
+
+    private function onConnection(int $threadId): void
+    {
+        require_once __DIR__ . '/../Support/fake-mysqli.php';
+        $this->wpdb->dbh = FakeMysqli::handle();
+        FakeMysqli::$threadId = $threadId;
+    }
+
+    /**
+     * The connection was lost before an Expense's COMMIT and wpdb repeated
+     * the COMMIT on a new connection, where it "succeeded": the run had
+     * reported the Expense migrated although it was still CONFIRMED. A
+     * COMMIT on another connection is a failed COMMIT - not counted, not
+     * audited SUCCEEDED - and the next preview offers the Expense again.
+     */
+    public function test_a_commit_on_another_connection_is_a_failed_commit(): void
+    {
+        $this->onConnection(41);
+        $this->db->failures['RECONNECT_AT_COMMIT'] = 'migratable';
+        $before = $this->data->expensesById();
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(['migratable' => M::FAILED_COMMIT], $result['failed']);
+        $this->assertSame(['migratable-2'], $result['migrated'], 'Counted only once committed on its own connection');
+        $this->assertSame(['START', 'COMMIT', 'ROLLBACK', 'START', 'COMMIT'], $this->db->transactionLog);
+        $this->assertSame($before['migratable'], $this->data->expensesById()['migratable'], 'Still CONFIRMED, every column as before');
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame([[A::FAILED, M::FAILED_COMMIT]], $this->auditOutcomes('migratable'), 'No SUCCEEDED row for it');
+        $this->assertSame([[A::SUCCEEDED, null]], $this->auditOutcomes('migratable-2'));
+        $this->assertStringContainsString('migrated=1 failed=1', $this->logged());
+        $this->assertSame(['migratable'], array_keys(M::preview($this->wpdb)['candidates']), 'Offered again');
+    }
+
+    /**
+     * A ROLLBACK that fails leaves the transaction open on the connection,
+     * and the next Expense's START TRANSACTION would commit it - here the
+     * status change of an Expense whose history insert failed. The
+     * connection is closed instead (the server discards the transaction)
+     * and a fresh one carries on: the Expense stays CONFIRMED without
+     * history, its FAILED row is written, the next Expense migrates.
+     */
+    public function test_a_failed_rollback_replaces_the_connection_so_nothing_half_done_is_committed(): void
+    {
+        $this->db->failures['INSERT'] = 'migratable';
+        $this->db->failures['ROLLBACK'] = 'migratable';
+        $before = $this->data->expensesById();
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame(['migratable' => M::FAILED_HISTORY_INSERT], $result['failed']);
+        $this->assertSame(['migratable-2'], $result['migrated']);
+        $this->assertSame(['START', 'ROLLBACK', 'CLOSE', 'CONNECT', 'START', 'COMMIT'], $this->db->transactionLog);
+        $this->assertSame([[false]], $this->wpdb->callsTo('db_connect'), 'Reopened without bailing');
+        $this->assertSame($before['migratable'], $this->data->expensesById()['migratable'], 'The status change went with the closed connection');
+        $this->assertSame([], $this->data->historyOf('migratable'));
+        $this->assertSame([[A::FAILED, M::FAILED_HISTORY_INSERT]], $this->auditOutcomes('migratable'));
+        $this->assertSame('POSTED', $this->data->expensesById()['migratable-2']['status']);
+        $this->assertStringContainsString('rollback failed: migratable; the connection was closed and replaced', $this->logged());
+    }
+
+    /**
+     * Inside each Expense's transaction wpdb may not reconnect (a lost
+     * connection then ends the run instead of autocommitting the rest);
+     * its setting is back between the transactions and after the run,
+     * whether the Expense migrated or failed.
+     */
+    public function test_each_transaction_runs_without_reconnecting(): void
+    {
+        $this->wpdb->reconnect_retries = 5;
+        $this->db->failures['UPDATE'] = 'migratable';
+
+        $this->previewAndExecute();
+
+        $this->assertSame([
+            ['START TRANSACTION', 5], ['ROLLBACK', 0],
+            ['START TRANSACTION', 5], ['COMMIT', 0],
+        ], $this->db->reconnectRetries);
+        $this->assertSame(5, $this->wpdb->reconnect_retries);
+    }
+
+    public function test_a_transaction_that_cannot_start_leaves_reconnecting_alone(): void
+    {
+        $this->wpdb->reconnect_retries = 5;
+        $this->db->failures['START'] = true;
+
+        $result = $this->previewAndExecute();
+
+        $this->assertSame([], $result['migrated']);
+        $this->assertSame(5, $this->wpdb->reconnect_retries);
+        $this->assertSame([], $this->wpdb->callsTo('close'));
     }
 }
