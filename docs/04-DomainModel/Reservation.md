@@ -258,6 +258,49 @@ Ticket Priceを変更しても、
 
 ---
 
+# Price Snapshot in Revenue and Ticket Back
+
+確定仕様（PR #7、2026-11-10）。
+
+Price Snapshotは1枚あたりの予約時点単価である。
+売上・チケットバックはいずれも
+Price Snapshotを単価として計算し、
+Ticketの現在Priceを過去のReservationに使用しない。
+
+売上金額：
+
+売上金額
+  = Price Snapshot × Guest Count
+
+例えば、
+
+Ticket Price = 3,000円で
+Guest Count = 3のReservationを作成し、
+その後Ticket Priceを3,500円へ変更した場合でも、
+
+売上金額
+  = 3,000円 × 3 = 9,000円
+
+とする。
+
+チケットバック：
+
+- 枚数は実際にCHECKED_INとなったReservationのGuest Countの合計とする
+  （Reservation件数ではない）。
+- NO_SHOW・CANCELLEDのReservationは0枚とする。
+- 扱い（attributedPersonId）ごとに集計する。
+- 複数のTicket種別がある場合は種別ごとに集計する。
+- 単価は各ReservationのPrice Snapshotとし、
+  予約後にTicket Priceが変更されても
+  過去のReservationに対するチケットバック額は変わらない。
+
+詳細はProductionSettlementScreen.md（Chapter 29）§7.1を参照。
+
+公演全体のQuota判定に使う販売実績は、
+個人別チケットバックとは別の集計として扱う。
+
+---
+
 # Issued Ticket
 
 Reservationが成立し、
@@ -891,6 +934,8 @@ Production権限に従う。
 - Ticketの正本はProduction側にある。
 - Reservationは予約成立時点のPrice Snapshotを保持する。
 - Ticketの現在Priceを変更しても過去のPrice Snapshotを変更しない。
+- 売上金額はPrice Snapshot × Guest Countとし、Ticketの現在Priceを使用しない。
+- チケットバックはCHECKED_INのReservationのGuest Count合計を枚数とし、Price Snapshotを単価とする。NO_SHOW・CANCELLEDは含めない。
 - ReservationはIssued Ticketと関連付けることができる。
 - QR TicketはIssued Ticketに関連する受付用Artifactである。
 - QRコードをReservation情報の正本として扱わない。

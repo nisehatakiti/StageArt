@@ -105,9 +105,11 @@ Performance終了
 ↓
 Reception / Check-in
 ↓
-実来場枚数をチケット種別ごとに集計
+実来場枚数（CHECKED_INのReservationのGuest Count合計）を
+扱い（メンバー）ごと・チケット種別ごとに集計
 ↓
 Production共通のチケットバック条件・計算方式を適用
+（1枚あたりの単価 = 各ReservationのPrice Snapshot）
 ↓
 個人別チケットバック確定額
 ↓
@@ -131,7 +133,36 @@ Production共通のチケットバック条件・計算方式を適用
 - Settlement changes the applicable ticket-back unpaid amount to **0円**.
 - Settlement uses the final ticket-back amount, not the Home estimate.
 - The final ticket-back amount is based on actual tickets checked in at Reception / Check-in.
-- Ticket-back calculation is performed separately by ticket type using the Production-configured ticket price.
+- Ticket-back calculation is performed separately by ticket type, using each Reservation's booking-time unit price (`Reservation.priceSnapshot`), not the ticket's current price.
+
+### 7.1 Ticket-back quantity and unit price (confirmed 2026-11-10, PR #7)
+
+**Quantity**
+
+- Only seats that actually came in count: Reservations whose status is **CHECKED_IN**.
+- Quantity is the sum of `guestCount`, not the number of Reservations. One CHECKED_IN Reservation with `guestCount = 3` counts as **3**.
+- **NO_SHOW**, **CANCELLED** and still-**RESERVED** Reservations count as **0**.
+- Seats are totalled per member by the Reservation's 扱い (`attributedPersonId`). A Reservation without 扱い belongs to no member.
+- When the Production has more than one ticket type, seats are totalled per ticket type. The Production-wide conditions are applied to each type's own quantity, and the member's amounts for all types are added together.
+
+**Unit price**
+
+- Each seat is valued at its Reservation's `priceSnapshot`, the ticket price fixed when the Reservation was made.
+- The current `Ticket.price` is never used for past Reservations. Changing a ticket's price after booking does not change the ticket-back amount for Reservations made before the change.
+- 累進方式: the rate of the condition reached by the type's quantity is applied to the sum of the seats' `priceSnapshot`.
+- 分離方式: seats of one ticket type are taken in booking order (Reservation creation time). Each seat falls into the band its position reaches, at its own `priceSnapshot`. A band from 0枚 starts at the first seat.
+
+Example. The rule is 累進方式, 1枚以上 10%. A member's Reservation has `guestCount = 3` and was booked at 3,000円; the ticket was later changed to 3,500円.
+
+| Status | Ticket-back quantity | Ticket-back amount |
+|---|---|---|
+| CHECKED_IN | 3 | 3 × 3,000円 × 10% = 900円 |
+| NO_SHOW | 0 | 0円 |
+| CANCELLED | 0 | 0円 |
+
+**Separate from the Quota**
+
+The Production-wide Quota (ノルマ) uses its own sales-performance count, which is not part of this rule. That count is CHECKED_IN + NO_SHOW, counted in Reservations, and is unchanged.
 
 ---
 

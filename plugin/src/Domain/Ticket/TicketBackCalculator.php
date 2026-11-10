@@ -21,6 +21,13 @@ namespace StageArt\Domain\Ticket;
  * banding; conditions are sorted by threshold ascending regardless of
  * their own comparator for this mode, matching the worked example in
  * §27 (1-10 / 11-20 / 21+).
+ *
+ * Every sold seat carries its own price (PR #7 会計仕様 C): the price
+ * frozen on its Reservation at booking (Reservation::priceSnapshot()),
+ * never the Ticket's current price, so seats of one Ticket type booked
+ * before and after a price change are worth what each was sold for.
+ * `calculateForSeatPrices()` takes those per-seat prices in sale order;
+ * `calculate()` is the single-price form of it.
  */
 final class TicketBackCalculator
 {
@@ -33,26 +40,40 @@ final class TicketBackCalculator
      */
     public static function calculate(TicketBackMode $mode, array $conditions, int $soldCount, int $ticketPrice): int
     {
-        if ($soldCount <= 0 || $conditions === []) {
-            return 0;
-        }
-
-        return $mode->equals(TicketBackMode::fromString(TicketBackMode::PROGRESSIVE))
-            ? self::calculateProgressive($conditions, $soldCount, $ticketPrice)
-            : self::calculateSeparated($conditions, $soldCount, $ticketPrice);
+        return self::calculateForSeatPrices($mode, $conditions, $soldCount > 0 ? array_fill(0, $soldCount, $ticketPrice) : []);
     }
 
     /**
      * @param TicketBackCondition[] $conditions
+     * @param int[] $seatPrices one entry per sold seat, in sale order (the
+     *        order decides which seats fall into which 分離方式 band)
      */
-    private static function calculateProgressive(array $conditions, int $soldCount, int $ticketPrice): int
+    public static function calculateForSeatPrices(TicketBackMode $mode, array $conditions, array $seatPrices): int
     {
+        $seatPrices = array_values($seatPrices);
+
+        if ($seatPrices === [] || $conditions === []) {
+            return 0;
+        }
+
+        return $mode->equals(TicketBackMode::fromString(TicketBackMode::PROGRESSIVE))
+            ? self::calculateProgressive($conditions, $seatPrices)
+            : self::calculateSeparated($conditions, $seatPrices);
+    }
+
+    /**
+     * @param TicketBackCondition[] $conditions
+     * @param int[] $seatPrices
+     */
+    private static function calculateProgressive(array $conditions, array $seatPrices): int
+    {
+        $soldCount = count($seatPrices);
         $sorted = $conditions;
         usort($sorted, static fn (TicketBackCondition $a, TicketBackCondition $b): int => $a->priority() <=> $b->priority());
 
         foreach ($sorted as $condition) {
             if ($condition->matches($soldCount)) {
-                return (int) round($soldCount * $ticketPrice * $condition->ratePercent() / 100);
+                return (int) round(array_sum($seatPrices) * $condition->ratePercent() / 100);
             }
         }
 
@@ -61,16 +82,20 @@ final class TicketBackCalculator
 
     /**
      * @param TicketBackCondition[] $conditions
+     * @param int[] $seatPrices
      */
-    private static function calculateSeparated(array $conditions, int $soldCount, int $ticketPrice): int
+    private static function calculateSeparated(array $conditions, array $seatPrices): int
     {
+        $soldCount = count($seatPrices);
         $sorted = $conditions;
         usort($sorted, static fn (TicketBackCondition $a, TicketBackCondition $b): int => $a->threshold() <=> $b->threshold());
 
         $total = 0;
 
         foreach ($sorted as $index => $condition) {
-            $lowerBound = $condition->threshold();
+            // Seats are numbered from 1: a band from 0枚 starts at the first
+            // seat (counting it from 0 paid one seat that was never sold).
+            $lowerBound = max(1, $condition->threshold());
             $nextCondition = $sorted[$index + 1] ?? null;
             $upperBound = $nextCondition !== null ? $nextCondition->threshold() - 1 : $soldCount;
 
@@ -84,7 +109,8 @@ final class TicketBackCalculator
                 continue;
             }
 
-            $total += (int) round($unitsInBand * $ticketPrice * $condition->ratePercent() / 100);
+            $bandSales = array_sum(array_slice($seatPrices, $lowerBound - 1, $unitsInBand));
+            $total += (int) round($bandSales * $condition->ratePercent() / 100);
         }
 
         return $total;

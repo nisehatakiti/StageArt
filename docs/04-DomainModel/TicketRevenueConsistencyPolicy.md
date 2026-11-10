@@ -142,6 +142,24 @@ Ticketの現在価格を参照して過去Reservationの金額を再計算して
 
 Guest Countが複数の場合も、予約時点で確定した取引金額を基礎とする。
 
+確定仕様（PR #7、2026-11-10）：
+
+- 売上金額 = Reservation.Price Snapshot（予約時点の1枚あたり単価）× Reservation.Guest Count（予約枚数）。
+- 例：3,000円で3枚予約した後にTicket Priceが3,500円へ変更されても、そのReservationの売上金額は3,000円 × 3 = 9,000円とする。
+- Ticketの現在Price（Ticket.Price）を過去Reservationの売上・入金額に使用してはならない。
+
+---
+
+# Ticket Back Amount Source
+
+チケットバック（個人別精算）の金額も、売上と同じくReservation.Price Snapshotを単価とする（PR #7、2026-11-10）。
+
+- 対象枚数は、実際にCHECKED_INとなったReservationのGuest Countの合計とする。NO_SHOW・CANCELLEDは含めない。
+- 扱い（attributedPersonId）ごと・Ticket種別ごとに集計する。
+- Ticket Priceを予約後に変更しても、過去Reservationに対するチケットバック額は変わらない。
+
+詳細はProductionSettlementScreen.md（Chapter 29）§7.1を参照。公演全体のQuota判定に使う販売実績は別概念であり、本項の対象外とする。
+
 ---
 
 # Scope Aggregation

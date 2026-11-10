@@ -336,6 +336,10 @@ Check In
 
 として扱う。
 
+ただし、売上金額とチケットバック枚数は
+Guest Countの人数分（この例では3枚）として数える
+（「Revenue and Guest Count」「Check In and Ticket Back」を参照）。
+
 ---
 
 # Companion
@@ -508,22 +512,57 @@ Check Inされた既存Reservationの売上
 
 Guest Countが複数の場合、
 Reservationに記録された
-取引金額を会計連携の基礎とする。
+予約時点の単価（Price Snapshot）と
+予約枚数（Guest Count）から
+売上金額を求める。
+
+売上金額
+  = Reservation.Price Snapshot × Reservation.Guest Count
 
 例えば、
 
-Guest Count
-  = 3
+予約時点
+  Ticket Price = 3,000円
+  Guest Count = 3
 
-の場合でも、
-Reservationに記録された
-実際の取引金額を利用する。
+で予約した後、
+Ticket Priceが3,500円へ変更されても、
 
-単純に、
+売上金額
+  = 3,000円 × 3 = 9,000円
 
-Ticket Price × Guest Count
+とする。
 
-だけで金額を再計算しない。
+Ticketの現在Priceを使って
+
+Ticket.Price × Guest Count
+  = 3,500円 × 3 = 10,500円
+
+と再計算してはならない。
+
+（PR #7 会計仕様確定 2026-11-10）
+
+---
+
+# Check In and Ticket Back
+
+Check Inの操作はReservation単位（Guest Countが複数でもCheck In = 1件）だが、
+チケットバックの枚数は
+実際にCHECKED_INとなったReservationの
+Guest Countの合計で数える。
+
+- CHECKED_INのReservationだけを対象とする。
+- Guest Count = 3のReservationがCHECKED_INなら3枚とする。
+- NO_SHOW・CANCELLED・RESERVEDのReservationは0枚とする。
+- 扱い（attributedPersonId）ごと、Ticket種別ごとに集計する。
+- 1枚あたりの単価は、そのReservationのPrice Snapshotを使う。
+  Ticketの現在Priceは使わない。
+
+計算方式の詳細はProductionSettlementScreen.md（Chapter 29）を参照。
+
+公演全体のQuota（ノルマ）判定に使う販売実績は、
+チケットバックとは別の集計であり、
+本項の変更対象ではない。
 
 ---
 
@@ -909,7 +948,8 @@ Check Inとの関連を追跡する。
 - Check In完了時点では仮売上へ振り替えない。会計期間末に仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 - 売上金額はReservationの予約時点の取引価格を利用する。
 - Ticketの現在価格を過去Reservationの売上計算に利用しない。
-- Guest Countから単純計算して売上金額を再構成しない。
+- 売上金額はReservation.Price Snapshot（予約時点の単価）× Guest Count（予約枚数）とする。Ticketの現在PriceとGuest Countから売上金額を再構成しない。
+- チケットバック枚数はCHECKED_INとなったReservationのGuest Countの合計とし、NO_SHOW・CANCELLEDは含めない。単価はPrice Snapshotを使う。
 - Accounting DomainはCheckInCompletedを来場受付Factとして参照できる。入金・Ticket Revenueの計上根拠はPayment Factとし、仮売上への振替仕訳は会計期間末に生成する。
 - Check In Domain自身がJournal Entryを直接生成しない。
 - Check In Domain自身が勘定科目を管理しない。
