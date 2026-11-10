@@ -29,6 +29,17 @@ describe('getErrorMessage', () => {
     );
   });
 
+  it('explains a completion refused for an over-paid settlement, with the amount when given', () => {
+    expect(
+      getErrorMessage(new ApiError(422, 'overpaid', 'stageart_production_settlement_overpaid', { status: 422, total_overpaid_amount: 1500 }))
+    ).toBe(
+      '精算済みの額が確定したチケットバックを上回っているメンバーがいるため（合計1,500円）、決算を完了できません。精算画面で該当メンバーの精算を取り消し、確定額で精算し直してください。'
+    );
+    expect(getErrorMessage(new ApiError(422, 'overpaid', 'stageart_production_settlement_overpaid'))).toBe(
+      '精算済みの額が確定したチケットバックを上回っているメンバーがいるため、決算を完了できません。精算画面で該当メンバーの精算を取り消し、確定額で精算し直してください。'
+    );
+  });
+
   it('maps NetworkError to a connectivity-specific message', () => {
     expect(getErrorMessage(new NetworkError(new Error('offline')))).toBe(
       'サーバーへ接続できませんでした。通信環境を確認してください。'

@@ -1,6 +1,6 @@
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
-import { currentPerson, mockFetchRoutes, rehearsalScheduleAdjustment } from '@/features/attendance/__fixtures__/attendanceFixtures';
+import { currentPerson, mockFetchRoutes, productionOne, rehearsalScheduleAdjustment } from '@/features/attendance/__fixtures__/attendanceFixtures';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -21,6 +21,9 @@ describe('Rehearsal edit screen: 回答期限', () => {
     const rehearsalWithDeadline = { ...rehearsalScheduleAdjustment, response_deadline: '2026-08-19T18:00:00+09:00' };
 
     mockFetchRoutes([
+      // f575bc5: the edit form is for the PrimaryManager / REHEARSAL_MANAGER,
+      // decided from GET /productions/{id}.
+      { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/me'), status: 200, body: currentPerson },
       { test: (u) => u.endsWith('/rehearsals/rehearsal-1'), status: 200, body: rehearsalWithDeadline },
     ]);

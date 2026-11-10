@@ -1,5 +1,5 @@
-import { useLocalSearchParams, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FormInput } from '@/components/form-input';
 
@@ -16,17 +16,15 @@ import {
 } from '@/features/participantInvitation/useParticipantInvitation';
 import { updateProduction } from '@/features/production/api';
 import { useProduction } from '@/features/production/useProductions';
-import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Participant } from '@/types/api';
+import type { Participant, ProductionDelegate } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 import {
   createProductionDelegate,
   fetchProductionDelegates,
   updateProductionDelegate,
 } from '@/features/productionDelegate/api';
-import type { ProductionDelegate } from '@/types/api';
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
 const PARTICIPANT_TYPES = ['CAST', 'STAFF'] as const;
@@ -123,7 +121,6 @@ export default function ProductionParticipantsScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
   });
 
-  const { organization } = useProductionOrganization(production);
   const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
@@ -155,7 +152,12 @@ export default function ProductionParticipantsScreen() {
   const [newMemberRemarks, setNewMemberRemarks] = useState('');
   const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  // PR #7 review (R7): merged during render whenever a new Participant
+  // list arrives (the effect re-ran on every new participantsQuery.data) -
+  // not in an effect (react-hooks/set-state-in-effect).
+  const [editsSeededFrom, setEditsSeededFrom] = useState<typeof participantsQuery.data>(undefined);
+  if (participantsQuery.data !== editsSeededFrom) {
+    setEditsSeededFrom(participantsQuery.data);
     if (activeParticipants.length > 0) {
       setEdits((current) => {
         const next = { ...current };
@@ -171,15 +173,15 @@ export default function ProductionParticipantsScreen() {
         return next;
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantsQuery.data]);
+  }
 
-  useEffect(() => {
-    if (production && !initialized) {
-      setMemberInfoPublishedAt(production.member_info_published_at ?? '');
-      setInitialized(true);
-    }
-  }, [production, initialized]);
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (production && !initialized) {
+    setMemberInfoPublishedAt(production.member_info_published_at ?? '');
+    setInitialized(true);
+  }
+
 
   /**
    * §2: one action, 氏名＋メールアドレス＋役割＋備考 submitted together.
@@ -238,7 +240,7 @@ export default function ProductionParticipantsScreen() {
         if (!edit) continue;
 
         if (edit.delete) {
-          await useCancelParticipantDirect(apiClient, participant.id);
+          await cancelParticipantDirect(apiClient, participant.id);
           continue;
         }
 
@@ -261,15 +263,6 @@ export default function ProductionParticipantsScreen() {
       setSaving(false);
     }
   }
-
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
-    ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
-    { label: production?.name ?? '...', href: `/productions/${id}` as Href },
-    { label: 'メンバー管理' },
-  ];
 
   if (productionQuery.isLoading) {
     return (
@@ -683,7 +676,7 @@ function ParticipantEditRow({
 /** Cancel is applied inline within the batched save loop, matching the
  * same ApiClient the other mutations here use (no separate hook needed
  * for a call this narrow). */
-async function useCancelParticipantDirect(apiClient: ReturnType<typeof useAuth>['apiClient'], participantId: string): Promise<void> {
+async function cancelParticipantDirect(apiClient: ReturnType<typeof useAuth>['apiClient'], participantId: string): Promise<void> {
   await apiClient.delete<void>(`/participants/${participantId}`);
 }
 

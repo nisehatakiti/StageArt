@@ -115,16 +115,20 @@ export class ApiClient {
 
     let message = `Request failed (${response.status})`;
     let code: string | undefined;
+    let data: Record<string, unknown> | undefined;
 
     try {
-      const decoded = (await response.json()) as { message?: string; code?: string };
+      const decoded = (await response.json()) as { message?: string; code?: string; data?: unknown };
       message = decoded.message ?? message;
       code = decoded.code;
+      if (decoded.data !== null && typeof decoded.data === 'object' && !Array.isArray(decoded.data)) {
+        data = decoded.data as Record<string, unknown>;
+      }
     } catch {
       // Non-JSON error body: keep the generic message above.
     }
 
-    throw new ApiError(response.status, message, code);
+    throw new ApiError(response.status, message, code, data);
   }
 
   async get<T = unknown>(path: string, query?: QueryParams): Promise<T> {

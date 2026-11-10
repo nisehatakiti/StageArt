@@ -114,7 +114,6 @@ type NavEntry = {
  */
 export default function HomeScreen() {
   const { apiClient, status } = useAuth();
-  const currentPersonQuery = useCurrentPerson();
   const dashboardQuery = useMyDashboard();
   const dashboardViewModel = dashboardQuery.data ? buildDashboardViewModel(dashboardQuery.data) : null;
   const notificationsQuery = useMyNotifications();
@@ -149,6 +148,11 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
+      // PR #7 review (R7): a stable root testID. Every Home section is
+      // conditional (docs/04-HomeRoleBasedMenu.md: nothing is shown for
+      // absent information), so a Home with no data renders no other
+      // element to tell "Home has been reached".
+      testID="home-screen"
       refreshControl={
         <RefreshControl
           refreshing={dashboardQuery.isFetching}
@@ -501,12 +505,6 @@ function HomeNotificationRow({ notification }: { notification: MyNotification })
  * not a new permission concept (still exactly `current_person_role ===
  * 'OWNER'`, the same field/check as before).
  */
-function formatTimeRange(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-}
-
 function formatNotificationCreatedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;

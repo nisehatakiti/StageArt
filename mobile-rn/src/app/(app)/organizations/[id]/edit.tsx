@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, Image, Linking, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -53,15 +53,16 @@ export default function OrganizationEditScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (organization && !initialized) {
-      setName(organization.name);
-      setSlug(organization.slug ?? '');
-      setDescription(organization.description ?? '');
-      setPublished(organization.published_at !== null);
-      setInitialized(true);
-    }
-  }, [organization, initialized]);
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (organization && !initialized) {
+    setName(organization.name);
+    setSlug(organization.slug ?? '');
+    setDescription(organization.description ?? '');
+    setPublished(organization.published_at !== null);
+    setInitialized(true);
+  }
+
 
   const slugChanged = slug !== (organization?.slug ?? '');
   const slugValid = isValidSlug(slug);

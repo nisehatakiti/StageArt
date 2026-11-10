@@ -76,8 +76,9 @@ describe('Home: greeting + quick actions', () => {
     await waitFor(() => expect(screen.getByTestId('home-greeting')).toBeVisible());
     expect(screen.getByText(/舞台さん/)).toBeVisible();
 
-    fireEvent.press(screen.getByTestId('home-quick-action-create-organization'));
-    expect(mockPush).toHaveBeenCalledWith('/organizations/create');
+    // R7: 2513c52 removed the 「団体を作る」 shortcut from Home (it stays on
+    // the 所属団体 list, /organizations - organizations-create-link).
+    expect(screen.queryByTestId('home-quick-action-create-organization')).toBeNull();
 
     await waitFor(() => expect(screen.getByTestId('home-nav-favorites')).toBeVisible());
     fireEvent.press(screen.getByTestId('home-nav-favorites'));

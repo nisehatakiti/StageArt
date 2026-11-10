@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty, orgOne, orgTwo, productionOne, productionTwo, projectOne, projectTwo } from './__fixtures__/homeFixtures';
-import HomeScreen from '../app/(app)/home';
+import OrganizationsListScreen from '../app/(app)/organizations/index';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -33,7 +33,13 @@ jest.mock('expo-router', () => ({
  * したOrganizationは保存と同時に公開状態とする"), so that implementation-
  * only pill had no basis in spec. This test no longer asserts on it.
  */
-describe('Home: 団体（参加中／管理中）', () => {
+/*
+ * R7: 3113937 (2026-10-06, "simplify dashboard") moved this list off Home
+ * to the 「所属団体」 menu entry (/organizations). The list shows each
+ * Organization's name, role and Production count, and a row opens the
+ * Organization - the same information this test checked on Home.
+ */
+describe('所属団体: 団体（参加中／管理中）', () => {
   it('lists each Organization with its Role and own Productions, and tapping navigates to its management screen', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
@@ -47,20 +53,22 @@ describe('Home: 団体（参加中／管理中）', () => {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <HomeScreen />
+            <OrganizationsListScreen />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('home-organization-row-org-1')).toBeVisible());
-    const orgOneRow = within(screen.getByTestId('home-organization-row-org-1'));
+    await waitFor(() => expect(screen.getByTestId('organizations-row-org-1')).toBeVisible());
+    const orgOneRow = within(screen.getByTestId('organizations-row-org-1'));
     expect(orgOneRow.getByText('○○演劇団')).toBeVisible();
     expect(orgOneRow.getByText('オーナー')).toBeVisible();
+    expect(within(screen.getByTestId('organizations-row-org-2')).getByText('メンバー')).toBeVisible();
 
-    await waitFor(() => expect(orgOneRow.getByText(/○○公演2026/)).toBeVisible());
+    // Its own Productions (org-2's are not counted here).
+    await waitFor(() => expect(orgOneRow.getByText('公演 1件')).toBeVisible());
 
-    fireEvent.press(screen.getByTestId('home-organization-link-org-1'));
+    fireEvent.press(screen.getByTestId('organizations-row-org-1'));
     expect(mockPush).toHaveBeenCalledWith('/organizations/org-1');
   });
 });

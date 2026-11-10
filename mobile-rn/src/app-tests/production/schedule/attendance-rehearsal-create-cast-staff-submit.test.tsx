@@ -57,6 +57,14 @@ const castB = participant('participant-b', 'person-b', 'CAST');
 const staffC = participant('participant-c', 'person-c', 'STAFF');
 const staffD = participant('participant-d', 'person-d', 'STAFF');
 
+/**
+ * R7: the first test of this file to render the screen in a Jest worker
+ * pays for the module transform, and under the full parallel run the
+ * participant list could take longer than waitFor's default 1 s to
+ * appear (it passed alone). Only how long the wait may last changes.
+ */
+const MEMBERS_LOADED = { timeout: 5000 };
+
 function renderCreate() {
   const queryClient = new QueryClient();
   return render(
@@ -86,9 +94,9 @@ describe('稽古作成: CAST/STAFF初期選択と送信内容', () => {
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-c')).toBeVisible());
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-c')).toBeVisible(), MEMBERS_LOADED);
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
@@ -107,11 +115,11 @@ describe('稽古作成: CAST/STAFF初期選択と送信内容', () => {
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-c')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-c')).toBeVisible(), MEMBERS_LOADED);
     fireEvent.press(screen.getByTestId('rehearsal-create-member-person-c'));
 
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));

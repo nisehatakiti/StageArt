@@ -64,7 +64,11 @@ describe('Schedule: list -> Item Detail -> back', () => {
     // Phase 6.4's report: shown unconditionally, not hidden by author),
     // so the row's full text content now also includes "編集"/"削除" -
     // matched with a substring regex instead of full equality.
-    expect(screen.getByTestId('comment-comment-1')).toHaveTextContent(/少し遅れますperson-2 ・ 2026\/08\/18 09:00/);
+    // 0f4b3e0 (2026-10-06): authors are shown by name, never by Person id.
+    // person-2 is not one of this Production's Participants, so its name
+    // is unknown: 名前未設定.
+    expect(screen.getByTestId('comment-comment-1')).toHaveTextContent(/少し遅れます名前未設定 ・ 2026\/08\/18 09:00/);
+    expect(screen.getByTestId('comment-comment-1')).not.toHaveTextContent(/person-2/);
 
     await fireEvent.press(screen.getByTestId('schedule-detail-back'));
 

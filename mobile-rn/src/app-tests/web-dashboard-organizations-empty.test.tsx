@@ -5,7 +5,7 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { OrganizationProvider } from '@/features/organization/OrganizationContext';
 
 import { mockFetchRoutes, myDashboardEmpty } from './__fixtures__/homeFixtures';
-import HomeScreen from '../app/(app)/home';
+import OrganizationsListScreen from '../app/(app)/organizations/index';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -27,7 +27,11 @@ jest.mock('expo-router', () => ({
  * still renders for an unaffiliated Person, not this section's own CTA
  * text).
  */
-describe('Home: 団体（空の場合）', () => {
+/*
+ * R7: 3113937 (2026-10-06) moved the 団体 list and its empty-state prompt
+ * off Home to the 「所属団体」 menu entry (/organizations).
+ */
+describe('所属団体: 団体（空の場合）', () => {
   it('shows an empty-state prompt to create an Organization when the Person has none', async () => {
     mockFetchRoutes([
       { test: (url) => url.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
@@ -39,13 +43,15 @@ describe('Home: 団体（空の場合）', () => {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OrganizationProvider>
-            <HomeScreen />
+            <OrganizationsListScreen />
           </OrganizationProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('organizations-empty')).toBeVisible());
-    expect(screen.queryByTestId('home-organizations-list')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('organizations-list-empty')).toBeVisible());
+    expect(screen.getByText(/「団体を作る」から最初の団体を作成してください/)).toBeVisible();
+    expect(screen.getByTestId('organizations-create-link')).toBeVisible();
+    expect(screen.queryByTestId('organizations-table')).toBeNull();
   });
 });

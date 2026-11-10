@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -56,19 +56,20 @@ export default function ProductionQuestionEditScreen() {
   const [initialized, setInitialized] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isEditing && existingQuestion && !initialized) {
-      setText(existingQuestion.text);
-      setType(existingQuestion.type);
-      setRequired(existingQuestion.required);
-      setChoices(
-        existingQuestion.choices.length > 0
-          ? existingQuestion.choices.map((choice) => newChoiceRow(choice.id, choice.label))
-          : [newChoiceRow(), newChoiceRow()]
-      );
-      setInitialized(true);
-    }
-  }, [isEditing, existingQuestion, initialized]);
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (isEditing && existingQuestion && !initialized) {
+    setText(existingQuestion.text);
+    setType(existingQuestion.type);
+    setRequired(existingQuestion.required);
+    setChoices(
+      existingQuestion.choices.length > 0
+        ? existingQuestion.choices.map((choice) => newChoiceRow(choice.id, choice.label))
+        : [newChoiceRow(), newChoiceRow()]
+    );
+    setInitialized(true);
+  }
+
 
   const isChoiceBased = CHOICE_BASED_TYPES.includes(type);
   const nonEmptyChoices = choices.filter((choice) => choice.label.trim().length > 0);

@@ -55,8 +55,8 @@ describe('稽古作成: 回答期限', () => {
       </QueryClientProvider>
     );
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title')).toBeVisible());
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
     fireEvent.changeText(screen.getByTestId('rehearsal-create-deadline-date'), '2026-09-19');
     fireEvent.changeText(screen.getByTestId('rehearsal-create-deadline-time'), '18:00');
     await waitFor(() => expect(screen.getByTestId('rehearsal-create-deadline-time').props.value).toBe('18:00'));

@@ -41,6 +41,9 @@ export function useCreateRehearsal(productionId: string | undefined) {
     mutationFn: (fields: {
       title?: string | null;
       description?: string | null;
+      // PR #7 review (R7): the screens send it (f2de669 / create), the API
+      // client already maps it to activity_type - only this type lacked it.
+      activityType?: string;
       startDateTime?: string;
       endDateTime?: string;
       timezone?: string;
@@ -90,6 +93,7 @@ export function useUpdateRehearsal(rehearsalId: string | undefined) {
     mutationFn: (fields: {
       title?: string | null;
       description: string | null;
+      activityType?: string;
       startDateTime?: string;
       endDateTime?: string;
       timezone?: string;

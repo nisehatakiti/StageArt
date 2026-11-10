@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -88,36 +88,38 @@ export default function ProductionEditScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (ticketSalesSettingsQuery.data && !ticketSettingsSeeded) {
-      setTicketSettingsSeeded(true);
-      setPublicationAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_publication_at));
-      setSalesStartAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_sales_start_at));
-      if (ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'DAY_BEFORE_AT_TIME' || ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'HOURS_BEFORE_START') {
-        setSalesEndRule(ticketSalesSettingsQuery.data.ticket_sales_end_rule);
-      }
-      setSalesEndParameter(ticketSalesSettingsQuery.data.ticket_sales_end_parameter ?? '');
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (ticketSalesSettingsQuery.data && !ticketSettingsSeeded) {
+    setTicketSettingsSeeded(true);
+    setPublicationAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_publication_at));
+    setSalesStartAt(formatDateTimeLocal(ticketSalesSettingsQuery.data.ticket_sales_start_at));
+    if (ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'DAY_BEFORE_AT_TIME' || ticketSalesSettingsQuery.data.ticket_sales_end_rule === 'HOURS_BEFORE_START') {
+      setSalesEndRule(ticketSalesSettingsQuery.data.ticket_sales_end_rule);
     }
-  }, [ticketSalesSettingsQuery.data, ticketSettingsSeeded]);
+    setSalesEndParameter(ticketSalesSettingsQuery.data.ticket_sales_end_parameter ?? '');
+  }
 
-  useEffect(() => {
-    if (production && !initialized) {
-      setName(production.name);
-      setTitleHeading(production.title_heading ?? '');
-      setSlug(production.slug ?? '');
-      setDescription(production.description ?? '');
-      setVenueName(production.venue_name ?? '');
-      setScheduleStartDate(production.schedule_start_date ?? '');
-      setScheduleEndDate(production.schedule_end_date ?? '');
-      setScriptCredit(production.script_credit ?? '');
-      setDirectionCredit(production.direction_credit ?? '');
-      setCapacity(production.capacity !== null && production.capacity !== undefined ? String(production.capacity) : '');
-      setPerformanceDurationMinutes(production.performance_duration_minutes != null ? String(production.performance_duration_minutes) : '');
-      setPerformanceCommonRemarks(production.performance_common_remarks ?? '');
-      setPublished(production.published_at !== null);
-      setInitialized(true);
-    }
-  }, [production, initialized]);
+
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (production && !initialized) {
+    setName(production.name);
+    setTitleHeading(production.title_heading ?? '');
+    setSlug(production.slug ?? '');
+    setDescription(production.description ?? '');
+    setVenueName(production.venue_name ?? '');
+    setScheduleStartDate(production.schedule_start_date ?? '');
+    setScheduleEndDate(production.schedule_end_date ?? '');
+    setScriptCredit(production.script_credit ?? '');
+    setDirectionCredit(production.direction_credit ?? '');
+    setCapacity(production.capacity !== null && production.capacity !== undefined ? String(production.capacity) : '');
+    setPerformanceDurationMinutes(production.performance_duration_minutes != null ? String(production.performance_duration_minutes) : '');
+    setPerformanceCommonRemarks(production.performance_common_remarks ?? '');
+    setPublished(production.published_at !== null);
+    setInitialized(true);
+  }
+
 
   const slugChanged = slug !== (production?.slug ?? '');
   const slugValid = isValidSlug(slug);
@@ -267,15 +269,6 @@ export default function ProductionEditScreen() {
       setSubmitting(false);
     }
   }
-
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
-    ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
-    { label: production?.name ?? '...', href: `/productions/${id}` as Href },
-    { label: '公演情報編集' },
-  ];
 
   if (productionQuery.isLoading) {
     return (

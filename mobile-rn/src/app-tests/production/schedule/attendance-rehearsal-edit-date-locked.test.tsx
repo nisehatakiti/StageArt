@@ -1,6 +1,6 @@
 import { renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
-import { currentPerson, mockFetchRoutes, rehearsalConfirmed } from '@/features/attendance/__fixtures__/attendanceFixtures';
+import { currentPerson, mockFetchRoutes, productionOne, rehearsalConfirmed } from '@/features/attendance/__fixtures__/attendanceFixtures';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -19,6 +19,9 @@ jest.mock('expo-secure-store', () => ({
 describe('Rehearsal edit screen: date locked once CONFIRMED', () => {
   it('disables the date input and shows an explanation for a CONFIRMED Rehearsal', async () => {
     mockFetchRoutes([
+      // f575bc5: the edit form is for the PrimaryManager / REHEARSAL_MANAGER,
+      // decided from GET /productions/{id}.
+      { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/me'), status: 200, body: currentPerson },
       { test: (u) => u.endsWith('/rehearsals/rehearsal-2'), status: 200, body: rehearsalConfirmed },
     ]);

@@ -1,4 +1,4 @@
-import { useLocalSearchParams, type Href } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
@@ -8,7 +8,6 @@ import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useCancelPerformance, useCreatePerformance, usePerformances, useUpdatePerformance } from '@/features/performance/usePerformances';
 import { useProduction } from '@/features/production/useProductions';
-import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import type { Performance } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -84,7 +83,6 @@ export default function ProductionPerformancesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const productionQuery = useProduction(id);
   const production = productionQuery.data;
-  const { organization } = useProductionOrganization(production);
   const performancesQuery = usePerformances(id);
   const createPerformance = useCreatePerformance(id);
   const cancelPerformance = useCancelPerformance(id);
@@ -104,15 +102,6 @@ export default function ProductionPerformancesScreen() {
   const [newSymbolDescription, setNewSymbolDescription] = useState('');
 
   const performances = performancesQuery.data ?? [];
-
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
-    ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
-    { label: production?.name ?? '...', href: `/productions/${id}` as Href },
-    { label: '公演スケジュール管理' },
-  ];
 
   async function handleCreate() {
     setErrorMessage(null);

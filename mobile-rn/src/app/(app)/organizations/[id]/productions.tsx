@@ -46,13 +46,6 @@ export default function OrganizationProductionsScreen() {
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
 
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    { label: organization?.name ?? '...', href: `/organizations/${id}` as Href },
-    { label: '公演' },
-  ];
-
   if (organizationsQuery.isLoading) {
     return (
       <>

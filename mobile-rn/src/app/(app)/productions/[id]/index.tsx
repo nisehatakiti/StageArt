@@ -109,14 +109,6 @@ export default function ProductionManagementScreen() {
     ]);
   }
 
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
-    ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
-    { label: production?.name ?? '...' },
-  ];
-
   if (productionQuery.isLoading) {
     return (
       <>

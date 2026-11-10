@@ -17,7 +17,6 @@ import { publicGet } from './publicClient';
  * neither Client hardcoding or duplicating a Base URL of its own.
  */
 function setConfiguredApiBaseUrl(apiBaseUrl: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (Constants as any).expoConfig = { extra: { apiEnv: 'test', apiBaseUrl } };
 }
 

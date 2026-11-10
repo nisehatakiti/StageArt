@@ -746,4 +746,169 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->assertSame('Renamed Show', $stored->name()->toString());
         $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
     }
+
+    // --- PR #7 review (R7): no completion with a member settled more than confirmed ---
+
+    private function theCheckedInSeat(Production $production): Reservation
+    {
+        return $this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id())[0];
+    }
+
+    /** A Check-in reversed (refunded) after the settlement, as ReverseCheckInUseCase commits it. */
+    private function refund(Reservation $reservation): void
+    {
+        $reservation->reverseCheckIn(null);
+        $this->reservations->save($reservation);
+    }
+
+    /** One more seat sold by the same member and checked in. */
+    private function anotherCheckedInSeat(Production $production): Reservation
+    {
+        $first = $this->theCheckedInSeat($production);
+        $seat = Reservation::create($first->performanceId(), $first->ticketId(), 'B', 'b@example.com', 1, 3000, null, $first->attributedPersonId());
+        $seat->checkIn(null);
+        $this->reservations->save($seat);
+
+        return $seat;
+    }
+
+    public function test_settled_then_refunded_is_overpaid_and_refuses_completion_with_the_amounts(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $member = $this->theCheckedInSeat($production)->attributedPersonId();
+        $this->refund($this->theCheckedInSeat($production));
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed with 300 settled and 0 confirmed.');
+        } catch (\StageArt\Application\Production\ProductionSettlementOverpaidException $exception) {
+            $this->assertSame(300, $exception->totalOverpaid());
+            $this->assertSame([[
+                'person_id' => $member->toString(),
+                'confirmed_ticket_back_amount' => 0,
+                'settled_amount' => 300,
+                'overpaid_amount' => 300,
+            ]], $exception->members());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame('RESERVED', $this->theCheckedInSeat($production)->status()->toString(), 'nothing of the completion was applied');
+    }
+
+    public function test_a_refund_that_brings_the_confirmed_amount_down_to_the_settled_one_completes(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);              // 300 settled for the first seat
+        $second = $this->anotherCheckedInSeat($production); // confirmed 600: 300 unsettled
+        $this->refund($second);                             // confirmed back to 300 = settled
+
+        $result = $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+    }
+
+    public function test_settled_without_any_refund_still_completes(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1))->status);
+    }
+
+    /**
+     * The over-payment is resolved with what exists today: the member's
+     * last settlement is cancelled (allowed before completion).
+     */
+    public function test_completion_goes_through_once_the_over_payment_is_resolved(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $member = $this->theCheckedInSeat($production)->attributedPersonId();
+        $this->refund($this->theCheckedInSeat($production));
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed while overpaid.');
+        } catch (\StageArt\Application\Production\ProductionSettlementOverpaidException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $settlement = $this->settlements->findByProductionAndPerson($production->id(), $member);
+        $settlement->cancelLastSettlement($member);
+        $this->settlements->save($settlement);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1))->status);
+    }
+
+    /**
+     * A refund committed while the completion waited for the exclusive
+     * lock is seen by the check.
+     */
+    public function test_a_refund_committed_while_completion_waited_refuses_the_completion(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->refund($this->theCheckedInSeat($production));
+        };
+
+        $this->expectException(\StageArt\Application\Production\ProductionSettlementOverpaidException::class);
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+        } finally {
+            $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        }
+    }
+
+    public function test_a_failed_settlement_read_does_not_complete_and_rolls_back(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $failing = new class ($this->settlements) implements \StageArt\Domain\Settlement\SettlementRepositoryInterface {
+            private \StageArt\Domain\Settlement\SettlementRepositoryInterface $inner;
+
+            public function __construct(\StageArt\Domain\Settlement\SettlementRepositoryInterface $inner)
+            {
+                $this->inner = $inner;
+            }
+
+            public function save(\StageArt\Domain\Settlement\ProductionMemberSettlement $settlement): void
+            {
+                $this->inner->save($settlement);
+            }
+
+            public function findByProductionAndPerson(\StageArt\Domain\Production\ProductionId $productionId, \StageArt\Domain\Person\PersonId $personId): ?\StageArt\Domain\Settlement\ProductionMemberSettlement
+            {
+                return $this->inner->findByProductionAndPerson($productionId, $personId);
+            }
+
+            public function findByProductionId(\StageArt\Domain\Production\ProductionId $productionId): array
+            {
+                throw new \RuntimeException('Failed to read the Settlements of the Production. MySQL server has gone away');
+            }
+        };
+        $transactions = new RollbackingTransactionManager();
+        $useCase = new CompleteProductionUseCase(
+            $this->productions,
+            $this->productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
+            $failing,
+            $this->performances,
+            $this->reservations,
+            $transactions
+        );
+
+        try {
+            $useCase->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed without reading the settlements.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Settlements', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
+    }
 }

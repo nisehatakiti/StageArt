@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -28,20 +28,21 @@ export default function ProductionTicketQuotaScreen() {
   const [ticketBackConditions, setTicketBackConditions] = useState<TicketBackCondition[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (settingsQuery.data && !seeded) {
-      setSeeded(true);
-      setQuotaEnabled(settingsQuery.data.quota_enabled);
-      setQuotaCount(settingsQuery.data.quota_count === null ? '' : String(settingsQuery.data.quota_count));
-      setQuotaBuybackEnabled(settingsQuery.data.quota_buyback_enabled);
-      setQuotaShortfallUnitPrice(
-        settingsQuery.data.quota_shortfall_unit_price === null ? '' : String(settingsQuery.data.quota_shortfall_unit_price)
-      );
-      setTicketBackEnabled(settingsQuery.data.ticket_back_mode !== null);
-      if (settingsQuery.data.ticket_back_mode) setTicketBackMode(settingsQuery.data.ticket_back_mode);
-      setTicketBackConditions(settingsQuery.data.ticket_back_conditions);
-    }
-  }, [settingsQuery.data, seeded]);
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (settingsQuery.data && !seeded) {
+    setSeeded(true);
+    setQuotaEnabled(settingsQuery.data.quota_enabled);
+    setQuotaCount(settingsQuery.data.quota_count === null ? '' : String(settingsQuery.data.quota_count));
+    setQuotaBuybackEnabled(settingsQuery.data.quota_buyback_enabled);
+    setQuotaShortfallUnitPrice(
+      settingsQuery.data.quota_shortfall_unit_price === null ? '' : String(settingsQuery.data.quota_shortfall_unit_price)
+    );
+    setTicketBackEnabled(settingsQuery.data.ticket_back_mode !== null);
+    if (settingsQuery.data.ticket_back_mode) setTicketBackMode(settingsQuery.data.ticket_back_mode);
+    setTicketBackConditions(settingsQuery.data.ticket_back_conditions);
+  }
+
 
   function addCondition() {
     setTicketBackConditions((current) => [

@@ -164,6 +164,13 @@ Example. The rule is 累進方式, 1枚以上 10%. A member's Reservation has `g
 
 The Production-wide Quota (ノルマ) uses its own sales-performance count, which is not part of this rule. That count is CHECKED_IN + NO_SHOW, counted in Reservations, and is unchanged.
 
+### 7.2 Over-payment after a refund (2026-11-10, PR #7 R7)
+
+- A Check-in reversed (refunded) after the member was settled lowers the confirmed amount, while the settled amount stays. The difference is shown on the member's row as **払い過ぎ: N円**.
+- Production Completion (決算完了) is refused while any member is over-paid, as it is while any member is under-settled (`docs/04-DomainModel/ProductionLifecycle.md` 「決算完了の精算条件」).
+- With today's operations, the manager resolves it before completion by cancelling the member's last settlement and settling again at the confirmed amount.
+- Open issue: cancelling undoes only the last settlement, once. A member settled in several steps who then becomes over-paid by more than the last step cannot be brought back to the confirmed amount, so the Production cannot be completed. A settlement adjustment (reduction / refund record) is needed; not decided.
+
 ---
 
 ## 8. Scope

@@ -47,7 +47,19 @@ final class ProductionMemberSettlementLineResult
             'confirmed_ticket_back_amount' => $this->confirmedTicketBackAmount,
             'already_settled_amount' => $this->alreadySettledAmount,
             'outstanding_amount' => $this->outstandingAmount,
+            'overpaid_amount' => $this->overpaidAmount(),
             'last_settled_amount' => $this->lastSettledAmount,
         ];
+    }
+
+    /**
+     * PR #7 review (R7): how much more was settled than is confirmed now (a
+     * Check-in reversed after the settlement), 0 otherwise. Production
+     * Completion is refused while any member has one. `outstanding_amount`
+     * stays clamped at 0, as before.
+     */
+    public function overpaidAmount(): int
+    {
+        return max(0, $this->alreadySettledAmount - $this->confirmedTicketBackAmount);
     }
 }

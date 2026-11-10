@@ -7,7 +7,6 @@ namespace StageArt\Application\Production;
 use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
-use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
@@ -128,17 +127,54 @@ final class CompleteProductionUseCase
         );
     }
 
+    /**
+     * Every member's settled amount must equal the confirmed Ticket Back.
+     *
+     * - Less settled than confirmed: ProductionSettlementIncompleteException
+     *   (unchanged, checked first).
+     * - (R7) More settled than confirmed: ProductionSettlementOverpaidException.
+     *   A Check-in reversed after the settlement lowers the confirmed
+     *   amount; completing would close the settlement with the over-payment
+     *   in it. The members checked are the union of those with a confirmed
+     *   amount and those with a settlement record - a member whose every
+     *   seat was reversed has no confirmed amount at all any more.
+     *
+     * Runs under the exclusive Production lock, in the completion's
+     * transaction: a Check-in reversal (shared lock), a settlement or its
+     * cancellation (exclusive lock) either committed before - and is seen
+     * here - or waits until the completion has committed (and is then
+     * refused, the Production being COMPLETED).
+     */
     private function guardSettlementComplete(Production $production, ProductionId $productionId): void
     {
         $confirmedAmounts = $this->settlementCalculator->confirmedTicketBackAmountsByMember($production, $productionId);
 
-        foreach ($confirmedAmounts as $personIdString => $confirmed) {
-            $settlement = $this->settlements->findByProductionAndPerson($productionId, PersonId::fromString($personIdString));
-            $alreadySettled = $settlement !== null ? $settlement->totalSettledAmount() : 0;
+        $settledAmounts = [];
+        foreach ($this->settlements->findByProductionId($productionId) as $settlement) {
+            $settledAmounts[$settlement->personId()->toString()] = $settlement->totalSettledAmount();
+        }
+
+        $overpaid = [];
+        foreach (array_unique(array_merge(array_map('strval', array_keys($confirmedAmounts)), array_keys($settledAmounts))) as $personIdString) {
+            $confirmed = $confirmedAmounts[$personIdString] ?? 0;
+            $alreadySettled = $settledAmounts[$personIdString] ?? 0;
 
             if ($confirmed - $alreadySettled > 0) {
                 throw new ProductionSettlementIncompleteException();
             }
+
+            if ($alreadySettled > $confirmed) {
+                $overpaid[] = [
+                    'person_id' => (string) $personIdString,
+                    'confirmed_ticket_back_amount' => $confirmed,
+                    'settled_amount' => $alreadySettled,
+                    'overpaid_amount' => $alreadySettled - $confirmed,
+                ];
+            }
+        }
+
+        if ($overpaid !== []) {
+            throw new ProductionSettlementOverpaidException($overpaid);
         }
     }
 }

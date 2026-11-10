@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useCommentAuthorNames } from '@/features/participant/useCommentAuthorNames';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import {
   useDeleteTimetableItemComment,
@@ -30,10 +31,13 @@ const STAGE_VENUE = '舞台';
  * 「確定版のみ表示」の事実表示に留めた - Phase 5.3報告のOpen Item参照)。
  */
 export default function ScheduleItemDetailScreen() {
-  const { itemId } = useLocalSearchParams<{ id: string; itemId: string }>();
+  const { id: productionId, itemId } = useLocalSearchParams<{ id: string; itemId: string }>();
   const router = useRouter();
   const itemQuery = useTimetableItem(itemId);
   const commentsQuery = useTimetableItemComments(itemId);
+  // PR #7 review (R7): comment authors by name, as on the rehearsal detail
+  // screen (0f4b3e0 wired the names there only).
+  const commentAuthorNameByPersonId = useCommentAuthorNames(productionId);
   const postComment = usePostScheduleComment(itemId as string);
   const updateComment = useUpdateTimetableItemComment(itemId);
   const deleteComment = useDeleteTimetableItemComment(itemId);
@@ -199,6 +203,7 @@ export default function ScheduleItemDetailScreen() {
             isError={commentsQuery.isError}
             error={commentsQuery.error}
             comments={commentsQuery.data}
+            authorNameByPersonId={commentAuthorNameByPersonId}
             onEdit={handleStartEdit}
             onDelete={handleDelete}
             editingCommentId={editingCommentId}

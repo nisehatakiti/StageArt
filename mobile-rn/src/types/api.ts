@@ -347,7 +347,7 @@ export type Ticket = {
  * server remains the sole authority on whether a Reservation attempt
  * actually succeeds). Empty `tickets` before `ticket_publication_at`. */
 export type PublicTicketList = {
-  tickets: Array<{ id: string; name: string; price: number; remarks: string | null }>;
+  tickets: { id: string; name: string; price: number; remarks: string | null }[];
   sales_start_at: string | null;
   sales_end_rule: 'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START' | null;
   sales_end_parameter: string | null;
@@ -445,6 +445,10 @@ export type ProductionMemberSettlementLine = {
   confirmed_ticket_back_amount: number;
   already_settled_amount: number;
   outstanding_amount: number;
+  /** PR #7 review (R7): settled minus confirmed when positive (a Check-in
+   * refunded after the settlement), else 0. Optional: absent from servers
+   * older than R7. */
+  overpaid_amount?: number;
   /** Phase 5 §7: >0 means the most recent settle action for this member
    * can still be cancelled (checkbox shows CHECKED); 0 means nothing to
    * cancel (never settled, or already cancelled). */

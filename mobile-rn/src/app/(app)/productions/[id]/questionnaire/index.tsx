@@ -1,6 +1,6 @@
 import QRCode from 'react-native-qrcode-svg';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ApiError } from '@/api/errors';
@@ -69,14 +69,15 @@ export default function ProductionQuestionnaireScreen() {
   const [initialized, setInitialized] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (questionnaire && !initialized) {
-      setTitle(questionnaire.title);
-      setDescription(questionnaire.description ?? '');
-      setResponseEndAt(questionnaire.response_end_at ?? '');
-      setInitialized(true);
-    }
-  }, [questionnaire, initialized]);
+  // PR #7 review (R7): seeded during render (see create.tsx), not in an effect
+  // (react-hooks/set-state-in-effect) - same guard, same values.
+  if (questionnaire && !initialized) {
+    setTitle(questionnaire.title);
+    setDescription(questionnaire.description ?? '');
+    setResponseEndAt(questionnaire.response_end_at ?? '');
+    setInitialized(true);
+  }
+
 
   async function handleCreate() {
     setErrorMessage(null);

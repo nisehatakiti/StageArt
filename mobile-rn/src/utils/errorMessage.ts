@@ -27,6 +27,13 @@ export function getErrorMessage(error: unknown): string {
     if (error.code === 'stageart_capacity_below_reservations') {
       return '予約済みの席数より少ない定員には変更できません。定員は変更されていません。';
     }
+    // PR #7 review (R7): a member was settled more than is now confirmed
+    // (a Check-in refunded after the settlement).
+    if (error.code === 'stageart_production_settlement_overpaid') {
+      const total = error.data?.total_overpaid_amount;
+      const amount = typeof total === 'number' ? `（合計${total.toLocaleString('ja-JP')}円）` : '';
+      return `精算済みの額が確定したチケットバックを上回っているメンバーがいるため${amount}、決算を完了できません。精算画面で該当メンバーの精算を取り消し、確定額で精算し直してください。`;
+    }
     if (error.statusCode === 401) {
       return '認証が切れました。再度ログインしてください。';
     }

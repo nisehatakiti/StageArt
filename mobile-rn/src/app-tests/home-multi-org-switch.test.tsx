@@ -18,8 +18,8 @@ jest.mock('expo-secure-store', () => ({
  * previous "Home: multiple Organization memberships" test (which
  * asserted on the now-removed `organization-tile-*`/picker rendering).
  */
-describe('Home: multiple Organization memberships', () => {
-  it('shows every Organization as its own card with correct Organization-Scope role labels, no switcher', async () => {
+describe('所属団体: multiple Organization memberships', () => {
+  it('shows every Organization as its own row with correct Organization-Scope role labels, no switcher', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne, orgTwo] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne, projectTwo] },
@@ -27,10 +27,12 @@ describe('Home: multiple Organization memberships', () => {
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/home' });
+    // R7: 3113937 (2026-10-06) moved the Organization list off Home to the
+    // 「所属団体」 menu entry (/organizations), with the same information.
+    renderRouter('src/app', { initialUrl: '/organizations' });
 
-    await waitFor(() => expect(screen.getByTestId(`home-organization-row-${orgOne.id}`)).toBeVisible());
-    expect(screen.getByTestId(`home-organization-row-${orgTwo.id}`)).toBeVisible();
+    await waitFor(() => expect(screen.getByTestId(`organizations-row-${orgOne.id}`)).toBeVisible());
+    expect(screen.getByTestId(`organizations-row-${orgTwo.id}`)).toBeVisible();
     expect(screen.getByText('○○演劇団')).toBeVisible();
     expect(screen.getByText('△△企画')).toBeVisible();
     // Organization Scope roles (OWNER/MEMBER via Membership), not

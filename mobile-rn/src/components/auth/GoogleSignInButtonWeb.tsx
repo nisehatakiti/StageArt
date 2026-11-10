@@ -105,7 +105,12 @@ function generateNonce(): string {
 export function GoogleSignInButtonWeb({ onIdToken, disabled }: { onIdToken: (idToken: string) => void; disabled?: boolean }) {
   const containerRef = useRef<View>(null);
   const onIdTokenRef = useRef(onIdToken);
-  onIdTokenRef.current = onIdToken;
+  // PR #7 review (R7): the latest callback, kept in the ref after each
+  // render rather than during it (react-hooks/refs). Declared before the
+  // effect below, so it is current before that effect runs.
+  useEffect(() => {
+    onIdTokenRef.current = onIdToken;
+  }, [onIdToken]);
 
   useEffect(() => {
     let cancelled = false;

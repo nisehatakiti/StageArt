@@ -181,6 +181,14 @@ export default function ProductionSettlementScreen() {
                   <ThemedText type="small" themeColor="textSecondary">
                     未払い金: {member.outstanding_amount}円（確定額 {member.confirmed_ticket_back_amount}円 / 精算済み {member.already_settled_amount}円）
                   </ThemedText>
+                  {/* PR #7 review (R7): settled more than now confirmed (a Check-in
+                      refunded after the settlement). Completion is refused until the
+                      settlement is cancelled and redone at the confirmed amount. */}
+                  {(member.overpaid_amount ?? 0) > 0 && (
+                    <ThemedText testID={`settlement-overpaid-${member.person_id}`} style={styles.error}>
+                      払い過ぎ: {member.overpaid_amount}円（精算後の返金により確定額が減少しています。精算を取り消して精算し直してください）
+                    </ThemedText>
+                  )}
                 </View>
                 {neverRelevant ? (
                   <ThemedText testID={`settlement-not-needed-${member.person_id}`} themeColor="textSecondary">

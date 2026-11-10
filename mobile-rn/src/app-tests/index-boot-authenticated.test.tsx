@@ -33,6 +33,8 @@ describe('index.tsx: boot with a stored session', () => {
 
     renderRouter('src/app', { initialUrl: '/' });
 
-    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
   });
 });

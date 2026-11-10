@@ -26,6 +26,7 @@ use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsForPersonQuery;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionSettlementIncompleteException;
+use StageArt\Application\Production\ProductionSettlementOverpaidException;
 use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
@@ -396,6 +397,15 @@ final class ProductionRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionSettlementIncompleteException $exception) {
             return new WP_Error('stageart_production_settlement_incomplete', $exception->getMessage(), ['status' => 422]);
+        } catch (ProductionSettlementOverpaidException $exception) {
+            // PR #7 review (R7): settled more than confirmed (a Check-in
+            // reversed after the settlement). Same status as the "not yet
+            // settled" refusal; each over-paid member is listed.
+            return new WP_Error('stageart_production_settlement_overpaid', $exception->getMessage(), [
+                'status' => 422,
+                'total_overpaid_amount' => $exception->totalOverpaid(),
+                'members' => $exception->members(),
+            ]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid_transition', $exception->getMessage(), ['status' => 422]);
         }

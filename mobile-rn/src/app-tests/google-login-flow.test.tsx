@@ -69,7 +69,9 @@ describe('login flow: Google', () => {
     // StageArt Home仕様追加 (2026-09-05): home-primary-nav is now
     // conditional on having favorites - home-quick-action-create-organization
     // is the unconditional "we've reached Home" marker instead.
-    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
 
     const googleCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/auth/google'));
     expect(googleCall).toBeDefined();

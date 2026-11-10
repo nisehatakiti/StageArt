@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -37,19 +37,23 @@ export default function OrganizationMembersScreen() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (membersQuery.data) {
-      setRemarksEdits((current) => {
-        const next = { ...current };
-        for (const member of membersQuery.data) {
-          if (next[member.person_id] === undefined) {
-            next[member.person_id] = member.remarks ?? '';
-          }
+  // PR #7 review (R7): merged during render whenever a new members list
+  // arrives (the effect re-ran on every new membersQuery.data) - not in an
+  // effect (react-hooks/set-state-in-effect).
+  const [remarksSeededFrom, setRemarksSeededFrom] = useState<typeof membersQuery.data>(undefined);
+  if (membersQuery.data && membersQuery.data !== remarksSeededFrom) {
+    const members = membersQuery.data;
+    setRemarksSeededFrom(members);
+    setRemarksEdits((current) => {
+      const next = { ...current };
+      for (const member of members) {
+        if (next[member.person_id] === undefined) {
+          next[member.person_id] = member.remarks ?? '';
         }
-        return next;
-      });
-    }
-  }, [membersQuery.data]);
+      }
+      return next;
+    });
+  }
 
   async function handleSave() {
     setSaving(true);

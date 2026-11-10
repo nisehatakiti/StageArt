@@ -596,4 +596,41 @@ final class SettlementUseCaseTest extends TestCase
         $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
         $this->assertSame(0, $this->settlementOf($production, $member)->totalSettledAmount());
     }
+
+    // --- PR #7 review (R7): the over-payment left by a refund after settling ---
+
+    public function test_the_summary_shows_an_over_payment_after_a_refund(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+        foreach ($this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id()) as $reservation) {
+            $reservation->reverseCheckIn(null);
+            $this->reservations->save($reservation);
+        }
+
+        $line = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1))->members[0];
+
+        $this->assertSame(0, $line->confirmedTicketBackAmount);
+        $this->assertSame(300, $line->alreadySettledAmount);
+        $this->assertSame(0, $line->outstandingAmount, 'still clamped at 0, as before');
+        $this->assertSame(300, $line->overpaidAmount());
+        $this->assertSame(300, $line->toArray()['overpaid_amount']);
+
+        try {
+            $this->settle($production, $member);
+            $this->fail('Settled again while overpaid.');
+        } catch (NothingToSettleException $exception) {
+            $this->addToAssertionCount(1);
+        }
+    }
+
+    public function test_no_over_payment_is_shown_while_settled_equals_confirmed(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+
+        $line = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1))->members[0];
+
+        $this->assertSame(0, $line->toArray()['overpaid_amount']);
+    }
 }

@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import type { PropsWithChildren } from 'react';
 import { useState } from 'react';
 import { Alert } from 'react-native';
 

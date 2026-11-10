@@ -18,8 +18,8 @@ jest.mock('expo-secure-store', () => ({
  * cross-test navigation state leak (multiple renderRouter() calls in
  * one file).
  */
-describe('Home: single Organization membership', () => {
-  it('shows the Organization card (no picker/switcher) with its Productions', async () => {
+describe('所属団体: single Organization membership', () => {
+  it('shows the Organization as its one row (no picker/switcher) with its Productions counted', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
@@ -27,12 +27,18 @@ describe('Home: single Organization membership', () => {
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/home' });
+    // R7: 3113937 (2026-10-06) moved the Organization list, with each
+    // Organization's Productions, off Home to the 「所属団体」 menu entry
+    // (/organizations). That list shows each Organization's Production
+    // count; the Production names are on its 公演・活動一覧, covered by
+    // web-organization-productions.test.tsx (one renderRouter() per test).
+    renderRouter('src/app', { initialUrl: '/organizations' });
 
-    await waitFor(() => expect(screen.getByTestId(`home-organization-productions-${orgOne.id}`)).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId(`organizations-row-${orgOne.id}`)).toBeVisible());
     expect(screen.queryByTestId('organization-picker')).toBeNull();
     expect(screen.queryByTestId('organization-switcher')).toBeNull();
     expect(screen.getByText('○○演劇団')).toBeVisible();
-    expect(screen.getByText('○○公演2026')).toBeVisible();
+    expect(screen.getByText('オーナー')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('公演 1件')).toBeVisible());
   });
 });

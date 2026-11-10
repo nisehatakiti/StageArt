@@ -46,7 +46,10 @@ describe('Home: no Organization memberships', () => {
 
     renderRouter('src/app', { initialUrl: '/home' });
 
-    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
+    expect(screen.queryByTestId('home-quick-action-create-organization')).toBeNull();
     expect(screen.queryByTestId('home-primary-nav')).toBeNull();
     expect(screen.queryByTestId('home-nav-viewing-history')).toBeNull();
     expect(screen.queryByTestId('home-nav-favorites')).toBeNull();

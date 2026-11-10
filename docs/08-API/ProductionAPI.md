@@ -706,6 +706,33 @@ Reservation Domainが発行する。
 - 判定はProduction行の排他ロック下で読んだStatusで行う。決算完了と精算取消が同時に要求された場合、先に確定した方の結果を後の処理が読む（決算完了が先なら精算取消は409、精算取消が先なら決算完了は未精算額を検出して拒否）。
 - 決算完了後の訂正には、公演を明示的に再開する管理フローが必要（未実装）。
 
+## 決算完了と精算の一致（R7）
+
+`PATCH /productions/{id}/complete` は、すべてのメンバーで「精算済み額 ＝ 確定チケットバック額」のときにだけ完了する。
+
+| 状態 | HTTP | code |
+|------|------|------|
+| 未精算あり（精算済み ＜ 確定） | 422 | `stageart_production_settlement_incomplete`（既存） |
+| 払い過ぎ（精算済み ＞ 確定。精算後のCheck-in取消・返金で起きる） | 422 | `stageart_production_settlement_overpaid` |
+
+払い過ぎの応答例：
+
+```json
+{
+  "code": "stageart_production_settlement_overpaid",
+  "message": "This Production cannot be completed: 1 member(s) were settled 300 more than their confirmed Ticket Back.",
+  "data": {
+    "status": 422,
+    "total_overpaid_amount": 300,
+    "members": [
+      { "person_id": "…", "confirmed_ticket_back_amount": 0, "settled_amount": 300, "overpaid_amount": 300 }
+    ]
+  }
+}
+```
+
+`GET /productions/{id}/settlement` の各メンバーには `overpaid_amount`（整数、払い過ぎがなければ0）を追加した。詳細は `04-DomainModel/ProductionLifecycle.md`「決算完了の精算条件」。
+
 ## 共通
 
 ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。公演状態ごとの業務ルールとロック順序は `04-DomainModel/ProductionLifecycle.md` を正とする。

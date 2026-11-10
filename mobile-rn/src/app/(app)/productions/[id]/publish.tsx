@@ -1,4 +1,4 @@
-import { useLocalSearchParams, type Href } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -94,15 +94,6 @@ export default function ProductionPublishScreen() {
       setSubmitting(false);
     }
   }
-
-  const breadcrumbs = [
-    { label: 'StageArt', href: '/dashboard' as Href },
-    { label: '団体', href: '/organizations' as Href },
-    ...(organization ? [{ label: organization.name, href: `/organizations/${organization.id}` as Href }] : []),
-    ...(organization ? [{ label: '公演', href: `/organizations/${organization.id}/productions` as Href }] : []),
-    { label: production?.name ?? '...', href: `/productions/${id}` as Href },
-    { label: '公開設定' },
-  ];
 
   if (productionQuery.isLoading) {
     return (

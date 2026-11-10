@@ -34,6 +34,11 @@ const oneFavorite: MyFavorite[] = [
   },
 ];
 
+/** Whether Home has asked for GET /me/favorites yet (R7). */
+function favoritesRequested(): boolean {
+  return (global.fetch as jest.Mock).mock.calls.some(([url]: [unknown]) => String(url).endsWith('/me/favorites'));
+}
+
 function renderHome() {
   const queryClient = new QueryClient();
   return render(
@@ -68,7 +73,12 @@ describe('Home: お気に入り conditional tile', () => {
 
     renderHome();
 
-    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible());
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
+    // The tile depends on GET /me/favorites: assert only once it has answered.
+    await waitFor(() => expect(favoritesRequested()).toBe(true));
+    await waitFor(() => expect(screen.queryByTestId('home-primary-nav')).toBeNull());
     expect(screen.queryByTestId('home-primary-nav')).toBeNull();
     expect(screen.queryByTestId('home-nav-favorites')).toBeNull();
   });
@@ -96,7 +106,10 @@ describe('Home: お気に入り conditional tile', () => {
 
     renderHome();
 
-    await waitFor(() => expect(screen.getByTestId('home-quick-action-create-organization')).toBeVisible(), { timeout: 8000 });
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible(), { timeout: 8000 });
+    await waitFor(() => expect(favoritesRequested()).toBe(true));
     expect(screen.queryByTestId('home-nav-favorites')).toBeNull();
   });
 });

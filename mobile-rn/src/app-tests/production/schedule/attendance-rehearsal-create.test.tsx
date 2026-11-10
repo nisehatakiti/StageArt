@@ -63,6 +63,14 @@ const memberC = participant('participant-c', 'person-c');
 const staffD = participant('participant-d', 'person-d', 'STAFF');
 const staffE = participant('participant-e', 'person-e', 'STAFF');
 
+/**
+ * R7: the first test of this file to render the screen in a Jest worker
+ * pays for the module transform, and under the full parallel run the
+ * participant list could take longer than waitFor's default 1 s to
+ * appear (it passed alone). Only how long the wait may last changes.
+ */
+const MEMBERS_LOADED = { timeout: 5000 };
+
 function renderCreate() {
   const queryClient = createQueryClient();
   return render(
@@ -96,7 +104,7 @@ describe('稽古作成: 参加メンバー選択の初期状態とチェック�
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible(), MEMBERS_LOADED);
     expect(isCheckboxChecked('person-a')).toBe(true);
     expect(isCheckboxChecked('person-b')).toBe(true);
     expect(isCheckboxChecked('person-c')).toBe(true);
@@ -120,7 +128,7 @@ describe('稽古作成: 参加メンバー選択の初期状態とチェック�
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible(), MEMBERS_LOADED);
     fireEvent.press(screen.getByTestId('rehearsal-create-deselect-all'));
 
     await waitFor(() => expect(isCheckboxChecked('person-a')).toBe(false));
@@ -133,7 +141,7 @@ describe('稽古作成: 参加メンバー選択の初期状態とチェック�
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible(), MEMBERS_LOADED);
     fireEvent.press(screen.getByTestId('rehearsal-create-deselect-all'));
     await waitFor(() => expect(isCheckboxChecked('person-a')).toBe(false));
 
@@ -190,7 +198,7 @@ describe('稽古作成: 参加メンバー選択の初期状態とチェック�
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible(), MEMBERS_LOADED);
     fireEvent.press(screen.getByTestId('rehearsal-create-deselect-all'));
 
     await waitFor(() => expect(isCheckboxChecked('person-a')).toBe(false));
@@ -239,9 +247,9 @@ describe('稽古作成: ステータス選択', () => {
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title')).toBeVisible());
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
@@ -260,9 +268,9 @@ describe('稽古作成: ステータス選択', () => {
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title')).toBeVisible());
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-status-confirmed'));
     await waitFor(() =>
       expect(screen.getByTestId('rehearsal-create-status-confirmed').props.style).toMatchObject({ backgroundColor: '#4a3f7a' })
@@ -319,15 +327,18 @@ describe('稽古作成: 参加メンバー選択（送信内容の確認）', ()
 
     renderCreate();
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible());
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-a')).toBeVisible(), MEMBERS_LOADED);
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
 
     expect(findCreateRehearsalBody().person_ids).toEqual(expect.arrayContaining(['person-a', 'person-b', 'person-c']));
     expect(findCreateRehearsalBody().person_ids).toHaveLength(3);
+    // 64d53af: 稽古名 was replaced by 備考 - no title, the text is the description.
+    expect(findCreateRehearsalBody().title).toBeNull();
+    expect(findCreateRehearsalBody().description).toBe('新しい稽古');
   });
 
   it('Bのチェックを外すと、A/Cのみがperson_idsとして送信される', async () => {
@@ -341,8 +352,8 @@ describe('稽古作成: 参加メンバー選択（送信内容の確認）', ()
     await waitFor(() => expect(screen.getByTestId('rehearsal-create-member-person-b')).toBeVisible());
     fireEvent.press(screen.getByTestId('rehearsal-create-member-person-b'));
 
-    fireEvent.changeText(screen.getByTestId('rehearsal-create-title'), '新しい稽古');
-    await waitFor(() => expect(screen.getByTestId('rehearsal-create-title').props.value).toBe('新しい稽古'));
+    fireEvent.changeText(screen.getByTestId('rehearsal-create-description'), '新しい稽古');
+    await waitFor(() => expect(screen.getByTestId('rehearsal-create-description').props.value).toBe('新しい稽古'));
     fireEvent.press(screen.getByTestId('rehearsal-create-submit'));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
