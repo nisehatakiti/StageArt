@@ -110,6 +110,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             $this->wpdb->prepare("SELECT status, revision FROM {$this->table} WHERE id = %s", $id),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to re-read the Expense after a conditional update.');
 
         if (! $current || $current['status'] !== $expectedStatus || (int) $current['revision'] !== $expectedRevision) {
             throw new ExpenseStateConflictException('The Expense was changed by someone else.');
@@ -167,6 +168,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Expense.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -177,6 +179,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to lock the Expense.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -190,6 +193,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             ),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Expenses of the Production.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
@@ -200,6 +204,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->linesTable} WHERE expense_id = %s", $row['id']),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Expense Lines.');
 
         $lines = array_map(
             static fn (array $lineRow): ExpenseLine => ExpenseLine::reconstitute(
@@ -218,6 +223,7 @@ final class WordPressExpenseRepository implements ExpenseRepositoryInterface
             ),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Expense history.');
 
         $expenseId = ExpenseId::fromString($row['id']);
         $reviews = array_map(

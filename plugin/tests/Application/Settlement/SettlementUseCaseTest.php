@@ -45,6 +45,7 @@ use StageArt\Tests\Support\InMemoryReservationRepository;
 use StageArt\Tests\Support\InMemorySettlementRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\ReadFailingReservationRepository;
 
 final class SettlementUseCaseTest extends TestCase
 {
@@ -57,6 +58,10 @@ final class SettlementUseCaseTest extends TestCase
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
     private InMemoryProductionDelegateRepository $delegates;
+
+    private CoreIdentityAdapter $identity;
+    private CoreAuthorizationAdapter $authorization;
+    private CoreMembershipAdapter $membershipContract;
 
     private GetProductionSettlementSummaryUseCase $getSummary;
     private SettleProductionMemberUseCase $settleMember;
@@ -81,6 +86,9 @@ final class SettlementUseCaseTest extends TestCase
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter($participants, $this->productions, $this->people, $productionAuthorization);
         $calculator = new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets);
+        $this->identity = $identity;
+        $this->authorization = $authorization;
+        $this->membershipContract = $membershipContract;
 
         $this->getSummary = new GetProductionSettlementSummaryUseCase(
             $this->productions,
@@ -307,5 +315,48 @@ final class SettlementUseCaseTest extends TestCase
 
         $this->expectException(SettlementAccessDeniedException::class);
         $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 51));
+    }
+
+    // --- PR #7 review: a failed Reservation read is not "no Reservations" ---
+
+    public function test_settling_stops_when_the_reservations_cannot_be_read(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $settle = new SettleProductionMemberUseCase(
+            $this->productions,
+            $this->settlements,
+            new ProductionSettlementCalculator($this->performances, new ReadFailingReservationRepository($this->reservations), $this->tickets),
+            $this->identity,
+            $this->authorization,
+            new InMemoryTransactionManager()
+        );
+
+        try {
+            $settle->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+            $this->fail('Settled although the Reservations could not be read.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Reservations', $exception->getMessage());
+        }
+
+        $this->assertNull($this->settlements->findByProductionAndPerson($production->id(), $member->id()));
+    }
+
+    public function test_the_summary_is_not_shown_as_nothing_owed_when_the_reservations_cannot_be_read(): void
+    {
+        [$production] = $this->givenProductionWithOneMemberSale();
+        $summary = new GetProductionSettlementSummaryUseCase(
+            $this->productions,
+            $this->membershipContract,
+            $this->people,
+            $this->settlements,
+            new ProductionSettlementCalculator($this->performances, new ReadFailingReservationRepository($this->reservations), $this->tickets),
+            $this->identity,
+            $this->authorization
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to read the Reservations');
+
+        $summary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1));
     }
 }

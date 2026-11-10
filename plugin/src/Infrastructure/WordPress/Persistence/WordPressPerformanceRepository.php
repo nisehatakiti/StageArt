@@ -70,6 +70,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Performance.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -97,6 +98,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE production_id = %s ORDER BY performance_date ASC, start_time ASC", $productionId->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Performances of the Production.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
@@ -114,6 +116,7 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id IN ({$placeholders})", $values),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Performances.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
@@ -146,6 +149,8 @@ final class WordPressPerformanceRepository implements PerformanceRepositoryInter
                 ARRAY_A
             );
         }
+
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Performance.');
 
         return $row ? $this->hydrate($row) : null;
     }

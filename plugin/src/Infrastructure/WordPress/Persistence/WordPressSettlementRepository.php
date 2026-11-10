@@ -70,6 +70,7 @@ final class WordPressSettlementRepository implements SettlementRepositoryInterfa
             ),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Settlement.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -80,6 +81,7 @@ final class WordPressSettlementRepository implements SettlementRepositoryInterfa
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE production_id = %s", $productionId->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Settlements of the Production.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }

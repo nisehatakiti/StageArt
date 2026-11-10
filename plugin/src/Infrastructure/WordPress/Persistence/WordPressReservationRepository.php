@@ -74,6 +74,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Reservation.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -95,6 +96,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE reservation_number = %s", $reservationNumber->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Reservation.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -105,6 +107,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE performance_id = %s ORDER BY created_at ASC", $performanceId->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Reservations of the Performance.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
@@ -148,6 +151,7 @@ final class WordPressReservationRepository implements ReservationRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id IN ({$placeholders})", $values),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Reservations.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }

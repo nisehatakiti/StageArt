@@ -46,6 +46,10 @@ use StageArt\Tests\Support\InMemoryReservationRepository;
 use StageArt\Tests\Support\InMemorySettlementRepository;
 use StageArt\Tests\Support\InMemoryTicketRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\ReadFailingReservationRepository;
+use StageArt\Tests\Support\RollbackingTransactionManager;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 
 /**
  * Covers the Production Lifecycle Action UseCases end to end - the
@@ -74,6 +78,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private ArchiveProductionUseCase $archive;
     private CancelProductionUseCase $cancel;
     private GetProductionUseCase $get;
+    private ProductionAuthorizationService $productionAuthorization;
 
     protected function setUp(): void
     {
@@ -93,6 +98,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
             $this->delegates,
             new InMemoryParticipantRepository()
         );
+        $this->productionAuthorization = $productionAuthorization;
 
         $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization);
         $this->complete = new CompleteProductionUseCase(
@@ -462,5 +468,104 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->assertSame('CANCELLED', $reloadedStillReserved->status()->toString());
         $this->assertSame('CHECKED_IN', $reloadedCheckedIn->status()->toString());
+    }
+
+    // --- PR #7 review: a failed Reservation read is not "no Reservations" ---
+
+    private function completeUseCaseWith(ReservationRepositoryInterface $reservations, TransactionManagerInterface $transactions): CompleteProductionUseCase
+    {
+        return new CompleteProductionUseCase(
+            $this->productions,
+            $this->productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $reservations, $this->tickets),
+            $this->settlements,
+            $this->performances,
+            $reservations,
+            $transactions
+        );
+    }
+
+    /**
+     * A Production whose Ticket Back is configured but which genuinely
+     * has no Reservations has nothing to settle and completes as before.
+     */
+    public function test_a_production_with_genuinely_no_reservations_still_completes(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $production->updateTicketBack(
+            TicketBackMode::PROGRESSIVE,
+            json_encode([['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => 10]])
+        );
+        $this->productions->save($production);
+        $this->performances->save(\StageArt\Domain\Performance\Performance::create($production->id(), new \DateTimeImmutable('-1 day'), '18:00', null, 20, null, null));
+        $this->tickets->save(\StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null));
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $transactions = new RollbackingTransactionManager();
+
+        $result = $this->completeUseCaseWith($this->reservations, $transactions)
+            ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * The settlement guard's Reservation read fails (a DB error): the
+     * guard must not see "no checked-in seats, nothing owed" and let the
+     * Production complete - it stops before any write.
+     */
+    public function test_a_failed_reservation_read_in_the_settlement_guard_does_not_complete_the_production(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $failing = new ReadFailingReservationRepository($this->reservations);
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($failing, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('The Production completed although its Reservations could not be read.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Reservations', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(0, $transactions->rollbacks(), 'nothing was written: the guard stopped before the transaction');
+    }
+
+    /**
+     * Same with a Production that has no Ticket Back (the guard reads no
+     * Reservations) and still-RESERVED Reservations: the read inside the
+     * transaction that cancels them fails, so the transaction is rolled
+     * back instead of committing COMPLETED with the RESERVED left over.
+     */
+    public function test_a_failed_reservation_read_while_completing_rolls_the_completion_back(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $this->productions->save($production);
+        $performance = \StageArt\Domain\Performance\Performance::create($production->id(), new \DateTimeImmutable('-1 day'), '18:00', null, 20, null, null);
+        $this->performances->save($performance);
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+        $stillReserved = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 2, 3000, null);
+        $this->reservations->save($stillReserved);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $failing = new ReadFailingReservationRepository($this->reservations);
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($failing, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('The Production completed although its Reservations could not be read.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Reservations', $exception->getMessage());
+        }
+
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
+        $this->assertSame('RESERVED', $this->reservations->findById($stillReserved->id())->status()->toString());
     }
 }

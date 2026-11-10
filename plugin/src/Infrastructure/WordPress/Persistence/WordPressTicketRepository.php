@@ -65,6 +65,7 @@ final class WordPressTicketRepository implements TicketRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Ticket.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -75,6 +76,7 @@ final class WordPressTicketRepository implements TicketRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE production_id = %s ORDER BY created_at ASC", $productionId->toString()),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Tickets of the Production.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
@@ -92,6 +94,7 @@ final class WordPressTicketRepository implements TicketRepositoryInterface
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id IN ({$placeholders})", $values),
             ARRAY_A
         );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Tickets.');
 
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
