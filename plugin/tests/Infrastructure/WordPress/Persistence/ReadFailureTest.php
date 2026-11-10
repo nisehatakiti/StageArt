@@ -236,4 +236,40 @@ final class ReadFailureTest extends TestCase
         $this->assertNull($expenses->findByIdForUpdate(ExpenseId::generate()));
         $this->assertSame([], $expenses->findByProductionId(ProductionId::generate()));
     }
+
+    // --- PR #7 review (R6): audit class A - the ticket revenue / refund path ---
+
+    /**
+     * What a Check-in reads before it records the ticket payment (and a
+     * refunded reversal before it reverses it). A failed read used to pass
+     * for "not found": the payment was recorded a second time (no unique
+     * key on journal_entries), the standard Accounts were created again,
+     * the revenue was silently skipped (no Organization), or a refund was
+     * not reversed.
+     *
+     * @return array<string, callable(): mixed>
+     */
+    private function revenuePathReads(\wpdb $wpdb): array
+    {
+        return [
+            'Production' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository($wpdb))->findById(ProductionId::generate()),
+            'Project' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository($wpdb))->findById(\StageArt\Domain\Project\ProjectId::generate()),
+            'Organization' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository($wpdb))->findById(\StageArt\Domain\Organization\OrganizationId::generate()),
+            'Accounts' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressAccountRepository($wpdb))->findByOrganizationId(\StageArt\Domain\Organization\OrganizationId::generate()),
+            'Journal Entry by source event' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressJournalEntryRepository($wpdb))->findBySourceEvent('TicketPaymentReceived', ReservationId::generate()->toString()),
+            'latest Check-in' => fn () => (new \StageArt\Infrastructure\WordPress\Persistence\WordPressCheckInRepository($wpdb))->findLatestByReservationId(ReservationId::generate()),
+        ];
+    }
+
+    public function test_a_failed_read_on_the_ticket_revenue_path_throws_instead_of_returning_none(): void
+    {
+        $this->assertEachThrows($this->revenuePathReads($this->failingReads()));
+    }
+
+    public function test_the_ticket_revenue_path_reads_with_no_rows_are_still_null_or_empty(): void
+    {
+        foreach ($this->revenuePathReads(new \wpdb()) as $name => $read) {
+            $this->assertContains($read(), [null, []], $name);
+        }
+    }
 }

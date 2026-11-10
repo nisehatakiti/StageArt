@@ -125,22 +125,45 @@ final class CoreProductionActivityLockAdapterTest extends TestCase
         }
     }
 
-    public function test_the_plain_shared_and_exclusive_locks_take_any_status(): void
+    /**
+     * (R6: the status-free shared lock, used only by the Performance
+     * cancellation, was removed when that cancellation started refusing
+     * COMPLETED / ARCHIVED.)
+     */
+    public function test_the_plain_exclusive_lock_takes_any_status(): void
     {
         foreach ([ProductionStatus::ACTIVE, ProductionStatus::CANCELLED, ProductionStatus::COMPLETED, ProductionStatus::ARCHIVED] as $status) {
             $production = $this->production($status);
-
-            $this->lock->lockProductionShared($production->id());
-            $this->assertSame(['SHARE', $production->id()->toString()], end($this->productions->locks), $status);
 
             $this->lock->lockProductionExclusively($production->id());
             $this->assertSame(['FOR UPDATE', $production->id()->toString()], end($this->productions->locks), $status);
         }
     }
 
+    public function test_the_exclusive_lock_for_a_performance_edit_refuses_a_closed_settlement_only(): void
+    {
+        foreach ([ProductionStatus::PLANNING, ProductionStatus::ACTIVE, ProductionStatus::CANCELLED] as $status) {
+            $production = $this->production($status);
+
+            $this->lock->lockUnsettledProductionExclusively($production->id());
+            $this->assertSame(['FOR UPDATE', $production->id()->toString()], end($this->productions->locks), $status);
+        }
+
+        foreach ([ProductionStatus::COMPLETED, ProductionStatus::ARCHIVED] as $status) {
+            $production = $this->production($status);
+
+            try {
+                $this->lock->lockUnsettledProductionExclusively($production->id());
+                $this->fail("{$status} was not refused.");
+            } catch (ProductionClosedException $exception) {
+                $this->assertSame($status, $exception->productionStatus());
+            }
+        }
+    }
+
     public function test_every_lock_reports_a_missing_production(): void
     {
-        foreach (['lockUnsettledProduction', 'lockProductionShared', 'lockProductionExclusively'] as $method) {
+        foreach (['lockUnsettledProduction', 'lockUnsettledProductionExclusively', 'lockProductionExclusively'] as $method) {
             try {
                 $this->lock->{$method}(ProductionId::generate());
                 $this->fail("{$method} took a lock on nothing.");

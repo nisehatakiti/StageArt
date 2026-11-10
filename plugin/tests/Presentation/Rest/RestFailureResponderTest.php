@@ -29,6 +29,15 @@ final class RestFailureResponderTest extends TestCase
         ini_set('error_log', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null');
     }
 
+    public function test_a_capacity_below_the_reserved_seats_is_409_with_both_numbers(): void
+    {
+        $response = RestFailureResponder::toResponse(new \StageArt\Application\Performance\CapacityBelowReservationsException('perf-1', 40, 45));
+
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame('stageart_capacity_below_reservations', $response->get_data()['code']);
+        $this->assertSame(['status' => 409, 'capacity' => 40, 'reserved_seats' => 45], $response->get_data()['data']);
+    }
+
     public function test_a_closed_production_is_409(): void
     {
         $response = RestFailureResponder::toResponse(new ProductionClosedException('p-1', 'CANCELLED'));

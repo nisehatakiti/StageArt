@@ -734,7 +734,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     {
         [$production] = $this->givenProduction(1);
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
-        $update = new \StageArt\Application\Production\UpdateProductionUseCase($this->productions, $this->productionAuthorization, $this->performances, new InMemoryTransactionManager());
+        $update = new \StageArt\Application\Production\UpdateProductionUseCase($this->productions, $this->productionAuthorization, $this->performances, new InMemoryTransactionManager(), $this->reservations);
         $this->completedWhileWaiting($this->productions->findById($production->id()));
         $this->productions->locks = [];
 

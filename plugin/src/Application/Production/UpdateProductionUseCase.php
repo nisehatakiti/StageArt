@@ -9,7 +9,11 @@ use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Performance\Performance;
+use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Performance\PerformanceStatus;
+use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
@@ -41,17 +45,34 @@ final class UpdateProductionUseCase
     private ProductionAuthorizationService $authorization;
     private PerformanceRepositoryInterface $performances;
     private TransactionManagerInterface $transactions;
+    private ReservationRepositoryInterface $reservations;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
         ProductionAuthorizationService $authorization,
         PerformanceRepositoryInterface $performances,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ReservationRepositoryInterface $reservations
     ) {
         $this->productions = $productions;
         $this->authorization = $authorization;
         $this->performances = $performances;
         $this->transactions = $transactions;
+        $this->reservations = $reservations;
+    }
+
+    /**
+     * PR #7 review (R6): the seats a Performance's Reservations take (every
+     * one not CANCELLED, as the booking capacity check counts them), read
+     * with FOR UPDATE after the Production lock (order Production ->
+     * Performance -> Reservation).
+     */
+    private function occupiedSeats(Performance $performance): int
+    {
+        return array_sum(array_map(
+            static fn (Reservation $r): int => $r->occupiesCapacity() ? $r->guestCount() : 0,
+            $this->reservations->findByPerformanceIdForUpdate($performance->id())
+        ));
     }
 
     public function execute(UpdateProductionCommand $command): ProductionResult
@@ -149,8 +170,26 @@ final class UpdateProductionUseCase
                 return $production;
             }
 
-            foreach ($this->performances->findByProductionId($production->id()) as $performance) {
+            foreach ($this->performances->findByProductionId($production->id()) as $listed) {
+                // (R6) Lock order Production -> Performance -> Reservation.
+                $performance = $this->performances->findByIdForUpdate($listed->id()) ?? $listed;
+
                 if ($capacityChanged) {
+                    // (R6) A Performance whose capacity would go down below the
+                    // seats already taken refuses the whole update: nothing is
+                    // saved (the transaction rolls back). A CANCELLED Performance
+                    // takes no new bookings, so it is not checked.
+                    if (
+                        $newCapacity < $performance->capacity()
+                        && ! $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::CANCELLED))
+                    ) {
+                        $occupied = $this->occupiedSeats($performance);
+
+                        if ($newCapacity < $occupied) {
+                            throw new CapacityBelowReservationsException($performance->id()->toString(), $newCapacity, $occupied);
+                        }
+                    }
+
                     // §11/§26: unconditional overwrite of every child Performance's
                     // capacity, including individually-customized and CANCELLED ones.
                     $performance->changeCapacity($newCapacity);

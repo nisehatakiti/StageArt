@@ -23,6 +23,12 @@ describe('getErrorMessage', () => {
     expect(getErrorMessage(new ApiError(503, 'Service Unavailable'))).toBe('読み込みに失敗しました。(503)');
   });
 
+  it('explains a capacity below the reserved seats (409)', () => {
+    expect(getErrorMessage(new ApiError(409, 'below', 'stageart_capacity_below_reservations'))).toBe(
+      '予約済みの席数より少ない定員には変更できません。定員は変更されていません。'
+    );
+  });
+
   it('maps NetworkError to a connectivity-specific message', () => {
     expect(getErrorMessage(new NetworkError(new Error('offline')))).toBe(
       'サーバーへ接続できませんでした。通信環境を確認してください。'

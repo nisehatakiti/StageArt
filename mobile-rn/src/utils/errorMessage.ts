@@ -23,6 +23,10 @@ export function getErrorMessage(error: unknown): string {
     if (error.code === 'stageart_database_busy') {
       return 'サーバーが混み合っていたため、保存されませんでした。少し待ってからもう一度お試しください。';
     }
+    // PR #7 review (R6): a capacity below the seats already reserved.
+    if (error.code === 'stageart_capacity_below_reservations') {
+      return '予約済みの席数より少ない定員には変更できません。定員は変更されていません。';
+    }
     if (error.statusCode === 401) {
       return '認証が切れました。再度ログインしてください。';
     }

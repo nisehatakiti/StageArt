@@ -19,10 +19,15 @@ use StageArt\Domain\Performance\PerformanceRepositoryInterface;
  *
  * Phase 2 Performance基盤 §7/§24: "中止" is the only delete-like
  * operation - a soft Status transition to CANCELLED, never a physical
- * delete. Unlike Create/Update, cancelling is deliberately NOT blocked by
- * a COMPLETED/ARCHIVED Production (§8's guard only names creation and
- * editing - cancelling a stray Performance under an already-finished
- * Production is still a legitimate correction).
+ * delete.
+ *
+ * PR #7 review (R6) supersedes the earlier exception to §8 (cancelling
+ * stayed allowed under a COMPLETED / ARCHIVED Production as "a legitimate
+ * correction"): once the Production is 決算完了 its records are closed,
+ * and corrections are to be recorded as adjustments, never by changing
+ * them (ProductionLifecycle.md 「決算完了後の訂正」). A COMPLETED /
+ * ARCHIVED Production now refuses the cancellation (409
+ * `stageart_production_closed`); a CANCELLED one still allows it.
  */
 final class CancelPerformanceUseCase
 {
@@ -76,14 +81,15 @@ final class CancelPerformanceUseCase
             );
         }
 
-        // PR #7 review (R5): cancelled on the Performance as re-read under
+        // PR #7 review (R5, R6): cancelled on the Performance as re-read under
         // its row lock, after the shared Production lock (order Production
-        // -> Performance), whatever the Production's status (see above).
-        // save() writes every column, so an edit committed since the read
-        // above is kept rather than reverted, and a Production update's
-        // capacity cascade (exclusive lock) never runs in between.
+        // -> Performance), on a Production that is not COMPLETED / ARCHIVED
+        // as read under that lock - a Production Completion or settlement
+        // (exclusive lock) never runs in between. save() writes every
+        // column, so an edit committed since the read above is kept rather
+        // than reverted.
         $cancelled = $this->transactions->run(function () use ($performance, $productionId, $command): Performance {
-            $this->productionLock->lockProductionShared($productionId);
+            $this->productionLock->lockUnsettledProduction($productionId);
 
             $locked = $this->performances->findByIdForUpdate($performance->id());
 

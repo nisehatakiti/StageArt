@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation\Rest;
 
+use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Shared\DatabaseBusyException;
 use Throwable;
@@ -19,6 +20,9 @@ use WP_REST_Response;
  * - 409 `stageart_production_closed`: the Production's status no longer
  *   allows the operation (ProductionClosedException). Sending it again
  *   does not help.
+ * - 409 `stageart_capacity_below_reservations` (R6): a capacity lower than
+ *   the seats already reserved; `data` carries `capacity` and
+ *   `reserved_seats`. Nothing is changed.
  * - 503 `stageart_database_busy` + `Retry-After`: a lock wait timeout or a
  *   deadlock rolled the whole transaction back (DatabaseBusyException), so
  *   nothing was saved and the same request may be sent again. `data`
@@ -87,6 +91,11 @@ final class RestFailureResponder
     {
         if ($exception instanceof ProductionClosedException) {
             return self::error('stageart_production_closed', $exception->getMessage(), 409);
+        }
+
+        // (R6) A capacity below the seats already reserved: nothing changed.
+        if ($exception instanceof CapacityBelowReservationsException) {
+            return self::error('stageart_capacity_below_reservations', $exception->getMessage(), 409, ['capacity' => $exception->capacity(), 'reserved_seats' => $exception->occupied()]);
         }
 
         if ($exception instanceof DatabaseBusyException) {

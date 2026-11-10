@@ -164,6 +164,10 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             ARRAY_A
         );
 
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Journal Entry of the source event.');
+
         return $row ? $this->hydrate($row) : null;
     }
 

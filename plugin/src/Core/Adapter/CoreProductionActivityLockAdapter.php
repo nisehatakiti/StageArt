@@ -33,16 +33,25 @@ final class CoreProductionActivityLockAdapter implements ProductionActivityLockC
         ProductionClosedException::throwIfIn($this->lockShared($productionId), ProductionClosedException::SETTLED);
     }
 
-    public function lockProductionShared(ProductionId $productionId): void
+    public function lockUnsettledProductionExclusively(ProductionId $productionId): void
     {
-        $this->lockShared($productionId);
+        ProductionClosedException::throwIfIn($this->lockExclusive($productionId), ProductionClosedException::SETTLED);
     }
 
     public function lockProductionExclusively(ProductionId $productionId): void
     {
-        if ($this->productions->findByIdForUpdate($productionId) === null) {
+        $this->lockExclusive($productionId);
+    }
+
+    private function lockExclusive(ProductionId $productionId): Production
+    {
+        $production = $this->productions->findByIdForUpdate($productionId);
+
+        if ($production === null) {
             throw new ProductionNotFoundException($productionId->toString());
         }
+
+        return $production;
     }
 
     private function lockShared(ProductionId $productionId): Production

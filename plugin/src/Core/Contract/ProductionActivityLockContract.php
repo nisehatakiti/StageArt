@@ -40,7 +40,7 @@ interface ProductionActivityLockContract
 
     /**
      * Shared lock for an operation that only takes a booking back
-     * (self-service cancellation, Check-in reversal / refund) or edits a
+     * (self-service cancellation, Check-in reversal / refund) or cancels a
      * Performance: still allowed on a CANCELLED Production, whose bookings
      * have to be wound down, but not once the settlement is closed.
      *
@@ -49,13 +49,14 @@ interface ProductionActivityLockContract
     public function lockUnsettledProduction(ProductionId $productionId): void;
 
     /**
-     * Shared lock whatever the status - for a change that its own row lock
-     * already orders against bookings (cancelling a Performance) but that
-     * must not interleave with a Production-wide change holding the
-     * exclusive lock (the capacity / duration cascade of a Production
-     * update, which rewrites every Performance row).
+     * (R6) Exclusive lock with the same status rule, for a Performance
+     * edit: its capacity is what bookings and walk-up sales check under
+     * their shared lock, so a capacity change waits for the bookings in
+     * progress and the seats it compares against are final.
+     *
+     * @throws \StageArt\Application\Production\ProductionClosedException when it is COMPLETED or ARCHIVED
      */
-    public function lockProductionShared(ProductionId $productionId): void;
+    public function lockUnsettledProductionExclusively(ProductionId $productionId): void;
 
     /**
      * Exclusive lock for a setting that bookings and reception read under

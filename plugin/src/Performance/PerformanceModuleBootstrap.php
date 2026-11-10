@@ -14,6 +14,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\PerformanceFinishedListenerContract;
+use StageArt\Core\Contract\PerformanceOccupancyContract;
 use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -47,12 +48,13 @@ final class PerformanceModuleBootstrap
         MembershipContract $membership,
         TransactionManagerInterface $transactions,
         ProductionActivityLockContract $productionLock,
+        PerformanceOccupancyContract $occupancy,
         ?PerformanceFinishedListenerContract $performanceFinishedListener = null
     ) {
         $createPerformance = new CreatePerformanceUseCase($productionContext, $performances, $identity, $authorization);
         $getPerformance = new GetPerformanceUseCase($performances, $productionContext, $identity, $membership);
         $listPerformances = new ListPerformancesUseCase($performances, $productionContext, $identity, $membership);
-        $updatePerformance = new UpdatePerformanceUseCase($performances, $productionContext, $identity, $authorization, $transactions, $productionLock, $performanceFinishedListener);
+        $updatePerformance = new UpdatePerformanceUseCase($performances, $productionContext, $identity, $authorization, $transactions, $productionLock, $occupancy, $performanceFinishedListener);
         $cancelPerformance = new CancelPerformanceUseCase($performances, $productionContext, $identity, $authorization, $transactions, $productionLock);
         $listPublicPerformances = new ListPublicPerformancesUseCase($performances, $productionContext);
 

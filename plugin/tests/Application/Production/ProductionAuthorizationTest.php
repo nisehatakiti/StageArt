@@ -77,7 +77,8 @@ final class ProductionAuthorizationTest extends TestCase
             $this->productions,
             $this->authorization,
             new InMemoryPerformanceRepository(),
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new \StageArt\Tests\Support\InMemoryReservationRepository()
         );
     }
 

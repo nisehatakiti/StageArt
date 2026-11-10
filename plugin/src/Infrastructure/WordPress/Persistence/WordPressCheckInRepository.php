@@ -83,6 +83,10 @@ final class WordPressCheckInRepository implements CheckInRepositoryInterface
             ARRAY_A
         );
 
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the latest Check-in of the Reservation.');
+
         return $row ? $this->hydrate($row) : null;
     }
 

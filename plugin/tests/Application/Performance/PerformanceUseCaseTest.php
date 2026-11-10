@@ -57,6 +57,7 @@ final class PerformanceUseCaseTest extends TestCase
     private InMemoryProductionDelegateRepository $delegates;
     private InMemoryParticipantRepository $participants;
     private InMemoryPerformanceRepository $performances;
+    private \StageArt\Tests\Support\InMemoryReservationRepository $reservations;
 
     private CreatePerformanceUseCase $createPerformance;
     private GetPerformanceUseCase $getPerformance;
@@ -74,6 +75,7 @@ final class PerformanceUseCaseTest extends TestCase
         $this->delegates = new InMemoryProductionDelegateRepository();
         $this->participants = new InMemoryParticipantRepository();
         $this->performances = new InMemoryPerformanceRepository();
+        $this->reservations = new \StageArt\Tests\Support\InMemoryReservationRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
@@ -89,7 +91,7 @@ final class PerformanceUseCaseTest extends TestCase
         $this->createPerformance = new CreatePerformanceUseCase($productionContext, $this->performances, $identity, $authorization);
         $this->getPerformance = new GetPerformanceUseCase($this->performances, $productionContext, $identity, $membership);
         $this->listPerformances = new ListPerformancesUseCase($this->performances, $productionContext, $identity, $membership);
-        $this->updatePerformance = new UpdatePerformanceUseCase($this->performances, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
+        $this->updatePerformance = new UpdatePerformanceUseCase($this->performances, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions), new \StageArt\Core\Adapter\CorePerformanceOccupancyAdapter($this->reservations));
         $this->cancelPerformance = new CancelPerformanceUseCase($this->performances, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
         $this->listPublicPerformances = new ListPublicPerformancesUseCase($this->performances, $productionContext);
     }
@@ -613,6 +615,7 @@ final class PerformanceUseCaseTest extends TestCase
             ),
             new \StageArt\Tests\Support\InMemoryTransactionManager(),
             new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions),
+            new \StageArt\Core\Adapter\CorePerformanceOccupancyAdapter($this->reservations),
             $listener
         );
 
@@ -657,6 +660,7 @@ final class PerformanceUseCaseTest extends TestCase
             ),
             new \StageArt\Tests\Support\InMemoryTransactionManager(),
             new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions),
+            new \StageArt\Core\Adapter\CorePerformanceOccupancyAdapter($this->reservations),
             $throwingListener
         );
 
@@ -712,7 +716,11 @@ final class PerformanceUseCaseTest extends TestCase
         return new UpdatePerformanceCommand($performanceId, 1, '2026-10-10', '13:00', null, $capacity, null, null);
     }
 
-    public function test_a_capacity_change_takes_the_shared_production_lock_then_the_performance_lock(): void
+    /**
+     * (R6: the edit now takes the EXCLUSIVE Production lock, so a capacity
+     * change waits for bookings in progress - this R5 test asserted SHARE.)
+     */
+    public function test_a_capacity_change_takes_the_exclusive_production_lock_then_the_performance_lock(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $performanceId = $this->givenPerformance($production);
@@ -725,7 +733,7 @@ final class PerformanceUseCaseTest extends TestCase
         $updated = $this->updatePerformance->execute($this->capacityChange($performanceId, 40));
 
         $this->assertSame(40, $updated->capacity);
-        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
         $this->assertSame(0, $performanceLocksAtProductionLock, 'Production lock first');
         $this->assertSame(1, $this->performances->lockCount);
     }
@@ -798,19 +806,144 @@ final class PerformanceUseCaseTest extends TestCase
         $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
     }
 
+    // --- PR #7 review (R6) ---
+
     /**
-     * Cancelling a stray Performance stays allowed under a finished
-     * Production (CancelPerformanceUseCase's own rule).
+     * R6 reverses the R5 / Phase 2 rule this test used to pin ("a
+     * Performance of a COMPLETED Production can still be cancelled"): once
+     * 決算完了, the Production's records are closed.
+     *
+     * @return array<string, array{0: string}>
      */
-    public function test_a_performance_of_a_completed_production_can_still_be_cancelled(): void
+    public function settledStatuses(): array
+    {
+        return ['COMPLETED' => ['COMPLETED'], 'ARCHIVED' => ['ARCHIVED']];
+    }
+
+    /**
+     * @dataProvider settledStatuses
+     */
+    public function test_a_performance_of_a_completed_production_cannot_be_cancelled(string $status): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $performanceId = $this->givenPerformance($production);
-        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, $status);
         $this->productions->save($production);
 
-        $result = $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1));
+        try {
+            $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1));
+            $this->fail("A Performance of a {$status} Production was cancelled.");
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame($status, $exception->productionStatus());
+        }
 
-        $this->assertSame('CANCELLED', $result->status);
+        $this->assertNotSame('CANCELLED', $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performanceId))->status()->toString());
+    }
+
+    public function test_a_cancellation_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+
+        $this->expectException(\StageArt\Application\Production\ProductionClosedException::class);
+
+        try {
+            $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1));
+        } finally {
+            $this->assertNotSame('CANCELLED', $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performanceId))->status()->toString());
+        }
+    }
+
+    public function test_a_performance_of_a_cancelled_production_can_still_be_edited_and_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+
+        $this->assertSame(50, $this->updatePerformance->execute($this->capacityChange($performanceId, 50))->capacity);
+        $this->assertSame('CANCELLED', $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1))->status);
+    }
+
+    private function reserve(string $performanceId, int $guests, bool $cancelled = false): void
+    {
+        $reservation = \StageArt\Domain\Reservation\Reservation::create(
+            \StageArt\Domain\Performance\PerformanceId::fromString($performanceId),
+            \StageArt\Domain\Ticket\TicketId::generate(),
+            'Fictional booker',
+            'booker@example.invalid',
+            $guests,
+            3000,
+            null
+        );
+
+        if ($cancelled) {
+            $reservation->cancel(null);
+        }
+
+        $this->reservations->save($reservation);
+    }
+
+    public function test_a_capacity_below_the_reserved_seats_is_refused_and_nothing_changes(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $this->reserve($performanceId, 30);
+        $this->reserve($performanceId, 15);
+        $this->reserve($performanceId, 40, true); // a CANCELLED Reservation takes no seat
+
+        try {
+            $this->updatePerformance->execute($this->capacityChange($performanceId, 44));
+            $this->fail('The capacity went below the 45 reserved seats.');
+        } catch (\StageArt\Application\Performance\CapacityBelowReservationsException $exception) {
+            $this->assertSame(44, $exception->capacity());
+            $this->assertSame(45, $exception->occupied());
+        }
+
+        $this->assertSame(100, $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performanceId))->capacity());
+
+        $this->assertSame(45, $this->updatePerformance->execute($this->capacityChange($performanceId, 45))->capacity, 'down to exactly the reserved seats');
+    }
+
+    /**
+     * The seats are counted under the lock: a booking committed while the
+     * capacity change waited for the exclusive Production lock is counted.
+     */
+    public function test_a_booking_committed_while_the_capacity_change_waits_is_counted(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $this->reserve($performanceId, 30);
+        $this->productions->beforeLockGranted = function () use ($performanceId): void {
+            $this->reserve($performanceId, 20);
+        };
+
+        $this->expectException(\StageArt\Application\Performance\CapacityBelowReservationsException::class);
+
+        try {
+            $this->updatePerformance->execute($this->capacityChange($performanceId, 40));
+        } finally {
+            $this->assertSame(100, $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performanceId))->capacity());
+        }
+    }
+
+    /**
+     * Only a decrease is checked: other fields of an already overbooked
+     * Performance (legacy data) stay editable.
+     */
+    public function test_an_overbooked_performance_can_still_be_edited_without_lowering_its_capacity(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $this->reserve($performanceId, 120);
+
+        $updated = $this->updatePerformance->execute(new UpdatePerformanceCommand($performanceId, 1, '2026-10-10', '13:00', null, 100, '備考を更新', null));
+
+        $this->assertSame('備考を更新', $updated->remarks);
     }
 }

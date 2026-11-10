@@ -49,6 +49,7 @@ final class ProductionCapacityCascadeTest extends TestCase
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
     private InMemoryPerformanceRepository $performances;
+    private \StageArt\Tests\Support\InMemoryReservationRepository $reservations;
     private CreatePerformanceUseCase $createPerformance;
     private UpdateProductionUseCase $updateProduction;
 
@@ -59,6 +60,7 @@ final class ProductionCapacityCascadeTest extends TestCase
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
         $this->performances = new InMemoryPerformanceRepository();
+        $this->reservations = new \StageArt\Tests\Support\InMemoryReservationRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
@@ -75,7 +77,8 @@ final class ProductionCapacityCascadeTest extends TestCase
             $this->productions,
             $productionAuthorization,
             $this->performances,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $this->reservations
         );
     }
 
@@ -275,11 +278,82 @@ final class ProductionCapacityCascadeTest extends TestCase
             $this->productions,
             $productionAuthorization,
             $failingPerformances,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $this->reservations
         );
 
         $this->expectException(RuntimeException::class);
 
         $this->updateProductionCapacity($production, 180, $useCaseWithFailingRepository);
+    }
+
+    // --- PR #7 review (R6): no capacity below the seats already reserved ---
+
+    private function reserve(string $performanceId, int $guests): void
+    {
+        $this->reservations->save(\StageArt\Domain\Reservation\Reservation::create(
+            \StageArt\Domain\Performance\PerformanceId::fromString($performanceId),
+            \StageArt\Domain\Ticket\TicketId::generate(),
+            'Fictional booker',
+            'booker@example.invalid',
+            $guests,
+            3000,
+            null
+        ));
+    }
+
+    private function useCaseWith(\StageArt\Tests\Support\RollbackingTransactionManager $transactions): UpdateProductionUseCase
+    {
+        return new UpdateProductionUseCase(
+            $this->productions,
+            new ProductionAuthorizationService(
+                new OrganizationAuthorizationService($this->people, $this->memberships),
+                new InMemoryProductionDelegateRepository(),
+                new InMemoryParticipantRepository()
+            ),
+            $this->performances,
+            $transactions,
+            $this->reservations
+        );
+    }
+
+    public function test_a_production_capacity_below_a_performances_reserved_seats_is_refused_and_rolled_back(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+        $performance = $this->createPerformance->execute(new \StageArt\Application\Performance\CreatePerformanceCommand(
+            $production->id()->toString(), 1, '2026-10-10', '13:00', null, null, null, null
+        ));
+        $this->reserve($performance->id, 60);
+        $transactions = new \StageArt\Tests\Support\RollbackingTransactionManager();
+
+        try {
+            $this->updateProductionCapacity($production, 50, $this->useCaseWith($transactions));
+            $this->fail('The cascade lowered a Performance below its 60 reserved seats.');
+        } catch (\StageArt\Application\Performance\CapacityBelowReservationsException $exception) {
+            $this->assertSame(50, $exception->capacity());
+            $this->assertSame(60, $exception->occupied());
+        }
+
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks(), 'the Production capacity and every Performance are rolled back together');
+
+        $this->updateProductionCapacity($production, 60);
+        $this->assertSame(60, $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performance->id))->capacity(), 'down to exactly the reserved seats');
+    }
+
+    public function test_a_cancelled_performance_does_not_block_the_cascade(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1, 100);
+        $performance = $this->createPerformance->execute(new \StageArt\Application\Performance\CreatePerformanceCommand(
+            $production->id()->toString(), 1, '2026-10-10', '13:00', null, null, null, null
+        ));
+        $this->reserve($performance->id, 60);
+        $stored = $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performance->id));
+        $stored->cancel();
+        $this->performances->save($stored);
+
+        $this->updateProductionCapacity($production, 50);
+
+        $this->assertSame(50, $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performance->id))->capacity());
     }
 }

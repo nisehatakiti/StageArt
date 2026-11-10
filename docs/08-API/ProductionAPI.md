@@ -686,7 +686,7 @@ Reservation Domainが発行する。
 
 以下はトランザクションの最初にProduction行を排他ロック（`FOR UPDATE`）で読み直し、その行に変更を適用して保存する。保存は行全体の書き込みのため、ロック前に読んだコピーを保存して、同時に確定した決算完了・中止・設定変更を元に戻すことはない。
 
-- `PUT /productions/{id}`（基本情報・定員・公演時間。定員・公演時間の各Performanceへの反映も同じトランザクション）
+- `PUT /productions/{id}`（基本情報・定員・公演時間。定員・公演時間の各Performanceへの反映も同じトランザクション。R6：定員の一括上書きで、CANCELLED以外のいずれかのPerformanceの定員が予約済み席数を下回る場合は409 `stageart_capacity_below_reservations` で全体を拒否し、何も変更しない）
 - `/productions/{id}/activate`、`/complete`、`/cancel`、`/archive`
 - `/productions/{id}/primary-manager`
 - `/productions/{id}/ticket-sales-settings`

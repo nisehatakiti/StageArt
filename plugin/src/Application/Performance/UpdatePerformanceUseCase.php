@@ -14,6 +14,7 @@ use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\PerformanceFinishedListenerContract;
+use StageArt\Core\Contract\PerformanceOccupancyContract;
 use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Performance\PerformanceId;
@@ -42,6 +43,7 @@ final class UpdatePerformanceUseCase
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
     private ProductionActivityLockContract $productionLock;
+    private PerformanceOccupancyContract $occupancy;
     private ?PerformanceFinishedListenerContract $performanceFinishedListener;
 
     public function __construct(
@@ -51,6 +53,7 @@ final class UpdatePerformanceUseCase
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions,
         ProductionActivityLockContract $productionLock,
+        PerformanceOccupancyContract $occupancy,
         ?PerformanceFinishedListenerContract $performanceFinishedListener = null
     ) {
         $this->performances = $performances;
@@ -59,6 +62,7 @@ final class UpdatePerformanceUseCase
         $this->authorization = $authorization;
         $this->transactions = $transactions;
         $this->productionLock = $productionLock;
+        $this->occupancy = $occupancy;
         $this->performanceFinishedListener = $performanceFinishedListener;
     }
 
@@ -97,21 +101,22 @@ final class UpdatePerformanceUseCase
 
         $performanceDate = $this->parseDate($command->performanceDate);
 
-        // PR #7 review (R5): edited on the Performance as re-read under its
-        // row lock, taken after the shared Production lock (lock order
-        // Production -> Performance):
-        // - a booking checks capacity under the same Performance lock, so a
-        //   capacity change and a booking are ordered one after the other;
-        // - the shared Production lock orders the edit against Production
-        //   Completion and a Production update's capacity / duration
-        //   cascade (both exclusive), so the COMPLETED / ARCHIVED guard
-        //   below is the committed status and the cascade never overwrites
-        //   this edit with an older copy (or the other way round);
+        // PR #7 review (R5, R6): edited on the Performance as re-read under
+        // its row lock, taken after the EXCLUSIVE Production lock (lock
+        // order Production -> Performance -> Reservation):
+        // - (R6) the capacity is what bookings, walk-up sales and guest
+        //   count increases check under their shared Production lock, so the
+        //   change waits for those in progress, none starts meanwhile, and
+        //   the seats counted below are final until this commits. A capacity
+        //   lowered below those seats is refused and nothing is changed;
+        // - the Production lock also orders the edit against Production
+        //   Completion, settlements and a Production update's cascade, so
+        //   the COMPLETED / ARCHIVED guard below is the committed status;
         // - save() writes every column, so a cancellation committed since
         //   the read above is seen instead of being reverted.
         [$performance, $wasFinished] = $this->transactions->run(function () use ($performance, $productionId, $command, $performanceDate): array {
             try {
-                $this->productionLock->lockUnsettledProduction($productionId);
+                $this->productionLock->lockUnsettledProductionExclusively($productionId);
             } catch (ProductionClosedException $exception) {
                 throw new InvalidArgumentException('Performances cannot be edited while their Production is COMPLETED or ARCHIVED.');
             }
@@ -128,6 +133,19 @@ final class UpdatePerformanceUseCase
             }
 
             $wasFinished = $locked->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
+            $previousCapacity = $locked->capacity();
+
+            // (R6) A capacity lowered below the seats already taken is
+            // refused. Only a decrease is checked: an unchanged (or raised)
+            // capacity never makes an existing overbooking worse, so other
+            // fields stay editable.
+            if ($command->capacity < $previousCapacity) {
+                $occupied = $this->occupancy->occupiedSeatsForUpdate($locked->id());
+
+                if ($command->capacity < $occupied) {
+                    throw new CapacityBelowReservationsException($locked->id()->toString(), $command->capacity, $occupied);
+                }
+            }
 
             $endTimeCustomized = $command->endTimeCustomized ?? ($command->endTime !== null && trim($command->endTime) !== '');
             $endTime = $command->endTime;

@@ -70,6 +70,10 @@ final class WordPressOrganizationRepository implements OrganizationRepositoryInt
             ARRAY_A
         );
 
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Organization.');
+
         if (! $row) {
             return null;
         }

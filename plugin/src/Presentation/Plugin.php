@@ -22,6 +22,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CorePerformanceOccupancyAdapter;
 use StageArt\Core\Adapter\CoreProductionActivityLockAdapter;
 use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
@@ -577,7 +578,7 @@ final class Plugin
         $getProductionOverview = new GetProductionOverviewUseCase($productions, $productionAuthorization);
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
-        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
+        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions, $reservations);
         $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization, $transactions);
         $completeProduction = new CompleteProductionUseCase(
             $productions,
@@ -744,6 +745,7 @@ final class Plugin
             $membershipContract,
             $transactions,
             $productionActivityLock,
+            new CorePerformanceOccupancyAdapter($reservations),
             $questionnaireModule->performanceFinishedListener()
         );
 
