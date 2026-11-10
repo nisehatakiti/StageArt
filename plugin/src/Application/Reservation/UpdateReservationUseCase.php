@@ -8,6 +8,8 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Reservation\Reservation;
@@ -27,15 +29,23 @@ final class UpdateReservationUseCase
     private ReservationRepositoryInterface $reservations;
     private PerformanceRepositoryInterface $performances;
     private ProductionContextContract $productionContext;
+    private TransactionManagerInterface $transactions;
+    private ProductionActivityLockContract $productionLock;
+    private PerformanceCapacityGuard $capacity;
 
     public function __construct(
         ReservationRepositoryInterface $reservations,
         PerformanceRepositoryInterface $performances,
-        ProductionContextContract $productionContext
+        ProductionContextContract $productionContext,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->reservations = $reservations;
         $this->performances = $performances;
         $this->productionContext = $productionContext;
+        $this->transactions = $transactions;
+        $this->productionLock = $productionLock;
+        $this->capacity = new PerformanceCapacityGuard($performances, $reservations, $productionLock);
     }
 
     public function execute(UpdateReservationCommand $command): PublicReservationResult
@@ -94,10 +104,35 @@ final class UpdateReservationUseCase
             throw new PerformanceAlreadyStartedException('changed');
         }
 
-        $reservation->changeGuestCount($command->guestCount, $reservation->bookerName(), $reservation->bookerEmail(), null);
+        $productionId = $performance->productionId();
 
-        $this->reservations->save($reservation);
+        // PR #7 review (R4): the checks above are an early answer only. The
+        // change is made inside a transaction, in the shared lock order:
+        // the Production lock first (refusing a COMPLETED Production), then
+        // - for an increase - the Performance lock and the seats taken by
+        // the other Reservations (the same capacity check as a booking,
+        // which an unlocked count let two requests pass at once), then the
+        // Reservation itself re-read under its row lock, so a Check-in or
+        // Production Completion committed meanwhile is never overwritten.
+        $updated = $this->transactions->run(function () use ($reservation, $command, $isIncrease, $productionId): Reservation {
+            if ($isIncrease) {
+                $this->capacity->lockAndReserve($productionId, $reservation->performanceId(), $command->guestCount, $reservation->id());
+            } else {
+                $this->productionLock->lockOpenProduction($productionId);
+            }
 
-        return PublicReservationResult::fromDomain($reservation);
+            $locked = $this->reservations->findByIdForUpdate($reservation->id());
+
+            if ($locked === null) {
+                throw new ReservationNotFoundException($command->reservationNumber);
+            }
+
+            $locked->changeGuestCount($command->guestCount, $locked->bookerName(), $locked->bookerEmail(), null);
+            $this->reservations->save($locked);
+
+            return $locked;
+        });
+
+        return PublicReservationResult::fromDomain($updated);
     }
 }

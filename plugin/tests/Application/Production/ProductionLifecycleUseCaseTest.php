@@ -513,7 +513,10 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     /**
      * The settlement guard's Reservation read fails (a DB error): the
      * guard must not see "no checked-in seats, nothing owed" and let the
-     * Production complete - it stops before any write.
+     * Production complete - it stops before any write. Since PR #7 R4 the
+     * guard runs inside the completion's transaction, under the Production
+     * lock, so the failure rolls that transaction back (it used to stop
+     * before the transaction started).
      */
     public function test_a_failed_reservation_read_in_the_settlement_guard_does_not_complete_the_production(): void
     {
@@ -531,7 +534,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
         $this->assertSame(0, $transactions->commits());
-        $this->assertSame(0, $transactions->rollbacks(), 'nothing was written: the guard stopped before the transaction');
+        $this->assertSame(1, $transactions->rollbacks(), 'the guard failed inside the completion transaction, before complete() was saved');
     }
 
     /**
@@ -567,5 +570,101 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->assertSame(0, $transactions->commits());
         $this->assertSame(1, $transactions->rollbacks());
         $this->assertSame('RESERVED', $this->reservations->findById($stillReserved->id())->status()->toString());
+    }
+
+    // --- PR #7 review (R4): Production Completion under the exclusive Production lock ---
+
+    /** Settles the member of givenActiveProductionWithUnsettledTicketBack() (300円). */
+    private function settleTheMember(Production $production): void
+    {
+        $member = $this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id())[0]->attributedPersonId();
+        $settlement = \StageArt\Domain\Settlement\ProductionMemberSettlement::openFor($production->id(), $member);
+        $settlement->recordSettlement(300, $member);
+        $this->settlements->save($settlement);
+    }
+
+    public function test_completion_takes_the_exclusive_production_lock_first_inside_its_transaction(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $transactions = new RollbackingTransactionManager();
+        $inTransactionAtLock = null;
+        $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransactionAtLock): void {
+            $inTransactionAtLock = $transactions->isInTransaction();
+        };
+
+        $result = $this->completeUseCaseWith($this->reservations, $transactions)
+            ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertTrue($inTransactionAtLock);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * A Check-in that committed while the completion waited for the lock
+     * creates new Ticket Back: the settlement check, read under the lock,
+     * sees it and refuses to complete.
+     */
+    public function test_a_check_in_committed_while_completion_waited_blocks_the_completion(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $performance = $this->performances->findByProductionId($production->id())[0];
+            $ticket = $this->tickets->findByProductionId($production->id())[0];
+            $member = $this->reservations->findByPerformanceId($performance->id())[0]->attributedPersonId();
+            $late = Reservation::create($performance->id(), $ticket->id(), 'Late', 'late@example.com', 1, 3000, null, $member);
+            $late->checkIn(null);
+            $this->reservations->save($late);
+        };
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed with Ticket Back owed on a Check-in committed just before.');
+        } catch (ProductionSettlementIncompleteException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    public function test_a_second_concurrent_completion_is_refused_after_the_first_commits(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+        };
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed twice.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('COMPLETED to COMPLETED', $exception->getMessage());
+        }
+
+        $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    public function test_a_failed_production_lock_does_not_complete(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->lockFailure = new \RuntimeException('Failed to lock the Production. Lock wait timeout exceeded; try restarting transaction');
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($this->reservations, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed without the Production lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
     }
 }

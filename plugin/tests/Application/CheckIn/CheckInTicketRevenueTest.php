@@ -132,7 +132,8 @@ final class CheckInTicketRevenueTest extends TestCase
             $this->productionContext,
             new CoreOrganizationContextAdapter($this->organizations),
             $this->journalEntries,
-            new StandardAccountResolver($this->accounts)
+            new StandardAccountResolver($this->accounts),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
 
         $this->checkInReservation = new CheckInReservationUseCase(
@@ -165,7 +166,8 @@ final class CheckInTicketRevenueTest extends TestCase
             new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization),
             $processor,
             new InMemoryWalkUpIdempotencyStore(),
-            $transactions
+            $transactions,
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
     }
 
@@ -180,7 +182,8 @@ final class CheckInTicketRevenueTest extends TestCase
             $this->issuedTickets,
             $this->productionContext,
             $this->identity,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
         $result = $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 2));
 
@@ -237,7 +240,8 @@ final class CheckInTicketRevenueTest extends TestCase
             $this->issuedTickets,
             $this->productionContext,
             $this->identity,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
         $updateTicket = new \StageArt\Application\Ticket\UpdateTicketUseCase($this->tickets, $this->productionContext, $this->identity, $this->authorization);
         $book = fn (int $guests): string => $createReservation->execute(new \StageArt\Application\Reservation\CreateReservationCommand(

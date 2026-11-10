@@ -86,9 +86,24 @@ final class CompleteProductionUseCase
             throw new ProductionAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can complete this Production.');
         }
 
-        $this->guardSettlementComplete($production, $productionId);
+        // PR #7 review (R4): everything below runs under the exclusive
+        // Production lock, taken first in the transaction. Bookings and
+        // reception operations hold the shared one (lock order Production ->
+        // Performance -> Reservation), so the ones already running commit
+        // before this lock is granted - and are seen by the settlement check
+        // - and new ones wait for this commit and then find the Production
+        // COMPLETED. The status, the settlement check and the RESERVED
+        // cleanup all read the state as of the lock, never a stale one, and
+        // any failure rolls the whole completion back.
+        $production = $this->transactions->run(function () use ($productionId, $person, $command): Production {
+            $production = $this->productions->findByIdForUpdate($productionId);
 
-        $this->transactions->run(function () use ($production, $productionId, $person): void {
+            if (! $production) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
+
+            $this->guardSettlementComplete($production, $productionId);
+
             $production->complete();
             $this->productions->save($production);
 
@@ -100,6 +115,8 @@ final class CompleteProductionUseCase
                     }
                 }
             }
+
+            return $production;
         });
 
         return ProductionResult::fromDomain(

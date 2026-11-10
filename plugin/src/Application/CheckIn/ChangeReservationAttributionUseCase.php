@@ -7,11 +7,13 @@ namespace StageArt\Application\CheckIn;
 use StageArt\Application\Performance\PerformanceNotFoundException;
 use StageArt\Application\Reservation\ReservationNotFoundException;
 use StageArt\Application\Reservation\ReservationResult;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Reservation\ReservationId;
 use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 
@@ -37,19 +39,25 @@ final class ChangeReservationAttributionUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private MembershipContract $membership;
+    private TransactionManagerInterface $transactions;
+    private CheckInProcessor $processor;
 
     public function __construct(
         ReservationRepositoryInterface $reservations,
         PerformanceRepositoryInterface $performances,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        MembershipContract $membership
+        MembershipContract $membership,
+        TransactionManagerInterface $transactions,
+        CheckInProcessor $processor
     ) {
         $this->reservations = $reservations;
         $this->performances = $performances;
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->membership = $membership;
+        $this->transactions = $transactions;
+        $this->processor = $processor;
     }
 
     public function execute(ChangeReservationAttributionCommand $command): ReservationResult
@@ -86,9 +94,22 @@ final class ChangeReservationAttributionUseCase
             throw new AttributedPersonNotProductionMemberException();
         }
 
-        $reservation->changeAttribution($attributedPersonId, $requesterId);
-        $this->reservations->save($reservation);
+        $productionId = $performance->productionId();
 
-        return ReservationResult::fromDomain($reservation);
+        // PR #7 review (R4): the attribution decides whose Ticket Back a
+        // sale counts toward, so it changes only under the Production lock
+        // (never after Production Completion, never while a settlement or
+        // Completion is reading it) and on the Reservation as re-read under
+        // its row lock - not by saving back the whole Reservation read
+        // above, which would undo a Check-in committed since.
+        $updated = $this->transactions->run(function () use ($reservation, $attributedPersonId, $requesterId, $productionId): Reservation {
+            $locked = $this->processor->lock($reservation, $productionId);
+            $locked->changeAttribution($attributedPersonId, $requesterId);
+            $this->reservations->save($locked);
+
+            return $locked;
+        });
+
+        return ReservationResult::fromDomain($updated);
     }
 }

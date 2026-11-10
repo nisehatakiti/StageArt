@@ -134,7 +134,7 @@ final class CheckInUseCaseTest extends TestCase
         $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization);
 
         $standardAccounts = new StandardAccountResolver($this->accounts);
-        $processor = new CheckInProcessor($this->reservations, $this->checkIns, $productionContext, $organizationContext, $this->journalEntries, $standardAccounts);
+        $processor = new CheckInProcessor($this->reservations, $this->checkIns, $productionContext, $organizationContext, $this->journalEntries, $standardAccounts, new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
 
         $this->checkInReservation = new CheckInReservationUseCase(
             $this->reservations,
@@ -168,15 +168,17 @@ final class CheckInUseCaseTest extends TestCase
             $membership,
             $processor,
             $this->walkUpIdempotencyStore,
-            $transactions
+            $transactions,
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
-        $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization, $membership);
+        $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization, $membership, $transactions, $processor);
         $this->decreaseGuestCount = new DecreaseReservationGuestCountUseCase(
             $this->reservations,
             $this->performances,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $processor
         );
     }
 
@@ -817,5 +819,158 @@ final class CheckInUseCaseTest extends TestCase
 
         $this->assertSame(1, $this->performances->lockCount);
         $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    // --- PR #7 review (R4): reception against Production Completion ---
+    //
+    // Every reception operation takes the shared Production lock first in
+    // its transaction; Production Completion holds it exclusively. The
+    // `beforeLockGranted` hook plays a completion that committed while the
+    // reception request waited for that lock.
+
+    /**
+     * What Production Completion commits: COMPLETED, and the remaining
+     * RESERVED Reservations cancelled.
+     */
+    private function completedElsewhere(Production $production, Reservation ...$reserved): void
+    {
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        foreach ($reserved as $reservation) {
+            $reservation->cancel(null);
+            $this->reservations->save($reservation);
+        }
+    }
+
+    public function test_check_in_takes_the_shared_production_lock_inside_its_transaction(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+    }
+
+    public function test_a_check_in_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->beforeLockGranted = function () use ($production, $reservation): void {
+            $this->completedElsewhere($production, $reservation);
+        };
+
+        try {
+            $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('Checked in after the Production was completed.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertStringContainsString($production->id()->toString(), $exception->getMessage());
+        }
+
+        $this->assertSame('CANCELLED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+        $this->assertSame([], $this->journalEntries->all(), 'no ticket revenue recorded');
+    }
+
+    public function test_a_walk_up_sale_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->completedElsewhere($production);
+        };
+
+        try {
+            $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, '当日券太郎', 'walkup@example.com', 1, null, 1, 'after-completion'
+            ));
+            $this->fail('A walk-up ticket was sold after the Production was completed.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertStringContainsString($production->id()->toString(), $exception->getMessage());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertSame([], $this->journalEntries->all());
+        $this->assertNull($this->walkUpIdempotencyStore->findReservationId('after-completion'));
+        $this->assertSame(0, $this->performances->lockCount, 'the Production lock comes before the Performance lock');
+    }
+
+    public function test_no_show_reversal_attribution_and_guest_count_are_refused_once_completed(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $checkedIn = $this->givenReservedReservation($performance, $ticketId, 2);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1));
+        $reserved = $this->givenReservedReservation($performance, $ticketId, 3);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        $operations = [
+            'no-show' => fn () => $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reserved->id()->toString(), 1)),
+            'reversal' => fn () => $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1, false)),
+            'attribution' => fn () => $this->changeAttribution->execute(new ChangeReservationAttributionCommand($checkedIn->id()->toString(), null, 1)),
+            'guest count' => fn () => $this->decreaseGuestCount->execute(new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reserved->id()->toString(), 1, 1)),
+        ];
+
+        foreach ($operations as $name => $operation) {
+            try {
+                $operation();
+                $this->fail("{$name} went through on a completed Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($checkedIn->id())->status()->toString());
+        $this->assertSame(2, $this->reservations->findById($checkedIn->id())->guestCount());
+        $this->assertSame('RESERVED', $this->reservations->findById($reserved->id())->status()->toString());
+        $this->assertSame(3, $this->reservations->findById($reserved->id())->guestCount());
+    }
+
+    public function test_a_failed_production_lock_checks_nothing_in(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->lockFailure = new \RuntimeException('Failed to lock the Production. Lock wait timeout exceeded; try restarting transaction');
+
+        try {
+            $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('Checked in without the Production lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $exception->getMessage());
+        }
+
+        $this->assertSame('RESERVED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+        $this->assertSame([], $this->journalEntries->all());
+
+        // The lock is free again: the same request now goes through.
+        $this->productions->lockFailure = null;
+        $result = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    /**
+     * The attribution is changed on the Reservation as re-read under its
+     * row lock: a Check-in committed after this request read the
+     * Reservation (still RESERVED) is kept, not overwritten.
+     */
+    public function test_an_attribution_change_does_not_undo_a_check_in_committed_meanwhile(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $member = Person::create(3);
+        $this->people->save($member);
+        $this->givenProductionMember($production, $member);
+        $this->productions->beforeLockGranted = function () use ($reservation): void {
+            $committed = clone $reservation;
+            $committed->checkIn(null);
+            $this->reservations->save($committed);
+        };
+
+        $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $member->id()->toString(), 1));
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertSame($member->id()->toString(), $this->reservations->findById($reservation->id())->attributedPersonId()->toString());
+        $this->assertSame($member->id()->toString(), $result->attributedPersonId);
     }
 }

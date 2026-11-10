@@ -13,6 +13,7 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\Project\ProjectId;
+use RuntimeException;
 use wpdb;
 
 final class WordPressProductionRepository implements ProductionRepositoryInterface
@@ -69,15 +70,26 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             $this->wpdb->prepare("SELECT id FROM {$this->table} WHERE id = %s", $production->id()->toString())
         );
 
+        // PR #7 review (R4): a failed write - or a failed existence check,
+        // which would otherwise be taken for "new row" - must not pass for
+        // a saved Production: Production Completion saves COMPLETED in the
+        // same transaction that cancels the RESERVED Reservations.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Production before saving it.');
+
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $production->id()->toString()]);
+            if ($this->wpdb->update($this->table, $row, ['id' => $production->id()->toString()]) === false) {
+                throw new RuntimeException('Failed to update Production. ' . $this->wpdb->last_error);
+            }
+
             return;
         }
 
         $row['id'] = $production->id()->toString();
         $row['created_at'] = $production->createdAt()->format('Y-m-d H:i:s');
 
-        $this->wpdb->insert($this->table, $row);
+        if ($this->wpdb->insert($this->table, $row) === false) {
+            throw new RuntimeException('Failed to insert Production. ' . $this->wpdb->last_error);
+        }
     }
 
     public function findById(ProductionId $id): ?Production
@@ -86,6 +98,30 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForUpdate(ProductionId $id): ?Production
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to lock the Production.');
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForShare(ProductionId $id): ?Production
+    {
+        // LOCK IN SHARE MODE: accepted by MySQL 5.7 and 8.0 (where FOR
+        // SHARE is the newer spelling) and by MariaDB.
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s LOCK IN SHARE MODE", $id->toString()),
+            ARRAY_A
+        );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to lock the Production.');
 
         return $row ? $this->hydrate($row) : null;
     }

@@ -6,6 +6,7 @@ namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
+use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Reservation\CancelReservationCommand;
 use StageArt\Application\Reservation\CancelReservationUseCase;
@@ -143,6 +144,8 @@ final class ReservationRestController
             return new WP_Error('stageart_ticket_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionClosedException $exception) {
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
         } catch (TicketNotPublicException $exception) {
             return new WP_Error('stageart_ticket_not_public', $exception->getMessage(), ['status' => 422]);
         } catch (SalesNotStartedException $exception) {
@@ -223,6 +226,8 @@ final class ReservationRestController
             return new WP_Error('stageart_performance_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionClosedException $exception) {
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
         } catch (PerformanceAlreadyStartedException $exception) {
             return new WP_Error('stageart_performance_already_started', $exception->getMessage(), ['status' => 422]);
         } catch (ReservationCannotBeIncreasedException $exception) {
@@ -252,6 +257,10 @@ final class ReservationRestController
             return new WP_Error('stageart_reservation_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (PerformanceNotFoundException $exception) {
             return new WP_Error('stageart_performance_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionClosedException $exception) {
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
         } catch (PerformanceAlreadyStartedException $exception) {
             return new WP_Error('stageart_performance_already_started', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {

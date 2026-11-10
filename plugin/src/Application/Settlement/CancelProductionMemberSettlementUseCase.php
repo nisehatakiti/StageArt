@@ -64,13 +64,22 @@ final class CancelProductionMemberSettlementUseCase
         }
 
         $personId = PersonId::fromString($command->personId);
-        $settlement = $this->settlements->findByProductionAndPerson($productionId, $personId);
 
-        if ($settlement === null || $settlement->lastSettledAmount() <= 0) {
-            throw new NothingToCancelException();
-        }
+        // PR #7 review (R4): read and changed under the exclusive Production
+        // lock (see SettleProductionMemberUseCase), so a settlement or
+        // another cancellation committed meanwhile is seen, never
+        // overwritten - a second cancellation finds nothing to cancel.
+        $this->transactions->run(function () use ($productionId, $personId, $requesterId, $command): void {
+            if (! $this->productions->findByIdForUpdate($productionId)) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
 
-        $this->transactions->run(function () use ($settlement, $requesterId): void {
+            $settlement = $this->settlements->findByProductionAndPerson($productionId, $personId);
+
+            if ($settlement === null || $settlement->lastSettledAmount() <= 0) {
+                throw new NothingToCancelException();
+            }
+
             $settlement->cancelLastSettlement($requesterId);
             $this->settlements->save($settlement);
         });

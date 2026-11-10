@@ -22,6 +22,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionActivityLockAdapter;
 use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
@@ -303,6 +304,9 @@ final class Plugin
         $identityContract = new CoreIdentityAdapter($people);
         $authorizationContract = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
+        // PR #7 review (R4): the Production lock every booking / reception
+        // operation takes first (see ProductionActivityLockContract).
+        $productionActivityLock = new CoreProductionActivityLockAdapter($productions);
 
         // Notification基盤実装 phase: In-App (highest priority per this
         // phase's instruction) and Email delivery Adapters, registered
@@ -764,7 +768,8 @@ final class Plugin
             $productionContextContract,
             $identityContract,
             $authorizationContract,
-            $transactions
+            $transactions,
+            $productionActivityLock
         );
 
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
@@ -841,7 +846,8 @@ final class Plugin
             $authorizationContract,
             $membershipContract,
             $walkUpIdempotencyStore,
-            $transactions
+            $transactions,
+            $productionActivityLock
         );
 
         // Settlement Module's own wiring - see SettlementModuleBootstrap's

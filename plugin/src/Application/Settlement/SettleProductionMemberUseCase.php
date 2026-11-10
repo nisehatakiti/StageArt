@@ -68,18 +68,37 @@ final class SettleProductionMemberUseCase
         }
 
         $personId = PersonId::fromString($command->personId);
-        $confirmedAmounts = $this->calculator->confirmedTicketBackAmountsByMember($production, $productionId);
-        $confirmed = $confirmedAmounts[$personId->toString()] ?? 0;
 
-        $settlement = $this->settlements->findByProductionAndPerson($productionId, $personId);
-        $alreadySettled = $settlement !== null ? $settlement->totalSettledAmount() : 0;
-        $outstanding = $confirmed - $alreadySettled;
+        // PR #7 review (R4): the amount owed, the amount already settled and
+        // the new settlement are read, decided and written in one
+        // transaction under the exclusive Production lock, taken first. A
+        // second settlement of the same member (or a cancellation, or
+        // Production Completion) waits for this one to commit and then
+        // reads its result - it finds nothing left to settle instead of
+        // settling the same amount again or overwriting this record with
+        // what it read before. No Check-in, attribution or booking change
+        // (they hold the shared lock) can change the amount owed between
+        // the read and the write. NothingToSettleException and any DB error
+        // roll back with nothing written, so a failed request can simply be
+        // sent again.
+        $this->transactions->run(function () use ($productionId, $personId, $requesterId, $command): void {
+            $locked = $this->productions->findByIdForUpdate($productionId);
 
-        if ($outstanding <= 0) {
-            throw new NothingToSettleException();
-        }
+            if (! $locked) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
 
-        $this->transactions->run(function () use ($productionId, $personId, $settlement, $outstanding, $requesterId): void {
+            $confirmedAmounts = $this->calculator->confirmedTicketBackAmountsByMember($locked, $productionId);
+            $confirmed = $confirmedAmounts[$personId->toString()] ?? 0;
+
+            $settlement = $this->settlements->findByProductionAndPerson($productionId, $personId);
+            $alreadySettled = $settlement !== null ? $settlement->totalSettledAmount() : 0;
+            $outstanding = $confirmed - $alreadySettled;
+
+            if ($outstanding <= 0) {
+                throw new NothingToSettleException();
+            }
+
             $record = $settlement ?? ProductionMemberSettlement::openFor($productionId, $personId);
             $record->recordSettlement($outstanding, $requesterId);
             $this->settlements->save($record);

@@ -359,4 +359,153 @@ final class SettlementUseCaseTest extends TestCase
 
         $summary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1));
     }
+
+    // --- PR #7 review (R4): concurrent settlements ---
+    //
+    // Settling and cancelling take the exclusive Production lock first in
+    // their transaction and read everything they decide on under it. The
+    // `beforeLockGranted` hook plays the request that held the lock first
+    // and committed while this one waited.
+
+    private function settle(Production $production, \StageArt\Domain\Person\Person $member): void
+    {
+        $this->settleMember->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+    }
+
+    /** A Check-in of one more seat for the member, committed by another request. */
+    private function anotherCheckedInSeat(Production $production, \StageArt\Domain\Person\Person $member): void
+    {
+        $performance = $this->performances->findByProductionId($production->id())[0];
+        $ticket = $this->tickets->findByProductionId($production->id())[0];
+        $reservation = Reservation::create($performance->id(), $ticket->id(), 'B', 'b@example.com', 1, 3000, null, $member->id());
+        $reservation->checkIn(null);
+        $this->reservations->save($reservation);
+    }
+
+    private function settlementOf(Production $production, \StageArt\Domain\Person\Person $member): ?\StageArt\Domain\Settlement\ProductionMemberSettlement
+    {
+        return $this->settlements->findByProductionAndPerson($production->id(), $member->id());
+    }
+
+    public function test_settling_reads_and_writes_under_the_exclusive_production_lock(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $transactions = new \StageArt\Tests\Support\RollbackingTransactionManager();
+        $inTransactionAtLock = null;
+        $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransactionAtLock): void {
+            $inTransactionAtLock = $transactions->isInTransaction();
+        };
+        $settle = new SettleProductionMemberUseCase(
+            $this->productions,
+            $this->settlements,
+            new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
+            $this->identity,
+            $this->authorization,
+            $transactions
+        );
+
+        $settle->execute(new SettleProductionMemberCommand($production->id()->toString(), $member->id()->toString(), 1));
+
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertTrue($inTransactionAtLock);
+        $this->assertSame(1, $transactions->commits());
+        $this->assertSame(300, $this->settlementOf($production, $member)->totalSettledAmount());
+    }
+
+    public function test_a_second_concurrent_settlement_of_the_same_member_finds_nothing_left(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->productions->beforeLockGranted = function () use ($production, $member): void {
+            $this->settle($production, $member); // the other request, committed first
+        };
+
+        try {
+            $this->settle($production, $member);
+            $this->fail('The same Ticket Back was settled twice.');
+        } catch (NothingToSettleException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $settlement = $this->settlementOf($production, $member);
+        $this->assertSame(300, $settlement->totalSettledAmount(), 'settled once, not twice');
+        $this->assertSame(300, $settlement->lastSettledAmount());
+    }
+
+    /**
+     * A Check-in committed between this request's first look and its lock
+     * is part of what it settles: the amount is read under the lock.
+     */
+    public function test_a_check_in_committed_before_the_lock_is_settled_too(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->productions->beforeLockGranted = function () use ($production, $member): void {
+            $this->anotherCheckedInSeat($production, $member);
+        };
+
+        $this->settle($production, $member);
+
+        // 2 seats * 3,000円 * 10%.
+        $this->assertSame(600, $this->settlementOf($production, $member)->totalSettledAmount());
+        $summary = $this->getSummary->execute(new GetProductionSettlementSummaryQuery($production->id()->toString(), 1));
+        $this->assertSame(0, $summary->members[0]->outstandingAmount);
+    }
+
+    /**
+     * With an existing settlement record: a cancellation committed while
+     * this settlement waited is read, not overwritten with the record as
+     * it was before.
+     */
+    public function test_settling_after_a_cancellation_committed_meanwhile_keeps_both(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+        $this->anotherCheckedInSeat($production, $member);
+        $this->productions->beforeLockGranted = function () use ($production, $member): void {
+            $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+        };
+
+        $this->settle($production, $member);
+
+        $settlement = $this->settlementOf($production, $member);
+        $this->assertSame(600, $settlement->totalSettledAmount(), 'the whole 600円 owed after the cancellation');
+        $this->assertSame(600, $settlement->lastSettledAmount());
+    }
+
+    public function test_a_second_concurrent_cancellation_finds_nothing_to_cancel(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+        $command = new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1);
+        $this->productions->beforeLockGranted = function () use ($command): void {
+            $this->cancelSettlement->execute($command);
+        };
+
+        try {
+            $this->cancelSettlement->execute($command);
+            $this->fail('The same settlement was cancelled twice.');
+        } catch (NothingToCancelException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame(0, $this->settlementOf($production, $member)->totalSettledAmount(), 'not -300');
+    }
+
+    public function test_a_failed_production_lock_settles_nothing_and_the_request_can_be_sent_again(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->productions->lockFailure = new \RuntimeException('Failed to lock the Production. Lock wait timeout exceeded; try restarting transaction');
+
+        try {
+            $this->settle($production, $member);
+            $this->fail('Settled without the Production lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $exception->getMessage());
+        }
+
+        $this->assertNull($this->settlementOf($production, $member));
+
+        $this->productions->lockFailure = null;
+        $this->settle($production, $member);
+        $this->assertSame(300, $this->settlementOf($production, $member)->totalSettledAmount());
+    }
 }

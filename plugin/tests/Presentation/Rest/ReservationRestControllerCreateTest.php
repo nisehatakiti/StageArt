@@ -121,10 +121,10 @@ final class ReservationRestControllerCreateTest extends TestCase
         ));
 
         $this->controller = new ReservationRestController(
-            new CreateReservationUseCase($performances, $tickets, $this->reservations, new InMemoryIssuedTicketRepository(), $productionContext, $identity, new InMemoryTransactionManager()),
+            new CreateReservationUseCase($performances, $tickets, $this->reservations, new InMemoryIssuedTicketRepository(), $productionContext, $identity, new InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($productions)),
             new GetReservationByNumberUseCase($this->reservations),
-            new UpdateReservationUseCase($this->reservations, $performances, $productionContext),
-            new CancelReservationUseCase($this->reservations, $performances),
+            new UpdateReservationUseCase($this->reservations, $performances, $productionContext, new InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($productions)),
+            new CancelReservationUseCase($this->reservations, $performances, new InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($productions)),
             new ListReservationsUseCase($this->reservations, $performances, $productionContext, $identity, $authorization)
         );
     }

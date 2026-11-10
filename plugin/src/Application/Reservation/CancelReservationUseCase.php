@@ -7,7 +7,10 @@ namespace StageArt\Application\Reservation;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Performance\PerformanceNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Reservation\ReservationNumber;
 use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 use StageArt\Domain\Reservation\ReservationStatus;
@@ -26,11 +29,19 @@ final class CancelReservationUseCase
 {
     private ReservationRepositoryInterface $reservations;
     private PerformanceRepositoryInterface $performances;
+    private TransactionManagerInterface $transactions;
+    private ProductionActivityLockContract $productionLock;
 
-    public function __construct(ReservationRepositoryInterface $reservations, PerformanceRepositoryInterface $performances)
-    {
+    public function __construct(
+        ReservationRepositoryInterface $reservations,
+        PerformanceRepositoryInterface $performances,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
+    ) {
         $this->reservations = $reservations;
         $this->performances = $performances;
+        $this->transactions = $transactions;
+        $this->productionLock = $productionLock;
     }
 
     public function execute(CancelReservationCommand $command): PublicReservationResult
@@ -57,16 +68,38 @@ final class CancelReservationUseCase
             throw new PerformanceAlreadyStartedException('cancelled');
         }
 
-        try {
-            $reservation->cancel(null);
-        } catch (InvalidArgumentException $exception) {
-            // A CHECKED_IN Reservation cannot be cancelled - surface this
-            // distinctly rather than as a generic 422.
-            throw new ReservationAccessDeniedException($exception->getMessage());
-        }
+        $productionId = $performance->productionId();
 
-        $this->reservations->save($reservation);
+        // PR #7 review (R4): cancelled on the Reservation as re-read under
+        // the Production and Reservation locks (lock order Production ->
+        // Reservation), so a Check-in or Production Completion committed
+        // since the read above is seen instead of overwritten.
+        $cancelled = $this->transactions->run(function () use ($reservation, $productionId): Reservation {
+            $this->productionLock->lockOpenProduction($productionId);
 
-        return PublicReservationResult::fromDomain($reservation);
+            $locked = $this->reservations->findByIdForUpdate($reservation->id());
+
+            if ($locked === null) {
+                throw new ReservationNotFoundException($reservation->reservationNumber()->toString());
+            }
+
+            if ($locked->status()->equals(ReservationStatus::fromString(ReservationStatus::CANCELLED))) {
+                return $locked;
+            }
+
+            try {
+                $locked->cancel(null);
+            } catch (InvalidArgumentException $exception) {
+                // A CHECKED_IN Reservation cannot be cancelled - surface this
+                // distinctly rather than as a generic 422.
+                throw new ReservationAccessDeniedException($exception->getMessage());
+            }
+
+            $this->reservations->save($locked);
+
+            return $locked;
+        });
+
+        return PublicReservationResult::fromDomain($cancelled);
     }
 }

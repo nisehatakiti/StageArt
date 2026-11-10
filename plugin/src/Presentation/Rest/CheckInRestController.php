@@ -336,6 +336,15 @@ final class CheckInRestController
             return new WP_Error('stageart_performance_not_found', $exception->getMessage(), ['status' => 404]);
         }
 
+        if ($exception instanceof \StageArt\Application\Production\ProductionNotFoundException) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+
+        // PR #7 review (R4): the Production is 決算完了 - reception is closed.
+        if ($exception instanceof \StageArt\Application\Production\ProductionClosedException) {
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
+        }
+
         if ($exception instanceof TicketNotFoundException) {
             return new WP_Error('stageart_ticket_not_found', $exception->getMessage(), ['status' => 404]);
         }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Application\CheckIn;
 
 use DateTimeImmutable;
+use StageArt\Application\Reservation\ReservationNotFoundException;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\CheckIn\CheckIn;
@@ -62,6 +64,7 @@ final class CheckInProcessor
     private OrganizationContextContract $organizationContext;
     private JournalEntryRepositoryInterface $journalEntries;
     private StandardAccountResolver $standardAccounts;
+    private ProductionActivityLockContract $productionLock;
 
     public function __construct(
         ReservationRepositoryInterface $reservations,
@@ -69,7 +72,8 @@ final class CheckInProcessor
         ProductionContextContract $productionContext,
         OrganizationContextContract $organizationContext,
         JournalEntryRepositoryInterface $journalEntries,
-        StandardAccountResolver $standardAccounts
+        StandardAccountResolver $standardAccounts,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->reservations = $reservations;
         $this->checkIns = $checkIns;
@@ -77,6 +81,7 @@ final class CheckInProcessor
         $this->organizationContext = $organizationContext;
         $this->journalEntries = $journalEntries;
         $this->standardAccounts = $standardAccounts;
+        $this->productionLock = $productionLock;
     }
 
     /**
@@ -85,9 +90,21 @@ final class CheckInProcessor
      * waits here and then sees the first one's result, instead of both
      * acting on the RESERVED state they read before the transaction.
      */
-    public function lock(Reservation $reservation): Reservation
+    public function lock(Reservation $reservation, ProductionId $productionId): Reservation
     {
-        return $this->reservations->findByIdForUpdate($reservation->id()) ?? $reservation;
+        // PR #7 review (R4), lock order Production -> Reservation
+        // (ProductionActivityLockContract): a COMPLETED Production refuses
+        // every reception operation, and Production Completion never runs
+        // between this read and the commit.
+        $this->productionLock->lockOpenProduction($productionId);
+
+        $locked = $this->reservations->findByIdForUpdate($reservation->id());
+
+        if ($locked === null) {
+            throw new ReservationNotFoundException($reservation->id()->toString());
+        }
+
+        return $locked;
     }
 
     public function process(Reservation $reservation, ProductionId $productionId, PersonId $checkedInBy): CheckIn

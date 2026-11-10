@@ -14,6 +14,7 @@ use StageArt\Application\Ticket\TicketNotFoundException;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Domain\CheckIn\CheckInRepositoryInterface;
 use StageArt\Domain\IssuedTicket\IssuedTicket;
 use StageArt\Domain\IssuedTicket\IssuedTicketRepositoryInterface;
@@ -82,7 +83,8 @@ final class CreateWalkUpReservationUseCase
         MembershipContract $membership,
         CheckInProcessor $processor,
         WalkUpIdempotencyStoreInterface $idempotencyStore,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->performances = $performances;
         $this->tickets = $tickets;
@@ -95,7 +97,7 @@ final class CreateWalkUpReservationUseCase
         $this->processor = $processor;
         $this->idempotencyStore = $idempotencyStore;
         $this->transactions = $transactions;
-        $this->capacity = new PerformanceCapacityGuard($performances, $reservations);
+        $this->capacity = new PerformanceCapacityGuard($performances, $reservations, $productionLock);
     }
 
     public function execute(CreateWalkUpReservationCommand $command): CheckInResult
@@ -162,7 +164,7 @@ final class CreateWalkUpReservationUseCase
 
         try {
             $bundle = $this->transactions->run(function () use ($performanceId, $ticketId, $command, $ticket, $requesterId, $attributedPersonId, $performance) {
-                $this->capacity->lockAndReserve($performanceId, $command->guestCount);
+                $this->capacity->lockAndReserve($performance->productionId(), $performanceId, $command->guestCount);
 
                 $reservation = Reservation::create(
                     $performanceId,

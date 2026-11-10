@@ -15,6 +15,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Reservation\ReservationId;
 use StageArt\Domain\Reservation\ReservationModificationPolicy;
 use StageArt\Domain\Reservation\ReservationRepositoryInterface;
@@ -41,19 +42,22 @@ final class DecreaseReservationGuestCountUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private CheckInProcessor $processor;
 
     public function __construct(
         ReservationRepositoryInterface $reservations,
         PerformanceRepositoryInterface $performances,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        CheckInProcessor $processor
     ) {
         $this->reservations = $reservations;
         $this->performances = $performances;
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->processor = $processor;
     }
 
     public function execute(DecreaseReservationGuestCountCommand $command): ReservationResult
@@ -98,11 +102,25 @@ final class DecreaseReservationGuestCountUseCase
             throw new PerformanceAlreadyStartedException('changed');
         }
 
-        $this->transactions->run(function () use ($reservation, $command, $requesterId): void {
-            $reservation->changeGuestCount($command->guestCount, $reservation->bookerName(), $reservation->bookerEmail(), $requesterId);
-            $this->reservations->save($reservation);
+        $productionId = $performance->productionId();
+
+        // PR #7 review (R4): changed on the Reservation as re-read under the
+        // Production and Reservation locks, so a Check-in or a Production
+        // Completion committed since the read above is seen - and refused or
+        // kept - instead of being overwritten with that older state.
+        $updated = $this->transactions->run(function () use ($reservation, $command, $requesterId, $productionId): Reservation {
+            $locked = $this->processor->lock($reservation, $productionId);
+
+            if ($command->guestCount >= $locked->guestCount()) {
+                throw new InvalidArgumentException('The new guest count must be less than the current guest count.');
+            }
+
+            $locked->changeGuestCount($command->guestCount, $locked->bookerName(), $locked->bookerEmail(), $requesterId);
+            $this->reservations->save($locked);
+
+            return $locked;
         });
 
-        return ReservationResult::fromDomain($reservation);
+        return ReservationResult::fromDomain($updated);
     }
 }

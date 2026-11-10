@@ -107,7 +107,7 @@ final class CheckInReservationUseCase
         // the first Check-in and then answers 受付済み without a second
         // CheckIn Fact or 売上 entry.
         [$checkIn, $locked, $alreadyProcessed] = $this->transactions->run(function () use ($reservation, $productionId, $requesterId): array {
-            $locked = $this->processor->lock($reservation);
+            $locked = $this->processor->lock($reservation, $productionId);
 
             if ($locked->status()->equals(ReservationStatus::fromString(ReservationStatus::CHECKED_IN))) {
                 $existing = $this->checkIns->findLatestByReservationId($locked->id());

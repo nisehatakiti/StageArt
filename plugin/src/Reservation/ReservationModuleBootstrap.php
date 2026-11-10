@@ -12,6 +12,7 @@ use StageArt\Application\Reservation\UpdateReservationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\IssuedTicket\IssuedTicketRepositoryInterface;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
@@ -43,7 +44,8 @@ final class ReservationModuleBootstrap
         ProductionContextContract $productionContext,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $createReservation = new CreateReservationUseCase(
             $performances,
@@ -52,11 +54,12 @@ final class ReservationModuleBootstrap
             $issuedTickets,
             $productionContext,
             $identity,
-            $transactions
+            $transactions,
+            $productionLock
         );
         $getReservationByNumber = new GetReservationByNumberUseCase($reservations);
-        $updateReservation = new UpdateReservationUseCase($reservations, $performances, $productionContext);
-        $cancelReservation = new CancelReservationUseCase($reservations, $performances);
+        $updateReservation = new UpdateReservationUseCase($reservations, $performances, $productionContext, $transactions, $productionLock);
+        $cancelReservation = new CancelReservationUseCase($reservations, $performances, $transactions, $productionLock);
         $listReservations = new ListReservationsUseCase($reservations, $performances, $productionContext, $identity, $authorization);
 
         $this->restControllers = [

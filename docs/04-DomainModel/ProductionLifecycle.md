@@ -118,6 +118,25 @@ COMPLETED
 
 具体的な決算完了条件、ゼロベース決算の記録方法、およびAccounting側のClose処理はAccounting Domainで定義する。
 
+## 決算完了と予約・受付・精算の同時実行（2026-11-10、PR #7 レビュー R4）
+
+COMPLETED（決算完了）となったProductionでは、Reservationの作成・変更（予約、当日券、Check-in、NO_SHOW、Check-in取消、人数変更、attribution変更、セルフサービスの変更・取消）を受け付けない（HTTP 409 `stageart_production_closed`）。ARCHIVEDも同じとする。
+
+決算完了のチェック後に新たな精算対象が発生しないよう、Production行のロックを共通の順序で取得する。
+
+| 順 | ロック | 取得する処理 |
+| --- | --- | --- |
+| 1 | Production行（共有ロック `LOCK IN SHARE MODE`、取得時にStatusを確認） | 予約・当日券・Check-in・NO_SHOW・Check-in取消・人数変更・attribution変更・セルフサービスの変更・取消 |
+| 1 | Production行（排他ロック `FOR UPDATE`） | 決算完了、メンバー精算、精算取消 |
+| 2 | Performance行（`FOR UPDATE`） | 席数が増える処理（予約・当日券・人数増） |
+| 3 | Reservation行（`FOR UPDATE`、ロック下で再読込） | 既存Reservationを変更する処理 |
+| 4 | 発券・CheckIn・仕訳・精算記録の書き込み | 上記の後 |
+
+- 各処理はトランザクションの最初にProduction行をロックする。決算完了・精算の確認（チケットバック確定額、精算済み額、RESERVEDの取消）は、すべてこのロックの下で同じトランザクション内で行う。
+- 予約・受付は互いに並行して実行できる（共有ロック）。決算完了・精算は、実行中の予約・受付の確定を待ってから実行され、その間に始まった予約・受付は決算完了・精算の確定を待つ。
+- 同一メンバーへの精算が同時に行われた場合、後の処理は先の処理の結果を読み、未精算額がなければ精算しない（NothingToSettle）。
+- ロック待ちのタイムアウト・デッドロック・DBエラーの場合は全体をROLLBACKし、何も確定しない。同じ操作を再度実行できる。
+
 ---
 
 # Archive Rule

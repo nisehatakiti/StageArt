@@ -20,6 +20,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\OrganizationContextContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\CheckIn\CheckInRepositoryInterface;
@@ -57,7 +58,8 @@ final class CheckInModuleBootstrap
         AuthorizationContract $authorization,
         MembershipContract $membership,
         WalkUpIdempotencyStoreInterface $walkUpIdempotencyStore,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $standardAccounts = new StandardAccountResolver($accounts);
         $processor = new CheckInProcessor(
@@ -66,7 +68,8 @@ final class CheckInModuleBootstrap
             $productionContext,
             $organizationContext,
             $journalEntries,
-            $standardAccounts
+            $standardAccounts,
+            $productionLock
         );
 
         $checkInReservation = new CheckInReservationUseCase(
@@ -101,10 +104,11 @@ final class CheckInModuleBootstrap
             $membership,
             $processor,
             $walkUpIdempotencyStore,
-            $transactions
+            $transactions,
+            $productionLock
         );
-        $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization, $membership);
-        $decreaseGuestCount = new DecreaseReservationGuestCountUseCase($reservations, $performances, $identity, $authorization, $transactions);
+        $changeAttribution = new ChangeReservationAttributionUseCase($reservations, $performances, $identity, $authorization, $membership, $transactions, $processor);
+        $decreaseGuestCount = new DecreaseReservationGuestCountUseCase($reservations, $performances, $identity, $authorization, $transactions, $processor);
 
         $this->restControllers = [
             new CheckInRestController(

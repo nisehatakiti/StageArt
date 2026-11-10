@@ -84,8 +84,10 @@ final class ReverseCheckInUseCase
 
         $paymentRefunded = $command->paymentRefunded;
 
-        $this->transactions->run(function () use ($reservation, $requesterId, $paymentRefunded): void {
-            $locked = $this->processor->lock($reservation);
+        $productionId = $performance->productionId();
+
+        $this->transactions->run(function () use ($reservation, $requesterId, $paymentRefunded, $productionId): void {
+            $locked = $this->processor->lock($reservation, $productionId);
             $checkIn = $this->checkIns->findLatestByReservationId($locked->id());
 
             if ($checkIn === null || ! $checkIn->isCompleted()) {

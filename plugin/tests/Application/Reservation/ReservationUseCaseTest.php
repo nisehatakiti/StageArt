@@ -109,10 +109,11 @@ final class ReservationUseCaseTest extends TestCase
             $this->issuedTickets,
             $productionContext,
             $identity,
-            $transactions
+            $transactions,
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
-        $this->updateReservation = new UpdateReservationUseCase($this->reservations, $this->performances, $productionContext);
-        $this->cancelReservation = new CancelReservationUseCase($this->reservations, $this->performances);
+        $this->updateReservation = new UpdateReservationUseCase($this->reservations, $this->performances, $productionContext, $transactions, new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
+        $this->cancelReservation = new CancelReservationUseCase($this->reservations, $this->performances, $transactions, new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
         $this->getReservationByNumber = new GetReservationByNumberUseCase($this->reservations);
         $this->listReservations = new ListReservationsUseCase($this->reservations, $this->performances, $productionContext, $identity, $authorization);
     }
@@ -598,7 +599,8 @@ final class ReservationUseCaseTest extends TestCase
             new \StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository($wpdb),
             $productionContext,
             new CoreIdentityAdapter($this->people),
-            new \StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager($wpdb)
+            new \StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager($wpdb),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         ), $wpdb];
     }
 
@@ -715,12 +717,111 @@ final class ReservationUseCaseTest extends TestCase
             $this->issuedTickets,
             $productionContext,
             new CoreIdentityAdapter($this->people),
-            $transactions
+            $transactions,
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
 
         $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
 
         $this->assertSame(1, $depthAtLock, 'Locked inside the transaction, so the lock is held until the booking is saved');
         $this->assertSame(1, $this->performances->lockCount);
+    }
+
+    // --- PR #7 review (R4): bookings against Production Completion ---
+
+    public function test_a_booking_takes_the_shared_production_lock_before_the_performance_lock(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $performanceLocksAtProductionLock = null;
+        $this->productions->beforeLockGranted = function () use (&$performanceLocksAtProductionLock): void {
+            $performanceLocksAtProductionLock = $this->performances->lockCount;
+        };
+
+        $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame(0, $performanceLocksAtProductionLock, 'Production lock first, then the Performance lock');
+        $this->assertSame(1, $this->performances->lockCount);
+    }
+
+    public function test_a_booking_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+            $this->productions->save($production);
+        };
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+            $this->fail('Booked after the Production was completed.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertStringContainsString($production->id()->toString(), $exception->getMessage());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertSame(0, $this->performances->lockCount);
+    }
+
+    public function test_self_service_change_and_cancel_are_refused_once_completed(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $booked = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        foreach ([
+            'increase' => fn () => $this->updateReservation->execute(new UpdateReservationCommand($booked->reservationNumber, 'a@example.com', 3)),
+            'decrease' => fn () => $this->updateReservation->execute(new UpdateReservationCommand($booked->reservationNumber, 'a@example.com', 1)),
+            'cancel' => fn () => $this->cancelReservation->execute(new CancelReservationCommand($booked->reservationNumber, 'a@example.com')),
+        ] as $name => $operation) {
+            try {
+                $operation();
+                $this->fail("{$name} went through on a completed Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $reservation = $this->reservations->findByPerformanceId($performance->id())[0];
+        $this->assertSame('RESERVED', $reservation->status()->toString());
+        $this->assertSame(2, $reservation->guestCount());
+    }
+
+    /**
+     * A self-service increase used to count the seats without any lock, so
+     * it could pass alongside a booking for the last seats. It now takes
+     * the same locks as a booking and counts the other Reservations under
+     * them.
+     */
+    public function test_a_self_service_increase_rechecks_capacity_under_the_locks(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'), 4);
+        $booked = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        $this->productions->beforeLockGranted = function () use ($performance, $ticketId): void {
+            // A booking for the last 2 seats committed while this request waited.
+            $this->reservations->save(\StageArt\Domain\Reservation\Reservation::create(
+                $performance->id(), \StageArt\Domain\Ticket\TicketId::fromString($ticketId), 'B', 'b@example.com', 2, 3000, null
+            ));
+        };
+
+        try {
+            $this->updateReservation->execute(new UpdateReservationCommand($booked->reservationNumber, 'a@example.com', 3));
+            $this->fail('The Performance was overbooked by an increase.');
+        } catch (CapacityExceededException $exception) {
+            $this->assertSame(2, $this->performances->lockCount, 'one for the first booking, one for the increase');
+        }
+
+        $this->assertSame(2, $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($booked->reservationNumber))->guestCount());
+    }
+
+    public function test_a_self_service_increase_within_capacity_still_succeeds(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'), 4);
+        $booked = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+
+        $updated = $this->updateReservation->execute(new UpdateReservationCommand($booked->reservationNumber, 'a@example.com', 4));
+
+        $this->assertSame(4, $updated->guestCount, 'its own 2 seats are not counted twice');
     }
 }

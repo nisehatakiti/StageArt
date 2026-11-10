@@ -11,6 +11,7 @@ use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\Ticket\TicketNotFoundException;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\IssuedTicket\IssuedTicket;
 use StageArt\Domain\IssuedTicket\IssuedTicketRepositoryInterface;
@@ -56,7 +57,8 @@ final class CreateReservationUseCase
         IssuedTicketRepositoryInterface $issuedTickets,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->performances = $performances;
         $this->tickets = $tickets;
@@ -65,7 +67,7 @@ final class CreateReservationUseCase
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->transactions = $transactions;
-        $this->capacity = new PerformanceCapacityGuard($performances, $reservations);
+        $this->capacity = new PerformanceCapacityGuard($performances, $reservations, $productionLock);
     }
 
     public function execute(CreateReservationCommand $command): PublicReservationResult
@@ -150,8 +152,8 @@ final class CreateReservationUseCase
             : null;
 
         // 11-13. Reservation生成 / Issued Ticket生成 / Transaction内で保存
-        $reservation = $this->transactions->run(function () use ($performanceId, $ticketId, $command, $ticket, $createdBy): Reservation {
-            $this->capacity->lockAndReserve($performanceId, $command->guestCount);
+        $reservation = $this->transactions->run(function () use ($performance, $performanceId, $ticketId, $command, $ticket, $createdBy): Reservation {
+            $this->capacity->lockAndReserve($performance->productionId(), $performanceId, $command->guestCount);
 
             $reservation = Reservation::create(
                 $performanceId,

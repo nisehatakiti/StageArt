@@ -83,7 +83,7 @@ final class MarkNoShowUseCase
         $productionId = $performance->productionId();
 
         $this->transactions->run(function () use ($reservation, $productionId, $requesterId): void {
-            $this->processor->processNoShow($this->processor->lock($reservation), $productionId, $requesterId);
+            $this->processor->processNoShow($this->processor->lock($reservation, $productionId), $productionId, $requesterId);
         });
     }
 }
