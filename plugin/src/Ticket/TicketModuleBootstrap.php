@@ -18,7 +18,9 @@ use StageArt\Application\Ticket\UpdateTicketUseCase;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Ticket\TicketRepositoryInterface;
@@ -50,16 +52,18 @@ final class TicketModuleBootstrap
         ProductionContextContract $productionContext,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        MembershipContract $membership
+        MembershipContract $membership,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $createTicket = new CreateTicketUseCase($productionContext, $tickets, $identity, $authorization);
         $getTicket = new GetTicketUseCase($tickets, $productionContext, $identity, $membership);
         $listTickets = new ListTicketsUseCase($tickets, $productionContext, $identity, $membership);
-        $updateTicket = new UpdateTicketUseCase($tickets, $productionContext, $identity, $authorization);
-        $archiveTicket = new ArchiveTicketUseCase($tickets, $productionContext, $identity, $authorization);
+        $updateTicket = new UpdateTicketUseCase($tickets, $productionContext, $identity, $authorization, $transactions, $productionLock);
+        $archiveTicket = new ArchiveTicketUseCase($tickets, $productionContext, $identity, $authorization, $transactions, $productionLock);
         $listPublicTickets = new ListPublicTicketsUseCase($tickets, $productionContext);
-        $updateTicketSalesSettings = new UpdateTicketSalesSettingsUseCase($productions, $identity, $authorization);
-        $updateQuotaAndTicketBackSettings = new UpdateQuotaAndTicketBackSettingsUseCase($productions, $identity, $authorization);
+        $updateTicketSalesSettings = new UpdateTicketSalesSettingsUseCase($productions, $identity, $authorization, $transactions);
+        $updateQuotaAndTicketBackSettings = new UpdateQuotaAndTicketBackSettingsUseCase($productions, $identity, $authorization, $transactions);
         $getTicketSalesSettings = new GetTicketSalesSettingsUseCase($productions, $identity, $membership);
         $getQuotaAndTicketBackSettings = new GetQuotaAndTicketBackSettingsUseCase($productions, $identity, $membership);
         $listPerformanceTicketAvailability = new ListPerformanceTicketAvailabilityUseCase($performances, $productionContext, $identity, $membership);

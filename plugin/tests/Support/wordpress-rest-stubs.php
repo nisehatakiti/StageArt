@@ -66,6 +66,22 @@ if (! class_exists('WP_REST_Response', false)) {
         {
             return $this->status;
         }
+
+        /** @var array<string, string> */
+        private array $headers = [];
+
+        public function header($key, $value, $replace = true): void
+        {
+            $this->headers[(string) $key] = (string) $value;
+        }
+
+        /**
+         * @return array<string, string>
+         */
+        public function get_headers(): array
+        {
+            return $this->headers;
+        }
     }
 }
 

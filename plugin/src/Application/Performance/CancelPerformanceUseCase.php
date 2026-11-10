@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace StageArt\Application\Performance;
 
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Performance\Performance;
 use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 
@@ -27,17 +30,23 @@ final class CancelPerformanceUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
+    private ProductionActivityLockContract $productionLock;
 
     public function __construct(
         PerformanceRepositoryInterface $performances,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->performances = $performances;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
+        $this->productionLock = $productionLock;
     }
 
     public function execute(CancelPerformanceCommand $command): PerformanceResult
@@ -67,9 +76,27 @@ final class CancelPerformanceUseCase
             );
         }
 
-        $performance->cancel();
-        $this->performances->save($performance);
+        // PR #7 review (R5): cancelled on the Performance as re-read under
+        // its row lock, after the shared Production lock (order Production
+        // -> Performance), whatever the Production's status (see above).
+        // save() writes every column, so an edit committed since the read
+        // above is kept rather than reverted, and a Production update's
+        // capacity cascade (exclusive lock) never runs in between.
+        $cancelled = $this->transactions->run(function () use ($performance, $productionId, $command): Performance {
+            $this->productionLock->lockProductionShared($productionId);
 
-        return PerformanceResult::fromDomain($performance);
+            $locked = $this->performances->findByIdForUpdate($performance->id());
+
+            if (! $locked) {
+                throw new PerformanceNotFoundException($command->performanceId);
+            }
+
+            $locked->cancel();
+            $this->performances->save($locked);
+
+            return $locked;
+        });
+
+        return PerformanceResult::fromDomain($cancelled);
     }
 }

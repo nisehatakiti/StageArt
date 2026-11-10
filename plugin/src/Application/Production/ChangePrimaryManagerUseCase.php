@@ -95,9 +95,30 @@ final class ChangePrimaryManagerUseCase
             throw new PrimaryManagerNotEligibleException('The new PrimaryManager must have an ACTIVE UserAccount.');
         }
 
-        $this->transactions->run(function () use ($production, $newPrimaryManagerPersonId): void {
-            $production->changePrimaryManager($newPrimaryManagerPersonId);
-            $this->productions->save($production);
+        // PR #7 review (R5): changed and saved on the Production as re-read
+        // under the exclusive lock - save() writes every column, so saving
+        // the copy read above could put back a status or setting committed
+        // since (e.g. reopen a Production just closed by Completion). The
+        // requester must still be its PrimaryManager at that point.
+        $production = $this->transactions->run(function () use ($production, $requester, $newPrimaryManagerPersonId): \StageArt\Domain\Production\Production {
+            $locked = $this->productions->findByIdForUpdate($production->id());
+
+            if (! $locked) {
+                throw new ProductionNotFoundException($production->id()->toString());
+            }
+
+            if (! $this->authorization->isPrimaryManager($requester, $locked)) {
+                throw new ProductionAccessDeniedException('Only the current PrimaryManager can change the PrimaryManager.');
+            }
+
+            if ($locked->primaryManagerPersonId()->equals($newPrimaryManagerPersonId)) {
+                throw new PrimaryManagerNotEligibleException('The new PrimaryManager is already the current PrimaryManager.');
+            }
+
+            $locked->changePrimaryManager($newPrimaryManagerPersonId);
+            $this->productions->save($locked);
+
+            return $locked;
         });
 
         return ProductionResult::fromDomain(

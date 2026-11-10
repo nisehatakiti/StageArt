@@ -155,6 +155,17 @@ final class CreateReservationUseCase
         $reservation = $this->transactions->run(function () use ($performance, $performanceId, $ticketId, $command, $ticket, $createdBy): Reservation {
             $this->capacity->lockAndReserve($performance->productionId(), $performanceId, $command->guestCount);
 
+            // PR #7 review (R5): the price frozen into the Reservation is the
+            // Ticket's as committed when the shared Production lock was
+            // granted. A price change or archive takes the exclusive lock, so
+            // it either committed before (seen here) or waits until this
+            // booking has committed (which keeps the price it froze).
+            $ticket = $this->tickets->findById($ticketId);
+
+            if (! $ticket || ! $ticket->isActive()) {
+                throw new TicketNotFoundException($command->ticketId);
+            }
+
             $reservation = Reservation::create(
                 $performanceId,
                 $ticketId,

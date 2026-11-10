@@ -508,4 +508,92 @@ final class SettlementUseCaseTest extends TestCase
         $this->settle($production, $member);
         $this->assertSame(300, $this->settlementOf($production, $member)->totalSettledAmount());
     }
+
+    // --- PR #7 review (R5): the settlement of a COMPLETED Production is closed ---
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function settledStatuses(): array
+    {
+        return ['COMPLETED' => ['COMPLETED'], 'ARCHIVED' => ['ARCHIVED']];
+    }
+
+    /**
+     * @dataProvider settledStatuses
+     */
+    public function test_a_settlement_is_not_cancelled_once_the_production_is_completed(string $status): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, $status);
+        $this->productions->save($production);
+
+        try {
+            $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+            $this->fail("A settlement of a {$status} Production was cancelled.");
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame($status, $exception->productionStatus());
+        }
+
+        $settlement = $this->settlementOf($production, $member);
+        $this->assertSame(300, $settlement->totalSettledAmount(), 'the settlement history is kept');
+        $this->assertSame(300, $settlement->lastSettledAmount());
+    }
+
+    /**
+     * Production Completion committed while the cancellation waited for the
+     * exclusive lock: the cancellation sees COMPLETED and changes nothing.
+     */
+    public function test_a_cancellation_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        $this->settle($production, $member);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+
+        $this->expectException(\StageArt\Application\Production\ProductionClosedException::class);
+
+        try {
+            $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+        } finally {
+            $this->assertSame(300, $this->settlementOf($production, $member)->totalSettledAmount());
+            $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+        }
+    }
+
+    public function test_settling_is_refused_once_completed(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        $this->expectException(\StageArt\Application\Production\ProductionClosedException::class);
+
+        try {
+            $this->settle($production, $member);
+        } finally {
+            $this->assertNull($this->settlementOf($production, $member));
+        }
+    }
+
+    /**
+     * A CANCELLED Production's members can still be settled - and a
+     * settlement corrected - for the Performances that did take place.
+     */
+    public function test_a_cancelled_production_can_still_be_settled_and_corrected(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMemberSale();
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+
+        $this->settle($production, $member);
+        $this->assertSame(300, $this->settlementOf($production, $member)->totalSettledAmount());
+
+        $this->cancelSettlement->execute(new CancelProductionMemberSettlementCommand($production->id()->toString(), $member->id()->toString(), 1));
+        $this->assertSame(0, $this->settlementOf($production, $member)->totalSettledAmount());
+    }
 }

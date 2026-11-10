@@ -13,6 +13,16 @@ describe('getErrorMessage', () => {
     expect(getErrorMessage(new ApiError(500, 'Server Error'))).toBe('読み込みに失敗しました。(500)');
   });
 
+  it('tells a closed Production (409) and a busy server (503, nothing saved) apart', () => {
+    expect(getErrorMessage(new ApiError(409, 'closed', 'stageart_production_closed'))).toBe(
+      'この公演は中止または決算完了済みのため、この操作はできません。'
+    );
+    expect(getErrorMessage(new ApiError(503, 'busy', 'stageart_database_busy'))).toBe(
+      'サーバーが混み合っていたため、保存されませんでした。少し待ってからもう一度お試しください。'
+    );
+    expect(getErrorMessage(new ApiError(503, 'Service Unavailable'))).toBe('読み込みに失敗しました。(503)');
+  });
+
   it('maps NetworkError to a connectivity-specific message', () => {
     expect(getErrorMessage(new NetworkError(new Error('offline')))).toBe(
       'サーバーへ接続できませんでした。通信環境を確認してください。'

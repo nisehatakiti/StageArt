@@ -427,6 +427,27 @@ ReservationCancelledを発行する。
 
 ---
 
+# 公演状態による制限（PR #7 レビュー R5）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）での、ProductionのStatusによる受付可否。拒否は409 `stageart_production_closed`、何も変更しない。
+
+| エンドポイント | CANCELLED | COMPLETED / ARCHIVED |
+|------|------|------|
+| `/performances/{id}/reservations`（予約） | 409 | 409 |
+| `/reservations/{number}`（セルフサービス変更） | 409 | 409 |
+| `/reservations/{number}/cancel`（セルフサービス取消） | **可** | 409 |
+| `/performances/{id}/checkin/walk-up`（当日券） | 409 | 409 |
+| `/performances/{id}/checkin/reservations/{reservation_id}`（Check-in）、`/performances/{id}/checkin/by-number` | 409 | 409 |
+| `.../checkin/reservations/{reservation_id}/no-show`、`.../guest-count`（人数減）、`/reservations/{reservation_id}/attribution` | 409 | 409 |
+| `.../checkin/reservations/{reservation_id}/reverse`（Check-in取消。`payment_refunded` の有無を問わない） | **可** | 409 |
+
+- 判定はトランザクション内でProduction行をロックして読んだStatusで行う。リクエストがロック待ちの間に決算完了・中止が確定した場合も409になる。
+- ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md`「公演状態・ロック・DB障害の共通エラー」）。
+- 予約・当日券のpriceSnapshotは、ロック取得後に読み直したTicketの価格で記録する。Ticketの価格変更後も、確定済みReservationのpriceSnapshotは変わらない。
+- 状態ごとの業務ルールは `04-DomainModel/ProductionLifecycle.md`「公演活動の制限」を正とする。
+
+---
+
 # Cancel Authorization
 
 ## Before Ticket Sales Deadline

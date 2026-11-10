@@ -678,6 +678,40 @@ Reservation Domainが発行する。
 
 ---
 
+# Production行のロックと公演状態（PR #7 レビュー R5）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）のうち、Production行を書き換える処理と、精算・チケット設定について。
+
+## Production行の排他ロック
+
+以下はトランザクションの最初にProduction行を排他ロック（`FOR UPDATE`）で読み直し、その行に変更を適用して保存する。保存は行全体の書き込みのため、ロック前に読んだコピーを保存して、同時に確定した決算完了・中止・設定変更を元に戻すことはない。
+
+- `PUT /productions/{id}`（基本情報・定員・公演時間。定員・公演時間の各Performanceへの反映も同じトランザクション）
+- `/productions/{id}/activate`、`/complete`、`/cancel`、`/archive`
+- `/productions/{id}/primary-manager`
+- `/productions/{id}/ticket-sales-settings`
+- `/productions/{id}/quota-ticket-back-settings`
+- `/tickets/{id}`（価格等の変更）、`/tickets/{id}/archive`：Production行の排他ロックの下でTicketを読み直して変更する
+
+予約・受付は同じ行の共有ロックを取るため、これらの処理とは互いに確定を待ち合わせる。
+
+## 精算と公演状態
+
+| エンドポイント | CANCELLED | COMPLETED / ARCHIVED |
+|------|------|------|
+| `POST /productions/{id}/settlement/members/{person_id}/settle` | 可 | 409 `stageart_production_closed` |
+| `POST /productions/{id}/settlement/members/{person_id}/cancel-settlement` | 可 | 409 `stageart_production_closed`（精算履歴は変更しない） |
+| `/productions/{id}/quota-ticket-back-settings`（変更） | 可 | 409 `stageart_production_closed` |
+
+- 判定はProduction行の排他ロック下で読んだStatusで行う。決算完了と精算取消が同時に要求された場合、先に確定した方の結果を後の処理が読む（決算完了が先なら精算取消は409、精算取消が先なら決算完了は未精算額を検出して拒否）。
+- 決算完了後の訂正には、公演を明示的に再開する管理フローが必要（未実装）。
+
+## 共通
+
+ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。公演状態ごとの業務ルールとロック順序は `04-DomainModel/ProductionLifecycle.md` を正とする。
+
+---
+
 # Error Response
 
 代表例

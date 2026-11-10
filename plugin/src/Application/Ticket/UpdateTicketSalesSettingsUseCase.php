@@ -8,6 +8,8 @@ use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Domain\Production\ProductionId;
@@ -33,12 +35,18 @@ final class UpdateTicketSalesSettingsUseCase
     private ProductionRepositoryInterface $productions;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
 
-    public function __construct(ProductionRepositoryInterface $productions, IdentityContract $identity, AuthorizationContract $authorization)
-    {
+    public function __construct(
+        ProductionRepositoryInterface $productions,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions
+    ) {
         $this->productions = $productions;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
     }
 
     public function execute(UpdateTicketSalesSettingsCommand $command): TicketSalesSettingsResult
@@ -71,13 +79,31 @@ final class UpdateTicketSalesSettingsUseCase
             throw new InvalidArgumentException('salesEndRule and salesEndParameter must both be set or both be null.');
         }
 
-        $production->updateTicketPublicationAt($this->parseOptionalDateTime($command->publicationAt));
-        $production->updateTicketSalesStartAt($this->parseOptionalDateTime($command->salesStartAt));
-        $production->updateTicketSalesEndRule($command->salesEndRule, $command->salesEndParameter);
+        $publicationAt = $this->parseOptionalDateTime($command->publicationAt);
+        $salesStartAt = $this->parseOptionalDateTime($command->salesStartAt);
 
-        $this->productions->save($production);
+        // PR #7 review (R5): applied to the Production as re-read under the
+        // exclusive lock and saved in the same transaction - save() writes
+        // every column, so saving the copy read above could put back a
+        // status (reopen a Production just closed by Completion) or a
+        // Ticket Back setting committed since.
+        $updated = $this->transactions->run(function () use ($productionId, $command, $publicationAt, $salesStartAt): Production {
+            $locked = $this->productions->findByIdForUpdate($productionId);
 
-        return TicketSalesSettingsResult::fromDomain($production);
+            if (! $locked) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
+
+            $locked->updateTicketPublicationAt($publicationAt);
+            $locked->updateTicketSalesStartAt($salesStartAt);
+            $locked->updateTicketSalesEndRule($command->salesEndRule, $command->salesEndParameter);
+
+            $this->productions->save($locked);
+
+            return $locked;
+        });
+
+        return TicketSalesSettingsResult::fromDomain($updated);
     }
 
     private function parseOptionalDateTime(?string $value): ?DateTimeImmutable

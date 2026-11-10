@@ -103,11 +103,11 @@ final class TicketUseCaseTest extends TestCase
         $this->createTicket = new CreateTicketUseCase($productionContext, $this->tickets, $identity, $authorization);
         $this->getTicket = new GetTicketUseCase($this->tickets, $productionContext, $identity, $membership);
         $this->listTickets = new ListTicketsUseCase($this->tickets, $productionContext, $identity, $membership);
-        $this->updateTicket = new UpdateTicketUseCase($this->tickets, $productionContext, $identity, $authorization);
-        $this->archiveTicket = new ArchiveTicketUseCase($this->tickets, $productionContext, $identity, $authorization);
+        $this->updateTicket = new UpdateTicketUseCase($this->tickets, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
+        $this->archiveTicket = new ArchiveTicketUseCase($this->tickets, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
         $this->listPublicTickets = new ListPublicTicketsUseCase($this->tickets, $productionContext);
-        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization);
-        $this->updateQuotaAndTicketBack = new UpdateQuotaAndTicketBackSettingsUseCase($this->productions, $identity, $authorization);
+        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
+        $this->updateQuotaAndTicketBack = new UpdateQuotaAndTicketBackSettingsUseCase($this->productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
         $this->getSalesSettings = new GetTicketSalesSettingsUseCase($this->productions, $identity, $membership);
         $this->getQuotaAndTicketBack = new GetQuotaAndTicketBackSettingsUseCase($this->productions, $identity, $membership);
         $this->listPerformanceAvailability = new ListPerformanceTicketAvailabilityUseCase($this->performances, $productionContext, $identity, $membership);
@@ -530,5 +530,144 @@ final class TicketUseCaseTest extends TestCase
 
         $this->assertTrue($result[0]->isTicketPublished);
         $this->assertFalse($result[0]->isSalesOpen);
+    }
+
+    // --- PR #7 review (R5): settings changes under the exclusive Production lock ---
+
+    private function ticketBackCommand(Production $production, int $ratePercent): UpdateQuotaAndTicketBackSettingsCommand
+    {
+        return new UpdateQuotaAndTicketBackSettingsCommand(
+            $production->id()->toString(),
+            1,
+            false,
+            null,
+            false,
+            null,
+            'PROGRESSIVE',
+            [['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => $ratePercent]]
+        );
+    }
+
+    /**
+     * What Production Completion commits while a settings change waits for
+     * the lock: a new copy of the row, COMPLETED. The settings change read
+     * the Production before (ACTIVE) and holds that older copy.
+     */
+    private function completedWhileWaiting(Production $production): void
+    {
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+    }
+
+    public function test_ticket_back_settings_are_changed_under_the_exclusive_lock(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->productions->locks = [];
+
+        $result = $this->updateQuotaAndTicketBack->execute($this->ticketBackCommand($production, 15));
+
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame('PROGRESSIVE', $result->ticketBackMode);
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function settledStatuses(): array
+    {
+        return ['COMPLETED' => ['COMPLETED'], 'ARCHIVED' => ['ARCHIVED']];
+    }
+
+    /**
+     * Ticket Back is what the closed settlement was computed from.
+     *
+     * @dataProvider settledStatuses
+     */
+    public function test_ticket_back_settings_are_refused_once_the_settlement_is_closed(string $status): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->updateQuotaAndTicketBack->execute($this->ticketBackCommand($production, 10));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, $status);
+        $this->productions->save($production);
+
+        try {
+            $this->updateQuotaAndTicketBack->execute($this->ticketBackCommand($production, 50));
+            $this->fail("Ticket Back of a {$status} Production was changed.");
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame($status, $exception->productionStatus());
+        }
+
+        $this->assertStringContainsString('"rate_percent":10', (string) $this->productions->findById($production->id())->ticketBackRules());
+    }
+
+    /**
+     * The old code saved the copy it read before Completion committed:
+     * the Production went back to ACTIVE with the new Ticket Back rate.
+     */
+    public function test_a_ticket_back_change_waiting_for_completion_neither_reopens_nor_changes_it(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->updateQuotaAndTicketBack->execute($this->ticketBackCommand($production, 10));
+        $this->completedWhileWaiting($production);
+
+        try {
+            $this->updateQuotaAndTicketBack->execute($this->ticketBackCommand($production, 50));
+            $this->fail('Ticket Back was changed after Completion.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $stored = $this->productions->findById($production->id());
+        $this->assertSame('COMPLETED', $stored->status()->toString());
+        $this->assertStringContainsString('"rate_percent":10', (string) $stored->ticketBackRules());
+    }
+
+    /**
+     * Sales settings stay editable after Completion, but are applied to
+     * the Production as read under the lock: Completion is not undone.
+     */
+    public function test_a_sales_settings_change_waiting_for_completion_keeps_it_completed(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->completedWhileWaiting($production);
+
+        $result = $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            '2026-09-01T00:00:00+09:00',
+            '2026-09-10T00:00:00+09:00',
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        $this->assertSame('HOURS_BEFORE_START', $result->salesEndRule);
+        $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame('FOR UPDATE', $this->productions->locks[0][0]);
+    }
+
+    /**
+     * Archiving a Ticket takes the exclusive lock and archives the Ticket
+     * as re-read under it - a price change committed meanwhile is kept.
+     */
+    public function test_archiving_a_ticket_keeps_a_price_change_committed_meanwhile(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
+        $this->productions->beforeLockGranted = function () use ($ticket): void {
+            $changed = clone $this->tickets->findById(\StageArt\Domain\Ticket\TicketId::fromString($ticket->id));
+            $changed->updateBasicInfo($changed->name(), 3500, $changed->remarks());
+            $this->tickets->save($changed);
+        };
+        $this->productions->locks = [];
+
+        $this->archiveTicket->execute(new ArchiveTicketCommand($ticket->id, 1));
+
+        $stored = $this->tickets->findById(\StageArt\Domain\Ticket\TicketId::fromString($ticket->id));
+        $this->assertFalse($stored->isActive());
+        $this->assertSame(3500, $stored->price());
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
     }
 }

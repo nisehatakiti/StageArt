@@ -76,6 +76,21 @@ namespace StageArt\Accounting {
 }
 
 namespace StageArt\Infrastructure\WordPress\Persistence {
+    // PR #7 review (R5): WordPressTransactionManager tells a lock wait
+    // timeout / deadlock by the error number, with FakeMysqli::$errno.
+    if (! function_exists(__NAMESPACE__ . '\\mysqli_errno')) {
+        function mysqli_errno($mysql): int
+        {
+            $errno = \StageArt\Tests\Support\FakeMysqli::$errno;
+
+            if ($errno instanceof \Throwable) {
+                throw $errno;
+            }
+
+            return (int) $errno;
+        }
+    }
+
     if (! function_exists(__NAMESPACE__ . '\\mysqli_thread_id')) {
         function mysqli_thread_id($mysql): int
         {

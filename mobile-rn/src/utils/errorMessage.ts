@@ -12,6 +12,17 @@ export function getErrorMessage(error: unknown): string {
   }
 
   if (error instanceof ApiError) {
+    // PR #7 review (R5): the server's own answers for a Production that
+    // no longer allows the operation (409) and for a busy database that
+    // rolled the request back (503). Nothing is resent automatically -
+    // mutations have no retry - so the user is told nothing was saved
+    // and decides to try again.
+    if (error.code === 'stageart_production_closed') {
+      return 'この公演は中止または決算完了済みのため、この操作はできません。';
+    }
+    if (error.code === 'stageart_database_busy') {
+      return 'サーバーが混み合っていたため、保存されませんでした。少し待ってからもう一度お試しください。';
+    }
     if (error.statusCode === 401) {
       return '認証が切れました。再度ログインしてください。';
     }

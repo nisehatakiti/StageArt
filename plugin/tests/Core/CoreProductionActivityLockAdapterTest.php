@@ -85,6 +85,71 @@ final class CoreProductionActivityLockAdapterTest extends TestCase
         $this->lock->lockOpenProduction($production->id());
     }
 
+    // --- PR #7 review (R5) ---
+
+    public function test_a_cancelled_production_is_closed_for_new_bookings_and_reception(): void
+    {
+        $production = $this->production(ProductionStatus::CANCELLED);
+
+        try {
+            $this->lock->lockOpenProduction($production->id());
+            $this->fail('CANCELLED was not refused.');
+        } catch (ProductionClosedException $exception) {
+            $this->assertSame(ProductionStatus::CANCELLED, $exception->productionStatus());
+            $this->assertStringContainsString('CANCELLED', $exception->getMessage());
+        }
+    }
+
+    public function test_a_cancelled_production_can_still_wind_its_bookings_down(): void
+    {
+        foreach ([ProductionStatus::PLANNING, ProductionStatus::ACTIVE, ProductionStatus::CANCELLED] as $status) {
+            $production = $this->production($status);
+
+            $this->lock->lockUnsettledProduction($production->id());
+
+            $this->assertSame(['SHARE', $production->id()->toString()], end($this->productions->locks), $status);
+        }
+    }
+
+    public function test_nothing_is_taken_back_once_the_settlement_is_closed(): void
+    {
+        foreach ([ProductionStatus::COMPLETED, ProductionStatus::ARCHIVED] as $status) {
+            $production = $this->production($status);
+
+            try {
+                $this->lock->lockUnsettledProduction($production->id());
+                $this->fail("{$status} was not refused.");
+            } catch (ProductionClosedException $exception) {
+                $this->assertSame($status, $exception->productionStatus());
+            }
+        }
+    }
+
+    public function test_the_plain_shared_and_exclusive_locks_take_any_status(): void
+    {
+        foreach ([ProductionStatus::ACTIVE, ProductionStatus::CANCELLED, ProductionStatus::COMPLETED, ProductionStatus::ARCHIVED] as $status) {
+            $production = $this->production($status);
+
+            $this->lock->lockProductionShared($production->id());
+            $this->assertSame(['SHARE', $production->id()->toString()], end($this->productions->locks), $status);
+
+            $this->lock->lockProductionExclusively($production->id());
+            $this->assertSame(['FOR UPDATE', $production->id()->toString()], end($this->productions->locks), $status);
+        }
+    }
+
+    public function test_every_lock_reports_a_missing_production(): void
+    {
+        foreach (['lockUnsettledProduction', 'lockProductionShared', 'lockProductionExclusively'] as $method) {
+            try {
+                $this->lock->{$method}(ProductionId::generate());
+                $this->fail("{$method} took a lock on nothing.");
+            } catch (ProductionNotFoundException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     /**
      * The status is the one read under the lock: a completion committed
      * while this request waited for the lock is seen.

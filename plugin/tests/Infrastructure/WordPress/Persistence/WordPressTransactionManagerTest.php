@@ -428,4 +428,110 @@ final class WordPressTransactionManagerTest extends TestCase
         $this->assertStringContainsString('connection changed', $thrown->getMessage());
         $this->assertFalse(isset($wpdb->reconnect_retries), 'Nothing was added to it.');
     }
+
+    // --- PR #7 review (R5): lock wait timeout / deadlock -> DatabaseBusyException ---
+
+    /**
+     * What a repository does when its statement fails: wpdb leaves the
+     * error in last_error (and mysqli its number), the repository throws.
+     */
+    private function failingStatement(FakeWpdb $wpdb, string $error, int $errno): callable
+    {
+        return static function () use ($wpdb, $error, $errno): void {
+            $wpdb->last_error = $error;
+            FakeMysqli::$errno = $errno;
+
+            throw new \RuntimeException('Failed to lock the Production. ' . $error);
+        };
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int}>
+     */
+    public function busyErrors(): array
+    {
+        return [
+            'lock wait timeout' => ['Lock wait timeout exceeded; try restarting transaction', 1205],
+            'deadlock' => ['Deadlock found when trying to get lock; try restarting transaction', 1213],
+        ];
+    }
+
+    /**
+     * @dataProvider busyErrors
+     */
+    public function test_a_lock_wait_timeout_or_deadlock_is_rolled_back_and_reported_as_busy(string $error, int $errno): void
+    {
+        $wpdb = $this->wpdb();
+
+        $thrown = $this->runRecording($wpdb, $this->failingStatement($wpdb, $error, $errno));
+
+        $this->assertInstanceOf(\StageArt\Application\Shared\DatabaseBusyException::class, $thrown);
+        $this->assertStringContainsString($error, $thrown->getMessage());
+        $this->assertStringContainsString('nothing was saved', $thrown->getMessage());
+        $this->assertInstanceOf(\RuntimeException::class, $thrown->getPrevious());
+        $this->assertStringStartsWith('Failed to lock the Production.', $thrown->getPrevious()->getMessage());
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::statements($wpdb), 'Rolled back before it is reported');
+    }
+
+    /**
+     * Without a mysqli connection (or with a number it does not report),
+     * the error text tells a lock wait timeout apart.
+     */
+    public function test_a_lock_wait_timeout_is_told_by_its_text_without_an_error_number(): void
+    {
+        $wpdb = $this->wpdb();
+        $wpdb->dbh = null;
+
+        $thrown = $this->runRecording($wpdb, $this->failingStatement($wpdb, 'Lock wait timeout exceeded; try restarting transaction', 0));
+
+        $this->assertInstanceOf(\StageArt\Application\Shared\DatabaseBusyException::class, $thrown);
+    }
+
+    /**
+     * Any other database error is not "busy": its outcome is not known to
+     * be nothing written, so it is passed on unchanged (REST 500).
+     */
+    public function test_another_database_error_is_rolled_back_and_passed_on_unchanged(): void
+    {
+        $wpdb = $this->wpdb();
+        $failing = $this->failingStatement($wpdb, "Table 'stageart.wp_stageart_productions' doesn't exist", 1146);
+
+        $thrown = $this->runRecording($wpdb, $failing);
+
+        $this->assertNotInstanceOf(\StageArt\Application\Shared\DatabaseBusyException::class, $thrown);
+        $this->assertStringStartsWith('Failed to lock the Production.', $thrown->getMessage());
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::statements($wpdb));
+    }
+
+    /**
+     * A domain failure after statements that all succeeded is not busy,
+     * whatever an earlier statement of the request left in its error.
+     */
+    public function test_a_domain_failure_after_successful_statements_is_not_busy(): void
+    {
+        $wpdb = $this->wpdb();
+        $failure = new LogicException('Nothing to settle.');
+
+        $thrown = $this->runRecording($wpdb, static function () use ($failure): void {
+            throw $failure;
+        });
+
+        $this->assertSame($failure, $thrown);
+    }
+
+    /**
+     * A busy failure whose ROLLBACK fails is reported as the ROLLBACK
+     * failure (the connection was replaced): nothing is known to be
+     * rolled back, so it is not "busy" either.
+     */
+    public function test_a_busy_failure_whose_rollback_fails_is_not_reported_as_busy(): void
+    {
+        $this->failing = ['ROLLBACK' => 'Lost connection to MySQL server during query'];
+        $wpdb = $this->wpdb();
+
+        $thrown = $this->runRecording($wpdb, $this->failingStatement($wpdb, 'Lock wait timeout exceeded; try restarting transaction', 1205));
+
+        $this->assertInstanceOf(TransactionFailedException::class, $thrown);
+        $this->assertStringContainsString('ROLLBACK failed', $thrown->getMessage());
+    }
 }

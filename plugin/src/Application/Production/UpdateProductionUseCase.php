@@ -10,6 +10,7 @@ use InvalidArgumentException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Performance\Performance;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
@@ -71,61 +72,81 @@ final class UpdateProductionUseCase
             throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
         }
 
-        $production->rename(new ProductionName($command->name));
-        $production->changeTitleHeading($command->titleHeading);
+        // PR #7 review (R5): the form is applied to the Production as re-read
+        // under the exclusive lock, in the transaction that saves it and
+        // cascades capacity / duration to its Performances. save() writes
+        // every column, so saving the copy read above could put back a
+        // status or a Ticket Back / sales setting committed since (e.g.
+        // reopen a Production that Completion had just closed). Holding the
+        // exclusive lock also orders the cascade after the bookings in
+        // progress, which hold the shared lock and read capacity under it,
+        // and after Performance edits / cancellations (shared lock too), so
+        // the cascade never overwrites one of those with an older copy.
+        $production = $this->transactions->run(function () use ($production, $person, $command): Production {
+            $production = $this->productions->findByIdForUpdate($production->id());
 
-        if ($command->slug !== null) {
-            $newSlug = new ProductionSlug($command->slug);
-            $currentSlug = $production->slug();
-
-            if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
-                $existing = $this->productions->findBySlug($newSlug->toString());
-
-                if ($existing !== null && ! $existing->id()->equals($production->id())) {
-                    throw new ProductionSlugAlreadyTakenException($newSlug->toString());
-                }
-
-                $production->changeSlug($newSlug);
+            if (! $production) {
+                throw new ProductionNotFoundException($command->productionId);
             }
-        }
 
-        if ($command->published === true) {
-            $production->publish($this->parseOptionalDateTime($command->publishedAt));
-        } elseif ($command->published === false) {
-            $production->unpublish();
-        }
+            if (! $this->authorization->canManageProduction($person, $production)) {
+                throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
+            }
 
-        $production->updateDescription($command->description, $this->parseOptionalDateTime($command->descriptionPublishedAt));
-        $production->updateFlyer($command->flyerUrl, $this->parseOptionalDateTime($command->flyerPublishedAt));
-        $production->updateVenue($command->venueName, $this->parseOptionalDateTime($command->venuePublishedAt));
-        $production->updateSchedule(
-            $this->parseOptionalDateTime($command->scheduleStartDate),
-            $this->parseOptionalDateTime($command->scheduleEndDate),
-            $this->parseOptionalDateTime($command->schedulePublishedAt)
-        );
-        $production->updateScriptDirection(
-            $command->scriptCredit,
-            $command->directionCredit,
-            $this->parseOptionalDateTime($command->scriptDirectionPublishedAt)
-        );
-        $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
-        $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
+            $production->rename(new ProductionName($command->name));
+            $production->changeTitleHeading($command->titleHeading);
 
-        $previousDuration = $production->performanceDurationMinutes();
-        $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
-        $newDuration = $production->performanceDurationMinutes();
-        $durationChanged = $newDuration !== $previousDuration;
+            if ($command->slug !== null) {
+                $newSlug = new ProductionSlug($command->slug);
+                $currentSlug = $production->slug();
 
-        $previousCapacity = $production->capacity();
-        $production->changeCapacity($command->capacity);
-        $newCapacity = $production->capacity();
-        $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
+                if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
+                    $existing = $this->productions->findBySlug($newSlug->toString());
 
-        $this->transactions->run(function () use ($production, $capacityChanged, $newCapacity, $durationChanged, $newDuration): void {
+                    if ($existing !== null && ! $existing->id()->equals($production->id())) {
+                        throw new ProductionSlugAlreadyTakenException($newSlug->toString());
+                    }
+
+                    $production->changeSlug($newSlug);
+                }
+            }
+
+            if ($command->published === true) {
+                $production->publish($this->parseOptionalDateTime($command->publishedAt));
+            } elseif ($command->published === false) {
+                $production->unpublish();
+            }
+
+            $production->updateDescription($command->description, $this->parseOptionalDateTime($command->descriptionPublishedAt));
+            $production->updateFlyer($command->flyerUrl, $this->parseOptionalDateTime($command->flyerPublishedAt));
+            $production->updateVenue($command->venueName, $this->parseOptionalDateTime($command->venuePublishedAt));
+            $production->updateSchedule(
+                $this->parseOptionalDateTime($command->scheduleStartDate),
+                $this->parseOptionalDateTime($command->scheduleEndDate),
+                $this->parseOptionalDateTime($command->schedulePublishedAt)
+            );
+            $production->updateScriptDirection(
+                $command->scriptCredit,
+                $command->directionCredit,
+                $this->parseOptionalDateTime($command->scriptDirectionPublishedAt)
+            );
+            $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
+            $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
+
+            $previousDuration = $production->performanceDurationMinutes();
+            $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
+            $newDuration = $production->performanceDurationMinutes();
+            $durationChanged = $newDuration !== $previousDuration;
+
+            $previousCapacity = $production->capacity();
+            $production->changeCapacity($command->capacity);
+            $newCapacity = $production->capacity();
+            $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
+
             $this->productions->save($production);
 
             if (! $capacityChanged && ! $durationChanged) {
-                return;
+                return $production;
             }
 
             foreach ($this->performances->findByProductionId($production->id()) as $performance) {
@@ -145,6 +166,8 @@ final class UpdateProductionUseCase
 
                 $this->performances->save($performance);
             }
+
+            return $production;
         });
 
         return ProductionResult::fromDomain(

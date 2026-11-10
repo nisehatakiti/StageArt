@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Settlement;
 
+use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
@@ -87,6 +88,11 @@ final class SettleProductionMemberUseCase
             if (! $locked) {
                 throw new ProductionNotFoundException($command->productionId);
             }
+
+            // (R5) The settlement of a COMPLETED / ARCHIVED Production is
+            // closed (ProductionLifecycle.md); a CANCELLED one may still be
+            // settled for the Performances that took place.
+            ProductionClosedException::throwIfIn($locked, ProductionClosedException::SETTLED);
 
             $confirmedAmounts = $this->calculator->confirmedTicketBackAmountsByMember($locked, $productionId);
             $confirmed = $confirmedAmounts[$personId->toString()] ?? 0;

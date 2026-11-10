@@ -100,7 +100,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         );
         $this->productionAuthorization = $productionAuthorization;
 
-        $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization);
+        $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
         $this->complete = new CompleteProductionUseCase(
             $this->productions,
             $productionAuthorization,
@@ -110,8 +110,8 @@ final class ProductionLifecycleUseCaseTest extends TestCase
             $this->reservations,
             new InMemoryTransactionManager()
         );
-        $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization);
-        $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization);
+        $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
+        $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
         $this->get = new GetProductionUseCase($this->productions, $productionAuthorization);
     }
 
@@ -592,6 +592,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransactionAtLock): void {
             $inTransactionAtLock = $transactions->isInTransaction();
         };
+        $this->productions->locks = []; // (R5) the setup's activation locks the Production too
 
         $result = $this->completeUseCaseWith($this->reservations, $transactions)
             ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
@@ -666,5 +667,83 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
         $this->assertSame(0, $transactions->commits());
         $this->assertSame(1, $transactions->rollbacks());
+    }
+
+    // --- PR #7 review (R5): every Production write decides on the row read under the exclusive lock ---
+
+    /**
+     * What Production Completion commits while another request waits for
+     * the lock: a new copy of the row, COMPLETED (the waiting request
+     * still holds the copy it read before).
+     */
+    private function completedWhileWaiting(Production $production): void
+    {
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+    }
+
+    public function test_cancelling_a_production_takes_the_exclusive_lock_inside_its_transaction(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $transactions = new RollbackingTransactionManager();
+        $inTransaction = null;
+        $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransaction): void {
+            $inTransaction = $transactions->isInTransaction();
+        };
+        $this->productions->locks = [];
+
+        $result = (new CancelProductionUseCase($this->productions, $this->productionAuthorization, $transactions))
+            ->execute(new CancelProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('CANCELLED', $result->status);
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertTrue($inTransaction);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * The old code cancelled the copy it read before Completion committed
+     * and saved it: a COMPLETED Production became CANCELLED.
+     */
+    public function test_a_cancellation_waiting_for_completion_does_not_overwrite_it(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $this->completedWhileWaiting($this->productions->findById($production->id()));
+
+        try {
+            $this->cancel->execute(new CancelProductionCommand($production->id()->toString(), 1));
+            $this->fail('A completed Production was cancelled.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('from COMPLETED to CANCELLED', $exception->getMessage());
+        }
+
+        $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    /**
+     * A basic-info update saves every column: applied to the copy read
+     * before Completion committed, it used to put the status back to
+     * ACTIVE.
+     */
+    public function test_a_production_update_waiting_for_completion_keeps_it_completed(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $update = new \StageArt\Application\Production\UpdateProductionUseCase($this->productions, $this->productionAuthorization, $this->performances, new InMemoryTransactionManager());
+        $this->completedWhileWaiting($this->productions->findById($production->id()));
+        $this->productions->locks = [];
+
+        $result = $update->execute(new \StageArt\Application\Production\UpdateProductionCommand($production->id()->toString(), 1, 'Renamed Show'));
+
+        $this->assertSame('Renamed Show', $result->name);
+        $stored = $this->productions->findById($production->id());
+        $this->assertSame('COMPLETED', $stored->status()->toString());
+        $this->assertSame('Renamed Show', $stored->name()->toString());
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
     }
 }

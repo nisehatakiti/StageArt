@@ -89,8 +89,8 @@ final class PerformanceUseCaseTest extends TestCase
         $this->createPerformance = new CreatePerformanceUseCase($productionContext, $this->performances, $identity, $authorization);
         $this->getPerformance = new GetPerformanceUseCase($this->performances, $productionContext, $identity, $membership);
         $this->listPerformances = new ListPerformancesUseCase($this->performances, $productionContext, $identity, $membership);
-        $this->updatePerformance = new UpdatePerformanceUseCase($this->performances, $productionContext, $identity, $authorization);
-        $this->cancelPerformance = new CancelPerformanceUseCase($this->performances, $productionContext, $identity, $authorization);
+        $this->updatePerformance = new UpdatePerformanceUseCase($this->performances, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
+        $this->cancelPerformance = new CancelPerformanceUseCase($this->performances, $productionContext, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
         $this->listPublicPerformances = new ListPublicPerformancesUseCase($this->performances, $productionContext);
     }
 
@@ -611,6 +611,8 @@ final class PerformanceUseCaseTest extends TestCase
                 $this->productions,
                 $this->people
             ),
+            new \StageArt\Tests\Support\InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions),
             $listener
         );
 
@@ -653,6 +655,8 @@ final class PerformanceUseCaseTest extends TestCase
                 $this->productions,
                 $this->people
             ),
+            new \StageArt\Tests\Support\InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions),
             $throwingListener
         );
 
@@ -692,5 +696,121 @@ final class PerformanceUseCaseTest extends TestCase
         $result = $this->listPublicPerformances->execute(new ListPublicPerformancesQuery($production->id()->toString()));
 
         $this->assertSame([], $result);
+    }
+
+    // --- PR #7 review (R5): Performance edits under the Production / Performance locks ---
+
+    private function givenPerformance(Production $production): string
+    {
+        return $this->createPerformance->execute(new CreatePerformanceCommand(
+            $production->id()->toString(), 1, '2026-10-10', '13:00', null, 100, null, null
+        ))->id;
+    }
+
+    private function capacityChange(string $performanceId, int $capacity): UpdatePerformanceCommand
+    {
+        return new UpdatePerformanceCommand($performanceId, 1, '2026-10-10', '13:00', null, $capacity, null, null);
+    }
+
+    public function test_a_capacity_change_takes_the_shared_production_lock_then_the_performance_lock(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $performanceLocksAtProductionLock = null;
+        $this->productions->beforeLockGranted = function () use (&$performanceLocksAtProductionLock): void {
+            $performanceLocksAtProductionLock = $this->performances->lockCount;
+        };
+        $this->productions->locks = [];
+
+        $updated = $this->updatePerformance->execute($this->capacityChange($performanceId, 40));
+
+        $this->assertSame(40, $updated->capacity);
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame(0, $performanceLocksAtProductionLock, 'Production lock first');
+        $this->assertSame(1, $this->performances->lockCount);
+    }
+
+    /**
+     * The COMPLETED guard is checked again on the status read under the
+     * lock: a completion committed while the edit waited refuses it.
+     */
+    public function test_an_edit_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+
+        try {
+            $this->updatePerformance->execute($this->capacityChange($performanceId, 40));
+            $this->fail('A Performance of a completed Production was edited.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('COMPLETED or ARCHIVED', $exception->getMessage());
+        }
+
+        $this->assertSame(100, $this->performances->findById(\StageArt\Domain\Performance\PerformanceId::fromString($performanceId))->capacity());
+    }
+
+    /**
+     * save() writes every column: an edit applied to the copy read before a
+     * cancellation committed used to put the Performance back to SCHEDULED.
+     */
+    public function test_an_edit_does_not_undo_a_cancellation_committed_meanwhile(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $id = \StageArt\Domain\Performance\PerformanceId::fromString($performanceId);
+        $this->productions->beforeLockGranted = function () use ($id): void {
+            $cancelled = clone $this->performances->findById($id);
+            $cancelled->cancel();
+            $this->performances->save($cancelled);
+        };
+
+        try {
+            $this->updatePerformance->execute($this->capacityChange($performanceId, 40));
+        } catch (\InvalidArgumentException $exception) {
+            // A CANCELLED Performance may refuse the edit itself; either way it stays cancelled.
+        }
+
+        $this->assertSame('CANCELLED', $this->performances->findById($id)->status()->toString());
+    }
+
+    public function test_a_cancellation_keeps_an_edit_committed_meanwhile(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        $id = \StageArt\Domain\Performance\PerformanceId::fromString($performanceId);
+        $this->productions->beforeLockGranted = function () use ($id): void {
+            $edited = clone $this->performances->findById($id);
+            $edited->changeCapacity(60);
+            $this->performances->save($edited);
+        };
+        $this->productions->locks = [];
+
+        $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1));
+
+        $stored = $this->performances->findById($id);
+        $this->assertSame('CANCELLED', $stored->status()->toString());
+        $this->assertSame(60, $stored->capacity());
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+    }
+
+    /**
+     * Cancelling a stray Performance stays allowed under a finished
+     * Production (CancelPerformanceUseCase's own rule).
+     */
+    public function test_a_performance_of_a_completed_production_can_still_be_cancelled(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $performanceId = $this->givenPerformance($production);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        $result = $this->cancelPerformance->execute(new CancelPerformanceCommand($performanceId, 1));
+
+        $this->assertSame('CANCELLED', $result->status);
     }
 }

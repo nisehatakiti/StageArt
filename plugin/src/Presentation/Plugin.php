@@ -210,6 +210,7 @@ use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
 use StageArt\Presentation\Rest\AuthenticationRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
+use StageArt\Presentation\Rest\RestFailureResponder;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\MeRestController;
@@ -577,7 +578,7 @@ final class Plugin
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
         $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions);
-        $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization);
+        $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization, $transactions);
         $completeProduction = new CompleteProductionUseCase(
             $productions,
             $productionAuthorization,
@@ -587,8 +588,8 @@ final class Plugin
             $reservations,
             $transactions
         );
-        $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization);
-        $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization);
+        $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization, $transactions);
+        $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization, $transactions);
         $changePrimaryManager = new ChangePrimaryManagerUseCase(
             $productions,
             $projects,
@@ -741,6 +742,8 @@ final class Plugin
             $identityContract,
             $authorizationContract,
             $membershipContract,
+            $transactions,
+            $productionActivityLock,
             $questionnaireModule->performanceFinishedListener()
         );
 
@@ -754,7 +757,9 @@ final class Plugin
             $productionContextContract,
             $identityContract,
             $authorizationContract,
-            $membershipContract
+            $membershipContract,
+            $transactions,
+            $productionActivityLock
         );
 
         // Reservation Module's own wiring, kept separate from Ticket's
@@ -1036,6 +1041,11 @@ final class Plugin
         );
 
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
+
+        // PR #7 review (R5): one answer on every stageart/v1 endpoint for
+        // a closed Production (409), a lock timeout / deadlock (503,
+        // retryable) and any other failure (500) - see RestFailureResponder.
+        RestFailureResponder::register();
 
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
         add_action('rest_api_init', [$organizationSnsRestController, 'register_routes']);

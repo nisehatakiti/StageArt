@@ -166,6 +166,16 @@ final class CreateWalkUpReservationUseCase
             $bundle = $this->transactions->run(function () use ($performanceId, $ticketId, $command, $ticket, $requesterId, $attributedPersonId, $performance) {
                 $this->capacity->lockAndReserve($performance->productionId(), $performanceId, $command->guestCount);
 
+                // PR #7 review (R5): the Ticket as committed when the shared
+                // Production lock was granted - a price change or archive
+                // (exclusive lock) committed before that is seen, not the
+                // copy read above.
+                $ticket = $this->tickets->findById($ticketId);
+
+                if (! $ticket || ! $ticket->isActive()) {
+                    throw new TicketNotFoundException($command->ticketId);
+                }
+
                 $reservation = Reservation::create(
                     $performanceId,
                     $ticketId,

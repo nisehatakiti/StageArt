@@ -96,8 +96,27 @@ final class CheckInProcessor
         // (ProductionActivityLockContract): a COMPLETED Production refuses
         // every reception operation, and Production Completion never runs
         // between this read and the commit.
+        // (R5) A CANCELLED Production refuses them too.
         $this->productionLock->lockOpenProduction($productionId);
 
+        return $this->lockReservation($reservation);
+    }
+
+    /**
+     * lock() for an operation that only takes a Check-in back (reversal,
+     * with or without a refund - PR #7 review R5): still allowed on a
+     * CANCELLED Production, whose guests may have to be refunded, but not
+     * on a COMPLETED / ARCHIVED one, whose settlement it would change.
+     */
+    public function lockForReversal(Reservation $reservation, ProductionId $productionId): Reservation
+    {
+        $this->productionLock->lockUnsettledProduction($productionId);
+
+        return $this->lockReservation($reservation);
+    }
+
+    private function lockReservation(Reservation $reservation): Reservation
+    {
         $locked = $this->reservations->findByIdForUpdate($reservation->id());
 
         if ($locked === null) {

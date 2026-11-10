@@ -131,7 +131,7 @@ final class CheckInUseCaseTest extends TestCase
         $transactions = new InMemoryTransactionManager();
 
         $this->createTicket = new CreateTicketUseCase($productionContext, $this->tickets, $identity, $authorization);
-        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization);
+        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
 
         $standardAccounts = new StandardAccountResolver($this->accounts);
         $processor = new CheckInProcessor($this->reservations, $this->checkIns, $productionContext, $organizationContext, $this->journalEntries, $standardAccounts, new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
@@ -847,6 +847,7 @@ final class CheckInUseCaseTest extends TestCase
     {
         [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
         $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->locks = []; // (R5) the setup's settings changes lock the Production too
 
         $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
 
@@ -972,5 +973,81 @@ final class CheckInUseCaseTest extends TestCase
         $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
         $this->assertSame($member->id()->toString(), $this->reservations->findById($reservation->id())->attributedPersonId()->toString());
         $this->assertSame($member->id()->toString(), $result->attributedPersonId);
+    }
+
+    // --- PR #7 review (R5): a CANCELLED Production ---
+
+    public function test_reception_is_refused_on_a_cancelled_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reserved = $this->givenReservedReservation($performance, $ticketId, 2);
+        $other = $this->givenReservedReservation($performance, $ticketId, 3);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+
+        $operations = [
+            'check-in' => fn () => $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reserved->id()->toString(), 1)),
+            'walk-up' => fn () => $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, '当日券太郎', 'walkup@example.com', 1, null, 1, 'after-cancellation'
+            )),
+            'no-show' => fn () => $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $other->id()->toString(), 1)),
+            'attribution' => fn () => $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reserved->id()->toString(), null, 1)),
+            'guest count' => fn () => $this->decreaseGuestCount->execute(new DecreaseReservationGuestCountCommand($performance->id()->toString(), $other->id()->toString(), 1, 1)),
+        ];
+
+        foreach ($operations as $name => $operation) {
+            try {
+                $operation();
+                $this->fail("{$name} went through on a CANCELLED Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->assertSame('CANCELLED', $exception->productionStatus(), $name);
+            }
+        }
+
+        $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()), 'no walk-up Reservation');
+        $this->assertSame('RESERVED', $this->reservations->findById($reserved->id())->status()->toString());
+        $this->assertSame('RESERVED', $this->reservations->findById($other->id())->status()->toString());
+        $this->assertSame(3, $this->reservations->findById($other->id())->guestCount());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reserved->id()));
+        $this->assertSame([], $this->journalEntries->all());
+    }
+
+    /**
+     * A guest checked in before the Production was cancelled can still be
+     * refunded: the reversal is a wind-down operation.
+     */
+    public function test_a_check_in_can_still_be_reversed_with_a_refund_on_a_cancelled_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+        $this->productions->locks = [];
+
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame('RESERVED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertCount(2, $this->journalEntries->all(), 'the payment and its reversal');
+    }
+
+    public function test_a_check_in_reversal_is_refused_once_archived(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'ARCHIVED');
+        $this->productions->save($production);
+
+        try {
+            $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+            $this->fail('Reversed a Check-in of an ARCHIVED Production.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame('ARCHIVED', $exception->productionStatus());
+        }
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertCount(1, $this->journalEntries->all(), 'no reversal entry');
     }
 }

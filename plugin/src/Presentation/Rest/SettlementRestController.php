@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation\Rest;
 
+use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Settlement\CancelProductionMemberSettlementCommand;
 use StageArt\Application\Settlement\CancelProductionMemberSettlementUseCase;
@@ -111,6 +112,9 @@ final class SettlementRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (NothingToSettleException $exception) {
             return new WP_Error('stageart_nothing_to_settle', $exception->getMessage(), ['status' => 422]);
+        } catch (ProductionClosedException $exception) {
+            // PR #7 review (R5): the settlement of a COMPLETED / ARCHIVED Production is closed.
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
         }
     }
 
@@ -135,6 +139,9 @@ final class SettlementRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (NothingToCancelException $exception) {
             return new WP_Error('stageart_nothing_to_cancel', $exception->getMessage(), ['status' => 422]);
+        } catch (ProductionClosedException $exception) {
+            // PR #7 review (R5): no settlement is cancelled once the Production is COMPLETED / ARCHIVED.
+            return new WP_Error('stageart_production_closed', $exception->getMessage(), ['status' => 409]);
         }
     }
 }

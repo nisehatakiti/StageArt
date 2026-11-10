@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace StageArt\Application\Ticket;
 
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Ticket\Ticket;
 use StageArt\Domain\Ticket\TicketId;
 use StageArt\Domain\Ticket\TicketRepositoryInterface;
 
@@ -22,17 +25,23 @@ final class ArchiveTicketUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
+    private ProductionActivityLockContract $productionLock;
 
     public function __construct(
         TicketRepositoryInterface $tickets,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock
     ) {
         $this->tickets = $tickets;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
+        $this->productionLock = $productionLock;
     }
 
     public function execute(ArchiveTicketCommand $command): TicketResult
@@ -62,10 +71,25 @@ final class ArchiveTicketUseCase
             );
         }
 
-        $ticket->archive();
+        // PR #7 review (R5): archived under the exclusive Production lock on
+        // the Ticket as re-read under it (see UpdateTicketUseCase): a
+        // booking holding the shared lock finishes first, and one that
+        // starts after it sees the Ticket archived and is refused.
+        $archived = $this->transactions->run(function () use ($ticket, $productionId, $command): Ticket {
+            $this->productionLock->lockProductionExclusively($productionId);
 
-        $this->tickets->save($ticket);
+            $locked = $this->tickets->findById($ticket->id());
 
-        return TicketResult::fromDomain($ticket);
+            if (! $locked) {
+                throw new TicketNotFoundException($command->ticketId);
+            }
+
+            $locked->archive();
+            $this->tickets->save($locked);
+
+            return $locked;
+        });
+
+        return TicketResult::fromDomain($archived);
     }
 }

@@ -986,6 +986,8 @@ CheckInCompletedを契機として、
 Reservation Domain自身が、
 HistoryやJournal Entryを直接生成・更新しない。
 
+公演状態による制限（PR #7 レビュー R5）：CANCELLED・COMPLETED・ARCHIVEDのProductionでは、Reservationの作成・変更を受け付けない。ただしCANCELLEDのProductionでは、中止公演の予約を整理するため、セルフサービスの予約取消は受け付ける。詳細とロック順序は `ProductionLifecycle.md`「公演活動の制限」「Production単位のロック規約」を正とする。
+
 ---
 
 # Design Decisions

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Settlement;
 
+use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
@@ -70,9 +71,22 @@ final class CancelProductionMemberSettlementUseCase
         // another cancellation committed meanwhile is seen, never
         // overwritten - a second cancellation finds nothing to cancel.
         $this->transactions->run(function () use ($productionId, $personId, $requesterId, $command): void {
-            if (! $this->productions->findByIdForUpdate($productionId)) {
+            $locked = $this->productions->findByIdForUpdate($productionId);
+
+            if (! $locked) {
                 throw new ProductionNotFoundException($command->productionId);
             }
+
+            // (R5) Once COMPLETED (or ARCHIVED) the settlement is closed and
+            // no settlement is cancelled any more: that would leave an unpaid
+            // amount in a Production that Completion checked had none. The
+            // status is the one read under the exclusive lock, so a
+            // Completion running at the same time either committed before
+            // (refused here) or waits until this cancellation has committed
+            // (and then sees the amount it left unsettled). Correcting a
+            // closed settlement needs an explicit "reopen" flow, which does
+            // not exist yet.
+            ProductionClosedException::throwIfIn($locked, ProductionClosedException::SETTLED);
 
             $settlement = $this->settlements->findByProductionAndPerson($productionId, $personId);
 

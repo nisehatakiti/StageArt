@@ -8,10 +8,13 @@ use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
 use Throwable;
+use StageArt\Application\Production\ProductionClosedException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\PerformanceFinishedListenerContract;
+use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Performance\PerformanceId;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
@@ -37,6 +40,8 @@ final class UpdatePerformanceUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
+    private ProductionActivityLockContract $productionLock;
     private ?PerformanceFinishedListenerContract $performanceFinishedListener;
 
     public function __construct(
@@ -44,12 +49,16 @@ final class UpdatePerformanceUseCase
         ProductionContextContract $productionContext,
         IdentityContract $identity,
         AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions,
+        ProductionActivityLockContract $productionLock,
         ?PerformanceFinishedListenerContract $performanceFinishedListener = null
     ) {
         $this->performances = $performances;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
+        $this->productionLock = $productionLock;
         $this->performanceFinishedListener = $performanceFinishedListener;
     }
 
@@ -86,41 +95,76 @@ final class UpdatePerformanceUseCase
             );
         }
 
-        $wasFinished = $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
+        $performanceDate = $this->parseDate($command->performanceDate);
 
-        $endTimeCustomized = $command->endTimeCustomized ?? ($command->endTime !== null && trim($command->endTime) !== '');
-        $endTime = $command->endTime;
-        if (! $endTimeCustomized && $production->performanceDurationMinutes !== null) {
-            $endTime = \StageArt\Domain\Performance\Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes);
-        }
+        // PR #7 review (R5): edited on the Performance as re-read under its
+        // row lock, taken after the shared Production lock (lock order
+        // Production -> Performance):
+        // - a booking checks capacity under the same Performance lock, so a
+        //   capacity change and a booking are ordered one after the other;
+        // - the shared Production lock orders the edit against Production
+        //   Completion and a Production update's capacity / duration
+        //   cascade (both exclusive), so the COMPLETED / ARCHIVED guard
+        //   below is the committed status and the cascade never overwrites
+        //   this edit with an older copy (or the other way round);
+        // - save() writes every column, so a cancellation committed since
+        //   the read above is seen instead of being reverted.
+        [$performance, $wasFinished] = $this->transactions->run(function () use ($performance, $productionId, $command, $performanceDate): array {
+            try {
+                $this->productionLock->lockUnsettledProduction($productionId);
+            } catch (ProductionClosedException $exception) {
+                throw new InvalidArgumentException('Performances cannot be edited while their Production is COMPLETED or ARCHIVED.');
+            }
 
-        $performance->updateBasicInfo(
-            $this->parseDate($command->performanceDate),
-            $command->startTime,
-            $endTime,
-            $command->capacity,
-            $command->remarks,
-            $command->symbol,
-            $command->symbolDescription,
-            $endTimeCustomized
-        );
+            $production = $this->productionContext->getProduction($productionId);
+            $locked = $this->performances->findByIdForUpdate($performance->id());
 
-        $duplicate = $this->performances->findByProductionAndDateTime(
-            $productionId,
-            $performance->performanceDate(),
-            $performance->startTime(),
-            $performance->id()
-        );
+            if (! $production) {
+                throw new ProductionNotFoundException($productionId->toString());
+            }
 
-        if ($duplicate !== null) {
-            throw new PerformanceDuplicateDateTimeException($performance->performanceDate()->format('Y-m-d'), $performance->startTime());
-        }
+            if (! $locked) {
+                throw new PerformanceNotFoundException($command->performanceId);
+            }
 
-        if ($command->status !== null) {
-            $performance->changeStatus(PerformanceStatus::fromString($command->status));
-        }
+            $wasFinished = $locked->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
 
-        $this->performances->save($performance);
+            $endTimeCustomized = $command->endTimeCustomized ?? ($command->endTime !== null && trim($command->endTime) !== '');
+            $endTime = $command->endTime;
+            if (! $endTimeCustomized && $production->performanceDurationMinutes !== null) {
+                $endTime = \StageArt\Domain\Performance\Performance::calculateEndTime($command->startTime, $production->performanceDurationMinutes);
+            }
+
+            $locked->updateBasicInfo(
+                $performanceDate,
+                $command->startTime,
+                $endTime,
+                $command->capacity,
+                $command->remarks,
+                $command->symbol,
+                $command->symbolDescription,
+                $endTimeCustomized
+            );
+
+            $duplicate = $this->performances->findByProductionAndDateTime(
+                $productionId,
+                $locked->performanceDate(),
+                $locked->startTime(),
+                $locked->id()
+            );
+
+            if ($duplicate !== null) {
+                throw new PerformanceDuplicateDateTimeException($locked->performanceDate()->format('Y-m-d'), $locked->startTime());
+            }
+
+            if ($command->status !== null) {
+                $locked->changeStatus(PerformanceStatus::fromString($command->status));
+            }
+
+            $this->performances->save($locked);
+
+            return [$locked, $wasFinished];
+        });
 
         $isNowFinished = $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::FINISHED));
 

@@ -124,7 +124,7 @@ final class CheckInTicketRevenueTest extends TestCase
         $this->authorization = $authorization;
 
         $this->createTicket = new CreateTicketUseCase($this->productionContext, $this->tickets, $this->identity, $authorization);
-        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $this->identity, $authorization);
+        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $this->identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
 
         $processor = new CheckInProcessor(
             $this->reservations,
@@ -243,7 +243,7 @@ final class CheckInTicketRevenueTest extends TestCase
             new InMemoryTransactionManager(),
             new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
         );
-        $updateTicket = new \StageArt\Application\Ticket\UpdateTicketUseCase($this->tickets, $this->productionContext, $this->identity, $this->authorization);
+        $updateTicket = new \StageArt\Application\Ticket\UpdateTicketUseCase($this->tickets, $this->productionContext, $this->identity, $this->authorization, new InMemoryTransactionManager(), new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
         $book = fn (int $guests): string => $createReservation->execute(new \StageArt\Application\Reservation\CreateReservationCommand(
             $performance->id()->toString(), $ticketId, '架空の予約者', 'booker@example.com', $guests
         ))->reservationNumber;

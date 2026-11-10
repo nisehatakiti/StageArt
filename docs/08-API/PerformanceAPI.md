@@ -393,6 +393,19 @@ Reservation Domainが以下を発行する。
 
 ---
 
+# 編集・中止のロックと公演状態（PR #7 レビュー R5）
+
+実装済みエンドポイント `/wp-json/stageart/v1/performances/{id}`（編集）、`/performances/{id}/cancel`（中止）について。
+
+- 編集は、Production行の共有ロック → Performance行の排他ロック（ロック下で読み直し）の順に取得してから適用する。予約の定員判定も同じPerformance行ロックの下で行うため、定員変更と予約は必ずどちらかが先に確定する。
+- 編集時のCOMPLETED / ARCHIVED判定（既存どおり422 `Performances cannot be edited while their Production is COMPLETED or ARCHIVED.`）は、ロック下で読んだStatusでも再確認する。ロック待ちの間に決算完了が確定した場合も同じ422になる。
+- 中止は既存どおり公演状態を問わず実行できる。Production行の共有ロック → Performance行の排他ロックの順に取得し、ロック下で読み直したPerformanceを中止する（同時に確定した編集を元に戻さない）。
+- Production更新による定員・公演時間の一括反映（Production行の排他ロック）とは、互いに待ち合わせる。
+- ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。
+- 定員を既存予約数より少なく変更することを禁止するルールは、現時点では定義されていない（既存どおり）。
+
+---
+
 # Error Response
 
 代表例

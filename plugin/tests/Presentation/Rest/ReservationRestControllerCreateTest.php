@@ -111,7 +111,7 @@ final class ReservationRestControllerCreateTest extends TestCase
             ->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null))->id;
         $dayAgo = new DateTimeImmutable('-1 day');
         $dayAgo = $dayAgo->setTime((int) $dayAgo->format('H'), (int) $dayAgo->format('i') - ((int) $dayAgo->format('i') % 5));
-        (new UpdateTicketSalesSettingsUseCase($productions, $identity, $authorization))->execute(new UpdateTicketSalesSettingsCommand(
+        (new UpdateTicketSalesSettingsUseCase($productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager()))->execute(new UpdateTicketSalesSettingsCommand(
             $production->id()->toString(),
             1,
             $dayAgo->format(DATE_ATOM),

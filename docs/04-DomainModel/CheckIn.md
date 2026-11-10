@@ -982,6 +982,8 @@ CheckInCompletedは来場受付FactとしてHistory等に利用できる。標�
 
 CheckInReversedは来場受付Factの取消・修正判断に利用する。返金や取引取消に伴う会計処理は、実際の返金・取消Factに基づきAccounting Domainで行う。
 
+公演状態による制限（PR #7 レビュー R5）：CANCELLED・COMPLETED・ARCHIVEDのProductionでは、Check In・当日券・NO_SHOW・attribution変更・人数減を受け付けない。Check In取消（返金あり・なし）は、来場済みの客に返金するため、CANCELLEDのProductionでは受け付け、精算が締まったCOMPLETED・ARCHIVEDでは受け付けない。詳細は `ProductionLifecycle.md`「公演活動の制限」を正とする。
+
 ---
 
 # Design Decisions

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use mysqli;
+use StageArt\Application\Shared\DatabaseBusyException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use Throwable;
 use wpdb;
@@ -39,12 +40,22 @@ use wpdb;
  * value is put back afterwards. The connection check above stays for a
  * $wpdb that does not honour reconnect_retries.
  *
+ * PR #7 review (R5): when the operation failed because its last statement
+ * hit a lock wait timeout (MySQL 1205) or a deadlock (1213), what is thrown
+ * after the ROLLBACK is DatabaseBusyException (with the original failure
+ * as its previous exception): the whole transaction is known to be rolled
+ * back, so the request may be sent again (REST 503). Any other failure is
+ * passed on unchanged.
+ *
  * Failures are TransactionFailedException (a RuntimeException), so callers
  * treat them like any other failed write. Nested run() calls are not
  * supported (MySQL would commit the outer transaction); no caller nests.
  */
 final class WordPressTransactionManager implements TransactionManagerInterface
 {
+    /** ER_LOCK_WAIT_TIMEOUT, ER_LOCK_DEADLOCK */
+    private const BUSY_ERRORS = [1205, 1213];
+
     private wpdb $wpdb;
 
     public function __construct(wpdb $wpdb)
@@ -77,7 +88,12 @@ final class WordPressTransactionManager implements TransactionManagerInterface
         try {
             $result = $operation();
         } catch (Throwable $exception) {
+            $busy = $this->busyError();
             $this->rollBack($exception);
+
+            if ($busy !== null && ! $exception instanceof DatabaseBusyException) {
+                throw new DatabaseBusyException($busy, $exception);
+            }
 
             throw $exception;
         }
@@ -157,6 +173,37 @@ final class WordPressTransactionManager implements TransactionManagerInterface
         if ($retries !== null) {
             $this->wpdb->reconnect_retries = $retries;
         }
+    }
+
+    /**
+     * The error of the statement that ran last, when it was a lock wait
+     * timeout or a deadlock; null otherwise. Read before the ROLLBACK,
+     * which clears it. mysqli's error number is used when there is a
+     * mysqli connection, the error text otherwise.
+     */
+    private function busyError(): ?string
+    {
+        $error = $this->databaseError();
+
+        if ($error === '') {
+            return null;
+        }
+
+        $handle = $this->wpdb->dbh;
+
+        if ($handle instanceof mysqli) {
+            try {
+                $errno = mysqli_errno($handle);
+            } catch (Throwable $exception) {
+                $errno = 0;
+            }
+
+            if (in_array($errno, self::BUSY_ERRORS, true)) {
+                return $error;
+            }
+        }
+
+        return preg_match('/^(Lock wait timeout exceeded|Deadlock found when trying to get lock)/', $error) === 1 ? $error : null;
     }
 
     private function databaseError(): string

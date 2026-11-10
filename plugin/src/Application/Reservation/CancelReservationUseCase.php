@@ -74,8 +74,12 @@ final class CancelReservationUseCase
         // the Production and Reservation locks (lock order Production ->
         // Reservation), so a Check-in or Production Completion committed
         // since the read above is seen instead of overwritten.
+        // (R5) Cancelling a booking is still allowed on a CANCELLED
+        // Production - that is how its bookings are wound down - but not on
+        // a COMPLETED / ARCHIVED one (whose RESERVED bookings Production
+        // Completion has already cancelled).
         $cancelled = $this->transactions->run(function () use ($reservation, $productionId): Reservation {
-            $this->productionLock->lockOpenProduction($productionId);
+            $this->productionLock->lockUnsettledProduction($productionId);
 
             $locked = $this->reservations->findByIdForUpdate($reservation->id());
 

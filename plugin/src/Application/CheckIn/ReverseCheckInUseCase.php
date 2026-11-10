@@ -87,7 +87,9 @@ final class ReverseCheckInUseCase
         $productionId = $performance->productionId();
 
         $this->transactions->run(function () use ($reservation, $requesterId, $paymentRefunded, $productionId): void {
-            $locked = $this->processor->lock($reservation, $productionId);
+            // PR #7 review (R5): a reversal / refund is still allowed on a
+            // CANCELLED Production, never on a COMPLETED / ARCHIVED one.
+            $locked = $this->processor->lockForReversal($reservation, $productionId);
             $checkIn = $this->checkIns->findLatestByReservationId($locked->id());
 
             if ($checkIn === null || ! $checkIn->isCompleted()) {

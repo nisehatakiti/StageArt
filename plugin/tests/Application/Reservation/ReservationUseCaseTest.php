@@ -101,7 +101,7 @@ final class ReservationUseCaseTest extends TestCase
         $transactions = new InMemoryTransactionManager();
 
         $this->createTicket = new CreateTicketUseCase($productionContext, $this->tickets, $identity, $authorization);
-        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization);
+        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
         $this->createReservation = new CreateReservationUseCase(
             $this->performances,
             $this->tickets,
@@ -642,7 +642,11 @@ final class ReservationUseCaseTest extends TestCase
             $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
             $this->fail('A booking was made without knowing the seats taken');
         } catch (\RuntimeException $exception) {
-            $this->assertStringStartsWith('Failed to lock the Reservations of the Performance.', $exception->getMessage());
+            // PR #7 review (R5): a lock wait timeout is reported, after the
+            // ROLLBACK, as DatabaseBusyException (REST 503, retryable); the
+            // failed locking read is kept as its previous exception.
+            $this->assertInstanceOf(\StageArt\Application\Shared\DatabaseBusyException::class, $exception);
+            $this->assertStringStartsWith('Failed to lock the Reservations of the Performance.', $exception->getPrevious()->getMessage());
         }
 
         $this->assertRolledBackWithNothingSaved($wpdb);
@@ -682,7 +686,10 @@ final class ReservationUseCaseTest extends TestCase
             $this->fail('A booking was made without the Performance lock');
         } catch (\RuntimeException $exception) {
             $this->assertNotInstanceOf(\StageArt\Application\Performance\PerformanceNotFoundException::class, $exception);
-            $this->assertStringStartsWith('Failed to lock the Performance.', $exception->getMessage());
+            // PR #7 review (R5): a deadlock is reported, after the ROLLBACK,
+            // as DatabaseBusyException; the failed lock is its previous exception.
+            $this->assertInstanceOf(\StageArt\Application\Shared\DatabaseBusyException::class, $exception);
+            $this->assertStringStartsWith('Failed to lock the Performance.', $exception->getPrevious()->getMessage());
         }
 
         $this->assertRolledBackWithNothingSaved($wpdb);
@@ -736,6 +743,7 @@ final class ReservationUseCaseTest extends TestCase
         $this->productions->beforeLockGranted = function () use (&$performanceLocksAtProductionLock): void {
             $performanceLocksAtProductionLock = $this->performances->lockCount;
         };
+        $this->productions->locks = []; // (R5) the setup's settings changes lock the Production too
 
         $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
 
@@ -823,5 +831,166 @@ final class ReservationUseCaseTest extends TestCase
         $updated = $this->updateReservation->execute(new UpdateReservationCommand($booked->reservationNumber, 'a@example.com', 4));
 
         $this->assertSame(4, $updated->guestCount, 'its own 2 seats are not counted twice');
+    }
+
+    // --- PR #7 review (R5): CANCELLED / ARCHIVED, Ticket changes ---
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function closedStatuses(): array
+    {
+        return ['CANCELLED' => ['CANCELLED'], 'COMPLETED' => ['COMPLETED'], 'ARCHIVED' => ['ARCHIVED']];
+    }
+
+    /**
+     * @dataProvider closedStatuses
+     */
+    public function test_a_booking_is_refused_on_a_cancelled_completed_or_archived_production(string $status): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, $status);
+        $this->productions->save($production);
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+            $this->fail("Booked on a {$status} Production.");
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame($status, $exception->productionStatus());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    public function test_a_booking_waiting_for_a_production_cancellation_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+            $this->productions->save($production);
+        };
+
+        $this->expectException(\StageArt\Application\Production\ProductionClosedException::class);
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        } finally {
+            $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+        }
+    }
+
+    /**
+     * A CANCELLED Production's bookings are wound down: the booker can
+     * still cancel one, but not change it.
+     */
+    public function test_a_cancelled_productions_bookings_can_be_cancelled_but_not_changed(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $first = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        $second = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'B', 'b@example.com', 2));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+
+        $cancelled = $this->cancelReservation->execute(new CancelReservationCommand($first->reservationNumber, 'a@example.com'));
+        $this->assertSame('CANCELLED', $cancelled->status);
+
+        foreach ([3, 1] as $guests) {
+            try {
+                $this->updateReservation->execute(new UpdateReservationCommand($second->reservationNumber, 'b@example.com', $guests));
+                $this->fail("Changed to {$guests} guests on a CANCELLED Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->assertSame('CANCELLED', $exception->productionStatus());
+            }
+        }
+
+        $this->assertSame(2, $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($second->reservationNumber))->guestCount());
+    }
+
+    public function test_a_self_service_cancellation_is_refused_on_an_archived_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $booked = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'ARCHIVED');
+        $this->productions->save($production);
+
+        try {
+            $this->cancelReservation->execute(new CancelReservationCommand($booked->reservationNumber, 'a@example.com'));
+            $this->fail('Cancelled on an ARCHIVED Production.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame('ARCHIVED', $exception->productionStatus());
+        }
+
+        $this->assertSame('RESERVED', $this->reservations->findByPerformanceId($performance->id())[0]->status()->toString());
+    }
+
+    private function updateTicketUseCase(): \StageArt\Application\Ticket\UpdateTicketUseCase
+    {
+        return new \StageArt\Application\Ticket\UpdateTicketUseCase(
+            $this->tickets,
+            new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository())),
+            new CoreIdentityAdapter($this->people),
+            new CoreAuthorizationAdapter(
+                new ProductionAuthorizationService(new OrganizationAuthorizationService($this->people, $this->memberships), $this->delegates, new InMemoryParticipantRepository()),
+                $this->productions,
+                $this->people
+            ),
+            new InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
+        );
+    }
+
+    /**
+     * A Ticket price change takes the exclusive Production lock and leaves
+     * every Reservation already made at the price it froze.
+     */
+    public function test_a_price_change_takes_the_exclusive_lock_and_keeps_existing_price_snapshots(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $before = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+        $this->productions->locks = [];
+
+        $this->updateTicketUseCase()->execute(new \StageArt\Application\Ticket\UpdateTicketCommand($ticketId, 1, '一般', 4000, null));
+
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $after = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'B', 'b@example.com', 1));
+        $this->assertSame(3000, $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($before->reservationNumber))->priceSnapshot());
+        $this->assertSame(4000, $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($after->reservationNumber))->priceSnapshot());
+    }
+
+    /**
+     * A price change committed while a booking waited for the shared lock
+     * is the price it records - not the one it read before the lock.
+     */
+    public function test_a_price_change_committed_while_a_booking_waits_is_the_price_it_records(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $this->productions->beforeLockGranted = function () use ($ticketId): void {
+            $changed = clone $this->tickets->findById(\StageArt\Domain\Ticket\TicketId::fromString($ticketId));
+            $changed->updateBasicInfo($changed->name(), 4500, $changed->remarks());
+            $this->tickets->save($changed);
+        };
+
+        $booked = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+
+        $this->assertSame(4500, $this->reservations->findByReservationNumber(\StageArt\Domain\Reservation\ReservationNumber::fromString($booked->reservationNumber))->priceSnapshot());
+    }
+
+    public function test_a_ticket_archived_while_a_booking_waits_is_not_booked(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $this->productions->beforeLockGranted = function () use ($ticketId): void {
+            $archived = clone $this->tickets->findById(\StageArt\Domain\Ticket\TicketId::fromString($ticketId));
+            $archived->archive();
+            $this->tickets->save($archived);
+        };
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2));
+            $this->fail('Booked a Ticket archived before the booking got the lock.');
+        } catch (\StageArt\Application\Ticket\TicketNotFoundException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
     }
 }
