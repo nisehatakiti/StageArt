@@ -294,6 +294,56 @@ final class ProductionSettlementCalculatorTest extends TestCase
     }
 
     /**
+     * PR #7 review (booking order): `created_at` is a DATETIME stored to
+     * the second, so two Reservations can share it. Seats of the same
+     * price are interchangeable - whichever comes first, every band gets
+     * the same prices - so a same-second tie between equal prices never
+     * changes the amount, whatever order the rows come back in.
+     */
+    public function test_a_same_second_tie_between_equal_prices_does_not_change_the_amount(): void
+    {
+        $production = $this->givenProductionWithTicketBack(TicketBackMode::SEPARATED, [[1, 1, 10], [2, 3, 20]]);
+        $performance = $this->givenPerformance($production);
+        $ticket = $this->givenTicket($production, 'A席', 3000);
+        $member = PersonId::generate();
+
+        $this->reservations->save($this->booked($performance, $ticket, 1, 3000, $member, ReservationStatus::CHECKED_IN, '2026-11-01 10:00:00', 'ZZZZZZZZZZ'));
+        $this->reservations->save($this->booked($performance, $ticket, 3, 3000, $member, ReservationStatus::CHECKED_IN, '2026-11-01 10:00:00', 'AAAAAAAAAA'));
+
+        $amounts = $this->calculator->confirmedTicketBackAmountsByMember($production, $production->id());
+
+        // Seats 1-2 at 10% (600) + seats 3-4 at 20% (1,200), either order.
+        $this->assertSame(1800, $amounts[$member->toString()]);
+    }
+
+    /**
+     * A same-second tie between different prices (the Ticket's price
+     * changed within that second) is broken by `reservation_number` - a
+     * random, unique code, so not the real sub-second booking order, but
+     * the same order every time the amount is computed (the settlement
+     * screen, the settlement itself and Production Completion all agree),
+     * whatever order the rows come back in.
+     */
+    public function test_a_same_second_tie_between_different_prices_is_broken_by_reservation_number_every_time(): void
+    {
+        $production = $this->givenProductionWithTicketBack(TicketBackMode::SEPARATED, [[1, 1, 10], [2, 3, 20]]);
+        $performance = $this->givenPerformance($production);
+        $ticket = $this->givenTicket($production, 'A席', 3500);
+        $member = PersonId::generate();
+
+        // Saved with the later reservation number first.
+        $this->reservations->save($this->booked($performance, $ticket, 2, 3500, $member, ReservationStatus::CHECKED_IN, '2026-11-01 10:00:00', 'BBBBBBBBBB'));
+        $this->reservations->save($this->booked($performance, $ticket, 2, 3000, $member, ReservationStatus::CHECKED_IN, '2026-11-01 10:00:00', 'AAAAAAAAAA'));
+
+        $first = $this->calculator->confirmedTicketBackAmountsByMember($production, $production->id());
+        $second = $this->calculator->confirmedTicketBackAmountsByMember($production, $production->id());
+
+        // AAAAAAAAAA first: 2 * 3,000円 * 10% = 600 + 2 * 3,500円 * 20% = 1,400.
+        $this->assertSame(2000, $first[$member->toString()]);
+        $this->assertSame($first, $second);
+    }
+
+    /**
      * @param array<int, array{0:int,1:int,2:int}> $conditions [priority, threshold (以上), rate %]
      */
     private function givenProductionWithTicketBack(string $mode, array $conditions): Production
@@ -323,13 +373,13 @@ final class ProductionSettlementCalculatorTest extends TestCase
         return $ticket;
     }
 
-    private function booked(Performance $performance, Ticket $ticket, int $guestCount, int $priceSnapshot, ?PersonId $attributedTo, string $status, string $bookedAt = '2026-11-01 10:00:00'): Reservation
+    private function booked(Performance $performance, Ticket $ticket, int $guestCount, int $priceSnapshot, ?PersonId $attributedTo, string $status, string $bookedAt = '2026-11-01 10:00:00', ?string $reservationNumber = null): Reservation
     {
         $at = new DateTimeImmutable($bookedAt);
 
         return Reservation::reconstitute(
             ReservationId::generate(),
-            ReservationNumber::generate(),
+            $reservationNumber !== null ? ReservationNumber::fromString($reservationNumber) : ReservationNumber::generate(),
             $performance->id(),
             $ticket->id(),
             'Booker',

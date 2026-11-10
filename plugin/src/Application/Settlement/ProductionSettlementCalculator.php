@@ -44,7 +44,13 @@ use StageArt\Domain\Ticket\TicketRepositoryInterface;
  *   to every Ticket type and each type's own seat count picks its rate.
  *   Within one Ticket type the seats are taken in booking order
  *   (Reservation `createdAt`), which decides each seat's 分離方式 band
- *   when the type's price changed between bookings.
+ *   when the type's price changed between bookings. `created_at` is
+ *   stored to the second, so a same-second tie is broken by
+ *   `reservationNumber` (unique, but random rather than chronological):
+ *   between equal prices the order never changes the amount, and between
+ *   different prices (a price change within that second) it is at least
+ *   the same order every time, so the settlement screen, the settlement
+ *   and Production Completion always agree (PR #7 review).
  *
  * A Reservation with no `attributedPersonId` (self-service or an
  * unattributed walk-up sale) is excluded from every member's Ticket Back
