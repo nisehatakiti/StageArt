@@ -132,7 +132,7 @@ export default function ScheduleItemDetailScreen() {
 
         <ThemedView style={styles.field}>
           <ThemedText type="smallBold">日付</ThemedText>
-          <ThemedText>{formatDayHeader(new Date(item.start_date_time))}</ThemedText>
+          <ThemedText>{formatDayHeader(item.start_date_time)}</ThemedText>
         </ThemedView>
 
         <ThemedView style={styles.field}>

@@ -1,22 +1,24 @@
 import type { TimetableItem } from '@/types/api';
 
+import { jstDateKey, jstTime, parseApiDateTime, toJstParts } from './jst';
+
 export type ScheduleDay = { dayKey: string; date: Date; items: TimetableItem[] };
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
+const instant = (value: string) => parseApiDateTime(value)?.getTime() ?? 0;
+
 /** §12: day-grouped vertical time-series, not a Gantt/horizontal-time
- * layout (that remains Print View's - Phase 4.5 - concern only). */
+ * layout (that remains Print View's - Phase 4.5 - concern only).
+ * PR #7 R11: days are Asia/Tokyo days (./jst.ts), not the device's. */
 export function groupByDay(items: TimetableItem[]): ScheduleDay[] {
-  const sorted = [...items].sort(
-    (a, b) => new Date(a.start_date_time).getTime() - new Date(b.start_date_time).getTime()
-  );
+  const sorted = [...items].sort((a, b) => instant(a.start_date_time) - instant(b.start_date_time));
 
   const order: string[] = [];
   const byDay = new Map<string, TimetableItem[]>();
 
   for (const item of sorted) {
-    const d = new Date(item.start_date_time);
-    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dayKey = jstDateKey(new Date(instant(item.start_date_time)));
 
     if (!byDay.has(dayKey)) {
       byDay.set(dayKey, []);
@@ -27,15 +29,24 @@ export function groupByDay(items: TimetableItem[]): ScheduleDay[] {
 
   return order.map((dayKey) => {
     const dayItems = byDay.get(dayKey)!;
-    return { dayKey, date: new Date(dayItems[0].start_date_time), items: dayItems };
+    return { dayKey, date: new Date(instant(dayItems[0].start_date_time)), items: dayItems };
   });
 }
 
-export function formatDayHeader(date: Date): string {
-  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}（${WEEKDAYS_JA[date.getDay()]}）`;
+/** "2026/8/18（火）" - the Asia/Tokyo date (PR #7 R11). A string is read
+ * as an API date-time (parseApiDateTime). Empty for an invalid value. */
+export function formatDayHeader(date: Date | string): string {
+  const value = typeof date === 'string' ? parseApiDateTime(date) : date;
+  if (!value || Number.isNaN(value.getTime())) {
+    return '';
+  }
+  const p = toJstParts(value);
+  return `${p.year}/${p.month}/${p.day}（${WEEKDAYS_JA[p.weekday]}）`;
 }
 
+/** "10:00" - the Asia/Tokyo time of an API date-time, on every device
+ * (PR #7 R11). Empty for an invalid value. */
 export function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const value = parseApiDateTime(iso);
+  return value ? jstTime(value) : '';
 }

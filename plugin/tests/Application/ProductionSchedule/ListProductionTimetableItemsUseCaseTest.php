@@ -316,4 +316,46 @@ final class ListProductionTimetableItemsUseCaseTest extends TestCase
         $this->assertCount(1, $narrowed);
         $this->assertSame('開演', $narrowed[0]->title);
     }
+
+    /**
+     * PR #7 R11: from/to are compared as instants. A bound sent in UTC
+     * ("Z") narrows to the same Asia/Tokyo day as the same bound sent
+     * with +09:00 or without an offset (Asia/Tokyo wall-clock).
+     */
+    public function test_r11_date_range_bounds_are_instants_whatever_their_offset(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production, '本番');
+
+        foreach (['前日 23:30' => '2026-10-30T23:30:00+09:00', '当日 00:30' => '2026-10-31T00:30:00+09:00', '翌日 00:30' => '2026-11-01T00:30:00+09:00'] as $title => $start) {
+            $this->createItem->execute(new CreateTimetableItemCommand(
+                $rehearsal->id()->toString(), 1, $title, null, $start, null, null, null, null, null, [], null
+            ));
+        }
+        $this->publishDraft($rehearsal->id(), 1);
+
+        foreach ([
+            ['2026-10-31T00:00:00+09:00', '2026-11-01T00:00:00+09:00'],
+            ['2026-10-30T15:00:00Z', '2026-10-31T15:00:00Z'],
+            ['2026-10-31 00:00:00', '2026-11-01 00:00:00'],
+        ] as [$from, $to]) {
+            $items = $this->listProductionItems->execute(new ListProductionTimetableItemsQuery(
+                $production->id()->toString(), 1, $from, $to
+            ));
+
+            $this->assertSame(['当日 00:30'], array_map(static fn ($item): string => $item->title, $items), "{$from} - {$to}");
+            $this->assertSame('2026-10-31T00:30:00+09:00', $items[0]->startDateTime);
+        }
+    }
+
+    public function test_r11_invalid_date_range_bound_is_rejected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->listProductionItems->execute(new ListProductionTimetableItemsQuery(
+            $production->id()->toString(), 1, 'yesterday', null
+        ));
+    }
 }

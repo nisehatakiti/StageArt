@@ -12,6 +12,7 @@ import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 import { useRehearsals } from '@/features/attendance/useRehearsals';
 import { useProduction } from '@/features/production/useProductions';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
+import { splitJstDateTime } from '@/features/schedule/jst';
 import { useSaveAndPublishTimetable, useTimetableEditorItems } from '@/features/schedule/useTimetableAuthoring';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { Rehearsal, TimetableItem } from '@/types/api';
@@ -26,11 +27,14 @@ type ItemRow = {
   notes: string;
 };
 
-/** "2026-08-20T10:00:00+09:00" -> { date: "2026-08-20", time: "10:00" }
- * (the wall-clock part as sent, the same convention the 予定 forms use). */
+/** "2026-08-20T10:00:00+09:00" -> { date: "2026-08-20", time: "10:00" }.
+ * PR #7 R11: the Asia/Tokyo date and time of the value (the same rule the
+ * list screens use - features/schedule/jst.ts), not the digits as sent:
+ * before R11 the API returned "10:00:00+00:00" for a 10:00 JST item, which
+ * this editor showed as 10:00 but the list screens showed as 19:00. Rows
+ * are saved back with "+09:00". */
 function splitDateTime(value: string | null): { date: string; time: string } {
-  const match = value ? /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(value) : null;
-  return match ? { date: match[1], time: match[2] } : { date: '', time: '' };
+  return splitJstDateTime(value);
 }
 
 function toRow(item: TimetableItem): ItemRow {

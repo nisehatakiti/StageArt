@@ -41,6 +41,15 @@ use StageArt\Domain\Timetable\TimetableId;
  */
 final class TimetableItem
 {
+    /**
+     * PR #7 R11: Timetable times are Asia/Tokyo business times. They are
+     * stored as Asia/Tokyo wall-clock values (DATETIME, no offset) and
+     * read back in this zone (WordPressTimetableItemRepository), and the
+     * API always returns them with +09:00
+     * (docs/20-RehearsalManagementScreen.md §24).
+     */
+    public const TIMEZONE = 'Asia/Tokyo';
+
     private TimetableItemId $id;
     private TimetableId $timetableId;
     private string $title;
