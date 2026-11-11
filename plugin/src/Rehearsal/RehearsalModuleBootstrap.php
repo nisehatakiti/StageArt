@@ -10,6 +10,7 @@ use StageArt\Application\ProductionSchedule\ListProductionTimetableItemsUseCase;
 use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Application\Rehearsal\RehearsalCreateRequestStoreInterface;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
@@ -131,7 +132,8 @@ final class RehearsalModuleBootstrap
         MembershipContract $membership,
         NotificationContract $notification,
         RehearsalReminderSchedulerInterface $reminderScheduler,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ?RehearsalCreateRequestStoreInterface $rehearsalCreateRequests = null
     ) {
         $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $timetableItemTargetValidator = new TimetableItemTargetValidator($membership);
@@ -149,7 +151,8 @@ final class RehearsalModuleBootstrap
             $identity,
             $authorization,
             $transactions,
-            $lifecycleNotifier
+            $lifecycleNotifier,
+            $rehearsalCreateRequests
         );
         $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
         $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);

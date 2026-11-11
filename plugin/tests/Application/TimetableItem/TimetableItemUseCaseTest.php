@@ -671,4 +671,56 @@ final class TimetableItemUseCaseTest extends TestCase
             $this->getItem->execute(new GetTimetableItemQuery($itemId, 1))->startDateTime
         );
     }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25): items crossing
+     * midnight, and the same start/end rejected.
+     */
+    public function test_r12_items_crossing_midnight_keep_their_next_day_end(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        $a = $this->createAt($rehearsal, '2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00');
+        $b = $this->createAt($rehearsal, '2026-11-10T23:30:00+09:00', '2026-11-11T01:30:00+09:00');
+
+        $this->assertSame('2026-11-11T00:30:00+09:00', $this->getItem->execute(new GetTimetableItemQuery($a, 1))->endDateTime);
+        $this->assertSame('2026-11-11T01:30:00+09:00', $this->getItem->execute(new GetTimetableItemQuery($b, 1))->endDateTime);
+
+        for ($i = 0; $i < 3; $i++) {
+            $current = $this->getItem->execute(new GetTimetableItemQuery($a, 1));
+            $this->updateAt($a, $current->startDateTime, $current->endDateTime);
+        }
+        $after = $this->getItem->execute(new GetTimetableItemQuery($a, 1));
+        $this->assertSame(['2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00'], [$after->startDateTime, $after->endDateTime]);
+    }
+
+    public function test_r12_same_start_and_end_or_end_before_start_is_rejected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00');
+
+        foreach ([
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T23:30:00+09:00'],
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T14:30:00Z'],
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T00:30:00+09:00'],
+        ] as [$start, $end]) {
+            try {
+                $this->createAt($rehearsal, $start, $end);
+                $this->fail("create accepted {$start} - {$end}");
+            } catch (InvalidArgumentException $expected) {
+                $this->addToAssertionCount(1);
+            }
+            try {
+                $this->updateAt($itemId, $start, $end);
+                $this->fail("update accepted {$start} - {$end}");
+            } catch (InvalidArgumentException $expected) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $kept = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+        $this->assertSame(['2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00'], [$kept->startDateTime, $kept->endDateTime]);
+    }
 }

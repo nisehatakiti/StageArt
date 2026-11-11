@@ -37,7 +37,11 @@ final class SchemaUpgrader
      * Manager's result kept apart from the member's answer (see
      * RehearsalInstaller for the one-time move of existing results).
      */
-    public const CURRENT_VERSION = '1.46.0';
+    /*
+     * 1.47.0 (PR #7 R12): stageart_rehearsal_create_requests, the
+     * idempotency keys of Rehearsal create requests (new table only).
+     */
+    public const CURRENT_VERSION = '1.47.0';
 
     /**
      * @return bool whether the schema is now at CURRENT_VERSION

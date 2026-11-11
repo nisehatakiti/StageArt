@@ -15,7 +15,6 @@ use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Timetable\Timetable;
 use StageArt\Domain\Timetable\TimetableRepositoryInterface;
-use StageArt\Domain\TimetableItem\TimetableItem;
 use StageArt\Domain\TimetableItem\TimetableItemRepositoryInterface;
 
 /**
@@ -110,20 +109,10 @@ final class CreateNewTimetableVersionUseCase
 
             if ($published !== null) {
                 foreach ($this->items->findByTimetableId($published->id()) as $sourceItem) {
-                    $copy = TimetableItem::create(
-                        $draft->id(),
-                        $sourceItem->title(),
-                        $sourceItem->description(),
-                        $sourceItem->startDateTime(),
-                        $sourceItem->endDateTime(),
-                        $sourceItem->displayOrder(),
-                        $sourceItem->category(),
-                        $sourceItem->venue(),
-                        $sourceItem->participantType(),
-                        $sourceItem->targetPersonIds(),
-                        $sourceItem->notes()
-                    );
-                    $this->items->save($copy);
+                    // PR #7 R12: copied as stored (TimetableItem::copyTo()),
+                    // so an existing item is never rejected or changed by
+                    // starting a new Version.
+                    $this->items->save($sourceItem->copyTo($draft->id()));
                 }
             }
 

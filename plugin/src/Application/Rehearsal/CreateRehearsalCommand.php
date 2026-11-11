@@ -37,6 +37,12 @@ final class CreateRehearsalCommand
      * one for a Rehearsal that was never 調整中 from their point of view.
      */
     public bool $confirmOnCreate;
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §26): the client's
+     * key for this create action, reused when the same request is sent
+     * again (e.g. after a lost response). Null: no idempotency (as before).
+     */
+    public ?string $idempotencyKey;
 
     /**
      * @param string[]|null $targetPersonIds
@@ -53,7 +59,8 @@ final class CreateRehearsalCommand
         ?array $targetPersonIds = null,
         ?string $responseDeadline = null,
         ?string $activityType = null,
-        bool $confirmOnCreate = false
+        bool $confirmOnCreate = false,
+        ?string $idempotencyKey = null
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -67,5 +74,6 @@ final class CreateRehearsalCommand
         $this->responseDeadline = $responseDeadline;
         $this->activityType = $activityType;
         $this->confirmOnCreate = $confirmOnCreate;
+        $this->idempotencyKey = $idempotencyKey;
     }
 }

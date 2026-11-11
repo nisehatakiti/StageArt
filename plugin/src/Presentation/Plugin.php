@@ -150,6 +150,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressAccountRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressBudgetRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressCheckInRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressSettlementRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalCreateRequestStore;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressWalkUpIdempotencyStore;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
@@ -695,7 +696,9 @@ final class Plugin
             $membershipContract,
             $notificationContract,
             $rehearsalReminderScheduler,
-            $transactions
+            $transactions,
+            // PR #7 R12: idempotency keys of Rehearsal create requests.
+            new WordPressRehearsalCreateRequestStore($wpdb)
         );
 
         // Phase 7 (Rehearsal仕様整合) §12: the sole Cron hook registration

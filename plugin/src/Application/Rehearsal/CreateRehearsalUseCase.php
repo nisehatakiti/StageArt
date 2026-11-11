@@ -6,6 +6,8 @@ namespace StageArt\Application\Rehearsal;
 
 use DateTimeImmutable;
 use InvalidArgumentException;
+use LogicException;
+use RuntimeException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
@@ -50,6 +52,16 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * chained create + confirm as two requests, which would now announce
  * the same Rehearsal twice (planned, then confirmed).
  *
+ * PR #7 R12 (docs/20-RehearsalManagementScreen.md §26): with an
+ * idempotency key, a request sent again with the same key and the same
+ * content (RehearsalCreateRequestHash) by the same person answers with the
+ * Rehearsal the first one created - nothing is created and nobody is
+ * notified again. The same key with different content, or from another
+ * person, is a 409 (RehearsalIdempotencyConflictException). The key is
+ * recorded first inside the creating transaction; a concurrent request
+ * with the same key waits on the DB UNIQUE key, then gets the duplicate
+ * error, rolls back everything it did and answers like a resend.
+ *
  * StageArt Core/Module Architecture Phase 2: depends only on Core
  * Contracts (Identity/ProductionContext/Authorization/Membership), not
  * on `ProductionRepositoryInterface`/`ProductionAuthorizationService`/
@@ -67,6 +79,7 @@ final class CreateRehearsalUseCase
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
     private RehearsalLifecycleNotifier $lifecycleNotifier;
+    private ?RehearsalCreateRequestStoreInterface $createRequests;
 
     public function __construct(
         ProductionContextContract $productionContext,
@@ -78,7 +91,8 @@ final class CreateRehearsalUseCase
         IdentityContract $identity,
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions,
-        RehearsalLifecycleNotifier $lifecycleNotifier
+        RehearsalLifecycleNotifier $lifecycleNotifier,
+        ?RehearsalCreateRequestStoreInterface $createRequests = null
     ) {
         $this->productionContext = $productionContext;
         $this->rehearsals = $rehearsals;
@@ -90,9 +104,15 @@ final class CreateRehearsalUseCase
         $this->authorization = $authorization;
         $this->transactions = $transactions;
         $this->lifecycleNotifier = $lifecycleNotifier;
+        $this->createRequests = $createRequests;
     }
 
     public function execute(CreateRehearsalCommand $command): RehearsalResult
+    {
+        return $this->executeWithOutcome($command)->result;
+    }
+
+    public function executeWithOutcome(CreateRehearsalCommand $command): CreateRehearsalOutcome
     {
         $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
 
@@ -121,6 +141,37 @@ final class CreateRehearsalUseCase
         $responseDeadline = RehearsalDateTime::parseOptional($command->responseDeadline, $zone);
         $activityType = $this->parseOptionalActivityType($command->activityType);
 
+        $idempotencyKey = self::idempotencyKey($command->idempotencyKey);
+        $requestHash = null;
+
+        if ($idempotencyKey !== null) {
+            if ($this->createRequests === null) {
+                throw new LogicException('CreateRehearsalUseCase was built without a RehearsalCreateRequestStoreInterface.');
+            }
+
+            $requestHash = RehearsalCreateRequestHash::hash(RehearsalCreateRequestHash::normalize(
+                $productionId,
+                $command->title,
+                $command->description,
+                $startDateTime,
+                $endDateTime,
+                $responseDeadline,
+                $zone->getName(),
+                $command->location,
+                $command->targetPersonIds,
+                $activityType,
+                $command->confirmOnCreate
+            ));
+
+            // A resend is answered from what the first request created,
+            // before re-checking the targets (they may have changed since).
+            $existing = $this->createRequests->find($productionId, $idempotencyKey);
+
+            if ($existing !== null) {
+                return $this->replay($existing, $requesterId, $requestHash);
+            }
+        }
+
         $activeMemberIdStrings = array_map(
             static fn (PersonId $personId): string => $personId->toString(),
             $this->membership->activeProductionMemberPersonIds($productionId)
@@ -138,47 +189,43 @@ final class CreateRehearsalUseCase
             }
         }
 
-        $rehearsal = $this->transactions->run(
-            function () use ($productionId, $command, $targetPersonIdStrings, $startDateTime, $endDateTime, $responseDeadline, $activityType, $zone): Rehearsal {
-                $rehearsal = Rehearsal::create(
-                    $productionId,
-                    $command->title,
-                    $command->description,
-                    $startDateTime,
-                    $endDateTime,
-                    $zone->getName(),
-                    $command->location,
-                    $responseDeadline,
-                    $activityType
-                );
-
-                $this->rehearsals->save($rehearsal);
-
-                foreach ($targetPersonIdStrings as $targetPersonIdString) {
-                    $this->attendances->save(
-                        RehearsalAttendance::createPhase1($rehearsal->id(), PersonId::fromString($targetPersonIdString))
+        try {
+            $rehearsal = $this->transactions->run(
+                function () use ($productionId, $command, $targetPersonIdStrings, $startDateTime, $endDateTime, $responseDeadline, $activityType, $zone, $idempotencyKey, $requesterId, $requestHash): Rehearsal {
+                    $rehearsal = Rehearsal::create(
+                        $productionId,
+                        $command->title,
+                        $command->description,
+                        $startDateTime,
+                        $endDateTime,
+                        $zone->getName(),
+                        $command->location,
+                        $responseDeadline,
+                        $activityType
                     );
-                }
 
-                if ($command->confirmOnCreate) {
-                    $rehearsal->confirm();
-                    $this->rehearsals->save($rehearsal);
-
-                    foreach ($targetPersonIdStrings as $targetPersonIdString) {
-                        $this->attendances->save(
-                            RehearsalAttendance::createPhase2($rehearsal->id(), PersonId::fromString($targetPersonIdString))
-                        );
+                    if ($idempotencyKey !== null) {
+                        /** @var RehearsalCreateRequestStoreInterface $store checked above */
+                        $store = $this->createRequests;
+                        $store->record($productionId, $idempotencyKey, $requesterId, (string) $requestHash, $rehearsal->id());
                     }
 
-                    return $rehearsal;
+                    return $this->createInTransaction($rehearsal, $command, $targetPersonIdStrings, $responseDeadline);
                 }
+            );
+        } catch (RehearsalCreateRequestDuplicateException $duplicate) {
+            // Another request with the same key committed first; this
+            // transaction was rolled back. Answer like a resend.
+            /** @var RehearsalCreateRequestStoreInterface $store */
+            $store = $this->createRequests;
+            $existing = $store->find($productionId, (string) $idempotencyKey);
 
-                $this->applyReminderPolicy($rehearsal, null, $responseDeadline, true);
-                $this->rehearsals->save($rehearsal);
-
-                return $rehearsal;
+            if ($existing === null) {
+                throw new RuntimeException('The idempotency key was reported as recorded but cannot be read.', 0, $duplicate);
             }
-        );
+
+            return $this->replay($existing, $requesterId, (string) $requestHash);
+        }
 
         $targets = array_map(static fn (string $id): PersonId => PersonId::fromString($id), $targetPersonIdStrings);
 
@@ -188,7 +235,84 @@ final class CreateRehearsalUseCase
             $this->lifecycleNotifier->planned($rehearsal, $production->name, $targets);
         }
 
-        return RehearsalResult::fromDomain($rehearsal);
+        return new CreateRehearsalOutcome(RehearsalResult::fromDomain($rehearsal), false);
+    }
+
+    /**
+     * The writes of a new Rehearsal, inside the creating transaction.
+     *
+     * @param string[] $targetPersonIdStrings
+     */
+    private function createInTransaction(
+        Rehearsal $rehearsal,
+        CreateRehearsalCommand $command,
+        array $targetPersonIdStrings,
+        ?DateTimeImmutable $responseDeadline
+    ): Rehearsal {
+        $this->rehearsals->save($rehearsal);
+
+        foreach ($targetPersonIdStrings as $targetPersonIdString) {
+            $this->attendances->save(
+                RehearsalAttendance::createPhase1($rehearsal->id(), PersonId::fromString($targetPersonIdString))
+            );
+        }
+
+        if ($command->confirmOnCreate) {
+            $rehearsal->confirm();
+            $this->rehearsals->save($rehearsal);
+
+            foreach ($targetPersonIdStrings as $targetPersonIdString) {
+                $this->attendances->save(
+                    RehearsalAttendance::createPhase2($rehearsal->id(), PersonId::fromString($targetPersonIdString))
+                );
+            }
+
+            return $rehearsal;
+        }
+
+        $this->applyReminderPolicy($rehearsal, null, $responseDeadline, true);
+        $this->rehearsals->save($rehearsal);
+
+        return $rehearsal;
+    }
+
+    /**
+     * PR #7 R12: the answer to a request whose key is already recorded.
+     * Only the same person sending the same content gets the Rehearsal;
+     * anything else is a conflict. Never creates or notifies.
+     */
+    private function replay(RehearsalCreateRequestRecord $existing, PersonId $requesterId, string $requestHash): CreateRehearsalOutcome
+    {
+        if (! $existing->requestedBy->equals($requesterId) || ! hash_equals($existing->requestHash, $requestHash)) {
+            throw new RehearsalIdempotencyConflictException(
+                'This idempotency key was already used for a different Rehearsal create request.'
+            );
+        }
+
+        $rehearsal = $this->rehearsals->findById($existing->rehearsalId);
+
+        if ($rehearsal === null) {
+            throw new RuntimeException('The Rehearsal created for this idempotency key cannot be found.');
+        }
+
+        return new CreateRehearsalOutcome(RehearsalResult::fromDomain($rehearsal), true);
+    }
+
+    /**
+     * 1-100 characters of letters, digits and "._:-" (a UUID fits).
+     * Missing or empty: no idempotency. Anything else: 422.
+     */
+    private static function idempotencyKey(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Za-z0-9._:-]{1,100}$/', $value) !== 1) {
+            throw new InvalidArgumentException('Invalid idempotency_key: use 1-100 letters, digits, ".", "_", ":" or "-".');
+        }
+
+        return $value;
     }
     /**
      * StageArt 予定・活動一般化調査: null/empty defers to

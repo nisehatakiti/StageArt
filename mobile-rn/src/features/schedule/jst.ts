@@ -42,6 +42,7 @@ export type JstParts = {
   day: number;
   hour: number;
   minute: number;
+  second: number;
   /** 0 (Sunday) - 6 */
   weekday: number;
 };
@@ -55,6 +56,7 @@ export function toJstParts(date: Date): JstParts {
     day: shifted.getUTCDate(),
     hour: shifted.getUTCHours(),
     minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
     weekday: shifted.getUTCDay(),
   };
 }
@@ -68,6 +70,13 @@ export function jstDateKey(date: Date): string {
 }
 
 /** "10:00" - the Asia/Tokyo time of an instant. */
+/** "2026-08-20T10:00:00+09:00" - an instant written as Asia/Tokyo time
+ * (PR #7 R12: what the timetable editor sends back for an unchanged row). */
+export function toJstIso(date: Date): string {
+  const p = toJstParts(date);
+  return `${jstDateKey(date)}T${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}+09:00`;
+}
+
 export function jstTime(date: Date): string {
   const p = toJstParts(date);
   return `${pad(p.hour)}:${pad(p.minute)}`;

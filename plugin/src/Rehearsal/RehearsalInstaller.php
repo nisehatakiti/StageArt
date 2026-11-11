@@ -46,6 +46,7 @@ final class RehearsalInstaller
         $timetableItems = $wpdb->prefix . 'stageart_timetable_items';
         $timetableItemParticipants = $wpdb->prefix . 'stageart_timetable_item_participants';
         $timetableVersionPublishedNotifications = $wpdb->prefix . 'stageart_timetable_version_published_notifications';
+        $rehearsalCreateRequests = $wpdb->prefix . 'stageart_rehearsal_create_requests';
 
         /*
          * Phase 7 (Rehearsal仕様整合) §4: response_deadline is the
@@ -266,6 +267,27 @@ final class RehearsalInstaller
             created_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             KEY production_id (production_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Schema 1.47.0 (PR #7 R12, docs/20-RehearsalManagementScreen.md
+         * §26): which Rehearsal a create request's idempotency key
+         * produced. UNIQUE (production_id, idempotency_key) is what stops
+         * two concurrent requests with the same key from both creating a
+         * Rehearsal. A new table only - existing tables and rows are not
+         * changed, and Rehearsals created without a key have no row here.
+         */
+        dbDelta("CREATE TABLE {$rehearsalCreateRequests} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            production_id CHAR(36) NOT NULL,
+            idempotency_key VARCHAR(100) NOT NULL,
+            requested_by CHAR(36) NOT NULL,
+            request_hash CHAR(64) NOT NULL,
+            rehearsal_id CHAR(36) NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY production_idempotency_key (production_id,idempotency_key),
+            KEY rehearsal_id (rehearsal_id)
         ) {$charsetCollate};");
     }
 

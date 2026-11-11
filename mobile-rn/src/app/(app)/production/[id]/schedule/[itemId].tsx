@@ -9,7 +9,7 @@ import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useCommentAuthorNames } from '@/features/participant/useCommentAuthorNames';
-import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
+import { formatDayHeader, formatEndTime, formatTime } from '@/features/schedule/groupByDay';
 import {
   useDeleteTimetableItemComment,
   usePostScheduleComment,
@@ -139,7 +139,7 @@ export default function ScheduleItemDetailScreen() {
           <ThemedText type="smallBold">時刻</ThemedText>
           <ThemedText>
             {formatTime(item.start_date_time)}
-            {item.end_date_time ? ` - ${formatTime(item.end_date_time)}` : '（終了時刻未設定）'}
+            {item.end_date_time ? ` - ${formatEndTime(item.start_date_time, item.end_date_time)}` : '（終了時刻未設定）'}
           </ThemedText>
         </ThemedView>
 

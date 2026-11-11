@@ -42,6 +42,8 @@ export function createRehearsal(
     /** PR #7 R9: create as 確定 in the same request - the Backend confirms
      * it in the same transaction and sends only the §11 notification. */
     confirmOnCreate?: boolean;
+    /** PR #7 R12: the create request's idempotency key (createRequestKey.ts). */
+    idempotencyKey?: string;
   }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
@@ -55,6 +57,7 @@ export function createRehearsal(
     person_ids: fields.targetPersonIds,
     response_deadline: fields.responseDeadline,
     confirm_on_create: fields.confirmOnCreate ?? false,
+    idempotency_key: fields.idempotencyKey,
   });
 }
 

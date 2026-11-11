@@ -228,4 +228,77 @@ final class TimetableItemTest extends TestCase
 
         $this->assertSame('団体独自カテゴリ', $item->category());
     }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25): start and end are
+     * full date-times; an item crossing midnight ends the next day.
+     */
+    private function itemAt(string $start, ?string $end): TimetableItem
+    {
+        return TimetableItem::create(
+            TimetableId::generate(), '場当たり', null,
+            new DateTimeImmutable($start), $end !== null ? new DateTimeImmutable($end) : null,
+            null, null, null, null, [], null
+        );
+    }
+
+    public function test_r12_an_item_may_end_the_next_day(): void
+    {
+        $item = $this->itemAt('2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00');
+        $this->assertSame('2026-11-11T00:30:00+09:00', $item->endDateTime()->format(DATE_ATOM));
+
+        $item->update('場当たり', null, new DateTimeImmutable('2026-11-10T23:30:00+09:00'), new DateTimeImmutable('2026-11-11T01:30:00+09:00'), null, null, null, null, [], null);
+        $this->assertSame('2026-11-11T01:30:00+09:00', $item->endDateTime()->format(DATE_ATOM));
+    }
+
+    public function test_r12_create_rejects_the_same_start_and_end(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be the same');
+
+        $this->itemAt('2026-11-10T23:30:00+09:00', '2026-11-10T23:30:00+09:00');
+    }
+
+    public function test_r12_create_rejects_an_end_before_the_start(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be after its start');
+
+        $this->itemAt('2026-11-10T23:30:00+09:00', '2026-11-10T00:30:00+09:00');
+    }
+
+    public function test_r12_update_rejects_the_same_start_and_end_and_keeps_the_item(): void
+    {
+        $item = $this->itemAt('2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00');
+
+        try {
+            $item->update('場当たり', null, new DateTimeImmutable('2026-11-10T10:00:00+09:00'), new DateTimeImmutable('2026-11-10T10:00:00+09:00'), null, null, null, null, [], null);
+            $this->fail('Accepted a zero-length item.');
+        } catch (InvalidArgumentException $expected) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame('2026-11-10T12:00:00+09:00', $item->endDateTime()->format(DATE_ATOM));
+    }
+
+    public function test_r12_copy_keeps_stored_values_even_a_zero_length_item(): void
+    {
+        $stored = TimetableItem::reconstitute(
+            \StageArt\Domain\TimetableItem\TimetableItemId::generate(), TimetableId::generate(), '旧データ', 'memo',
+            new DateTimeImmutable('2026-11-10T10:00:00+09:00'), new DateTimeImmutable('2026-11-10T10:00:00+09:00'),
+            3, 'SETUP', '舞台', ParticipantType::cast(), [PersonId::generate()], 'note',
+            new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-01')
+        );
+        $target = TimetableId::generate();
+
+        $copy = $stored->copyTo($target);
+
+        $this->assertNotSame($stored->id()->toString(), $copy->id()->toString());
+        $this->assertSame($target->toString(), $copy->timetableId()->toString());
+        $this->assertEquals($stored->startDateTime(), $copy->startDateTime());
+        $this->assertEquals($stored->endDateTime(), $copy->endDateTime());
+        $this->assertSame([$stored->title(), $stored->description(), $stored->displayOrder(), $stored->category(), $stored->venue(), $stored->notes()], [$copy->title(), $copy->description(), $copy->displayOrder(), $copy->category(), $copy->venue(), $copy->notes()]);
+        $this->assertEquals($stored->participantType(), $copy->participantType());
+        $this->assertEquals($stored->targetPersonIds(), $copy->targetPersonIds());
+    }
 }

@@ -36,9 +36,10 @@ code above, which stays in its existing DDD-layered location:
   is its only caller today.
 - `RehearsalModuleDescriptor` - declares `moduleId() = 'rehearsal'`,
   its own `version()`, `requiredContracts()` (the 5 Contracts below),
-  and `ownedTables()` (the 7 tables below). Registers into
+  and `ownedTables()` (the 8 tables below; PR #7 R12 added
+  `stageart_rehearsal_create_requests`). Registers into
   `Core\Module\ModuleRegistry`.
-- `RehearsalInstaller` - owns this Module's 7 tables' `CREATE TABLE`/
+- `RehearsalInstaller` - owns this Module's 8 tables' `CREATE TABLE`/
   `ALTER TABLE` statements, called from Core's own
   `Infrastructure\WordPress\Schema\Installer::install()`.
 - `RehearsalUpcomingRehearsalProvider` (Phase 4 §1) - the reverse
@@ -109,7 +110,9 @@ Verified two ways:
 
 `stageart_rehearsals`, `stageart_rehearsal_attendances`,
 `stageart_timetables`, `stageart_timetable_items`,
-`stageart_timetable_item_participants`, `stageart_schedule_comments`.
+`stageart_timetable_item_participants`, `stageart_schedule_comments`,
+`stageart_rehearsal_create_requests` (PR #7 R12: idempotency keys of
+Rehearsal create requests, docs/20-RehearsalManagementScreen.md §26).
 None of these are read or written by Core code paths outside the
 Rehearsal Application/Domain namespaces. `stageart_timetable_version_published_notifications`
 is a partial exception - see Known remaining coupling.

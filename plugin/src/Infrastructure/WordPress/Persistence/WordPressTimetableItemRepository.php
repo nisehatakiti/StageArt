@@ -88,6 +88,31 @@ final class WordPressTimetableItemRepository implements TimetableItemRepositoryI
         return $value->setTimezone(self::zone())->format('Y-m-d H:i:s');
     }
 
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25.3): before R12 the
+     * timetable editor put an item's end time on its start date, so an
+     * item entered as 23:30-00:30 was stored with end_date_time 00:30 of
+     * the START date - before its start. Such a row (end before start on
+     * the same date) means "ends the next day" and is read that way. The
+     * stored value is not changed here; it is written in the corrected
+     * form only when that item itself is saved again. Any other end -
+     * including one equal to the start - is read as stored.
+     */
+    private function readEnd(DateTimeImmutable $start, ?string $storedEnd): ?DateTimeImmutable
+    {
+        if ($storedEnd === null) {
+            return null;
+        }
+
+        $end = new DateTimeImmutable($storedEnd, self::zone());
+
+        if ($end < $start && $end->format('Y-m-d') === $start->format('Y-m-d')) {
+            return $end->modify('+1 day');
+        }
+
+        return $end;
+    }
+
     private static function zone(): DateTimeZone
     {
         return new DateTimeZone(TimetableItem::TIMEZONE);
@@ -204,13 +229,15 @@ final class WordPressTimetableItemRepository implements TimetableItemRepositoryI
             )
         );
 
+        $start = new DateTimeImmutable($row['start_date_time'], self::zone());
+
         return TimetableItem::reconstitute(
             TimetableItemId::fromString($row['id']),
             TimetableId::fromString($row['timetable_id']),
             $row['title'],
             $row['description'],
-            new DateTimeImmutable($row['start_date_time'], self::zone()),
-            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time'], self::zone()) : null,
+            $start,
+            $this->readEnd($start, $row['end_date_time']),
             $row['display_order'] !== null ? (int) $row['display_order'] : null,
             $row['category'],
             $row['venue'],

@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
+import { useCreateRequestKey } from '@/features/attendance/createRequestKey';
 import { useCreateRehearsal } from '@/features/attendance/useRehearsals';
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
@@ -106,12 +107,16 @@ export default function CreateRehearsalScreen() {
    */
   const [confirmOnCreate, setConfirmOnCreate] = useState(false);
 
+  /** PR #7 R12: the same content sent again (after a network error) reuses
+   * its idempotency key, so it is never created twice. */
+  const requestKey = useCreateRequestKey();
+
   async function handleSubmit() {
     const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
     const endDateTime = date && endTime ? `${date}T${endTime}:00+09:00` : undefined;
     const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
 
-    const rehearsal = await createRehearsal.mutateAsync({
+    const fields = {
       title: null,
       description: description.trim() || null,
       activityType,
@@ -122,7 +127,17 @@ export default function CreateRehearsalScreen() {
       targetPersonIds: Array.from(selectedPersonIds),
       responseDeadline,
       confirmOnCreate,
-    });
+    };
+
+    let rehearsal;
+    try {
+      rehearsal = await createRehearsal.mutateAsync({ ...fields, idempotencyKey: requestKey.keyFor(fields) });
+    } catch {
+      // Shown below from createRehearsal.error; pressing 作成 again with
+      // the same content resends with the same key.
+      return;
+    }
+    requestKey.reset();
 
     router.replace(`/production/${productionId}/schedule/attendance/${rehearsal.id}`);
   }

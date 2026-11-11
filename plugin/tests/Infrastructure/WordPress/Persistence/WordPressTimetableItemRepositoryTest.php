@@ -215,4 +215,62 @@ final class WordPressTimetableItemRepositoryTest extends TestCase
         $this->assertSame('2026-08-20 10:00:00', $this->rows[$id->toString()]['start_date_time']);
         $this->assertSame('2026-08-20 12:00:00', $this->rows[$id->toString()]['end_date_time']);
     }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25.3): before R12 the
+     * editor stored a 23:30-00:30 item with its end on the START date
+     * (end before start). Such a row is read as ending the next day; the
+     * stored value is only rewritten when that item is saved.
+     */
+    public function test_r12_a_pre_r12_cross_midnight_row_reads_as_ending_the_next_day(): void
+    {
+        foreach (['UTC', 'America/New_York', 'Asia/Tokyo'] as $phpTimezone) {
+            date_default_timezone_set($phpTimezone);
+            $a = $this->givenLegacyRow('2026-11-10 23:30:00', '2026-11-10 00:30:00');
+            $b = $this->givenLegacyRow('2026-11-10 23:30:00', '2026-11-10 01:30:00');
+            $repository = $this->repository();
+
+            $this->assertSame('2026-11-11T00:30:00+09:00', TimetableItemResult::fromDomain($repository->findById($a))->endDateTime, $phpTimezone);
+            $this->assertSame('2026-11-11T01:30:00+09:00', TimetableItemResult::fromDomain($repository->findById($b))->endDateTime, $phpTimezone);
+            $this->assertSame('2026-11-10 00:30:00', $this->rows[$a->toString()]['end_date_time'], 'Reading does not change the stored value.');
+        }
+    }
+
+    public function test_r12_saving_a_pre_r12_cross_midnight_row_keeps_its_meaning(): void
+    {
+        $id = $this->givenLegacyRow('2026-11-10 23:30:00', '2026-11-10 00:30:00');
+        $repository = $this->repository();
+
+        for ($i = 0; $i < 3; $i++) {
+            $repository->save($repository->findById($id));
+            $result = TimetableItemResult::fromDomain($repository->findById($id));
+            $this->assertSame(['2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00'], [$result->startDateTime, $result->endDateTime]);
+        }
+
+        $this->assertSame('2026-11-10 23:30:00', $this->rows[$id->toString()]['start_date_time']);
+        $this->assertSame('2026-11-11 00:30:00', $this->rows[$id->toString()]['end_date_time']);
+    }
+
+    public function test_r12_other_rows_read_as_stored(): void
+    {
+        $repository = $this->repository();
+        $sameDay = $this->givenLegacyRow('2026-11-10 10:00:00', '2026-11-10 12:00:00');
+        $zeroLength = $this->givenLegacyRow('2026-11-10 10:00:00', '2026-11-10 10:00:00');
+        $nextDay = $this->givenLegacyRow('2026-11-10 23:30:00', '2026-11-11 00:30:00');
+        $noEnd = $this->givenLegacyRow('2026-11-10 23:30:00', null);
+
+        $this->assertSame('2026-11-10T12:00:00+09:00', TimetableItemResult::fromDomain($repository->findById($sameDay))->endDateTime);
+        $this->assertSame('2026-11-10T10:00:00+09:00', TimetableItemResult::fromDomain($repository->findById($zeroLength))->endDateTime);
+        $this->assertSame('2026-11-11T00:30:00+09:00', TimetableItemResult::fromDomain($repository->findById($nextDay))->endDateTime);
+        $this->assertNull(TimetableItemResult::fromDomain($repository->findById($noEnd))->endDateTime);
+    }
+
+    public function test_r12_a_new_cross_midnight_item_is_stored_with_its_next_day_end(): void
+    {
+        $item = $this->newItem('2026-12-31T23:30:00+09:00', '2027-01-01T01:30:00+09:00');
+        $this->repository()->save($item);
+
+        $this->assertSame('2026-12-31 23:30:00', $this->rows[$item->id()->toString()]['start_date_time']);
+        $this->assertSame('2027-01-01 01:30:00', $this->rows[$item->id()->toString()]['end_date_time']);
+    }
 }

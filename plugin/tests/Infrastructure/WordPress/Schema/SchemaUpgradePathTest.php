@@ -25,6 +25,10 @@ use StageArt\Tests\Support\LegacyExpenseFixture;
  * 1.46.0 (PR #7 R9) adds stageart_rehearsal_attendances.actual_status and
  * moves existing results out of status (see the tests at the end).
  *
+ * 1.47.0 (PR #7 R12) adds the stageart_rehearsal_create_requests table
+ * (idempotency keys of Rehearsal create requests). The version check below
+ * moved from 1.46.0 to 1.47.0 with that schema change.
+ *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
@@ -83,9 +87,9 @@ final class SchemaUpgradePathTest extends TestCase
         return false;
     }
 
-    public function test_the_current_version_is_1_46_0(): void
+    public function test_the_current_version_is_1_47_0(): void
     {
-        $this->assertSame('1.46.0', SchemaUpgrader::CURRENT_VERSION);
+        $this->assertSame('1.47.0', SchemaUpgrader::CURRENT_VERSION);
     }
 
     /**
@@ -104,7 +108,7 @@ final class SchemaUpgradePathTest extends TestCase
      */
     public static function olderInstalls(): array
     {
-        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0']];
+        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0'], 'from 1.46.0' => ['1.46.0']];
     }
 
     public function test_an_install_already_at_the_current_version_runs_nothing(): void
@@ -184,6 +188,36 @@ final class SchemaUpgradePathTest extends TestCase
             . "WHERE phase = 'ATTENDANCE_CONFIRMATION' AND actual_status IS NULL "
             . "AND status IN ('ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT')",
         ], $moves);
+    }
+
+    /**
+     * 1.47.0: the idempotency key table, UNIQUE per Production. Only a
+     * CREATE TABLE - no existing table gets an UPDATE or ALTER for it.
+     *
+     * @dataProvider olderInstalls
+     */
+    public function test_every_older_install_gets_the_rehearsal_create_request_table(?string $storedVersion): void
+    {
+        $this->upgradeFrom($storedVersion);
+
+        $table = (string) $this->createStatementFor('stageart_rehearsal_create_requests');
+        foreach ([
+            'production_id CHAR(36) NOT NULL',
+            'idempotency_key VARCHAR(100) NOT NULL',
+            'requested_by CHAR(36) NOT NULL',
+            'request_hash CHAR(64) NOT NULL',
+            'rehearsal_id CHAR(36) NOT NULL',
+            'UNIQUE KEY production_idempotency_key (production_id,idempotency_key)',
+        ] as $definition) {
+            $this->assertStringContainsString($definition, $table);
+        }
+
+        $statements = array_map(static fn (array $args): string => (string) $args[0], $GLOBALS['wpdb']->callsTo('query'));
+        $this->assertSame([], array_values(array_filter(
+            $statements,
+            static fn (string $sql): bool => str_contains($sql, 'stageart_rehearsal_create_requests') || str_contains($sql, 'UPDATE wp_stageart_rehearsals ')
+        )));
+        $this->assertSame('1.47.0', get_option('stageart_db_schema_version'));
     }
 
     private function assertExpenseSchemaApplied(): void

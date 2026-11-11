@@ -276,6 +276,7 @@ the extraction.
 | `stageart_timetable_items` | Rehearsal | `RehearsalInstaller` |
 | `stageart_timetable_item_participants` | Rehearsal | `RehearsalInstaller` |
 | `stageart_timetable_version_published_notifications` | Rehearsal (physical), Core (a disclosed reader - §10) | `RehearsalInstaller` |
+| `stageart_rehearsal_create_requests` (PR #7 R12, schema 1.47.0) | Rehearsal | `RehearsalInstaller` |
 
 | Item | Owner |
 |---|---|

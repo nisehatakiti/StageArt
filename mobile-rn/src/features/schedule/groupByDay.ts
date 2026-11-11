@@ -50,3 +50,26 @@ export function formatTime(iso: string): string {
   const value = parseApiDateTime(iso);
   return value ? jstTime(value) : '';
 }
+
+/**
+ * PR #7 R12: an item's end time, relative to its start (Asia/Tokyo):
+ * "12:00" the same day, "翌00:30" the next day, "1/2 00:30" any later day.
+ * Empty for an invalid value.
+ */
+export function formatEndTime(startIso: string, endIso: string): string {
+  const start = parseApiDateTime(startIso);
+  const end = parseApiDateTime(endIso);
+  if (!start || !end) {
+    return '';
+  }
+  const startDay = jstDateKey(start);
+  const endDay = jstDateKey(end);
+  if (endDay === startDay) {
+    return jstTime(end);
+  }
+  if (endDay === jstDateKey(new Date(start.getTime() + 24 * 60 * 60 * 1000))) {
+    return `翌${jstTime(end)}`;
+  }
+  const p = toJstParts(end);
+  return `${p.month}/${p.day} ${jstTime(end)}`;
+}

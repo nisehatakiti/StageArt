@@ -17,6 +17,7 @@ use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsForProductionQuery;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\RehearsalAccessDeniedException;
+use StageArt\Application\Rehearsal\RehearsalIdempotencyConflictException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
 use StageArt\Application\Rehearsal\UpdateRehearsalCommand;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
@@ -143,10 +144,21 @@ final class RehearsalRestController
                 $this->stringOrNull($request->get_param('response_deadline')),
                 $this->stringOrNull($request->get_param('activity_type')),
                 // PR #7 R9: create as 確定 in one request (see CreateRehearsalCommand).
-                rest_sanitize_boolean($request->get_param('confirm_on_create') ?? false)
+                rest_sanitize_boolean($request->get_param('confirm_on_create') ?? false),
+                // PR #7 R12 (docs/20-RehearsalManagementScreen.md §26).
+                $this->stringOrNull($request->get_param('idempotency_key'))
             );
 
-            return new WP_REST_Response($this->createRehearsal->execute($command)->toArray(), 201);
+            $outcome = $this->createRehearsal->executeWithOutcome($command);
+            $response = new WP_REST_Response($outcome->result->toArray(), $outcome->replayed ? 200 : 201);
+
+            if ($outcome->replayed) {
+                $response->header('X-StageArt-Idempotent-Replay', 'true');
+            }
+
+            return $response;
+        } catch (RehearsalIdempotencyConflictException $exception) {
+            return new WP_Error('stageart_rehearsal_idempotency_conflict', $exception->getMessage(), ['status' => 409]);
         } catch (RehearsalAccessDeniedException $exception) {
             return new WP_Error('stageart_rehearsal_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {

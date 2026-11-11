@@ -13,6 +13,7 @@ import { useRehearsals } from '@/features/attendance/useRehearsals';
 import { useProduction } from '@/features/production/useProductions';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import { splitJstDateTime } from '@/features/schedule/jst';
+import { endDayLabel, rowDateTimes, rowFromItem, type RowOriginal } from '@/features/schedule/timetableRowTimes';
 import { useSaveAndPublishTimetable, useTimetableEditorItems } from '@/features/schedule/useTimetableAuthoring';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { Rehearsal, TimetableItem } from '@/types/api';
@@ -25,6 +26,8 @@ type ItemRow = {
   endTime: string;
   venue: string;
   notes: string;
+  /** PR #7 R12: the start/end this row was loaded with (none for a new row). */
+  original?: RowOriginal;
 };
 
 /** "2026-08-20T10:00:00+09:00" -> { date: "2026-08-20", time: "10:00" }.
@@ -38,16 +41,18 @@ function splitDateTime(value: string | null): { date: string; time: string } {
 }
 
 function toRow(item: TimetableItem): ItemRow {
-  const start = splitDateTime(item.start_date_time);
-  const end = splitDateTime(item.end_date_time);
+  // PR #7 R12: the row's date is the START date; an end on the next day is
+  // shown as 「翌日」 and kept (features/schedule/timetableRowTimes.ts).
+  const original = rowFromItem(item.start_date_time, item.end_date_time);
   return {
     key: item.id,
     title: item.title,
-    date: start.date,
-    startTime: start.time,
-    endTime: end.time,
+    date: original.date,
+    startTime: original.startTime,
+    endTime: original.endTime,
     venue: item.venue ?? '',
     notes: item.notes ?? '',
+    original,
   };
 }
 
@@ -133,17 +138,26 @@ export default function TimetableEditorScreen() {
       setValidationError(`${incomplete + 1}行目：項目名・日付・開始時刻を入力してください。`);
       return;
     }
+    const times = rows.map((row) => rowDateTimes(row, row.original));
+    const sameTime = times.findIndex((t) => !t.ok);
+    if (sameTime >= 0) {
+      setValidationError(`${sameTime + 1}行目：開始と終了が同じ時刻です。終了時刻を変えるか、空欄にしてください。`);
+      return;
+    }
     setValidationError(null);
 
     saveMutation.mutate(
-      rows.map((row, index) => ({
-        title: row.title.trim(),
-        startDateTime: `${row.date}T${row.startTime}:00+09:00`,
-        endDateTime: row.endTime ? `${row.date}T${row.endTime}:00+09:00` : null,
-        venue: row.venue.trim() || null,
-        notes: row.notes.trim() || null,
-        displayOrder: index + 1,
-      }))
+      rows.map((row, index) => {
+        const t = times[index] as { ok: true; start: string; end: string | null };
+        return {
+          title: row.title.trim(),
+          startDateTime: t.start,
+          endDateTime: t.end,
+          venue: row.venue.trim() || null,
+          notes: row.notes.trim() || null,
+          displayOrder: index + 1,
+        };
+      })
     );
   }
 
@@ -230,6 +244,11 @@ export default function TimetableEditorScreen() {
                         onChangeText={(endTime) => updateRow(row.key, { endTime })}
                         placeholder="終了（任意）"
                       />
+                      {endDayLabel(row, row.original) !== '' && (
+                        <ThemedText type="small" testID={`timetable-item-end-day-${index}`} style={styles.endDay}>
+                          {endDayLabel(row, row.original)}
+                        </ThemedText>
+                      )}
                     </ThemedView>
                     <ThemedTextInput
                       testID={`timetable-item-venue-${index}`}
@@ -356,6 +375,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   inlineFields: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  endDay: { alignSelf: 'center' },
   input: {
     borderWidth: 1,
     borderColor: '#b7b2c0',
