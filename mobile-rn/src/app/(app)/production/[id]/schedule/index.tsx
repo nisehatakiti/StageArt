@@ -12,6 +12,7 @@ import { formatDayHeader, groupByDay } from '@/features/schedule/groupByDay';
 import { deriveMyParticipantTypes, relatesToMe } from '@/features/schedule/personalHighlight';
 import { useParticipants, useProductionSchedule } from '@/features/schedule/useProductionSchedule';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -22,7 +23,9 @@ import { getErrorMessage } from '@/utils/errorMessage';
  *
  * Timetable is independent from Rehearsal management. The Production
  * Context's 小屋入り～本番 → タイムテーブル entry is the dedicated
- * timetable entry point.
+ * timetable entry point. PR #7 R8 (2-5; docs/04-CommonNavigationDesign.md
+ * §20.3): 「＋ タイムテーブルを作成」 opens the timetable editor
+ * (schedule/timetable.tsx); 「🖨 タイムテーブルを印刷」 prints.
  */
 export default function ScheduleListScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
@@ -34,6 +37,13 @@ export default function ScheduleListScreen() {
   const itemsQuery = useProductionSchedule(productionId, range);
   const participantsQuery = useParticipants(productionId);
   const currentPersonQuery = useCurrentPerson();
+  /** 「＋ タイムテーブルを作成」 is offered to whoever the Backend lets edit a
+   * Timetable (RehearsalCapability::MANAGE: PrimaryManager or
+   * REHEARSAL_MANAGER). The Backend still enforces it. */
+  const productionQuery = useProduction(productionId);
+  const canManageTimetable =
+    productionQuery.data?.is_primary_manager === true ||
+    productionQuery.data?.delegate_roles?.includes('REHEARSAL_MANAGER') === true;
 
   const myPersonId = currentPersonQuery.data?.id ?? null;
   const myParticipantTypes = useMemo(
@@ -57,6 +67,16 @@ export default function ScheduleListScreen() {
         >
           <ThemedText type="link">{fullRange ? '当日＋翌日のみ表示' : '全期間を表示'}</ThemedText>
         </TouchableOpacity>
+        {canManageTimetable && (
+          <TouchableOpacity
+            onPress={() => router.push(`/production/${productionId}/schedule/timetable`)}
+            testID="schedule-create-link"
+            accessibilityRole="button"
+            accessibilityLabel="タイムテーブルを作成"
+          >
+            <ThemedText type="link">＋ タイムテーブルを作成</ThemedText>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={() => router.push(`/production/${productionId}/schedule/print`)}
           testID="schedule-print-link"

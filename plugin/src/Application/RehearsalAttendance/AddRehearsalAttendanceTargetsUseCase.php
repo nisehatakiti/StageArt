@@ -8,11 +8,13 @@ use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalNotificationMessageBuilder;
 use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\NotificationContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Rehearsal\Rehearsal;
@@ -51,6 +53,13 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * again; only genuinely new targets get a fresh UNANSWERED record. The
  * return value is therefore only the newly-created records, not the
  * full roster.
+ *
+ * PR #7 R8 (docs/20-RehearsalManagementScreen.md §6.2): each newly-added
+ * target - and only those - receives the attendance request notification
+ * (type `rehearsal_attendance_requested`, the same wording the reminder
+ * builds on). People skipped as already-present are not notified again.
+ * Notifications are sent after the transaction commits, so a rolled-back
+ * addition never notifies anyone.
  */
 final class AddRehearsalAttendanceTargetsUseCase
 {
@@ -77,6 +86,7 @@ final class AddRehearsalAttendanceTargetsUseCase
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
     private RehearsalStatusTimeSync $statusTimeSync;
+    private NotificationContract $notifications;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
@@ -86,7 +96,8 @@ final class AddRehearsalAttendanceTargetsUseCase
         IdentityContract $identity,
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions,
-        RehearsalStatusTimeSync $statusTimeSync
+        RehearsalStatusTimeSync $statusTimeSync,
+        NotificationContract $notifications
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
@@ -96,6 +107,7 @@ final class AddRehearsalAttendanceTargetsUseCase
         $this->authorization = $authorization;
         $this->transactions = $transactions;
         $this->statusTimeSync = $statusTimeSync;
+        $this->notifications = $notifications;
     }
 
     /**
@@ -171,10 +183,32 @@ final class AddRehearsalAttendanceTargetsUseCase
             }
         );
 
+        $this->notifyAddedTargets($rehearsal, $production->name, $created);
+
         return array_map(
             static fn (RehearsalAttendance $attendance): RehearsalAttendanceResult => RehearsalAttendanceResult::fromDomain($attendance),
             $created
         );
+    }
+
+    /**
+     * @param RehearsalAttendance[] $created
+     */
+    private function notifyAddedTargets(Rehearsal $rehearsal, string $productionName, array $created): void
+    {
+        if ($created === [] || $rehearsal->startDateTime() === null) {
+            return;
+        }
+
+        $message = RehearsalNotificationMessageBuilder::buildResponseRequestMessage($productionName, $rehearsal->startDateTime());
+
+        foreach ($created as $attendance) {
+            $this->notifications->notify($attendance->personId(), 'rehearsal_attendance_requested', [
+                'rehearsal_id' => $rehearsal->id()->toString(),
+                'production_id' => $rehearsal->productionId()->toString(),
+                'message' => $message,
+            ]);
+        }
     }
 
     private function guardTargetAdditionAllowed(Rehearsal $rehearsal): void

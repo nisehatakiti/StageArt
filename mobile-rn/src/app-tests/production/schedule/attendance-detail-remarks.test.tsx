@@ -71,6 +71,11 @@ describe('Attendance detail: 備考 (remarks)', () => {
     fireEvent.press(screen.getByTestId('attendance-respond-AVAILABLE'));
 
     await waitFor(() => expect(respondBody).toEqual({ status: 'AVAILABLE', remarks: '更新後の備考' }));
-    await waitFor(() => expect(screen.getByTestId('attendance-remarks-input')).toHaveDisplayValue('更新後の備考'));
+    // PR #7 R8 (2-3): once answered, the answer buttons and the note input
+    // are no longer offered; the saved note is shown with the answer.
+    await waitFor(() => expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('参加可能'));
+    expect(screen.getByTestId('attendance-my-remarks')).toHaveTextContent(/更新後の備考/);
+    expect(screen.queryByTestId('attendance-remarks-input')).toBeNull();
+    expect(screen.queryByTestId('attendance-respond-AVAILABLE')).toBeNull();
   });
 });

@@ -221,7 +221,8 @@ final class RehearsalModuleBootstrap
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            $notification
         );
 
         $createScheduleComment = new CreateScheduleCommentUseCase(

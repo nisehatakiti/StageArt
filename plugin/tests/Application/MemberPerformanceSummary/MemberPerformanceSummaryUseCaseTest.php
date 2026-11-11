@@ -241,6 +241,69 @@ final class MemberPerformanceSummaryUseCaseTest extends TestCase
         $this->assertSame('舞台 花子', $line->displayName);
     }
 
+    /**
+     * PR #7 R8 (docs/20-RehearsalManagementScreen.md §19): a cancelled
+     * Rehearsal is not counted, and a confirmed Rehearsal whose actual
+     * result was never recorded counts as 欠席 - so the four counts add
+     * up to 稽古回数. A manager's correction (record-actual-status) is
+     * what the summary shows.
+     */
+    public function test_summary_excludes_cancelled_and_counts_unrecorded_as_absent(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMember();
+
+        $create = function (string $day) use ($production, $member): string {
+            $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+                $production->id()->toString(),
+                1,
+                'Act 1',
+                null,
+                "2099-01-{$day}T18:00:00+09:00",
+                "2099-01-{$day}T20:00:00+09:00",
+                'Asia/Tokyo',
+                null,
+                [$member->id()->toString()]
+            ));
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+
+            return $rehearsal->id;
+        };
+
+        $recorded = $create('01');
+        $unrecorded = $create('02');
+        $cancelled = $create('03');
+
+        $record = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($recorded, 'ATTENDANCE_CONFIRMATION', 1))[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
+        $entity = $this->rehearsals->findById(RehearsalId::fromString($recorded));
+        $entity->activate();
+        $this->rehearsals->save($entity);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED'));
+        // The manager corrects the result afterwards; the summary shows the correction.
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'EARLY_LEFT'));
+
+        $unrecordedRecord = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($unrecorded, 'ATTENDANCE_CONFIRMATION', 1))[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($unrecordedRecord->id, 2, 'ATTENDING'));
+
+        $entity = $this->rehearsals->findById(RehearsalId::fromString($cancelled));
+        $entity->cancel();
+        $this->rehearsals->save($entity);
+
+        $summary = $this->getSummary->execute(new GetMemberPerformanceSummaryQuery($production->id()->toString(), 1));
+        $line = current(array_filter($summary->members, static fn ($l) => $l->personId === $member->id()->toString()));
+
+        $this->assertNotFalse($line);
+        $this->assertSame(2, $line->rehearsalCount, 'the cancelled Rehearsal is excluded');
+        $this->assertSame(0, $line->attendedCount);
+        $this->assertSame(0, $line->lateCount);
+        $this->assertSame(1, $line->earlyLeftCount);
+        $this->assertSame(1, $line->absentCount, 'self-reported 出席 without an actual result counts as 欠席');
+        $this->assertSame(
+            $line->rehearsalCount,
+            $line->attendedCount + $line->lateCount + $line->earlyLeftCount + $line->absentCount
+        );
+    }
+
     public function test_a_member_with_no_activity_yet_still_appears_with_zero_counts(): void
     {
         [$production, $member] = $this->givenProductionWithOneMember();

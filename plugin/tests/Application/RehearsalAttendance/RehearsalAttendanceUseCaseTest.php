@@ -56,6 +56,8 @@ use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
 use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
+use StageArt\Tests\Support\RecordingNotificationContract;
+use StageArt\Tests\Support\RollbackingTransactionManager;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 
 final class RehearsalAttendanceUseCaseTest extends TestCase
@@ -76,6 +78,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
     private RespondRehearsalAttendanceUseCase $respondAttendance;
     private RecordActualRehearsalAttendanceStatusUseCase $recordActualStatus;
     private AddRehearsalAttendanceTargetsUseCase $addTargets;
+    private RollbackingTransactionManager $addTargetsTransactions;
+    private RecordingNotificationContract $addTargetsNotifications;
 
     protected function setUp(): void
     {
@@ -150,6 +154,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $authorization,
             $statusTimeSync
         );
+        $this->addTargetsTransactions = new RollbackingTransactionManager();
+        $this->addTargetsNotifications = new RecordingNotificationContract($this->addTargetsTransactions);
         $this->addTargets = new AddRehearsalAttendanceTargetsUseCase(
             $this->attendances,
             $this->rehearsals,
@@ -157,8 +163,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions,
-            $statusTimeSync
+            $this->addTargetsTransactions,
+            $statusTimeSync,
+            $this->addTargetsNotifications
         );
     }
 
@@ -436,6 +443,90 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $this->assertCount(2, $roster, 'the existing selected member must still be present, unmodified');
         $this->assertContains($selectedMember->id()->toString(), $rosterPersonIds);
         $this->assertContains($unselectedMember->id()->toString(), $rosterPersonIds);
+    }
+
+    /**
+     * PR #7 R8 (docs/20-RehearsalManagementScreen.md §6.2): only the newly
+     * added member gets the attendance request; the member who was already
+     * a target is not notified again, even when sent in the same request.
+     */
+    public function test_add_targets_notifies_only_newly_added_members_after_commit(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $unselectedMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$selectedMember->id()->toString(), $unselectedMember->id()->toString()]
+        ));
+
+        $sent = $this->addTargetsNotifications->sent();
+        $this->assertCount(1, $sent);
+        $this->assertSame($unselectedMember->id()->toString(), $sent[0]['person_id']);
+        $this->assertSame('rehearsal_attendance_requested', $sent[0]['type']);
+        $this->assertSame($rehearsal->id, $sent[0]['payload']['rehearsal_id']);
+        $this->assertSame($production->id()->toString(), $sent[0]['payload']['production_id']);
+        $this->assertStringContainsString('2099/01/01', $sent[0]['payload']['message']);
+        $this->assertSame(0, $this->addTargetsNotifications->sentInsideTransaction(), 'notify only after the commit');
+
+        // Saving again with the same selection notifies nobody.
+        $created = $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+            $rehearsal->id,
+            1,
+            [$selectedMember->id()->toString(), $unselectedMember->id()->toString()]
+        ));
+        $this->assertCount(0, $created);
+        $this->assertCount(1, $this->addTargetsNotifications->sent(), 'no re-notification for existing targets');
+    }
+
+    public function test_add_targets_rejected_request_notifies_nobody(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $selectedMember = $this->addActivePersonParticipant($production, 2);
+        $unselectedMember = $this->addActivePersonParticipant($production, 3);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$selectedMember->id()->toString()]
+        ));
+
+        try {
+            $this->addTargets->execute(new AddRehearsalAttendanceTargetsCommand(
+                $rehearsal->id,
+                1,
+                [$unselectedMember->id()->toString(), PersonId::generate()->toString()]
+            ));
+            $this->fail('a non-member in the request must reject the whole call');
+        } catch (InvalidArgumentException $expected) {
+        }
+
+        $this->assertSame([], $this->addTargetsNotifications->sent());
+        $roster = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($rehearsal->id),
+            RehearsalAttendancePhase::scheduleAdjustment()
+        );
+        $this->assertCount(1, $roster);
     }
 
     public function test_add_targets_rejects_a_person_who_is_not_an_active_participant(): void

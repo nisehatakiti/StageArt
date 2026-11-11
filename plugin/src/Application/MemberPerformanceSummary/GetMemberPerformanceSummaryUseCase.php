@@ -16,6 +16,7 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Reservation\ReservationStatus;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -91,7 +92,17 @@ final class GetMemberPerformanceSummaryUseCase
         /** @var array<string, array{attended:int,absent:int,late:int,earlyLeft:int,rehearsalCount:int}> $rehearsalCounts */
         $rehearsalCounts = [];
 
+        // docs/20-RehearsalManagementScreen.md §19 / RehearsalManagementPolicy.md
+        // "Member Performance Aggregation" (PR #7 R8): cancelled Rehearsals
+        // are excluded, and a target whose actual result was never recorded
+        // (still ATTENDING / NOT_ATTENDING / UNANSWERED in the confirmation
+        // phase) counts as 欠席, so that
+        // 出席 + 遅刻 + 早退 + 欠席 = 稽古回数 always holds.
         foreach ($this->rehearsals->findByProductionId($productionId) as $rehearsal) {
+            if ($rehearsal->status()->toString() === RehearsalStatus::CANCELLED) {
+                continue;
+            }
+
             $records = $this->rehearsalAttendances->findByRehearsalIdAndPhase(
                 $rehearsal->id(),
                 RehearsalAttendancePhase::attendanceConfirmation()
@@ -115,6 +126,9 @@ final class GetMemberPerformanceSummaryUseCase
                         break;
                     case RehearsalAttendanceStatus::EARLY_LEFT:
                         $rehearsalCounts[$key]['earlyLeft']++;
+                        break;
+                    default:
+                        $rehearsalCounts[$key]['absent']++;
                         break;
                 }
             }

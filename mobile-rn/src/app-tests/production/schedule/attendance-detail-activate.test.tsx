@@ -1,4 +1,4 @@
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
 import {
   attendanceConfirmationRoster,
@@ -17,20 +17,18 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt Rehearsal機能完成度向上: a CONFIRMED Rehearsal (per
- * Rehearsal.md's own Status Lifecycle) may become ACTIVE via
- * ActivateRehearsalUseCase - previously wired end-to-end on the Backend
- * (REST route + PHPUnit coverage) but never connected to any Mobile UI.
- * This confirms the management panel now shows "稽古を開始する" instead of
- * "稽古情報を確定する" once CONFIRMED, and that pressing it actually calls
- * POST /rehearsals/{id}/activate.
+ * PR #7 R8 (2-2): there is no manual 「稽古を開始する」/「稽古を終了する」.
+ * The Backend moves a CONFIRMED Rehearsal to ACTIVE at its start time and
+ * to COMPLETED at its end time whenever the Rehearsal is read or written
+ * (RehearsalStatusTimeSync, covered by RehearsalStatusTimeSyncTest). Before
+ * the start time the manager sees 確定 with edit/cancel only, and the
+ * screen never calls the activate/complete endpoints.
  */
-describe('Attendance detail: CONFIRMED Rehearsal management actions', () => {
-  it('shows the activate action (not confirm) and calls POST /rehearsals/{id}/activate', async () => {
+describe('Attendance detail: CONFIRMED Rehearsal has no manual start/finish', () => {
+  it('shows edit and cancel, but no start/finish buttons and no result recording', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/me'), status: 200, body: currentPerson },
-      { test: (u) => u.endsWith('/rehearsals/rehearsal-2/activate'), status: 200, body: { ...rehearsalConfirmed, status: 'ACTIVE' } },
       { test: (u) => u.endsWith('/rehearsals/rehearsal-2'), status: 200, body: rehearsalConfirmed },
       {
         test: (u) => u.includes('/rehearsals/rehearsal-2/attendances'),
@@ -41,16 +39,17 @@ describe('Attendance detail: CONFIRMED Rehearsal management actions', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/schedule/attendance/rehearsal-2' });
 
-    await waitFor(() => expect(screen.getByTestId('rehearsal-activate')).toBeVisible());
-    expect(screen.queryByTestId('rehearsal-confirm')).toBeNull();
-    expect(screen.getByTestId('rehearsal-cancel')).toBeVisible();
+    await waitFor(() => expect(screen.getByTestId('rehearsal-cancel')).toBeVisible());
+    expect(screen.getByTestId('rehearsal-info-status')).toHaveTextContent('確定');
     expect(screen.getByTestId('rehearsal-edit')).toBeVisible();
+    expect(screen.queryByTestId('rehearsal-confirm')).toBeNull();
+    expect(screen.queryByTestId('rehearsal-activate')).toBeNull();
+    expect(screen.queryByTestId('rehearsal-complete')).toBeNull();
+    // The actual result is recorded only once the Rehearsal is ACTIVE/COMPLETED.
+    expect(screen.queryByTestId('attendance-actual-save')).toBeNull();
+    expect(screen.queryByTestId('attendance-actual-select-attendance-3')).toBeNull();
 
-    fireEvent.press(screen.getByTestId('rehearsal-activate'));
-
-    await waitFor(() => {
-      const activateCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/rehearsals/rehearsal-2/activate'));
-      expect(activateCall).toBeDefined();
-    });
+    const urls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));
+    expect(urls.some((url) => /\/rehearsals\/[^/]+\/(activate|complete)$/.test(url))).toBe(false);
   });
 });

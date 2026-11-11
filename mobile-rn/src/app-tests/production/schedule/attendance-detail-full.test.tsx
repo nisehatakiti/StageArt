@@ -18,7 +18,8 @@ jest.mock('expo-secure-store', () => ({
 
 /** 正常取得 + 回答済み状態: an already-ATTENDING self record renders its
  * current status, and the roster shows every Person's status (not just
- * the caller's own). */
+ * the caller's own). PR #7 R8 (2-3): once answered, the answer buttons
+ * are not offered. */
 describe('Attendance detail: full roster, already-responded state', () => {
   it('shows my own current status and the full roster', async () => {
     mockFetchRoutes([
@@ -36,13 +37,16 @@ describe('Attendance detail: full roster, already-responded state', () => {
 
     await waitFor(() => expect(screen.getByTestId('attendance-my-record')).toBeVisible());
     expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('出席');
+    expect(screen.queryByTestId('attendance-respond-ATTENDING')).toBeNull();
+    expect(screen.queryByTestId('attendance-respond-NOT_ATTENDING')).toBeNull();
     expect(screen.getAllByTestId('attendance-roster-row')).toHaveLength(1);
 
     // docs/20-RehearsalManagementScreen.md §4/§4.1: the Detail screen
     // must show Status/Date/Start-End time/Location, not just the
     // attendance roster.
     expect(screen.getByTestId('rehearsal-info-status')).toHaveTextContent('確定');
-    expect(screen.getByTestId('rehearsal-info-datetime')).toHaveTextContent('2026/8/20（木） 10:00〜12:00');
+    expect(screen.getByTestId('rehearsal-info-datetime-date')).toHaveTextContent('2026/8/20（木）');
+    expect(screen.getByTestId('rehearsal-info-datetime')).toHaveTextContent('10:00〜12:00');
     expect(screen.getByTestId('rehearsal-info-location')).toHaveTextContent('稽古場A');
 
     expect(screen.getByTestId('attendance-summary-attending')).toHaveTextContent('出席 1名');

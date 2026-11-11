@@ -39,7 +39,7 @@ R6時点（Head `b27a422`）で、Jest 248スイート中38〜40スイート・4
 | タイムテーブル項目の詳細（schedule/[itemId].tsx） | 投稿者名の対応表を渡しておらず、すべてのコメントが「名前未設定」になっていた（0f4b3e0は稽古詳細だけに対応） | 稽古詳細と同じ規則の `useCommentAuthorNames` を追加して渡す |
 | Home | すべての欄が条件付きのため、データが無いと何も描画されず、到達を確認できる要素がなかった | ルートに `testID="home-screen"` を付与 |
 
-## 4. C：仕様と矛盾するため残したもの（失敗7件、ユーザー判断待ち）
+## 4. C：仕様と矛盾するため残したもの（失敗7件、R7時点。R8で解消 → §7）
 
 | テスト | 画面から削除された機能（コミット） | 仕様書 |
 | --- | --- | --- |
@@ -69,3 +69,18 @@ R6時点（Head `b27a422`）で、Jest 248スイート中38〜40スイート・4
 - 操作要素（ボタン・行）には `{画面}-{要素}-{ID}` 形式のtestIDと `accessibilityRole`・`accessibilityLabel` を付ける。選択状態を持つボタンには `accessibilityState.selected` を付ける（稽古詳細の回答ボタンには現在ない。4の判断と合わせて対応する）。
 - 仕様で表示しないと決めた要素（空の状態など）は、テストで「無いこと」を確認する。
 - 画面を変更するコミットでは、同じコミットで関連テストを更新する（今回の失敗の大半は、画面変更後にテストを実行していなかったことが原因）。
+
+## 7. R8（2026-11-11）：仕様矛盾7件の解消
+
+R8指示書 §2 の確定事項に従って画面を直し、7件はすべて成功するようにした（テストの削除なし）。仕様の記録は 20-RehearsalManagementScreen.md §21、04-CommonNavigationDesign.md §20.3.1。
+
+| テスト | R8の対応 |
+| --- | --- |
+| attendance-detail-add-members-add、-display | 稽古詳細に「参加メンバーを追加」を戻した（f575bc5 以前の部品を再利用）。Backendは追加者にだけ通知するよう修正 |
+| attendance-detail-activate、-complete | 手動の開始・終了ボタンは設けない（確定事項）。テストを「確定の稽古に開始・終了ボタンが無く、activate/completeを呼ばない」「実施中の稽古で管理者がプルダウンで実績を選び［更新］で保存する」に書き換えた。後者は、行の選択がrenderRouter()の多段Stack/Tabの奥で画面の状態に届かない既知の制約のため単体描画 |
+| attendance-detail-respond、-full | 「あなたの出欠」に本人の回答を表示し、回答ボタンは未回答のときだけ表示。-full の日時の確認は、日付と時刻が別要素になった現在の画面（32e281c 等）に合わせた（同じ値を確認） |
+| schedule-timetable-create-link | 「＋ タイムテーブルを作成」を戻し、押すとタイムテーブルの作成・編集画面を開く（稽古一覧ではない）ことを確認する内容に変更 |
+
+関連して変更・追加したテスト：attendance-detail-remarks（回答後はボタン・入力欄を出さず備考を表示）、schedule-timetable-create-link-member、timetable-editor-save-new、timetable-editor-save-existing-draft、home-rehearsal-card-attendance。
+
+画面側の不具合として、稽古詳細の一覧（FlatList）が `extraData` なしでは行の選択状態の変化で再描画されない問題を、プルダウン追加時に `extraData` を指定して防いだ。

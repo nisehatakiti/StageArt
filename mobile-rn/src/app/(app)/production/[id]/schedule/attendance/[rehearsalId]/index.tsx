@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScheduleCommentList } from '@/components/schedule-comment-list';
@@ -8,7 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { attendanceGroup, attendanceSummary, responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
+import {
+  ACTUAL_STATUS_OPTIONS,
+  attendanceGroup,
+  attendanceSummary,
+  responseOptionsForPhase,
+  statusLabel,
+} from '@/features/attendance/viewModel';
 import type { AttendanceGroup } from '@/features/attendance/viewModel';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { useProduction } from '@/features/production/useProductions';
@@ -19,6 +25,8 @@ import {
   useRehearsal,
 } from '@/features/attendance/useRehearsals';
 import {
+  useAddRehearsalAttendanceTargets,
+  useRecordActualRehearsalAttendanceStatus,
   useRehearsalAttendances,
   useRespondRehearsalAttendance,
 } from '@/features/attendance/useRehearsalAttendance';
@@ -32,7 +40,7 @@ import {
 } from '@/features/schedule/useScheduleComments';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
-import type { RehearsalAttendance, ScheduleComment } from '@/types/api';
+import type { Participant, RehearsalAttendance, ScheduleComment } from '@/types/api';
 import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 
 /** Rehearsal detail status labels. */
@@ -43,6 +51,28 @@ const REHEARSAL_STATUS_LABELS: Record<string, string> = {
   ACTIVE: '実施中',
   COMPLETED: '実施済み',
   CANCELLED: '中止',
+};
+
+const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
+
+/** Rehearsal statuses in which the Backend refuses each operation - kept
+ * identical to the server-side guards so the screen only offers what the
+ * API will accept (the API remains the authority):
+ * - adding targets: AddRehearsalAttendanceTargetsUseCase::TARGET_ADDITION_BLOCKED_STATUSES
+ * - self-response: RespondRehearsalAttendanceUseCase
+ * - actual result: RecordActualRehearsalAttendanceStatusUseCase (ACTIVE/COMPLETED only) */
+const TARGET_ADDITION_BLOCKED_STATUSES = new Set(['ACTIVE', 'COMPLETED', 'CANCELLED']);
+const RESPONSE_BLOCKED_STATUSES = new Set(['ACTIVE', 'COMPLETED', 'CANCELLED']);
+const ACTUAL_RECORDING_STATUSES = new Set(['ACTIVE', 'COMPLETED']);
+/** RehearsalAttendance::recordActualStatus(): an actual result can be
+ * recorded only for a member who answered 出席 (ATTENDING), or corrected
+ * once one exists. Others are counted as 欠席 by the member summary. */
+const ACTUAL_RECORDABLE_SOURCES = new Set(['ATTENDING', ...ACTUAL_STATUS_OPTIONS]);
+const ACTUAL_STATUS_LABELS: Record<string, string> = {
+  ATTENDED: '出席',
+  LATE: '遅刻',
+  EARLY_LEFT: '早退',
+  ABSENT: '欠席',
 };
 
 function rehearsalStatusLabel(status: string): string {
@@ -86,11 +116,20 @@ const ATTENDANCE_GROUP_LABELS: Record<AttendanceGroup, string> = {
 };
 
 /**
- * §17-19: Attendance roster + self-response for one Rehearsal. Whether
- * the caller may respond to a given row (own record only) or record an
- * actual result is enforced server-side; this screen does not hide the
- * "実績を記録" controls by Role (§24) - an unauthorized attempt shows the
- * Backend's own 403 message instead.
+ * §17-19: Attendance roster + self-response for one Rehearsal.
+ *
+ * PR #7 R8 (docs/20-RehearsalManagementScreen.md §6.2, §12, §13):
+ * - managers add Production members who are not targets yet (the
+ *   Backend notifies only the newly added members);
+ * - the member's own answer is shown; answer buttons appear only while
+ *   unanswered;
+ * - there are no manual start/finish buttons: the Backend moves a
+ *   CONFIRMED Rehearsal to ACTIVE at its start time and to COMPLETED at
+ *   its end time whenever it is read or written (RehearsalStatusTimeSync);
+ * - while ACTIVE/COMPLETED, managers choose each member's result from a
+ *   pull-down and save with 「更新」 (no notification to the member).
+ * Authorization stays server-side; the manager-only controls are hidden
+ * from non-managers only to avoid offering an action that would be 403.
  */
 export default function RehearsalAttendanceScreen() {
   const { id: productionId, rehearsalId } = useLocalSearchParams<{ id: string; rehearsalId: string }>();
@@ -117,6 +156,15 @@ export default function RehearsalAttendanceScreen() {
   const canManageRehearsal =
     productionQuery.data?.is_primary_manager === true ||
     productionQuery.data?.delegate_roles?.includes('REHEARSAL_MANAGER') === true;
+
+  const addTargetsMutation = useAddRehearsalAttendanceTargets(rehearsalId, phase);
+  const recordActualMutation = useRecordActualRehearsalAttendanceStatus(rehearsalId, phase);
+  const [selectedNewMemberIds, setSelectedNewMemberIds] = useState<Set<string>>(new Set());
+  /** attendanceId -> chosen actual status, saved together by 「更新」. */
+  const [pendingActual, setPendingActual] = useState<Record<string, string>>({});
+  const [openActualSelectId, setOpenActualSelectId] = useState<string | null>(null);
+  const [isSavingActual, setIsSavingActual] = useState(false);
+  const [actualSaveError, setActualSaveError] = useState<unknown>(null);
 
   const confirmRehearsal = useConfirmRehearsal(rehearsalId);
   const cancelRehearsal = useCancelRehearsal(rehearsalId);
@@ -214,6 +262,78 @@ export default function RehearsalAttendanceScreen() {
     );
   }, [attendancesQuery.data]);
 
+  const rehearsalStatus = rehearsalQuery.data?.status;
+  const canAddTargets = canManageRehearsal && !!rehearsalStatus && !TARGET_ADDITION_BLOCKED_STATUSES.has(rehearsalStatus);
+  const canRecordActual = canManageRehearsal && !!rehearsalStatus && ACTUAL_RECORDING_STATUSES.has(rehearsalStatus);
+  const canRespond = !!myRecord && myRecord.status === 'UNANSWERED' && !!rehearsalStatus && !RESPONSE_BLOCKED_STATUSES.has(rehearsalStatus);
+
+  /** Production members (ACTIVE, Person-subject) who are not targets of
+   * this Rehearsal yet. The Backend re-validates the same pool and skips
+   * anyone already present, so this list is display-only. */
+  const unselectedMembers = useMemo(() => {
+    const currentTargetPersonIds = new Set((attendancesQuery.data ?? []).map((a) => a.person_id));
+    return (participantsQuery.data ?? []).filter(
+      (participant): participant is Participant =>
+        participant.subject_type === 'PERSON' && participant.status === 'ACTIVE' && !currentTargetPersonIds.has(participant.subject_id)
+    );
+  }, [participantsQuery.data, attendancesQuery.data]);
+
+  function toggleNewMember(personId: string) {
+    setSelectedNewMemberIds((current) => {
+      const next = new Set(current);
+      if (next.has(personId)) {
+        next.delete(personId);
+      } else {
+        next.add(personId);
+      }
+      return next;
+    });
+  }
+
+  function handleAddSelectedMembers() {
+    if (selectedNewMemberIds.size === 0) return;
+
+    addTargetsMutation.mutate(Array.from(selectedNewMemberIds), {
+      onSuccess: () => setSelectedNewMemberIds(new Set()),
+    });
+  }
+
+  function handleSelectActual(attendanceId: string, status: string) {
+    setPendingActual((current) => ({ ...current, [attendanceId]: status }));
+    setOpenActualSelectId(null);
+  }
+
+  /** Saves every changed row; rows that fail stay pending so 「更新」 can be
+   * pressed again. One request per row (the existing endpoint is per
+   * record). */
+  async function handleSaveActual() {
+    const changes = Object.entries(pendingActual);
+    if (changes.length === 0) return;
+
+    setIsSavingActual(true);
+    setActualSaveError(null);
+    try {
+      for (const [attendanceId, status] of changes) {
+        await recordActualMutation.mutateAsync({ attendanceId, status });
+        setPendingActual((current) => {
+          const next = { ...current };
+          delete next[attendanceId];
+          return next;
+        });
+      }
+    } catch (error) {
+      setActualSaveError(error);
+    } finally {
+      setIsSavingActual(false);
+    }
+  }
+
+  const pendingActualCount = Object.keys(pendingActual).length;
+  const actualRowState = useMemo(
+    () => ({ pendingActual, openActualSelectId, canRecordActual }),
+    [pendingActual, openActualSelectId, canRecordActual]
+  );
+
   const isLoading = rehearsalQuery.isLoading || attendancesQuery.isLoading;
   const isError = rehearsalQuery.isError || attendancesQuery.isError;
   const loadError = rehearsalQuery.error ?? attendancesQuery.error;
@@ -251,6 +371,8 @@ export default function RehearsalAttendanceScreen() {
         <FlatList
           testID="attendance-roster"
           data={sortedAttendances}
+          // Rows depend on the pending pull-down choices, not only on `data`.
+          extraData={actualRowState}
           keyExtractor={(a) => a.id}
           numColumns={2}
           columnWrapperStyle={styles.rosterColumns}
@@ -353,9 +475,81 @@ export default function RehearsalAttendanceScreen() {
                 <ThemedText testID="attendance-summary-not-attending" style={styles.summaryNotAttending}>欠席 {summary.notAttending}名</ThemedText>
                 <ThemedText testID="attendance-summary-unanswered" style={styles.summaryUnanswered}>未回答 {summary.unanswered}名</ThemedText>
               </ThemedView>
+              {canAddTargets && (
+                <ThemedView style={styles.compactCard} testID="unselected-members-panel">
+                  <ThemedText type="smallBold">参加メンバーを追加</ThemedText>
+                  {participantsQuery.isLoading && <ActivityIndicator testID="unselected-members-loading" />}
+                  {!participantsQuery.isLoading && unselectedMembers.length === 0 && (
+                    <ThemedText type="small" themeColor="textSecondary" testID="unselected-members-empty">
+                      追加できるメンバーはいません。
+                    </ThemedText>
+                  )}
+                  {unselectedMembers.map((participant) => {
+                    const isChecked = selectedNewMemberIds.has(participant.subject_id);
+                    const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
+                    const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+                    const label = participant.display_name?.trim() || fullName || '名前未設定';
+
+                    return (
+                      <TouchableOpacity
+                        key={participant.id}
+                        testID={`unselected-member-${participant.subject_id}`}
+                        onPress={() => toggleNewMember(participant.subject_id)}
+                        style={styles.memberRow}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: isChecked }}
+                        accessibilityLabel={label}
+                      >
+                        <View
+                          testID={`unselected-member-checkbox-${participant.subject_id}`}
+                          style={[styles.checkbox, isChecked && styles.checkboxChecked]}
+                        >
+                          {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
+                        </View>
+                        <ThemedText>{label}</ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          （{typeLabel}）
+                        </ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {unselectedMembers.length > 0 && (
+                    <TouchableOpacity
+                      testID="unselected-members-add"
+                      onPress={handleAddSelectedMembers}
+                      disabled={selectedNewMemberIds.size === 0 || addTargetsMutation.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="選択したメンバーを追加する"
+                      style={[
+                        styles.actionButton,
+                        styles.confirmButton,
+                        (selectedNewMemberIds.size === 0 || addTargetsMutation.isPending) && styles.disabledButton,
+                      ]}
+                    >
+                      {addTargetsMutation.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>追加する</ThemedText>}
+                    </TouchableOpacity>
+                  )}
+                  {addTargetsMutation.isError && (
+                    <ThemedText testID="unselected-members-add-error">{getErrorMessage(addTargetsMutation.error)}</ThemedText>
+                  )}
+                </ThemedView>
+              )}
               {myRecord && (
                 <ThemedView style={styles.compactCard} testID="attendance-my-record">
-                  <ThemedText type="smallBold">稽古の出欠を登録してください。</ThemedText>
+                  <ThemedView style={styles.myStatusRow}>
+                    <ThemedText type="smallBold">あなたの出欠</ThemedText>
+                    <ThemedText type="smallBold" testID="attendance-my-status">
+                      {statusLabel(myRecord.status)}
+                    </ThemedText>
+                  </ThemedView>
+                  {!canRespond && myRecord.remarks?.trim() ? (
+                    <ThemedText type="small" testID="attendance-my-remarks">
+                      備考：{myRecord.remarks}
+                    </ThemedText>
+                  ) : null}
+                  {canRespond && (
+                  <>
+                  <ThemedText type="small">稽古の出欠を登録してください。</ThemedText>
                   {responseDeadlinePassed && (
                     <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
                       回答期限を過ぎたため、回答・変更はできません。
@@ -400,6 +594,8 @@ export default function RehearsalAttendanceScreen() {
                   {respondMutation.isError && (
                     <ThemedText testID="attendance-respond-error">{getErrorMessage(respondMutation.error)}</ThemedText>
                   )}
+                  </>
+                  )}
                 </ThemedView>
               )}
             </ThemedView>
@@ -408,10 +604,42 @@ export default function RehearsalAttendanceScreen() {
             <AttendanceRow
               attendance={item}
               displayName={participantNameByPersonId.get(item.person_id) ?? '氏名未設定'}
+              actualSelect={
+                canRecordActual
+                  ? {
+                      recordable: ACTUAL_RECORDABLE_SOURCES.has(item.status),
+                      value: pendingActual[item.id] ?? (ACTUAL_STATUS_OPTIONS.includes(item.status) ? item.status : null),
+                      isOpen: openActualSelectId === item.id,
+                      onToggle: () => setOpenActualSelectId((current) => (current === item.id ? null : item.id)),
+                      onSelect: (status) => handleSelectActual(item.id, status),
+                    }
+                  : null
+              }
             />
           )}
           ListFooterComponent={
             <ThemedView style={styles.commentsSection}>
+              {canRecordActual && (
+                <ThemedView style={styles.actualSaveArea}>
+                  <TouchableOpacity
+                    testID="attendance-actual-save"
+                    onPress={handleSaveActual}
+                    disabled={pendingActualCount === 0 || isSavingActual}
+                    accessibilityRole="button"
+                    accessibilityLabel="出欠を更新する"
+                    style={[
+                      styles.actionButton,
+                      styles.confirmButton,
+                      (pendingActualCount === 0 || isSavingActual) && styles.disabledButton,
+                    ]}
+                  >
+                    {isSavingActual ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.actionButtonText}>更新</ThemedText>}
+                  </TouchableOpacity>
+                  {actualSaveError !== null && (
+                    <ThemedText testID="attendance-actual-save-error">{getErrorMessage(actualSaveError)}</ThemedText>
+                  )}
+                </ThemedView>
+              )}
               <ThemedText type="smallBold">稽古連絡用コメント</ThemedText>
               <ScheduleCommentList
                 isLoading={commentsQuery.isLoading}
@@ -464,12 +692,22 @@ export default function RehearsalAttendanceScreen() {
   );
 }
 
+type ActualSelectProps = {
+  recordable: boolean;
+  value: string | null;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (status: string) => void;
+};
+
 function AttendanceRow({
   attendance,
   displayName,
+  actualSelect,
 }: {
   attendance: RehearsalAttendance;
   displayName: string;
+  actualSelect: ActualSelectProps | null;
 }) {
   const group = attendanceGroup(attendance.status);
   return (
@@ -483,6 +721,44 @@ function AttendanceRow({
           {attendance.remarks}
         </ThemedText>
       ) : null}
+      {actualSelect && actualSelect.recordable && (
+        <View style={styles.actualSelect}>
+          <TouchableOpacity
+            testID={`attendance-actual-select-${attendance.id}`}
+            onPress={actualSelect.onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={`${displayName}の出欠を選択`}
+            accessibilityState={{ expanded: actualSelect.isOpen }}
+            style={styles.selectBox}
+          >
+            <ThemedText type="small">
+              {actualSelect.value ? ACTUAL_STATUS_LABELS[actualSelect.value] : '未記録'} ▼
+            </ThemedText>
+          </TouchableOpacity>
+          {actualSelect.isOpen && (
+            <View style={styles.selectOptions}>
+              {ACTUAL_STATUS_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  testID={`attendance-actual-option-${attendance.id}-${option}`}
+                  onPress={() => actualSelect.onSelect(option)}
+                  accessibilityRole="button"
+                  accessibilityLabel={ACTUAL_STATUS_LABELS[option]}
+                  accessibilityState={{ selected: actualSelect.value === option }}
+                  style={[styles.selectOption, actualSelect.value === option && styles.selectOptionSelected]}
+                >
+                  <ThemedText type="small">{ACTUAL_STATUS_LABELS[option]}</ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+      {actualSelect && !actualSelect.recordable && (
+        <ThemedText type="small" themeColor="textSecondary" testID={`attendance-actual-unrecordable-${attendance.id}`}>
+          出席の回答がないため欠席として集計
+        </ThemedText>
+      )}
     </ThemedView>
   );
 }
@@ -561,6 +837,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   rosterRemarks: { alignSelf: 'stretch' },
+  myStatusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  actualSelect: { alignSelf: 'stretch', gap: Spacing.half },
+  selectBox: {
+    borderWidth: 1,
+    borderColor: '#b7b2c0',
+    borderRadius: 6,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    backgroundColor: '#fff',
+  },
+  selectOptions: { borderWidth: 1, borderColor: '#e1dee6', borderRadius: 6, backgroundColor: '#fff' },
+  selectOption: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  selectOptionSelected: { backgroundColor: '#ece8f5' },
+  actualSaveArea: { gap: Spacing.one, marginBottom: Spacing.three },
   remarksInput: {
     minHeight: 88,
     textAlignVertical: 'top',
