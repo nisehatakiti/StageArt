@@ -121,7 +121,8 @@ final class ScheduleCommentUseCaseTest extends TestCase
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
 
         $this->createTimetableItem = new CreateTimetableItemUseCase(

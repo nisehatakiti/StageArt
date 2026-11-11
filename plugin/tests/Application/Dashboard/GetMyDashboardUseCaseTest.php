@@ -115,7 +115,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
@@ -125,7 +126,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
 
         $upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(

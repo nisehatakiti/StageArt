@@ -47,6 +47,14 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * on `ProductionRepositoryInterface`/`ProductionAuthorizationService`
  * directly.
  */
+/**
+ * PR #7 R9 (§11): after the confirmation commits, the "confirmed"
+ * notification goes to exactly the members whose confirmed-attendance
+ * record this confirmation created. A second confirmation is rejected by
+ * Rehearsal::confirm() (SCHEDULED only) before anything is sent, and a
+ * racing duplicate that finds the records already there creates none, so
+ * nobody is notified twice.
+ */
 final class ConfirmRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
@@ -57,6 +65,7 @@ final class ConfirmRehearsalUseCase
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
     private RehearsalStatusTimeSync $statusTimeSync;
+    private RehearsalLifecycleNotifier $lifecycleNotifier;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -66,7 +75,8 @@ final class ConfirmRehearsalUseCase
         IdentityContract $identity,
         AuthorizationContract $authorization,
         TransactionManagerInterface $transactions,
-        RehearsalStatusTimeSync $statusTimeSync
+        RehearsalStatusTimeSync $statusTimeSync,
+        RehearsalLifecycleNotifier $lifecycleNotifier
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
@@ -76,6 +86,7 @@ final class ConfirmRehearsalUseCase
         $this->authorization = $authorization;
         $this->transactions = $transactions;
         $this->statusTimeSync = $statusTimeSync;
+        $this->lifecycleNotifier = $lifecycleNotifier;
     }
 
     public function execute(ConfirmRehearsalCommand $command): RehearsalResult
@@ -136,8 +147,12 @@ final class ConfirmRehearsalUseCase
         );
         $targetPersonIdStrings = array_intersect($phase1PersonIdStrings, $activeMemberIdStrings);
 
+        /** @var PersonId[] $created */
+        $created = [];
+
         $rehearsal = $this->transactions->run(
-            function () use ($rehearsal, $phase, $targetPersonIdStrings): Rehearsal {
+            function () use ($rehearsal, $phase, $targetPersonIdStrings, &$created): Rehearsal {
+                $created = [];
                 $rehearsal->confirm();
                 $this->rehearsals->save($rehearsal);
 
@@ -150,11 +165,14 @@ final class ConfirmRehearsalUseCase
                     }
 
                     $this->attendances->save(RehearsalAttendance::createPhase2($rehearsal->id(), $personId));
+                    $created[] = $personId;
                 }
 
                 return $rehearsal;
             }
         );
+
+        $this->lifecycleNotifier->confirmed($rehearsal, $production->name, $created);
 
         return RehearsalResult::fromDomain($rehearsal);
     }

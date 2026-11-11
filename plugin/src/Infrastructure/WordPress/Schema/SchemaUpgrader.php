@@ -32,7 +32,12 @@ final class SchemaUpgrader
 {
     private const OPTION_NAME = 'stageart_db_schema_version';
 
-    public const CURRENT_VERSION = '1.45.0';
+    /**
+     * 1.46.0 (PR #7 R9): stageart_rehearsal_attendances.actual_status, the
+     * Manager's result kept apart from the member's answer (see
+     * RehearsalInstaller for the one-time move of existing results).
+     */
+    public const CURRENT_VERSION = '1.46.0';
 
     /**
      * @return bool whether the schema is now at CURRENT_VERSION

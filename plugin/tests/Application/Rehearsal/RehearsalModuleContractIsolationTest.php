@@ -80,7 +80,8 @@ final class RehearsalModuleContractIsolationTest extends TestCase
             new InMemoryRehearsalReminderScheduler(),
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
 
         $result = $createRehearsal->execute(new CreateRehearsalCommand(
@@ -136,7 +137,8 @@ final class RehearsalModuleContractIsolationTest extends TestCase
             new InMemoryRehearsalReminderScheduler(),
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
 
         $this->expectException(RehearsalAccessDeniedException::class);

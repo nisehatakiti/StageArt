@@ -15,12 +15,15 @@ use StageArt\Tests\Support\LegacyExpenseFixture;
  * version-by-version: whenever the stored version differs from
  * CURRENT_VERSION the whole Installer runs, so every older install
  * reaches the 1.44.0 expense / notification schema and the 1.45.0
- * migration audit table; an install already at 1.45.0 does nothing. The upgrade runs on the first request after a
+ * migration audit table; an install already at the current version does nothing. The upgrade runs on the first request after a
  * deploy, so it never migrates the legacy CONFIRMED Expenses: that is an
  * operator's explicit step (LegacyExpenseMigration through WP-CLI).
  *
  * The 1.43.0 steps (public page tables, delegate areas) are covered by
  * SchemaUpgrade143PathTest, which belongs with those changes.
+ *
+ * 1.46.0 (PR #7 R9) adds stageart_rehearsal_attendances.actual_status and
+ * moves existing results out of status (see the tests at the end).
  *
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
@@ -80,9 +83,9 @@ final class SchemaUpgradePathTest extends TestCase
         return false;
     }
 
-    public function test_the_current_version_is_1_45_0(): void
+    public function test_the_current_version_is_1_46_0(): void
     {
-        $this->assertSame('1.45.0', SchemaUpgrader::CURRENT_VERSION);
+        $this->assertSame('1.46.0', SchemaUpgrader::CURRENT_VERSION);
     }
 
     /**
@@ -93,7 +96,7 @@ final class SchemaUpgradePathTest extends TestCase
         $this->upgradeFrom($storedVersion);
 
         $this->assertExpenseSchemaApplied();
-        $this->assertSame('1.45.0', get_option('stageart_db_schema_version'));
+        $this->assertSame(SchemaUpgrader::CURRENT_VERSION, get_option('stageart_db_schema_version'));
     }
 
     /**
@@ -101,12 +104,12 @@ final class SchemaUpgradePathTest extends TestCase
      */
     public static function olderInstalls(): array
     {
-        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0']];
+        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0']];
     }
 
-    public function test_an_install_already_at_1_45_0_runs_nothing(): void
+    public function test_an_install_already_at_the_current_version_runs_nothing(): void
     {
-        $this->upgradeFrom('1.45.0');
+        $this->upgradeFrom(SchemaUpgrader::CURRENT_VERSION);
 
         $this->assertSame([], $GLOBALS['stageart_test_wp']['dbdelta']);
         $this->assertSame([], $GLOBALS['wpdb']->calls);
@@ -131,7 +134,7 @@ final class SchemaUpgradePathTest extends TestCase
         $this->assertSame($before, $this->db->businessTables());
         $this->assertSame([], $this->db->transactionLog);
         $this->assertSame([], $this->db->tables['stageart_legacy_expense_migration_audit']);
-        $this->assertSame('1.45.0', get_option('stageart_db_schema_version'));
+        $this->assertSame(SchemaUpgrader::CURRENT_VERSION, get_option('stageart_db_schema_version'));
     }
 
     /**
@@ -153,6 +156,34 @@ final class SchemaUpgradePathTest extends TestCase
         $this->assertCount(1, $audits);
         $this->assertFalse($this->expenseMigrationRan());
         $this->assertSame([], $this->db->transactionLog);
+    }
+
+    /**
+     * 1.46.0: the attendance table gains actual_status, and the one-time
+     * move of results recorded before 1.46.0 (status ATTENDED/LATE/
+     * EARLY_LEFT/ABSENT, always over an ATTENDING answer) is issued after
+     * the column exists. The statement only touches rows that still hold a
+     * result in status and have no actual_status, so it is idempotent.
+     *
+     * @dataProvider olderInstalls
+     */
+    public function test_every_older_install_gets_the_rehearsal_actual_status_column_and_move(?string $storedVersion): void
+    {
+        $this->upgradeFrom($storedVersion);
+
+        $attendances = (string) $this->createStatementFor('stageart_rehearsal_attendances');
+        $this->assertStringContainsString('actual_status VARCHAR(20) NULL', $attendances);
+        $this->assertStringContainsString('status VARCHAR(20) NOT NULL', $attendances);
+
+        $moves = array_values(array_filter(
+            array_map(static fn (array $args): string => (string) $args[0], $GLOBALS['wpdb']->callsTo('query')),
+            static fn (string $sql): bool => str_contains($sql, 'UPDATE wp_stageart_rehearsal_attendances')
+        ));
+        $this->assertSame([
+            "UPDATE wp_stageart_rehearsal_attendances SET actual_status = status, status = 'ATTENDING' "
+            . "WHERE phase = 'ATTENDANCE_CONFIRMATION' AND actual_status IS NULL "
+            . "AND status IN ('ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT')",
+        ], $moves);
     }
 
     private function assertExpenseSchemaApplied(): void

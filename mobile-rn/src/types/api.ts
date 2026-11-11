@@ -773,6 +773,10 @@ export type RehearsalAttendance = {
    * respondAttendanceConfirmation()) - a Manager's actual-status
    * correction never touches it. */
   remarks: string | null;
+  /** PR #7 R9: the Manager's recorded result (ATTENDED/LATE/EARLY_LEFT/
+   * ABSENT), kept apart from `status` (the member's own answer); null
+   * until recorded. Optional only because older responses lack it. */
+  actual_status?: string | null;
   created_at: string;
   updated_at: string;
 };

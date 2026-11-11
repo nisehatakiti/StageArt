@@ -30,6 +30,9 @@ final class RehearsalAttendanceStatus
     public const ABSENT = 'ABSENT';
 
     public const PHASE_1_VALUES = [self::UNANSWERED, self::AVAILABLE, self::UNAVAILABLE];
+    /** PR #7 R9: the Manager's actual results, stored apart from the answer. */
+    public const ACTUAL_VALUES = [self::ATTENDED, self::LATE, self::EARLY_LEFT, self::ABSENT];
+
     public const PHASE_2_VALUES = [
         self::UNANSWERED,
         self::ATTENDING,

@@ -64,10 +64,6 @@ const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAF
 const TARGET_ADDITION_BLOCKED_STATUSES = new Set(['ACTIVE', 'COMPLETED', 'CANCELLED']);
 const RESPONSE_BLOCKED_STATUSES = new Set(['ACTIVE', 'COMPLETED', 'CANCELLED']);
 const ACTUAL_RECORDING_STATUSES = new Set(['ACTIVE', 'COMPLETED']);
-/** RehearsalAttendance::recordActualStatus(): an actual result can be
- * recorded only for a member who answered 出席 (ATTENDING), or corrected
- * once one exists. Others are counted as 欠席 by the member summary. */
-const ACTUAL_RECORDABLE_SOURCES = new Set(['ATTENDING', ...ACTUAL_STATUS_OPTIONS]);
 const ACTUAL_STATUS_LABELS: Record<string, string> = {
   ATTENDED: '出席',
   LATE: '遅刻',
@@ -121,13 +117,17 @@ const ATTENDANCE_GROUP_LABELS: Record<AttendanceGroup, string> = {
  * PR #7 R8 (docs/20-RehearsalManagementScreen.md §6.2, §12, §13):
  * - managers add Production members who are not targets yet (the
  *   Backend notifies only the newly added members);
- * - the member's own answer is shown; answer buttons appear only while
- *   unanswered;
+ * - the member's own answer is shown; answer buttons appear while
+ *   unanswered, and (R9, §8.1) an answered member can open
+ *   「回答を変更する」 until the deadline / the start of the Rehearsal;
  * - there are no manual start/finish buttons: the Backend moves a
  *   CONFIRMED Rehearsal to ACTIVE at its start time and to COMPLETED at
  *   its end time whenever it is read or written (RehearsalStatusTimeSync);
  * - while ACTIVE/COMPLETED, managers choose each member's result from a
  *   pull-down and save with 「更新」 (no notification to the member).
+ *   R9: every member has a pull-down whatever they answered; the badge
+ *   keeps showing the answer and the pull-down the recorded result
+ *   (`actual_status`), so the two are never mixed.
  * Authorization stays server-side; the manager-only controls are hidden
  * from non-managers only to avoid offering an action that would be 403.
  */
@@ -222,6 +222,8 @@ export default function RehearsalAttendanceScreen() {
     [attendancesQuery.data, myPersonId]
   );
   const [remarksDraft, setRemarksDraft] = useState('');
+  /** R9: an answered member opened 「回答を変更する」. */
+  const [isChangingAnswer, setIsChangingAnswer] = useState(false);
   const [remarksInitializedForId, setRemarksInitializedForId] = useState<string | null>(null);
   if (myRecord && remarksInitializedForId !== myRecord.id) {
     setRemarksDraft(myRecord.remarks ?? '');
@@ -265,7 +267,13 @@ export default function RehearsalAttendanceScreen() {
   const rehearsalStatus = rehearsalQuery.data?.status;
   const canAddTargets = canManageRehearsal && !!rehearsalStatus && !TARGET_ADDITION_BLOCKED_STATUSES.has(rehearsalStatus);
   const canRecordActual = canManageRehearsal && !!rehearsalStatus && ACTUAL_RECORDING_STATUSES.has(rehearsalStatus);
-  const canRespond = !!myRecord && myRecord.status === 'UNANSWERED' && !!rehearsalStatus && !RESPONSE_BLOCKED_STATUSES.has(rehearsalStatus);
+  /** The member's own answer can be given or changed while the Rehearsal
+   * accepts answers (§8.1); past the 調整中 deadline it is shown but
+   * locked (§8.2). The Backend enforces both. */
+  const responseOpen = !!myRecord && !!rehearsalStatus && !RESPONSE_BLOCKED_STATUSES.has(rehearsalStatus);
+  const isUnanswered = myRecord?.status === 'UNANSWERED';
+  const canChangeAnswer = responseOpen && !isUnanswered && !responseDeadlinePassed;
+  const showResponseForm = responseOpen && (isUnanswered || (isChangingAnswer && canChangeAnswer));
 
   /** Production members (ACTIVE, Person-subject) who are not targets of
    * this Rehearsal yet. The Backend re-validates the same pool and skips
@@ -542,14 +550,32 @@ export default function RehearsalAttendanceScreen() {
                       {statusLabel(myRecord.status)}
                     </ThemedText>
                   </ThemedView>
-                  {!canRespond && myRecord.remarks?.trim() ? (
+                  {!showResponseForm && myRecord.remarks?.trim() ? (
                     <ThemedText type="small" testID="attendance-my-remarks">
                       備考：{myRecord.remarks}
                     </ThemedText>
                   ) : null}
-                  {canRespond && (
+                  {!showResponseForm && canChangeAnswer && (
+                    <TouchableOpacity
+                      testID="attendance-change-answer"
+                      onPress={() => {
+                        setRemarksDraft(myRecord.remarks ?? '');
+                        setIsChangingAnswer(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="回答を変更する"
+                    >
+                      <ThemedText type="link">回答を変更する</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  {!showResponseForm && responseOpen && !isUnanswered && responseDeadlinePassed && (
+                    <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
+                      回答期限を過ぎたため、回答・変更はできません。
+                    </ThemedText>
+                  )}
+                  {showResponseForm && (
                   <>
-                  <ThemedText type="small">稽古の出欠を登録してください。</ThemedText>
+                  <ThemedText type="small">{isUnanswered ? '稽古の出欠を登録してください。' : '変更後の出欠を選んでください。'}</ThemedText>
                   {responseDeadlinePassed && (
                     <ThemedText testID="attendance-response-deadline-passed" themeColor="textSecondary" type="small">
                       回答期限を過ぎたため、回答・変更はできません。
@@ -564,11 +590,14 @@ export default function RehearsalAttendanceScreen() {
                           key={option}
                           testID={`attendance-respond-${option}`}
                           onPress={() =>
-                            respondMutation.mutate({
-                              attendanceId: myRecord.id,
-                              status: option,
-                              remarks: remarksDraft.trim() || null,
-                            })
+                            respondMutation.mutate(
+                              {
+                                attendanceId: myRecord.id,
+                                status: option,
+                                remarks: remarksDraft.trim() || null,
+                              },
+                              { onSuccess: () => setIsChangingAnswer(false) }
+                            )
                           }
                           disabled={respondMutation.isPending || responseDeadlinePassed}
                           style={[
@@ -591,6 +620,16 @@ export default function RehearsalAttendanceScreen() {
                     editable={!responseDeadlinePassed}
                     style={styles.remarksInput}
                   />
+                  {!isUnanswered && (
+                    <TouchableOpacity
+                      testID="attendance-change-answer-cancel"
+                      onPress={() => setIsChangingAnswer(false)}
+                      accessibilityRole="button"
+                      accessibilityLabel="回答の変更をやめる"
+                    >
+                      <ThemedText type="link">変更しない</ThemedText>
+                    </TouchableOpacity>
+                  )}
                   {respondMutation.isError && (
                     <ThemedText testID="attendance-respond-error">{getErrorMessage(respondMutation.error)}</ThemedText>
                   )}
@@ -607,8 +646,9 @@ export default function RehearsalAttendanceScreen() {
               actualSelect={
                 canRecordActual
                   ? {
-                      recordable: ACTUAL_RECORDABLE_SOURCES.has(item.status),
-                      value: pendingActual[item.id] ?? (ACTUAL_STATUS_OPTIONS.includes(item.status) ? item.status : null),
+                      // R9: every member's result can be recorded, whatever
+                      // they answered; the answer stays on the badge.
+                      value: pendingActual[item.id] ?? item.actual_status ?? null,
                       isOpen: openActualSelectId === item.id,
                       onToggle: () => setOpenActualSelectId((current) => (current === item.id ? null : item.id)),
                       onSelect: (status) => handleSelectActual(item.id, status),
@@ -693,7 +733,6 @@ export default function RehearsalAttendanceScreen() {
 }
 
 type ActualSelectProps = {
-  recordable: boolean;
   value: string | null;
   isOpen: boolean;
   onToggle: () => void;
@@ -721,7 +760,7 @@ function AttendanceRow({
           {attendance.remarks}
         </ThemedText>
       ) : null}
-      {actualSelect && actualSelect.recordable && (
+      {actualSelect && (
         <View style={styles.actualSelect}>
           <TouchableOpacity
             testID={`attendance-actual-select-${attendance.id}`}
@@ -732,7 +771,7 @@ function AttendanceRow({
             style={styles.selectBox}
           >
             <ThemedText type="small">
-              {actualSelect.value ? ACTUAL_STATUS_LABELS[actualSelect.value] : '未記録'} ▼
+              実績：{actualSelect.value ? ACTUAL_STATUS_LABELS[actualSelect.value] : '未記録'} ▼
             </ThemedText>
           </TouchableOpacity>
           {actualSelect.isOpen && (
@@ -753,11 +792,6 @@ function AttendanceRow({
             </View>
           )}
         </View>
-      )}
-      {actualSelect && !actualSelect.recordable && (
-        <ThemedText type="small" themeColor="textSecondary" testID={`attendance-actual-unrecordable-${attendance.id}`}>
-          出席の回答がないため欠席として集計
-        </ThemedText>
       )}
     </ThemedView>
   );

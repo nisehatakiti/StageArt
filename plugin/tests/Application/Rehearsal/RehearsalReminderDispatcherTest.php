@@ -99,4 +99,41 @@ final class RehearsalReminderDispatcherTest extends TestCase
         $rows = $notifications->findByPersonId($answeredAttendance->personId());
         $this->assertCount(0, $rows);
     }
+
+    /**
+     * PR #7 R9: the reminder belongs to the planning stage - once the
+     * Rehearsal is confirmed (or later), an unanswered planning record
+     * gets no 【Remind】…計画されています, and the reminder is not marked
+     * sent either.
+     */
+    public function test_no_reminder_once_the_rehearsal_is_confirmed(): void
+    {
+        $attendances = new InMemoryRehearsalAttendanceRepository();
+        $productionContext = new FakeProductionContextContract();
+        $notifications = new InMemoryNotificationRepository();
+        $notificationContract = new CoreNotificationAdapter(
+            new DirectNotificationDispatcher(new InAppNotificationAdapter($notifications))
+        );
+
+        $productionId = ProductionId::generate();
+        $productionContext->register($productionId, '踊れチュパカブラ');
+
+        $rehearsal = Rehearsal::create(
+            $productionId,
+            null,
+            null,
+            new DateTimeImmutable('+3 days'),
+            new DateTimeImmutable('+3 days +2 hours'),
+            'Asia/Tokyo',
+            null
+        );
+        $unanswered = RehearsalAttendance::createPhase1($rehearsal->id(), PersonId::generate());
+        $attendances->save($unanswered);
+        $rehearsal->confirm();
+
+        (new RehearsalReminderDispatcher($attendances, $productionContext, $notificationContract))->dispatch($rehearsal);
+
+        $this->assertCount(0, $notifications->findByPersonId($unanswered->personId()));
+        $this->assertNull($rehearsal->reminderSentAt());
+    }
 }

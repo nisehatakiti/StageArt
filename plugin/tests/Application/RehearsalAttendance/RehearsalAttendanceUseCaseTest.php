@@ -117,7 +117,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
@@ -127,7 +128,8 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->listAttendances = new ListRehearsalAttendancesUseCase(
             $this->attendances,
@@ -352,7 +354,9 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
             new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED')
         );
 
-        $this->assertSame('ATTENDED', $result->status);
+        // R9: the result is returned apart from the member's answer.
+        $this->assertSame('ATTENDED', $result->actualStatus);
+        $this->assertSame('ATTENDING', $result->status);
     }
 
     public function test_plain_member_cannot_record_actual_status(): void
@@ -819,7 +823,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $result = $this->recordActualStatus->execute(
             new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'EARLY_LEFT')
         );
-        $this->assertSame('EARLY_LEFT', $result->status);
+        $this->assertSame('EARLY_LEFT', $result->actualStatus);
 
         $rehearsalEntity->complete();
         $this->rehearsals->save($rehearsalEntity);
@@ -829,7 +833,7 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
         $corrected = $this->recordActualStatus->execute(
             new RecordActualRehearsalAttendanceStatusCommand($record->id, 1, 'ATTENDED')
         );
-        $this->assertSame('ATTENDED', $corrected->status);
+        $this->assertSame('ATTENDED', $corrected->actualStatus);
     }
 
     public function test_record_actual_status_rejected_when_rehearsal_is_confirmed(): void
@@ -1006,5 +1010,212 @@ final class RehearsalAttendanceUseCaseTest extends TestCase
 
         $updated = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, 'ATTENDING'));
         $this->assertSame('ATTENDING', $updated->status);
+    }
+
+    // --- PR #7 R9: 本人の回答と管理者の実績の分離、回答の変更 ---
+
+    /**
+     * Creates a confirmed Rehearsal for one member (wp=2), lets the member
+     * answer (or not), then makes it ACTIVE. Returns the Phase 2 record id.
+     */
+    private function givenActiveRehearsalWhereTheMemberAnswered(?string $answer, ?string $remarks = null): string
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$member->id()->toString()]
+        ));
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+        $record = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1))[0];
+
+        if ($answer !== null) {
+            $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, $answer, $remarks));
+        }
+
+        $entity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $entity->activate();
+        $this->rehearsals->save($entity);
+
+        return $record->id;
+    }
+
+    /**
+     * @return array<string, array{?string, string}>
+     */
+    public static function answersAndResults(): array
+    {
+        return [
+            '出席と回答 -> 遅刻' => ['ATTENDING', 'LATE'],
+            '欠席と回答 -> 出席' => ['NOT_ATTENDING', 'ATTENDED'],
+            '欠席と回答 -> 欠席' => ['NOT_ATTENDING', 'ABSENT'],
+            '未回答 -> 早退' => [null, 'EARLY_LEFT'],
+            '未回答 -> 欠席' => [null, 'ABSENT'],
+        ];
+    }
+
+    /**
+     * @dataProvider answersAndResults
+     */
+    public function test_manager_records_a_result_for_any_answer_and_the_answer_is_kept(?string $answer, string $result): void
+    {
+        $recordId = $this->givenActiveRehearsalWhereTheMemberAnswered($answer, $answer ? '本人の備考' : null);
+
+        $recorded = $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($recordId, 1, $result));
+
+        $this->assertSame($result, $recorded->actualStatus);
+        $this->assertSame($answer ?? 'UNANSWERED', $recorded->status, 'the member\'s answer is not overwritten');
+        $this->assertSame($answer ? '本人の備考' : null, $recorded->remarks);
+
+        // The stored record reads back the same way (answer and result apart).
+        $stored = $this->attendances->findById(\StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId::fromString($recordId));
+        $this->assertSame($result, $stored->actualStatus()->toString());
+        $this->assertSame($answer ?? 'UNANSWERED', $stored->status()->toString());
+    }
+
+    public function test_manager_can_change_a_recorded_result_of_a_member_who_answered_not_attending(): void
+    {
+        $recordId = $this->givenActiveRehearsalWhereTheMemberAnswered('NOT_ATTENDING');
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($recordId, 1, 'ABSENT'));
+
+        $changed = $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($recordId, 1, 'ATTENDED'));
+
+        $this->assertSame('ATTENDED', $changed->actualStatus);
+        $this->assertSame('NOT_ATTENDING', $changed->status);
+    }
+
+    public function test_a_member_cannot_record_a_result_even_for_themselves(): void
+    {
+        $recordId = $this->givenActiveRehearsalWhereTheMemberAnswered('NOT_ATTENDING');
+
+        $this->expectException(RehearsalAttendanceAccessDeniedException::class);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($recordId, 2, 'ATTENDED'));
+    }
+
+    public function test_an_answer_value_is_rejected_as_a_result(): void
+    {
+        $recordId = $this->givenActiveRehearsalWhereTheMemberAnswered('ATTENDING');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($recordId, 1, 'NOT_ATTENDING'));
+    }
+
+    /**
+     * §8.1: before the deadline the member may change an answer already
+     * given - the answer, and the remarks with it.
+     */
+    public function test_member_changes_an_answer_already_given_before_the_deadline(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$member->id()->toString()]
+        ));
+        $entity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $entity->changeResponseDeadline(new \DateTimeImmutable('+1 hour'));
+        $this->rehearsals->save($entity);
+        $own = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1))[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, 2, 'AVAILABLE', '19時から'));
+
+        $changed = $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, 2, 'UNAVAILABLE', '仕事が入りました'));
+
+        $this->assertSame('UNAVAILABLE', $changed->status);
+        $this->assertSame('仕事が入りました', $changed->remarks);
+    }
+
+    /**
+     * §8.2: once the deadline has passed, an answer already given can no
+     * longer be changed, and the stored answer stays as it was.
+     */
+    public function test_member_cannot_change_an_answer_after_the_deadline(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$member->id()->toString()]
+        ));
+        $own = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1))[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, 2, 'AVAILABLE', '19時から'));
+
+        $entity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+        $entity->changeResponseDeadline(new \DateTimeImmutable('-1 minute'));
+        $this->rehearsals->save($entity);
+
+        try {
+            $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, 2, 'UNAVAILABLE', '変更'));
+            $this->fail('A change after the deadline must be rejected.');
+        } catch (InvalidArgumentException $expected) {
+        }
+
+        $stored = $this->attendances->findById(\StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId::fromString($own->id));
+        $this->assertSame('AVAILABLE', $stored->status()->toString());
+        $this->assertSame('19時から', $stored->remarks());
+    }
+
+    /**
+     * Confirmed (Phase 2) answers close when the Rehearsal starts (ACTIVE):
+     * a member who answered can no longer change it from then on.
+     */
+    public function test_member_cannot_change_a_confirmed_answer_once_the_rehearsal_has_started(): void
+    {
+        $recordId = $this->givenActiveRehearsalWhereTheMemberAnswered('ATTENDING');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($recordId, 2, 'NOT_ATTENDING'));
+    }
+
+    public function test_another_member_cannot_change_an_answer_already_given(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberTwo = $this->addActivePersonParticipant($production, 2);
+        $this->addActivePersonParticipant($production, 3);
+        $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            'Act 1',
+            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            [$memberTwo->id()->toString()]
+        ));
+        $own = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'SCHEDULE_ADJUSTMENT', 1))[0];
+        $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, 2, 'AVAILABLE'));
+
+        foreach ([3, 1] as $otherWpUser) { // another member, and even the manager
+            try {
+                $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($own->id, $otherWpUser, 'UNAVAILABLE'));
+                $this->fail("wp={$otherWpUser} must not change someone else's answer.");
+            } catch (RehearsalAttendanceAccessDeniedException $expected) {
+            }
+        }
+
+        $stored = $this->attendances->findById(\StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId::fromString($own->id));
+        $this->assertSame('AVAILABLE', $stored->status()->toString());
     }
 }

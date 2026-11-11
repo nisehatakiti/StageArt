@@ -92,7 +92,9 @@ final class RehearsalAttendanceTest extends TestCase
 
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDED));
 
-        $this->assertSame(RehearsalAttendanceStatus::ATTENDED, $attendance->status()->toString());
+        // R9: the result is stored apart from the answer, which stays ATTENDING.
+        $this->assertSame(RehearsalAttendanceStatus::ATTENDED, $attendance->actualStatus()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::ATTENDING, $attendance->status()->toString());
     }
 
     public function test_record_actual_status_allows_manager_correction_between_actual_results(): void
@@ -103,7 +105,7 @@ final class RehearsalAttendanceTest extends TestCase
 
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::LATE));
 
-        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->status()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->actualStatus()->toString());
     }
 
     public function test_record_actual_status_from_attending_accepts_early_left(): void
@@ -113,7 +115,7 @@ final class RehearsalAttendanceTest extends TestCase
 
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::EARLY_LEFT));
 
-        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->status()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->actualStatus()->toString());
     }
 
     public function test_record_actual_status_allows_manager_correction_to_and_from_early_left(): void
@@ -123,27 +125,68 @@ final class RehearsalAttendanceTest extends TestCase
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDED));
 
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::EARLY_LEFT));
-        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->status()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::EARLY_LEFT, $attendance->actualStatus()->toString());
 
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::LATE));
-        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->status()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->actualStatus()->toString());
     }
 
-    public function test_record_actual_status_rejects_unanswered_source(): void
+    /**
+     * PR #7 R9 (replaces the R8-era "rejects UNANSWERED / NOT_ATTENDING
+     * source" tests): the Manager records a result for every member,
+     * whatever they answered, and the answer itself is kept.
+     */
+    public function test_record_actual_status_for_an_unanswered_member_keeps_the_answer(): void
     {
         $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
 
-        $this->expectException(InvalidArgumentException::class);
         $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ATTENDED));
+
+        $this->assertSame(RehearsalAttendanceStatus::ATTENDED, $attendance->actualStatus()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::UNANSWERED, $attendance->status()->toString());
     }
 
-    public function test_record_actual_status_rejects_not_attending_source(): void
+    public function test_record_actual_status_for_a_member_who_answered_not_attending_keeps_the_answer(): void
     {
         $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
-        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::NOT_ATTENDING));
+        $attendance->respondAttendanceConfirmation(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::NOT_ATTENDING), '仕事のため');
+
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::LATE));
+
+        $this->assertSame(RehearsalAttendanceStatus::LATE, $attendance->actualStatus()->toString());
+        $this->assertSame(RehearsalAttendanceStatus::NOT_ATTENDING, $attendance->status()->toString());
+        $this->assertSame('仕事のため', $attendance->remarks());
+    }
+
+    public function test_a_new_phase2_record_has_no_actual_status(): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
+
+        $this->assertNull($attendance->actualStatus());
+    }
+
+    /**
+     * @dataProvider answerValues
+     */
+    public function test_record_actual_status_rejects_an_answer_value_as_a_result(string $value): void
+    {
+        $attendance = RehearsalAttendance::createPhase2(RehearsalId::generate(), PersonId::generate());
 
         $this->expectException(InvalidArgumentException::class);
-        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString(RehearsalAttendanceStatus::ABSENT));
+        $attendance->recordActualStatus(RehearsalAttendanceStatus::fromString($value));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function answerValues(): array
+    {
+        return [
+            'UNANSWERED' => [RehearsalAttendanceStatus::UNANSWERED],
+            'ATTENDING' => [RehearsalAttendanceStatus::ATTENDING],
+            'NOT_ATTENDING' => [RehearsalAttendanceStatus::NOT_ATTENDING],
+            'AVAILABLE' => [RehearsalAttendanceStatus::AVAILABLE],
+        ];
     }
 
     public function test_record_actual_status_rejects_phase1_record(): void

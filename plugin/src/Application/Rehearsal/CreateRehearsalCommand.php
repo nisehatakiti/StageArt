@@ -30,6 +30,13 @@ final class CreateRehearsalCommand
      * (REHEARSAL) - existing callers that never pass this keep working
      * unchanged. */
     public ?string $activityType;
+    /**
+     * PR #7 R9: the create screen's 「確定」 choice. The Rehearsal is
+     * created and confirmed in one transaction, so its members receive
+     * only the §11 "confirmed" notification - never the §9.1 "planned"
+     * one for a Rehearsal that was never 調整中 from their point of view.
+     */
+    public bool $confirmOnCreate;
 
     /**
      * @param string[]|null $targetPersonIds
@@ -45,7 +52,8 @@ final class CreateRehearsalCommand
         ?string $location,
         ?array $targetPersonIds = null,
         ?string $responseDeadline = null,
-        ?string $activityType = null
+        ?string $activityType = null,
+        bool $confirmOnCreate = false
     ) {
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -58,5 +66,6 @@ final class CreateRehearsalCommand
         $this->targetPersonIds = $targetPersonIds ?? [];
         $this->responseDeadline = $responseDeadline;
         $this->activityType = $activityType;
+        $this->confirmOnCreate = $confirmOnCreate;
     }
 }

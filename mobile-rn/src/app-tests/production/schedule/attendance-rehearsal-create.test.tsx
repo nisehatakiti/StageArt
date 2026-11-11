@@ -255,15 +255,22 @@ describe('稽古作成: ステータス選択', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
 
     const calls = (global.fetch as jest.Mock).mock.calls;
-    expect(calls.some(([url]: [string]) => url.endsWith('/productions/prod-1/rehearsals'))).toBe(true);
+    const createCall = calls.find(([url]: [string]) => url.endsWith('/productions/prod-1/rehearsals'));
+    expect(createCall).toBeDefined();
+    expect(JSON.parse(createCall[1].body).confirm_on_create).toBe(false);
     expect(calls.some(([url]: [string]) => url.endsWith('/confirm'))).toBe(false);
   });
 
-  it('「確定」選択時は作成後にconfirmを呼び出す', async () => {
+  /**
+   * PR #7 R9: 「確定」 is one create request with confirm_on_create - the
+   * Backend confirms in the same transaction and sends only the §11
+   * notification. A separate /confirm call would also have announced the
+   * Rehearsal as 計画中 (§9.1) first.
+   */
+  it('「確定」選択時はconfirm_on_create付きの作成1回だけを呼び出し、confirmは別に呼ばない', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1/participants'), status: 200, body: [] },
-      { test: (u) => u.endsWith('/productions/prod-1/rehearsals'), status: 201, body: newRehearsal },
-      { test: (u) => u.endsWith('/rehearsals/rehearsal-new/confirm'), status: 200, body: { ...newRehearsal, status: 'CONFIRMED' } },
+      { test: (u) => u.endsWith('/productions/prod-1/rehearsals'), status: 201, body: { ...newRehearsal, status: 'CONFIRMED' } },
     ]);
 
     renderCreate();
@@ -280,12 +287,12 @@ describe('稽古作成: ステータス選択', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-new'));
 
     const calls = (global.fetch as jest.Mock).mock.calls;
-    expect(
-      calls.some(([url, options]: [string, RequestInit]) => url.endsWith('/productions/prod-1/rehearsals') && options?.method === 'POST')
-    ).toBe(true);
-    expect(
-      calls.some(([url, options]: [string, RequestInit]) => url.endsWith('/rehearsals/rehearsal-new/confirm') && options?.method === 'POST')
-    ).toBe(true);
+    const createCalls = calls.filter(
+      ([url, options]: [string, RequestInit]) => url.endsWith('/productions/prod-1/rehearsals') && options?.method === 'POST'
+    );
+    expect(createCalls).toHaveLength(1);
+    expect(JSON.parse(createCalls[0][1].body).confirm_on_create).toBe(true);
+    expect(calls.some(([url]: [string]) => url.endsWith('/confirm'))).toBe(false);
   });
 });
 

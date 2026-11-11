@@ -96,6 +96,7 @@ final class RehearsalInstaller
             phase VARCHAR(30) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'UNANSWERED',
             remarks TEXT NULL,
+            actual_status VARCHAR(20) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -103,6 +104,24 @@ final class RehearsalInstaller
             KEY person_id (person_id),
             UNIQUE KEY rehearsal_person_phase (rehearsal_id, person_id, phase)
         ) {$charsetCollate};");
+
+        /*
+         * Schema 1.46.0 (PR #7 R9): actual_status holds the Manager's
+         * day-of result apart from status (the member's own answer).
+         * Before 1.46.0 the result overwrote status, and the Domain only
+         * allowed recording it over an ATTENDING answer
+         * (RehearsalAttendance::recordActualStatus() up to R8), so every
+         * existing row with a result in status answered ATTENDING. This
+         * moves the result into actual_status and restores that answer -
+         * nothing is lost. Idempotent: a moved row's status is ATTENDING,
+         * so it never matches again.
+         */
+        self::statement(
+            $wpdb,
+            "UPDATE {$rehearsalAttendances} SET actual_status = status, status = 'ATTENDING' "
+            . "WHERE phase = 'ATTENDANCE_CONFIRMATION' AND actual_status IS NULL "
+            . "AND status IN ('ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT')"
+        );
 
         /*
          * Phase 3 review fix: rehearsal_id relaxed to NULL-able and

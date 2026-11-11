@@ -72,7 +72,12 @@ const myAttendance = {
   updated_at: '',
 };
 
-function renderHome(dashboard: MyDashboard, myNotifications: MyNotification[] = [], myAttendanceStatus = 'UNANSWERED') {
+function renderHome(
+  dashboard: MyDashboard,
+  myNotifications: MyNotification[] = [],
+  myAttendanceStatus = 'UNANSWERED',
+  rehearsalBody: Omit<typeof rehearsal, 'response_deadline'> & { response_deadline: string | null } = rehearsal
+) {
   let notifications = myNotifications;
   let attendanceStatus = myAttendanceStatus;
 
@@ -101,7 +106,7 @@ function renderHome(dashboard: MyDashboard, myNotifications: MyNotification[] = 
       } as Response;
     }
     if (url.endsWith('/rehearsals/rehearsal-1')) {
-      return { ok: true, status: 200, text: async () => JSON.stringify(rehearsal) } as Response;
+      return { ok: true, status: 200, text: async () => JSON.stringify(rehearsalBody) } as Response;
     }
     if (url.includes('/rehearsal-attendances/attendance-1/respond') && init?.method === 'PUT') {
       attendanceStatus = JSON.parse(String(init.body)).status;
@@ -208,5 +213,34 @@ describe('Home: 予定 card attendance', () => {
 
     fireEvent.press(screen.getByTestId('upcoming-rehearsal-row-rehearsal-1'));
     expect(mockPush).toHaveBeenCalledWith('/production/prod-1/schedule/attendance/rehearsal-1');
+  });
+
+  /**
+   * PR #7 R9 (§8.2): past the 調整中 response deadline the Backend rejects
+   * a new answer, so the card says so instead of offering buttons.
+   */
+  it('調整中で回答期限を過ぎた未回答: ボタンを出さず期限切れを表示する', async () => {
+    renderHome(dashboardWithContent, [], 'UNANSWERED', {
+      ...rehearsal,
+      status: 'SCHEDULED',
+      response_deadline: '2020-01-01T00:00:00+09:00',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('home-rehearsal-deadline-passed-rehearsal-1')).toBeVisible());
+    expect(screen.getByText('未回答（回答期限を過ぎました）')).toBeVisible();
+    expect(screen.queryByTestId('home-rehearsal-respond-rehearsal-1-AVAILABLE')).toBeNull();
+    expect(screen.queryByTestId('home-rehearsal-respond-rehearsal-1-UNAVAILABLE')).toBeNull();
+  });
+
+  it('調整中で回答期限前の未回答: 参加可能／参加不可のボタンを出す', async () => {
+    renderHome(dashboardWithContent, [], 'UNANSWERED', {
+      ...rehearsal,
+      status: 'SCHEDULED',
+      response_deadline: '2099-01-01T00:00:00+09:00',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('home-rehearsal-respond-rehearsal-1-AVAILABLE')).toBeVisible());
+    expect(screen.getByTestId('home-rehearsal-respond-rehearsal-1-UNAVAILABLE')).toBeVisible();
+    expect(screen.queryByTestId('home-rehearsal-deadline-passed-rehearsal-1')).toBeNull();
   });
 });

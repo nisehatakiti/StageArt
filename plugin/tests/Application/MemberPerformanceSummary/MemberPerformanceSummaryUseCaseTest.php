@@ -116,7 +116,8 @@ final class MemberPerformanceSummaryUseCaseTest extends TestCase
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
@@ -126,7 +127,8 @@ final class MemberPerformanceSummaryUseCaseTest extends TestCase
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->listAttendances = new ListRehearsalAttendancesUseCase(
             $this->attendances,
@@ -298,6 +300,61 @@ final class MemberPerformanceSummaryUseCaseTest extends TestCase
         $this->assertSame(0, $line->lateCount);
         $this->assertSame(1, $line->earlyLeftCount);
         $this->assertSame(1, $line->absentCount, 'self-reported 出席 without an actual result counts as 欠席');
+        $this->assertSame(
+            $line->rehearsalCount,
+            $line->attendedCount + $line->lateCount + $line->earlyLeftCount + $line->absentCount
+        );
+    }
+
+    /**
+     * PR #7 R9: only the Manager's result is counted, never the member's
+     * answer. Answered 欠席 but recorded 出席 counts as 出席; answered 出席
+     * with nothing recorded counts as 欠席; unanswered and recorded 遅刻
+     * counts as 遅刻.
+     */
+    public function test_summary_counts_the_managers_result_not_the_members_answer(): void
+    {
+        [$production, $member] = $this->givenProductionWithOneMember();
+
+        $activeRehearsalAnswered = function (string $day, ?string $answer) use ($production, $member): string {
+            $rehearsal = $this->createRehearsal->execute(new CreateRehearsalCommand(
+                $production->id()->toString(),
+                1,
+                'Act 1',
+                null,
+                "2099-01-{$day}T18:00:00+09:00",
+                "2099-01-{$day}T20:00:00+09:00",
+                'Asia/Tokyo',
+                null,
+                [$member->id()->toString()]
+            ));
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsal->id, 1));
+            $record = $this->listAttendances->execute(new ListRehearsalAttendancesQuery($rehearsal->id, 'ATTENDANCE_CONFIRMATION', 1))[0];
+            if ($answer !== null) {
+                $this->respondAttendance->execute(new RespondRehearsalAttendanceCommand($record->id, 2, $answer));
+            }
+            $entity = $this->rehearsals->findById(RehearsalId::fromString($rehearsal->id));
+            $entity->activate();
+            $this->rehearsals->save($entity);
+
+            return $record->id;
+        };
+
+        $saidNoButCame = $activeRehearsalAnswered('01', 'NOT_ATTENDING');
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($saidNoButCame, 1, 'ATTENDED'));
+        $activeRehearsalAnswered('02', 'ATTENDING'); // nothing recorded
+        $unansweredLate = $activeRehearsalAnswered('03', null);
+        $this->recordActualStatus->execute(new RecordActualRehearsalAttendanceStatusCommand($unansweredLate, 1, 'LATE'));
+
+        $summary = $this->getSummary->execute(new GetMemberPerformanceSummaryQuery($production->id()->toString(), 1));
+        $line = current(array_filter($summary->members, static fn ($l) => $l->personId === $member->id()->toString()));
+
+        $this->assertNotFalse($line);
+        $this->assertSame(3, $line->rehearsalCount);
+        $this->assertSame(1, $line->attendedCount, 'answered 欠席, recorded 出席');
+        $this->assertSame(1, $line->lateCount, 'unanswered, recorded 遅刻');
+        $this->assertSame(0, $line->earlyLeftCount);
+        $this->assertSame(1, $line->absentCount, 'answered 出席, nothing recorded');
         $this->assertSame(
             $line->rehearsalCount,
             $line->attendedCount + $line->lateCount + $line->earlyLeftCount + $line->absentCount

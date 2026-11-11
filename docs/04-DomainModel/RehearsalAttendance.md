@@ -486,6 +486,22 @@ Personが早退した（実際には参加したが、途中で退出した）�
 Personが参加予定だったが、
 実際には参加しなかった。
 
+## 回答と実績の分離（2026-11-11、PR #7 R9）
+
+確定後（ATTENDANCE_CONFIRMATION）のRehearsalAttendanceは、
+次の2つを別々に保持する。
+
+- 本人の回答：Status（UNANSWERED／ATTENDING／NOT_ATTENDING）
+- 管理者の実績：Actual Status（ATTENDED／LATE／EARLY_LEFT／ABSENT、未記録はnull）
+
+管理者が実績を記録・修正しても、本人の回答と出欠備考は変わらない。
+実績の集計（稽古回数・出席・遅刻・早退・欠席）はActual Statusだけを使い、
+本人の回答は使わない。実績が未記録の対象者は欠席として数える。
+
+保存先はstageart_rehearsal_attendances.actual_status（スキーマ1.46.0）。
+1.46.0より前は実績をStatusに上書きしていた。当時の実績はATTENDINGの回答からしか記録できなかったため、
+移行では既存の実績をactual_statusへ移し、StatusをATTENDINGへ戻す（情報は失われない）。
+
 ---
 
 # Status Transition
@@ -504,16 +520,23 @@ ATTENDING
 NOT_ATTENDING
     └──→ ATTENDING
 
-実施：
+実施（PR #7 R9で変更）：
 
-ATTENDING
-    ├──→ ATTENDED
-    ├──→ LATE
-    ├──→ EARLY_LEFT
-    └──→ ABSENT
+本人の回答（UNANSWERED／ATTENDING／NOT_ATTENDING）がどれであっても、
+Managerは実績（Actual Status）を記録できる。
 
-必要に応じて、
-ManagerによるStatus修正を許可する。
+UNANSWERED／ATTENDING／NOT_ATTENDING（回答）
+    + Actual Status
+        ├──→ ATTENDED
+        ├──→ LATE
+        ├──→ EARLY_LEFT
+        └──→ ABSENT
+
+記録済みの実績は、Managerが別の実績へ修正できる。
+回答（Status）は実績の記録によって変わらない。
+
+R8までは「ATTENDINGの回答からだけ実績を記録できる」としていたが、
+欠席と回答したが実際は来た人等を記録できないため、R9のユーザー指示で廃止した。
 
 Status Transitionの詳細ルールは、
 Rehearsal Domainで定義する。

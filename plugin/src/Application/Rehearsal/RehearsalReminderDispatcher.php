@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use StageArt\Core\Contract\NotificationContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
@@ -54,9 +55,20 @@ final class RehearsalReminderDispatcher
         $this->notificationContract = $notificationContract;
     }
 
+    /**
+     * PR #7 R9: the reminder belongs to the planning stage (§9.2 -
+     * "【Remind】…計画されています"), so it is sent only while the Rehearsal
+     * is still 調整中 (SCHEDULED). Once confirmed, the members have the §11
+     * notification and a Phase 2 record to answer; a reminder about the
+     * plan after that would be a second, outdated notification.
+     */
     public function dispatch(Rehearsal $rehearsal): void
     {
         if ($rehearsal->startDateTime() === null) {
+            return;
+        }
+
+        if ($rehearsal->status()->toString() !== RehearsalStatus::SCHEDULED) {
             return;
         }
 

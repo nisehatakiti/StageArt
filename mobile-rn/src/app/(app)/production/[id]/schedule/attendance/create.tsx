@@ -7,8 +7,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { DateTimeInput } from '@/components/date-time-input';
 import { Radius, Spacing } from '@/constants/theme';
-import { useAuth } from '@/auth/AuthContext';
-import { confirmRehearsal } from '@/features/attendance/api';
 import { useCreateRehearsal } from '@/features/attendance/useRehearsals';
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
@@ -31,7 +29,6 @@ const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAF
 export default function CreateRehearsalScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { apiClient } = useAuth();
   const createRehearsal = useCreateRehearsal(productionId);
   const participantsQuery = useParticipants(productionId);
   const currentPersonQuery = useCurrentPerson();
@@ -101,12 +98,13 @@ export default function CreateRehearsalScreen() {
    * screen's「調整」「確定」labels are not the same thing as SCHEDULED/
    * CONFIRMED (see this Phase's report §3). create() itself always
    * starts a Rehearsal at SCHEDULED (Rehearsal.php has no way to create
-   * directly into CONFIRMED); choosing「確定」here means "create, then
-   * call the existing confirm endpoint" - two already-existing calls
-   * chained by this screen, not a new Backend capability.
+   * directly into CONFIRMED). PR #7 R9: choosing「確定」sends
+   * `confirm_on_create`, and the Backend confirms it inside the same
+   * transaction, so the members get only the §11「確定しました」
+   * notification (the earlier create-then-confirm pair of requests would
+   * also have sent the §9.1「計画されています」one).
    */
   const [confirmOnCreate, setConfirmOnCreate] = useState(false);
-  const [isConfirming, setIsConfirming] = useState(false);
 
   async function handleSubmit() {
     const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
@@ -123,21 +121,8 @@ export default function CreateRehearsalScreen() {
       location: location.trim() || undefined,
       targetPersonIds: Array.from(selectedPersonIds),
       responseDeadline,
+      confirmOnCreate,
     });
-
-    if (confirmOnCreate) {
-      setIsConfirming(true);
-      try {
-        await confirmRehearsal(apiClient, rehearsal.id);
-      } catch {
-        // Creation already succeeded (Rehearsal exists as 調整中/SCHEDULED).
-        // No new recovery flow is added here - the existing "稽古情報を
-        // 確定する" button on the detail screen (RehearsalManagementPanel)
-        // already covers retrying the confirm step.
-      } finally {
-        setIsConfirming(false);
-      }
-    }
 
     router.replace(`/production/${productionId}/schedule/attendance/${rehearsal.id}`);
   }
@@ -354,10 +339,10 @@ export default function CreateRehearsalScreen() {
         <TouchableOpacity
           testID="rehearsal-create-submit"
           onPress={handleSubmit}
-          disabled={createRehearsal.isPending || isConfirming}
-          style={[styles.button, (createRehearsal.isPending || isConfirming) && styles.buttonDisabled]}
+          disabled={createRehearsal.isPending}
+          style={[styles.button, createRehearsal.isPending && styles.buttonDisabled]}
         >
-          {createRehearsal.isPending || isConfirming ? (
+          {createRehearsal.isPending ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <ThemedText style={styles.buttonText}>作成する</ThemedText>

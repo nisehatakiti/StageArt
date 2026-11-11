@@ -16,6 +16,7 @@ use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
 use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
 use StageArt\Application\Rehearsal\RehearsalReminderSchedulerInterface;
+use StageArt\Application\Rehearsal\RehearsalLifecycleNotifier;
 use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Application\Rehearsal\SendRehearsalReminderUseCase;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
@@ -138,6 +139,7 @@ final class RehearsalModuleBootstrap
         $timetableItemTargetValidator = new TimetableItemTargetValidator($membership);
         $reminderDispatcher = new RehearsalReminderDispatcher($rehearsalAttendances, $productionContext, $notification);
         $statusTimeSync = new RehearsalStatusTimeSync($rehearsals);
+        $lifecycleNotifier = new RehearsalLifecycleNotifier($notification);
 
         $createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -148,7 +150,8 @@ final class RehearsalModuleBootstrap
             $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $lifecycleNotifier
         );
         $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
         $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
@@ -170,7 +173,8 @@ final class RehearsalModuleBootstrap
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            $lifecycleNotifier
         );
         $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
         $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);

@@ -95,9 +95,9 @@ final class GetMemberPerformanceSummaryUseCase
         // docs/20-RehearsalManagementScreen.md §19 / RehearsalManagementPolicy.md
         // "Member Performance Aggregation" (PR #7 R8): cancelled Rehearsals
         // are excluded, and a target whose actual result was never recorded
-        // (still ATTENDING / NOT_ATTENDING / UNANSWERED in the confirmation
-        // phase) counts as 欠席, so that
-        // 出席 + 遅刻 + 早退 + 欠席 = 稽古回数 always holds.
+        // counts as 欠席, so that 出席 + 遅刻 + 早退 + 欠席 = 稽古回数 always
+        // holds. R9: only the Manager's result (actualStatus) is counted -
+        // the member's own answer (status) is never read here.
         foreach ($this->rehearsals->findByProductionId($productionId) as $rehearsal) {
             if ($rehearsal->status()->toString() === RehearsalStatus::CANCELLED) {
                 continue;
@@ -114,7 +114,9 @@ final class GetMemberPerformanceSummaryUseCase
                 $rehearsalCounts[$key] ??= ['attended' => 0, 'absent' => 0, 'late' => 0, 'earlyLeft' => 0, 'rehearsalCount' => 0];
                 $rehearsalCounts[$key]['rehearsalCount']++;
 
-                switch ($record->status()->toString()) {
+                $actual = $record->actualStatus();
+
+                switch ($actual ? $actual->toString() : null) {
                     case RehearsalAttendanceStatus::ATTENDED:
                         $rehearsalCounts[$key]['attended']++;
                         break;

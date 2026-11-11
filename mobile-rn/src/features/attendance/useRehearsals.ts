@@ -50,6 +50,7 @@ export function useCreateRehearsal(productionId: string | undefined) {
       location?: string;
       targetPersonIds?: string[];
       responseDeadline?: string;
+      confirmOnCreate?: boolean;
     }) => createRehearsal(apiClient, productionId as string, fields),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-rehearsals', productionId] }),
   });

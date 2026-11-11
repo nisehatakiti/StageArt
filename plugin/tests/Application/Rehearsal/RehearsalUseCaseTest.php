@@ -74,6 +74,8 @@ final class RehearsalUseCaseTest extends TestCase
     private InMemoryRehearsalAttendanceRepository $attendances;
     private InMemoryNotificationDispatcher $notificationDispatcher;
     private InMemoryRehearsalReminderScheduler $reminderScheduler;
+    private \StageArt\Tests\Support\RecordingNotificationContract $lifecycleNotifications;
+    private \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier $lifecycleNotifier;
 
     private CreateRehearsalUseCase $createRehearsal;
     private GetRehearsalUseCase $getRehearsal;
@@ -111,6 +113,8 @@ final class RehearsalUseCaseTest extends TestCase
         $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
         $this->reminderScheduler = new InMemoryRehearsalReminderScheduler();
         $statusTimeSync = new RehearsalStatusTimeSync($this->rehearsals);
+        $this->lifecycleNotifications = new \StageArt\Tests\Support\RecordingNotificationContract();
+        $this->lifecycleNotifier = new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier($this->lifecycleNotifications);
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
@@ -121,7 +125,8 @@ final class RehearsalUseCaseTest extends TestCase
             $this->reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $this->lifecycleNotifier
         );
         $this->getRehearsal = new GetRehearsalUseCase($this->rehearsals, $productionContext, $identity, $memberResolver, $statusTimeSync);
         $this->listRehearsals = new ListRehearsalsUseCase($this->rehearsals, $productionContext, $identity, $memberResolver, $statusTimeSync);
@@ -143,7 +148,8 @@ final class RehearsalUseCaseTest extends TestCase
             $identity,
             $authorization,
             $transactions,
-            $statusTimeSync
+            $statusTimeSync,
+            $this->lifecycleNotifier
         );
         $this->activateRehearsal = new ActivateRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
         $this->completeRehearsal = new CompleteRehearsalUseCase($this->rehearsals, $productionContext, $identity, $authorization);
@@ -1379,5 +1385,321 @@ final class RehearsalUseCaseTest extends TestCase
         $this->assertContains($unanswered->id()->toString(), $notifiedPersonIds);
         $this->assertNotContains($available->id()->toString(), $notifiedPersonIds);
         $this->assertNotContains($unavailable->id()->toString(), $notifiedPersonIds);
+    }
+
+    // --- PR #7 R9: 稽古作成（§9.1）・確定（§11）の通知 ---
+
+    /**
+     * @return array<int, array{person_id: string, type: string, payload: array<string, mixed>}>
+     */
+    private function lifecycleSent(string $type): array
+    {
+        return array_values(array_filter(
+            $this->lifecycleNotifications->sent(),
+            static fn (array $n): bool => $n['type'] === $type
+        ));
+    }
+
+    private function createFor(Production $production, array $targets, ?string $deadline = null, int $wpUser = 1): \StageArt\Application\Rehearsal\RehearsalResult
+    {
+        return $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            $wpUser,
+            'Act 1 Run',
+            null,
+            '2099-09-20T18:00:00+09:00',
+            '2099-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            array_map(static fn (Person $p): string => $p->id()->toString(), $targets),
+            $deadline
+        ));
+    }
+
+    public function test_creating_a_rehearsal_notifies_each_target_once_with_the_planned_text(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberA = $this->addActivePersonParticipant($production, 2);
+        $memberB = $this->addActivePersonParticipant($production, 3);
+        $this->addActivePersonParticipant($production, 4); // not selected
+
+        $created = $this->createFor($production, [$memberA, $memberB]);
+
+        $sent = $this->lifecycleSent('rehearsal_planned');
+        $this->assertCount(2, $sent);
+        $this->assertEqualsCanonicalizing(
+            [$memberA->id()->toString(), $memberB->id()->toString()],
+            array_column($sent, 'person_id')
+        );
+        $this->assertSame('Showの稽古が2099/09/20に計画されています。詳細を確認して出欠登録をお願いします', $sent[0]['payload']['message']);
+        $this->assertSame($created->id, $sent[0]['payload']['rehearsal_id']);
+        $this->assertSame($production->id()->toString(), $sent[0]['payload']['production_id']);
+        $this->assertSame([], $this->lifecycleSent('rehearsal_confirmed'));
+    }
+
+    public function test_creating_a_rehearsal_without_targets_notifies_nobody(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $this->createFor($production, []);
+
+        $this->assertSame([], $this->lifecycleNotifications->sent());
+    }
+
+    public function test_a_rejected_creation_notifies_nobody(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $plain = $this->addActivePersonParticipant($production, 3);
+
+        try {
+            $this->createFor($production, [$member], null, 3); // a plain member cannot create
+            $this->fail('A plain member must not create a Rehearsal.');
+        } catch (\StageArt\Application\Rehearsal\RehearsalAccessDeniedException $expected) {
+        }
+
+        $this->assertSame([], $this->lifecycleNotifications->sent());
+        $this->assertNotNull($plain);
+    }
+
+    /**
+     * Duplicate prevention: with the deadline already within 24 hours at
+     * creation, the immediate 【Remind】 is not sent on top of the planned
+     * notification (same text, same moment), and nothing is scheduled.
+     */
+    public function test_creation_with_a_deadline_within_24_hours_sends_the_planned_notification_but_no_extra_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $created = $this->createFor($production, [$member], (new DateTimeImmutable('+2 hours'))->format(DATE_ATOM));
+
+        $this->assertCount(1, $this->lifecycleSent('rehearsal_planned'));
+        $reminders = array_filter($this->notificationDispatcher->dispatched(), static fn ($n) => $n['type'] === 'rehearsal_response_reminder');
+        $this->assertSame([], array_values($reminders));
+        $this->assertFalse($this->reminderScheduler->isScheduled(RehearsalId::fromString($created->id)));
+        $this->assertNotNull($this->rehearsals->findById(RehearsalId::fromString($created->id))->reminderSentAt());
+    }
+
+    public function test_the_reminder_is_the_planned_text_with_the_remind_prefix(): void
+    {
+        $this->assertSame(
+            '【Remind】' . \StageArt\Application\Rehearsal\RehearsalNotificationMessageBuilder::buildPlannedMessage('Show', new DateTimeImmutable('2099-09-20T18:00:00+09:00')),
+            \StageArt\Application\Rehearsal\RehearsalNotificationMessageBuilder::buildReminderMessage('Show', new DateTimeImmutable('2099-09-20T18:00:00+09:00'))
+        );
+    }
+
+    public function test_confirming_notifies_each_confirmed_target_once_with_the_confirmed_text(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberA = $this->addActivePersonParticipant($production, 2);
+        $memberB = $this->addActivePersonParticipant($production, 3);
+        $created = $this->createFor($production, [$memberA, $memberB]);
+
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        $sent = $this->lifecycleSent('rehearsal_confirmed');
+        $this->assertCount(2, $sent);
+        $this->assertEqualsCanonicalizing(
+            [$memberA->id()->toString(), $memberB->id()->toString()],
+            array_column($sent, 'person_id')
+        );
+        $this->assertSame('Showの稽古日程が2099/09/20で確定しました。詳細を確認して出欠登録をお願いします', $sent[0]['payload']['message']);
+        $this->assertSame($created->id, $sent[0]['payload']['rehearsal_id']);
+    }
+
+    public function test_confirming_twice_does_not_notify_again(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member]);
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        try {
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+            $this->fail('A CONFIRMED Rehearsal cannot be confirmed again.');
+        } catch (\InvalidArgumentException $expected) {
+        }
+
+        $this->assertCount(1, $this->lifecycleSent('rehearsal_confirmed'));
+    }
+
+    public function test_confirm_does_not_notify_a_member_deactivated_since_creation(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $stays = $this->addActivePersonParticipant($production, 2);
+        $leaves = $this->addActivePersonParticipant($production, 3);
+        $created = $this->createFor($production, [$stays, $leaves]);
+
+        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
+            if ($participant->subjectId() === $leaves->id()->toString()) {
+                $participant->deactivate();
+                $this->participants->save($participant);
+            }
+        }
+
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        $this->assertSame([$stays->id()->toString()], array_column($this->lifecycleSent('rehearsal_confirmed'), 'person_id'));
+    }
+
+    public function test_a_plain_member_cannot_confirm_and_nobody_is_notified(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member]);
+
+        try {
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 2));
+            $this->fail('A plain member must not confirm.');
+        } catch (\StageArt\Application\Rehearsal\RehearsalAccessDeniedException $expected) {
+        }
+
+        $this->assertSame([], $this->lifecycleSent('rehearsal_confirmed'));
+    }
+
+    /**
+     * A failing notification never undoes the committed create/confirm
+     * and never stops the other members' notifications.
+     */
+    public function test_a_failing_notification_does_not_fail_create_or_confirm_or_stop_the_others(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $failing = $this->addActivePersonParticipant($production, 2);
+        $other = $this->addActivePersonParticipant($production, 3);
+        $this->lifecycleNotifications->failFor($failing->id());
+        $previousLog = ini_set('error_log', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null');
+
+        try {
+            $created = $this->createFor($production, [$failing, $other]);
+            $confirmed = $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+        } finally {
+            ini_set('error_log', (string) $previousLog);
+        }
+
+        $this->assertSame('CONFIRMED', $confirmed->status);
+        $this->assertSame('CONFIRMED', $this->rehearsals->findById(RehearsalId::fromString($created->id))->status()->toString());
+        $this->assertSame([$other->id()->toString()], array_column($this->lifecycleSent('rehearsal_planned'), 'person_id'));
+        $this->assertSame([$other->id()->toString()], array_column($this->lifecycleSent('rehearsal_confirmed'), 'person_id'));
+    }
+
+    // --- PR #7 R9: 作成時に「確定」を選んだ場合（§5.2・§11） ---
+
+    private function createConfirmedFor(Production $production, array $targetIds, ?string $deadline = null, int $wpUser = 1): \StageArt\Application\Rehearsal\RehearsalResult
+    {
+        return $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            $wpUser,
+            null,
+            null,
+            '2099-09-20T18:00:00+09:00',
+            '2099-09-20T20:00:00+09:00',
+            'Asia/Tokyo',
+            null,
+            $targetIds,
+            $deadline,
+            null,
+            true
+        ));
+    }
+
+    /**
+     * Created as 確定: one request, CONFIRMED with a Phase 2 record per
+     * target, and only the §11 notification - never §9.1's "planned" one
+     * for a Rehearsal the members never saw as 調整中.
+     */
+    public function test_creating_as_confirmed_sends_only_the_confirmed_notification(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $memberA = $this->addActivePersonParticipant($production, 2);
+        $memberB = $this->addActivePersonParticipant($production, 3);
+
+        $created = $this->createConfirmedFor($production, [$memberA->id()->toString(), $memberB->id()->toString()]);
+
+        $this->assertSame('CONFIRMED', $created->status);
+        $phase2 = $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($created->id),
+            \StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase::attendanceConfirmation()
+        );
+        $this->assertEqualsCanonicalizing(
+            [$memberA->id()->toString(), $memberB->id()->toString()],
+            array_map(static fn ($a): string => $a->personId()->toString(), $phase2)
+        );
+        foreach ($phase2 as $record) {
+            $this->assertSame('UNANSWERED', $record->status()->toString());
+        }
+        $this->assertSame([], $this->lifecycleSent('rehearsal_planned'));
+        $sent = $this->lifecycleSent('rehearsal_confirmed');
+        $this->assertCount(2, $sent);
+        $this->assertSame('Showの稽古日程が2099/09/20で確定しました。詳細を確認して出欠登録をお願いします', $sent[0]['payload']['message']);
+    }
+
+    /**
+     * Created as 確定 with a deadline: no planning-stage reminder is
+     * scheduled or sent, and confirming again is rejected without a
+     * second notification.
+     */
+    public function test_creating_as_confirmed_schedules_no_reminder_and_cannot_be_confirmed_again(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        $created = $this->createConfirmedFor($production, [$member->id()->toString()], (new DateTimeImmutable('+2 hours'))->format(DATE_ATOM));
+
+        $this->assertFalse($this->reminderScheduler->isScheduled(RehearsalId::fromString($created->id)));
+        $reminders = array_filter($this->notificationDispatcher->dispatched(), static fn ($n) => $n['type'] === 'rehearsal_response_reminder');
+        $this->assertSame([], array_values($reminders));
+
+        try {
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+            $this->fail('A Rehearsal created as CONFIRMED cannot be confirmed again.');
+        } catch (\InvalidArgumentException $expected) {
+        }
+
+        $this->assertCount(1, $this->lifecycleSent('rehearsal_confirmed'));
+    }
+
+    public function test_a_plain_member_cannot_create_as_confirmed_and_nobody_is_notified(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+
+        try {
+            $this->createConfirmedFor($production, [$member->id()->toString()], null, 2);
+            $this->fail('A plain member must not create a Rehearsal.');
+        } catch (\StageArt\Application\Rehearsal\RehearsalAccessDeniedException $expected) {
+        }
+
+        $this->assertSame([], $this->rehearsals->findByProductionId($production->id()));
+        $this->assertSame([], $this->lifecycleNotifications->sent());
+    }
+
+    /**
+     * A target id sent twice is one target: one record per phase and one
+     * notification (before R9 the second save hit the unique key).
+     */
+    public function test_a_repeated_target_id_is_one_target_with_one_notification(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $id = $member->id()->toString();
+
+        $planned = $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(), 1, null, null,
+            '2099-09-20T18:00:00+09:00', '2099-09-20T20:00:00+09:00', 'Asia/Tokyo', null,
+            [$id, $id]
+        ));
+        $confirmed = $this->createConfirmedFor($production, [$id, $id]);
+
+        $this->assertCount(1, $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($planned->id),
+            \StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase::scheduleAdjustment()
+        ));
+        $this->assertCount(1, $this->attendances->findByRehearsalIdAndPhase(
+            RehearsalId::fromString($confirmed->id),
+            \StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase::attendanceConfirmation()
+        ));
+        $this->assertCount(1, $this->lifecycleSent('rehearsal_planned'));
+        $this->assertCount(1, $this->lifecycleSent('rehearsal_confirmed'));
     }
 }

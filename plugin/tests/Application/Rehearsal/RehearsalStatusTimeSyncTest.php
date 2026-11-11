@@ -179,6 +179,48 @@ final class RehearsalStatusTimeSyncTest extends TestCase
         $this->assertSame(RehearsalStatus::SCHEDULED, $this->rehearsals->findById($rehearsal->id())->status()->toString());
     }
 
+    /**
+     * PR #7 R9 §4: 調整中 (SCHEDULED) is never advanced by time, even after
+     * the end time - the Lifecycle has no SCHEDULED->ACTIVE/COMPLETED
+     * step, and the confirmed-attendance records an actual result needs
+     * are created only by 確定 (ConfirmRehearsalUseCase).
+     */
+    public function test_scheduled_after_end_stays_scheduled(): void
+    {
+        $rehearsal = $this->buildRehearsal(
+            RehearsalStatus::SCHEDULED,
+            new DateTimeImmutable('-3 hours'),
+            new DateTimeImmutable('-1 hour')
+        );
+        $this->rehearsals->save($rehearsal);
+
+        $synced = $this->statusTimeSync->sync($rehearsal);
+
+        $this->assertSame(RehearsalStatus::SCHEDULED, $synced->status()->toString());
+        $this->assertSame(RehearsalStatus::SCHEDULED, $this->rehearsals->findById($rehearsal->id())->status()->toString());
+    }
+
+    /**
+     * PR #7 R9 §4: once a manager confirms a 調整中 Rehearsal whose times
+     * have already passed, the next sync applies the usual time rules
+     * (CONFIRMED -> ACTIVE -> COMPLETED in one pass).
+     */
+    public function test_scheduled_confirmed_after_its_end_time_is_completed_on_the_next_sync(): void
+    {
+        $rehearsal = $this->buildRehearsal(
+            RehearsalStatus::SCHEDULED,
+            new DateTimeImmutable('-3 hours'),
+            new DateTimeImmutable('-1 hour')
+        );
+        $rehearsal->confirm();
+        $this->rehearsals->save($rehearsal);
+
+        $synced = $this->statusTimeSync->sync($rehearsal);
+
+        $this->assertSame(RehearsalStatus::COMPLETED, $synced->status()->toString());
+        $this->assertSame(RehearsalStatus::COMPLETED, $this->rehearsals->findById($rehearsal->id())->status()->toString());
+    }
+
     // 8. CANCELLED stays CANCELLED regardless of elapsed time
     public function test_cancelled_stays_cancelled_regardless_of_elapsed_time(): void
     {

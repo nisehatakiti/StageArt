@@ -541,6 +541,13 @@ function UpcomingRehearsalCard({
   const currentPersonQuery = useCurrentPerson();
   const myRecord = attendancesQuery.data?.find((a) => a.person_id === currentPersonQuery.data?.id);
   const responseOptions = phase ? responseOptionsForPhase(phase) : [];
+  /** PR #7 R9 (§8.2): past the 調整中 response deadline a new answer is
+   * rejected by the Backend, so the card shows that instead of buttons
+   * that could only fail. */
+  const responseDeadlinePassed =
+    phase === 'SCHEDULE_ADJUSTMENT' &&
+    !!rehearsalQuery.data?.response_deadline &&
+    new Date() > new Date(rehearsalQuery.data.response_deadline);
 
   return (
     <ThemedView style={styles.rehearsalCard}>
@@ -592,7 +599,15 @@ function UpcomingRehearsalCard({
       {myRecord && responseOptions.length > 0 && (
         <ThemedView style={styles.homeAttendanceArea}>
           <ThemedText type="smallBold" style={styles.attendanceHeading}>出欠</ThemedText>
-          {myRecord.status === 'UNANSWERED' ? (
+          {myRecord.status === 'UNANSWERED' && responseDeadlinePassed ? (
+            <ThemedText
+              type="small"
+              themeColor="textSecondary"
+              testID={'home-rehearsal-deadline-passed-' + rehearsal.rehearsalId}
+            >
+              未回答（回答期限を過ぎました）
+            </ThemedText>
+          ) : myRecord.status === 'UNANSWERED' ? (
             <ThemedView style={styles.responseButtonRow}>
               {responseOptions.map((option) => {
                 const isAttending = option === 'ATTENDING' || option === 'AVAILABLE';

@@ -39,6 +39,9 @@ export function createRehearsal(
     targetPersonIds?: string[];
     /** Phase 7 (Rehearsal仕様整合): "回答期限" - optional. */
     responseDeadline?: string;
+    /** PR #7 R9: create as 確定 in the same request - the Backend confirms
+     * it in the same transaction and sends only the §11 notification. */
+    confirmOnCreate?: boolean;
   }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
@@ -51,6 +54,7 @@ export function createRehearsal(
     location: fields.location,
     person_ids: fields.targetPersonIds,
     response_deadline: fields.responseDeadline,
+    confirm_on_create: fields.confirmOnCreate ?? false,
   });
 }
 
