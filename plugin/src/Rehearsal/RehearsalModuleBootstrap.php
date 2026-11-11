@@ -7,9 +7,7 @@ namespace StageArt\Rehearsal;
 use StageArt\Application\Dashboard\UpcomingRehearsalProviderInterface;
 use StageArt\Application\PrintView\GetProductionPrintViewUseCase;
 use StageArt\Application\ProductionSchedule\ListProductionTimetableItemsUseCase;
-use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
 use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
-use StageArt\Application\Rehearsal\CompleteRehearsalUseCase;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
@@ -176,8 +174,6 @@ final class RehearsalModuleBootstrap
             $statusTimeSync,
             $lifecycleNotifier
         );
-        $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
-        $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
         $cancelRehearsal = new CancelRehearsalUseCase(
             $rehearsals,
             $rehearsalAttendances,
@@ -374,8 +370,6 @@ final class RehearsalModuleBootstrap
                 $listRehearsals,
                 $updateRehearsal,
                 $confirmRehearsal,
-                $activateRehearsal,
-                $completeRehearsal,
                 $cancelRehearsal
             ),
             new RehearsalAttendanceRestController(

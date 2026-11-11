@@ -15,6 +15,11 @@ use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
  * StageArt Core/Module Architecture Phase 2: depends only on Core
  * Contracts, not `ProductionRepositoryInterface`/
  * `ProductionAuthorizationService` directly.
+ *
+ * PR #7 R10: no longer wired to a REST route (the manual start/finish
+ * API was removed - see RehearsalRestController). Not called from
+ * production code; the time-based RehearsalStatusTimeSync is the only
+ * path that starts/finishes a Rehearsal.
  */
 final class CompleteRehearsalUseCase
 {

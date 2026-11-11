@@ -201,6 +201,7 @@ out('Production member (ACTIVE Participant/CAST)', $productionMemberUserId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '通し稽古',
     'start_date_time' => '2026-10-15T18:00:00+09:00',
+    'end_date_time' => '2026-10-15T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
@@ -212,6 +213,7 @@ out('Rehearsal (confirmed, 出欠確認あり)', $rehearsalConfirmedId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '顔合わせ',
     'start_date_time' => '2026-10-05T19:00:00+09:00',
+    'end_date_time' => '2026-10-05T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
@@ -222,13 +224,18 @@ out('Rehearsal (unconfirmed, 出欠確認なし)', $rehearsalUnconfirmedId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '初回稽古',
     'start_date_time' => '2026-07-01T18:00:00+09:00',
+    'end_date_time' => '2026-07-01T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
 $rehearsalPastId = $resp->get_data()['id'];
 call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/confirm");
-call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/activate");
-call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/complete");
+// PR #7 R10: the manual activate/complete routes were removed. A CONFIRMED
+// Rehearsal whose end time has passed becomes COMPLETED the next time it
+// is read (RehearsalStatusTimeSync), so reading it once is enough. (R10
+// also added end_date_time above - it has been required since the
+// status time-sync change, and the seed was missing it.)
+call('GET', "/stageart/v1/rehearsals/{$rehearsalPastId}");
 out('Rehearsal (past, completed)', $rehearsalPastId);
 
 wp_set_current_user($orgOwnerUserId);

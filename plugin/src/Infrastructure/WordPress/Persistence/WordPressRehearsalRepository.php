@@ -32,13 +32,13 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
             'production_id' => $rehearsal->productionId()->toString(),
             'title' => $rehearsal->title(),
             'description' => $rehearsal->description(),
-            'start_date_time' => $rehearsal->startDateTime() !== null ? $rehearsal->startDateTime()->format('Y-m-d H:i:s') : null,
-            'end_date_time' => $rehearsal->endDateTime() !== null ? $rehearsal->endDateTime()->format('Y-m-d H:i:s') : null,
+            'start_date_time' => $this->wallClock($rehearsal->startDateTime(), $rehearsal),
+            'end_date_time' => $this->wallClock($rehearsal->endDateTime(), $rehearsal),
             'timezone' => $rehearsal->timezone(),
             'location' => $rehearsal->location(),
             'status' => $rehearsal->status()->toString(),
             'activity_type' => $rehearsal->activityType()->toString(),
-            'response_deadline' => $rehearsal->responseDeadline() !== null ? $rehearsal->responseDeadline()->format('Y-m-d H:i:s') : null,
+            'response_deadline' => $this->wallClock($rehearsal->responseDeadline(), $rehearsal),
             'reminder_sent_at' => $rehearsal->reminderSentAt() !== null ? $rehearsal->reminderSentAt()->format('Y-m-d H:i:s') : null,
             'updated_at' => $rehearsal->updatedAt()->format('Y-m-d H:i:s'),
         ];
@@ -124,6 +124,27 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
      * DateTimeImmutable, rather than patching every serialization call
      * site separately.
      */
+    /**
+     * PR #7 R10: the stored wall-clock value is the instant expressed in
+     * the zone hydrate() reads it back with (the Rehearsal's timezone, or
+     * PHP's default when it has none). Before R10 the value was formatted
+     * in whatever offset it arrived with, so e.g. 01:00Z for a Tokyo
+     * Rehearsal was stored as 01:00 and read back as 01:00 JST - nine
+     * hours early.
+     */
+    private function wallClock(?DateTimeImmutable $value, Rehearsal $rehearsal): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $zone = $rehearsal->timezone() !== null
+            ? new DateTimeZone($rehearsal->timezone())
+            : new DateTimeZone(date_default_timezone_get());
+
+        return $value->setTimezone($zone)->format('Y-m-d H:i:s');
+    }
+
     private function hydrate(array $row): Rehearsal
     {
         $timezone = $row['timezone'] !== null ? new DateTimeZone($row['timezone']) : null;

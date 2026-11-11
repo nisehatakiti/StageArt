@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace StageArt\Application\Rehearsal;
 
 use DateTimeImmutable;
-use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -82,26 +81,44 @@ final class UpdateRehearsalUseCase
 
         $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
-        $newResponseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
+        // PR #7 R10 (§23.3): read every date/time as an instant in the
+        // Rehearsal's timezone. A request without a timezone keeps the
+        // Rehearsal's current one (before R10 it cleared it, which changed
+        // how the stored wall-clock times were read back).
+        $zone = RehearsalDateTime::zone(
+            $command->timezone !== null && trim($command->timezone) !== '' ? $command->timezone : $rehearsal->timezone()
+        );
+        $startDateTime = RehearsalDateTime::parseRequired($command->startDateTime, $zone, 'start date/time');
+        $endDateTime = RehearsalDateTime::parseRequired($command->endDateTime, $zone, 'end date/time');
+        $newResponseDeadline = RehearsalDateTime::parseOptional($command->responseDeadline, $zone);
         $activityType = $this->parseOptionalActivityType($command->activityType);
 
-        $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline, $activityType): void {
+        $sendReminderAfterCommit = false;
+
+        $this->transactions->run(function () use ($rehearsal, $command, $newResponseDeadline, $activityType, $zone, $startDateTime, $endDateTime, &$sendReminderAfterCommit): void {
+            $sendReminderAfterCommit = false;
             $rehearsal->updateBasicInfo(
                 $command->title,
                 $command->description,
-                $this->parseRequiredDateTime($command->startDateTime, 'start date/time'),
-                $this->parseRequiredDateTime($command->endDateTime, 'end date/time'),
-                $command->timezone,
+                $startDateTime,
+                $endDateTime,
+                $zone->getName(),
                 $command->location,
                 $activityType
             );
 
             $oldResponseDeadline = $rehearsal->responseDeadline();
             $rehearsal->changeResponseDeadline($newResponseDeadline);
-            $this->applyReminderPolicy($rehearsal, $oldResponseDeadline, $newResponseDeadline);
+            $sendReminderAfterCommit = $this->applyReminderPolicy($rehearsal, $oldResponseDeadline, $newResponseDeadline);
 
             $this->rehearsals->save($rehearsal);
         });
+
+        // PR #7 R10: the immediate reminder (deadline brought forward past
+        // its reminder time, §10.2) goes out only after the change commits.
+        if ($sendReminderAfterCommit) {
+            $this->reminderDispatcher->send($rehearsal);
+        }
 
         return RehearsalResult::fromDomain($rehearsal);
     }
@@ -114,7 +131,11 @@ final class UpdateRehearsalUseCase
      * the confirmed spec) or ACTION_CANCEL (nothing to guard once there
      * is no deadline at all).
      */
-    private function applyReminderPolicy(Rehearsal $rehearsal, ?DateTimeImmutable $oldDeadline, ?DateTimeImmutable $newDeadline): void
+    /**
+     * @return bool whether a reminder must be sent once the transaction
+     *              has committed (PR #7 R10)
+     */
+    private function applyReminderPolicy(Rehearsal $rehearsal, ?DateTimeImmutable $oldDeadline, ?DateTimeImmutable $newDeadline): bool
     {
         $decision = RehearsalReminderPolicy::decideOnDeadlineChange($oldDeadline, $newDeadline, new DateTimeImmutable());
 
@@ -131,8 +152,15 @@ final class UpdateRehearsalUseCase
                 // to leak.
                 $this->reminderScheduler->cancelReminder($rehearsal->id());
                 $rehearsal->clearReminderSentMark();
-                $this->reminderDispatcher->dispatch($rehearsal);
-                break;
+
+                if (! $this->reminderDispatcher->isSendable($rehearsal)) {
+                    return false;
+                }
+
+                // Recorded with the change; sent after the commit.
+                $rehearsal->markReminderSent(new DateTimeImmutable());
+
+                return true;
             case RehearsalReminderPolicy::ACTION_SCHEDULE:
                 $rehearsal->clearReminderSentMark();
                 $this->reminderScheduler->scheduleReminderAt($rehearsal->id(), $decision['reminderAt']);
@@ -141,21 +169,9 @@ final class UpdateRehearsalUseCase
                 $this->reminderScheduler->cancelReminder($rehearsal->id());
                 break;
         }
+
+        return false;
     }
-
-    private function parseOptionalDateTime(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
-        }
-    }
-
     /**
      * StageArt 予定・活動一般化調査: null/empty leaves the Rehearsal's
      * current species unchanged (see Rehearsal::updateBasicInfo()'s own
@@ -172,24 +188,6 @@ final class UpdateRehearsalUseCase
             return RehearsalActivityType::fromString($value);
         } catch (InvalidArgumentException $exception) {
             throw new InvalidArgumentException("Invalid activity_type value: {$value}");
-        }
-    }
-
-    /**
-     * StageArt 稽古管理ステータス自動同期 instruction: see
-     * CreateRehearsalUseCase's identical method for why this is required
-     * rather than optional now.
-     */
-    private function parseRequiredDateTime(?string $value, string $fieldName): DateTimeImmutable
-    {
-        if ($value === null || $value === '') {
-            throw new InvalidArgumentException("Rehearsal {$fieldName} is required.");
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
         }
     }
 }

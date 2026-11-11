@@ -42,6 +42,7 @@ import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { Participant, RehearsalAttendance, ScheduleComment } from '@/types/api';
 import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
+import { isOverdueScheduled, OVERDUE_SCHEDULED_MESSAGE } from '@/features/attendance/overdue';
 
 /** Rehearsal detail status labels. */
 const REHEARSAL_STATUS_LABELS: Record<string, string> = {
@@ -461,6 +462,11 @@ export default function RehearsalAttendanceScreen() {
                       {rehearsalQuery.data.description?.trim() || 'なし'}
                     </ThemedText>
                   </ThemedView>
+                  {canManageRehearsal && isOverdueScheduled(rehearsalQuery.data) && (
+                    <ThemedText type="small" style={styles.overdueNotice} testID="rehearsal-overdue-notice">
+                      {OVERDUE_SCHEDULED_MESSAGE}
+                    </ThemedText>
+                  )}
                   {canManageRehearsal && rehearsalQuery.data.status === 'SCHEDULED' && (
                     <TouchableOpacity
                       testID="rehearsal-confirm"
@@ -798,6 +804,7 @@ function AttendanceRow({
 }
 
 const styles = StyleSheet.create({
+  overdueNotice: { color: '#b3261e' },
   safeArea: { flex: 1 },
   backRow: { paddingHorizontal: Spacing.four, paddingVertical: Spacing.two },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four, gap: Spacing.two },

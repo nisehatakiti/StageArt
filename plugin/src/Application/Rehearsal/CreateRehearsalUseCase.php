@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace StageArt\Application\Rehearsal;
 
 use DateTimeImmutable;
-use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
@@ -114,9 +113,12 @@ final class CreateRehearsalUseCase
             );
         }
 
-        $startDateTime = $this->parseRequiredDateTime($command->startDateTime, 'start date/time');
-        $endDateTime = $this->parseRequiredDateTime($command->endDateTime, 'end date/time');
-        $responseDeadline = $this->parseOptionalDateTime($command->responseDeadline);
+        // PR #7 R10 (§23.3): every date/time is read as an instant and held in
+        // the Rehearsal's timezone (Asia/Tokyo unless one is given).
+        $zone = RehearsalDateTime::zone($command->timezone);
+        $startDateTime = RehearsalDateTime::parseRequired($command->startDateTime, $zone, 'start date/time');
+        $endDateTime = RehearsalDateTime::parseRequired($command->endDateTime, $zone, 'end date/time');
+        $responseDeadline = RehearsalDateTime::parseOptional($command->responseDeadline, $zone);
         $activityType = $this->parseOptionalActivityType($command->activityType);
 
         $activeMemberIdStrings = array_map(
@@ -137,14 +139,14 @@ final class CreateRehearsalUseCase
         }
 
         $rehearsal = $this->transactions->run(
-            function () use ($productionId, $command, $targetPersonIdStrings, $startDateTime, $endDateTime, $responseDeadline, $activityType): Rehearsal {
+            function () use ($productionId, $command, $targetPersonIdStrings, $startDateTime, $endDateTime, $responseDeadline, $activityType, $zone): Rehearsal {
                 $rehearsal = Rehearsal::create(
                     $productionId,
                     $command->title,
                     $command->description,
                     $startDateTime,
                     $endDateTime,
-                    $command->timezone,
+                    $zone->getName(),
                     $command->location,
                     $responseDeadline,
                     $activityType
@@ -188,20 +190,6 @@ final class CreateRehearsalUseCase
 
         return RehearsalResult::fromDomain($rehearsal);
     }
-
-    private function parseOptionalDateTime(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
-        }
-    }
-
     /**
      * StageArt 予定・活動一般化調査: null/empty defers to
      * Rehearsal::create()'s own default (REHEARSAL) - an invalid species
@@ -220,27 +208,6 @@ final class CreateRehearsalUseCase
             throw new InvalidArgumentException("Invalid activity_type value: {$value}");
         }
     }
-
-    /**
-     * StageArt 稽古管理ステータス自動同期 instruction: Rehearsal's start/end
-     * are now required (see Rehearsal::create()'s own docblock) - a
-     * missing or unparseable value is rejected here, before the Domain
-     * layer's own non-nullable parameter type would otherwise surface it
-     * as an uncaught TypeError instead of a clean InvalidArgumentException.
-     */
-    private function parseRequiredDateTime(?string $value, string $fieldName): DateTimeImmutable
-    {
-        if ($value === null || $value === '') {
-            throw new InvalidArgumentException("Rehearsal {$fieldName} is required.");
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
-        }
-    }
-
     /**
      * Phase 7: shared with `UpdateRehearsalUseCase` in spirit (not code -
      * each has its own copy since `$oldDeadline` is trivially `null` here,

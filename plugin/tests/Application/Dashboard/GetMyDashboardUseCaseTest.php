@@ -203,14 +203,18 @@ final class GetMyDashboardUseCaseTest extends TestCase
         string $startDateTime,
         array $targetPersonIds = []
     ): RehearsalId {
-        $endDateTime = (new DateTimeImmutable($startDateTime))->modify('+2 hours')->format(DATE_ATOM);
+        // PR #7 R10: the API takes ISO 8601 only (RehearsalDateTime), so the
+        // relative "+10 days" these tests are written with is turned into
+        // one here - the same instant as before.
+        $start = new DateTimeImmutable($startDateTime);
+        $endDateTime = $start->modify('+2 hours')->format(DATE_ATOM);
 
         $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             $creatorWordPressUserId,
             'Rehearsal',
             null,
-            $startDateTime,
+            $start->format(DATE_ATOM),
             $endDateTime,
             null,
             'Studio A',

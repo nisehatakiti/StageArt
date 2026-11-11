@@ -1702,4 +1702,308 @@ final class RehearsalUseCaseTest extends TestCase
         $this->assertCount(1, $this->lifecycleSent('rehearsal_planned'));
         $this->assertCount(1, $this->lifecycleSent('rehearsal_confirmed'));
     }
+
+    // --- PR #7 R10: 通知はcommit後にだけ送る（§22.4 / §23.4） ---
+
+    /**
+     * Replaces the use case's TransactionManager with one whose commit
+     * fails after the work inside it has run - the latest point a
+     * notification could leak before a commit.
+     */
+    private function failCommitOf(object $useCase): void
+    {
+        $failing = new class () implements \StageArt\Application\Shared\TransactionManagerInterface {
+            public function run(callable $operation)
+            {
+                $operation();
+
+                throw new \RuntimeException('commit failed');
+            }
+        };
+        $property = new \ReflectionProperty($useCase, 'transactions');
+        $property->setAccessible(true);
+        $property->setValue($useCase, $failing);
+    }
+
+    public function test_a_failed_commit_of_create_sends_nothing(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $this->failCommitOf($this->createRehearsal);
+
+        foreach ([false, true] as $confirmOnCreate) {
+            try {
+                $this->createRehearsal->execute(new CreateRehearsalCommand(
+                    $production->id()->toString(), 1, null, null,
+                    '2099-09-20T18:00:00+09:00', '2099-09-20T20:00:00+09:00', 'Asia/Tokyo', null,
+                    [$member->id()->toString()], '2099-09-18T18:00:00+09:00', null, $confirmOnCreate
+                ));
+                $this->fail('The failed commit must surface.');
+            } catch (\RuntimeException $expected) {
+                $this->assertSame('commit failed', $expected->getMessage());
+            }
+        }
+
+        $this->assertSame([], $this->lifecycleNotifications->sent());
+        $this->assertSame([], $this->notificationDispatcher->dispatched());
+    }
+
+    public function test_a_failed_commit_of_confirm_sends_nothing(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member]);
+        $this->failCommitOf($this->confirmRehearsal);
+
+        try {
+            $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+            $this->fail('The failed commit must surface.');
+        } catch (\RuntimeException $expected) {
+            $this->assertSame('commit failed', $expected->getMessage());
+        }
+
+        $this->assertSame([], $this->lifecycleSent('rehearsal_confirmed'));
+    }
+
+    /**
+     * @return array<int, array{type: string, personId: PersonId}>
+     */
+    private function dispatchedOfType(string $type): array
+    {
+        return array_values(array_filter($this->notificationDispatcher->dispatched(), static fn ($n) => $n['type'] === $type));
+    }
+
+    public function test_a_failed_commit_of_a_deadline_change_sends_no_immediate_reminder(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member], (new DateTimeImmutable('+3 days'))->format(DATE_ATOM));
+        $this->failCommitOf($this->updateRehearsal);
+
+        try {
+            // Brought forward to 2 hours from now: the reminder time has passed (§10.2).
+            $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+                $created->id, 1, null, null, '2099-09-20T18:00:00+09:00', '2099-09-20T20:00:00+09:00', 'Asia/Tokyo', null,
+                (new DateTimeImmutable('+2 hours'))->format(DATE_ATOM)
+            ));
+            $this->fail('The failed commit must surface.');
+        } catch (\RuntimeException $expected) {
+            $this->assertSame('commit failed', $expected->getMessage());
+        }
+
+        $this->assertSame([], $this->dispatchedOfType('rehearsal_response_reminder'));
+    }
+
+    public function test_a_committed_deadline_change_sends_the_immediate_reminder_once(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member], (new DateTimeImmutable('+3 days'))->format(DATE_ATOM));
+
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id, 1, null, null, '2099-09-20T18:00:00+09:00', '2099-09-20T20:00:00+09:00', 'Asia/Tokyo', null,
+            (new DateTimeImmutable('+2 hours'))->format(DATE_ATOM)
+        ));
+
+        $this->assertCount(1, $this->dispatchedOfType('rehearsal_response_reminder'));
+        $this->assertNotNull($this->rehearsals->findById(RehearsalId::fromString($created->id))->reminderSentAt());
+    }
+
+    public function test_a_failed_commit_of_cancel_sends_no_cancellation_notice(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member]);
+        $this->failCommitOf($this->cancelRehearsal);
+
+        try {
+            $this->cancelRehearsal->execute(new \StageArt\Application\Rehearsal\CancelRehearsalCommand($created->id, 1));
+            $this->fail('The failed commit must surface.');
+        } catch (\RuntimeException $expected) {
+            $this->assertSame('commit failed', $expected->getMessage());
+        }
+
+        $this->assertSame([], $this->dispatchedOfType('rehearsal_cancelled'));
+    }
+
+    public function test_the_cron_reminder_is_recorded_before_it_is_sent_and_sent_once(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $member = $this->addActivePersonParticipant($production, 2);
+        $created = $this->createFor($production, [$member], (new DateTimeImmutable('+3 days'))->format(DATE_ATOM));
+        $dispatcher = (new \ReflectionProperty($this->updateRehearsal, 'reminderDispatcher'));
+        $dispatcher->setAccessible(true);
+        $failing = new class () implements \StageArt\Application\Shared\TransactionManagerInterface {
+            public function run(callable $operation)
+            {
+                $operation();
+
+                throw new \RuntimeException('commit failed');
+            }
+        };
+
+        // Commit fails: nothing is sent.
+        try {
+            (new \StageArt\Application\Rehearsal\SendRehearsalReminderUseCase($this->rehearsals, $dispatcher->getValue($this->updateRehearsal), $failing))
+                ->execute(new \StageArt\Application\Rehearsal\SendRehearsalReminderCommand($created->id));
+            $this->fail('The failed commit must surface.');
+        } catch (\RuntimeException $expected) {
+        }
+        $this->assertSame([], $this->dispatchedOfType('rehearsal_response_reminder'));
+
+        // Commit succeeds: sent once; the cron firing again sends nothing.
+        $cron = new \StageArt\Application\Rehearsal\SendRehearsalReminderUseCase(
+            $this->rehearsals,
+            $dispatcher->getValue($this->updateRehearsal),
+            new \StageArt\Tests\Support\InMemoryTransactionManager()
+        );
+        $fresh = $this->rehearsals->findById(RehearsalId::fromString($created->id));
+        $fresh->clearReminderSentMark(); // the failed run above changed the in-memory object
+        $this->rehearsals->save($fresh);
+        $cron->execute(new \StageArt\Application\Rehearsal\SendRehearsalReminderCommand($created->id));
+        $cron->execute(new \StageArt\Application\Rehearsal\SendRehearsalReminderCommand($created->id));
+
+        $this->assertCount(1, $this->dispatchedOfType('rehearsal_response_reminder'));
+    }
+
+    // --- PR #7 R10: 稽古日時のタイムゾーン（§23.3） ---
+
+    private function createAt(Production $production, string $start, string $end, ?string $timezone = 'Asia/Tokyo', ?string $deadline = null): \StageArt\Application\Rehearsal\RehearsalResult
+    {
+        return $this->createRehearsal->execute(new CreateRehearsalCommand(
+            $production->id()->toString(),
+            1,
+            null,
+            null,
+            $start,
+            $end,
+            $timezone,
+            null,
+            [],
+            $deadline
+        ));
+    }
+
+    public function test_the_same_instant_sent_with_different_offsets_is_the_same_rehearsal_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $results = [
+            $this->createAt($production, '2026-11-11T10:00:00+09:00', '2026-11-11T12:00:00+09:00'),
+            $this->createAt($production, '2026-11-11T01:00:00Z', '2026-11-11T03:00:00Z'),
+            $this->createAt($production, '2026-11-10T20:00:00-05:00', '2026-11-10T22:00:00-05:00'),
+        ];
+
+        foreach ($results as $result) {
+            $this->assertSame('2026-11-11T10:00:00+09:00', $result->startDateTime);
+            $this->assertSame('2026-11-11T12:00:00+09:00', $result->endDateTime);
+            $stored = $this->rehearsals->findById(RehearsalId::fromString($result->id));
+            $this->assertSame('2026-11-11 10:00:00', $stored->startDateTime()->format('Y-m-d H:i:s'));
+            $this->assertSame('Asia/Tokyo', $stored->timezone());
+        }
+    }
+
+    public function test_the_deadline_is_read_the_same_way(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createAt($production, '2099-11-11T10:00:00+09:00', '2099-11-11T12:00:00+09:00', 'Asia/Tokyo', '2099-11-09T15:00:00Z');
+
+        $this->assertSame('2099-11-10T00:00:00+09:00', $created->responseDeadline);
+    }
+
+    public function test_without_an_offset_the_time_is_tokyo_wall_clock_and_the_timezone_defaults_to_tokyo(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $created = $this->createAt($production, '2026-11-11T10:00:00', '2026-11-11T12:00:00', null);
+
+        $this->assertSame('2026-11-11T10:00:00+09:00', $created->startDateTime);
+        $this->assertSame('Asia/Tokyo', $created->timezone);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidDateTimes(): array
+    {
+        return [
+            'text' => ['not a date'],
+            'impossible date' => ['2026-02-30T10:00:00+09:00'],
+            'relative' => ['tomorrow'],
+        ];
+    }
+
+    /**
+     * @dataProvider invalidDateTimes
+     */
+    public function test_an_invalid_date_time_is_rejected_and_nothing_is_created(string $value): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        try {
+            $this->createAt($production, $value, '2026-11-11T12:00:00+09:00');
+            $this->fail('An invalid start date/time must be rejected.');
+        } catch (\InvalidArgumentException $expected) {
+            $this->assertStringContainsString('Invalid date/time value', $expected->getMessage());
+        }
+
+        $this->assertSame([], $this->rehearsals->findByProductionId($production->id()));
+        $this->assertSame([], $this->lifecycleNotifications->sent());
+    }
+
+    public function test_an_unknown_timezone_is_rejected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->createAt($production, '2026-11-11T10:00:00+09:00', '2026-11-11T12:00:00+09:00', 'Mars/Olympus_Mons');
+    }
+
+    /**
+     * Before R10 the "date cannot change once confirmed" check compared the
+     * calendar date in each value's own offset, so the same instant sent
+     * in UTC (a different calendar date) was refused as a date change.
+     */
+    public function test_a_confirmed_rehearsal_accepts_the_same_date_sent_in_another_offset(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $created = $this->createAt($production, '2099-11-11T08:00:00+09:00', '2099-11-11T10:00:00+09:00');
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        // 2099-11-10T23:00Z is 2099-11-11 08:00 in Tokyo - the same day.
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id, 1, null, null, '2099-11-10T23:00:00Z', '2099-11-11T02:00:00Z', 'Asia/Tokyo', 'Studio'
+        ));
+
+        $this->assertSame('2099-11-11T08:00:00+09:00', $updated->startDateTime);
+        $this->assertSame('2099-11-11T11:00:00+09:00', $updated->endDateTime);
+        $this->assertSame('Studio', $updated->location);
+    }
+
+    public function test_a_confirmed_rehearsal_still_refuses_a_real_date_change_sent_in_another_offset(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $created = $this->createAt($production, '2099-11-11T08:00:00+09:00', '2099-11-11T10:00:00+09:00');
+        $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($created->id, 1));
+
+        // 2099-11-11T16:00Z is 2099-11-12 01:00 in Tokyo - the next day.
+        $this->expectException(\InvalidArgumentException::class);
+        $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id, 1, null, null, '2099-11-11T16:00:00Z', '2099-11-11T17:00:00Z', 'Asia/Tokyo', null
+        ));
+    }
+
+    public function test_an_update_without_a_timezone_keeps_the_rehearsal_timezone(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $created = $this->createAt($production, '2099-11-11T08:00:00+09:00', '2099-11-11T10:00:00+09:00');
+
+        $updated = $this->updateRehearsal->execute(new UpdateRehearsalCommand(
+            $created->id, 1, null, null, '2099-11-11T09:00:00', '2099-11-11T11:00:00', null, null
+        ));
+
+        $this->assertSame('Asia/Tokyo', $updated->timezone);
+        $this->assertSame('2099-11-11T09:00:00+09:00', $updated->startDateTime);
+    }
 }

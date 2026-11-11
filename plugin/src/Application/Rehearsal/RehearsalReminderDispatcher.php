@@ -12,6 +12,7 @@ use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
+use Throwable;
 
 /**
  * Phase 7 (Rehearsal仕様整合): the actual "send the Reminder now" work,
@@ -62,20 +63,50 @@ final class RehearsalReminderDispatcher
      * notification and a Phase 2 record to answer; a reminder about the
      * plan after that would be a second, outdated notification.
      */
+    public function isSendable(Rehearsal $rehearsal): bool
+    {
+        return $rehearsal->startDateTime() !== null
+            && $rehearsal->status()->toString() === RehearsalStatus::SCHEDULED;
+    }
+
+    /**
+     * Sends and marks the reminder sent, in one call. PR #7 R10: the
+     * transactional callers (UpdateRehearsalUseCase,
+     * SendRehearsalReminderUseCase) no longer use this inside their
+     * transaction - they mark the reminder sent there and call send()
+     * after the commit, so a rolled-back change never notifies anyone.
+     */
     public function dispatch(Rehearsal $rehearsal): void
     {
-        if ($rehearsal->startDateTime() === null) {
+        if (! $this->isSendable($rehearsal)) {
             return;
         }
 
-        if ($rehearsal->status()->toString() !== RehearsalStatus::SCHEDULED) {
-            return;
+        if ($this->send($rehearsal)) {
+            $rehearsal->markReminderSent(new DateTimeImmutable());
+        }
+    }
+
+    /**
+     * PR #7 R10: sends the reminder to the still-unanswered planning-stage
+     * targets without touching the Rehearsal. A failure for one person is
+     * logged (type and Rehearsal id only) and does not stop the others,
+     * as RehearsalLifecycleNotifier does; it is not retried, so nobody
+     * receives it twice.
+     *
+     * @return bool false when nothing could be sent (not sendable, or the
+     *              Production no longer exists)
+     */
+    public function send(Rehearsal $rehearsal): bool
+    {
+        if (! $this->isSendable($rehearsal)) {
+            return false;
         }
 
         $production = $this->productionContext->getProduction($rehearsal->productionId());
 
         if ($production === null) {
-            return;
+            return false;
         }
 
         $message = RehearsalNotificationMessageBuilder::buildReminderMessage($production->name, $rehearsal->startDateTime());
@@ -85,13 +116,21 @@ final class RehearsalReminderDispatcher
                 continue;
             }
 
-            $this->notificationContract->notify($attendance->personId(), 'rehearsal_response_reminder', [
-                'rehearsal_id' => $rehearsal->id()->toString(),
-                'production_id' => $rehearsal->productionId()->toString(),
-                'message' => $message,
-            ]);
+            try {
+                $this->notificationContract->notify($attendance->personId(), 'rehearsal_response_reminder', [
+                    'rehearsal_id' => $rehearsal->id()->toString(),
+                    'production_id' => $rehearsal->productionId()->toString(),
+                    'message' => $message,
+                ]);
+            } catch (Throwable $exception) {
+                error_log(sprintf(
+                    '[StageArt rehearsal notification] rehearsal_response_reminder for rehearsal %s not sent: %s',
+                    $rehearsal->id()->toString(),
+                    get_class($exception)
+                ));
+            }
         }
 
-        $rehearsal->markReminderSent(new DateTimeImmutable());
+        return true;
     }
 }

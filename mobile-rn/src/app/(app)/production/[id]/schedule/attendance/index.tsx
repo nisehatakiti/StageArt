@@ -7,6 +7,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import { useRehearsals } from '@/features/attendance/useRehearsals';
+import { canManageRehearsals, isOverdueScheduled, OVERDUE_SCHEDULED_MESSAGE } from '@/features/attendance/overdue';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 
@@ -41,6 +43,11 @@ export default function RehearsalListScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const rehearsalsQuery = useRehearsals(productionId);
+  // PR #7 R10 (§23.2): only managers are told to confirm or cancel an
+  // overdue 調整中 Rehearsal; members see the list as before.
+  const productionQuery = useProduction(productionId);
+  const canManage = canManageRehearsals(productionQuery.data);
+  const now = new Date();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -94,6 +101,11 @@ export default function RehearsalListScreen() {
               <ThemedText type="smallBold" testID={`rehearsal-status-${rehearsal.id}`}>
                 {rehearsalStatusLabel(rehearsal.status)}
               </ThemedText>
+              {canManage && isOverdueScheduled(rehearsal, now) && (
+                <ThemedText type="small" style={styles.overdue} testID={`rehearsal-overdue-${rehearsal.id}`}>
+                  {OVERDUE_SCHEDULED_MESSAGE}
+                </ThemedText>
+              )}
               <ThemedText type="small">
                 種別：{rehearsalActivityTypeLabel(rehearsal.activity_type)}
               </ThemedText>
@@ -126,4 +138,5 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: 2,
   },
+  overdue: { color: '#b3261e' },
 });

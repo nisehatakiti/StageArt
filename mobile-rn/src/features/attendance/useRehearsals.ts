@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
+// PR #7 R10: no activate/complete hooks - the manual start/finish API was
+// removed; a confirmed Rehearsal starts/finishes by time on the Backend.
 import {
-  activateRehearsal,
   cancelRehearsal,
-  completeRehearsal,
   confirmRehearsal,
   createRehearsal,
   fetchRehearsal,
@@ -76,16 +76,6 @@ export function useCancelRehearsal(rehearsalId: string | undefined) {
   });
 }
 
-export function useActivateRehearsal(rehearsalId: string | undefined) {
-  const { apiClient } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => activateRehearsal(apiClient, rehearsalId as string),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] }),
-  });
-}
-
 export function useUpdateRehearsal(rehearsalId: string | undefined) {
   const { apiClient } = useAuth();
   const queryClient = useQueryClient();
@@ -105,15 +95,5 @@ export function useUpdateRehearsal(rehearsalId: string | undefined) {
       queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] });
       queryClient.invalidateQueries({ queryKey: ['production-rehearsals', rehearsal.production_id] });
     },
-  });
-}
-
-export function useCompleteRehearsal(rehearsalId: string | undefined) {
-  const { apiClient } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => completeRehearsal(apiClient, rehearsalId as string),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rehearsal', rehearsalId] }),
   });
 }

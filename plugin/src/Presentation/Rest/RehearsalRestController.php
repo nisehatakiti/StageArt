@@ -6,12 +6,8 @@ namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Application\Rehearsal\ActivateRehearsalCommand;
-use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
 use StageArt\Application\Rehearsal\CancelRehearsalCommand;
 use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
-use StageArt\Application\Rehearsal\CompleteRehearsalCommand;
-use StageArt\Application\Rehearsal\CompleteRehearsalUseCase;
 use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
@@ -28,6 +24,14 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 
+/**
+ * PR #7 R10: the manual `POST /rehearsals/{id}/activate` and `/complete`
+ * routes are removed. A CONFIRMED Rehearsal becomes ACTIVE at its start
+ * time and COMPLETED at its end time (RehearsalStatusTimeSync), and the
+ * manual routes allowed starting a Rehearsal before its start time
+ * (docs/20-RehearsalManagementScreen.md §21.1, §23.1). No screen, app
+ * or documented integration called them.
+ */
 final class RehearsalRestController
 {
     private const API_NAMESPACE = 'stageart/v1';
@@ -37,8 +41,6 @@ final class RehearsalRestController
     private ListRehearsalsUseCase $listRehearsals;
     private UpdateRehearsalUseCase $updateRehearsal;
     private ConfirmRehearsalUseCase $confirmRehearsal;
-    private ActivateRehearsalUseCase $activateRehearsal;
-    private CompleteRehearsalUseCase $completeRehearsal;
     private CancelRehearsalUseCase $cancelRehearsal;
 
     public function __construct(
@@ -47,8 +49,6 @@ final class RehearsalRestController
         ListRehearsalsUseCase $listRehearsals,
         UpdateRehearsalUseCase $updateRehearsal,
         ConfirmRehearsalUseCase $confirmRehearsal,
-        ActivateRehearsalUseCase $activateRehearsal,
-        CompleteRehearsalUseCase $completeRehearsal,
         CancelRehearsalUseCase $cancelRehearsal
     ) {
         $this->createRehearsal = $createRehearsal;
@@ -56,8 +56,6 @@ final class RehearsalRestController
         $this->listRehearsals = $listRehearsals;
         $this->updateRehearsal = $updateRehearsal;
         $this->confirmRehearsal = $confirmRehearsal;
-        $this->activateRehearsal = $activateRehearsal;
-        $this->completeRehearsal = $completeRehearsal;
         $this->cancelRehearsal = $cancelRehearsal;
     }
 
@@ -89,7 +87,7 @@ final class RehearsalRestController
             ],
         ]);
 
-        foreach (['confirm' => 'confirm', 'activate' => 'activate', 'complete' => 'complete', 'cancel' => 'cancel'] as $route => $handler) {
+        foreach (['confirm' => 'confirm', 'cancel' => 'cancel'] as $route => $handler) {
             register_rest_route(self::API_NAMESPACE, "/rehearsals/(?P<id>[^/]+)/{$route}", [
                 [
                     'methods' => 'POST',
@@ -218,46 +216,6 @@ final class RehearsalRestController
             $command = new ConfirmRehearsalCommand((string) $request->get_param('id'), get_current_user_id());
 
             return new WP_REST_Response($this->confirmRehearsal->execute($command)->toArray(), 200);
-        } catch (RehearsalAccessDeniedException $exception) {
-            return new WP_Error('stageart_rehearsal_access_denied', $exception->getMessage(), ['status' => 403]);
-        } catch (RehearsalNotFoundException $exception) {
-            return new WP_Error('stageart_rehearsal_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (ProductionNotFoundException $exception) {
-            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (InvalidArgumentException $exception) {
-            return new WP_Error('stageart_rehearsal_invalid', $exception->getMessage(), ['status' => 422]);
-        }
-    }
-
-    /**
-     * @return WP_REST_Response|WP_Error
-     */
-    public function activate(WP_REST_Request $request)
-    {
-        try {
-            $command = new ActivateRehearsalCommand((string) $request->get_param('id'), get_current_user_id());
-
-            return new WP_REST_Response($this->activateRehearsal->execute($command)->toArray(), 200);
-        } catch (RehearsalAccessDeniedException $exception) {
-            return new WP_Error('stageart_rehearsal_access_denied', $exception->getMessage(), ['status' => 403]);
-        } catch (RehearsalNotFoundException $exception) {
-            return new WP_Error('stageart_rehearsal_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (ProductionNotFoundException $exception) {
-            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (InvalidArgumentException $exception) {
-            return new WP_Error('stageart_rehearsal_invalid', $exception->getMessage(), ['status' => 422]);
-        }
-    }
-
-    /**
-     * @return WP_REST_Response|WP_Error
-     */
-    public function complete(WP_REST_Request $request)
-    {
-        try {
-            $command = new CompleteRehearsalCommand((string) $request->get_param('id'), get_current_user_id());
-
-            return new WP_REST_Response($this->completeRehearsal->execute($command)->toArray(), 200);
         } catch (RehearsalAccessDeniedException $exception) {
             return new WP_Error('stageart_rehearsal_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (RehearsalNotFoundException $exception) {

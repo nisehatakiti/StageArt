@@ -115,20 +115,6 @@ export function cancelRehearsal(client: ApiClient, rehearsalId: string): Promise
   return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/cancel`);
 }
 
-/** POST /rehearsals/{id}/activate - "稽古を開始する" (Rehearsal.md's own
- * ACTIVE definition: "Rehearsalが実施中である状態"). Only a CONFIRMED
- * Rehearsal may become ACTIVE (ActivateRehearsalUseCase.php). */
-export function activateRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
-  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/activate`);
-}
-
-/** POST /rehearsals/{id}/complete - "実施済みにする" (Rehearsal.md's own
- * COMPLETED definition: "Rehearsalが実施済みとなった状態"). Only an ACTIVE
- * Rehearsal may become COMPLETED (CompleteRehearsalUseCase.php). */
-export function completeRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
-  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/complete`);
-}
-
 /** GET /rehearsals/{id}/attendances?phase=X - the full roster for one
  * Rehearsal/phase, not just the caller's own record (see
  * RehearsalAttendanceRestController.php: read is Production-membership-

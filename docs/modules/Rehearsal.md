@@ -59,7 +59,7 @@ directly (24 migrated in Phase 2, 2 more found and migrated in Phase 3
 
 | UseCase group | Contracts depended on |
 |---|---|
-| Management ops (`ActivateRehearsalUseCase`, `CancelRehearsalUseCase`, `CompleteRehearsalUseCase`, `UpdateRehearsalUseCase`) | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| Management ops (`ActivateRehearsalUseCase`, `CancelRehearsalUseCase`, `CompleteRehearsalUseCase`, `UpdateRehearsalUseCase`) | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` (PR #7 R10: `Activate`/`Complete` are no longer exposed over REST - see docs/20-RehearsalManagementScreen.md §23.1) |
 | Read ops (`GetRehearsalUseCase`, `ListRehearsalsUseCase`) | `ProductionContextContract`, `IdentityContract`, `MembershipContract` |
 | Creation (`CreateRehearsalUseCase`, `ConfirmRehearsalUseCase`) | `ProductionContextContract`, `MembershipContract`, `IdentityContract`, `AuthorizationContract` |
 | RehearsalAttendance UseCases (4) | `IdentityContract` (+ `MembershipContract`/`ProductionContextContract` where needed - `RespondRehearsalAttendanceUseCase` needs only `IdentityContract`, since it checks `$attendance->personId()->equals($requesterId)` directly) |

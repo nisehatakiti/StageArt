@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Rehearsal;
 
+use DateTimeImmutable;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
@@ -66,9 +67,18 @@ final class SendRehearsalReminderUseCase
             return;
         }
 
+        if (! $this->dispatcher->isSendable($rehearsal)) {
+            return;
+        }
+
+        // PR #7 R10: mark it sent and commit first, then send - a failed
+        // save never leaves a reminder that was sent but not recorded
+        // (which a later run would send again).
         $this->transactions->run(function () use ($rehearsal): void {
-            $this->dispatcher->dispatch($rehearsal);
+            $rehearsal->markReminderSent(new DateTimeImmutable());
             $this->rehearsals->save($rehearsal);
         });
+
+        $this->dispatcher->send($rehearsal);
     }
 }

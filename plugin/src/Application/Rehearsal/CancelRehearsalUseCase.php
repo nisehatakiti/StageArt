@@ -14,6 +14,8 @@ use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
+use Throwable;
+
 
 /**
  * StageArt Core/Module Architecture Phase 2: depends only on Core
@@ -101,32 +103,43 @@ final class CancelRehearsalUseCase
         // triggered a sync yet.
         $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
-        $this->transactions->run(function () use ($rehearsal, $production): void {
+        $this->transactions->run(function () use ($rehearsal): void {
             $rehearsal->cancel();
             $this->rehearsals->save($rehearsal);
 
             $this->reminderScheduler->cancelReminder($rehearsal->id());
+        });
 
-            if ($rehearsal->startDateTime() !== null) {
-                $message = RehearsalNotificationMessageBuilder::buildCancelledMessage($production->name, $rehearsal->startDateTime());
+        // PR #7 R10: the §17 notification goes out only after the
+        // cancellation commits; one person's failure is logged and does
+        // not stop the others or undo the cancellation.
+        if ($rehearsal->startDateTime() !== null) {
+            $message = RehearsalNotificationMessageBuilder::buildCancelledMessage($production->name, $rehearsal->startDateTime());
 
-                $targetPersonIds = [];
+            $targetPersonIds = [];
 
-                foreach ([RehearsalAttendancePhase::scheduleAdjustment(), RehearsalAttendancePhase::attendanceConfirmation()] as $phase) {
-                    foreach ($this->attendances->findByRehearsalIdAndPhase($rehearsal->id(), $phase) as $attendance) {
-                        $targetPersonIds[$attendance->personId()->toString()] = $attendance->personId();
-                    }
+            foreach ([RehearsalAttendancePhase::scheduleAdjustment(), RehearsalAttendancePhase::attendanceConfirmation()] as $phase) {
+                foreach ($this->attendances->findByRehearsalIdAndPhase($rehearsal->id(), $phase) as $attendance) {
+                    $targetPersonIds[$attendance->personId()->toString()] = $attendance->personId();
                 }
+            }
 
-                foreach ($targetPersonIds as $personId) {
+            foreach ($targetPersonIds as $personId) {
+                try {
                     $this->notificationContract->notify($personId, 'rehearsal_cancelled', [
                         'rehearsal_id' => $rehearsal->id()->toString(),
                         'production_id' => $rehearsal->productionId()->toString(),
                         'message' => $message,
                     ]);
+                } catch (Throwable $exception) {
+                    error_log(sprintf(
+                        '[StageArt rehearsal notification] rehearsal_cancelled for rehearsal %s not sent: %s',
+                        $rehearsal->id()->toString(),
+                        get_class($exception)
+                    ));
                 }
             }
-        });
+        }
 
         return RehearsalResult::fromDomain($rehearsal);
     }
