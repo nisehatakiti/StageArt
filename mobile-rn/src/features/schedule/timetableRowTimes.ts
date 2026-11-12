@@ -2,37 +2,73 @@ import { parseApiDateTime, splitJstDateTime, toJstIso } from './jst';
 
 /**
  * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25): how the timetable
- * editor's one-date rows map to full start/end date-times.
+ * editor's rows map to full start/end date-times (Asia/Tokyo, "+09:00").
  *
- * A row has the item's date (its START date - the list groups it there),
- * a start time and an optional end time. An end time earlier than the
- * start time means the item ends the next day (23:30-00:30). The same
- * start and end time is not allowed (no zero-length items).
+ * A row has a start date and time and an optional end date and time.
+ *
+ * - The end date of an item loaded from the API is the end's own date
+ *   (R12 follow-up): an item ending the next day, two days later or later
+ *   still keeps that date. Changing only the end time never moves it -
+ *   an end that then falls on or before the start is refused, not moved.
+ * - Changing the start date moves an end date by the same number of days
+ *   (the item keeps how many days it spans).
+ * - A row with no end date (a new row, or an item that had no end) takes
+ *   the start date, or the next day when the end time is earlier than the
+ *   start time (23:30-00:30).
+ * - The same start and end is not allowed (no zero-length items).
  *
  * A row the user did not change sends back exactly the start/end it was
- * loaded with, so saving never loses or moves an end date - including an
- * item that runs longer than a day, which one date per row cannot show.
+ * loaded with.
  */
-export type RowTimes = { date: string; startTime: string; endTime: string };
+export type RowTimes = {
+  date: string;
+  startTime: string;
+  /** '' (or absent): not chosen - see above. */
+  endDate?: string;
+  endTime: string;
+};
 
-export type RowOriginal = RowTimes & { start: string; end: string | null };
+export type RowOriginal = RowTimes & { endDate: string; start: string; end: string | null };
 
-export type RowDateTimes =
-  | { ok: true; start: string; end: string | null }
-  | { ok: false; error: 'same-time' };
+export type RowDateTimeError = 'same-time' | 'end-before-start';
+
+export type RowDateTimes = { ok: true; start: string; end: string | null } | { ok: false; error: RowDateTimeError };
+
+const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function dateToUtc(date: string): number | null {
+  const match = DATE.exec(date);
+  if (!match) {
+    return null;
+  }
+  const time = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+  return Number.isNaN(time) ? null : time;
+}
+
+/** "2026-12-30" + 2 -> "2027-01-01" (calendar days; no timezone involved). */
+export function addDays(date: string, days: number): string {
+  const time = dateToUtc(date);
+  return time === null ? date : new Date(time + days * DAY_MS).toISOString().slice(0, 10);
+}
 
 /** "2026-12-31" -> "2027-01-01" */
 export function nextDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number);
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  return next.toISOString().slice(0, 10);
+  return addDays(date, 1);
 }
 
 /** The editor's row values for a loaded item, keeping what was loaded. */
 export function rowFromItem(start: string, end: string | null): RowOriginal {
   const s = splitJstDateTime(start);
   const e = splitJstDateTime(end);
-  return { date: s.date, startTime: s.time, endTime: e.time, start: asJst(start), end: end === null ? null : asJst(end) };
+  return {
+    date: s.date,
+    startTime: s.time,
+    endDate: e.date,
+    endTime: e.time,
+    start: asJst(start),
+    end: end === null ? null : asJst(end),
+  };
 }
 
 /** The same instant written with "+09:00" (unchanged when unreadable). */
@@ -41,13 +77,35 @@ function asJst(value: string): string {
   return date ? toJstIso(date) : value;
 }
 
+/**
+ * The row after its start date is changed: an end date moves by the same
+ * number of days, so a 3-day item stays a 3-day item.
+ */
+export function withStartDate<T extends RowTimes>(row: T, date: string): T {
+  const from = dateToUtc(row.date);
+  const to = dateToUtc(date);
+  if (!row.endDate || from === null || to === null) {
+    return { ...row, date };
+  }
+  return { ...row, date, endDate: addDays(row.endDate, Math.round((to - from) / DAY_MS)) };
+}
+
 function unchanged(row: RowTimes, original: RowOriginal | undefined): original is RowOriginal {
   return (
     original !== undefined &&
     row.date === original.date &&
     row.startTime === original.startTime &&
+    (row.endDate ?? '') === original.endDate &&
     row.endTime === original.endTime
   );
+}
+
+/** The end date a row is saved with (see the rules above). */
+function endDateOf(row: RowTimes): string {
+  if (row.endDate) {
+    return row.endDate;
+  }
+  return row.endTime < row.startTime ? nextDate(row.date) : row.date;
 }
 
 /** The start/end date-times (Asia/Tokyo, "+09:00") a row is saved with. */
@@ -65,17 +123,28 @@ export function rowDateTimes(row: RowTimes, original?: RowOriginal): RowDateTime
   if (!row.endTime) {
     return { ok: true, start, end: null };
   }
-  if (row.endTime === row.startTime) {
+  const end = `${endDateOf(row)}T${row.endTime}:00+09:00`;
+  // Both are "YYYY-MM-DDTHH:MM:00+09:00", so text order is time order.
+  if (end === start) {
     return { ok: false, error: 'same-time' };
   }
-  const endDate = row.endTime > row.startTime ? row.date : nextDate(row.date);
-  return { ok: true, start, end: `${endDate}T${row.endTime}:00+09:00` };
+  if (end < start) {
+    return { ok: false, error: 'end-before-start' };
+  }
+  return { ok: true, start, end };
+}
+
+/** The validation message for a row the editor will not save. */
+export function rowDateTimeErrorMessage(rowNumber: number, error: RowDateTimeError): string {
+  return error === 'same-time'
+    ? `${rowNumber}行目：開始と終了が同じ時刻です。終了の日付・時刻を変えるか、終了時刻を空欄にしてください。`
+    : `${rowNumber}行目：終了が開始より前になっています。終了日または終了時刻を直してください。`;
 }
 
 /**
  * What the editor shows next to the end time: "翌日" when the item ends
- * the next day, "M/D終了" when it ends later than that (only possible for
- * an item created through the API), nothing when it ends the same day.
+ * the next day, "M/D終了" when it ends later than that, nothing when it
+ * ends the same day (or the row cannot be saved as it is).
  */
 export function endDayLabel(row: RowTimes, original?: RowOriginal): string {
   const times = rowDateTimes(row, original);

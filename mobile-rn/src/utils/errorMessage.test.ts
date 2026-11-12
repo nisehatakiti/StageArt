@@ -1,6 +1,6 @@
 import { ApiError, NetworkError } from '@/api/errors';
 
-import { getErrorMessage } from './errorMessage';
+import { getErrorMessage, isRehearsalIdempotencyConflict } from './errorMessage';
 
 describe('getErrorMessage', () => {
   it('distinguishes 401 (Authentication) from 403 (Authorization)', () => {
@@ -38,6 +38,22 @@ describe('getErrorMessage', () => {
     expect(getErrorMessage(new ApiError(422, 'overpaid', 'stageart_production_settlement_overpaid'))).toBe(
       '精算済みの額が確定したチケットバックを上回っているメンバーがいるため、決算を完了できません。精算画面で該当メンバーの精算を取り消し、確定額で精算し直してください。'
     );
+  });
+
+  it('explains a Rehearsal create key reused with different content (409), and only that 409', () => {
+    const conflict = new ApiError(409, 'Idempotency-Key was used for a different request.', 'stageart_rehearsal_idempotency_conflict', { status: 409 });
+    expect(getErrorMessage(conflict)).toBe(
+      '同じ送信キーで異なる内容の稽古を登録しようとしました。画面を再読み込みして、もう一度登録してください。'
+    );
+    expect(isRehearsalIdempotencyConflict(conflict)).toBe(true);
+
+    const closed = new ApiError(409, 'closed', 'stageart_production_closed');
+    expect(getErrorMessage(closed)).toBe('この公演は中止または決算完了済みのため、この操作はできません。');
+    expect(isRehearsalIdempotencyConflict(closed)).toBe(false);
+    expect(getErrorMessage(new ApiError(409, 'other', 'stageart_other_conflict'))).toBe('読み込みに失敗しました。(409)');
+    expect(isRehearsalIdempotencyConflict(new ApiError(409, 'other'))).toBe(false);
+    expect(isRehearsalIdempotencyConflict(new ApiError(422, 'x', 'stageart_rehearsal_idempotency_conflict'))).toBe(false);
+    expect(isRehearsalIdempotencyConflict(new NetworkError(new Error('offline')))).toBe(false);
   });
 
   it('maps NetworkError to a connectivity-specific message', () => {

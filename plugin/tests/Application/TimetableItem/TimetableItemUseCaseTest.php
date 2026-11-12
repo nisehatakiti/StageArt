@@ -723,4 +723,44 @@ final class TimetableItemUseCaseTest extends TestCase
         $kept = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
         $this->assertSame(['2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00'], [$kept->startDateTime, $kept->endDateTime]);
     }
+
+    /**
+     * PR #7 R12 follow-up (docs/20-RehearsalManagementScreen.md §25.4): no
+     * limit on how long an item may be (none existed before); items ending
+     * two, three or more days later are created, updated and read back
+     * with their own end date.
+     */
+    public function test_r12_items_longer_than_a_day_keep_their_end_date(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        $twoDays = $this->createAt($rehearsal, '2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00');
+        $threeDays = $this->createAt($rehearsal, '2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00');
+        $week = $this->createAt($rehearsal, '2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00');
+        $read = function (string $id): array {
+            $item = $this->getItem->execute(new GetTimetableItemQuery($id, 1));
+
+            return [$item->startDateTime, $item->endDateTime];
+        };
+
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00'], $read($twoDays));
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00'], $read($threeDays));
+        $this->assertSame(['2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00'], $read($week));
+
+        // Only the end time / only the end date / the start date and end date.
+        $this->updateAt($twoDays, '2026-11-10T09:00:00+09:00', '2026-11-12T08:00:00+09:00');
+        $this->updateAt($threeDays, '2026-11-10T09:00:00+09:00', '2026-11-14T09:00:00+09:00');
+        $this->updateAt($week, '2026-12-29T22:00:00+09:00', '2027-01-05T06:00:00+09:00');
+        for ($i = 0; $i < 3; $i++) {
+            foreach ([$twoDays, $threeDays, $week] as $id) {
+                [$start, $end] = $read($id);
+                $this->updateAt($id, $start, $end);
+            }
+        }
+
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-12T08:00:00+09:00'], $read($twoDays));
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-14T09:00:00+09:00'], $read($threeDays));
+        $this->assertSame(['2026-12-29T22:00:00+09:00', '2027-01-05T06:00:00+09:00'], $read($week));
+    }
 }

@@ -96,7 +96,13 @@ describe('Timetable editor: items crossing midnight', () => {
     expect(screen.getByTestId('timetable-item-end-day-0')).toHaveTextContent('翌日');
     expect(screen.queryByTestId('timetable-item-end-day-1')).toBeNull();
 
-    // Row 2 now ends at 01:30 - before its 22:00 start, so the next day.
+    expect(screen.getByTestId('timetable-item-end-date-0').props.value).toBe('2026-11-11');
+    expect(screen.getByTestId('timetable-item-end-date-1').props.value).toBe('2026-11-10');
+
+    // Row 2 now ends at 01:30 the next day. R12 follow-up: the end date is
+    // the row's own field and is changed explicitly (R12 moved it to the
+    // next day by itself when the end time was earlier than the start).
+    fireEvent.changeText(screen.getByTestId('timetable-item-end-date-1'), '2026-11-11');
     fireEvent.changeText(screen.getByTestId('timetable-item-end-1'), '01:30');
     await waitFor(() => expect(screen.getByTestId('timetable-item-end-day-1')).toHaveTextContent('翌日'));
 
@@ -107,21 +113,5 @@ describe('Timetable editor: items crossing midnight', () => {
       ['バラシ', '2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00'],
       ['撤収', '2026-11-10T22:00:00+09:00', '2026-11-11T01:30:00+09:00'],
     ]);
-  });
-
-  it('does not save the same start and end time', async () => {
-    const writes = mockApi([
-      { ...baseItem, id: 'item-a', title: 'バラシ', start_date_time: '2026-11-10T23:30:00+09:00', end_date_time: '2026-11-11T00:30:00+09:00' },
-    ]);
-    await openEditor();
-
-    await waitFor(() => expect(screen.getByTestId('timetable-item-end-0').props.value).toBe('00:30'));
-    fireEvent.changeText(screen.getByTestId('timetable-item-end-0'), '23:30');
-    await waitFor(() => expect(screen.getByTestId('timetable-item-end-0').props.value).toBe('23:30'));
-
-    fireEvent.press(screen.getByTestId('timetable-save'));
-
-    await waitFor(() => expect(screen.getByTestId('timetable-save-validation')).toHaveTextContent(/1行目：開始と終了が同じ時刻です/));
-    expect(writes).toEqual([]);
   });
 });

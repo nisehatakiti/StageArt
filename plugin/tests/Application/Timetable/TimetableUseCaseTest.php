@@ -470,4 +470,39 @@ final class TimetableUseCaseTest extends TestCase
             '旧データ（同時刻）' => ['2026-11-10T10:00:00+09:00', '2026-11-10T10:00:00+09:00'],
         ], $copies);
     }
+
+    /**
+     * PR #7 R12 follow-up: a new Version copies items longer than a day
+     * with their own end date (二日後・三日後・年またぎ), version after version.
+     */
+    public function test_r12_new_version_copies_items_longer_than_a_day(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $expected = [
+            'A 二日後' => ['2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00'],
+            'B 三日後' => ['2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00'],
+            'C 年またぎ' => ['2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00'],
+        ];
+        $order = 1;
+        foreach ($expected as $title => [$start, $end]) {
+            $this->createItem->execute(new CreateTimetableItemCommand(
+                $rehearsal->id()->toString(), 1, $title, null, $start, $end, $order++, null, null, null, [], null
+            ));
+        }
+        $draftV1 = $this->getDraftTimetable->execute(new GetDraftTimetableQuery($rehearsal->id()->toString(), 1));
+        $this->publishVersion->execute(new PublishTimetableVersionCommand($draftV1->id, 1, null));
+
+        for ($version = 2; $version <= 3; $version++) {
+            $this->createNewVersion->execute(new CreateNewTimetableVersionCommand($rehearsal->id()->toString(), 1));
+            $copies = [];
+            foreach ($this->listDraftItems->execute(new ListDraftTimetableItemsQuery($rehearsal->id()->toString(), 1)) as $item) {
+                $copies[$item->title] = [$item->startDateTime, $item->endDateTime];
+            }
+            ksort($copies);
+            $this->assertSame($expected, $copies, "version {$version}");
+            $draft = $this->getDraftTimetable->execute(new GetDraftTimetableQuery($rehearsal->id()->toString(), 1));
+            $this->publishVersion->execute(new PublishTimetableVersionCommand($draft->id, 1, null));
+        }
+    }
 }

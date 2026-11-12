@@ -13,7 +13,14 @@ import { useRehearsals } from '@/features/attendance/useRehearsals';
 import { useProduction } from '@/features/production/useProductions';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import { splitJstDateTime } from '@/features/schedule/jst';
-import { endDayLabel, rowDateTimes, rowFromItem, type RowOriginal } from '@/features/schedule/timetableRowTimes';
+import {
+  endDayLabel,
+  rowDateTimeErrorMessage,
+  rowDateTimes,
+  rowFromItem,
+  withStartDate,
+  type RowOriginal,
+} from '@/features/schedule/timetableRowTimes';
 import { useSaveAndPublishTimetable, useTimetableEditorItems } from '@/features/schedule/useTimetableAuthoring';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { Rehearsal, TimetableItem } from '@/types/api';
@@ -23,6 +30,8 @@ type ItemRow = {
   title: string;
   date: string;
   startTime: string;
+  /** PR #7 R12 follow-up: the end's own date ('' = not chosen). */
+  endDate: string;
   endTime: string;
   venue: string;
   notes: string;
@@ -41,14 +50,16 @@ function splitDateTime(value: string | null): { date: string; time: string } {
 }
 
 function toRow(item: TimetableItem): ItemRow {
-  // PR #7 R12: the row's date is the START date; an end on the next day is
-  // shown as 「翌日」 and kept (features/schedule/timetableRowTimes.ts).
+  // PR #7 R12: the row keeps the start date and the end's own date, so an
+  // item ending the next day or later keeps its end date
+  // (features/schedule/timetableRowTimes.ts).
   const original = rowFromItem(item.start_date_time, item.end_date_time);
   return {
     key: item.id,
     title: item.title,
     date: original.date,
     startTime: original.startTime,
+    endDate: original.endDate,
     endTime: original.endTime,
     venue: item.venue ?? '',
     notes: item.notes ?? '',
@@ -114,13 +125,18 @@ export default function TimetableEditorScreen() {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
 
+  /** PR #7 R12 follow-up: a new start date moves the end date with it. */
+  function changeStartDate(key: string, date: string) {
+    setRows((current) => current.map((row) => (row.key === key ? withStartDate(row, date) : row)));
+  }
+
   function addRow() {
     newRowSequence.current += 1;
     const key = `new-${newRowSequence.current}`;
     const defaultDate = splitDateTime(selectedRehearsal?.start_date_time ?? null).date;
     setRows((current) => [
       ...current,
-      { key, title: '', date: defaultDate, startTime: '', endTime: '', venue: '', notes: '' },
+      { key, title: '', date: defaultDate, startTime: '', endDate: '', endTime: '', venue: '', notes: '' },
     ]);
   }
 
@@ -139,9 +155,10 @@ export default function TimetableEditorScreen() {
       return;
     }
     const times = rows.map((row) => rowDateTimes(row, row.original));
-    const sameTime = times.findIndex((t) => !t.ok);
-    if (sameTime >= 0) {
-      setValidationError(`${sameTime + 1}行目：開始と終了が同じ時刻です。終了時刻を変えるか、空欄にしてください。`);
+    const invalid = times.findIndex((t) => !t.ok);
+    if (invalid >= 0) {
+      const failed = times[invalid] as { ok: false; error: 'same-time' | 'end-before-start' };
+      setValidationError(rowDateTimeErrorMessage(invalid + 1, failed.error));
       return;
     }
     setValidationError(null);
@@ -227,8 +244,8 @@ export default function TimetableEditorScreen() {
                         mode="date"
                         testID={`timetable-item-date-${index}`}
                         value={row.date}
-                        onChangeText={(date) => updateRow(row.key, { date })}
-                        placeholder="日付"
+                        onChangeText={(date) => changeStartDate(row.key, date)}
+                        placeholder="開始日"
                       />
                       <DateTimeInput
                         mode="time"
@@ -236,6 +253,13 @@ export default function TimetableEditorScreen() {
                         value={row.startTime}
                         onChangeText={(startTime) => updateRow(row.key, { startTime })}
                         placeholder="開始"
+                      />
+                      <DateTimeInput
+                        mode="date"
+                        testID={`timetable-item-end-date-${index}`}
+                        value={row.endDate}
+                        onChangeText={(endDate) => updateRow(row.key, { endDate })}
+                        placeholder="終了日（省略時は自動）"
                       />
                       <DateTimeInput
                         mode="time"

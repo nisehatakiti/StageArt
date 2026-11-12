@@ -11,7 +11,7 @@ import { useCreateRequestKey } from '@/features/attendance/createRequestKey';
 import { useCreateRehearsal } from '@/features/attendance/useRehearsals';
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
-import { getErrorMessage } from '@/utils/errorMessage';
+import { getErrorMessage, isRehearsalIdempotencyConflict } from '@/utils/errorMessage';
 import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
 import type { Participant } from '@/types/api';
 
@@ -132,9 +132,15 @@ export default function CreateRehearsalScreen() {
     let rehearsal;
     try {
       rehearsal = await createRehearsal.mutateAsync({ ...fields, idempotencyKey: requestKey.keyFor(fields) });
-    } catch {
+    } catch (error) {
       // Shown below from createRehearsal.error; pressing 作成 again with
-      // the same content resends with the same key.
+      // the same content resends with the same key - except after the
+      // Backend said that key already belongs to different content (409
+      // stageart_rehearsal_idempotency_conflict): that key can never
+      // succeed, so the next 作成 (or the reloaded screen) uses a new one.
+      if (isRehearsalIdempotencyConflict(error)) {
+        requestKey.reset();
+      }
       return;
     }
     requestKey.reset();
@@ -347,7 +353,9 @@ export default function CreateRehearsalScreen() {
 
         {createRehearsal.isError && (
           <View style={styles.errorBox}>
-            <ThemedText style={styles.error}>{getErrorMessage(createRehearsal.error)}</ThemedText>
+            <ThemedText style={styles.error} testID="rehearsal-create-error">
+              {getErrorMessage(createRehearsal.error)}
+            </ThemedText>
           </View>
         )}
 

@@ -273,4 +273,40 @@ final class WordPressTimetableItemRepositoryTest extends TestCase
         $this->assertSame('2026-12-31 23:30:00', $this->rows[$item->id()->toString()]['start_date_time']);
         $this->assertSame('2027-01-01 01:30:00', $this->rows[$item->id()->toString()]['end_date_time']);
     }
+
+    /**
+     * PR #7 R12 follow-up (docs/20-RehearsalManagementScreen.md §25.4): items
+     * longer than a day are stored and read as their full date-times, in
+     * any PHP default timezone, and saving them again changes nothing.
+     */
+    public function test_r12_items_longer_than_a_day_round_trip_unchanged(): void
+    {
+        foreach (['UTC', 'America/New_York', 'Asia/Tokyo'] as $phpTimezone) {
+            date_default_timezone_set($phpTimezone);
+            $repository = $this->repository();
+            foreach ([
+                ['2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00', '2026-11-12 18:00:00'],
+                ['2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00', '2026-11-13 09:00:00'],
+                ['2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00', '2027-01-04 06:00:00'],
+                ['2026-11-10T23:30:00+09:00', '2026-11-12T00:30:00+09:00', '2026-11-12 00:30:00'],
+            ] as [$start, $end, $stored]) {
+                $item = $this->newItem($start, $end);
+                $repository->save($item);
+                for ($i = 0; $i < 3; $i++) {
+                    $result = TimetableItemResult::fromDomain($repository->findById($item->id()));
+                    $this->assertSame([$start, $end], [$result->startDateTime, $result->endDateTime], $phpTimezone);
+                    $repository->save($repository->findById($item->id()));
+                }
+                $this->assertSame($stored, $this->rows[$item->id()->toString()]['end_date_time'], $phpTimezone);
+            }
+        }
+    }
+
+    /** A row ending on a later date with an earlier clock time is not a pre-R12 row. */
+    public function test_r12_a_later_end_date_with_an_earlier_time_reads_as_stored(): void
+    {
+        $id = $this->givenLegacyRow('2026-11-10 23:30:00', '2026-11-12 00:30:00');
+
+        $this->assertSame('2026-11-12T00:30:00+09:00', TimetableItemResult::fromDomain($this->repository()->findById($id))->endDateTime);
+    }
 }

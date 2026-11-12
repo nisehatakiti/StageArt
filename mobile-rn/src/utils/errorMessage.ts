@@ -1,5 +1,14 @@
 import { ApiError, NetworkError } from '@/api/errors';
 
+/** PR #7 R12: the 409 code of POST /productions/{id}/rehearsals for an
+ * idempotency key reused with different content. */
+export const REHEARSAL_IDEMPOTENCY_CONFLICT = 'stageart_rehearsal_idempotency_conflict';
+
+/** True for that 409 (and nothing else - not other 409s, not network errors). */
+export function isRehearsalIdempotencyConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.statusCode === 409 && error.code === REHEARSAL_IDEMPOTENCY_CONFLICT;
+}
+
 /**
  * Maps API/Network errors to a Japanese message, distinguishing
  * Authentication (401) from Authorization (403) from Not Found (404)
@@ -22,6 +31,12 @@ export function getErrorMessage(error: unknown): string {
     }
     if (error.code === 'stageart_database_busy') {
       return 'サーバーが混み合っていたため、保存されませんでした。少し待ってからもう一度お試しください。';
+    }
+    // PR #7 R12 follow-up (docs/20 §26.4): a Rehearsal create whose
+    // idempotency key was already used for different content. Only the
+    // create endpoint answers this code; other 409s keep their own text.
+    if (error.code === REHEARSAL_IDEMPOTENCY_CONFLICT) {
+      return '同じ送信キーで異なる内容の稽古を登録しようとしました。画面を再読み込みして、もう一度登録してください。';
     }
     // PR #7 review (R6): a capacity below the seats already reserved.
     if (error.code === 'stageart_capacity_below_reservations') {

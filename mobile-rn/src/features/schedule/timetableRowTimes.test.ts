@@ -75,14 +75,18 @@ describe('timetable editor rows', () => {
     }
   });
 
-  it('keeps an end more than a day later when the row is not changed, and recomputes it when it is', () => {
+  // R12 follow-up: this test first expected an edited end time to be
+  // recomputed onto the next day (end 11/11 01:30), which lost the item's
+  // 11/12 end date. The end date is now kept (timetableRowTimesMultiDay.test.ts).
+  it('keeps an end more than a day later when the row is not changed, and when only its end time is changed', () => {
     const original = rowFromItem('2026-11-10T23:30:00+09:00', '2026-11-12T09:00:00+09:00');
+    expect(original.endDate).toBe('2026-11-12');
     expect(endDayLabel(original, original)).toBe('11/12終了');
     expect(rowDateTimes(original, original)).toMatchObject({ end: '2026-11-12T09:00:00+09:00' });
 
     const edited = { ...original, endTime: '01:30' };
-    expect(rowDateTimes(edited, original)).toMatchObject({ end: '2026-11-11T01:30:00+09:00' });
-    expect(endDayLabel(edited, original)).toBe('翌日');
+    expect(rowDateTimes(edited, original)).toMatchObject({ end: '2026-11-12T01:30:00+09:00' });
+    expect(endDayLabel(edited, original)).toBe('11/12終了');
   });
 
   it('stops an unchanged pre-R12 item that has the same start and end before saving', () => {
