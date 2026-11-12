@@ -4,25 +4,66 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Production;
 
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
+use StageArt\Domain\Reservation\ReservationRepositoryInterface;
+use StageArt\Domain\Reservation\ReservationStatus;
+use StageArt\Domain\Settlement\SettlementRepositoryInterface;
 
 /**
- * ACTIVE -> COMPLETED ("精算" -> "決算完了"). PrimaryManager-exclusive per
- * ProductionDelegatePolicy.md ("ACTIVE → COMPLETED: PrimaryManagerのみ、
- * かつ決算完了が必須"). See Production::complete()'s docblock for why no
- * automated Accounting-settlement Guard is enforced here yet - Production
- * Settlement is unimplemented this Phase, a disclosed Open Item.
+ * ACTIVE -> COMPLETED ("精算" -> "決算完了"). Allowed to the holders of
+ * `ProductionCapability::COMPLETE` - PrimaryManager, 会計管理者 and 代理人
+ * (StageArt 統合・会計仕様の確定事項 2026-10-28 §2, superseding
+ * ProductionDelegatePolicy.md's earlier "PrimaryManagerのみ"); the
+ * settlement guard below applies to all of them.
+ *
+ * Phase 4 (Check-in/精算/会計連携) fills in the real Guard Production::complete()'s own docblock always pointed to
+ * ("a real computed Guard should replace this once Production Settlement
+ * exists") - every member with a confirmed, unsettled Ticket Back amount
+ * blocks this transition. Reuses `ProductionSettlementCalculator`
+ * directly (an Application-layer, Domain-repository-only calculation
+ * service) rather than duplicating its per-member Ticket Back arithmetic
+ * here.
+ *
+ * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+ * round): "Production終了時に残っているRESERVEDはCANCELLEDにします" - every
+ * still-RESERVED Reservation across every Performance of this Production
+ * is cancelled in the same transaction as the ACTIVE -> COMPLETED
+ * transition itself, releasing the Capacity it held
+ * (Reservation::occupiesCapacity() already excludes CANCELLED). Already-
+ * CHECKED_IN/NO_SHOW/CANCELLED Reservations are untouched - only RESERVED
+ * is a "was never actually resolved" state this cleanup targets.
  */
 final class CompleteProductionUseCase
 {
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
+    private ProductionSettlementCalculator $settlementCalculator;
+    private SettlementRepositoryInterface $settlements;
+    private PerformanceRepositoryInterface $performances;
+    private ReservationRepositoryInterface $reservations;
+    private TransactionManagerInterface $transactions;
 
-    public function __construct(ProductionRepositoryInterface $productions, ProductionAuthorizationService $authorization)
-    {
+    public function __construct(
+        ProductionRepositoryInterface $productions,
+        ProductionAuthorizationService $authorization,
+        ProductionSettlementCalculator $settlementCalculator,
+        SettlementRepositoryInterface $settlements,
+        PerformanceRepositoryInterface $performances,
+        ReservationRepositoryInterface $reservations,
+        TransactionManagerInterface $transactions
+    ) {
         $this->productions = $productions;
         $this->authorization = $authorization;
+        $this->settlementCalculator = $settlementCalculator;
+        $this->settlements = $settlements;
+        $this->performances = $performances;
+        $this->reservations = $reservations;
+        $this->transactions = $transactions;
     }
 
     public function execute(CompleteProductionCommand $command): ProductionResult
@@ -33,24 +74,107 @@ final class CompleteProductionUseCase
             throw new ProductionAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($command->productionId));
+        $productionId = ProductionId::fromString($command->productionId);
+        $production = $this->productions->findById($productionId);
 
         if (! $production) {
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can advance this Production\'s Lifecycle.');
+        if (! $this->authorization->canCompleteProduction($person, $production)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can complete this Production.');
         }
 
-        $production->complete();
+        // PR #7 review (R4): everything below runs under the exclusive
+        // Production lock, taken first in the transaction. Bookings and
+        // reception operations hold the shared one (lock order Production ->
+        // Performance -> Reservation), so the ones already running commit
+        // before this lock is granted - and are seen by the settlement check
+        // - and new ones wait for this commit and then find the Production
+        // COMPLETED. The status, the settlement check and the RESERVED
+        // cleanup all read the state as of the lock, never a stale one, and
+        // any failure rolls the whole completion back.
+        $production = $this->transactions->run(function () use ($productionId, $person, $command): Production {
+            $production = $this->productions->findByIdForUpdate($productionId);
 
-        $this->productions->save($production);
+            if (! $production) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
+
+            $this->guardSettlementComplete($production, $productionId);
+
+            $production->complete();
+            $this->productions->save($production);
+
+            foreach ($this->performances->findByProductionId($productionId) as $performance) {
+                foreach ($this->reservations->findByPerformanceId($performance->id()) as $reservation) {
+                    if ($reservation->status()->equals(ReservationStatus::fromString(ReservationStatus::RESERVED))) {
+                        $reservation->cancel($person->id());
+                        $this->reservations->save($reservation);
+                    }
+                }
+            }
+
+            return $production;
+        });
 
         return ProductionResult::fromDomain(
             $production,
-            true,
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->isPrimaryManager($person, $production),
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
+    }
+
+    /**
+     * Every member's settled amount must equal the confirmed Ticket Back.
+     *
+     * - Less settled than confirmed: ProductionSettlementIncompleteException
+     *   (unchanged, checked first).
+     * - (R7) More settled than confirmed: ProductionSettlementOverpaidException.
+     *   A Check-in reversed after the settlement lowers the confirmed
+     *   amount; completing would close the settlement with the over-payment
+     *   in it. The members checked are the union of those with a confirmed
+     *   amount and those with a settlement record - a member whose every
+     *   seat was reversed has no confirmed amount at all any more.
+     *
+     * Runs under the exclusive Production lock, in the completion's
+     * transaction: a Check-in reversal (shared lock), a settlement or its
+     * cancellation (exclusive lock) either committed before - and is seen
+     * here - or waits until the completion has committed (and is then
+     * refused, the Production being COMPLETED).
+     */
+    private function guardSettlementComplete(Production $production, ProductionId $productionId): void
+    {
+        $confirmedAmounts = $this->settlementCalculator->confirmedTicketBackAmountsByMember($production, $productionId);
+
+        $settledAmounts = [];
+        foreach ($this->settlements->findByProductionId($productionId) as $settlement) {
+            $settledAmounts[$settlement->personId()->toString()] = $settlement->totalSettledAmount();
+        }
+
+        $overpaid = [];
+        foreach (array_unique(array_merge(array_map('strval', array_keys($confirmedAmounts)), array_keys($settledAmounts))) as $personIdString) {
+            $confirmed = $confirmedAmounts[$personIdString] ?? 0;
+            $alreadySettled = $settledAmounts[$personIdString] ?? 0;
+
+            if ($confirmed - $alreadySettled > 0) {
+                throw new ProductionSettlementIncompleteException();
+            }
+
+            if ($alreadySettled > $confirmed) {
+                $overpaid[] = [
+                    'person_id' => (string) $personIdString,
+                    'confirmed_ticket_back_amount' => $confirmed,
+                    'settled_amount' => $alreadySettled,
+                    'overpaid_amount' => $alreadySettled - $confirmed,
+                ];
+            }
+        }
+
+        if ($overpaid !== []) {
+            throw new ProductionSettlementOverpaidException($overpaid);
+        }
     }
 }

@@ -13,6 +13,7 @@ use StageArt\Application\Budget\CreateBudgetCommand;
 use StageArt\Application\Budget\CreateBudgetUseCase;
 use StageArt\Application\Budget\GetBudgetQuery;
 use StageArt\Application\Budget\GetBudgetUseCase;
+use StageArt\Application\Budget\ListBudgetItemsUseCase;
 use StageArt\Application\Budget\ListBudgetsUseCase;
 use StageArt\Application\Budget\ListProductionBudgetsQuery;
 use StageArt\Application\Budget\UpdateBudgetCommand;
@@ -31,19 +32,22 @@ final class BudgetRestController
     private GetBudgetUseCase $getBudget;
     private ListBudgetsUseCase $listBudgets;
     private ActivateBudgetUseCase $activateBudget;
+    private ?ListBudgetItemsUseCase $listBudgetItems;
 
     public function __construct(
         CreateBudgetUseCase $createBudget,
         UpdateBudgetUseCase $updateBudget,
         GetBudgetUseCase $getBudget,
         ListBudgetsUseCase $listBudgets,
-        ActivateBudgetUseCase $activateBudget
+        ActivateBudgetUseCase $activateBudget,
+        ?ListBudgetItemsUseCase $listBudgetItems = null
     ) {
         $this->createBudget = $createBudget;
         $this->updateBudget = $updateBudget;
         $this->getBudget = $getBudget;
         $this->listBudgets = $listBudgets;
         $this->activateBudget = $activateBudget;
+        $this->listBudgetItems = $listBudgetItems;
     }
 
     public function register_routes(): void
@@ -60,6 +64,16 @@ final class BudgetRestController
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
+
+        if ($this->listBudgetItems !== null) {
+            register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/budget-items', [
+                [
+                    'methods' => 'GET',
+                    'callback' => [$this, 'items'],
+                    'permission_callback' => [$this, 'require_login'],
+                ],
+            ]);
+        }
 
         register_rest_route(self::API_NAMESPACE, '/budgets/(?P<id>[^/]+)', [
             [
@@ -108,6 +122,40 @@ final class BudgetRestController
     }
 
     /**
+     * 予算項目 for the Budget input screen (ListBudgetItemsUseCase).
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function items(WP_REST_Request $request)
+    {
+        $query = new ListProductionBudgetsQuery((string) $request->get_param('id'), get_current_user_id());
+
+        try {
+            return new WP_REST_Response(
+                array_map(static fn ($item) => $item->toArray(), $this->listBudgetItems->execute($query)),
+                200
+            );
+        } catch (BudgetAccessDeniedException $exception) {
+            return new WP_Error('stageart_budget_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * `items` (予算項目 input) when the request sends them; otherwise null
+     * and the Budget is built from `lines` as before.
+     *
+     * @return array<int, mixed>|null
+     */
+    private function itemsParam(WP_REST_Request $request): ?array
+    {
+        $items = $request->get_param('items');
+
+        return is_array($items) ? array_values($items) : null;
+    }
+
+    /**
      * @return WP_REST_Response|WP_Error
      */
     public function create(WP_REST_Request $request)
@@ -117,7 +165,8 @@ final class BudgetRestController
                 get_current_user_id(),
                 (string) $request->get_param('id'),
                 (string) $request->get_param('name'),
-                (array) $request->get_param('lines')
+                (array) $request->get_param('lines'),
+                $this->itemsParam($request)
             );
 
             return new WP_REST_Response($this->createBudget->execute($command)->toArray(), 201);
@@ -158,7 +207,8 @@ final class BudgetRestController
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('name'),
-                (array) $request->get_param('lines')
+                (array) $request->get_param('lines'),
+                $this->itemsParam($request)
             );
 
             return new WP_REST_Response($this->updateBudget->execute($command)->toArray(), 200);

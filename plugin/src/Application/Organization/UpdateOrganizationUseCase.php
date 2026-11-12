@@ -36,9 +36,10 @@ final class UpdateOrganizationUseCase
         }
 
         $organizationId = OrganizationId::fromString($command->organizationId);
+        $role = $this->authorization->roleFor($person, $organizationId);
 
-        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new OrganizationAccessDeniedException('Only an Organization Owner can update this Organization.');
+        if ($role === null || ! in_array($role->toString(), [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER], true)) {
+            throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can update this Organization.');
         }
 
         $organization = $this->organizations->findById($organizationId);
@@ -50,6 +51,7 @@ final class UpdateOrganizationUseCase
         $organization->rename(new OrganizationName($command->name));
         $organization->changeType($command->type);
         $organization->changeDescription($command->description);
+        $organization->changeLogoUrl($command->logoUrl);
 
         if ($command->slug !== null) {
             $newSlug = new OrganizationSlug($command->slug);
@@ -90,7 +92,7 @@ final class UpdateOrganizationUseCase
 
         $this->organizations->save($organization);
 
-        return OrganizationResult::fromDomain($organization, RoleKey::owner());
+        return OrganizationResult::fromDomain($organization, $role);
     }
 
     private function parseOptionalDateTime(?string $value): ?DateTimeImmutable

@@ -64,6 +64,27 @@ final class ParticipantTest extends TestCase
         $this->assertSame(ParticipantType::STAFF, $participant->participantType()->toString());
     }
 
+    /**
+     * StageArt Production側氏名の権威付けラウンド §0/§2: a PERSON-subject
+     * Participant may carry its own Production-specific displayName,
+     * entirely independent of the linked Person's own name (which this
+     * Entity never even sees - Person resolution happens elsewhere).
+     */
+    public function test_a_person_subject_participant_can_carry_its_own_production_specific_display_name(): void
+    {
+        $participant = Participant::create(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast(),
+            null,
+            '佐藤一郎（劇団いるか）'
+        );
+
+        $this->assertSame(ParticipantSubjectType::PERSON, $participant->subjectType()->toString());
+        $this->assertSame('佐藤一郎（劇団いるか）', $participant->displayName());
+    }
+
     public function test_organization_subject_type_is_supported(): void
     {
         $participant = Participant::create(
@@ -130,5 +151,38 @@ final class ParticipantTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         $participant->approve();
+    }
+
+    public function test_create_name_only_generates_a_placeholder_subject_id_and_carries_the_display_name(): void
+    {
+        $participant = Participant::createNameOnly(ProductionId::generate(), '山田太郎', ParticipantType::cast());
+
+        $this->assertSame(ParticipantSubjectType::NAME_ONLY, $participant->subjectType()->toString());
+        $this->assertSame('山田太郎', $participant->displayName());
+        $this->assertNotEmpty($participant->subjectId());
+        $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
+    }
+
+    public function test_create_name_only_rejects_an_empty_display_name(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Participant::createNameOnly(ProductionId::generate(), '   ', ParticipantType::cast());
+    }
+
+    public function test_change_remarks_sets_and_normalizes_blank_to_null(): void
+    {
+        $participant = Participant::create(
+            ProductionId::generate(),
+            ParticipantSubjectType::person(),
+            PersonId::generate()->toString(),
+            ParticipantType::cast()
+        );
+
+        $participant->changeRemarks('チームA');
+        $this->assertSame('チームA', $participant->remarks());
+
+        $participant->changeRemarks('   ');
+        $this->assertNull($participant->remarks());
     }
 }

@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -120,6 +120,14 @@ GET /api/v1/productions/{productionId}
 - PrimaryManager
 - ProductionDelegates
 - DelegateRole
+
+Productionのレスポンス（取得・一覧・各状態変更の結果）は、要求者について `can_complete`（boolean）を含む（Version 4.1、2026-10-29）。
+
+- 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。
+- 公演完了の権限を持つのは、Primary Manager、会計管理者（ACCOUNTING_MANAGER）、代理人（有効なPARTICIPANT_MANAGERとREHEARSAL_MANAGERを同時に持つProduction Delegate）である（ExpenseApprovalWorkflow「決算確定」）。判定は公演完了APIと同じ認可処理による。
+- 精算が完了していない等、公演完了時の制約は `can_complete` では判定しない。trueでも、公演完了APIはそれらの制約により拒否しうる。
+- 公演開始・アーカイブ・中止等、他の状態変更の権限は `can_complete` に含まれず、従来どおりPrimary Managerのみである。
+- 画面は、公演完了の操作の表示を `can_complete` で判定する。
 
 Production APIは関連Resourceを集約して返却する。
 
@@ -667,6 +675,67 @@ Production APIでは発行しない。
 
 Reservationに関するDomain Eventは
 Reservation Domainが発行する。
+
+---
+
+# Production行のロックと公演状態（PR #7 レビュー R5）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）のうち、Production行を書き換える処理と、精算・チケット設定について。
+
+## Production行の排他ロック
+
+以下はトランザクションの最初にProduction行を排他ロック（`FOR UPDATE`）で読み直し、その行に変更を適用して保存する。保存は行全体の書き込みのため、ロック前に読んだコピーを保存して、同時に確定した決算完了・中止・設定変更を元に戻すことはない。
+
+- `PUT /productions/{id}`（基本情報・定員・公演時間。定員・公演時間の各Performanceへの反映も同じトランザクション。R6：定員の一括上書きで、CANCELLED以外のいずれかのPerformanceの定員が予約済み席数を下回る場合は409 `stageart_capacity_below_reservations` で全体を拒否し、何も変更しない）
+- `/productions/{id}/activate`、`/complete`、`/cancel`、`/archive`
+- `/productions/{id}/primary-manager`
+- `/productions/{id}/ticket-sales-settings`
+- `/productions/{id}/quota-ticket-back-settings`
+- `/tickets/{id}`（価格等の変更）、`/tickets/{id}/archive`：Production行の排他ロックの下でTicketを読み直して変更する
+
+予約・受付は同じ行の共有ロックを取るため、これらの処理とは互いに確定を待ち合わせる。
+
+## 精算と公演状態
+
+| エンドポイント | CANCELLED | COMPLETED / ARCHIVED |
+|------|------|------|
+| `POST /productions/{id}/settlement/members/{person_id}/settle` | 可 | 409 `stageart_production_closed` |
+| `POST /productions/{id}/settlement/members/{person_id}/cancel-settlement` | 可 | 409 `stageart_production_closed`（精算履歴は変更しない） |
+| `/productions/{id}/quota-ticket-back-settings`（変更） | 可 | 409 `stageart_production_closed` |
+
+- 判定はProduction行の排他ロック下で読んだStatusで行う。決算完了と精算取消が同時に要求された場合、先に確定した方の結果を後の処理が読む（決算完了が先なら精算取消は409、精算取消が先なら決算完了は未精算額を検出して拒否）。
+- 決算完了後の訂正には、公演を明示的に再開する管理フローが必要（未実装）。
+
+## 決算完了と精算の一致（R7）
+
+`PATCH /productions/{id}/complete` は、すべてのメンバーで「精算済み額 ＝ 確定チケットバック額」のときにだけ完了する。
+
+| 状態 | HTTP | code |
+|------|------|------|
+| 未精算あり（精算済み ＜ 確定） | 422 | `stageart_production_settlement_incomplete`（既存） |
+| 払い過ぎ（精算済み ＞ 確定。精算後のCheck-in取消・返金で起きる） | 422 | `stageart_production_settlement_overpaid` |
+
+払い過ぎの応答例：
+
+```json
+{
+  "code": "stageart_production_settlement_overpaid",
+  "message": "This Production cannot be completed: 1 member(s) were settled 300 more than their confirmed Ticket Back.",
+  "data": {
+    "status": 422,
+    "total_overpaid_amount": 300,
+    "members": [
+      { "person_id": "…", "confirmed_ticket_back_amount": 0, "settled_amount": 300, "overpaid_amount": 300 }
+    ]
+  }
+}
+```
+
+`GET /productions/{id}/settlement` の各メンバーには `overpaid_amount`（整数、払い過ぎがなければ0）を追加した。詳細は `04-DomainModel/ProductionLifecycle.md`「決算完了の精算条件」。
+
+## 共通
+
+ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。公演状態ごとの業務ルールとロック順序は `04-DomainModel/ProductionLifecycle.md` を正とする。
 
 ---
 

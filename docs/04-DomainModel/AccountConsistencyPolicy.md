@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Account
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -154,13 +154,9 @@ Actualを独立した正本として二重保存しない。
 
 # Ticket Revenue
 
-Ticket RevenueはCheckInCompletedを契機としてJournal Entryへ変換される。
+Ticket Revenueの入金・売上仕訳はPayment Factに基づいて生成する。CheckInCompleted単独では仕訳を生成しない。会計期間末に決算未確定Productionの既存売上残高を仮売上へ振り替え、Production決算確定時に仮売上を正式な売上へ振り替える。正式売上にはREVENUE TypeのAccountを使用する。
 
-Revenue AccountにはREVENUE TypeのTicket Revenue用Accountを使用する。
-
-Reservation成立時点ではRevenueを認識せず、未収金等の状態をAccounting Domainで扱う。
-
-Check In時点でRevenue Recognitionを行う。
+標準の当日精算運用では、Reservation成立時点で売上・入金・未収金を計上しない。実際の代金受領を示すPayment Factに基づき、入金とTicket Revenueを同時に計上する。予約時点で受取権利が別途確定する契約等の例外では、明示された別ルールに従って未収金を扱う。仮売上AccountのAccount Typeおよび相手勘定は、関連Account / Journal Entry仕様と整合させて確定し、実装側で推定しない。
 
 ---
 
@@ -174,6 +170,9 @@ Check In時点でRevenue Recognitionを行う。
 - 普通預金
 - 未収金
 - 未払金
+- 公演仕掛金（資産科目。期末に繰り延べる公演原価を管理する）
+- 売上原価（公演決算確定時に公演仕掛金から振り替える費用科目）
+- 仮売上
 - チケット売上
 - 物販売上
 - その他収入
@@ -195,6 +194,8 @@ Organization Setupで会計管理を有効にした場合、初期流動資産�
 
 - 現金
 - 預金
+
+画面上の入力項目「預金」は、会計上の正式な勘定科目「普通預金」を指す。同一の科目であり、「預金」と「普通預金」を別々のAccountとして作成してはならない。入力された預金の初期残高は「普通預金」Accountの初期残高として扱う。
 
 これらは対応するAsset Accountの初期残高として会計処理する。
 
@@ -222,6 +223,16 @@ INACTIVE Accountは新規取引への利用を停止するが、過去のJournal
 
 ---
 
+# Required Account Validation
+
+会計処理で必要となるAccountが未登録、またはINACTIVEの場合、システムはAccountを自動作成・再有効化してはならない。会計エントリーの保存・転記または承認処理を中止し、必要な勘定科目が未登録または利用不可であることを利用者へ明確に通知する。
+
+必要なAccountの検証に失敗した場合、関連する業務処理を部分的に完了させてはならない。たとえばExpense承認では、Expenseの承認済み／POSTED化、Journal Entry生成、Actual反映をいずれも行わない。会計管理権限を持つ利用者がAccount設定を修正した後、元の業務操作を再実行できるようにする。
+
+別名のAccountを自動生成して不足を補うことも禁止する。既存Accountの名称変更や再有効化は、権限を持つ利用者が明示的に設定操作として行う。
+
+---
+
 # Account Change
 
 Account Name、Code、階層等のマスタ情報は変更できる。
@@ -239,11 +250,13 @@ Business Eventから使用Accountを決定するMappingはAccount本体と分離
 例えば、
 
 ```text
-CheckInCompleted
+会計期間末
     ↓
-Ticket Revenue Recognition
+仮売上へ振替
     ↓
-Ticket Revenue Account
+Production決算確定
+    ↓
+REVENUE Typeの正式売上Account
 ```
 
 のようなMappingを将来管理できる。

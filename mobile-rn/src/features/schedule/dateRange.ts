@@ -1,12 +1,12 @@
+import { JST_OFFSET_MS, toJstParts } from './jst';
+
 /**
- * §11/§37: the Backend stores/compares TimetableItem start/end times as
- * offset-naive wall-clock values (see
- * ListProductionTimetableItemsUseCase::parseOptionalDateTime's own
- * comment) and PHP's date.timezone is Asia/Tokyo (confirmed live on the
- * Development server via `php -i`), so a plain, offset-free
- * "YYYY-MM-DD HH:mm:ss" string - built from the device's own local Date
- * components - is what the existing convention expects. No independent
- * UTC/JST conversion is introduced here.
+ * §11/§37: an offset-free "YYYY-MM-DD HH:mm:ss" string built from the
+ * Date's own (device-local) components.
+ *
+ * PR #7 R11: the Backend reads an offset-free from/to as Asia/Tokyo
+ * wall-clock time (TimetableItemDateTime), so defaultScheduleRange() no
+ * longer uses this - it builds the Asia/Tokyo day itself.
  */
 export function formatWallClock(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -22,11 +22,21 @@ export type ScheduleRange = { from: string; to: string } | undefined;
  * implementation's convention exactly (schedule_screen.dart: `from =
  * today 00:00`, `to = from + 2 days`) - a half-open window covering
  * today and tomorrow in full.
+ *
+ * PR #7 R11: "today" is today in Asia/Tokyo, whatever the device's
+ * timezone, and the bounds are Asia/Tokyo wall-clock values (no offset),
+ * which the Backend reads as Asia/Tokyo time.
  */
 export function defaultScheduleRange(now: Date = new Date()): { from: string; to: string } {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(start);
-  end.setDate(end.getDate() + 2);
+  const today = toJstParts(now);
+  const start = new Date(Date.UTC(today.year, today.month - 1, today.day) - JST_OFFSET_MS);
+  const end = new Date(Date.UTC(today.year, today.month - 1, today.day + 2) - JST_OFFSET_MS);
 
-  return { from: formatWallClock(start), to: formatWallClock(end) };
+  return { from: jstWallClock(start), to: jstWallClock(end) };
+}
+
+function jstWallClock(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const p = toJstParts(date);
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}:00`;
 }

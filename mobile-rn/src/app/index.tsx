@@ -6,6 +6,8 @@ import { useAuth } from '@/auth/AuthContext';
 import { StartupAnimation } from '@/components/startup-animation';
 import { ThemedView } from '@/components/themed-view';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { PublicLandingPage } from '@/components/public-landing-page';
+import { useIsPublicSite, useSiteHostname } from '@/hooks/use-site-host';
 
 /** Jest sets NODE_ENV=test automatically (jest-expo preset) - the
  * startup animation is a fixed ~1.8s time-based UI concern orthogonal
@@ -61,7 +63,7 @@ function Loading() {
  * no "Google already proved identity" shortcut (this Phase's explicit
  * requirement, mirrored in login.tsx's own post-login routing).
  */
-export default function Index() {
+function ApplicationIndex() {
   const { status } = useAuth();
   const currentPersonQuery = useCurrentPerson();
   const [animationDone, setAnimationDone] = useState(SKIP_STARTUP_ANIMATION);
@@ -87,4 +89,22 @@ export default function Index() {
   }
 
   return <Redirect href="/home" />;
+}
+
+/**
+ * Public and application hosts share the exported web bundle, but not the
+ * responsibility of their root page. The public domains keep the feature
+ * introduction at "/", while app.stageart.top and dev.stageart.top retain
+ * the authenticated application's entry flow. See use-site-host.ts for why
+ * the hostname is read through useSyncExternalStore (React #418).
+ */
+export default function Index() {
+  const hostname = useSiteHostname();
+  const isPublicSite = useIsPublicSite();
+
+  if (isPublicSite) {
+    return <PublicLandingPage hostname={hostname} />;
+  }
+
+  return <ApplicationIndex />;
 }

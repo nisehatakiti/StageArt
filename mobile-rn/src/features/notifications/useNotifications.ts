@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { fetchProductionNotifications, markNotificationRead } from './api';
+import { fetchMyNotifications, fetchProductionNotifications, markMyNotificationRead, markNotificationRead } from './api';
 
 /** Query Key: `['production-notifications', productionId]`, matching the
  * existing `['production-accounting', productionId]` / `['production-
@@ -32,6 +32,29 @@ export function useMarkNotificationRead(productionId: string | undefined) {
     mutationFn: (notificationId: string) => markNotificationRead(apiClient, notificationId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['production-notifications', productionId] });
+    },
+  });
+}
+
+/** Query Key: `['my-notifications']` - personal, not Production-scoped. */
+export function useMyNotifications() {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['my-notifications'],
+    queryFn: () => fetchMyNotifications(apiClient),
+    enabled: status === 'authenticated',
+  });
+}
+
+export function useMarkMyNotificationRead() {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (notificationId: string) => markMyNotificationRead(apiClient, notificationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-notifications'] });
     },
   });
 }

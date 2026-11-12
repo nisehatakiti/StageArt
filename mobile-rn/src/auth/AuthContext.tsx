@@ -58,7 +58,7 @@ type AuthContextValue = {
   status: AuthStatus;
   apiClient: ApiClient;
   loginWithEmail: (email: string, password: string) => Promise<AuthActionResult>;
-  registerWithEmail: (email: string, password: string) => Promise<AuthActionResult>;
+  registerWithEmail: (email: string, password: string, invitationToken?: string) => Promise<AuthActionResult>;
   loginWithGoogle: (idToken: string) => Promise<AuthActionResult>;
   logout: () => Promise<void>;
   completeEmailVerificationFromPending: () => Promise<{ hasSession: boolean; hasName: boolean }>;
@@ -229,27 +229,46 @@ export function AuthProvider({ children }: PropsWithChildren) {
     [applySession, probePersonGate]
   );
 
-  const registerWithEmail = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {
-    try {
-      const result = await registerWithEmailApi(email, password);
-      // A freshly created EmailCredential is never pre-verified
-      // (Backend Domain guarantee: EmailCredential.emailVerifiedAt
-      // starts null), and a freshly created Person never has a name set
-      // either - unlike loginWithEmail there is nothing to probe here,
-      // both are known false by construction. No session is
-      // established; the caller routes to registration-pending.
-      setPendingSession({ accessToken: result.access_token, refreshToken: result.refresh_token });
-      return { ok: true, emailVerified: false, hasName: false, familyNameHint: null, givenNameHint: null };
-    } catch (error) {
-      if (error instanceof ApiError && error.statusCode === 409) {
-        return { ok: false, message: 'このメールアドレスは既に登録されています。' };
+  /**
+   * StageArt 招待登録のメール確認省略ラウンド: when `invitationToken` is
+   * supplied (and the Backend accepts it - a valid, usable
+   * ParticipantInvitation), the freshly-created EmailCredential is
+   * already marked verified server-side, since the invitation link
+   * itself already proved this address is reachable. This is why the
+   * gate below is a real `probePersonGate()` call (matching
+   * loginWithEmail's own shape) instead of the hardcoded `false` an
+   * ordinary self-registration always used to get - GET /me's
+   * email_verified now genuinely differs between the two paths, and
+   * this must establish a real session immediately for the invitation
+   * case rather than routing to registration-pending for an account
+   * that is already verified.
+   */
+  const registerWithEmail = useCallback(
+    async (email: string, password: string, invitationToken?: string): Promise<AuthActionResult> => {
+      try {
+        const result = await registerWithEmailApi(email, password, invitationToken);
+        const { emailVerified, hasName } = await probePersonGate(result.access_token);
+        if (emailVerified) {
+          await applySession(result);
+        } else {
+          setPendingSession({ accessToken: result.access_token, refreshToken: result.refresh_token });
+        }
+        return { ok: true, emailVerified, hasName, familyNameHint: null, givenNameHint: null };
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'stageart_participant_invitation_not_found') {
+          return { ok: false, message: '招待の有効期限が切れたか、無効になっています。管理者に再送を依頼してください。' };
+        }
+        if (error instanceof ApiError && error.statusCode === 409) {
+          return { ok: false, message: 'このメールアドレスは既に登録されています。' };
+        }
+        if (error instanceof ApiError && error.statusCode === 422) {
+          return { ok: false, message: 'パスワードは8文字以上で入力してください。' };
+        }
+        return { ok: false, message: mapNetworkOrGenericError(error, '新規登録に失敗しました。時間をおいて再度お試しください。') };
       }
-      if (error instanceof ApiError && error.statusCode === 422) {
-        return { ok: false, message: 'パスワードは8文字以上で入力してください。' };
-      }
-      return { ok: false, message: mapNetworkOrGenericError(error, '新規登録に失敗しました。時間をおいて再度お試しください。') };
-    }
-  }, []);
+    },
+    [applySession, probePersonGate]
+  );
 
   const loginWithGoogle = useCallback(
     async (idToken: string): Promise<AuthActionResult> => {

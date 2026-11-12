@@ -8,12 +8,16 @@
 export class ApiError extends Error {
   readonly statusCode: number;
   readonly code?: string;
+  /** PR #7 review (R7): the envelope's `data` (e.g. the amounts of a
+   * `stageart_production_settlement_overpaid` refusal), when present. */
+  readonly data?: Record<string, unknown>;
 
-  constructor(statusCode: number, message: string, code?: string) {
+  constructor(statusCode: number, message: string, code?: string, data?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
     this.code = code;
+    this.data = data;
   }
 }
 

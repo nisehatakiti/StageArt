@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use RuntimeException;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Rehearsal\RehearsalActivityType;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
 use StageArt\Domain\Rehearsal\RehearsalStatus;
@@ -30,11 +32,14 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
             'production_id' => $rehearsal->productionId()->toString(),
             'title' => $rehearsal->title(),
             'description' => $rehearsal->description(),
-            'start_date_time' => $rehearsal->startDateTime() !== null ? $rehearsal->startDateTime()->format('Y-m-d H:i:s') : null,
-            'end_date_time' => $rehearsal->endDateTime() !== null ? $rehearsal->endDateTime()->format('Y-m-d H:i:s') : null,
+            'start_date_time' => $this->wallClock($rehearsal->startDateTime(), $rehearsal),
+            'end_date_time' => $this->wallClock($rehearsal->endDateTime(), $rehearsal),
             'timezone' => $rehearsal->timezone(),
             'location' => $rehearsal->location(),
             'status' => $rehearsal->status()->toString(),
+            'activity_type' => $rehearsal->activityType()->toString(),
+            'response_deadline' => $this->wallClock($rehearsal->responseDeadline(), $rehearsal),
+            'reminder_sent_at' => $rehearsal->reminderSentAt() !== null ? $rehearsal->reminderSentAt()->format('Y-m-d H:i:s') : null,
             'updated_at' => $rehearsal->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -99,20 +104,72 @@ final class WordPressRehearsalRepository implements RehearsalRepositoryInterface
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 
+    /**
+     * start_date_time/end_date_time are stored as naive local wall-clock
+     * values (DATETIME, no offset - see RehearsalInstaller.php's schema),
+     * deliberately paired with this Rehearsal's own separate `timezone`
+     * column to give them meaning (Rehearsal.md's "Location"/timezone
+     * design: a real-world rehearsal happens at a wall-clock time in
+     * whatever place it's held, not at a fixed UTC instant). Without an
+     * explicit DateTimeZone here, PHP's DateTimeImmutable falls back to
+     * date_default_timezone_get() - which WordPress's own
+     * wp-settings.php unconditionally forces to 'UTC' on every request,
+     * regardless of the server's real system timezone. That silently
+     * mislabels the exact same wall-clock digits as UTC instead of this
+     * Rehearsal's own timezone, corrupting every DATE_ATOM-formatted API
+     * response downstream (RehearsalResult, RehearsalUpcomingRehearsal
+     * Provider) with a wrong offset while leaving the digits unchanged.
+     * Passing the Rehearsal's own timezone here instead fixes this at
+     * the one point the naive string is reconstructed into a
+     * DateTimeImmutable, rather than patching every serialization call
+     * site separately.
+     */
+    /**
+     * PR #7 R10: the stored wall-clock value is the instant expressed in
+     * the zone hydrate() reads it back with (the Rehearsal's timezone, or
+     * PHP's default when it has none). Before R10 the value was formatted
+     * in whatever offset it arrived with, so e.g. 01:00Z for a Tokyo
+     * Rehearsal was stored as 01:00 and read back as 01:00 JST - nine
+     * hours early.
+     */
+    private function wallClock(?DateTimeImmutable $value, Rehearsal $rehearsal): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $zone = $rehearsal->timezone() !== null
+            ? new DateTimeZone($rehearsal->timezone())
+            : new DateTimeZone(date_default_timezone_get());
+
+        return $value->setTimezone($zone)->format('Y-m-d H:i:s');
+    }
+
     private function hydrate(array $row): Rehearsal
     {
+        $timezone = $row['timezone'] !== null ? new DateTimeZone($row['timezone']) : null;
+
         return Rehearsal::reconstitute(
             RehearsalId::fromString($row['id']),
             ProductionId::fromString($row['production_id']),
             $row['title'],
             $row['description'],
-            $row['start_date_time'] !== null ? new DateTimeImmutable($row['start_date_time']) : null,
-            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time']) : null,
+            $row['start_date_time'] !== null ? new DateTimeImmutable($row['start_date_time'], $timezone) : null,
+            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time'], $timezone) : null,
             $row['timezone'],
             $row['location'],
             RehearsalStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            isset($row['response_deadline']) && $row['response_deadline'] !== null
+                ? new DateTimeImmutable($row['response_deadline'], $timezone)
+                : null,
+            isset($row['reminder_sent_at']) && $row['reminder_sent_at'] !== null
+                ? new DateTimeImmutable($row['reminder_sent_at'])
+                : null,
+            isset($row['activity_type']) && $row['activity_type'] !== null
+                ? RehearsalActivityType::fromString($row['activity_type'])
+                : null
         );
     }
 }

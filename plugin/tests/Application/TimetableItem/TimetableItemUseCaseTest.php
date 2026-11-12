@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\TimetableItem;
 
+use DateTimeImmutable;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -195,7 +197,15 @@ final class TimetableItemUseCaseTest extends TestCase
 
     private function givenRehearsal(Production $production): Rehearsal
     {
-        $rehearsal = Rehearsal::create($production->id(), 'Act 1', null, null, null, null, null);
+        $rehearsal = Rehearsal::create(
+            $production->id(),
+            'Act 1',
+            null,
+            new DateTimeImmutable('2099-01-01 18:00'),
+            new DateTimeImmutable('2099-01-01 20:00'),
+            null,
+            null
+        );
         $this->rehearsals->save($rehearsal);
 
         return $rehearsal;
@@ -536,5 +546,221 @@ final class TimetableItemUseCaseTest extends TestCase
 
         $items = $this->listItems->execute(new ListTimetableItemsQuery($rehearsal->id()->toString(), 1));
         $this->assertCount(2, $items);
+    }
+
+    /**
+     * PR #7 R11 (docs/20-RehearsalManagementScreen.md §24): whatever offset
+     * a client sends, the item's time is returned as Asia/Tokyo time, so
+     * "10:00 JST" is always "10:00+09:00" and never "10:00+00:00".
+     */
+    private function createAt(Rehearsal $rehearsal, string $start, ?string $end): string
+    {
+        return $this->createItem->execute(new CreateTimetableItemCommand(
+            $rehearsal->id()->toString(), 1, '場当たり', null, $start, $end, null, null, null, null, [], null
+        ))->id;
+    }
+
+    private function updateAt(string $itemId, string $start, ?string $end): void
+    {
+        $this->updateItem->execute(new UpdateTimetableItemCommand(
+            $itemId, 1, '場当たり', null, $start, $end, null, null, null, null, [], null
+        ));
+    }
+
+    public function test_r11_created_item_time_is_returned_as_asia_tokyo_time_for_any_offset(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        foreach ([
+            ['2026-08-20T10:00:00+09:00', '2026-08-20T12:00:00+09:00'],
+            ['2026-08-20T01:00:00Z', '2026-08-20T03:00:00Z'],
+            ['2026-08-19T20:00:00-05:00', '2026-08-19T22:00:00-05:00'],
+            ['2026-08-20T10:00:00', '2026-08-20T12:00:00'],
+        ] as [$start, $end]) {
+            $item = $this->getItem->execute(new GetTimetableItemQuery($this->createAt($rehearsal, $start, $end), 1));
+
+            $this->assertSame('2026-08-20T10:00:00+09:00', $item->startDateTime, $start);
+            $this->assertSame('2026-08-20T12:00:00+09:00', $item->endDateTime, $end);
+        }
+    }
+
+    public function test_r11_sending_the_api_value_back_on_update_keeps_the_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-08-20T10:00:00+09:00', null);
+
+        for ($i = 0; $i < 3; $i++) {
+            $current = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+            $this->updateAt($itemId, $current->startDateTime, $current->endDateTime);
+        }
+
+        $after = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+        $this->assertSame('2026-08-20T10:00:00+09:00', $after->startDateTime);
+        $this->assertNull($after->endDateTime);
+    }
+
+    public function test_r11_updated_time_is_returned_as_asia_tokyo_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-08-20T10:00:00+09:00', null);
+
+        $this->updateAt($itemId, '2026-12-31T15:00:00Z', '2026-12-31T16:30:00Z');
+
+        $after = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+        $this->assertSame('2027-01-01T00:00:00+09:00', $after->startDateTime);
+        $this->assertSame('2027-01-01T01:30:00+09:00', $after->endDateTime);
+    }
+
+    public function test_r11_list_and_detail_return_the_same_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-08-20T01:00:00Z', null);
+        $this->publishDraft($rehearsal->id(), 1);
+
+        $listed = $this->listItems->execute(new ListTimetableItemsQuery($rehearsal->id()->toString(), 1));
+        $detail = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+
+        $this->assertCount(1, $listed);
+        $this->assertSame('2026-08-20T10:00:00+09:00', $listed[0]->startDateTime);
+        $this->assertSame($listed[0]->startDateTime, $detail->startDateTime);
+    }
+
+    public function test_r11_invalid_or_missing_time_is_rejected_on_create(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        foreach (['', 'not a date', '2026-02-30T10:00:00+09:00', '+1 day'] as $value) {
+            try {
+                $this->createAt($rehearsal, $value, null);
+                $this->fail("Accepted start '{$value}'.");
+            } catch (InvalidArgumentException $expected) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        try {
+            $this->createAt($rehearsal, '2026-08-20T10:00:00+09:00', 'tomorrow');
+            $this->fail('Accepted end \'tomorrow\'.');
+        } catch (InvalidArgumentException $expected) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertNull($this->timetables->findDraftByRehearsalId($rehearsal->id()), 'Nothing was created.');
+    }
+
+    public function test_r11_invalid_time_on_update_is_rejected_and_keeps_the_stored_time(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-08-20T10:00:00+09:00', null);
+
+        try {
+            $this->updateAt($itemId, 'not a date', null);
+            $this->fail('Accepted an invalid start.');
+        } catch (InvalidArgumentException $expected) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame(
+            '2026-08-20T10:00:00+09:00',
+            $this->getItem->execute(new GetTimetableItemQuery($itemId, 1))->startDateTime
+        );
+    }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25): items crossing
+     * midnight, and the same start/end rejected.
+     */
+    public function test_r12_items_crossing_midnight_keep_their_next_day_end(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        $a = $this->createAt($rehearsal, '2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00');
+        $b = $this->createAt($rehearsal, '2026-11-10T23:30:00+09:00', '2026-11-11T01:30:00+09:00');
+
+        $this->assertSame('2026-11-11T00:30:00+09:00', $this->getItem->execute(new GetTimetableItemQuery($a, 1))->endDateTime);
+        $this->assertSame('2026-11-11T01:30:00+09:00', $this->getItem->execute(new GetTimetableItemQuery($b, 1))->endDateTime);
+
+        for ($i = 0; $i < 3; $i++) {
+            $current = $this->getItem->execute(new GetTimetableItemQuery($a, 1));
+            $this->updateAt($a, $current->startDateTime, $current->endDateTime);
+        }
+        $after = $this->getItem->execute(new GetTimetableItemQuery($a, 1));
+        $this->assertSame(['2026-11-10T23:30:00+09:00', '2026-11-11T00:30:00+09:00'], [$after->startDateTime, $after->endDateTime]);
+    }
+
+    public function test_r12_same_start_and_end_or_end_before_start_is_rejected(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $itemId = $this->createAt($rehearsal, '2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00');
+
+        foreach ([
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T23:30:00+09:00'],
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T14:30:00Z'],
+            ['2026-11-10T23:30:00+09:00', '2026-11-10T00:30:00+09:00'],
+        ] as [$start, $end]) {
+            try {
+                $this->createAt($rehearsal, $start, $end);
+                $this->fail("create accepted {$start} - {$end}");
+            } catch (InvalidArgumentException $expected) {
+                $this->addToAssertionCount(1);
+            }
+            try {
+                $this->updateAt($itemId, $start, $end);
+                $this->fail("update accepted {$start} - {$end}");
+            } catch (InvalidArgumentException $expected) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $kept = $this->getItem->execute(new GetTimetableItemQuery($itemId, 1));
+        $this->assertSame(['2026-11-10T10:00:00+09:00', '2026-11-10T12:00:00+09:00'], [$kept->startDateTime, $kept->endDateTime]);
+    }
+
+    /**
+     * PR #7 R12 follow-up (docs/20-RehearsalManagementScreen.md §25.4): no
+     * limit on how long an item may be (none existed before); items ending
+     * two, three or more days later are created, updated and read back
+     * with their own end date.
+     */
+    public function test_r12_items_longer_than_a_day_keep_their_end_date(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+
+        $twoDays = $this->createAt($rehearsal, '2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00');
+        $threeDays = $this->createAt($rehearsal, '2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00');
+        $week = $this->createAt($rehearsal, '2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00');
+        $read = function (string $id): array {
+            $item = $this->getItem->execute(new GetTimetableItemQuery($id, 1));
+
+            return [$item->startDateTime, $item->endDateTime];
+        };
+
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00'], $read($twoDays));
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00'], $read($threeDays));
+        $this->assertSame(['2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00'], $read($week));
+
+        // Only the end time / only the end date / the start date and end date.
+        $this->updateAt($twoDays, '2026-11-10T09:00:00+09:00', '2026-11-12T08:00:00+09:00');
+        $this->updateAt($threeDays, '2026-11-10T09:00:00+09:00', '2026-11-14T09:00:00+09:00');
+        $this->updateAt($week, '2026-12-29T22:00:00+09:00', '2027-01-05T06:00:00+09:00');
+        for ($i = 0; $i < 3; $i++) {
+            foreach ([$twoDays, $threeDays, $week] as $id) {
+                [$start, $end] = $read($id);
+                $this->updateAt($id, $start, $end);
+            }
+        }
+
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-12T08:00:00+09:00'], $read($twoDays));
+        $this->assertSame(['2026-11-10T09:00:00+09:00', '2026-11-14T09:00:00+09:00'], $read($threeDays));
+        $this->assertSame(['2026-12-29T22:00:00+09:00', '2027-01-05T06:00:00+09:00'], $read($week));
     }
 }

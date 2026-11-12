@@ -86,7 +86,7 @@ final class CreateProductionUseCaseTest extends TestCase
         $result = $this->useCase->execute(new CreateProductionCommand(1, $project->id()->toString(), 'Autumn Play', 'autumn-play', $owner->id()->toString()));
 
         $this->assertSame('Autumn Play', $result->name);
-        $this->assertSame('DRAFT', $result->status);
+        $this->assertSame('PLANNING', $result->status);
         $this->assertTrue($result->isPrimaryManager);
         $this->assertNull($result->titleHeading);
 

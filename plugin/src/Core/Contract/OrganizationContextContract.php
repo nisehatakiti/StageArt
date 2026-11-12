@@ -19,4 +19,14 @@ use StageArt\Domain\Organization\OrganizationId;
 interface OrganizationContextContract
 {
     public function organizationExists(OrganizationId $organizationId): bool;
+
+    /**
+     * Phase 4 Check-in/精算/会計連携: whether ticket Check-in Revenue
+     * Recognition should generate a Journal Entry for this Organization.
+     * "Accounting OFF" is not an error condition - Reservation/Check-in/
+     * sales/Ticket-Back/Quota/Settlement data is still tracked internally
+     * either way (see this Phase's report); only the Journal Entry side
+     * effect is conditional on this flag.
+     */
+    public function isAccountingEnabled(OrganizationId $organizationId): bool;
 }

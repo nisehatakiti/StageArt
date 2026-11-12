@@ -8,9 +8,13 @@ use InvalidArgumentException;
 
 /**
  * RehearsalAttendance.md "Attendance Status": the two Phases use
- * disjoint-except-UNANSWERED value sets. This VO validates membership in
- * the full 8-value union (matching the DB column's realistic domain);
- * which subset is valid for a given record's Phase is enforced by
+ * disjoint-except-UNANSWERED value sets. EARLY_LEFT (早退) is a confirmed
+ * addition to Phase 2's actual-result values, alongside ATTENDED/LATE/
+ * ABSENT - someone who left early still actually attended, so it is
+ * treated the same as LATE wherever "did they actually attend" matters.
+ * This VO validates membership in the full 9-value union (matching the
+ * DB column's realistic domain); which subset is valid for a given
+ * record's Phase is enforced by
  * RehearsalAttendance::class, since only the Entity knows its own Phase.
  */
 final class RehearsalAttendanceStatus
@@ -22,15 +26,20 @@ final class RehearsalAttendanceStatus
     public const NOT_ATTENDING = 'NOT_ATTENDING';
     public const ATTENDED = 'ATTENDED';
     public const LATE = 'LATE';
+    public const EARLY_LEFT = 'EARLY_LEFT';
     public const ABSENT = 'ABSENT';
 
     public const PHASE_1_VALUES = [self::UNANSWERED, self::AVAILABLE, self::UNAVAILABLE];
+    /** PR #7 R9: the Manager's actual results, stored apart from the answer. */
+    public const ACTUAL_VALUES = [self::ATTENDED, self::LATE, self::EARLY_LEFT, self::ABSENT];
+
     public const PHASE_2_VALUES = [
         self::UNANSWERED,
         self::ATTENDING,
         self::NOT_ATTENDING,
         self::ATTENDED,
         self::LATE,
+        self::EARLY_LEFT,
         self::ABSENT,
     ];
 
@@ -42,6 +51,7 @@ final class RehearsalAttendanceStatus
         self::NOT_ATTENDING,
         self::ATTENDED,
         self::LATE,
+        self::EARLY_LEFT,
         self::ABSENT,
     ];
 

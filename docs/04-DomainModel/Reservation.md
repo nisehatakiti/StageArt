@@ -258,6 +258,49 @@ Ticket Priceを変更しても、
 
 ---
 
+# Price Snapshot in Revenue and Ticket Back
+
+確定仕様（PR #7、2026-11-10）。
+
+Price Snapshotは1枚あたりの予約時点単価である。
+売上・チケットバックはいずれも
+Price Snapshotを単価として計算し、
+Ticketの現在Priceを過去のReservationに使用しない。
+
+売上金額：
+
+売上金額
+  = Price Snapshot × Guest Count
+
+例えば、
+
+Ticket Price = 3,000円で
+Guest Count = 3のReservationを作成し、
+その後Ticket Priceを3,500円へ変更した場合でも、
+
+売上金額
+  = 3,000円 × 3 = 9,000円
+
+とする。
+
+チケットバック：
+
+- 枚数は実際にCHECKED_INとなったReservationのGuest Countの合計とする
+  （Reservation件数ではない）。
+- NO_SHOW・CANCELLEDのReservationは0枚とする。
+- 扱い（attributedPersonId）ごとに集計する。
+- 複数のTicket種別がある場合は種別ごとに集計する。
+- 単価は各ReservationのPrice Snapshotとし、
+  予約後にTicket Priceが変更されても
+  過去のReservationに対するチケットバック額は変わらない。
+
+詳細はProductionSettlementScreen.md（Chapter 29）§7.1を参照。
+
+公演全体のQuota判定に使う販売実績は、
+個人別チケットバックとは別の集計として扱う。
+
+---
+
 # Issued Ticket
 
 Reservationが成立し、
@@ -664,11 +707,7 @@ Check In
   ↓
 CheckInCompleted
 
-CheckInCompletedは、
-Reservation Domainだけで消費するEventではない。
-
-必要な関連Domainが、
-CheckInCompletedを契機として処理を行う。
+CheckInCompletedは、Reservation Domainだけで消費するEventではない。History DomainはこのEventを来場受付Factとして利用できる。Accounting Domainでは、入金・Ticket Revenueの計上根拠をPayment Factとする。通常の当日精算では両Eventを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedで再計上しない。
 
 ---
 
@@ -700,8 +739,7 @@ Audience History
 
 # Check In and Accounting
 
-CheckInCompletedを契機として、
-チケット売上をAccounting Domainへ連携する。
+通常の当日精算では、Check In時の代金受領とCheckInCompletedが同時に発生するため、Accounting連携の契機として利用できる。ただし会計仕訳は実際の代金受領を示すPayment Factに基づいて生成する。スタッフ預りTicketは受付担当者が現金を受領して支払済みを確定した時点で入金と売上を計上し、後続のCheckInCompletedで再計上しない。
 
 基本Flow：
 
@@ -730,8 +768,7 @@ Journal Entryを管理しない。
 # Ticket Revenue
 
 Ticket Revenueは、
-CheckInCompletedによって確定した
-チケット売上の会計連携用Factである。
+Payment Factによって確定したチケット売上の会計連携用Factである。通常の当日精算ではCheckInCompletedと同時に記録されるが、スタッフ預りTicketでは受付担当者が現金を受領して支払済みを確定した時点で確定する。
 
 Ticket.Priceは販売条件であり、
 Ticket Revenueそのものではない。
@@ -897,6 +934,8 @@ Production権限に従う。
 - Ticketの正本はProduction側にある。
 - Reservationは予約成立時点のPrice Snapshotを保持する。
 - Ticketの現在Priceを変更しても過去のPrice Snapshotを変更しない。
+- 売上金額はPrice Snapshot × Guest Countとし、Ticketの現在Priceを使用しない。
+- チケットバックはCHECKED_INのReservationのGuest Count合計を枚数とし、Price Snapshotを単価とする。NO_SHOW・CANCELLEDは含めない。
 - ReservationはIssued Ticketと関連付けることができる。
 - QR TicketはIssued Ticketに関連する受付用Artifactである。
 - QRコードをReservation情報の正本として扱わない。
@@ -916,7 +955,7 @@ Production権限に従う。
 - ReservationはHistoryを直接管理しない。
 - CheckInCompletedを契機としてHistory DomainがAudience Historyを生成する。
 - Audience HistoryのSubjectはReservation.Bookerである。
-- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、計上根拠はPayment Factとする。スタッフ預りTicketでは現金受領時に計上し、後続のCheckInCompletedで二重計上しない。
 - Reservation DomainはJournal Entryを管理しない。
 - CreatedByはReservation作成後に変更しない。
 - CreatedAtは変更しない。
@@ -946,6 +985,8 @@ CheckInCompletedを契機として、
 
 Reservation Domain自身が、
 HistoryやJournal Entryを直接生成・更新しない。
+
+公演状態による制限（PR #7 レビュー R5）：CANCELLED・COMPLETED・ARCHIVEDのProductionでは、Reservationの作成・変更を受け付けない。ただしCANCELLEDのProductionでは、中止公演の予約を整理するため、セルフサービスの予約取消は受け付ける。詳細とロック順序は `ProductionLifecycle.md`「公演活動の制限」「Production単位のロック規約」を正とする。
 
 ---
 
@@ -980,12 +1021,7 @@ Check InはReservation単位で行う。
 Check Inが完了すると、
 CheckInCompletedを発行する。
 
-CheckInCompletedを契機として、
-
-- Audience History
-- Ticket Revenue
-
-をそれぞれのDomainへ連携する。
+CheckInCompletedを契機としてAudience HistoryをHistory Domainへ連携する。Ticket Revenueは実際の代金受領を示すPayment Factに基づいてAccounting Domainへ連携する。通常の当日精算ではPayment FactとCheckInCompletedを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedから再計上しない。
 
 ReservationはHistoryを直接管理しない。
 
@@ -1042,7 +1078,7 @@ Reservationの基本責務を
 - Check In時にはPerformanceを検証する。
 - Check In完了時にCheckInCompletedを発行する。
 - CheckInCompletedからAudience Historyを生成する。
-- CheckInCompletedからTicket RevenueをAccountingへ連携する。
+- Payment Factに基づいてTicket RevenueをAccountingへ連携する。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生する。
 - Reservation DomainはHistoryを直接管理しない。
 - Reservation DomainはJournal Entryを管理しない。
 - CANCELLEDのReservationを物理削除しない。

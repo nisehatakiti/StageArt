@@ -19,20 +19,83 @@ export function fetchRehearsal(client: ApiClient, rehearsalId: string): Promise<
 }
 
 /** POST /productions/{id}/rehearsals - creates a Rehearsal (starts at
- * DRAFT; RehearsalAttendance SCHEDULE_ADJUSTMENT-phase records are
- * created automatically for eligible Participants server-side, see
- * CreateRehearsalUseCase.php). */
+ * SCHEDULED). `targetPersonIds` becomes the exact set of Production
+ * members who get a SCHEDULE_ADJUSTMENT RehearsalAttendance record - an
+ * unselected Production member is not an Attendance target for this
+ * Rehearsal (CreateRehearsalUseCase.php no longer auto-targets every
+ * active member). Omitting it (or passing []) creates zero Attendance
+ * records. */
 export function createRehearsal(
   client: ApiClient,
   productionId: string,
-  fields: { title: string; startDateTime?: string; endDateTime?: string; timezone?: string; location?: string }
+  fields: {
+    title?: string | null;
+    description?: string | null;
+    activityType?: string;
+    startDateTime?: string;
+    endDateTime?: string;
+    timezone?: string;
+    location?: string;
+    targetPersonIds?: string[];
+    /** Phase 7 (Rehearsal仕様整合): "回答期限" - optional. */
+    responseDeadline?: string;
+    /** PR #7 R9: create as 確定 in the same request - the Backend confirms
+     * it in the same transaction and sends only the §11 notification. */
+    confirmOnCreate?: boolean;
+    /** PR #7 R12: the create request's idempotency key (createRequestKey.ts). */
+    idempotencyKey?: string;
+  }
 ): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/productions/${productionId}/rehearsals`, {
-    title: fields.title,
+    title: fields.title ?? null,
+    description: fields.description ?? null,
+    activity_type: fields.activityType ?? 'REHEARSAL',
     start_date_time: fields.startDateTime,
     end_date_time: fields.endDateTime,
     timezone: fields.timezone,
     location: fields.location,
+    person_ids: fields.targetPersonIds,
+    response_deadline: fields.responseDeadline,
+    confirm_on_create: fields.confirmOnCreate ?? false,
+    idempotency_key: fields.idempotencyKey,
+  });
+}
+
+/** PUT /rehearsals/{id} - "稽古情報の編集" (UpdateRehearsalUseCase.php).
+ * Valid for DRAFT/SCHEDULED/CONFIRMED/ACTIVE (rejected for the two
+ * terminal statuses - Rehearsal.php's own `isTerminal()` guard); never
+ * changes Status itself. Every field the Backend accepts is applied
+ * unconditionally (no per-field "only if provided" merge, matching
+ * updateOrganization()'s identical contract) - `description` is
+ * therefore always required here even though no Mobile UI edits it yet,
+ * so callers must pass the Rehearsal's own current description back
+ * unchanged rather than omit it, or a real (if currently always-null in
+ * practice) value would be silently wiped. */
+export function updateRehearsal(
+  client: ApiClient,
+  rehearsalId: string,
+  fields: {
+    title?: string | null;
+    description: string | null;
+    activityType?: string;
+    startDateTime?: string;
+    endDateTime?: string;
+    timezone?: string;
+    location?: string;
+    /** Phase 7 (Rehearsal仕様整合): "回答期限" - whole-field overwrite,
+     * matching every other field here; omitting it clears the deadline. */
+    responseDeadline?: string;
+  }
+): Promise<Rehearsal> {
+  return client.put<Rehearsal>(`/rehearsals/${rehearsalId}`, {
+    title: fields.title,
+    description: fields.description,
+    activity_type: fields.activityType,
+    start_date_time: fields.startDateTime,
+    end_date_time: fields.endDateTime,
+    timezone: fields.timezone,
+    location: fields.location,
+    response_deadline: fields.responseDeadline,
   });
 }
 
@@ -43,6 +106,16 @@ export function createRehearsal(
  * automatically server-side by this action (ConfirmRehearsalUseCase.php). */
 export function confirmRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
   return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/confirm`);
+}
+
+/** POST /rehearsals/{id}/cancel - "中止する" (稽古を中止する). Soft
+ * status-only transition to CANCELLED (CancelRehearsalUseCase.php); the
+ * record is never physically deleted and keeps appearing in the
+ * Rehearsal list with its CANCELLED status. Valid from DRAFT/SCHEDULED/
+ * CONFIRMED/ACTIVE (Rehearsal.md's own Status Lifecycle "中止の場合"
+ * section - anything short of the two terminal statuses). */
+export function cancelRehearsal(client: ApiClient, rehearsalId: string): Promise<Rehearsal> {
+  return client.post<Rehearsal>(`/rehearsals/${rehearsalId}/cancel`);
 }
 
 /** GET /rehearsals/{id}/attendances?phase=X - the full roster for one
@@ -57,14 +130,35 @@ export function fetchRehearsalAttendances(
   return client.get<RehearsalAttendance[]>(`/rehearsals/${rehearsalId}/attendances`, { phase });
 }
 
+/** POST /rehearsals/{id}/attendances - "稽古詳細画面で未選択メンバーを追加".
+ * Adds RehearsalAttendance targets for Production members who were not
+ * selected at creation/confirm time. Backend validates each personId is
+ * a currently-ACTIVE, Person-subject Participant of this Rehearsal's
+ * Production, and is idempotent per Person - someone who already has an
+ * Attendance record for the Rehearsal's current phase is left untouched
+ * (no resend), only genuinely new targets get created
+ * (AddRehearsalAttendanceTargetsUseCase.php). Returns only the
+ * newly-created records. */
+export function addRehearsalAttendanceTargets(
+  client: ApiClient,
+  rehearsalId: string,
+  personIds: string[]
+): Promise<RehearsalAttendance[]> {
+  return client.post<RehearsalAttendance[]>(`/rehearsals/${rehearsalId}/attendances`, { person_ids: personIds });
+}
+
 /** PUT /rehearsal-attendances/{id}/respond - self-response only; the
- * Backend rejects (403) if the caller does not own this record. */
+ * Backend rejects (403) if the caller does not own this record.
+ * `remarks` (Phase 5 §3) always replaces the current value, including to
+ * `null` when omitted - the same "whole field overwrite" convention this
+ * codebase already uses for its other multi-field update calls. */
 export function respondRehearsalAttendance(
   client: ApiClient,
   attendanceId: string,
-  status: string
+  status: string,
+  remarks?: string | null
 ): Promise<RehearsalAttendance> {
-  return client.put<RehearsalAttendance>(`/rehearsal-attendances/${attendanceId}/respond`, { status });
+  return client.put<RehearsalAttendance>(`/rehearsal-attendances/${attendanceId}/respond`, { status, remarks: remarks ?? null });
 }
 
 /** PUT /rehearsal-attendances/{id}/record-actual-status - the

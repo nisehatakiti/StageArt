@@ -1,15 +1,18 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 
-import { signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
+import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
-import { StageArtLogo } from '@/components/brand/StageArtLogo';
+import { appOnlyRoute } from '@/components/app-only-route';
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { authStyles } from '@/components/auth/authStyles';
+import { STAGE } from '@/components/auth/authTheme';
+import { GoogleSignInButtonWeb } from '@/components/auth/GoogleSignInButtonWeb';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { BrandColors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -127,7 +130,7 @@ function useGoogleSigninButtonComponent(): GoogleSigninButtonComponent | null {
   return Button;
 }
 
-export default function LoginScreen() {
+function LoginScreen() {
   const { loginWithEmail, loginWithGoogle } = useAuth();
   const router = useRouter();
   const GoogleIcon = useGoogleSigninButtonComponent();
@@ -161,6 +164,33 @@ export default function LoginScreen() {
     router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
   }
 
+  /**
+   * The shared "we already have a Google ID Token, finish logging in"
+   * path - identical regardless of how that token was obtained (native
+   * GoogleSignin.signIn() vs Web's GoogleSignInButtonWeb callback, see
+   * that component's own docblock for why Web cannot share the same
+   * button-press flow native uses). Callers own submittingGoogle's
+   * lifecycle around this call, since native's diagnostic path has an
+   * earlier failure branch (module/config errors) this function never
+   * needs to know about.
+   */
+  async function completeGoogleLogin(idToken: string) {
+    try {
+      const result = await loginWithGoogle(idToken);
+
+      if (!result.ok) {
+        setErrorMessage(result.message);
+        return;
+      }
+
+      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+    } catch (error) {
+      const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
+      Alert.alert('Googleサインイン診断', message);
+      setErrorMessage(message);
+    }
+  }
+
   async function handleGoogleSubmit() {
     setSubmittingGoogle(true);
     setErrorMessage(null);
@@ -191,39 +221,53 @@ export default function LoginScreen() {
     }
 
     try {
-      const result = await loginWithGoogle(diagnostic.idToken);
+      await completeGoogleLogin(diagnostic.idToken);
+    } finally {
+      setSubmittingGoogle(false);
+    }
+  }
 
-      if (!result.ok) {
-        setErrorMessage(result.message);
-        return;
-      }
+  /**
+   * Web entry point: called from GoogleSignInButtonWeb's own callback,
+   * which Google Identity Services invokes once the user completes its
+   * popup - not from a press on this screen's own button (see that
+   * component's docblock for why).
+   */
+  async function handleGoogleWebIdToken(idToken: string) {
+    setSubmittingGoogle(true);
+    setErrorMessage(null);
 
-      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
-    } catch (error) {
-      const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
-      Alert.alert('Googleサインイン診断', message);
-      setErrorMessage(message);
+    try {
+      await completeGoogleLogin(idToken);
     } finally {
       setSubmittingGoogle(false);
     }
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <ThemedView style={styles.brand}>
-            <StageArtLogo width={200} height={60} />
-          </ThemedView>
-
+    <AuthLayout logoTestID="login-brand-logo">
+      {/*
+       * StageArt Google Web Sign-In (2026-09-04): isGoogleSignInAvailable()
+       * now returns true on Web once a Web Client ID is configured
+       * (see googleSignIn.web.ts) - Web renders GoogleSignInButtonWeb
+       * (Google Identity Services) instead of this custom button,
+       * since GIS can only issue an ID Token through its own
+       * rendered button's callback (see that component's docblock
+       * for why a differently-styled proxy button cannot trigger
+       * it). Native's button below is unchanged.
+       */}
+      {isGoogleSignInAvailable() &&
+        (Platform.OS === 'web' ? (
+          <GoogleSignInButtonWeb onIdToken={handleGoogleWebIdToken} disabled={submitting} />
+        ) : (
           <TouchableOpacity
             testID="login-google-button"
             onPress={handleGoogleSubmit}
             disabled={submitting}
-            style={[styles.googleButton, submitting && styles.buttonDisabled]}
+            style={[styles.googleButton, submitting && authStyles.buttonDisabled]}
           >
             {submittingGoogle ? (
-              <ActivityIndicator />
+              <ActivityIndicator color={STAGE.link} />
             ) : (
               <>
                 {/* The official Google "G" mark, rendered by
@@ -266,108 +310,102 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
+        ))}
 
-          <ThemedView style={styles.dividerRow}>
-            <ThemedView style={styles.dividerLine} />
-            <ThemedText type="small" themeColor="textSecondary">
-              または
-            </ThemedText>
-            <ThemedView style={styles.dividerLine} />
-          </ThemedView>
-
-          <ThemedTextInput
-            testID="login-email"
-            placeholder="メールアドレス"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={styles.input}
-          />
-          <ThemedTextInput
-            testID="login-password"
-            placeholder="パスワード"
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            textContentType="password"
-            autoComplete="current-password"
-            style={styles.input}
-          />
-
-          {errorMessage && (
-            <ThemedText testID="login-error" themeColor="text" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
-
-          <TouchableOpacity
-            testID="login-submit"
-            onPress={handleEmailSubmit}
-            disabled={submitting}
-            style={[styles.button, submitting && styles.buttonDisabled]}
-          >
-            {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>ログイン</ThemedText>}
-          </TouchableOpacity>
-
-          <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
-            <ThemedText type="linkPrimary" style={styles.linkCentered}>
-              アカウントを新規登録
-            </ThemedText>
-          </TouchableOpacity>
-
-          <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
-            <ThemedText type="link" style={styles.linkCentered}>
-              パスワードを忘れた
-            </ThemedText>
-          </TouchableOpacity>
+      {isGoogleSignInAvailable() && (
+        <ThemedView style={styles.dividerRow}>
+          <ThemedView style={styles.dividerLine} />
+          <ThemedText type="small" style={styles.dividerText}>
+            または
+          </ThemedText>
+          <ThemedView style={styles.dividerLine} />
         </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      )}
+
+      <ThemedTextInput
+        testID="login-email"
+        placeholder="メールアドレス"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        placeholderTextColor={STAGE.placeholder}
+        style={authStyles.input}
+      />
+      <ThemedTextInput
+        testID="login-password"
+        placeholder="パスワード"
+        value={password}
+        onChangeText={setPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        textContentType="password"
+        autoComplete="current-password"
+        placeholderTextColor={STAGE.placeholder}
+        style={authStyles.input}
+      />
+
+      {errorMessage && (
+        <ThemedText testID="login-error" style={authStyles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
+
+      <TouchableOpacity
+        testID="login-submit"
+        onPress={handleEmailSubmit}
+        disabled={submitting}
+        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+      >
+        {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>ログイン</ThemedText>}
+      </TouchableOpacity>
+
+      <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
+        <ThemedText type="linkPrimary" style={authStyles.linkCentered}>
+          アカウントを新規登録
+        </ThemedText>
+      </TouchableOpacity>
+
+      <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
+        <ThemedText type="link" style={authStyles.linkCentered}>
+          パスワードを忘れた
+        </ThemedText>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  flex: { flex: 1 },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { alignItems: 'center', marginBottom: Spacing.two },
+  // Explicit dark fill (not just an outline) so the button reads as a
+  // deliberate, filled button rather than a ghost/outline one - matching
+  // the weight of the email-login button beside it, per the redesign's
+  // "Googleログインだけ小さく見えない" requirement. Same paddingVertical as
+  // authStyles.input/button so all three sit on one visual rhythm.
   googleButton: {
     flexDirection: 'row',
+    backgroundColor: STAGE.inputBackground,
     borderWidth: 1,
-    borderColor: '#dadce0',
+    borderColor: STAGE.inputBorder,
     borderRadius: 8,
-    paddingVertical: Spacing.three,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
   },
   googleIcon: { width: 20, height: 20 },
-  googleButtonText: { fontWeight: '600' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#ccc' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  error: { color: '#a6483a' },
-  button: {
-    // StageArt Web First Phase 1 (docs/03-BrandIdentity.md): warm amber,
-    // not the earlier unrelated purple.
-    backgroundColor: BrandColors.warmAmber,
-    borderRadius: 8,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  linkCentered: { textAlign: 'center' },
+  googleButtonText: { fontWeight: '600', color: STAGE.inputText },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, backgroundColor: 'transparent' },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: STAGE.divider },
+  dividerText: { color: STAGE.placeholder },
 });
+
+/**
+ * The public site (public-site build, or a public host) never shows a
+ * login form - its visitors log in on the application host instead (see
+ * PublicLandingPage's login links). A direct /login visit there, or the
+ * (app) group's unauthenticated redirect, goes back to the public top
+ * page. Native and the application hosts keep the login screen unchanged.
+ */
+export default appOnlyRoute(LoginScreen);

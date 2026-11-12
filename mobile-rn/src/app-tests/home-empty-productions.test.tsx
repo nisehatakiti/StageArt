@@ -19,10 +19,13 @@ describe('Home: Organization with no Productions', () => {
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/home' });
+    // R7: 3113937 (2026-10-06) moved an Organization's Productions off
+    // Home to its 公演・活動一覧 (/organizations/{id}/productions), which
+    // has the same empty / error states.
+    renderRouter('src/app', { initialUrl: `/organizations/${orgOne.id}/productions` });
 
-    await waitFor(() => expect(screen.getByTestId('productions-empty')).toBeVisible());
-    expect(screen.getByText('この団体には公演・活動がありません。')).toBeVisible();
-    expect(screen.queryByTestId('productions-error')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('organization-productions-empty')).toBeVisible());
+    expect(screen.getByText(/まだ公演・活動がありません/)).toBeVisible();
+    expect(screen.queryByTestId('organization-productions-list-error')).toBeNull();
   });
 });

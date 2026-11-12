@@ -7,17 +7,18 @@ namespace StageArt\Domain\Production;
 use InvalidArgumentException;
 
 /**
- * Production.md's "Lifecycle" section defines exactly these six values
- * and states elsewhere ("Completed to Archived Transition") that
- * COMPLETED -> ARCHIVED specifically requires Production Settlement
- * confirmation. That single forbidden transition is enforced by
- * Production::changeStatus() (which sees both the current and target
- * Status), not here - this VO only validates membership in the allowed
- * set, matching ProjectStatus's precedent.
+ * StageArt Production Lifecycle整理 instruction: this round's confirmed
+ * Production Lifecycle is PLANNING -> ACTIVE -> COMPLETED only. DRAFT is
+ * removed - a newly created Production starts at PLANNING directly (see
+ * Production::create()), not DRAFT (StageArt does not use a DRAFT status
+ * to gate public/private visibility for Production either - see
+ * Production::publish()/isPublished()). ARCHIVED and CANCELLED are kept
+ * unchanged this round (their removal/retention was not confirmed - see
+ * this round's report) but are not part of the newly-confirmed
+ * PLANNING/ACTIVE/COMPLETED chain.
  */
 final class ProductionStatus
 {
-    public const DRAFT = 'DRAFT';
     public const PLANNING = 'PLANNING';
     public const ACTIVE = 'ACTIVE';
     public const COMPLETED = 'COMPLETED';
@@ -25,7 +26,6 @@ final class ProductionStatus
     public const CANCELLED = 'CANCELLED';
 
     private const VALID = [
-        self::DRAFT,
         self::PLANNING,
         self::ACTIVE,
         self::COMPLETED,
@@ -44,9 +44,9 @@ final class ProductionStatus
         $this->value = $value;
     }
 
-    public static function draft(): self
+    public static function planning(): self
     {
-        return new self(self::DRAFT);
+        return new self(self::PLANNING);
     }
 
     public static function fromString(string $value): self

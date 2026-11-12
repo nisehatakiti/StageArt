@@ -13,6 +13,23 @@ export const productionOne: Production = {
   updated_at: '',
   is_primary_manager: true,
   delegate_role: null,
+  delegate_roles: [],
+  description: null,
+  description_published_at: null,
+  flyer_url: null,
+  flyer_published_at: null,
+  venue_name: null,
+  venue_published_at: null,
+  schedule_start_date: null,
+  schedule_end_date: null,
+  schedule_published_at: null,
+  script_credit: null,
+  direction_credit: null,
+  script_direction_published_at: null,
+  member_info_published_at: null,
+  capacity: null,
+  performance_common_remarks: null,
+  performance_duration_minutes: null,
 };
 
 export const staffItem: TimetableItem = {
@@ -53,8 +70,8 @@ export const currentPerson = {
   id: 'person-1',
   word_press_user_id: 1,
   email_verified: true,
-  family_name: '秦',
-  given_name: '良輔',
+  family_name: '舞台',
+  given_name: '芸術',
 };
 
 export const participants: Participant[] = [
@@ -67,6 +84,11 @@ export const participants: Participant[] = [
     status: 'ACTIVE',
     created_at: '',
     updated_at: '',
+    remarks: null,
+    display_name: null,
+    person_family_name: null,
+    person_given_name: null,
+    email: null,
   },
 ];
 
@@ -102,7 +124,7 @@ const DEFAULT_ROUTES: { test: (url: string) => boolean; status: number; body: un
   {
     test: (url) => url.endsWith('/me'),
     status: 200,
-    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '秦', given_name: '良輔' },
+    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' },
   },
 ];
 

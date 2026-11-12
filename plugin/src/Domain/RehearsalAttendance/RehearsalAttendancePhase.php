@@ -52,7 +52,7 @@ final class RehearsalAttendancePhase
      * needs to pick exactly one "current" record per Rehearsal (a
      * Rehearsal keeps its superseded Phase 1 record after reaching
      * CONFIRMED - see RehearsalAttendanceRepositoryInterface::
-     * findUpcomingByPersonId()'s docblock). This centralizes the same
+     * findByPersonIdExcludingRehearsalStatuses()'s docblock). This centralizes the same
      * disclosed, non-Blueprint-literal inference Mobile's
      * phaseForRehearsalStatus() (features/attendance/phase.ts) already
      * makes client-side: before CONFIRMED, only SCHEDULE_ADJUSTMENT

@@ -2,7 +2,7 @@
 
 # Production Delegate Policy
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -109,7 +109,7 @@ ProductionDelegateがProduction Memberに対して資料を直接配布する機
 
 ProductionDelegateはACTIVE期間中の実務を担当できる。
 
-ただし、Production Lifecycleを進めるActionはPrimaryManagerのみが実行する。
+ただし、Production Lifecycleを進めるActionはPrimaryManagerのみが実行する。例外として、ACTIVE → COMPLETED（決算確定）は会計管理者と代理人も実行できる（Version 1.1、2026-10-28確定）。
 
 DRAFT → PLANNING
     PrimaryManagerのみ
@@ -118,7 +118,8 @@ PLANNING → ACTIVE
     PrimaryManagerのみ
 
 ACTIVE → COMPLETED
-    PrimaryManagerのみ
+    PrimaryManager、会計管理者（ACCOUNTING_MANAGER）、
+    代理人（PARTICIPANT_MANAGER＋REHEARSAL_MANAGER）
     かつ決算完了が必須
 
 COMPLETED → ARCHIVED

@@ -173,10 +173,12 @@ $productionPublishedId = $resp->get_data()['id'];
 // PrimaryManager-exclusive - switch from the Organization Owner (who
 // created this Production) to its actual PrimaryManager.
 wp_set_current_user($productionManagerUserId);
-call('PUT', "/stageart/v1/productions/{$productionPublishedId}", ['name' => '[Sample] 夏の公演', 'published' => true]);
-// Transition DRAFT -> PLANNING -> ACTIVE to match the "ACTIVE" label
-// below (Phase 6.1 Lifecycle Actions use PATCH, not POST).
-call('PATCH', "/stageart/v1/productions/{$productionPublishedId}/start-planning");
+call('PUT', "/stageart/v1/productions/{$productionPublishedId}", ['name' => '[Sample] 夏の公演']);
+// StageArt Production Lifecycle整理 instruction: a Production already
+// starts at PLANNING (no separate "start planning" Action exists
+// anymore), and activate() (PLANNING -> ACTIVE, "公演を確定する") now also
+// publishes the Production itself - see Production::activate()'s
+// docblock - so no separate `published => true` PUT is needed here.
 call('PATCH', "/stageart/v1/productions/{$productionPublishedId}/activate");
 out('Production (published, ACTIVE)', $productionPublishedId);
 
@@ -199,6 +201,7 @@ out('Production member (ACTIVE Participant/CAST)', $productionMemberUserId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '通し稽古',
     'start_date_time' => '2026-10-15T18:00:00+09:00',
+    'end_date_time' => '2026-10-15T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
@@ -210,6 +213,7 @@ out('Rehearsal (confirmed, 出欠確認あり)', $rehearsalConfirmedId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '顔合わせ',
     'start_date_time' => '2026-10-05T19:00:00+09:00',
+    'end_date_time' => '2026-10-05T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
@@ -220,22 +224,28 @@ out('Rehearsal (unconfirmed, 出欠確認なし)', $rehearsalUnconfirmedId);
 $resp = call('POST', "/stageart/v1/productions/{$productionPublishedId}/rehearsals", [
     'title' => '初回稽古',
     'start_date_time' => '2026-07-01T18:00:00+09:00',
+    'end_date_time' => '2026-07-01T21:00:00+09:00',
     'timezone' => 'Asia/Tokyo',
     'location' => '[Sample] サンプルスタジオ',
 ]);
 $rehearsalPastId = $resp->get_data()['id'];
 call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/confirm");
-call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/activate");
-call('POST', "/stageart/v1/rehearsals/{$rehearsalPastId}/complete");
+// PR #7 R10: the manual activate/complete routes were removed. A CONFIRMED
+// Rehearsal whose end time has passed becomes COMPLETED the next time it
+// is read (RehearsalStatusTimeSync), so reading it once is enough. (R10
+// also added end_date_time above - it has been required since the
+// status time-sync change, and the seed was missing it.)
+call('GET', "/stageart/v1/rehearsals/{$rehearsalPastId}");
 out('Rehearsal (past, completed)', $rehearsalPastId);
 
 wp_set_current_user($orgOwnerUserId);
-// A second, unpublished Production under Org A - the closest honest
-// representation of "not yet public" (see this Phase's report: a real
-// "公開予定" scheduled-future-publish is NOT implemented Backend-side -
-// publishedAt is a simple now-or-null flag, not date-compared - so this
-// script does not fake a future publishedAt, which would actually make
-// it publicly visible today, contradicting "予定".
+// A second, unpublished Production under Org A. StageArt Production
+// Lifecycle整理 instruction: activate() (PLANNING -> ACTIVE) now also
+// publishes by default (see Production::activate()'s docblock), so this
+// demo row is explicitly un-published again afterward via the
+// pre-existing, Status-independent publish/unpublish toggle
+// (`PUT .../productions/{id}` with `published => false`) to keep
+// demonstrating an ACTIVE-but-not-public Production.
 $resp = call('POST', '/stageart/v1/productions', [
     'project_id' => $projectAId,
     'name' => '[Sample] 冬の新作（準備中）',
@@ -243,7 +253,13 @@ $resp = call('POST', '/stageart/v1/productions', [
     'primary_manager_person_id' => $productionManagerPersonId,
 ]);
 $productionDraftId = $resp->get_data()['id'];
-out('Production (unpublished/draft)', $productionDraftId);
+// Lifecycle Actions are PrimaryManager-exclusive (same as the published
+// Production above) - switch from the Organization Owner (who just
+// created this Production) to its actual PrimaryManager.
+wp_set_current_user($productionManagerUserId);
+call('PATCH', "/stageart/v1/productions/{$productionDraftId}/activate");
+call('PUT', "/stageart/v1/productions/{$productionDraftId}", ['name' => '[Sample] 冬の新作（準備中）', 'published' => false]);
+out('Production (unpublished, ACTIVE)', $productionDraftId);
 
 wp_set_current_user($orgOwnerUserId);
 // A third Production, published then lifecycle-completed/archived (終了済み)
@@ -259,11 +275,11 @@ $productionEndedId = $resp->get_data()['id'];
 // the Organization Owner who just created this Production is not
 // automatically its PrimaryManager, so we switch back.
 wp_set_current_user($productionManagerUserId);
-call('PUT', "/stageart/v1/productions/{$productionEndedId}", ['name' => '[Sample] 昨年の公演', 'published' => true]);
-// Phase 6.1 Lifecycle Actions use PATCH, not POST (unlike Rehearsal's
-// own confirm/activate/complete, which are POST - see
+// Lifecycle Actions use PATCH, not POST (unlike Rehearsal's own
+// confirm/activate/complete, which are POST - see
 // ProductionRestController::register_routes()'s own registration).
-call('PATCH', "/stageart/v1/productions/{$productionEndedId}/start-planning");
+// activate() itself publishes (see Production::activate()'s docblock),
+// so no separate `published => true` PUT is needed here.
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/activate");
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/complete");
 call('PATCH', "/stageart/v1/productions/{$productionEndedId}/archive");

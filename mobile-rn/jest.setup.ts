@@ -19,7 +19,6 @@ jest.setTimeout(15000);
 // @testing-library/react-native's renderHook() (used by
 // src/auth/AuthContext.test.tsx) log "not configured to support act()"
 // and the hook's return value is never populated.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
@@ -35,7 +34,7 @@ jest.mock('expo-constants', () => ({
     expoConfig: {
       extra: {
         apiEnv: 'development',
-        apiBaseUrl: 'https://dev-stageart.hatakiti.com/stageart-test/wp-json/stageart/v1',
+        apiBaseUrl: 'https://dev-api.stageart.top/wp-json/stageart/v1',
       },
     },
   },

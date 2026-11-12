@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace StageArt\Infrastructure\WordPress\Schema;
 
+use RuntimeException;
 use StageArt\Accounting\AccountingInstaller;
+use StageArt\CheckIn\CheckInInstaller;
+use StageArt\Performance\PerformanceInstaller;
+use StageArt\Questionnaire\QuestionnaireInstaller;
 use StageArt\Rehearsal\RehearsalInstaller;
+use StageArt\Settlement\SettlementInstaller;
+use StageArt\Ticket\TicketInstaller;
 
 /**
  * StageArt Core/Module Architecture Phase 3: this class is now Core's
@@ -18,8 +24,35 @@ use StageArt\Rehearsal\RehearsalInstaller;
  */
 final class Installer
 {
+    /**
+     * StageArt Admin Console V1: 'stageart_manage_accounts' is a new,
+     * dedicated WordPress Capability - deliberately not `manage_options`
+     * (that would make an Admin Console admin a full WordPress Site
+     * Administrator, far broader than intended) and never granted to
+     * the 'subscriber' role WordPressUserProvisioner assigns every
+     * auto-provisioned Google/Email StageArt User (see that class's own
+     * docblock) - so a regular StageArt user's WordPress User can never
+     * satisfy this check, however it authenticated.
+     *
+     * Granted to two roles: the new 'stageart_admin' role (created just
+     * for this - Admin Console administrators created via the "管理者
+     * アカウント作成" screen get this role and nothing else), and the
+     * built-in 'administrator' role (so the site's own WordPress
+     * Administrator can always reach the Admin Console to create the
+     * first StageArt admin account - otherwise nobody could ever
+     * bootstrap it). add_role()/add_cap() are idempotent (get_role()
+     * returns the existing role unchanged if already present), so this
+     * is safe to run on every upgrade, matching maybeUpgrade()'s own
+     * "runs once per CURRENT_VERSION bump, cheap no-op after that"
+     * design.
+     */
+    private const ADMIN_CONSOLE_CAPABILITY = 'stageart_manage_accounts';
+    private const ADMIN_CONSOLE_ROLE = 'stageart_admin';
+
     public static function install(): void
     {
+        self::installAdminConsoleRole();
+
         global $wpdb;
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -41,9 +74,16 @@ final class Installer
         $participants = $wpdb->prefix . 'stageart_participants';
         $notificationReadStates = $wpdb->prefix . 'stageart_notification_read_states';
         $pushPreferences = $wpdb->prefix . 'stageart_push_preferences';
+        $notifications = $wpdb->prefix . 'stageart_notifications';
+        $notificationEmails = $wpdb->prefix . 'stageart_notification_emails';
+        $notificationEmailChangeRequests = $wpdb->prefix . 'stageart_notification_email_change_requests';
         $organizationFollows = $wpdb->prefix . 'stageart_organization_follows';
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
+        $participantInvitations = $wpdb->prefix . 'stageart_participant_invitations';
+        $organizationSns = $wpdb->prefix . 'stageart_organization_sns';
+        $organizationExternalLinks = $wpdb->prefix . 'stageart_organization_external_links';
+        $organizationInvitations = $wpdb->prefix . 'stageart_organization_invitations';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -53,10 +93,81 @@ final class Installer
             description TEXT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
             published_at DATETIME NULL,
+            accounting_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            logo_url VARCHAR(500) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY slug (slug)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationSNS.md,
+         * Confirmed): service/account_identifier/profile_url/
+         * display_name/display_order/visibility, exactly the field list
+         * that doc specifies. Deliberately NO credential/token columns
+         * (doc's "Security" section forbids storing them here at all).
+         */
+        dbDelta("CREATE TABLE {$organizationSns} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            service VARCHAR(20) NOT NULL,
+            account_identifier VARCHAR(255) NOT NULL,
+            profile_url VARCHAR(500) NULL,
+            display_name VARCHAR(255) NULL,
+            display_order INT NOT NULL DEFAULT 0,
+            visibility TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理 (docs/04-DomainModel/
+         * OrganizationPublicSiteStructure.md "OTHER LINKS", Confirmed at
+         * the structure/behavior level: "劇団が自由に登録できる外部リンク
+         * 一覧...V1ではサービスを限定しない") - label/url/display_order is
+         * this round's own field-naming decision (the doc confirms the
+         * concept and free-form nature, not exact column names).
+         */
+        dbDelta("CREATE TABLE {$organizationExternalLinks} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            label VARCHAR(255) NOT NULL,
+            url VARCHAR(500) NOT NULL,
+            display_order INT NOT NULL DEFAULT 0,
+            visibility TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        /*
+         * StageArt 団体管理UI整理: Organization-Scope counterpart of
+         * stageart_participant_invitations, same shape (email/
+         * invited_name/invited_by_person_id/remarks/token_hash/status/
+         * expires_at/consumed_at) minus participant_type (Organization
+         * membership carries no per-invite Role choice at add-time - see
+         * CreateOrganizationInvitationUseCase's own docblock).
+         */
+        dbDelta("CREATE TABLE {$organizationInvitations} (
+            id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            invited_name VARCHAR(255) NOT NULL DEFAULT '',
+            invited_by_person_id CHAR(36) NOT NULL,
+            remarks TEXT NULL,
+            token_hash CHAR(64) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            created_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY token_hash (token_hash),
+            KEY organization_id (organization_id),
+            KEY email (email)
         ) {$charsetCollate};");
 
         dbDelta("CREATE TABLE {$people} (
@@ -77,6 +188,7 @@ final class Installer
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
             created_at DATETIME NOT NULL,
             joined_at DATETIME NULL,
+            remarks TEXT NULL,
             PRIMARY KEY  (id),
             KEY organization_id (organization_id),
             KEY person_id (person_id)
@@ -190,9 +302,35 @@ final class Installer
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(64) NULL,
             title_heading VARCHAR(255) NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+            status VARCHAR(20) NOT NULL DEFAULT 'PLANNING',
             published_at DATETIME NULL,
             primary_manager_person_id CHAR(36) NOT NULL,
+            description TEXT NULL,
+            description_published_at DATETIME NULL,
+            flyer_url VARCHAR(500) NULL,
+            flyer_published_at DATETIME NULL,
+            venue_name VARCHAR(255) NULL,
+            venue_published_at DATETIME NULL,
+            schedule_start_date DATE NULL,
+            schedule_end_date DATE NULL,
+            schedule_published_at DATETIME NULL,
+            script_credit VARCHAR(255) NULL,
+            direction_credit VARCHAR(255) NULL,
+            script_direction_published_at DATETIME NULL,
+            member_info_published_at DATETIME NULL,
+            capacity INT NULL,
+            performance_common_remarks TEXT NULL,
+            performance_duration_minutes INT NULL,
+            ticket_publication_at DATETIME NULL,
+            ticket_sales_start_at DATETIME NULL,
+            ticket_sales_end_rule VARCHAR(30) NULL,
+            ticket_sales_end_parameter VARCHAR(20) NULL,
+            quota_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            quota_count INT NULL,
+            quota_buyback_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            quota_shortfall_unit_price INT NULL,
+            ticket_back_mode VARCHAR(20) NULL,
+            ticket_back_rules TEXT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -224,12 +362,56 @@ final class Installer
             subject_id CHAR(36) NOT NULL,
             participant_type VARCHAR(20) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+            remarks TEXT NULL,
+            display_name VARCHAR(255) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             KEY production_id (production_id),
             KEY subject (subject_type, subject_id),
             UNIQUE KEY production_subject_type (production_id, subject_type, subject_id, participant_type)
+        ) {$charsetCollate};");
+
+        // StageArt メール招待によるProductionParticipant追加機能: no
+        // FOREIGN KEY constraints, matching this schema's established
+        // approach everywhere else (dbDelta/WordPress compatibility) -
+        // production_id/invited_by_person_id are plain indexed
+        // references, not enforced at the DB level. No UNIQUE KEY on
+        // (production_id, email, participant_type): duplicate-invitation
+        // prevention is an Application-layer concern
+        // (CreateParticipantInvitationUseCase resends an existing usable
+        // PENDING row instead of inserting a second one), and historical
+        // CANCELLED/CONSUMED/expired-but-still-PENDING rows are expected
+        // to accumulate for the same tuple over time - see
+        // ParticipantInvitationRepositoryInterface::findByProductionEmailAndType()'s
+        // own docblock. stageart_participants itself is unchanged.
+        //
+        // StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド:
+        // invited_name added via dbDelta's own ALTER-TABLE-diffing against
+        // this same CREATE TABLE statement (see SchemaUpgrader's own
+        // docblock for why re-running Installer::install() is always
+        // safe). `DEFAULT ''` (not NULL) so dbDelta can ADD this NOT NULL
+        // column on an already-deployed table with existing rows without
+        // failing under MySQL strict mode; the Domain layer's own
+        // ParticipantInvitation::create() still enforces a real,
+        // non-empty name for every row created going forward.
+        dbDelta("CREATE TABLE {$participantInvitations} (
+            id CHAR(36) NOT NULL,
+            production_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            invited_name VARCHAR(255) NOT NULL DEFAULT '',
+            invited_by_person_id CHAR(36) NOT NULL,
+            participant_type VARCHAR(20) NOT NULL,
+            remarks TEXT NULL,
+            token_hash CHAR(64) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            created_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY token_hash (token_hash),
+            KEY production_id (production_id),
+            KEY email (email)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
@@ -241,6 +423,28 @@ final class Installer
         // class's own docblock. Byte-identical SQL to before this
         // extraction; only the physical location moved.
         RehearsalInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 2 Performance基盤:
+        // Performance Module's own single table, owned and migrated by
+        // PerformanceInstaller, not created here - see that class's own
+        // docblock, and RehearsalInstaller's identical precedent above.
+        PerformanceInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: Ticket Module's own tables (tickets, reservations,
+        // issued_tickets) are owned and migrated by TicketInstaller, not
+        // created here - see that class's own docblock, and
+        // PerformanceInstaller's identical precedent above.
+        TicketInstaller::install($wpdb, $charsetCollate);
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): Check-in Module's own table (check_ins) and
+        // Settlement Module's own table (production_member_settlements),
+        // owned and migrated by their own Installers - see those
+        // classes' own docblocks, and TicketInstaller's identical
+        // precedent above.
+        CheckInInstaller::install($wpdb, $charsetCollate);
+        SettlementInstaller::install($wpdb, $charsetCollate);
 
         /*
          * Phase 7.0 (NotificationPolicy.md "未読 / 既読"): a lazily-created
@@ -275,6 +479,94 @@ final class Installer
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Notification基盤実装 phase: the generic, per-recipient In-App
+         * Notification Fact (see Notification::class's own docblock for
+         * why this is a NEW table rather than a
+         * stageart_timetable_version_published_notifications refactor -
+         * that table's audience-not-stored design stays as-is). One row
+         * per (Person, event); read/unread lives directly on the row
+         * (read_at NULL = unread), not through
+         * stageart_notification_read_states, since a per-recipient row
+         * already exists and a second table would add nothing.
+         */
+        /*
+         * StageArt ホームお知らせ・稽古出欠通知 instruction: rehearsal_id
+         * identifies the specific Rehearsal a notification is about (e.g.
+         * "出欠を回答してください"), so the Frontend can navigate straight
+         * to the right Rehearsal Detail screen without parsing the
+         * message string - a Production can have several Rehearsals, so
+         * production_id alone is not enough. NULL for any notification
+         * that is not about one particular Rehearsal (e.g.
+         * timetable_version_published, which is Production-wide).
+         */
+        dbDelta("CREATE TABLE {$notifications} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            type VARCHAR(50) NOT NULL,
+            message TEXT NOT NULL,
+            production_id CHAR(36) NULL,
+            rehearsal_id CHAR(36) NULL,
+            target_type VARCHAR(30) NULL,
+            target_id CHAR(36) NULL,
+            read_at DATETIME NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * Google認証ユーザーのEmail通知先対応 phase: a Person's own
+         * StageArt-managed notification destination email, one row per
+         * Person (unique on person_id, same "save()'s exists-check-
+         * then-insert/update pattern always finds at most one existing
+         * row" shape as stageart_push_preferences above). Deliberately
+         * separate from stageart_email_credentials (password-login
+         * email, keyed by user_account_id) and
+         * stageart_external_identities (OAuth linkage, never stores the
+         * provider's email) - see NotificationEmail::class's own
+         * docblock. A missing row means "no StageArt-managed
+         * notification email yet"; it is seeded only once, from a
+         * verified Google email, and never overwritten afterward (see
+         * NotificationEmailSeeder::class).
+         */
+        dbDelta("CREATE TABLE {$notificationEmails} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            verified TINYINT(1) NOT NULL DEFAULT 0,
+            source VARCHAR(30) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_id (person_id)
+        ) {$charsetCollate};");
+
+        /*
+         * 通知用Email確認・変更機能: one PENDING row per Person (unique on
+         * person_id, same upsert-by-person shape as stageart_push_
+         * preferences/stageart_notification_emails above) - a fresh
+         * change request always REPLACES this row in place (same id,
+         * new candidate_email/token_hash/expires_at, consumed_at reset
+         * to NULL), which is what makes an old verification link stop
+         * matching anything the instant a newer request is made (仕様書
+         * §9). candidate_email is NOT the Person's notification email
+         * until this token is verified - see NotificationEmail::
+         * changeEmail(), the only writer that ever promotes it there.
+         */
+        dbDelta("CREATE TABLE {$notificationEmailChangeRequests} (
+            id CHAR(36) NOT NULL,
+            person_id CHAR(36) NOT NULL,
+            candidate_email VARCHAR(255) NOT NULL,
+            token_hash CHAR(64) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            consumed_at DATETIME NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY person_id (person_id),
+            UNIQUE KEY token_hash (token_hash)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Accounting Module's
@@ -338,5 +630,53 @@ final class Installer
             PRIMARY KEY  (id),
             UNIQUE KEY person_target (person_id, target_type, target_id)
         ) {$charsetCollate};");
+
+        // アンケート実装指示書: Questionnaire Module's own 4 tables, owned
+        // and migrated by QuestionnaireInstaller, not created here - see
+        // that class's own docblock, and PerformanceInstaller's identical
+        // precedent above.
+        QuestionnaireInstaller::install($wpdb, $charsetCollate);
+
+        self::applyColumnNullabilityFixups($wpdb, $organizationSns);
+    }
+
+    /**
+     * StageArt SNS backend nullable対応 (schema 1.40.0): dbDelta only
+     * reliably handles ADD COLUMN/ADD KEY/CREATE TABLE - it does not
+     * relax an existing column's NOT NULL constraint to NULL on an
+     * already-created table (confirmed empirically on dev: after this
+     * round's dbDelta-based migration ran, `DESCRIBE` still showed
+     * profile_url as NOT NULL and a genuine NULL insert was rejected by
+     * MySQL). An explicit MODIFY COLUMN closes that gap. Idempotent -
+     * safe to run on every boot via maybeUpgrade(), and harmless on a
+     * fresh install where the CREATE TABLE above already declares the
+     * column nullable.
+     */
+    private static function applyColumnNullabilityFixups($wpdb, string $organizationSns): void
+    {
+        // A failure throws, so SchemaUpgrader keeps the stored version (PR #7 review).
+        if ($wpdb->query("ALTER TABLE {$organizationSns} MODIFY profile_url VARCHAR(500) NULL") === false) {
+            throw new RuntimeException("Schema statement failed on {$organizationSns}: " . (string) ($wpdb->last_error ?? ''));
+        }
+    }
+
+    private static function installAdminConsoleRole(): void
+    {
+        if (! get_role(self::ADMIN_CONSOLE_ROLE)) {
+            add_role(self::ADMIN_CONSOLE_ROLE, 'StageArt Admin Console', [
+                'read' => true,
+                self::ADMIN_CONSOLE_CAPABILITY => true,
+            ]);
+        }
+
+        $adminConsoleRole = get_role(self::ADMIN_CONSOLE_ROLE);
+        if ($adminConsoleRole && ! $adminConsoleRole->has_cap(self::ADMIN_CONSOLE_CAPABILITY)) {
+            $adminConsoleRole->add_cap(self::ADMIN_CONSOLE_CAPABILITY);
+        }
+
+        $administratorRole = get_role('administrator');
+        if ($administratorRole && ! $administratorRole->has_cap(self::ADMIN_CONSOLE_CAPABILITY)) {
+            $administratorRole->add_cap(self::ADMIN_CONSOLE_CAPABILITY);
+        }
     }
 }

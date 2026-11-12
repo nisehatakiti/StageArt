@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\Timetable;
 
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -47,6 +48,9 @@ use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Rehearsal\Rehearsal;
+use StageArt\Domain\Timetable\TimetableId;
+use StageArt\Domain\TimetableItem\TimetableItem;
+use StageArt\Domain\TimetableItem\TimetableItemId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
@@ -208,7 +212,15 @@ final class TimetableUseCaseTest extends TestCase
 
     private function givenRehearsal(Production $production): Rehearsal
     {
-        $rehearsal = Rehearsal::create($production->id(), 'Act 1', null, null, null, null, null);
+        $rehearsal = Rehearsal::create(
+            $production->id(),
+            'Act 1',
+            null,
+            new DateTimeImmutable('2099-01-01 18:00'),
+            new DateTimeImmutable('2099-01-01 20:00'),
+            null,
+            null
+        );
         $this->rehearsals->save($rehearsal);
 
         return $rehearsal;
@@ -423,5 +435,74 @@ final class TimetableUseCaseTest extends TestCase
         $this->assertSame(1, $notifications[0]->version());
         $this->assertSame('照明シュートを追加', $notifications[0]->changeSummary());
         $this->assertTrue($notifications[0]->rehearsalId()->equals($rehearsal->id()));
+    }
+
+    /**
+     * PR #7 R12: a new Version copies items exactly as stored - an item
+     * crossing midnight keeps its next-day end, and an item saved before
+     * R12 with the same start and end (no longer accepted on create) is
+     * copied rather than blocking the new Version.
+     */
+    public function test_r12_new_version_copies_cross_midnight_and_pre_r12_items_as_stored(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $this->createItem->execute(new CreateTimetableItemCommand(
+            $rehearsal->id()->toString(), 1, 'バラシ', null, '2026-11-10T23:30:00+09:00', '2026-11-11T01:30:00+09:00', 1, null, null, null, [], null
+        ));
+        $draftV1 = $this->getDraftTimetable->execute(new GetDraftTimetableQuery($rehearsal->id()->toString(), 1));
+        $this->items->save(TimetableItem::reconstitute(
+            TimetableItemId::generate(), TimetableId::fromString($draftV1->id), '旧データ（同時刻）', null,
+            new DateTimeImmutable('2026-11-10T10:00:00+09:00'), new DateTimeImmutable('2026-11-10T10:00:00+09:00'),
+            2, null, null, null, [], null, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-01')
+        ));
+        $this->publishVersion->execute(new PublishTimetableVersionCommand($draftV1->id, 1, null));
+
+        $this->createNewVersion->execute(new CreateNewTimetableVersionCommand($rehearsal->id()->toString(), 1));
+
+        $copies = [];
+        foreach ($this->listDraftItems->execute(new ListDraftTimetableItemsQuery($rehearsal->id()->toString(), 1)) as $item) {
+            $copies[$item->title] = [$item->startDateTime, $item->endDateTime];
+        }
+        ksort($copies);
+        $this->assertSame([
+            'バラシ' => ['2026-11-10T23:30:00+09:00', '2026-11-11T01:30:00+09:00'],
+            '旧データ（同時刻）' => ['2026-11-10T10:00:00+09:00', '2026-11-10T10:00:00+09:00'],
+        ], $copies);
+    }
+
+    /**
+     * PR #7 R12 follow-up: a new Version copies items longer than a day
+     * with their own end date (二日後・三日後・年またぎ), version after version.
+     */
+    public function test_r12_new_version_copies_items_longer_than_a_day(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $rehearsal = $this->givenRehearsal($production);
+        $expected = [
+            'A 二日後' => ['2026-11-10T09:00:00+09:00', '2026-11-12T18:00:00+09:00'],
+            'B 三日後' => ['2026-11-10T09:00:00+09:00', '2026-11-13T09:00:00+09:00'],
+            'C 年またぎ' => ['2026-12-28T22:00:00+09:00', '2027-01-04T06:00:00+09:00'],
+        ];
+        $order = 1;
+        foreach ($expected as $title => [$start, $end]) {
+            $this->createItem->execute(new CreateTimetableItemCommand(
+                $rehearsal->id()->toString(), 1, $title, null, $start, $end, $order++, null, null, null, [], null
+            ));
+        }
+        $draftV1 = $this->getDraftTimetable->execute(new GetDraftTimetableQuery($rehearsal->id()->toString(), 1));
+        $this->publishVersion->execute(new PublishTimetableVersionCommand($draftV1->id, 1, null));
+
+        for ($version = 2; $version <= 3; $version++) {
+            $this->createNewVersion->execute(new CreateNewTimetableVersionCommand($rehearsal->id()->toString(), 1));
+            $copies = [];
+            foreach ($this->listDraftItems->execute(new ListDraftTimetableItemsQuery($rehearsal->id()->toString(), 1)) as $item) {
+                $copies[$item->title] = [$item->startDateTime, $item->endDateTime];
+            }
+            ksort($copies);
+            $this->assertSame($expected, $copies, "version {$version}");
+            $draft = $this->getDraftTimetable->execute(new GetDraftTimetableQuery($rehearsal->id()->toString(), 1));
+            $this->publishVersion->execute(new PublishTimetableVersionCommand($draft->id, 1, null));
+        }
     }
 }

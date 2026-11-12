@@ -56,6 +56,7 @@ final class RehearsalModuleDescriptor implements ModuleDescriptor
             'stageart_timetable_items',
             'stageart_timetable_item_participants',
             'stageart_timetable_version_published_notifications',
+            'stageart_rehearsal_create_requests',
         ];
     }
 }

@@ -49,6 +49,8 @@ describe('login flow', () => {
     await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
     await fireEvent.press(screen.getByTestId('login-submit'));
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
   });
 });

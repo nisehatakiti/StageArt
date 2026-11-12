@@ -23,6 +23,19 @@ export function fetchProduction(client: ApiClient, id: string): Promise<Producti
 }
 
 /**
+ * 参加者向け「公演概要ダッシュボード」instruction: GET /productions/{id}/overview
+ * (GetProductionOverviewUseCase.php) - the isProductionMember-gated
+ * counterpart to fetchProduction() above. fetchProduction()'s own
+ * endpoint (canReadProduction: PrimaryManager/active Delegate only) 403s
+ * for an ordinary ACTIVE Person-Participant, so the 概要 screen (which
+ * must work for every Participant, not just managers) uses this instead.
+ * Returns the identical `Production` shape - same fields, same type.
+ */
+export function fetchProductionOverview(client: ApiClient, id: string): Promise<Production> {
+  return client.get<Production>(`/productions/${id}/overview`);
+}
+
+/**
  * StageArt Web First Phase 2: `primaryManagerPersonId` is always the
  * caller's own Person ID in the onboarding flow (the Organization Owner
  * who just created the Production - see CreateProductionUseCase's
@@ -44,16 +57,110 @@ export function createProduction(
   });
 }
 
-/** A full PUT per the existing Backend Update endpoint (`name` is
- * always required by UpdateProductionUseCase, even when only publishing
- * - see its own docblock, which unlike Organization's never touches
- * `status`). */
+/**
+ * A full PUT per the existing Backend Update endpoint. `name`/`title_heading`
+ * are always applied unconditionally by UpdateProductionUseCase
+ * (rename()/changeTitleHeading() both run every call, defaulting to null
+ * when the key is missing from the request body) - every caller must
+ * pass the Production's current name/titleHeading back, not just the
+ * fields it means to change, mirroring updateOrganization()'s identical
+ * type/description requirement. `slug`/`published` remain "only touch
+ * when explicitly provided". `status` can no longer be changed via this
+ * endpoint at all (Phase 6.1 moved it to the dedicated Lifecycle Action
+ * endpoints - a `status` key here is rejected with 422) - this function
+ * has never sent one and must not start now.
+ */
+/**
+ * StageArt Phase 1 (docs/12-FunctionalStructure.md §20): the five
+ * Production Information sections - `description`/`flyerUrl`/
+ * `venueName`/`scheduleStartDate`/`scheduleEndDate`/`scriptCredit`/
+ * `directionCredit` and each section's own `*PublishedAt` are all
+ * optional/trailing. Every field this function is called with replaces
+ * the Production's current value (matching `titleHeading`'s existing
+ * convention - omitting a key sends it as `undefined`, which the
+ * backend then reads as `null`/"clear this field").
+ */
 export function updateProduction(
   client: ApiClient,
   id: string,
-  fields: { name: string; slug?: string; published?: boolean }
+  fields: {
+    name: string;
+    titleHeading: string | null;
+    slug?: string;
+    published?: boolean;
+    publishedAt?: string | null;
+    description?: string | null;
+    descriptionPublishedAt?: string | null;
+    flyerUrl?: string | null;
+    flyerPublishedAt?: string | null;
+    venueName?: string | null;
+    venuePublishedAt?: string | null;
+    scheduleStartDate?: string | null;
+    scheduleEndDate?: string | null;
+    schedulePublishedAt?: string | null;
+    scriptCredit?: string | null;
+    directionCredit?: string | null;
+    scriptDirectionPublishedAt?: string | null;
+    memberInfoPublishedAt?: string | null;
+    /** Internal-only (never shown on the Public Page). Like `name`, null
+     * here REPLACES the current value (it does not mean "leave
+     * unchanged") - a caller that wants to keep the existing capacity
+     * must send it back explicitly. Changing it cascades server-side to
+     * overwrite every existing Performance's own capacity for this
+     * Production (UpdateProductionUseCase's own confirmed behavior). */
+    capacity?: number | null;
+    performanceCommonRemarks?: string | null;
+    performanceDurationMinutes?: number | null;
+  }
 ): Promise<Production> {
-  return client.put<Production>(`/productions/${id}`, fields);
+  return client.put<Production>(`/productions/${id}`, {
+    name: fields.name,
+    title_heading: fields.titleHeading,
+    slug: fields.slug,
+    published: fields.published,
+    published_at: fields.publishedAt,
+    description: fields.description,
+    description_published_at: fields.descriptionPublishedAt,
+    flyer_url: fields.flyerUrl,
+    flyer_published_at: fields.flyerPublishedAt,
+    venue_name: fields.venueName,
+    venue_published_at: fields.venuePublishedAt,
+    schedule_start_date: fields.scheduleStartDate,
+    schedule_end_date: fields.scheduleEndDate,
+    schedule_published_at: fields.schedulePublishedAt,
+    script_credit: fields.scriptCredit,
+    direction_credit: fields.directionCredit,
+    script_direction_published_at: fields.scriptDirectionPublishedAt,
+    member_info_published_at: fields.memberInfoPublishedAt,
+    capacity: fields.capacity,
+    performance_common_remarks: fields.performanceCommonRemarks,
+    performance_duration_minutes: fields.performanceDurationMinutes,
+  });
+}
+
+/**
+ * The Lifecycle Action endpoints (`PATCH /productions/{id}/{action}`) -
+ * Status can no longer be changed via the generic `updateProduction()`
+ * PUT above, only through these. `activate` ("公演を確定する", PLANNING ->
+ * ACTIVE) also publishes the Production server-side
+ * (Production::activate()). `complete` enforces the existing
+ * Settlement-completion Guard server-side (CompleteProductionUseCase) -
+ * this function does not duplicate that check client-side.
+ */
+export function activateProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/activate`);
+}
+
+export function completeProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/complete`);
+}
+
+export function archiveProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/archive`);
+}
+
+export function cancelProduction(client: ApiClient, id: string): Promise<Production> {
+  return client.patch<Production>(`/productions/${id}/cancel`);
 }
 
 /** GET /productions/by-slug/{slug} - public, unauthenticated (see

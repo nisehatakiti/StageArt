@@ -146,19 +146,31 @@ TicketまたはPerformance Overrideの現在値を再参照して、既存Reserv
 
 # 7. Accounting Relationship
 
-Reservation成立時の取引金額は、Accounting Domainと連携して未収金として扱う。
+Reservation成立時点ではPrice Snapshotによって予約金額を確定するが、標準運用では予約成立だけを理由に売上・入金・未収金を計上しない。
+
+売上・入金の計上契機は、劇団側が実際にTicket代金を受領した時点とする。
+
+- 当日精算：Check In受付時に受付担当者が観客から代金を受領した時点で、Payment Factを記録し、入金とTicket Revenueを同時に計上する。
+- スタッフ預り：スタッフが観客から事前に代金を預かっていても、その時点では劇団側の受領・売上成立とはしない。受付担当者がスタッフから現金を受け取り、Reservationを「支払済」にした時点で、Payment Factを記録し、入金とTicket Revenueを同時に計上する。
+- いずれの場合も、その後のCheck Inは来場Factを記録する処理であり、既に計上済みの売上・入金を再計上しない。
 
 基本Flow：
 
 Reservation成立
   ↓
-未収金 / チケット売上
+Price Snapshot（予約金額の確定。仕訳なし）
   ↓
-受付・入金
+劇団側による実際の代金受領
   ↓
-現金等 / 未収金
+Payment Fact
+  ↓
+入金とチケット売上を同時に計上
 
-キャンセル、免除、金額変更等によって未収金を調整する場合も、元の取引Factを破壊せず、必要なAdjustment / Reversal等として記録する。
+標準運用では予約成立時の未収金仕訳を生成しない。別途定義された契約等により未収金が実際に成立する例外ケースは、その専用仕様に従う。
+
+キャンセル、返金、免除、金額変更等によって既に計上した会計Factを調整する場合、元の取引Factを破壊せず、必要なAdjustment / Reversal等として記録する。
+
+会計期間末の仮売上振替およびProduction決算確定時の正式売上への振替は、既に計上された売上Journal Entryを対象とする別処理であり、新たな売上を二重計上してはならない。
 
 具体的なJournal Entryの構造はAccounting / Journal Entry Domainに従う。
 
@@ -188,4 +200,7 @@ PerformanceのPublic表示では、ProductionのTicket設定およびPerformance
 - ReservationはPerformanceに紐付く。
 - Reservationは予約成立時点の単価・金額をSnapshotとして保持する。
 - Ticket価格変更によって既存Reservationの金額を再計算しない。
-- Reservation成立時の金額はAccounting Domainへ連携する。
+- Reservation成立時はPrice Snapshotで予約金額を確定するが、標準運用では予約成立だけで売上・入金・未収金を計上しない。
+- 劇団側が代金を実際に受領した時点でPayment Factを記録し、入金とTicket Revenueを同時に計上する。
+- スタッフ預りTicketは、受付担当者がスタッフから現金を受け取りReservationを支払済みにした時点で入金とTicket Revenueを同時に計上する。
+- 既に支払い済みのTicketについて、後続のCheck Inで売上・入金を再計上しない。

@@ -22,6 +22,31 @@ final class RoleKeyTest extends TestCase
         $this->assertSame('REHEARSAL_MANAGER', RoleKey::rehearsalManager()->toString());
     }
 
+    public function test_performance_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('PERFORMANCE_MANAGER', RoleKey::performanceManager()->toString());
+    }
+
+    public function test_checkin_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('CHECKIN_MANAGER', RoleKey::checkInManager()->toString());
+    }
+
+    public function test_questionnaire_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('QUESTIONNAIRE_MANAGER', RoleKey::questionnaireManager()->toString());
+    }
+
+    public function test_accounting_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('ACCOUNTING_MANAGER', RoleKey::accountingManager()->toString());
+    }
+
+    public function test_organization_manager_is_a_valid_role_key(): void
+    {
+        $this->assertSame('ORGANIZATION_MANAGER', RoleKey::organizationManager()->toString());
+    }
+
     public function test_unknown_role_key_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);

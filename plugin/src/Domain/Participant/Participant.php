@@ -26,6 +26,16 @@ final class Participant
     private ParticipantStatus $status;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
+    /**
+     * StageArt Phase 1 (docs/21-MemberManagementScreen.md §2.6
+     * "Remarks"): a Production-specific free-text note per member
+     * ("チームA", "○○日は出演しないので..."), independent of any Person-
+     * level profile field.
+     */
+    private ?string $remarks;
+    /** Only meaningful when subjectType is NAME_ONLY - see
+     * ParticipantSubjectType::NAME_ONLY's own docblock. */
+    private ?string $displayName;
 
     private function __construct(
         ParticipantId $id,
@@ -35,7 +45,9 @@ final class Participant
         ParticipantType $participantType,
         ParticipantStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $remarks = null,
+        ?string $displayName = null
     ) {
         $this->id = $id;
         $this->productionId = $productionId;
@@ -45,13 +57,17 @@ final class Participant
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
+        $this->remarks = $remarks;
+        $this->displayName = $displayName;
     }
 
     public static function create(
         ProductionId $productionId,
         ParticipantSubjectType $subjectType,
         string $subjectId,
-        ParticipantType $participantType
+        ParticipantType $participantType,
+        ?string $remarks = null,
+        ?string $displayName = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -63,7 +79,35 @@ final class Participant
             $participantType,
             ParticipantStatus::active(),
             $now,
-            $now
+            $now,
+            self::normalizeNullableString($remarks),
+            self::normalizeNullableString($displayName)
+        );
+    }
+
+    /**
+     * A member registered by name only (docs/21-MemberManagementScreen.md
+     * §2.4 "Member Registration Scope" - "People without a StageArt
+     * account"). `subjectId` is a fresh, self-referential placeholder -
+     * see ParticipantSubjectType::NAME_ONLY's docblock.
+     */
+    public static function createNameOnly(
+        ProductionId $productionId,
+        string $displayName,
+        ParticipantType $participantType,
+        ?string $remarks = null
+    ): self {
+        if (trim($displayName) === '') {
+            throw new InvalidArgumentException('displayName must not be empty for a NAME_ONLY Participant.');
+        }
+
+        return self::create(
+            $productionId,
+            ParticipantSubjectType::nameOnly(),
+            ParticipantId::generate()->toString(),
+            $participantType,
+            $remarks,
+            $displayName
         );
     }
 
@@ -75,9 +119,22 @@ final class Participant
         ParticipantType $participantType,
         ParticipantStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $remarks = null,
+        ?string $displayName = null
     ): self {
-        return new self($id, $productionId, $subjectType, $subjectId, $participantType, $status, $createdAt, $updatedAt);
+        return new self(
+            $id,
+            $productionId,
+            $subjectType,
+            $subjectId,
+            $participantType,
+            $status,
+            $createdAt,
+            $updatedAt,
+            $remarks,
+            $displayName
+        );
     }
 
     /**
@@ -162,6 +219,23 @@ final class Participant
         $this->changeStatus(ParticipantStatus::fromString(ParticipantStatus::CANCELLED));
     }
 
+    public function changeRemarks(?string $remarks): void
+    {
+        $this->remarks = self::normalizeNullableString($remarks);
+        $this->touch();
+    }
+
+    private static function normalizeNullableString(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
     private function touch(): void
     {
         $this->updatedAt = new DateTimeImmutable();
@@ -205,5 +279,15 @@ final class Participant
     public function updatedAt(): DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function remarks(): ?string
+    {
+        return $this->remarks;
+    }
+
+    public function displayName(): ?string
+    {
+        return $this->displayName;
     }
 }

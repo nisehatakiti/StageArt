@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace StageArt\Rehearsal;
 
+use StageArt\Application\Dashboard\UpcomingRehearsalProviderInterface;
 use StageArt\Application\PrintView\GetProductionPrintViewUseCase;
 use StageArt\Application\ProductionSchedule\ListProductionTimetableItemsUseCase;
-use StageArt\Application\Rehearsal\ActivateRehearsalUseCase;
 use StageArt\Application\Rehearsal\CancelRehearsalUseCase;
-use StageArt\Application\Rehearsal\CompleteRehearsalUseCase;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Application\Rehearsal\RehearsalCreateRequestStoreInterface;
 use StageArt\Application\Rehearsal\GetRehearsalUseCase;
 use StageArt\Application\Rehearsal\ListRehearsalsUseCase;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Application\Rehearsal\RehearsalReminderSchedulerInterface;
+use StageArt\Application\Rehearsal\RehearsalLifecycleNotifier;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
+use StageArt\Application\Rehearsal\SendRehearsalReminderUseCase;
 use StageArt\Application\Rehearsal\UpdateRehearsalUseCase;
+use StageArt\Application\RehearsalAttendance\AddRehearsalAttendanceTargetsUseCase;
 use StageArt\Application\RehearsalAttendance\GetRehearsalAttendanceUseCase;
 use StageArt\Application\RehearsalAttendance\ListRehearsalAttendancesUseCase;
 use StageArt\Application\RehearsalAttendance\RecordActualRehearsalAttendanceStatusUseCase;
@@ -93,18 +99,25 @@ use StageArt\Presentation\Rest\TimetableVersionRestController;
  * follows the REST Controller's declared owner, not which Application
  * sub-namespace a UseCase happens to live under.
  *
- * Deliberately NOT included: `GetMyDashboardUseCase`,
- * `ListNotificationsForProductionUseCase`, `MarkNotificationReadUseCase`
- * (Core's own cross-Module aggregation UseCases, which read Rehearsal's
- * Repository interfaces directly - a disclosed, opposite-direction
- * coupling this phase does not fix; see
- * `docs/architecture/WordPressPluginModuleBoundary.md`'s Known Remaining
- * Coupling section).
+ * `GetMyDashboardUseCase` (Core's own cross-Module aggregation UseCase)
+ * is NOT constructed here - it is Core's own code, wired by
+ * `Plugin.php` directly - but its former direct dependency on
+ * `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+ * (a disclosed Core -> Module Domain coupling, the reverse of every
+ * other direction this Bootstrap enforces) is closed as of Phase 4 §1
+ * via `upcomingRehearsalProvider()` below - Core depends on
+ * `Application\Dashboard\UpcomingRehearsalProviderInterface` (a Port
+ * Core itself defines), and this Bootstrap is what supplies the one
+ * real implementation.
  */
 final class RehearsalModuleBootstrap
 {
     /** @var array<int, object> */
     private array $restControllers;
+
+    private UpcomingRehearsalProviderInterface $upcomingRehearsalProvider;
+
+    private SendRehearsalReminderUseCase $sendRehearsalReminder;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -118,23 +131,41 @@ final class RehearsalModuleBootstrap
         AuthorizationContract $authorization,
         MembershipContract $membership,
         NotificationContract $notification,
-        TransactionManagerInterface $transactions
+        RehearsalReminderSchedulerInterface $reminderScheduler,
+        TransactionManagerInterface $transactions,
+        ?RehearsalCreateRequestStoreInterface $rehearsalCreateRequests = null
     ) {
         $nextTimetableVersionResolver = new NextTimetableVersionResolver($timetables);
         $timetableItemTargetValidator = new TimetableItemTargetValidator($membership);
+        $reminderDispatcher = new RehearsalReminderDispatcher($rehearsalAttendances, $productionContext, $notification);
+        $statusTimeSync = new RehearsalStatusTimeSync($rehearsals);
+        $lifecycleNotifier = new RehearsalLifecycleNotifier($notification);
 
         $createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $rehearsals,
             $rehearsalAttendances,
             $membership,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $lifecycleNotifier,
+            $rehearsalCreateRequests
         );
-        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership);
-        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership);
-        $updateRehearsal = new UpdateRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
+        $getRehearsal = new GetRehearsalUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
+        $listRehearsals = new ListRehearsalsUseCase($rehearsals, $productionContext, $identity, $membership, $statusTimeSync);
+        $updateRehearsal = new UpdateRehearsalUseCase(
+            $rehearsals,
+            $productionContext,
+            $reminderDispatcher,
+            $reminderScheduler,
+            $identity,
+            $authorization,
+            $transactions,
+            $statusTimeSync
+        );
         $confirmRehearsal = new ConfirmRehearsalUseCase(
             $rehearsals,
             $productionContext,
@@ -142,33 +173,59 @@ final class RehearsalModuleBootstrap
             $membership,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync,
+            $lifecycleNotifier
         );
-        $activateRehearsal = new ActivateRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
-        $completeRehearsal = new CompleteRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
-        $cancelRehearsal = new CancelRehearsalUseCase($rehearsals, $productionContext, $identity, $authorization);
+        $cancelRehearsal = new CancelRehearsalUseCase(
+            $rehearsals,
+            $rehearsalAttendances,
+            $productionContext,
+            $notification,
+            $reminderScheduler,
+            $identity,
+            $authorization,
+            $transactions,
+            $statusTimeSync
+        );
+
+        $this->sendRehearsalReminder = new SendRehearsalReminderUseCase($rehearsals, $reminderDispatcher, $transactions);
 
         $listRehearsalAttendances = new ListRehearsalAttendancesUseCase(
             $rehearsalAttendances,
             $rehearsals,
             $productionContext,
             $identity,
-            $membership
+            $membership,
+            $statusTimeSync
         );
         $getRehearsalAttendance = new GetRehearsalAttendanceUseCase(
             $rehearsalAttendances,
             $rehearsals,
             $productionContext,
             $identity,
-            $membership
+            $membership,
+            $statusTimeSync
         );
-        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $identity);
+        $respondRehearsalAttendance = new RespondRehearsalAttendanceUseCase($rehearsalAttendances, $rehearsals, $identity, $statusTimeSync);
         $recordActualRehearsalAttendanceStatus = new RecordActualRehearsalAttendanceStatusUseCase(
             $rehearsalAttendances,
             $rehearsals,
             $productionContext,
             $identity,
-            $authorization
+            $authorization,
+            $statusTimeSync
+        );
+        $addRehearsalAttendanceTargets = new AddRehearsalAttendanceTargetsUseCase(
+            $rehearsalAttendances,
+            $rehearsals,
+            $productionContext,
+            $membership,
+            $identity,
+            $authorization,
+            $transactions,
+            $statusTimeSync,
+            $notification
         );
 
         $createScheduleComment = new CreateScheduleCommentUseCase(
@@ -316,15 +373,14 @@ final class RehearsalModuleBootstrap
                 $listRehearsals,
                 $updateRehearsal,
                 $confirmRehearsal,
-                $activateRehearsal,
-                $completeRehearsal,
                 $cancelRehearsal
             ),
             new RehearsalAttendanceRestController(
                 $listRehearsalAttendances,
                 $getRehearsalAttendance,
                 $respondRehearsalAttendance,
-                $recordActualRehearsalAttendanceStatus
+                $recordActualRehearsalAttendanceStatus,
+                $addRehearsalAttendanceTargets
             ),
             new ScheduleCommentRestController(
                 $createScheduleComment,
@@ -358,6 +414,12 @@ final class RehearsalModuleBootstrap
                 new DompdfRenderer()
             ),
         ];
+
+        $this->upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(
+            $rehearsals,
+            $rehearsalAttendances,
+            $productionContext
+        );
     }
 
     /**
@@ -373,5 +435,31 @@ final class RehearsalModuleBootstrap
     public function restControllers(): array
     {
         return $this->restControllers;
+    }
+
+    /**
+     * StageArt Core/Module Architecture Phase 4 §1: the Rehearsal
+     * Module's own implementation of Core's
+     * `Application\Dashboard\UpcomingRehearsalProviderInterface` Port -
+     * the concrete answer to "how does Core get Dashboard data out of
+     * Rehearsal without depending on Rehearsal's Repository interfaces
+     * directly". `Presentation\Plugin::boot()` passes this straight into
+     * `GetMyDashboardUseCase`'s own constructor.
+     */
+    public function upcomingRehearsalProvider(): UpcomingRehearsalProviderInterface
+    {
+        return $this->upcomingRehearsalProvider;
+    }
+
+    /**
+     * Phase 7 (Rehearsal仕様整合): the Rehearsal Module's own consumer of
+     * a `stageart_rehearsal_reminder` WordPress Cron firing. `Plugin::boot()`
+     * is the only caller, wiring it to `add_action('stageart_rehearsal_reminder', ...)`
+     * - this Bootstrap itself never touches WordPress hook registration,
+     * matching its own established convention.
+     */
+    public function sendRehearsalReminder(): SendRehearsalReminderUseCase
+    {
+        return $this->sendRehearsalReminder;
     }
 }

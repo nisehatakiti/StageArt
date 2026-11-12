@@ -94,6 +94,21 @@ UI上の表示は既存実装に対応する「未回答」「参加可能」「
 
 遅刻・早退について既存Statusが存在する場合は、それを活用する。
 
+既存RehearsalAttendance Domainの予定段階・実施段階のStatusへ対応させる。
+
+具体的な対応例：
+
+```text
+未回答 → UNANSWERED
+出席   → ATTENDING / ATTENDED
+欠席   → NOT_ATTENDING / ABSENT
+遅刻   → LATE
+早退   → EARLY_LEFT（実際に参加した実績として、出席側に集計する）
+不明   → 未確定の出欠情報として管理
+```
+
+既存Domainで状態Enumが定義されている場合、V1 UI上の表示名とDomain Statusを分離して対応する。
+
 ---
 
 # Attendance Comment

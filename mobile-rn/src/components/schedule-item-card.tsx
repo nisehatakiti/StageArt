@@ -1,7 +1,7 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { formatTime } from '@/features/schedule/groupByDay';
+import { formatEndTime, formatTime } from '@/features/schedule/groupByDay';
 import type { TimetableItem } from '@/types/api';
 
 import { ThemedText } from './themed-text';
@@ -36,7 +36,7 @@ export function ScheduleItemCard({
       <View style={styles.timeRow}>
         <ThemedText type="smallBold">
           {formatTime(item.start_date_time)}
-          {item.end_date_time ? ` - ${formatTime(item.end_date_time)}` : ''}
+          {item.end_date_time ? ` - ${formatEndTime(item.start_date_time, item.end_date_time)}` : ''}
         </ThemedText>
         {highlighted && (
           <View style={styles.highlightBadge} testID={`highlight-badge-${item.id}`}>

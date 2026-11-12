@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import Head from 'expo-router/head';
-import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
@@ -13,6 +13,7 @@ import { fetchPublicOrganizationBySlug } from '@/features/organization/api';
 import { useFollowOrganization, useMyFollows } from '@/features/organization/useFollow';
 import { useMyMemberships, useRequestOrganizationMembership } from '@/features/membership/useMembership';
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
+import { useIsPublicSite } from '@/hooks/use-site-host';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -35,10 +36,18 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * "所属なしユーザー" - 観劇客 can browse without an account); Follow/
  * Favorite/Membership-request actions require one.
  */
+const SNS_SERVICE_LABEL: Record<string, string> = {
+  X: 'X',
+  INSTAGRAM: 'Instagram',
+  FACEBOOK: 'Facebook',
+  OTHER: 'SNS',
+};
+
 export default function PublicOrganizationScreen() {
   const { organizationSlug } = useLocalSearchParams<{ organizationSlug: string }>();
   const { status } = useAuth();
   const router = useRouter();
+  const isPublicSite = useIsPublicSite();
 
   const query = useQuery({
     queryKey: ['public-organization', organizationSlug],
@@ -85,6 +94,14 @@ export default function PublicOrganizationScreen() {
 
         {query.data && (
           <ThemedView testID="public-organization-content" style={styles.content}>
+            {query.data.logo_url && (
+              // contain, never cover: the whole logo is shown at its own
+              // aspect ratio inside the square frame (empty margins are fine).
+              <View style={styles.logo}>
+                <Image testID="public-organization-logo" source={{ uri: query.data.logo_url }} style={styles.logoImage} resizeMode="contain" />
+              </View>
+            )}
+
             <ThemedText type="title" testID="public-organization-name">
               {query.data.name}
             </ThemedText>
@@ -92,6 +109,46 @@ export default function PublicOrganizationScreen() {
               <ThemedText testID="public-organization-description" style={styles.description}>
                 {query.data.description}
               </ThemedText>
+            )}
+
+            {query.data.sns.length > 0 && (
+              <ThemedView style={styles.snsSection} testID="public-organization-sns">
+                <ThemedText type="smallBold">公式SNS</ThemedText>
+                {query.data.sns.map((sns) => (
+                  <TouchableOpacity
+                    key={sns.id}
+                    testID={`public-organization-sns-${sns.id}`}
+                    onPress={() => {
+                      if (sns.profile_url) {
+                        Linking.openURL(sns.profile_url);
+                      }
+                    }}
+                    disabled={!sns.profile_url}
+                    style={styles.snsRow}
+                  >
+                    <ThemedText type="small" style={styles.snsService}>
+                      {SNS_SERVICE_LABEL[sns.service] ?? sns.service}
+                    </ThemedText>
+                    <ThemedText type="link">{sns.display_name ?? sns.account_identifier}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </ThemedView>
+            )}
+
+            {query.data.external_links.length > 0 && (
+              <ThemedView style={styles.linksSection} testID="public-organization-external-links">
+                <ThemedText type="smallBold">リンク</ThemedText>
+                {query.data.external_links.map((link) => (
+                  <TouchableOpacity
+                    key={link.id}
+                    testID={`public-organization-external-link-${link.id}`}
+                    onPress={() => Linking.openURL(link.url)}
+                    style={styles.linkRow}
+                  >
+                    <ThemedText type="link">{link.label}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </ThemedView>
             )}
 
             {status === 'authenticated' ? (
@@ -106,9 +163,13 @@ export default function PublicOrganizationScreen() {
                 </ThemedText>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity testID="public-organization-login-to-follow" onPress={() => router.push('/login')}>
-                <ThemedText type="link">ログインしてフォロー</ThemedText>
-              </TouchableOpacity>
+              // The public-site hosts never ask for a login (only the
+              // application hosts own the login screen).
+              !isPublicSite && (
+                <TouchableOpacity testID="public-organization-login-to-follow" onPress={() => router.push('/login')}>
+                  <ThemedText type="link">ログインしてフォロー</ThemedText>
+                </TouchableOpacity>
+              )
             )}
 
             {status === 'authenticated' && (
@@ -206,7 +267,14 @@ export default function PublicOrganizationScreen() {
 const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
+  logo: { width: 96, height: 96, borderRadius: Radius.medium, marginBottom: Spacing.two, padding: Spacing.one },
+  logoImage: { width: '100%', height: '100%' },
   description: { marginTop: Spacing.two },
+  snsSection: { marginTop: Spacing.three, gap: Spacing.one },
+  snsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.half },
+  snsService: { fontWeight: '700', minWidth: 72 },
+  linksSection: { marginTop: Spacing.three, gap: Spacing.one },
+  linkRow: { paddingVertical: Spacing.half },
   followButton: {
     borderRadius: Radius.medium,
     paddingVertical: Spacing.two,

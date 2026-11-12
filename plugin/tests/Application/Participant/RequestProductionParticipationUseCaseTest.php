@@ -78,6 +78,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
             null,
             new ProductionSlug('autumn-play')
         );
+        $this->production->activate();
         $this->production->publish();
         $this->productions->save($this->production);
     }

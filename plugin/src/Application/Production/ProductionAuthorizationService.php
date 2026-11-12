@@ -65,14 +65,15 @@ use StageArt\Domain\Role\RolePermissions;
  * `hasProductionCapability()`'s generic Capability check below -
  * see the Core/Module Architecture phase's report.)
  *
- * Phase 6.1: Production Lifecycle Action authorization
- * (canManageProduction()) is unchanged by the Role/Permission
- * unification - ProductionDelegatePolicy.md's "Lifecycle Relationship"
- * section is explicit that every Lifecycle transition ("DRAFT →
- * PLANNING" through "COMPLETED → ARCHIVED") is PrimaryManager-only
- * regardless of any ProductionDelegate Role, so the existing
- * PrimaryManager-exclusive canManageProduction() is reused as-is by the
- * new Lifecycle Action UseCases rather than adding a redundant method.
+ * Production Lifecycle Action authorization (canManageProduction()) is
+ * PrimaryManager-only for every Lifecycle transition
+ * ("PLANNING → ACTIVE" through "COMPLETED → ARCHIVED"), regardless of
+ * any ProductionDelegate Role - the existing PrimaryManager-exclusive
+ * canManageProduction() is reused as-is by every Lifecycle Action
+ * UseCase rather than adding a redundant method. The one exception is
+ * ACTIVE → COMPLETED (決算確定), which checks
+ * `ProductionCapability::COMPLETE` instead (see
+ * PROXY_MANAGER_CAPABILITIES).
  */
 final class ProductionAuthorizationService
 {
@@ -127,31 +128,62 @@ final class ProductionAuthorizationService
         return null;
     }
 
+    /**
+     * StageArt 担当者権限をメンバー管理へ統合・複数Role対応: a Person can hold
+     * several ACTIVE ProductionDelegate rows on the same Production
+     * (Production+Person+Role is the unique key - see the
+     * stageart_production_delegates schema). Every actual Permission
+     * decision (hasProductionPermission/hasProductionCapability/
+     * hasActiveDelegateRole below) must consider all of them, not just
+     * the first one found - `activeDelegateFor()` above is intentionally
+     * left as-is (a single, first-match delegate) because it still backs
+     * ProductionResult's legacy `delegate_role` display field, which this
+     * round's instruction explicitly says to keep at its current,
+     * unchanged meaning rather than redefine for the multi-Role case.
+     *
+     * @return ProductionDelegate[]
+     */
+    public function activeDelegatesFor(Person $person, Production $production): array
+    {
+        return array_values(array_filter(
+            $this->delegates->findByProductionId($production->id()),
+            static fn (ProductionDelegate $delegate): bool =>
+                $delegate->personId()->equals($person->id()) && $delegate->isActive()
+        ));
+    }
+
     public function hasActiveDelegateRole(Person $person, Production $production, RoleKey $role): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if ($delegate->role()->equals($role)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && $delegate->role()->equals($role);
+        return false;
     }
 
     /**
      * Phase 6.1: routes Production-Scope Role checks through the shared
      * Role -> Permission Set -> Permission structure (RolePermissions)
      * instead of comparing the active delegate's Role for exact identity
-     * against one hardcoded RoleKey. Behaviorally equivalent today (only
-     * PARTICIPANT_MANAGER's Permission Set contains Participant.x, only
-     * REHEARSAL_MANAGER's contains Rehearsal.x / Schedule.Read, so the
-     * result is identical to the old direct-equality checks) - the
-     * difference is that a future Role whose Permission Set also grants
-     * this Permission would be recognized here without editing this
-     * class again, matching Role.md's "同じRole Definitionを...共通して
-     * 利用できる" intent.
+     * against one hardcoded RoleKey.
+     *
+     * 担当者権限をメンバー管理へ統合・複数Role対応: checks the union across
+     * every ACTIVE delegate Role the Person holds on this Production, not
+     * just one - a Person with REHEARSAL_MANAGER + TICKET_MANAGER both
+     * ACTIVE must pass this check for a Permission either Role's
+     * Permission Set grants.
      */
     private function hasProductionPermission(Person $person, Production $production, Permission $permission): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if (RolePermissions::hasPermission($delegate->role(), $permission)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && RolePermissions::hasPermission($delegate->role(), $permission);
+        return false;
     }
 
     /**
@@ -174,7 +206,35 @@ final class ProductionAuthorizationService
     public function hasProductionCapability(Person $person, Production $production, string $capability): bool
     {
         return $this->isPrimaryManager($person, $production)
-            || $this->hasProductionPermission($person, $production, Permission::fromString($capability));
+            || $this->hasProductionPermission($person, $production, Permission::fromString($capability))
+            || (in_array($capability, self::PROXY_MANAGER_CAPABILITIES, true) && $this->isProxyManager($person, $production));
+    }
+
+    /**
+     * Capabilities a 代理人 (isProxyManager()) holds on top of its two
+     * Roles' own Permission Sets: 経費承認 (`Expense.Approve`) and 決算確定
+     * (`Production.Complete`) - StageArt 統合・会計仕様の確定事項
+     * 2026-10-28 §2 ("Production Delegate（代理人）と会計管理者の両方が実施
+     * 可能"). 代理人 is a combination of Roles, so it cannot be expressed
+     * in the per-Role `RolePermissions::MAP`; 会計管理者 gets them there.
+     *
+     * @var string[]
+     */
+    private const PROXY_MANAGER_CAPABILITIES = [
+        'Expense.Approve',
+        'Production.Complete',
+    ];
+
+    /**
+     * Whether this Person holds the right to complete the Production
+     * (ACTIVE -> COMPLETED): PrimaryManager, 会計管理者 or 代理人, exactly
+     * what `CompleteProductionUseCase` checks. It says nothing about the
+     * Production's status or its settlement, which the completion itself
+     * still guards.
+     */
+    public function canCompleteProduction(Person $person, Production $production): bool
+    {
+        return $this->hasProductionCapability($person, $production, ProductionCapability::COMPLETE);
     }
 
     public function canReadProduction(Person $person, Production $production): bool
@@ -188,15 +248,98 @@ final class ProductionAuthorizationService
         return $this->isPrimaryManager($person, $production);
     }
 
+    /**
+     * StageArt メンバー管理 instruction (担当者権限をメンバー管理へ統合・整理
+     * §3/§4): viewing the ProductionDelegate roster (GET .../delegates) -
+     * PrimaryManager or 代理人 (an ACTIVE delegate holding BOTH
+     * PARTICIPANT_MANAGER and REHEARSAL_MANAGER simultaneously). This is a
+     * *different*, broader Authorization question than "which specific
+     * Role may this requester assign" (see canManageProductionDelegateRole()
+     * below) - per this instruction's own explicit "代理人がメンバー管理画面を
+     * 開けることと...ProductionDelegateを変更できることは別のAuthorization".
+     */
     public function canManageProductionDelegates(Person $person, Production $production): bool
     {
-        return $this->isPrimaryManager($person, $production);
+        return $this->isPrimaryManager($person, $production) || $this->isProxyManager($person, $production);
+    }
+
+    /**
+     * "代理人" per this instruction's §3 definition: an ACTIVE delegate
+     * holding BOTH PARTICIPANT_MANAGER and REHEARSAL_MANAGER Roles at
+     * once - not just one of the two, and not a new bundled RoleKey (the
+     * instruction explicitly forbids collapsing them into one Role).
+     */
+    private function isProxyManager(Person $person, Production $production): bool
+    {
+        return $this->hasActiveDelegateRole($person, $production, RoleKey::participantManager())
+            && $this->hasActiveDelegateRole($person, $production, RoleKey::rehearsalManager());
+    }
+
+    /**
+     * The 3 general-member checkboxes' underlying Roles a 代理人 (not
+     * PrimaryManager) may create/change/remove for another member -
+     * exactly 代理人 itself (both Roles), 会計担当, 受付担当. Deliberately
+     * excludes TICKET_MANAGER/PERFORMANCE_MANAGER/RESERVATION_MANAGER/
+     * QUESTIONNAIRE_MANAGER, which remain reachable only via the existing
+     * 担当者 screen (PrimaryManager-exclusive, unchanged by this
+     * instruction - see canManageProductionDelegateRole() below).
+     *
+     * @var string[]
+     */
+    private const PROXY_MANAGEABLE_ROLES = [
+        RoleKey::PARTICIPANT_MANAGER,
+        RoleKey::REHEARSAL_MANAGER,
+        RoleKey::ACCOUNTING_MANAGER,
+        RoleKey::CHECKIN_MANAGER,
+    ];
+
+    /**
+     * StageArt メンバー管理 instruction §3/§4: creating, changing the Role/
+     * Status of, or removing a SPECIFIC ProductionDelegate row (POST/PUT/
+     * DELETE .../delegates). PrimaryManager may manage any Role, exactly
+     * as before. 代理人 may manage only $targetRole values in
+     * PROXY_MANAGEABLE_ROLES - "代理人だから何でもできる」とはしない per this
+     * instruction's own explicit boundary; assigning
+     * TICKET_MANAGER/PERFORMANCE_MANAGER/RESERVATION_MANAGER/
+     * QUESTIONNAIRE_MANAGER, or any other PrimaryManager-only Production
+     * management action, is never granted by this method regardless of
+     * caller.
+     */
+    public function canManageProductionDelegateRole(Person $person, Production $production, RoleKey $targetRole): bool
+    {
+        if ($this->isPrimaryManager($person, $production)) {
+            return true;
+        }
+
+        if (! $this->isProxyManager($person, $production)) {
+            return false;
+        }
+
+        return in_array($targetRole->toString(), self::PROXY_MANAGEABLE_ROLES, true);
     }
 
     public function canManageParticipants(Person $person, Production $production): bool
     {
         return $this->isPrimaryManager($person, $production)
             || $this->hasProductionPermission($person, $production, Permission::fromString('Participant.Update'));
+    }
+
+    /**
+     * StageArt 稽古作成画面の参加メンバー表示修正 instruction: the Read-level
+     * counterpart to canManageParticipants() above - checks
+     * `Participant.Read` instead of `Participant.Update`, so a
+     * REHEARSAL_MANAGER delegate (who now carries `Participant.Read` in
+     * RolePermissions::MAP, but deliberately not Participant.Create/
+     * Update/Delete) can view the Production's Participant roster to
+     * pick Rehearsal Attendance targets, without gaining any ability to
+     * add/remove/edit Participants themselves. PARTICIPANT_MANAGER keeps
+     * passing this too (their own Permission Set already includes both
+     * Participant.Read and Participant.Update).
+     */
+    public function canReadParticipants(Person $person, Production $production): bool
+    {
+        return $this->isPrimaryManager($person, $production)
+            || $this->hasProductionPermission($person, $production, Permission::fromString('Participant.Read'));
     }
 
     public function isActivePersonParticipant(Person $person, Production $production): bool

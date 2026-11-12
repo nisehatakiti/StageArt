@@ -2,7 +2,26 @@
 
 # Domain Model : Performance
 
-Version : 4.1
+Version : 4.2
+
+---
+
+# Update (Version 4.2)
+
+StageArt全体DRAFT廃止の確認事項として、PerformanceのStatusからDRAFTを廃止
+した。StageArtでは公開/非公開をDRAFT状態ではなく、各機能で定義された公
+開条件・公開日時等によって判定する
+（`PublicationStateModel.md`参照）。Performanceは作成直後からPUBLISHED
+として扱う。
+
+このため、以下の「Status」節（旧「DRAFT」節を統合）と「Lifecycle」節
+は、旧仕様（Version 4.1）からVersion 4.2で更新されている。Performance
+単位の公開日時（例え
+ば個別のPerformanceだけを非公開にする仕組み）は既存仕様上定義されてお
+らず、今回新設していない - Performanceの公開状態はProductionの公開状態
+と整合させるという「Visibility」節の既存ルールのみが根拠であり、
+`ListPublicPerformancesUseCase`が個別にProductionの公開日時を参照する
+かどうかは未確認事項として残っている。
 
 ---
 
@@ -133,9 +152,8 @@ Reservationを正本として扱う。
 
 # Status
 
-Performanceは以下の状態を持つ。
+Performanceは以下の状態を持つ（Version 4.2でDRAFTを廃止）。
 
-- DRAFT
 - PUBLISHED
 - SOLD_OUT
 - FINISHED
@@ -144,15 +162,9 @@ Performanceは以下の状態を持つ。
 Statusは、
 Performance自身のLifecycleを表す。
 
----
-
-# DRAFT
-
-Performanceが作成されたが、
-まだ一般公開されていない状態。
-
-この状態では、
-公演日時や会場などの情報を準備できる。
+DRAFTは持たない。
+公開/非公開はStatusではなく、各機能で定義された公開条件・公開日時等に
+よって判定する。
 
 ---
 
@@ -216,10 +228,8 @@ Performance Cancellationに伴うBusiness Processとして処理する。
 
 # Lifecycle
 
-基本的なLifecycle：
+基本的なLifecycle（Version 4.2でDRAFTを廃止、PUBLISHEDから開始）：
 
-DRAFT
-  ↓
 PUBLISHED
   ↓
 SOLD_OUT
@@ -233,10 +243,6 @@ PUBLISHED
 FINISHED
 
 中止の場合：
-
-DRAFT
-  ↓
-CANCELLED
 
 PUBLISHED
   ↓
@@ -476,8 +482,7 @@ CheckInCompletedは、
 
 # Check In and Accounting
 
-CheckInCompletedは、
-チケット売上をAccounting Domainへ連携する契機となる。
+通常の当日精算では、受付時の代金受領とCheckInCompletedが同時に発生するため、両者を関連付けてAccounting連携できる。ただし、入金・Ticket Revenue仕訳の根拠は実際の代金受領を示すPayment Factとする。スタッフ預りTicketは、受付担当者が現金を受領しReservationの支払済みを確定した時点でPayment Factを記録して計上し、後続のCheckInCompletedでは再計上しない。
 
 基本的なFlow：
 
@@ -487,19 +492,20 @@ Issued Ticket
   ↓
 Check In
   ↓
-CheckInCompleted
-  ├── History
-  │     └── Audience History
-  │
-  └── Accounting
-        └── Ticket Revenue
+CheckInCompleted ──→ History / Audience History
+
+実際の代金受領
+  ↓
+Payment Fact
+  ↓
+Accounting ──→ 入金・Ticket Revenue
+
+CheckInCompleted単独では仕訳を生成しない。
 
 Performance Domainは、
 仕訳そのものを管理しない。
 
-Accounting Domainが、
-CheckInCompletedなどのBusiness Eventを受け取り、
-必要なJournal Entryを生成する。
+Accounting Domainは、Payment Factに基づいて入金・Ticket RevenueのJournal Entryを生成する。CheckInCompletedは通常フローで関連付けられる来場受付Eventであり、スタッフ預りTicketでは先行するPayment Factによる計上を重複させない。
 
 ---
 
@@ -509,9 +515,8 @@ CheckInCompletedなどのBusiness Eventを受け取り、
 チケットを予約した時点では
 正式な会計上の売上として確定しない。
 
-Check Inが完了し、
-CheckInCompletedが発生した時点で、
-チケット売上をAccounting Domainへ連携する。
+Check Inが完了し、CheckInCompletedが発生しても、仮売上への振替仕訳は生成しない。
+会計期間末に、決算未確定Productionに関連する売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。
 
 基本Flow：
 
@@ -525,9 +530,15 @@ Check In
   ↓
 CheckInCompleted
   ↓
-Ticket Revenue
+来場Fact（この時点で仮売上仕訳は生成しない）
+
+会計期間末
   ↓
-Journal Entry
+仮売上へ振替
+  ↓
+Production決算確定
+  ↓
+正式な売上へ振替
 
 具体的な勘定科目やDebit / Creditの処理は、
 Accounting Domainで定義する。
@@ -816,7 +827,7 @@ Cancellationなどについても、
 - Performance自身は個々のReservationのCheck In状態を保持しない。
 - Check In状態はReservationを正本とする。
 - CheckInCompletedは観劇実績確定のBusiness Eventである。
-- CheckInCompletedをAccounting連携の契機として利用できる。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Performance DomainはJournal Entryを管理しない。
 - Accounting DomainがJournal Entryを生成する。
 - Ticket Type / Priceの正本はProduction側にある。
@@ -954,7 +965,7 @@ Performanceの責務を過度に拡張しない。
 - Performance自身はReservationのCheck In状態を保持しない。
 - ReservationをCheck Inの正本とする。
 - CheckInCompletedを観劇実績確定Eventとして扱う。
-- CheckInCompletedをAccounting連携の契機として利用できる。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳の根拠はPayment Factとする。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Performance DomainはJournal Entryを管理しない。
 - Ticket Type / Priceの正本はProduction側にある。
 - PerformanceはTicket Type / Priceを販売対象として利用する。

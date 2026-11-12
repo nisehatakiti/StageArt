@@ -16,18 +16,25 @@ jest.mock('expo-secure-store', () => ({
  * home-dashboard-error-productions-ok.test.tsx's docblock for why this
  * pairing is split rather than co-located in one file.
  */
-describe('Home: Production Navigator fails, Dashboard does not', () => {
+describe('Home: the Production list fails, Dashboard does not', () => {
   it('Production list failing still shows the Personal Overview normally', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
       { test: (u) => u.endsWith('/productions'), status: 403, body: { code: 'stageart_forbidden', message: 'Forbidden' } },
+      { test: (u) => u.endsWith('/me/notifications'), status: 200, body: [] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
     renderRouter('src/app', { initialUrl: '/home' });
 
-    await waitFor(() => expect(screen.getByTestId('productions-error')).toBeVisible());
+    // R7: 3113937 (2026-10-06) moved the Production list off Home; Home
+    // still reads GET /productions (to name each upcoming rehearsal's
+    // Organization). Its failure must not surface on Home or break the
+    // Personal Overview.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('home-greeting')).toBeVisible());
+    expect(screen.queryByText('この情報を表示する権限がありません。')).toBeNull();
     // The unrelated Personal Overview section must render normally
     // regardless (i.e. not itself in an error/loading state) - both
     // lists are empty here, so per docs/04-HomeRoleBasedMenu.md it

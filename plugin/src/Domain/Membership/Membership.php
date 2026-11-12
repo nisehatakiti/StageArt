@@ -31,6 +31,11 @@ final class Membership
     private string $status;
     private DateTimeImmutable $createdAt;
     private ?DateTimeImmutable $joinedAt;
+    /** StageArt Organization管理UI/UX統一: mirrors Participant.remarks -
+     * メンバー管理のテーブルの「備考」列。Set at add-time (carried over from
+     * the OrganizationInvitation/直接追加 that created this Membership) and
+     * editable afterward via UpdateOrganizationMemberRemarksUseCase. */
+    private ?string $remarks;
 
     private function __construct(
         MembershipId $id,
@@ -39,7 +44,8 @@ final class Membership
         RoleKey $roleKey,
         string $status,
         DateTimeImmutable $createdAt,
-        ?DateTimeImmutable $joinedAt = null
+        ?DateTimeImmutable $joinedAt = null,
+        ?string $remarks = null
     ) {
         $this->id = $id;
         $this->organizationId = $organizationId;
@@ -48,9 +54,10 @@ final class Membership
         $this->status = $status;
         $this->createdAt = $createdAt;
         $this->joinedAt = $joinedAt;
+        $this->remarks = $remarks;
     }
 
-    public static function create(OrganizationId $organizationId, PersonId $personId, RoleKey $roleKey): self
+    public static function create(OrganizationId $organizationId, PersonId $personId, RoleKey $roleKey, ?string $remarks = null): self
     {
         $now = new DateTimeImmutable();
 
@@ -61,7 +68,8 @@ final class Membership
             $roleKey,
             self::STATUS_ACTIVE,
             $now,
-            $now
+            $now,
+            $remarks
         );
     }
 
@@ -106,9 +114,10 @@ final class Membership
         RoleKey $roleKey,
         string $status,
         DateTimeImmutable $createdAt,
-        ?DateTimeImmutable $joinedAt = null
+        ?DateTimeImmutable $joinedAt = null,
+        ?string $remarks = null
     ): self {
-        return new self($id, $organizationId, $personId, $roleKey, $status, $createdAt, $joinedAt);
+        return new self($id, $organizationId, $personId, $roleKey, $status, $createdAt, $joinedAt, $remarks);
     }
 
     public function id(): MembershipId
@@ -149,6 +158,16 @@ final class Membership
     public function joinedAt(): ?DateTimeImmutable
     {
         return $this->joinedAt;
+    }
+
+    public function remarks(): ?string
+    {
+        return $this->remarks;
+    }
+
+    public function changeRemarks(?string $remarks): void
+    {
+        $this->remarks = $remarks;
     }
 
     /** Only a REQUESTED Membership can be approved - matching

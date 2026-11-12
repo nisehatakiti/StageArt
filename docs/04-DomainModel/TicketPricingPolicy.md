@@ -130,6 +130,8 @@ Reservationは、成立時点で選択されたTicketおよびPrice Snapshotを�
 
 Ticket料金の変更によって、既存Reservationの価格を変更してはならない。
 
+料金変更と予約が同時に行われた場合（PR #7 レビュー R5）：料金変更はProduction行の排他ロック、予約・当日券は共有ロックの下で行い、予約はロック取得後に読み直したTicketの料金をPrice Snapshotとする。予約は「変更前の料金で先に成立する」か「変更の確定後に新しい料金で成立する」かのどちらかであり、ロック前に読んだ古い料金で成立することはない（`ProductionLifecycle.md`「Production単位のロック規約」）。
+
 ---
 
 # Budget Relationship

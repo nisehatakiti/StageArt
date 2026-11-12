@@ -122,6 +122,10 @@ Production定員は標準値および一括更新の基準値であり、日常�
 6. Productionの定員を変更して保存した場合、既存を含む全Performanceの定員を新しい値で一括上書きする。
 7. 一括上書き後は、各Performanceで再度個別変更できる。
 8. 特定Performanceに対する予約・販売・受付では、Performance側の定員を使用する。
+9. （2026-11-10、PR #7 R6）定員を、そのPerformanceの予約済み席数より少ない値へ引き下げることはできない。予約済み席数は、予約時の定員判定と同じく、CANCELLED以外（RESERVED・CHECKED_IN・NO_SHOW）のReservationの人数の合計とする。拒否した場合は定員も予約も変更しない（HTTP 409 `stageart_capacity_below_reservations`、`data.capacity` と `data.reserved_seats` を返す）。
+10. Production定員の一括上書き（§4）で、いずれかのPerformance（CANCELLEDのPerformanceを除く）の定員が予約済み席数を下回る場合は、一括上書き全体を拒否し、Production定員を含めて何も変更しない。
+11. 定員を変えない、または引き上げる変更は、予約済み席数が定員を超えている既存データでも拒否しない（他の項目は編集できる）。
+12. 定員の変更はProduction行の排他ロックの下で行い、予約・当日券・人数増と同時に実行されても、ロック下で読み直した予約済み席数で判定する（`04-DomainModel/ProductionLifecycle.md`「Production単位のロック規約」）。
 
 ---
 

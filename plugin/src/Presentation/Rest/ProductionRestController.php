@@ -17,20 +17,22 @@ use StageArt\Application\Production\CompleteProductionCommand;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\CreateProductionCommand;
 use StageArt\Application\Production\CreateProductionUseCase;
+use StageArt\Application\Production\GetProductionOverviewQuery;
+use StageArt\Application\Production\GetProductionOverviewUseCase;
 use StageArt\Application\Production\GetProductionQuery;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\GetPublicProductionBySlugQuery;
 use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsForPersonQuery;
 use StageArt\Application\Production\ListProductionsUseCase;
+use StageArt\Application\Production\ProductionSettlementIncompleteException;
+use StageArt\Application\Production\ProductionSettlementOverpaidException;
 use StageArt\Application\Production\PrimaryManagerNotEligibleException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Production\ProductionSlugAlreadyTakenException;
 use StageArt\Application\Production\SearchProductionsQuery;
 use StageArt\Application\Production\SearchProductionsUseCase;
-use StageArt\Application\Production\StartProductionPlanningCommand;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\Project\ProjectNotFoundException;
@@ -50,11 +52,11 @@ final class ProductionRestController
 
     private CreateProductionUseCase $createProduction;
     private GetProductionUseCase $getProduction;
+    private GetProductionOverviewUseCase $getProductionOverview;
     private GetPublicProductionBySlugUseCase $getPublicProductionBySlug;
     private ListProductionsUseCase $listProductions;
     private UpdateProductionUseCase $updateProduction;
     private ChangePrimaryManagerUseCase $changePrimaryManager;
-    private StartProductionPlanningUseCase $startPlanning;
     private ActivateProductionUseCase $activateProduction;
     private CompleteProductionUseCase $completeProduction;
     private ArchiveProductionUseCase $archiveProduction;
@@ -64,11 +66,11 @@ final class ProductionRestController
     public function __construct(
         CreateProductionUseCase $createProduction,
         GetProductionUseCase $getProduction,
+        GetProductionOverviewUseCase $getProductionOverview,
         GetPublicProductionBySlugUseCase $getPublicProductionBySlug,
         ListProductionsUseCase $listProductions,
         UpdateProductionUseCase $updateProduction,
         ChangePrimaryManagerUseCase $changePrimaryManager,
-        StartProductionPlanningUseCase $startPlanning,
         ActivateProductionUseCase $activateProduction,
         CompleteProductionUseCase $completeProduction,
         ArchiveProductionUseCase $archiveProduction,
@@ -77,11 +79,11 @@ final class ProductionRestController
     ) {
         $this->createProduction = $createProduction;
         $this->getProduction = $getProduction;
+        $this->getProductionOverview = $getProductionOverview;
         $this->getPublicProductionBySlug = $getPublicProductionBySlug;
         $this->listProductions = $listProductions;
         $this->updateProduction = $updateProduction;
         $this->changePrimaryManager = $changePrimaryManager;
-        $this->startPlanning = $startPlanning;
         $this->activateProduction = $activateProduction;
         $this->completeProduction = $completeProduction;
         $this->archiveProduction = $archiveProduction;
@@ -133,6 +135,14 @@ final class ProductionRestController
             ],
         ]);
 
+        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/overview', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'getOverview'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/primary-manager', [
             [
                 'methods' => 'PUT',
@@ -141,18 +151,8 @@ final class ProductionRestController
             ],
         ]);
 
-        // Phase 6.1 Lifecycle Actions - see ProductionLifecycle.md's
-        // Action/GO model. Action names are derived from each transition's
-        // target Status (Blueprint names target Status labels, not literal
-        // Action verbs - see Production::startPlanning()'s docblock).
-        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/start-planning', [
-            [
-                'methods' => 'PATCH',
-                'callback' => [$this, 'startPlanning'],
-                'permission_callback' => [$this, 'require_login'],
-            ],
-        ]);
-
+        // Production Lifecycle Actions - target Status-derived Action
+        // names (see Production::activate()'s docblock).
         register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/activate', [
             [
                 'methods' => 'PATCH',
@@ -254,6 +254,30 @@ final class ProductionRestController
     }
 
     /**
+     * 参加者向け「公演概要ダッシュボード」instruction: isProductionMember-gated
+     * counterpart to get() above (canReadProduction-gated) - see
+     * GetProductionOverviewUseCase's own docblock for why this is a
+     * separate Use Case/endpoint rather than widening get()'s own
+     * authorization.
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function getOverview(WP_REST_Request $request)
+    {
+        try {
+            $query = new GetProductionOverviewQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->getProductionOverview->execute($query)->toArray(), 200);
+        } catch (ProductionAccessDeniedException $exception) {
+            return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
      * @return WP_REST_Response|WP_Error
      */
     public function getBySlug(WP_REST_Request $request)
@@ -293,7 +317,7 @@ final class ProductionRestController
             return new WP_Error(
                 'stageart_production_status_not_updatable_via_put',
                 'Production Status can no longer be changed via PUT. Use the Lifecycle Action endpoints '
-                    . '(/start-planning, /activate, /complete, /archive, /cancel) instead.',
+                    . '(/activate, /complete, /archive, /cancel) instead.',
                 ['status' => 422]
             );
         }
@@ -309,7 +333,23 @@ final class ProductionRestController
                 $this->stringOrNull($request->get_param('title_heading')),
                 $this->stringOrNull($slugParam),
                 $publishedParam === null ? null : (bool) $publishedParam,
-                $this->stringOrNull($request->get_param('published_at'))
+                $this->stringOrNull($request->get_param('published_at')),
+                $this->stringOrNull($request->get_param('description')),
+                $this->stringOrNull($request->get_param('description_published_at')),
+                $this->stringOrNull($request->get_param('flyer_url')),
+                $this->stringOrNull($request->get_param('flyer_published_at')),
+                $this->stringOrNull($request->get_param('venue_name')),
+                $this->stringOrNull($request->get_param('venue_published_at')),
+                $this->stringOrNull($request->get_param('schedule_start_date')),
+                $this->stringOrNull($request->get_param('schedule_end_date')),
+                $this->stringOrNull($request->get_param('schedule_published_at')),
+                $this->stringOrNull($request->get_param('script_credit')),
+                $this->stringOrNull($request->get_param('direction_credit')),
+                $this->stringOrNull($request->get_param('script_direction_published_at')),
+                $this->stringOrNull($request->get_param('member_info_published_at')),
+                $this->intOrNull($request->get_param('capacity')),
+                $this->stringOrNull($request->get_param('performance_common_remarks')),
+                $this->intOrNull($request->get_param('performance_duration_minutes'))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);
@@ -321,24 +361,6 @@ final class ProductionRestController
             return new WP_Error('stageart_production_slug_taken', $exception->getMessage(), ['status' => 422]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid', $exception->getMessage(), ['status' => 422]);
-        }
-    }
-
-    /**
-     * @return WP_REST_Response|WP_Error
-     */
-    public function startPlanning(WP_REST_Request $request)
-    {
-        try {
-            $command = new StartProductionPlanningCommand((string) $request->get_param('id'), get_current_user_id());
-
-            return new WP_REST_Response($this->startPlanning->execute($command)->toArray(), 200);
-        } catch (ProductionAccessDeniedException $exception) {
-            return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
-        } catch (ProductionNotFoundException $exception) {
-            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (InvalidArgumentException $exception) {
-            return new WP_Error('stageart_production_invalid_transition', $exception->getMessage(), ['status' => 422]);
         }
     }
 
@@ -373,6 +395,17 @@ final class ProductionRestController
             return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ProductionSettlementIncompleteException $exception) {
+            return new WP_Error('stageart_production_settlement_incomplete', $exception->getMessage(), ['status' => 422]);
+        } catch (ProductionSettlementOverpaidException $exception) {
+            // PR #7 review (R7): settled more than confirmed (a Check-in
+            // reversed after the settlement). Same status as the "not yet
+            // settled" refusal; each over-paid member is listed.
+            return new WP_Error('stageart_production_settlement_overpaid', $exception->getMessage(), [
+                'status' => 422,
+                'total_overpaid_amount' => $exception->totalOverpaid(),
+                'members' => $exception->members(),
+            ]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_production_invalid_transition', $exception->getMessage(), ['status' => 422]);
         }
@@ -443,5 +476,10 @@ final class ProductionRestController
     private function stringOrNull($value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    private function intOrNull($value): ?int
+    {
+        return $value === null || $value === '' ? null : (int) $value;
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Support;
 
-use DateTimeImmutable;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
@@ -19,10 +18,11 @@ final class InMemoryRehearsalAttendanceRepository implements RehearsalAttendance
     private array $attendances = [];
 
     /**
-     * findUpcomingByPersonId() simulates the real Repository's SQL JOIN
-     * against the rehearsals table - the fake needs the same Rehearsal
-     * data the real one would read via a live JOIN, so tests register it
-     * here rather than this fake reaching into another fake.
+     * findByPersonIdExcludingRehearsalStatuses() simulates the real
+     * Repository's SQL JOIN against the rehearsals table (status filter
+     * only) - the fake needs the same Rehearsal data the real one would
+     * read via a live JOIN, so tests register it here rather than this
+     * fake reaching into another fake.
      *
      * @var array<string, Rehearsal>
      */
@@ -84,11 +84,9 @@ final class InMemoryRehearsalAttendanceRepository implements RehearsalAttendance
         return null;
     }
 
-    public function findUpcomingByPersonId(
+    public function findByPersonIdExcludingRehearsalStatuses(
         PersonId $personId,
-        DateTimeImmutable $from,
-        array $excludedRehearsalStatuses,
-        int $limit
+        array $excludedRehearsalStatuses
     ): array {
         $matches = [];
 
@@ -99,11 +97,7 @@ final class InMemoryRehearsalAttendanceRepository implements RehearsalAttendance
 
             $rehearsal = $this->rehearsals[$attendance->rehearsalId()->toString()] ?? null;
 
-            if (! $rehearsal || $rehearsal->startDateTime() === null) {
-                continue;
-            }
-
-            if ($rehearsal->startDateTime() < $from) {
+            if (! $rehearsal) {
                 continue;
             }
 
@@ -114,13 +108,6 @@ final class InMemoryRehearsalAttendanceRepository implements RehearsalAttendance
             $matches[] = $attendance;
         }
 
-        usort(
-            $matches,
-            fn (RehearsalAttendance $a, RehearsalAttendance $b): int =>
-                $this->rehearsals[$a->rehearsalId()->toString()]->startDateTime()
-                    <=> $this->rehearsals[$b->rehearsalId()->toString()]->startDateTime()
-        );
-
-        return array_slice($matches, 0, $limit);
+        return $matches;
     }
 }

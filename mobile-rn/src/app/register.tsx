@@ -1,42 +1,128 @@
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
+import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
+import { AuthLayout } from '@/components/auth/AuthLayout';
+import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { fetchParticipantInvitationPreview } from '@/features/participantInvitation/api';
 
 /**
  * Email+Password new StageArt Account registration (Backend Phase 2's
  * POST /auth/email/register). The Backend still returns a full
  * Access/Refresh Token pair on success (matching Google's own new-user
  * path, unchanged Backend contract) - but a real-device correction
- * clarified that this must NOT be treated as "the user is now logged
- * into StageArt": AuthContext.registerWithEmail() deliberately never
- * persists a session for a freshly-registered (always-unverified)
+ * clarified that an ORDINARY self-registration must NOT be treated as
+ * "the user is now logged into StageArt": AuthContext.registerWithEmail()
+ * never persists a session for a freshly-registered, still-unverified
  * account (see its own docblock) - status stays 'unauthenticated', and
- * closing/reopening the app lands back on the login screen, not here
- * again. This screen's own job is unchanged: always navigate to
- * registration-pending.tsx on success, never to /home.
+ * this screen navigates to registration-pending.tsx, never /home.
+ *
+ * StageArt 招待登録のメール確認省略ラウンド: this no longer holds for a
+ * registration reached via a valid Production invitation link
+ * (register.tsx?token=...) - the invitation link itself already proves
+ * the address is reachable, so the Backend marks that EmailCredential
+ * verified immediately and never sends a confirmation mail for it (see
+ * RegisterWithEmailUseCase's own docblock). `handleSubmit()` below
+ * forwards `invitationToken` only once the preview fetch has confirmed
+ * it resolves to a real, usable invitation, and AuthContext's
+ * registerWithEmail() establishes a real session right away for that
+ * case (its own `probePersonGate()` call reflects the Backend's actual
+ * verified status now, not a hardcoded assumption) - this screen routes
+ * straight to /home or /set-name instead of registration-pending.tsx
+ * when that happens. Ordinary self-registration (no token, or a token
+ * that failed to preview) is completely unaffected.
  */
-export default function RegisterScreen() {
+function RegisterScreen() {
   const { registerWithEmail } = useAuth();
   const router = useRouter();
+  const { token: invitationToken } = useLocalSearchParams<{ token?: string }>();
 
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [invitationProductionName, setInvitationProductionName] = useState<string | null>(null);
 
+  /**
+   * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §3/§23:
+   * arriving via an invitation link (register.tsx?token=...) pre-fills
+   * the invited email AND name as a courtesy.
+   *
+   * StageArt 招待登録のメール確認省略ラウンド §7: this fetch succeeding is
+   * also what this screen treats as "this token is confirmed usable" -
+   * `invitationProductionName` being set gates both forwarding
+   * `invitationToken` to registerWithEmail() on submit (see
+   * handleSubmit() below) and fixing the email field so it cannot be
+   * changed to something other than the invited address (the Backend
+   * now uses the invitation's own recorded email unconditionally for
+   * this path regardless, but the field is fixed here too so the UI
+   * never implies an edit that would silently be ignored). `name` stays
+   * editable (§3: "本人が登録時に氏名を変更できることを妨げない") - it is
+   * unrelated to which email ends up registered. If this fetch fails
+   * (invalid/expired/cancelled/unknown token, or no token at all), this
+   * silently falls back to an ordinary, fully-editable self-registration
+   * - never a half-invited submission with a token the Backend would
+   * reject anyway.
+   *
+   * IMPORTANT (disclosed limitation, not silently decided - unchanged by
+   * this round): `name` here is still UI-only. POST /auth/email/register
+   * (RegisterWithEmailUseCase) has no name parameter - Person.familyName/
+   * givenName are only ever set later via the existing, separate
+   * UpdatePersonNameUseCase (set-name.tsx). Wiring this pre-filled name
+   * through to the real Person would mean extending either
+   * RegisterWithEmailUseCase or set-name.tsx, both outside this round's
+   * authorized change scope - see this round's final report for this
+   * open item.
+   */
+  useEffect(() => {
+    if (!invitationToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    fetchParticipantInvitationPreview(invitationToken)
+      .then((preview) => {
+        if (cancelled) return;
+        setEmail(preview.email);
+        setName(preview.name);
+        setInvitationProductionName(preview.production_name);
+      })
+      .catch(() => {
+        // An invalid/expired/consumed token must never block normal
+        // registration - silently fall back to the blank, editable
+        // email/name fields a direct /register visit already has.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [invitationToken]);
+
+  /**
+   * StageArt 招待登録のメール確認省略ラウンド: `invitationToken` is only
+   * ever forwarded once `invitationProductionName` is set - i.e. once
+   * the preview fetch above has actually confirmed this token resolves
+   * to a usable ParticipantInvitation. If that preview failed (expired/
+   * cancelled/unknown token, or no token at all), this degrades to an
+   * ordinary self-registration exactly as before - never a half-invited
+   * submission with a token the Backend would reject anyway.
+   */
   async function handleSubmit() {
     setSubmitting(true);
     setErrorMessage(null);
 
     const trimmedEmail = email.trim();
-    const result = await registerWithEmail(trimmedEmail, password);
+    const result = await registerWithEmail(
+      trimmedEmail,
+      password,
+      invitationProductionName ? invitationToken : undefined
+    );
 
     setSubmitting(false);
     if (!result.ok) {
@@ -44,30 +130,54 @@ export default function RegisterScreen() {
       return;
     }
 
-    router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+    if (!result.emailVerified) {
+      router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+      return;
+    }
+
+    // The invitation link itself already proved this address is
+    // reachable - registerWithEmail() has already established a real
+    // session (see its own docblock), so there is no "確認メールを
+    // お送りしました" step to show here at all.
+    router.replace(result.hasName ? '/home' : '/set-name');
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.brand}>
-            アカウントを新規登録
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
-            メールアドレスとパスワード（8文字以上）を入力してください。
-          </ThemedText>
+    <AuthLayout>
+      <ThemedText type="title" style={authStyles.title}>
+        アカウントを新規登録
+      </ThemedText>
+      <ThemedText type="small" style={authStyles.description}>
+        StageArtをはじめるためのアカウントを作成します。メールアドレスとパスワード（8文字以上）を入力してください。
+      </ThemedText>
 
-          <ThemedTextInput
-            testID="register-email"
-            placeholder="メールアドレス"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={styles.input}
-          />
+      {invitationProductionName && (
+        <ThemedText testID="register-invitation-notice" type="small" style={authStyles.description}>
+          「{invitationProductionName}」への招待です。このメールアドレスで登録すると、確認メールなしで自動的にメンバーへ追加されます。
+        </ThemedText>
+      )}
+
+      {invitationProductionName && (
+        <ThemedTextInput
+          testID="register-invitation-name"
+          placeholder="氏名"
+          value={name}
+          onChangeText={setName}
+          style={authStyles.input}
+        />
+      )}
+
+      <ThemedTextInput
+        testID="register-email"
+        placeholder="メールアドレス"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        editable={!invitationProductionName}
+        style={[authStyles.input, invitationProductionName ? styles.fixedInput : null]}
+      />
           {/*
            * textContentType="oneTimeCode" is deliberate, not an oversight
            * (it was "newPassword" before). Confirmed via a real iPad
@@ -85,67 +195,45 @@ export default function RegisterScreen() {
            * suggestion UI while leaving secureTextEntry's masking
            * behavior untouched.
            */}
-          <ThemedTextInput
-            testID="register-password"
-            placeholder="パスワード（8文字以上）"
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            textContentType="oneTimeCode"
-            style={styles.input}
-          />
+      <ThemedTextInput
+        testID="register-password"
+        placeholder="パスワード（8文字以上）"
+        value={password}
+        onChangeText={setPassword}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        textContentType="oneTimeCode"
+        style={authStyles.input}
+      />
 
-          {errorMessage && (
-            <ThemedText testID="register-error" themeColor="text" style={styles.error}>
-              {errorMessage}
-            </ThemedText>
-          )}
+      {errorMessage && (
+        <ThemedText testID="register-error" style={authStyles.error}>
+          {errorMessage}
+        </ThemedText>
+      )}
 
-          <TouchableOpacity
-            testID="register-submit"
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={[styles.button, submitting && styles.buttonDisabled]}
-          >
-            {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>登録する</ThemedText>}
-          </TouchableOpacity>
+      <TouchableOpacity
+        testID="register-submit"
+        onPress={handleSubmit}
+        disabled={submitting}
+        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+      >
+        {submitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>登録する</ThemedText>}
+      </TouchableOpacity>
 
-          <TouchableOpacity testID="register-login-link" onPress={() => router.back()} disabled={submitting}>
-            <ThemedText type="link" style={styles.linkCentered}>
-              ログイン画面へ戻る
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <TouchableOpacity testID="register-login-link" onPress={() => router.back()} disabled={submitting}>
+        <ThemedText type="link" style={authStyles.linkCentered}>
+          ← ログイン画面へ戻る
+        </ThemedText>
+      </TouchableOpacity>
+    </AuthLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  flex: { flex: 1 },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
-  brand: { fontSize: 28, lineHeight: 34, textAlign: 'center' },
-  description: { textAlign: 'center', marginBottom: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  error: { color: '#a6483a' },
-  button: {
-    backgroundColor: '#4a3f7a',
-    borderRadius: 8,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-  linkCentered: { textAlign: 'center' },
+  fixedInput: { opacity: 0.6 },
 });
+
+/** Never shown on the public site - see app-only-route.tsx. */
+export default appOnlyRoute(RegisterScreen);

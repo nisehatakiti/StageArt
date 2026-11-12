@@ -19,6 +19,7 @@ use StageArt\Application\Authentication\RefreshAccessTokenCommand;
 use StageArt\Application\Authentication\RefreshAccessTokenUseCase;
 use StageArt\Application\Authentication\RegisterWithEmailCommand;
 use StageArt\Application\Authentication\RegisterWithEmailUseCase;
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\UserAccount\UserAccountId;
@@ -30,10 +31,15 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryEmailVerificationTokenRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
+use StageArt\Tests\Support\InMemoryOrganizationInvitationRepository;
+use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryRefreshTokenRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
+use StageArt\Tests\Support\NullResolveOrganizationInvitationUseCaseFactory;
+use StageArt\Tests\Support\NullResolveParticipantInvitationUseCaseFactory;
 
 /**
  * The explicit Google x Email+Password authentication matrix requested
@@ -75,6 +81,13 @@ final class AuthenticationMatrixTest extends TestCase
         $this->accessTokenIssuer = new FakeAccessTokenIssuer();
         $this->wordPressUserProvisioner = new FakeWordPressUserProvisioner();
         $this->mailer = new FakeAuthMailer();
+        $notificationEmailSeeder = new NotificationEmailSeeder(
+            new InMemoryNotificationEmailRepository(),
+            $this->userAccounts,
+            $this->emailCredentials
+        );
+
+        $resolveParticipantInvitation = NullResolveParticipantInvitationUseCaseFactory::create($this->people);
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
@@ -85,7 +98,11 @@ final class AuthenticationMatrixTest extends TestCase
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
             new InMemoryTransactionManager(),
-            $this->mailer
+            $this->mailer,
+            $resolveParticipantInvitation,
+            new InMemoryParticipantInvitationRepository(),
+            NullResolveOrganizationInvitationUseCaseFactory::create(),
+            new InMemoryOrganizationInvitationRepository()
         );
         $this->authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $this->emailCredentials,
@@ -103,14 +120,18 @@ final class AuthenticationMatrixTest extends TestCase
             $this->refreshTokens,
             $this->accessTokenIssuer,
             $this->wordPressUserProvisioner,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $notificationEmailSeeder,
+            $resolveParticipantInvitation,
+            NullResolveOrganizationInvitationUseCaseFactory::create()
         );
         $this->linkGoogleIdentity = new LinkGoogleIdentityUseCase(
             $this->googleVerifier,
             $this->people,
             $this->userAccounts,
             $this->externalIdentities,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $notificationEmailSeeder
         );
         $this->refreshAccessToken = new RefreshAccessTokenUseCase(
             $this->refreshTokens,

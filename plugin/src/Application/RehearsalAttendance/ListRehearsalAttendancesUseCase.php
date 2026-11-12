@@ -6,6 +6,7 @@ namespace StageArt\Application\RehearsalAttendance;
 
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
@@ -34,19 +35,22 @@ final class ListRehearsalAttendancesUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private MembershipContract $membership;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        MembershipContract $membership
+        MembershipContract $membership,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->membership = $membership;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     /**
@@ -78,6 +82,8 @@ final class ListRehearsalAttendancesUseCase
                 'You must be a member of this Production to view its RehearsalAttendance records.'
             );
         }
+
+        $this->statusTimeSync->sync($rehearsal);
 
         $phase = RehearsalAttendancePhase::fromString($query->phase);
 

@@ -37,6 +37,7 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
             'role_key' => $membership->roleKey()->toString(),
             'status' => $membership->status(),
             'joined_at' => $membership->joinedAt()?->format('Y-m-d H:i:s'),
+            'remarks' => $membership->remarks(),
         ];
 
         if ($existing) {
@@ -112,7 +113,8 @@ final class WordPressMembershipRepository implements MembershipRepositoryInterfa
             RoleKey::fromString($row['role_key']),
             $row['status'],
             new DateTimeImmutable($row['created_at']),
-            isset($row['joined_at']) && $row['joined_at'] !== null ? new DateTimeImmutable($row['joined_at']) : null
+            isset($row['joined_at']) && $row['joined_at'] !== null ? new DateTimeImmutable($row['joined_at']) : null,
+            $row['remarks'] ?? null
         );
     }
 }

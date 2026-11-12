@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Domain\JournalEntry;
 
+use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 
 interface JournalEntryRepositoryInterface
@@ -25,4 +26,24 @@ interface JournalEntryRepositoryInterface
      * @return JournalEntry[]
      */
     public function findPostedByProductionId(ProductionId $productionId): array;
+
+    /**
+     * POSTED entries of an Organization that carry a Production - the
+     * source of 団体会計の公演別実績, read in one query instead of one
+     * per Production.
+     *
+     * @return JournalEntry[]
+     */
+    public function findPostedWithProductionByOrganizationId(OrganizationId $organizationId): array;
+
+    /**
+     * Phase 4 Check-in/精算/会計連携: the Accounting Idempotency lookup
+     * CheckIn.md's "# Duplicate Accounting" requires ("同一
+     * CheckInCompletedから...二重計上してはならない") - given a Check-in's
+     * own identity as `sourceEventType`/`sourceEventId`, finds whether a
+     * Journal Entry was already generated for it, so re-processing the
+     * same Check-in never creates a second entry. Also used by Check-in
+     * Reversal to find the original entry to reverse.
+     */
+    public function findBySourceEvent(string $sourceEventType, string $sourceEventId): ?JournalEntry;
 }

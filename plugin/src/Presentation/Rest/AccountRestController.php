@@ -11,6 +11,9 @@ use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsForOrganizationQuery;
 use StageArt\Application\Account\ListAccountsUseCase;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Application\OrganizationAccounting\ListOrganizationProductionResultsQuery;
+use StageArt\Application\OrganizationAccounting\ListOrganizationProductionResultsUseCase;
+use StageArt\Application\OrganizationAccounting\OrganizationAccountingAccessDeniedException;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -19,6 +22,10 @@ use WP_REST_Response;
  * permission_callback only checks authentication; the actual Organization
  * Scope decision happens inside each Use Case and is mapped to a 403
  * here, same pattern as OrganizationRestController.
+ *
+ * GET /organizations/{id}/production-results - 団体会計の公演別実績
+ * (OrganizationAccountingAndProductionCostPolicy.md §2), the other
+ * Organization-scoped Accounting read.
  */
 final class AccountRestController
 {
@@ -26,11 +33,16 @@ final class AccountRestController
 
     private CreateAccountUseCase $createAccount;
     private ListAccountsUseCase $listAccounts;
+    private ?ListOrganizationProductionResultsUseCase $listProductionResults;
 
-    public function __construct(CreateAccountUseCase $createAccount, ListAccountsUseCase $listAccounts)
-    {
+    public function __construct(
+        CreateAccountUseCase $createAccount,
+        ListAccountsUseCase $listAccounts,
+        ?ListOrganizationProductionResultsUseCase $listProductionResults = null
+    ) {
         $this->createAccount = $createAccount;
         $this->listAccounts = $listAccounts;
+        $this->listProductionResults = $listProductionResults;
     }
 
     public function register_routes(): void
@@ -47,6 +59,32 @@ final class AccountRestController
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
+
+        if ($this->listProductionResults !== null) {
+            register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/production-results', [
+                [
+                    'methods' => 'GET',
+                    'callback' => [$this, 'list_production_results'],
+                    'permission_callback' => [$this, 'require_login'],
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function list_production_results(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListOrganizationProductionResultsQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response($this->listProductionResults->execute($query)->toArray(), 200);
+        } catch (OrganizationAccountingAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_accounting_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
     }
 
     public function require_login(): bool

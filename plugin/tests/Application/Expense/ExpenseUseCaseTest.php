@@ -13,8 +13,11 @@ use StageArt\Application\Expense\CreateExpenseCommand;
 use StageArt\Application\Expense\CreateExpenseUseCase;
 use StageArt\Application\Expense\ExpenseAccessDeniedException;
 use StageArt\Application\Expense\ExpenseLineFactory;
+use StageArt\Application\Expense\ExpenseOperationRetiredException;
 use StageArt\Application\Expense\GetExpenseQuery;
 use StageArt\Application\Expense\GetExpenseUseCase;
+use StageArt\Application\Expense\ListExpensesUseCase;
+use StageArt\Application\Expense\ListProductionExpensesQuery;
 use StageArt\Application\Expense\UpdateExpenseCommand;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
@@ -36,6 +39,7 @@ use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
@@ -60,10 +64,12 @@ final class ExpenseUseCaseTest extends TestCase
     private InMemoryExpenseRepository $expenses;
     private InMemoryJournalEntryRepository $journalEntries;
     private InMemoryParticipantRepository $participants;
+    private InMemoryProductionDelegateRepository $delegates;
 
     private CreateAccountUseCase $createAccount;
     private CreateExpenseUseCase $createExpense;
     private GetExpenseUseCase $getExpense;
+    private ListExpensesUseCase $listExpenses;
     private UpdateExpenseUseCase $updateExpense;
     private ConfirmExpenseUseCase $confirmExpense;
 
@@ -78,11 +84,12 @@ final class ExpenseUseCaseTest extends TestCase
         $this->expenses = new InMemoryExpenseRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
         $this->participants = new InMemoryParticipantRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
 
         $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
         $prodAuth = new ProductionAuthorizationService(
             $orgAuth,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             $this->participants
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
@@ -97,17 +104,10 @@ final class ExpenseUseCaseTest extends TestCase
         $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
         $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorizationContract);
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membershipContract, $identity, $lineFactory, $transactions);
-        $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $authorizationContract, $lineFactory, $transactions);
-        $this->confirmExpense = new ConfirmExpenseUseCase(
-            $this->expenses,
-            $productionContext,
-            $this->accounts,
-            $this->journalEntries,
-            $identity,
-            $authorizationContract,
-            $transactions
-        );
+        $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract, $authorizationContract);
+        $this->listExpenses = new ListExpensesUseCase($this->expenses, $productionContext, $membershipContract, $identity, $authorizationContract);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions);
+        $this->confirmExpense = new ConfirmExpenseUseCase($this->expenses, $identity, $authorizationContract);
     }
 
     /**
@@ -176,7 +176,7 @@ final class ExpenseUseCaseTest extends TestCase
         $this->assertSame(12000, $result->totalAmount);
     }
 
-    public function test_get_expense_is_visible_to_any_production_member(): void
+    public function test_primary_manager_can_view_a_members_expense(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
@@ -206,7 +206,7 @@ final class ExpenseUseCaseTest extends TestCase
         $this->assertSame(15000, $result->totalAmount);
     }
 
-    public function test_update_expense_rejected_for_non_creator_non_manager(): void
+    public function test_update_expense_rejected_for_non_creator(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
@@ -226,7 +226,11 @@ final class ExpenseUseCaseTest extends TestCase
         ]));
     }
 
-    public function test_primary_manager_can_confirm_expense_and_it_generates_a_balanced_journal_entry(): void
+    /**
+     * 修正8: Confirm is retired in favour of submit -> approve. The
+     * endpoint stays but refuses, and changes nothing.
+     */
+    public function test_confirm_is_refused_even_for_the_primary_manager_and_changes_nothing(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
         [$expenseAccountId, $payableAccountId] = $this->createExpenseAndPayableAccounts($organization);
@@ -235,26 +239,13 @@ final class ExpenseUseCaseTest extends TestCase
             ['account_id' => $expenseAccountId, 'amount' => 30000],
         ]));
 
-        $result = $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 1, $payableAccountId));
-
-        $this->assertSame('CONFIRMED', $result->status);
-
-        $entries = $this->journalEntries->findByProductionId($production->id());
-        $this->assertCount(1, $entries);
-        $this->assertSame('ExpenseConfirmed', $entries[0]->sourceEventType());
-        $this->assertSame($created->id, $entries[0]->sourceEventId());
-
-        $totalDebit = 0;
-        $totalCredit = 0;
-        foreach ($entries[0]->lines() as $line) {
-            if ($line->debitCredit()->toString() === 'DEBIT') {
-                $totalDebit += $line->amount();
-            } else {
-                $totalCredit += $line->amount();
-            }
+        try {
+            $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 1, $payableAccountId));
+            $this->fail('Confirm must be refused.');
+        } catch (ExpenseOperationRetiredException $exception) {
+            $this->assertSame('DRAFT', $this->getExpense->execute(new GetExpenseQuery($created->id, 1))->status);
+            $this->assertSame([], $this->journalEntries->findByProductionId($production->id()));
         }
-        $this->assertSame(30000, $totalDebit);
-        $this->assertSame(30000, $totalCredit);
     }
 
     public function test_non_manager_member_cannot_confirm_expense(): void
@@ -269,5 +260,201 @@ final class ExpenseUseCaseTest extends TestCase
         $this->expectException(ExpenseAccessDeniedException::class);
 
         $this->confirmExpense->execute(new ConfirmExpenseCommand($created->id, 2, $payableAccountId));
+    }
+
+    /**
+     * Adds an Organization MEMBER with the given WordPress user id who is
+     * also on this Production - either as a Cast Participant (no Role) or
+     * as an ACTIVE Delegate with the given Role.
+     */
+    private function givenProductionPerson(Organization $organization, Production $production, int $wordPressUserId, ?RoleKey $delegateRole = null): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+        $this->memberships->save(Membership::create($organization->id(), $person->id(), RoleKey::member()));
+
+        if ($delegateRole === null) {
+            $this->participants->save(Participant::create(
+                $production->id(),
+                ParticipantSubjectType::person(),
+                $person->id()->toString(),
+                ParticipantType::cast()
+            ));
+        } else {
+            $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $delegateRole, $production->primaryManagerPersonId()));
+        }
+
+        return $person;
+    }
+
+    /**
+     * @return array{0: Production, 1: string, 2: string} [Production, member 2's Expense id, member 3's Expense id]
+     */
+    private function givenTwoMembersExpenses(): array
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
+        [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
+        $this->givenProductionPerson($organization, $production, 3);
+        $this->givenProductionPerson($organization, $production, 4, RoleKey::accountingManager());
+        $this->givenProductionPerson($organization, $production, 5, RoleKey::ticketManager());
+
+        $own = $this->createExpense->execute(new CreateExpenseCommand(2, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 1200],
+        ]))->id;
+        $others = $this->createExpense->execute(new CreateExpenseCommand(3, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 3400],
+        ]))->id;
+
+        return [$production, $own, $others];
+    }
+
+    /**
+     * @return string[]
+     */
+    private function listedIds(Production $production, int $wordPressUserId): array
+    {
+        $ids = array_map(
+            static fn ($result): string => $result->id,
+            $this->listExpenses->execute(new ListProductionExpensesQuery($production->id()->toString(), $wordPressUserId))
+        );
+        sort($ids);
+
+        return $ids;
+    }
+
+    public function test_primary_manager_and_accounting_manager_list_every_expense(): void
+    {
+        [$production, $own, $others] = $this->givenTwoMembersExpenses();
+        $all = [$own, $others];
+        sort($all);
+
+        $this->assertSame($all, $this->listedIds($production, 1));
+        $this->assertSame($all, $this->listedIds($production, 4));
+    }
+
+    /**
+     * A 代理人 approves Expenses (`Expense.Approve`), so it lists and reads
+     * every Expense of the Production like the PrimaryManager and the
+     * 会計管理者 do. Holding only one of its two Roles, or one of them no
+     * longer ACTIVE, leaves a Delegate with its own Expenses only.
+     */
+    public function test_a_proxy_manager_sees_every_expense_but_a_partial_proxy_only_their_own(): void
+    {
+        [$production, $own, $others] = $this->givenTwoMembersExpenses();
+        $organization = $this->organizations->findById($this->projects->findById($production->projectId())->organizationId());
+        $all = [$own, $others];
+        sort($all);
+
+        $proxy = $this->givenProductionPerson($organization, $production, 8, RoleKey::participantManager());
+        $this->delegates->save(ProductionDelegate::create($production->id(), $proxy->id(), RoleKey::rehearsalManager(), $production->primaryManagerPersonId()));
+        $this->givenProductionPerson($organization, $production, 9, RoleKey::participantManager());
+        $former = $this->givenProductionPerson($organization, $production, 10, RoleKey::participantManager());
+        $rehearsal = ProductionDelegate::create($production->id(), $former->id(), RoleKey::rehearsalManager(), $production->primaryManagerPersonId());
+        $rehearsal->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($rehearsal);
+
+        $this->assertSame($all, $this->listedIds($production, 8));
+        $this->assertSame($others, $this->getExpense->execute(new GetExpenseQuery($others, 8))->id);
+
+        foreach ([9, 10] as $partial) {
+            $this->assertSame([], $this->listedIds($production, $partial), "user {$partial}");
+
+            try {
+                $this->getExpense->execute(new GetExpenseQuery($others, $partial));
+                $this->fail("User {$partial} must not read another member's Expense.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_general_member_lists_only_their_own_expenses(): void
+    {
+        [$production, $own, $others] = $this->givenTwoMembersExpenses();
+
+        $this->assertSame([$own], $this->listedIds($production, 2));
+        $this->assertSame([$others], $this->listedIds($production, 3));
+    }
+
+    public function test_delegate_without_accounting_role_lists_only_their_own_expenses(): void
+    {
+        [$production] = $this->givenTwoMembersExpenses();
+
+        $this->assertSame([], $this->listedIds($production, 5));
+    }
+
+    public function test_outsider_cannot_list_expenses(): void
+    {
+        [$production] = $this->givenTwoMembersExpenses();
+        $outsider = Person::create(6);
+        $this->people->save($outsider);
+
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->listExpenses->execute(new ListProductionExpensesQuery($production->id()->toString(), 6));
+    }
+
+    public function test_expense_list_of_another_production_is_not_reachable_through_this_productions_role(): void
+    {
+        [$production] = $this->givenTwoMembersExpenses();
+        $other = Production::create($production->projectId(), new ProductionName('Winter Play'), $production->primaryManagerPersonId());
+        $this->productions->save($other);
+
+        // Person 4 is ACCOUNTING_MANAGER of $production only.
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->listExpenses->execute(new ListProductionExpensesQuery($other->id()->toString(), 4));
+    }
+
+    public function test_creator_can_view_their_own_expense(): void
+    {
+        [, $own] = $this->givenTwoMembersExpenses();
+
+        $this->assertSame($own, $this->getExpense->execute(new GetExpenseQuery($own, 2))->id);
+    }
+
+    public function test_accounting_manager_can_view_any_expense(): void
+    {
+        [, $own, $others] = $this->givenTwoMembersExpenses();
+
+        $this->assertSame($own, $this->getExpense->execute(new GetExpenseQuery($own, 4))->id);
+        $this->assertSame($others, $this->getExpense->execute(new GetExpenseQuery($others, 4))->id);
+    }
+
+    public function test_general_member_cannot_view_another_members_expense_by_id(): void
+    {
+        [, , $others] = $this->givenTwoMembersExpenses();
+
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->getExpense->execute(new GetExpenseQuery($others, 2));
+    }
+
+    public function test_delegate_without_accounting_role_cannot_view_another_members_expense(): void
+    {
+        [, $own] = $this->givenTwoMembersExpenses();
+
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->getExpense->execute(new GetExpenseQuery($own, 5));
+    }
+
+    public function test_creator_who_left_the_production_cannot_view_their_expense(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManagerAndMember();
+        [$expenseAccountId] = $this->createExpenseAndPayableAccounts($organization);
+        $creator = $this->givenProductionPerson($organization, $production, 3, RoleKey::ticketManager());
+        $created = $this->createExpense->execute(new CreateExpenseCommand(3, $production->id()->toString(), [
+            ['account_id' => $expenseAccountId, 'amount' => 500],
+        ]))->id;
+
+        $delegate = $this->delegates->findByProductionId($production->id())[0];
+        $delegate->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($delegate);
+        $this->assertTrue($creator->id()->equals($delegate->personId()));
+
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->getExpense->execute(new GetExpenseQuery($created, 3));
     }
 }

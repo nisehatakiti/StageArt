@@ -41,6 +41,15 @@ use StageArt\Domain\Timetable\TimetableId;
  */
 final class TimetableItem
 {
+    /**
+     * PR #7 R11: Timetable times are Asia/Tokyo business times. They are
+     * stored as Asia/Tokyo wall-clock values (DATETIME, no offset) and
+     * read back in this zone (WordPressTimetableItemRepository), and the
+     * API always returns them with +09:00
+     * (docs/20-RehearsalManagementScreen.md §24).
+     */
+    public const TIMEZONE = 'Asia/Tokyo';
+
     private TimetableItemId $id;
     private TimetableId $timetableId;
     private string $title;
@@ -109,6 +118,7 @@ final class TimetableItem
         ?string $notes
     ): self {
         self::assertTitle($title);
+        self::assertTimeRange($startDateTime, $endDateTime);
 
         $now = new DateTimeImmutable();
 
@@ -183,6 +193,7 @@ final class TimetableItem
         ?string $notes
     ): void {
         self::assertTitle($title);
+        self::assertTimeRange($startDateTime, $endDateTime);
 
         $this->title = trim($title);
         $this->description = $description;
@@ -195,6 +206,53 @@ final class TimetableItem
         $this->targetPersonIds = array_values($targetPersonIds);
         $this->notes = $notes;
         $this->touch();
+    }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25): start and end
+     * are full date-times, so an item that crosses midnight (23:30-00:30)
+     * ends on the next day. The end must be after the start - a
+     * zero-length item (same instant) and an end before the start are
+     * rejected (422). Applies to create() and update(); reconstitute()
+     * and copyTo() keep what is already stored.
+     */
+    private static function assertTimeRange(DateTimeImmutable $start, ?DateTimeImmutable $end): void
+    {
+        if ($end !== null && $end <= $start) {
+            throw new InvalidArgumentException(
+                $end == $start
+                    ? 'TimetableItem end must not be the same as its start.'
+                    : 'TimetableItem end must be after its start (an item ending after midnight ends on the next day).'
+            );
+        }
+    }
+
+    /**
+     * PR #7 R12: the same item on another Timetable Version (new DRAFT
+     * from the PUBLISHED one). The values are copied exactly as stored -
+     * they were accepted when written, and a copy must not change or
+     * reject existing data (e.g. a zero-length item saved before R12).
+     */
+    public function copyTo(TimetableId $timetableId): self
+    {
+        $now = new DateTimeImmutable();
+
+        return new self(
+            TimetableItemId::generate(),
+            $timetableId,
+            $this->title,
+            $this->description,
+            $this->startDateTime,
+            $this->endDateTime,
+            $this->displayOrder,
+            $this->category,
+            $this->venue,
+            $this->participantType,
+            $this->targetPersonIds,
+            $this->notes,
+            $now,
+            $now
+        );
     }
 
     private static function assertTitle(string $title): void

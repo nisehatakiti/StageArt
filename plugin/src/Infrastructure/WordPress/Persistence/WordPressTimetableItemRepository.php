@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Timetable\TimetableId;
@@ -42,8 +43,8 @@ final class WordPressTimetableItemRepository implements TimetableItemRepositoryI
             'timetable_id' => $item->timetableId()->toString(),
             'title' => $item->title(),
             'description' => $item->description(),
-            'start_date_time' => $item->startDateTime()->format('Y-m-d H:i:s'),
-            'end_date_time' => $item->endDateTime() !== null ? $item->endDateTime()->format('Y-m-d H:i:s') : null,
+            'start_date_time' => $this->wallClock($item->startDateTime()),
+            'end_date_time' => $item->endDateTime() !== null ? $this->wallClock($item->endDateTime()) : null,
             'display_order' => $item->displayOrder(),
             'category' => $item->category(),
             'venue' => $item->venue(),
@@ -66,6 +67,55 @@ final class WordPressTimetableItemRepository implements TimetableItemRepositoryI
         }
 
         $this->syncTargetPersons($item);
+    }
+
+    /**
+     * PR #7 R11 (docs/20-RehearsalManagementScreen.md §24):
+     * start_date_time/end_date_time hold Asia/Tokyo wall-clock values
+     * (DATETIME, no offset). Every client has always sent "+09:00"
+     * (mobile-rn timetable editor and the earlier item form), and the
+     * value was stored with the digits it arrived with - so existing rows
+     * already are Asia/Tokyo wall-clock time and are kept unchanged. The
+     * bug was only on the way back: hydrate() read them in PHP's default
+     * zone, which WordPress forces to UTC, so the API returned
+     * "10:00+00:00" for a 10:00 JST item. Writing in Asia/Tokyo here and
+     * reading in Asia/Tokyo in hydrate() keeps those digits and gives them
+     * their real meaning; a value sent with another offset (e.g. "Z") is
+     * converted to Asia/Tokyo first instead of storing its digits.
+     */
+    private function wallClock(DateTimeImmutable $value): string
+    {
+        return $value->setTimezone(self::zone())->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * PR #7 R12 (docs/20-RehearsalManagementScreen.md §25.3): before R12 the
+     * timetable editor put an item's end time on its start date, so an
+     * item entered as 23:30-00:30 was stored with end_date_time 00:30 of
+     * the START date - before its start. Such a row (end before start on
+     * the same date) means "ends the next day" and is read that way. The
+     * stored value is not changed here; it is written in the corrected
+     * form only when that item itself is saved again. Any other end -
+     * including one equal to the start - is read as stored.
+     */
+    private function readEnd(DateTimeImmutable $start, ?string $storedEnd): ?DateTimeImmutable
+    {
+        if ($storedEnd === null) {
+            return null;
+        }
+
+        $end = new DateTimeImmutable($storedEnd, self::zone());
+
+        if ($end < $start && $end->format('Y-m-d') === $start->format('Y-m-d')) {
+            return $end->modify('+1 day');
+        }
+
+        return $end;
+    }
+
+    private static function zone(): DateTimeZone
+    {
+        return new DateTimeZone(TimetableItem::TIMEZONE);
     }
 
     private function syncTargetPersons(TimetableItem $item): void
@@ -179,13 +229,15 @@ final class WordPressTimetableItemRepository implements TimetableItemRepositoryI
             )
         );
 
+        $start = new DateTimeImmutable($row['start_date_time'], self::zone());
+
         return TimetableItem::reconstitute(
             TimetableItemId::fromString($row['id']),
             TimetableId::fromString($row['timetable_id']),
             $row['title'],
             $row['description'],
-            new DateTimeImmutable($row['start_date_time']),
-            $row['end_date_time'] !== null ? new DateTimeImmutable($row['end_date_time']) : null,
+            $start,
+            $this->readEnd($start, $row['end_date_time']),
             $row['display_order'] !== null ? (int) $row['display_order'] : null,
             $row['category'],
             $row['venue'],

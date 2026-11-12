@@ -293,6 +293,15 @@ final class JournalEntry
         return $this->journalDate;
     }
 
+    /**
+     * The 仕訳日 this entry counts on: the JST calendar date of its Journal
+     * Date (AccountingDate), as Y-m-d.
+     */
+    public function accountingDate(): string
+    {
+        return AccountingDate::of($this->journalDate);
+    }
+
     public function description(): string
     {
         return $this->description;

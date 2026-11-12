@@ -19,6 +19,7 @@ function makeRehearsal(overrides: Partial<UpcomingRehearsal> = {}): UpcomingRehe
     end_date_time: null,
     location: '○○スタジオ',
     attendance_status: 'UNANSWERED',
+    activity_type: 'REHEARSAL',
     ...overrides,
   };
 }
@@ -74,6 +75,10 @@ describe('buildUpcomingRehearsalViewModel', () => {
 
   it('any other attendance_status maps to isUnanswered=false', () => {
     expect(buildUpcomingRehearsalViewModel(makeRehearsal({ attendance_status: 'AVAILABLE' })).isUnanswered).toBe(false);
+  });
+
+  it('passes activity_type through unchanged', () => {
+    expect(buildUpcomingRehearsalViewModel(makeRehearsal({ activity_type: 'SELF_PRACTICE' })).activityType).toBe('SELF_PRACTICE');
   });
 
   it('a null start_date_time produces null date/time display rather than throwing', () => {

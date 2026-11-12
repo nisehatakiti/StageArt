@@ -1,0 +1,1053 @@
+<?php
+
+declare(strict_types=1);
+
+namespace StageArt\Tests\Application\CheckIn;
+
+use DateTimeImmutable;
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+use StageArt\Application\CheckIn\AttributedPersonNotProductionMemberException;
+use StageArt\Application\CheckIn\ChangeReservationAttributionCommand;
+use StageArt\Application\CheckIn\ChangeReservationAttributionUseCase;
+use StageArt\Application\CheckIn\CheckInAccessDeniedException;
+use StageArt\Application\CheckIn\CheckInByNumberCommand;
+use StageArt\Application\CheckIn\CheckInByNumberUseCase;
+use StageArt\Application\CheckIn\CheckInCommand;
+use StageArt\Application\CheckIn\CheckInProcessor;
+use StageArt\Application\CheckIn\CheckInReservationUseCase;
+use StageArt\Application\CheckIn\CreateWalkUpReservationCommand;
+use StageArt\Application\CheckIn\CreateWalkUpReservationUseCase;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountCommand;
+use StageArt\Application\CheckIn\DecreaseReservationGuestCountUseCase;
+use StageArt\Application\CheckIn\MarkNoShowCommand;
+use StageArt\Application\CheckIn\MarkNoShowUseCase;
+use StageArt\Application\CheckIn\PerformanceMismatchException;
+use StageArt\Application\CheckIn\ReservationNotCheckInEligibleException;
+use StageArt\Application\CheckIn\ReverseCheckInCommand;
+use StageArt\Application\CheckIn\ReverseCheckInUseCase;
+use StageArt\Application\CheckIn\SearchReservationsForCheckInQuery;
+use StageArt\Application\CheckIn\SearchReservationsForCheckInUseCase;
+use StageArt\Application\CheckIn\StandardAccountResolver;
+use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Application\Ticket\CreateTicketCommand;
+use StageArt\Application\Ticket\CreateTicketUseCase;
+use StageArt\Application\Ticket\UpdateTicketSalesSettingsCommand;
+use StageArt\Application\Ticket\UpdateTicketSalesSettingsUseCase;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Domain\JournalEntry\DebitCredit;
+use StageArt\Domain\Membership\Membership;
+use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Performance\Performance;
+use StageArt\Domain\Person\Person;
+use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
+use StageArt\Domain\Project\Project;
+use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Role\RoleKey;
+use StageArt\Domain\Ticket\TicketId;
+use StageArt\Tests\Support\InMemoryAccountRepository;
+use StageArt\Tests\Support\InMemoryCheckInRepository;
+use StageArt\Tests\Support\InMemoryIssuedTicketRepository;
+use StageArt\Tests\Support\InMemoryJournalEntryRepository;
+use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPerformanceRepository;
+use StageArt\Tests\Support\InMemoryPersonRepository;
+use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
+use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
+use StageArt\Tests\Support\InMemoryReservationRepository;
+use StageArt\Tests\Support\InMemoryTicketRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\InMemoryWalkUpIdempotencyStore;
+
+final class CheckInUseCaseTest extends TestCase
+{
+    private InMemoryOrganizationRepository $organizations;
+    private InMemoryPersonRepository $people;
+    private InMemoryMembershipRepository $memberships;
+    private InMemoryProductionRepository $productions;
+    private InMemoryProjectRepository $projects;
+    private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
+    private InMemoryPerformanceRepository $performances;
+    private InMemoryTicketRepository $tickets;
+    private InMemoryReservationRepository $reservations;
+    private InMemoryIssuedTicketRepository $issuedTickets;
+    private InMemoryCheckInRepository $checkIns;
+    private InMemoryAccountRepository $accounts;
+    private InMemoryJournalEntryRepository $journalEntries;
+    private InMemoryWalkUpIdempotencyStore $walkUpIdempotencyStore;
+
+    private CreateTicketUseCase $createTicket;
+    private UpdateTicketSalesSettingsUseCase $updateSalesSettings;
+    private CheckInReservationUseCase $checkInReservation;
+    private CheckInByNumberUseCase $checkInByNumber;
+    private MarkNoShowUseCase $markNoShow;
+    private ReverseCheckInUseCase $reverseCheckIn;
+    private SearchReservationsForCheckInUseCase $searchReservations;
+    private CreateWalkUpReservationUseCase $createWalkUp;
+    private ChangeReservationAttributionUseCase $changeAttribution;
+    private DecreaseReservationGuestCountUseCase $decreaseGuestCount;
+
+    protected function setUp(): void
+    {
+        $this->organizations = new InMemoryOrganizationRepository();
+        $this->people = new InMemoryPersonRepository();
+        $this->memberships = new InMemoryMembershipRepository();
+        $this->productions = new InMemoryProductionRepository();
+        $this->projects = new InMemoryProjectRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
+        $this->performances = new InMemoryPerformanceRepository();
+        $this->tickets = new InMemoryTicketRepository();
+        $this->reservations = new InMemoryReservationRepository();
+        $this->issuedTickets = new InMemoryIssuedTicketRepository();
+        $this->checkIns = new InMemoryCheckInRepository();
+        $this->accounts = new InMemoryAccountRepository();
+        $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->walkUpIdempotencyStore = new InMemoryWalkUpIdempotencyStore();
+
+        $organizationAuthorization = new \StageArt\Application\Organization\OrganizationAuthorizationService($this->people, $this->memberships);
+        $productionAuthorization = new ProductionAuthorizationService(
+            $organizationAuthorization,
+            $this->delegates,
+            $this->participants
+        );
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver($this->projects));
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
+        $membership = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+        $transactions = new InMemoryTransactionManager();
+
+        $this->createTicket = new CreateTicketUseCase($productionContext, $this->tickets, $identity, $authorization);
+        $this->updateSalesSettings = new UpdateTicketSalesSettingsUseCase($this->productions, $identity, $authorization, new \StageArt\Tests\Support\InMemoryTransactionManager());
+
+        $standardAccounts = new StandardAccountResolver($this->accounts);
+        $processor = new CheckInProcessor($this->reservations, $this->checkIns, $productionContext, $organizationContext, $this->journalEntries, $standardAccounts, new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions));
+
+        $this->checkInReservation = new CheckInReservationUseCase(
+            $this->reservations,
+            $this->performances,
+            $this->checkIns,
+            $identity,
+            $authorization,
+            $processor,
+            $transactions
+        );
+        $this->checkInByNumber = new CheckInByNumberUseCase($this->reservations, $this->checkInReservation);
+        $this->markNoShow = new MarkNoShowUseCase($this->reservations, $this->performances, $identity, $authorization, $processor, $transactions);
+        $this->reverseCheckIn = new ReverseCheckInUseCase(
+            $this->reservations,
+            $this->performances,
+            $this->checkIns,
+            $identity,
+            $authorization,
+            $processor,
+            $transactions
+        );
+        $this->searchReservations = new SearchReservationsForCheckInUseCase($this->reservations, $this->performances, $identity, $authorization);
+        $this->createWalkUp = new CreateWalkUpReservationUseCase(
+            $this->performances,
+            $this->tickets,
+            $this->reservations,
+            $this->issuedTickets,
+            $this->checkIns,
+            $identity,
+            $authorization,
+            $membership,
+            $processor,
+            $this->walkUpIdempotencyStore,
+            $transactions,
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
+        );
+        $this->changeAttribution = new ChangeReservationAttributionUseCase($this->reservations, $this->performances, $identity, $authorization, $membership, $transactions, $processor);
+        $this->decreaseGuestCount = new DecreaseReservationGuestCountUseCase(
+            $this->reservations,
+            $this->performances,
+            $identity,
+            $authorization,
+            $transactions,
+            $processor
+        );
+    }
+
+    /**
+     * 公演スケジュール Phase: Performance::create() now rejects start times
+     * off a 5-minute boundary, and Production's ticket publication/sales
+     * start times have the same requirement. These fixtures build their
+     * times from the real wall clock (`new DateTimeImmutable('+N hours')`
+     * etc.) so the minute is whatever second the test happens to run at -
+     * floor it to the nearest 5 minutes rather than hardcoding a
+     * clock-independent time, preserving each test's relative intent.
+     */
+    private function alignedDateTime(DateTimeImmutable $dt): DateTimeImmutable
+    {
+        $minute = (int) $dt->format('i');
+
+        return $dt->setTime((int) $dt->format('H'), $minute - ($minute % 5));
+    }
+
+    /**
+     * @return array{0: Production, 1: Performance, 2: string} [production, performance, ticketId]
+     */
+    private function givenProductionWithPerformanceAndTicket(bool $accountingEnabled = false, int $capacity = 20): array
+    {
+        $organization = Organization::create(new OrganizationName('Theatre Co'), null, null, null, $accountingEnabled);
+        $this->organizations->save($organization);
+
+        $primaryManager = Person::create(1);
+        $this->people->save($primaryManager);
+        $this->memberships->save(Membership::createOwnerMembership($organization->id(), $primaryManager->id()));
+
+        $project = Project::create($organization->id(), 'Season');
+        $this->projects->save($project);
+
+        $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
+        $production->changeCapacity($capacity);
+        $this->productions->save($production);
+
+        $performanceStart = $this->alignedDateTime(new DateTimeImmutable('+10 days'));
+        $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, $capacity, null, null);
+        $this->performances->save($performance);
+
+        $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
+        $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        return [$production, $performance, $ticket->id];
+    }
+
+    private function givenReservedReservation(Performance $performance, string $ticketId, int $guestCount = 1): Reservation
+    {
+        $reservation = Reservation::create(
+            $performance->id(),
+            TicketId::fromString($ticketId),
+            'Booker',
+            'booker@example.com',
+            $guestCount,
+            3000,
+            null
+        );
+        $this->reservations->save($reservation);
+
+        return $reservation;
+    }
+
+    public function test_check_in_transitions_reservation_and_creates_a_completed_check_in(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $result = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+        $this->assertFalse($result->alreadyProcessed);
+    }
+
+    public function test_check_in_generates_a_posted_journal_entry_when_accounting_is_enabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $entries = $this->journalEntries->all();
+        $this->assertCount(1, $entries);
+        $entry = $entries[0];
+        $this->assertTrue($entry->isPosted());
+        // Keyed by the Reservation that was paid, not by the CheckIn.
+        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entry->sourceEventType());
+        $this->assertSame($reservation->id()->toString(), $entry->sourceEventId());
+
+        $lines = $entry->lines();
+        $this->assertCount(2, $lines);
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $creditLine = $lines[0]->debitCredit()->equals(DebitCredit::credit()) ? $lines[0] : $lines[1];
+        $this->assertSame(3000, $debitLine->amount());
+        $this->assertSame(3000, $creditLine->amount());
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-1: a GuestCount=4 Reservation at 3,000円 must
+     * post 12,000円 (priceSnapshot × guestCount), not 3,000円.
+     */
+    public function test_check_in_revenue_is_price_snapshot_times_guest_count_for_a_multi_guest_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $entries = $this->journalEntries->all();
+        $this->assertCount(1, $entries);
+        $lines = $entries[0]->lines();
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $creditLine = $lines[0]->debitCredit()->equals(DebitCredit::credit()) ? $lines[0] : $lines[1];
+        $this->assertSame(12000, $debitLine->amount());
+        $this->assertSame(12000, $creditLine->amount());
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-1: the GuestCount=1 case must remain unchanged
+     * (priceSnapshot × 1 = priceSnapshot).
+     */
+    public function test_check_in_revenue_for_a_single_guest_reservation_is_unchanged(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 1);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $lines = $this->journalEntries->all()[0]->lines();
+        $debitLine = $lines[0]->debitCredit()->equals(DebitCredit::debit()) ? $lines[0] : $lines[1];
+        $this->assertSame(3000, $debitLine->amount());
+    }
+
+    public function test_check_in_generates_no_journal_entry_when_accounting_is_disabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertCount(0, $this->journalEntries->all());
+    }
+
+    public function test_duplicate_check_in_is_idempotent_and_does_not_double_post(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $first = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $second = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertFalse($first->alreadyProcessed);
+        $this->assertTrue($second->alreadyProcessed);
+        $this->assertSame($first->checkInId, $second->checkInId);
+        $this->assertCount(1, $this->journalEntries->all());
+    }
+
+    public function test_check_in_rejects_a_cancelled_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $reservation->cancel(null);
+        $this->reservations->save($reservation);
+
+        $this->expectException(ReservationNotCheckInEligibleException::class);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+    }
+
+    public function test_check_in_rejects_a_mismatched_performance(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->expectException(PerformanceMismatchException::class);
+        $this->checkInReservation->execute(new CheckInCommand(\StageArt\Domain\Performance\PerformanceId::generate()->toString(), $reservation->id()->toString(), 1));
+    }
+
+    public function test_check_in_rejects_an_unauthorized_user(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $stranger = Person::create(99);
+        $this->people->save($stranger);
+
+        $this->expectException(CheckInAccessDeniedException::class);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 99));
+    }
+
+    public function test_a_checkin_manager_delegate_can_check_in(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $staff = Person::create(2);
+        $this->people->save($staff);
+        $this->delegates->save(ProductionDelegate::create($production->id(), $staff->id(), RoleKey::checkInManager(), $production->primaryManagerPersonId()));
+
+        $result = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 2));
+
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    public function test_check_in_by_number_resolves_via_reservation_number(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $result = $this->checkInByNumber->execute(new CheckInByNumberCommand($performance->id()->toString(), $reservation->reservationNumber()->toString(), 1));
+
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    public function test_mark_no_show_transitions_status(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $refetched = $this->reservations->findById($reservation->id());
+        $this->assertSame('NO_SHOW', $refetched->status()->toString());
+    }
+
+    public function test_mark_no_show_creates_no_journal_entry_when_accounting_is_disabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertCount(0, $this->journalEntries->all());
+    }
+
+    /**
+     * The no-show alone is not a record of the money being received
+     * (統合・会計仕様の確定事項 2026-10-28 §3), so even with Accounting
+     * enabled no Journal Entry is generated - and no CheckIn Fact either.
+     */
+    public function test_mark_no_show_generates_no_journal_entry_even_when_accounting_is_enabled(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 2);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertCount(0, $this->journalEntries->all());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+    }
+
+    public function test_mark_no_show_does_not_double_post_on_a_repeat_attempt(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+    }
+
+    /**
+     * A Check-in reversal alone leaves the received payment recorded
+     * (CheckIn.md "# Accounting Reversal", see CheckInTicketRevenueTest);
+     * this is the case where the money was also given back.
+     */
+    public function test_reverse_check_in_with_a_refund_reverts_reservation_and_generates_a_reversal_journal_entry(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+
+        $refetched = $this->reservations->findById($reservation->id());
+        $this->assertSame('RESERVED', $refetched->status()->toString());
+
+        $checkIn = $this->checkIns->findLatestByReservationId($reservation->id());
+        $this->assertFalse($checkIn->isCompleted());
+
+        $entries = $this->journalEntries->all();
+        $this->assertCount(2, $entries);
+        // Backend PHPUnit環境整備 Phase: JournalEntry::createReversalOf()
+        // gives the new reversal entry REVERSED status too (by design -
+        // see that method's own docblock: both the reversed original and
+        // its reversal record are excluded from Actual), so isPosted()
+        // can no longer tell the two entries apart here - both are
+        // REVERSED. reversalOfJournalEntryId() is the real distinguishing
+        // field (null on the original, set on the reversal), and is what
+        // this test actually wants to prove regardless.
+        $reversal = $entries[0]->reversalOfJournalEntryId() !== null ? $entries[0] : $entries[1];
+        $original = $reversal === $entries[0] ? $entries[1] : $entries[0];
+        $this->assertSame('REVERSED', $original->status()->toString());
+        $this->assertSame('REVERSED', $reversal->status()->toString());
+        $this->assertTrue($reversal->reversalOfJournalEntryId()->equals($original->id()));
+    }
+
+    public function test_reverse_check_in_rejects_when_there_is_nothing_to_reverse(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+    }
+
+    public function test_search_filters_by_reservation_number_and_booker_name(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $a = Reservation::create($performance->id(), TicketId::fromString($ticketId), '山田太郎', 'a@example.com', 1, 3000, null);
+        $b = Reservation::create($performance->id(), TicketId::fromString($ticketId), '鈴木花子', 'b@example.com', 1, 3000, null);
+        $this->reservations->save($a);
+        $this->reservations->save($b);
+
+        $results = $this->searchReservations->execute(new SearchReservationsForCheckInQuery($performance->id()->toString(), '山田', 1));
+
+        $this->assertCount(1, $results);
+        $this->assertSame($a->id()->toString(), $results[0]->id);
+    }
+
+    public function test_walk_up_creates_and_immediately_checks_in_a_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        $result = $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            '当日券太郎',
+            'walkup@example.com',
+            1,
+            null,
+            1,
+            'walkup-request-1'
+        ));
+
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+        $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    /**
+     * Phase 0-4統合監査 P1-3: a retried confirmed action (same
+     * idempotency key) must resolve to the SAME Reservation/Check-in,
+     * never create a second one - covers both the double-tap and the
+     * network-retry scenario the audit flagged.
+     */
+    public function test_walk_up_with_the_same_idempotency_key_does_not_create_a_duplicate(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+
+        $command = new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            '当日券太郎',
+            'walkup@example.com',
+            2,
+            null,
+            1,
+            'same-request-id'
+        );
+
+        $first = $this->createWalkUp->execute($command);
+        $second = $this->createWalkUp->execute($command);
+
+        $this->assertFalse($first->alreadyProcessed);
+        $this->assertTrue($second->alreadyProcessed);
+        $this->assertSame($first->reservationId, $second->reservationId);
+        $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertCount(1, $this->journalEntries->all());
+    }
+
+    public function test_walk_up_with_a_different_idempotency_key_creates_a_separate_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 1, null, 1, 'request-a'
+        ));
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'B', 'b@example.com', 1, null, 1, 'request-b'
+        ));
+
+        $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    public function test_walk_up_rejects_an_attribution_that_is_not_a_production_member(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        $outsider = Person::create(50);
+        $this->people->save($outsider);
+
+        $this->expectException(AttributedPersonNotProductionMemberException::class);
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            'A',
+            'a@example.com',
+            1,
+            $outsider->id()->toString(),
+            1,
+            'attribution-reject'
+        ));
+    }
+
+    public function test_walk_up_accepts_an_attribution_that_is_a_production_member(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+
+        // The PrimaryManager is always a Production member.
+        $result = $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticketId,
+            'A',
+            'a@example.com',
+            1,
+            $production->primaryManagerPersonId()->toString(),
+            1,
+            'attribution-accept'
+        ));
+
+        $reservation = $this->reservations->findById(\StageArt\Domain\Reservation\ReservationId::fromString($result->reservationId));
+        $this->assertTrue($reservation->attributedPersonId()->equals($production->primaryManagerPersonId()));
+    }
+
+    public function test_walk_up_bypasses_the_public_sales_window(): void
+    {
+        // Sales already ended (HOURS_BEFORE_START '3', performance in 1
+        // hour) - the public CreateReservationUseCase would reject this,
+        // but a staff-initiated walk-up sale must not be blocked by the
+        // online sales window.
+        $organization = Organization::create(new OrganizationName('Theatre Co'));
+        $this->organizations->save($organization);
+        $primaryManager = Person::create(1);
+        $this->people->save($primaryManager);
+        $this->memberships->save(Membership::createOwnerMembership($organization->id(), $primaryManager->id()));
+        $project = Project::create($organization->id(), 'Season');
+        $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
+        $production->changeCapacity(20);
+        $this->productions->save($production);
+
+        $performanceStart = $this->alignedDateTime(new DateTimeImmutable('+1 hour'));
+        $performance = Performance::create($production->id(), $performanceStart, $performanceStart->format('H:i'), null, 20, null, null);
+        $this->performances->save($performance);
+
+        $ticket = $this->createTicket->execute(new CreateTicketCommand($production->id()->toString(), 1, '一般', 3000, null));
+        $this->updateSalesSettings->execute(new UpdateTicketSalesSettingsCommand(
+            $production->id()->toString(),
+            1,
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            $this->alignedDateTime(new DateTimeImmutable('-1 day'))->format(DATE_ATOM),
+            'HOURS_BEFORE_START',
+            '3'
+        ));
+
+        $result = $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(),
+            $ticket->id,
+            '当日券太郎',
+            'walkup@example.com',
+            1,
+            null,
+            1,
+            'sales-window-bypass-request'
+        ));
+
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    public function test_decrease_guest_count_reduces_the_reservations_guest_count(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $result = $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
+
+        $this->assertSame(3, $result->guestCount);
+        $refetched = $this->reservations->findById($reservation->id());
+        $this->assertSame(3, $refetched->guestCount());
+    }
+
+    public function test_decrease_guest_count_rejects_a_value_that_is_not_lower(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 3);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_a_non_positive_value(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 3);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 0, 1)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_an_unauthorized_user(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId, 4);
+
+        $stranger = Person::create(99);
+        $this->people->save($stranger);
+
+        $this->expectException(CheckInAccessDeniedException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reservation->id()->toString(), 3, 99)
+        );
+    }
+
+    public function test_decrease_guest_count_rejects_after_the_performance_has_started(): void
+    {
+        [$production, , $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $pastStart = $this->alignedDateTime(new DateTimeImmutable('-1 hour'));
+        $pastPerformance = Performance::create($production->id(), $pastStart, $pastStart->format('H:i'), null, 20, null, null);
+        $this->performances->save($pastPerformance);
+        $reservation = $this->givenReservedReservation($pastPerformance, $ticketId, 4);
+
+        $this->expectException(\StageArt\Application\Reservation\PerformanceAlreadyStartedException::class);
+        $this->decreaseGuestCount->execute(
+            new DecreaseReservationGuestCountCommand($pastPerformance->id()->toString(), $reservation->id()->toString(), 3, 1)
+        );
+    }
+
+    public function test_change_attribution_updates_the_reservation(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $member = Person::create(3);
+        $this->people->save($member);
+        // PR #7 review: the attributed Person must belong to the Production.
+        $this->givenProductionMember($production, $member);
+
+        $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $member->id()->toString(), 1));
+
+        $this->assertSame($member->id()->toString(), $result->attributedPersonId);
+    }
+
+    private function givenProductionMember(Production $production, Person $person): void
+    {
+        $this->participants->save(\StageArt\Domain\Participant\Participant::create(
+            $production->id(),
+            \StageArt\Domain\Participant\ParticipantSubjectType::person(),
+            $person->id()->toString(),
+            \StageArt\Domain\Participant\ParticipantType::cast()
+        ));
+    }
+
+    // --- PR #7 review item 6: attribution stays inside the Production -----
+
+    public function test_change_attribution_refuses_a_person_outside_the_production(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $outsider = Person::create(50);
+        $this->people->save($outsider);
+
+        try {
+            $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $outsider->id()->toString(), 1));
+            $this->fail('An outsider was accepted as the attributed Person');
+        } catch (AttributedPersonNotProductionMemberException $exception) {
+            $this->assertNull($this->reservations->findById($reservation->id())->attributedPersonId(), 'The Reservation is unchanged');
+        }
+    }
+
+    public function test_change_attribution_refuses_a_member_of_another_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $otherProduction = Production::create($production->projectId(), new ProductionName('Other Show'), \StageArt\Domain\Person\PersonId::generate());
+        $this->productions->save($otherProduction);
+        $otherMember = Person::create(51);
+        $this->people->save($otherMember);
+        $this->givenProductionMember($otherProduction, $otherMember);
+
+        $this->expectException(AttributedPersonNotProductionMemberException::class);
+        $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $otherMember->id()->toString(), 1));
+    }
+
+    public function test_change_attribution_can_still_be_cleared(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $reservation->changeAttribution($production->primaryManagerPersonId(), $production->primaryManagerPersonId());
+        $this->reservations->save($reservation);
+
+        $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), null, 1));
+
+        $this->assertNull($result->attributedPersonId);
+    }
+
+    // --- PR #7 review item 4: the walk-up sale re-checks capacity under the Performance lock
+
+    public function test_walk_up_rechecks_capacity_after_taking_the_performance_lock(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false, 2);
+        $this->givenReservedReservation($performance, $ticketId, 1);
+        // Another sale for the last seat commits while this one waits for the lock.
+        $this->performances->onLock = function () use ($performance, $ticketId): void {
+            $this->givenReservedReservation($performance, $ticketId, 1);
+        };
+
+        try {
+            $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 1, null, 1, 'last-seat'
+            ));
+            $this->fail('The Performance was overbooked');
+        } catch (\StageArt\Application\Reservation\CapacityExceededException $exception) {
+            $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()), 'Only the concurrent sale was kept');
+            $this->assertSame(1, $this->performances->lockCount);
+        }
+    }
+
+    public function test_walk_up_within_capacity_takes_the_performance_lock_once(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(false, 2);
+
+        $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+            $performance->id()->toString(), $ticketId, 'A', 'a@example.com', 2, null, 1, 'two-seats'
+        ));
+
+        $this->assertSame(1, $this->performances->lockCount);
+        $this->assertCount(1, $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    // --- PR #7 review (R4): reception against Production Completion ---
+    //
+    // Every reception operation takes the shared Production lock first in
+    // its transaction; Production Completion holds it exclusively. The
+    // `beforeLockGranted` hook plays a completion that committed while the
+    // reception request waited for that lock.
+
+    /**
+     * What Production Completion commits: COMPLETED, and the remaining
+     * RESERVED Reservations cancelled.
+     */
+    private function completedElsewhere(Production $production, Reservation ...$reserved): void
+    {
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        foreach ($reserved as $reservation) {
+            $reservation->cancel(null);
+            $this->reservations->save($reservation);
+        }
+    }
+
+    public function test_check_in_takes_the_shared_production_lock_inside_its_transaction(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->locks = []; // (R5) the setup's settings changes lock the Production too
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+    }
+
+    public function test_a_check_in_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->beforeLockGranted = function () use ($production, $reservation): void {
+            $this->completedElsewhere($production, $reservation);
+        };
+
+        try {
+            $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('Checked in after the Production was completed.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertStringContainsString($production->id()->toString(), $exception->getMessage());
+        }
+
+        $this->assertSame('CANCELLED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+        $this->assertSame([], $this->journalEntries->all(), 'no ticket revenue recorded');
+    }
+
+    public function test_a_walk_up_sale_waiting_for_production_completion_is_refused_after_it_commits(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->completedElsewhere($production);
+        };
+
+        try {
+            $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, '当日券太郎', 'walkup@example.com', 1, null, 1, 'after-completion'
+            ));
+            $this->fail('A walk-up ticket was sold after the Production was completed.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertStringContainsString($production->id()->toString(), $exception->getMessage());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertSame([], $this->journalEntries->all());
+        $this->assertNull($this->walkUpIdempotencyStore->findReservationId('after-completion'));
+        $this->assertSame(0, $this->performances->lockCount, 'the Production lock comes before the Performance lock');
+    }
+
+    public function test_no_show_reversal_attribution_and_guest_count_are_refused_once_completed(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $checkedIn = $this->givenReservedReservation($performance, $ticketId, 2);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1));
+        $reserved = $this->givenReservedReservation($performance, $ticketId, 3);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'COMPLETED');
+        $this->productions->save($production);
+
+        $operations = [
+            'no-show' => fn () => $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reserved->id()->toString(), 1)),
+            'reversal' => fn () => $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1, false)),
+            'attribution' => fn () => $this->changeAttribution->execute(new ChangeReservationAttributionCommand($checkedIn->id()->toString(), null, 1)),
+            'guest count' => fn () => $this->decreaseGuestCount->execute(new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reserved->id()->toString(), 1, 1)),
+        ];
+
+        foreach ($operations as $name => $operation) {
+            try {
+                $operation();
+                $this->fail("{$name} went through on a completed Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($checkedIn->id())->status()->toString());
+        $this->assertSame(2, $this->reservations->findById($checkedIn->id())->guestCount());
+        $this->assertSame('RESERVED', $this->reservations->findById($reserved->id())->status()->toString());
+        $this->assertSame(3, $this->reservations->findById($reserved->id())->guestCount());
+    }
+
+    public function test_a_failed_production_lock_checks_nothing_in(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->productions->lockFailure = new \RuntimeException('Failed to lock the Production. Lock wait timeout exceeded; try restarting transaction');
+
+        try {
+            $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('Checked in without the Production lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $exception->getMessage());
+        }
+
+        $this->assertSame('RESERVED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reservation->id()));
+        $this->assertSame([], $this->journalEntries->all());
+
+        // The lock is free again: the same request now goes through.
+        $this->productions->lockFailure = null;
+        $result = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        $this->assertSame('CHECKED_IN', $result->reservationStatus);
+    }
+
+    /**
+     * The attribution is changed on the Reservation as re-read under its
+     * row lock: a Check-in committed after this request read the
+     * Reservation (still RESERVED) is kept, not overwritten.
+     */
+    public function test_an_attribution_change_does_not_undo_a_check_in_committed_meanwhile(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $member = Person::create(3);
+        $this->people->save($member);
+        $this->givenProductionMember($production, $member);
+        $this->productions->beforeLockGranted = function () use ($reservation): void {
+            $committed = clone $reservation;
+            $committed->checkIn(null);
+            $this->reservations->save($committed);
+        };
+
+        $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $member->id()->toString(), 1));
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertSame($member->id()->toString(), $this->reservations->findById($reservation->id())->attributedPersonId()->toString());
+        $this->assertSame($member->id()->toString(), $result->attributedPersonId);
+    }
+
+    // --- PR #7 review (R5): a CANCELLED Production ---
+
+    public function test_reception_is_refused_on_a_cancelled_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reserved = $this->givenReservedReservation($performance, $ticketId, 2);
+        $other = $this->givenReservedReservation($performance, $ticketId, 3);
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+
+        $operations = [
+            'check-in' => fn () => $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reserved->id()->toString(), 1)),
+            'walk-up' => fn () => $this->createWalkUp->execute(new CreateWalkUpReservationCommand(
+                $performance->id()->toString(), $ticketId, '当日券太郎', 'walkup@example.com', 1, null, 1, 'after-cancellation'
+            )),
+            'no-show' => fn () => $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $other->id()->toString(), 1)),
+            'attribution' => fn () => $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reserved->id()->toString(), null, 1)),
+            'guest count' => fn () => $this->decreaseGuestCount->execute(new DecreaseReservationGuestCountCommand($performance->id()->toString(), $other->id()->toString(), 1, 1)),
+        ];
+
+        foreach ($operations as $name => $operation) {
+            try {
+                $operation();
+                $this->fail("{$name} went through on a CANCELLED Production.");
+            } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+                $this->assertSame('CANCELLED', $exception->productionStatus(), $name);
+            }
+        }
+
+        $this->assertCount(2, $this->reservations->findByPerformanceId($performance->id()), 'no walk-up Reservation');
+        $this->assertSame('RESERVED', $this->reservations->findById($reserved->id())->status()->toString());
+        $this->assertSame('RESERVED', $this->reservations->findById($other->id())->status()->toString());
+        $this->assertSame(3, $this->reservations->findById($other->id())->guestCount());
+        $this->assertNull($this->checkIns->findLatestByReservationId($reserved->id()));
+        $this->assertSame([], $this->journalEntries->all());
+    }
+
+    /**
+     * A guest checked in before the Production was cancelled can still be
+     * refunded: the reversal is a wind-down operation.
+     */
+    public function test_a_check_in_can_still_be_reversed_with_a_refund_on_a_cancelled_production(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'CANCELLED');
+        $this->productions->save($production);
+        $this->productions->locks = [];
+
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+
+        $this->assertSame([['SHARE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertSame('RESERVED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertCount(2, $this->journalEntries->all(), 'the payment and its reversal');
+    }
+
+    public function test_a_check_in_reversal_is_refused_once_archived(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+        \StageArt\Tests\Support\ProductionStatusFixture::force($production, 'ARCHIVED');
+        $this->productions->save($production);
+
+        try {
+            $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+            $this->fail('Reversed a Check-in of an ARCHIVED Production.');
+        } catch (\StageArt\Application\Production\ProductionClosedException $exception) {
+            $this->assertSame('ARCHIVED', $exception->productionStatus());
+        }
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertCount(1, $this->journalEntries->all(), 'no reversal entry');
+    }
+}

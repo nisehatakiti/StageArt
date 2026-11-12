@@ -56,7 +56,9 @@ final class ActivateBudgetUseCase
             throw new BudgetNotFoundException($command->budgetId);
         }
 
-        if (! $this->authorization->canForProduction($requesterId, $budget->productionId(), AccountingCapability::MANAGE)) {
+        // ProductionDelegatePolicy.md: Budget確定 is the PrimaryManager's
+        // alone; a 会計管理者 may enter a Budget but not activate it.
+        if (! $this->authorization->canForProduction($requesterId, $budget->productionId(), AccountingCapability::ACTIVATE_BUDGET)) {
             throw new BudgetAccessDeniedException('Only the PrimaryManager can activate a Budget.');
         }
 

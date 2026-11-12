@@ -29,6 +29,7 @@ use StageArt\Tests\Support\FakeMembershipContract;
 use StageArt\Tests\Support\FakeProductionContextContract;
 use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryScheduleCommentRepository;
 use StageArt\Tests\Support\InMemoryTimetableItemRepository;
@@ -90,10 +91,11 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             1,
             'Run-through',
             null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null,
-            null,
-            null,
-            null
+            [$this->phantomMember->toString()]
         ));
 
         $generated = $this->rehearsalAttendances->findByRehearsalIdAndPhase(
@@ -169,6 +171,7 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             $authorization,
             $membership,
             $notification,
+            new InMemoryRehearsalReminderScheduler(),
             new InMemoryTransactionManager()
         );
     }
@@ -204,6 +207,7 @@ final class RehearsalModuleBootstrapIsolationTest extends TestCase
             $authorization,
             $membership,
             $notification,
+            new InMemoryRehearsalReminderScheduler(),
             new InMemoryTransactionManager()
         );
     }

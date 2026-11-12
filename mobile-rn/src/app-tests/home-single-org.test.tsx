@@ -10,11 +10,16 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
-/** §5 "1 Organizationなら自動選択": kept in its own file - see Phase
- * 5.1's documented Expo Router testing-library cross-test navigation
- * state leak (multiple renderRouter() calls in one file). */
-describe('Home: single Organization membership', () => {
-  it('auto-selects the only Organization (no picker) and shows its Productions', async () => {
+/**
+ * StageArt Blueprint再構成 Phase 1c §4: no more Organization Switcher or
+ * auto-select state - a single Organization membership simply renders
+ * as the one card there is, with its Productions inline. Kept in its
+ * own file - see Phase 5.1's documented Expo Router testing-library
+ * cross-test navigation state leak (multiple renderRouter() calls in
+ * one file).
+ */
+describe('所属団体: single Organization membership', () => {
+  it('shows the Organization as its one row (no picker/switcher) with its Productions counted', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 200, body: [orgOne] },
       { test: (u) => u.endsWith('/projects'), status: 200, body: [projectOne] },
@@ -22,11 +27,18 @@ describe('Home: single Organization membership', () => {
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/home' });
+    // R7: 3113937 (2026-10-06) moved the Organization list, with each
+    // Organization's Productions, off Home to the 「所属団体」 menu entry
+    // (/organizations). That list shows each Organization's Production
+    // count; the Production names are on its 公演・活動一覧, covered by
+    // web-organization-productions.test.tsx (one renderRouter() per test).
+    renderRouter('src/app', { initialUrl: '/organizations' });
 
-    await waitFor(() => expect(screen.getByTestId('production-list')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId(`organizations-row-${orgOne.id}`)).toBeVisible());
     expect(screen.queryByTestId('organization-picker')).toBeNull();
-    expect(screen.getByText('○○演劇団 ▼')).toBeVisible();
-    expect(screen.getByText('○○公演2026')).toBeVisible();
+    expect(screen.queryByTestId('organization-switcher')).toBeNull();
+    expect(screen.getByText('○○演劇団')).toBeVisible();
+    expect(screen.getByText('オーナー')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('公演 1件')).toBeVisible());
   });
 });

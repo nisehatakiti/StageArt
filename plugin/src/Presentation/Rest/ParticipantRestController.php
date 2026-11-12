@@ -118,8 +118,10 @@ final class ParticipantRestController
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('subject_type'),
-                (string) $request->get_param('subject_id'),
-                (string) $request->get_param('participant_type')
+                $this->stringOrNull($request->get_param('subject_id')),
+                (string) $request->get_param('participant_type'),
+                $this->stringOrNull($request->get_param('display_name')),
+                $this->stringOrNull($request->get_param('remarks'))
             );
 
             return new WP_REST_Response($this->createParticipant->execute($command)->toArray(), 201);
@@ -166,7 +168,8 @@ final class ParticipantRestController
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('participant_type'),
-                (string) $request->get_param('status')
+                (string) $request->get_param('status'),
+                $this->stringOrNull($request->get_param('remarks'))
             );
 
             return new WP_REST_Response($this->updateParticipant->execute($command)->toArray(), 200);
@@ -198,5 +201,13 @@ final class ParticipantRestController
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function stringOrNull($value): ?string
+    {
+        return $value === null || $value === '' ? null : (string) $value;
     }
 }

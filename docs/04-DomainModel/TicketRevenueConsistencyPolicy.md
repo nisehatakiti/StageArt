@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Ticket Revenue / Accounting
 
-Version : 1.1
+Version : 1.3
 
 ---
 
@@ -16,25 +16,25 @@ Ticket RevenueとAccounting Domainの責務境界を整理し、Reservation、Ch
 
 # Canonical Revenue Recognition Rule
 
-**Ticket RevenueはCheck In時点で成立・認識する。**
+**Check In時点では仮売上へ振り替えない。会計期間末に、決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。**
 
-Reservation成立時点では、Ticket Revenueはまだ成立していない。
-
-Reservation成立後、実際の来場が確認されるCheck Inをもって、Ticket RevenueをRevenueとして認識する。
+予約のみでは売上・入金を計上しない。標準運用では、当日Check In時に代金を実際に受領したことをPayment Factとして記録し、その時点で入金とTicket Revenueを同時に計上する。Check Inだけで代金を受領していない場合は計上しない。仮売上への振替は会計期間末の別処理である。
 
 基本Flow：
 
-Reservation成立
+Reservation / Ticket取引Fact
     ↓
-未収金 / 予約Fact
+取引・入金等に応じた既存Journal Entry
     ↓
-Check In
+会計期間末（Production決算未確定）
     ↓
-Ticket Revenue認識
+売上残高を仮売上へ振替
     ↓
-Journal Entry
+Production決算確定
+    ↓
+仮売上を正式な売上へ振替
 
-したがって、予約済みで未来場のTicketは、Revenueとして認識せず、未収金として扱う。
+したがって、標準運用では予約済みで未来場・未入金のTicketは、予約があるという理由だけで売上・入金・未収金を計上しない。実際に受取権利が別途確定する契約・運用がある場合の未収金処理は、その条件を定めた別仕様に従う。
 
 ---
 
@@ -46,7 +46,7 @@ Reservation Domain：
 - Guest Count
 - Price Snapshot
 - Reservation Status
-- 未収金の対象となる予約金額の確定情報
+- 予約金額の確定情報（Price Snapshot）。予約金額が確定したことだけをもって未収金を計上しない。
 
 Check In Domain：
 
@@ -54,7 +54,7 @@ Check In Domain：
 - Check In Status
 - Check In Operator
 - CheckInCompleted Event
-- Ticket Revenue認識の契機
+- 会計期間末の仮売上振替対象
 
 Ticket Domain：
 
@@ -65,7 +65,7 @@ Ticket Domain：
 
 Accounting Domain：
 
-- Revenue Recognition
+- 仮売上の記録と正式売上への振替
 - Accounts Receivable / 未収金
 - Accounts Payable / 未払金
 - Journal Entry
@@ -74,63 +74,63 @@ Accounting Domain：
 - Reversal / Adjustment
 - Accounting Period
 
-Ticket Revenueそのものを独立した会計帳簿として保持しない。
+Ticket Revenueそのものを独立した会計帳簿として保持しない。Check Inは来場受付Factであり、仮売上振替は会計期間末に行う。
 
 ---
 
 # Reservation and Accounts Receivable
 
-Reservation成立時点では、Price Snapshotに基づく予約金額を未収金の対象として扱う。
+Reservation成立時点ではPrice Snapshotを保存するが、予約成立だけでは売上・入金・未収金を計上しない。
 
-例えば3,000円のTicket予約が成立した場合：
+標準運用では、当日Check In時に3,000円を実際に受領した場合、その受領Factに基づき入金とTicket Revenueを同時に計上する。具体的なDebit / Creditおよび決済手段に対応するAccountはAccounting DomainのAccount MasterおよびJournal Entry Ruleに従う。
 
-未収金 3,000 / 予約に対応する未収金認識
-
-ただし、この時点ではTicket Revenueを認識しない。
-
-実際の会計上の仕訳構造はAccounting DomainのAccount MasterおよびJournal Entry Ruleに従う。
-
-予約がキャンセルされた場合、未収金の消滅・免除・取消等をAccounting上のAdjustmentとして処理する。
+予約キャンセルは予約状態の変更として記録する。未収金が実際に計上されているケースに限り、必要な取消・免除等をAccounting上のAdjustmentとして処理する。
 
 ---
 
 # Check In and Revenue Recognition
 
-Check Inが正常に完了した時点で、ReservationのPrice Snapshotを基準としてTicket Revenueを認識する。
+CheckInCompleted自体は会計仕訳を発生させない。ただし、当日Check In時に代金を実際に受領した場合は、Payment Factを記録し、その受領と同時に入金およびTicket RevenueのJournal Entryを計上する。来場記録だけで受領がない場合は計上しない。会計期間末には、対象Productionの既存売上Journal Entry残高を仮売上へ振り替える。
 
 基本Flow：
 
-Reservation
+元の売上Journal Entry
     ↓
-Price Snapshot
+会計期間末
     ↓
-Check In
+仮売上へ振替
     ↓
-CheckInCompleted
+Production決算確定
     ↓
-Ticket Revenue Recognition
-    ↓
-Journal Entry
+正式な売上へ振替
 
-Check In時点で未収金が存在する場合は、Ticket Revenueの認識と同時に未収金を売上へ振り替える。
+当日Check In時に代金を受領した場合、入金とTicket Revenueを同じ取引として同時に記録する。すでに未収金が計上されている例外ケースでは、実際の入金・決済Factに基づいて未収金を消し込む。CheckInCompleted自体を仕訳生成の根拠にせず、Payment Factを根拠とする。期末の仮売上振替は既存売上Journal Entryを対象に行い、二重計上しない。
 
 例えば3,000円の予約について来場した場合：
 
-Ticket Revenue 3,000 / 未収金 3,000
+Check In時点で仮売上振替仕訳は生成しない。期末の振替仕訳の具体的な貸借・相手勘定はAccount / Journal Entry仕様に従う。
 
-実際にその場で現金・預金等を受領した場合は、Accounting上必要な入金処理を別途行い、未収金を消し込む。
-
-実際の入金タイミングとRevenue Recognition Timingは同一である必要はない。
+標準運用では、その場で現金等を受領した時点で入金とTicket Revenueを同時に計上する。未収金が計上済みの例外ケースでは、その入金によって未収金を消し込む。事前決済等で入金と売上のタイミングが異なる運用を追加する場合は、別途Payment / Revenue Recognition仕様を定義する。
 
 ---
 
 # No-Show
 
-Reservationが成立していてもCheck Inされなかった場合、原則としてTicket Revenueは認識しない。
+Version 1.2（2026-10-28確定）：
 
-No-ShowとなったReservationについて、未収金をどう処理するかは、キャンセル規則・返金規則・免除規則等に従ってAccounting上で処理する。
+No-Showの対象となるReservationは、代金を受領済みであることを前提とする（TicketConsistencyPolicy「NoShow」）。No-Showに「代金未受領」の入力状態は設けない。
 
-Revenue Recognitionは、原則としてCheck Inという来場Factに基づく。
+Ticket Revenueは実際に代金を受領した時点で、その受領の記録に基づいて計上する。No-Showの確定だけを根拠に、代金を受領済みとして記録・計上してはならない。Check In等で既に計上済みの入金・Ticket Revenueは、No-Showになっても維持し、再計上しない。
+
+事前に受領済みのReservationの受領は、TicketConsistencyPolicy「入金記録」で記録する（Version 1.3、2026-10-29確定）。入金記録には対象Reservation、金額、受領日時、操作者を含め、入金とTicket Revenueはその入金記録に基づいてReservation単位で一度だけ計上する。
+
+未実装範囲：入金記録のエンティティ・登録API・登録権限は2026-10-29時点で未実装である。それまでの間、No-ShowとなったReservationの代金は、Check In等で既に計上済みのものを除き、会計に計上されない。No-Showの確定を入金記録の代用にしてはならない。入金記録の実装時は、Check In時の計上と同じReservation単位の重複防止に接続し、Check Inと入金記録の両方で同一Reservationが二重に計上されないようにする。
+
+同一Reservationの入金・Ticket Revenueは、Check InとNo-Showのどちらの経路でも1回だけ計上する。
+
+No-Showになったことだけを理由に、計上済みの売上を取り消さない。キャンセル・返金の扱いは本項の対象外とする。
+
+仮売上への振替は会計期間末に行う。Check Inは仮売上振替の契機ではない。
 
 ---
 
@@ -141,6 +141,24 @@ Revenue Recognitionに利用するTicket取引金額は、Reservation成立時�
 Ticketの現在価格を参照して過去Reservationの金額を再計算してはならない。
 
 Guest Countが複数の場合も、予約時点で確定した取引金額を基礎とする。
+
+確定仕様（PR #7、2026-11-10）：
+
+- 売上金額 = Reservation.Price Snapshot（予約時点の1枚あたり単価）× Reservation.Guest Count（予約枚数）。
+- 例：3,000円で3枚予約した後にTicket Priceが3,500円へ変更されても、そのReservationの売上金額は3,000円 × 3 = 9,000円とする。
+- Ticketの現在Price（Ticket.Price）を過去Reservationの売上・入金額に使用してはならない。
+
+---
+
+# Ticket Back Amount Source
+
+チケットバック（個人別精算）の金額も、売上と同じくReservation.Price Snapshotを単価とする（PR #7、2026-11-10）。
+
+- 対象枚数は、実際にCHECKED_INとなったReservationのGuest Countの合計とする。NO_SHOW・CANCELLEDは含めない。
+- 扱い（attributedPersonId）ごと・Ticket種別ごとに集計する。
+- Ticket Priceを予約後に変更しても、過去Reservationに対するチケットバック額は変わらない。
+
+詳細はProductionSettlementScreen.md（Chapter 29）§7.1を参照。公演全体のQuota判定に使う販売実績は別概念であり、本項の対象外とする。
 
 ---
 
@@ -176,9 +194,7 @@ Budgetは計画値であり、ActualはJournal Entryから算出される実績�
 
 # Idempotency
 
-同一CheckInCompleted Eventを複数回処理しても、同一Ticket Revenueを二重計上してはならない。
-
-Accounting Processingは、Eventの一意識別情報等を利用してIdempotentに実行できる構造とする。
+CheckInCompletedの再処理で来場Factを重複生成してはならない。入金・売上仕訳はPayment Factを根拠とし、同一Payment Factの再処理で二重計上してはならない。Accounting ProcessingはPayment Factの一意識別情報を利用してIdempotentに実行する。
 
 ---
 
@@ -188,19 +204,17 @@ Ticket取引やCheck Inに関する取消・修正が発生した場合、既存
 
 元の会計Factとの関連を追跡できることを基本とする。
 
-Revenue認識後にCheck Inが無効化された場合も、元のRevenue Journal Entryを直接削除せず、必要なReversal / Adjustmentを生成する。
+会計期間末の仮売上振替後に元となる売上取引やCheck Inが無効化された場合も、元のJournal Entryを直接削除せず、関連する仮売上振替および元仕訳を考慮したReversal / Adjustmentを生成する。
 
 ---
 
 # Canonical Decision
 
-Ticket Revenueの認識タイミングは以下を正式仕様とする。
+Ticket Revenueの会計処理は以下を正式仕様とする。
 
-> **Reservation成立時点では未収金。Check In時点でTicket Revenue成立・認識。**
+> **予約だけでは売上・入金を計上しない。標準運用では当日Check In時に実際に代金を受領した時点で、入金とTicket Revenueを同時に計上する。会計期間末には決算未確定Productionの既存売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。**
 
-これにより、予約と売上を明確に分離する。
-
-Reservationは「予約された」という事実を管理し、Check Inは「実際に来場した」という事実を管理する。AccountingはCheckInCompletedを契機としてRevenueを認識する。
+Reservationは予約Fact、CheckInCompletedは来場Fact、Payment Factは実際の代金受領Factとして区別する。CheckInCompletedだけでは売上・入金仕訳を生成せず、実際の受領を示すPayment Factに基づいて計上する。
 
 ---
 
@@ -216,4 +230,4 @@ Reservationは「予約された」という事実を管理し、Check Inは「�
 - Project Accounting Policy
 - Production Accounting Policy
 
-特にAccounting PolicyにReservation成立時のTicket Revenue認識が記載されている場合は、本PolicyのCanonical Ruleを優先する。
+特にAccounting PolicyやTicket / Performance DomainにCheckInCompleted時点で正式な売上を認識すると記載されている場合は、本PolicyのCanonical Ruleに従い、会計期間末を仮売上への振替時点、Production決算確定時点を正式な売上への振替時点とする。CheckInCompletedは仮売上振替の契機ではない。
