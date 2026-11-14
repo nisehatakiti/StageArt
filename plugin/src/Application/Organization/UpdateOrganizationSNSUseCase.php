@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Application\Shared\WebUrl;
 use InvalidArgumentException;
 use StageArt\Domain\Organization\OrganizationSNSId;
 use StageArt\Domain\Organization\OrganizationSNSRepositoryInterface;
@@ -74,10 +75,7 @@ final class UpdateOrganizationSNSUseCase
             return null;
         }
 
-        if (filter_var($trimmed, FILTER_VALIDATE_URL) === false) {
-            throw new InvalidArgumentException("Invalid profile_url: {$providedUrl}");
-        }
-
-        return $trimmed;
+        // PR #7 R14-A (F9): http(s) only - see WebUrl.
+        return WebUrl::require($trimmed, 'profile_url');
     }
 }

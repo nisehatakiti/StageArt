@@ -15,6 +15,7 @@ import { useMyMemberships, useRequestOrganizationMembership } from '@/features/m
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
 import { useIsPublicSite } from '@/hooks/use-site-host';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { isHttpUrl } from '@/utils/webUrl';
 
 /**
  * StageArt Public Page Architecture phase
@@ -94,7 +95,7 @@ export default function PublicOrganizationScreen() {
 
         {query.data && (
           <ThemedView testID="public-organization-content" style={styles.content}>
-            {query.data.logo_url && (
+            {isHttpUrl(query.data.logo_url) && (
               // contain, never cover: the whole logo is shown at its own
               // aspect ratio inside the square frame (empty margins are fine).
               <View style={styles.logo}>
@@ -119,11 +120,12 @@ export default function PublicOrganizationScreen() {
                     key={sns.id}
                     testID={`public-organization-sns-${sns.id}`}
                     onPress={() => {
-                      if (sns.profile_url) {
+                      // PR #7 R14-A (F9): only an http(s) URL is opened.
+                      if (isHttpUrl(sns.profile_url)) {
                         Linking.openURL(sns.profile_url);
                       }
                     }}
-                    disabled={!sns.profile_url}
+                    disabled={!isHttpUrl(sns.profile_url)}
                     style={styles.snsRow}
                   >
                     <ThemedText type="small" style={styles.snsService}>
@@ -138,7 +140,9 @@ export default function PublicOrganizationScreen() {
             {query.data.external_links.length > 0 && (
               <ThemedView style={styles.linksSection} testID="public-organization-external-links">
                 <ThemedText type="smallBold">リンク</ThemedText>
-                {query.data.external_links.map((link) => (
+                {/* PR #7 R14-A (F9): a stored URL that is not http(s) (saved
+                    before R14-A) is not shown as a link at all. */}
+                {query.data.external_links.filter((link) => isHttpUrl(link.url)).map((link) => (
                   <TouchableOpacity
                     key={link.id}
                     testID={`public-organization-external-link-${link.id}`}

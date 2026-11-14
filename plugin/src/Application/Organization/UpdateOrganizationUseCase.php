@@ -7,6 +7,7 @@ namespace StageArt\Application\Organization;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
+use StageArt\Application\Shared\WebUrl;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
@@ -51,7 +52,8 @@ final class UpdateOrganizationUseCase
         $organization->rename(new OrganizationName($command->name));
         $organization->changeType($command->type);
         $organization->changeDescription($command->description);
-        $organization->changeLogoUrl($command->logoUrl);
+        // PR #7 R14-A (F9): a logo URL is shown on the public page - http(s) only.
+        $organization->changeLogoUrl(WebUrl::optional($command->logoUrl, 'logo_url'));
 
         if ($command->slug !== null) {
             $newSlug = new OrganizationSlug($command->slug);

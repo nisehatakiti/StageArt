@@ -16,6 +16,7 @@ import { useOrganizationExternalLinks, useOrganizationSns } from '@/features/org
 import { useOrganizationLogo, useOrganizations } from '@/features/organization/useOrganizations';
 import type { OrganizationExternalLink, OrganizationSNS } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { isHttpUrl } from '@/utils/webUrl';
 import { isValidSlug } from '@/utils/slug';
 
 const SNS_SERVICES: { value: string; label: string }[] = [
@@ -547,6 +548,12 @@ function OrganizationExternalLinksSection({ organizationId }: { organizationId: 
 
   async function handleSubmitForm() {
     if (!label.trim() || !url.trim()) {
+      return;
+    }
+
+    // PR #7 R14-A (F9): http(s) only, as the Backend requires.
+    if (!isHttpUrl(url.trim())) {
+      setFormError('URLは http:// または https:// で始まる形で入力してください。');
       return;
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Application\Shared\WebUrl;
 use InvalidArgumentException;
 use StageArt\Domain\Organization\OrganizationExternalLink;
 use StageArt\Domain\Organization\OrganizationExternalLinkRepositoryInterface;
@@ -37,9 +38,8 @@ final class CreateOrganizationExternalLinkUseCase
             throw new InvalidArgumentException('label must not be empty.');
         }
 
-        if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === false) {
-            throw new InvalidArgumentException("Invalid url: {$command->url}");
-        }
+        // PR #7 R14-A (F9): http(s) only - see WebUrl.
+        $url = WebUrl::require($url, 'url');
 
         $link = OrganizationExternalLink::create($organizationId, $label, $url, $command->displayOrder, $command->visibility);
         $this->links->save($link);

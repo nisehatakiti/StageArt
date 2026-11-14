@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
 use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Application\Shared\WebUrl;
 use StageArt\Domain\Performance\Performance;
 use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Domain\Performance\PerformanceRepositoryInterface;
@@ -154,7 +155,8 @@ final class UpdateProductionUseCase
                 $date('description_published_at', $command->descriptionPublishedAt, $production->descriptionPublishedAt())
             );
             $production->updateFlyer(
-                $sent('flyer_url') ? $command->flyerUrl : $production->flyerUrl(),
+                // PR #7 R14-A (F9): shown on the public page - http(s) only.
+                $sent('flyer_url') ? WebUrl::optional($command->flyerUrl, 'flyer_url') : $production->flyerUrl(),
                 $date('flyer_published_at', $command->flyerPublishedAt, $production->flyerPublishedAt())
             );
             $production->updateVenue(

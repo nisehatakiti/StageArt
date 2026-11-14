@@ -113,6 +113,47 @@ final class OrganizationExternalLinkUseCaseTest extends TestCase
         ));
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function dangerousUrls(): array
+    {
+        return [
+            'javascript' => ['javascript://x/%0Aalert(1)'],
+            'data' => ['data://text/html,abc'],
+            'vbscript' => ['vbscript://x/msgbox(1)'],
+            'file' => ['file:///etc/passwd'],
+            'intent' => ['intent://x#Intent;end'],
+            'upper-case javascript' => ['JavaScript://x/%0Aalert(1)'],
+            'tab in the scheme' => ["java\tscript://x/%0Aalert(1)"],
+        ];
+    }
+
+    /**
+     * PR #7 R14-A (F9).
+     *
+     * @dataProvider dangerousUrls
+     */
+    public function test_r14a_create_and_update_refuse_a_url_that_is_not_http(string $url): void
+    {
+        $this->givenOwner(1);
+        $created = $this->create->execute(new CreateOrganizationExternalLinkCommand($this->organizationId->toString(), 1, 'Site', 'https://example.com'));
+
+        foreach ([
+            'create' => fn () => $this->create->execute(new CreateOrganizationExternalLinkCommand($this->organizationId->toString(), 1, 'Bad', $url)),
+            'update' => fn () => $this->update->execute(new UpdateOrganizationExternalLinkCommand($created->id, 1, 'Site', $url, 0, true)),
+        ] as $operation => $call) {
+            try {
+                $call();
+                $this->fail("{$operation} accepted {$url}");
+            } catch (InvalidArgumentException $expected) {
+                $this->assertSame('url must be an http:// or https:// URL.', $expected->getMessage());
+            }
+        }
+
+        $this->assertSame('https://example.com', $this->update->execute(new UpdateOrganizationExternalLinkCommand($created->id, 1, 'Site', ' https://example.com ', 0, true))->url, 'a normal URL is kept (trimmed)');
+    }
+
     public function test_create_rejects_an_empty_label(): void
     {
         $this->givenOwner(1);

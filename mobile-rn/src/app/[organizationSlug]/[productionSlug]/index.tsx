@@ -16,6 +16,7 @@ import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavori
 import { usePublicPerformances } from '@/features/performance/usePerformances';
 import { usePublicTickets } from '@/features/ticket/useTickets';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { isHttpUrl } from '@/utils/webUrl';
 
 /**
  * StageArt Public Page Architecture phase
@@ -89,7 +90,7 @@ export default function PublicProductionScreen() {
 
         {query.data && (
           <ThemedView testID="public-production-content" style={styles.content}>
-            {query.data.flyer_url && (
+            {isHttpUrl(query.data.flyer_url) && (
               <Image
                 testID="public-production-flyer"
                 source={{ uri: query.data.flyer_url }}

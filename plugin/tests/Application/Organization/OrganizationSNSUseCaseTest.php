@@ -136,8 +136,25 @@ final class OrganizationSNSUseCaseTest extends TestCase
      * docblock) - only OTHER (not creatable from the current UI, but
      * still a valid existing OrganizationSNSService) still uses a
      * client-supplied profile_url, so that is the only case real URL
-     * validation still applies to.
+     * validation still applies to. PR #7 R14-A (F9): and it must be http(s).
      */
+    public function test_r14a_other_service_refuses_a_profile_url_that_is_not_http(): void
+    {
+        $this->givenOwner(1);
+
+        foreach (['javascript://x/%0Aalert(1)', 'data://text/html,abc', 'vbscript://x/msgbox(1)', 'file:///etc/passwd', 'intent://x#Intent;end'] as $url) {
+            try {
+                $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::OTHER, 'handle', $url));
+                $this->fail("Accepted {$url}");
+            } catch (InvalidArgumentException $expected) {
+                $this->assertSame('profile_url must be an http:// or https:// URL.', $expected->getMessage());
+            }
+        }
+
+        $created = $this->create->execute(new CreateOrganizationSNSCommand($this->organizationId->toString(), 1, OrganizationSNSService::OTHER, 'handle', 'https://example.com/me'));
+        $this->assertSame('https://example.com/me', $created->profileUrl);
+    }
+
     public function test_create_rejects_an_invalid_profile_url_for_other_service(): void
     {
         $this->givenOwner(1);
