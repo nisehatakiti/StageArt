@@ -254,7 +254,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->people->save($existingPerson);
         $userAccount = UserAccount::create($existingPerson->id());
         $this->userAccounts->save($userAccount);
-        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'already-registered@example.com', 'hash'));
+        $this->emailCredentials->save((static function (EmailCredential $credential): EmailCredential { $credential->markEmailVerified(); return $credential; })(EmailCredential::create($userAccount->id(), 'already-registered@example.com', 'hash'))); // R14-A: an existing owner has a verified address
 
         $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
             $production->id()->toString(),

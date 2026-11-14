@@ -443,7 +443,16 @@ final class Plugin
             $transactions
         );
         $resetPassword = new ResetPasswordUseCase($passwordResetTokens, $emailCredentials, $refreshTokens, $transactions);
-        $verifyEmail = new VerifyEmailUseCase($emailVerificationTokens, $emailCredentials, $transactions);
+        // PR #7 R14-A (F6): invitations sent to an address are resolved
+        // when that address is verified (not at self-registration).
+        $verifyEmail = new VerifyEmailUseCase(
+            $emailVerificationTokens,
+            $emailCredentials,
+            $transactions,
+            $userAccounts,
+            $resolveParticipantInvitation,
+            $resolveOrganizationInvitation
+        );
         $changePassword = new ChangePasswordUseCase($people, $userAccounts, $emailCredentials, $transactions);
         $requestEmailVerification = new RequestEmailVerificationUseCase(
             $people,

@@ -18,7 +18,15 @@ use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
  * Google-only Person (ExternalIdentity never stores email - see its own
  * docblock). Checks two sources only, per this round's explicit scope:
  *
- * 1. EmailCredential (password-login email) -> UserAccount -> Person.
+ * 1. EmailCredential (password-login email) -> UserAccount -> Person,
+ *    ONLY when the address has been verified (PR #7 R14-A, F6): anyone
+ *    can register an unverified credential for someone else's address,
+ *    and an invitation to that address would otherwise add the
+ *    registrant directly (CreateParticipantInvitationUseCase /
+ *    CreateOrganizationInvitationUseCase "existing Person" branch).
+ *    An unverified registrant is treated as no Person here: the
+ *    invitation is mailed instead, and resolved once the address is
+ *    verified (VerifyEmailUseCase).
  * 2. NotificationEmail, but ONLY rows with verified=true (see
  *    NotificationEmailRepositoryInterface::findVerifiedByEmail()'s own
  *    docblock for why an unverified one must never be trusted here).
@@ -64,7 +72,7 @@ final class FindPersonByEmailUseCase
 
         $credential = $this->emailCredentials->findByEmail($email);
 
-        if ($credential !== null) {
+        if ($credential !== null && $credential->isEmailVerified()) {
             $userAccount = $this->userAccounts->findById($credential->userAccountId());
 
             if ($userAccount !== null) {

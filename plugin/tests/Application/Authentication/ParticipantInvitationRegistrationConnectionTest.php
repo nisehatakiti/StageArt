@@ -11,6 +11,9 @@ use StageArt\Application\Authentication\AuthenticateWithGoogleCommand;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\RegisterWithEmailCommand;
 use StageArt\Application\Authentication\RegisterWithEmailUseCase;
+use StageArt\Application\Authentication\InvalidEmailVerificationTokenException;
+use StageArt\Application\Authentication\VerifyEmailCommand;
+use StageArt\Application\Authentication\VerifyEmailUseCase;
 use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
@@ -82,6 +85,8 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
     private FakeParticipantInvitationMailer $invitationMailer;
     private FakeAuthMailer $authMailer;
     private InMemoryProductionDelegateRepository $delegates;
+    private VerifyEmailUseCase $verifyEmail;
+    private InMemoryOrganizationInvitationRepository $organizationInvitations;
 
     protected function setUp(): void
     {
@@ -118,9 +123,14 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             $createParticipant
         );
 
+        // PR #7 R14-A: the same credential/account stores as registration,
+        // so "an existing Person owns this address" is decided on what was
+        // actually registered (an unverified registrant must not count).
+        $this->emailCredentials = new InMemoryEmailCredentialRepository();
+        $userAccounts = new InMemoryUserAccountRepository();
         $findPersonByEmail = new FindPersonByEmailUseCase(
-            new InMemoryEmailCredentialRepository(),
-            new InMemoryUserAccountRepository(),
+            $this->emailCredentials,
+            $userAccounts,
             new InMemoryNotificationEmailRepository(),
             $this->people
         );
@@ -135,18 +145,18 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             $this->invitationMailer
         );
 
-        $this->emailCredentials = new InMemoryEmailCredentialRepository();
-        $userAccounts = new InMemoryUserAccountRepository();
         $this->authMailer = new FakeAuthMailer();
         $organizationInvitations = new InMemoryOrganizationInvitationRepository();
+        $this->organizationInvitations = $organizationInvitations;
         $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $this->memberships);
+        $emailVerificationTokens = new InMemoryEmailVerificationTokenRepository();
 
         $this->registerWithEmail = new RegisterWithEmailUseCase(
             $this->emailCredentials,
             $this->people,
             $userAccounts,
             new InMemoryRefreshTokenRepository(),
-            new InMemoryEmailVerificationTokenRepository(),
+            $emailVerificationTokens,
             new FakeAccessTokenIssuer(),
             new FakeWordPressUserProvisioner(),
             new InMemoryTransactionManager(),
@@ -155,6 +165,14 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
             $this->invitations,
             $resolveOrganizationInvitation,
             $organizationInvitations
+        );
+        $this->verifyEmail = new VerifyEmailUseCase(
+            $emailVerificationTokens,
+            $this->emailCredentials,
+            new InMemoryTransactionManager(),
+            $userAccounts,
+            $resolveParticipantInvitation,
+            $resolveOrganizationInvitation
         );
 
         $this->googleVerifier = new FakeGoogleIdTokenVerifier();
@@ -207,7 +225,15 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
         return $delegatePerson;
     }
 
-    public function test_completing_email_registration_resolves_a_matching_pending_invitation(): void
+    /**
+     * PR #7 R14-A (F6): this test used to assert that a self-registration
+     * (no invitation token, address not verified) resolved the invitation
+     * sent to that address - i.e. that anyone registering with someone
+     * else's address became the Participant. The registrant now has to
+     * prove the address first: nothing is resolved at registration, and
+     * verifying the address resolves the invitation.
+     */
+    public function test_a_self_registration_resolves_its_invitation_only_once_the_email_is_verified(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
@@ -220,17 +246,133 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
 
         $result = $this->registerWithEmail->execute(new RegisterWithEmailCommand('newmember@example.com', 'password123'));
 
-        $participant = $this->participants->findByProductionAndSubject(
-            $production->id(),
-            ParticipantSubjectType::person(),
-            $result->personId,
-            ParticipantType::cast()
-        );
+        $this->assertNull($this->participantFor($production, $result->personId), 'Not a Participant before the address is verified.');
+        $this->assertTrue($this->invitations->findByEmail('newmember@example.com')[0]->isPending(), 'The invitation is still pending.');
+
+        $this->verifyEmail->execute(new VerifyEmailCommand($this->authMailer->verificationEmails[0]['token']));
+
+        $participant = $this->participantFor($production, $result->personId);
         $this->assertNotNull($participant);
         // StageArt Production側氏名の権威付けラウンド AC-04: the invitation's
-        // invitedName reaches the real Participant end-to-end through the
-        // actual registration entry point, not just in isolation.
+        // invitedName reaches the real Participant end-to-end.
         $this->assertSame('山田 花子', $participant->displayName());
+        $this->assertFalse($this->invitations->findByEmail('newmember@example.com')[0]->isPending(), 'The invitation is used up.');
+    }
+
+    public function test_a_self_registration_does_not_take_an_organization_invitation_before_verification(): void
+    {
+        $organization = Organization::create(new OrganizationName('Other Co'));
+        $this->organizations->save($organization);
+        $inviter = Person::create(9);
+        $this->people->save($inviter);
+        $this->organizationInvitations->save(\StageArt\Domain\OrganizationInvitation\OrganizationInvitation::create(
+            $organization->id(),
+            'member@example.com',
+            '佐藤 一郎',
+            $inviter->id(),
+            null,
+            hash('sha256', 'org-token'),
+            (new DateTimeImmutable())->add(new DateInterval('P7D'))
+        ));
+
+        $result = $this->registerWithEmail->execute(new RegisterWithEmailCommand('member@example.com', 'password123'));
+        $personId = PersonId::fromString($result->personId);
+
+        $this->assertNull($this->memberships->findByOrganizationAndPerson($organization->id(), $personId));
+
+        $this->verifyEmail->execute(new VerifyEmailCommand($this->authMailer->verificationEmails[0]['token']));
+
+        $membership = $this->memberships->findByOrganizationAndPerson($organization->id(), $personId);
+        $this->assertNotNull($membership);
+        $this->assertTrue($membership->isActive());
+    }
+
+    /**
+     * Someone registers first with another person's address (they can never
+     * verify it). A later invitation to that address must not add them
+     * directly as "an existing StageArt user": it is mailed instead, and
+     * nothing is resolved for the unverified registrant.
+     */
+    public function test_an_unverified_registrant_does_not_receive_a_later_invitation_to_that_address(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $squatter = $this->registerWithEmail->execute(new RegisterWithEmailCommand('victim@example.com', 'password123'));
+
+        $result = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '本人 太郎',
+            'victim@example.com',
+            'CAST'
+        ));
+
+        $this->assertNull($this->participantFor($production, $squatter->personId), 'Not added as an existing user.');
+        $this->assertCount(1, $this->invitationMailer->invitationEmails, 'The invitation was mailed to the address instead.');
+        $this->assertCount(1, $this->invitations->findByEmail('victim@example.com'));
+        $this->assertNotNull($result);
+    }
+
+    public function test_a_verified_user_invited_later_is_added_as_before(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $registered = $this->registerWithEmail->execute(new RegisterWithEmailCommand('known@example.com', 'password123'));
+        $this->verifyEmail->execute(new VerifyEmailCommand($this->authMailer->verificationEmails[0]['token']));
+
+        $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '既存 花子',
+            'known@example.com',
+            'CAST'
+        ));
+
+        // N4 (adding an existing user without their consent) is out of
+        // R14-A's scope; the existing direct add stays for a VERIFIED owner.
+        $this->assertNotNull($this->participantFor($production, $registered->personId));
+        $this->assertCount(0, $this->invitationMailer->invitationEmails);
+    }
+
+    public function test_a_verification_token_cannot_be_used_twice_and_an_unknown_one_is_refused(): void
+    {
+        $this->registerWithEmail->execute(new RegisterWithEmailCommand('once@example.com', 'password123'));
+        $token = $this->authMailer->verificationEmails[0]['token'];
+        $this->verifyEmail->execute(new VerifyEmailCommand($token));
+
+        foreach ([$token, 'not-a-real-token'] as $bad) {
+            try {
+                $this->verifyEmail->execute(new VerifyEmailCommand($bad));
+                $this->fail("Accepted verification token {$bad}.");
+            } catch (InvalidEmailVerificationTokenException $expected) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_an_invitation_token_cannot_register_twice(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
+            $production->id()->toString(),
+            1,
+            '招待 一郎',
+            'invited-once@example.com',
+            'CAST'
+        ));
+        $token = $this->invitationMailer->invitationEmails[0]['token'];
+        $this->registerWithEmail->execute(new RegisterWithEmailCommand('ignored@example.com', 'password123', $token));
+
+        $this->expectException(ParticipantInvitationNotFoundException::class);
+        $this->registerWithEmail->execute(new RegisterWithEmailCommand('other@example.com', 'password123', $token));
+    }
+
+    private function participantFor(Production $production, string $personId)
+    {
+        return $this->participants->findByProductionAndSubject(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $personId,
+            ParticipantType::cast()
+        );
     }
 
     public function test_email_registration_with_no_matching_invitation_still_succeeds_normally(): void

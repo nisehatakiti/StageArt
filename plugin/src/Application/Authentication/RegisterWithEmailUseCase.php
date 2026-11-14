@@ -67,6 +67,9 @@ use Throwable;
  * try/catch so an invitation-resolution failure can never turn a
  * successful registration into a failed response - this method's
  * existing return contract (AuthenticationResult) is unchanged.
+ * PR #7 R14-A (F6): only for a registration through an invitation link
+ * (`invitationToken`); a self-registration's invitations are resolved
+ * when its address is verified (VerifyEmailUseCase).
  *
  * StageArt 招待登録のメール確認省略ラウンド: when `$command->invitationToken`
  * resolves to a usable ParticipantInvitation, that invitation's own
@@ -237,6 +240,17 @@ final class RegisterWithEmailUseCase
 
         if ($emailVerificationTokenValue !== null) {
             $this->mailer->sendEmailVerificationEmail($registrationEmail, $emailVerificationTokenValue);
+        }
+
+        // PR #7 R14-A (F6): invitations are resolved here only when the
+        // registration came through an invitation link - the token proves
+        // the registrant received the mail sent to that address, and the
+        // credential was registered under the invitation's own address and
+        // marked verified above. A self-registration has proven nothing
+        // about the address yet: its invitations are resolved when the
+        // address is verified (VerifyEmailUseCase), never before.
+        if (! $hasTrustedInvitation) {
+            return $result;
         }
 
         try {

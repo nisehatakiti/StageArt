@@ -50,7 +50,7 @@ final class FindPersonByEmailUseCaseTest extends TestCase
         $this->people->save($person);
         $userAccount = UserAccount::create($person->id());
         $this->userAccounts->save($userAccount);
-        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'alice@example.com', 'hash'));
+        $this->emailCredentials->save((static function (EmailCredential $credential): EmailCredential { $credential->markEmailVerified(); return $credential; })(EmailCredential::create($userAccount->id(), 'alice@example.com', 'hash'))); // R14-A: an existing owner has a verified address
 
         $result = $this->findPersonByEmail->execute('alice@example.com');
 
@@ -87,7 +87,7 @@ final class FindPersonByEmailUseCaseTest extends TestCase
         $this->people->save($personA);
         $userAccountA = UserAccount::create($personA->id());
         $this->userAccounts->save($userAccountA);
-        $this->emailCredentials->save(EmailCredential::create($userAccountA->id(), 'shared@example.com', 'hash'));
+        $this->emailCredentials->save((static function (EmailCredential $credential): EmailCredential { $credential->markEmailVerified(); return $credential; })(EmailCredential::create($userAccountA->id(), 'shared@example.com', 'hash'))); // R14-A: an existing owner has a verified address
 
         $personB = Person::create(5);
         $this->people->save($personB);
@@ -103,7 +103,7 @@ final class FindPersonByEmailUseCaseTest extends TestCase
         $this->people->save($person);
         $userAccount = UserAccount::create($person->id());
         $this->userAccounts->save($userAccount);
-        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), 'dave@example.com', 'hash'));
+        $this->emailCredentials->save((static function (EmailCredential $credential): EmailCredential { $credential->markEmailVerified(); return $credential; })(EmailCredential::create($userAccount->id(), 'dave@example.com', 'hash'))); // R14-A: an existing owner has a verified address
         $this->notificationEmails->save(NotificationEmail::create($person->id(), 'dave@example.com', true, NotificationEmail::SOURCE_GOOGLE));
 
         $result = $this->findPersonByEmail->execute('dave@example.com');

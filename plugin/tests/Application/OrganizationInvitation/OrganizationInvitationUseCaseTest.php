@@ -119,7 +119,7 @@ final class OrganizationInvitationUseCaseTest extends TestCase
         $userAccount = UserAccount::create($person->id());
         $this->userAccounts->save($userAccount);
 
-        $this->emailCredentials->save(EmailCredential::create($userAccount->id(), $email, password_hash('irrelevant', PASSWORD_DEFAULT)));
+        $this->emailCredentials->save((static function (EmailCredential $credential): EmailCredential { $credential->markEmailVerified(); return $credential; })(EmailCredential::create($userAccount->id(), $email, password_hash('irrelevant', PASSWORD_DEFAULT)))); // R14-A: an existing owner has a verified address
 
         return $person;
     }
