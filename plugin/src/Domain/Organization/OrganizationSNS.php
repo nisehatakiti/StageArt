@@ -81,7 +81,12 @@ final class OrganizationSNS
         OrganizationId $organizationId,
         OrganizationSNSService $service,
         string $accountIdentifier,
-        string $profileUrl,
+        // PR #7 R14-A (N3): nullable like create()/update() and the column -
+        // an OTHER entry may have no URL, and a required string here made
+        // reading such a row throw a TypeError (the public organization
+        // page and SNS management answered 500; the row could not even be
+        // deleted through the API).
+        ?string $profileUrl,
         ?string $displayName,
         int $displayOrder,
         bool $visibility,
