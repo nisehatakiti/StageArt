@@ -638,6 +638,24 @@ final class Installer
         QuestionnaireInstaller::install($wpdb, $charsetCollate);
 
         self::applyColumnNullabilityFixups($wpdb, $organizationSns);
+        self::moveRetiredDraftProductionsToPlanning($wpdb, $productions);
+    }
+
+    /**
+     * Schema 1.48.0 (PR #7 R14-A, N2; user decision 2026-11-14): DRAFT is no
+     * longer a ProductionStatus - a new Production starts at PLANNING - but
+     * main created every Production as DRAFT, and loading such a row threw,
+     * failing every list that contained it. Those rows move to PLANNING,
+     * the status a Production now starts in. Only the status of rows that
+     * are still DRAFT changes; nothing is deleted. Idempotent: a moved row is
+     * PLANNING and never matches again, and a fresh install has none.
+     */
+    private static function moveRetiredDraftProductionsToPlanning($wpdb, string $productions): void
+    {
+        // A failure throws, so SchemaUpgrader keeps the stored version.
+        if ($wpdb->query("UPDATE {$productions} SET status = 'PLANNING' WHERE status = 'DRAFT'") === false) {
+            throw new RuntimeException("Schema statement failed on {$productions}: " . (string) ($wpdb->last_error ?? ''));
+        }
     }
 
     /**

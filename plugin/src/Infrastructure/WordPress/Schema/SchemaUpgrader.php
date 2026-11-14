@@ -41,7 +41,14 @@ final class SchemaUpgrader
      * 1.47.0 (PR #7 R12): stageart_rehearsal_create_requests, the
      * idempotency keys of Rehearsal create requests (new table only).
      */
-    public const CURRENT_VERSION = '1.47.0';
+    /*
+     * 1.48.0 (PR #7 R14-A, N2): Productions still in the retired DRAFT
+     * status (main created every Production as DRAFT; this PR removed the
+     * status) are moved to PLANNING - otherwise any list containing one
+     * failed to load (500). Only the status column of those rows changes;
+     * no row is deleted. User decision 2026-11-14.
+     */
+    public const CURRENT_VERSION = '1.48.0';
 
     /**
      * @return bool whether the schema is now at CURRENT_VERSION

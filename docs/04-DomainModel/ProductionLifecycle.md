@@ -29,6 +29,8 @@ Production LifecycleとProduction Statusの対応は以下を確定仕様とす�
 | 決算完了 | COMPLETED | Productionの決算処理を完了した状態 |
 | Archive | ARCHIVED | 完了したProductionを保管する状態 |
 
+> **実装との差（PR #7 R14-A、2026-11-14 時点）**：実装ではDRAFTを廃止しており、新しいProductionはPLANNINGから始まる（`ProductionStatus`）。本文のDRAFTの記述は未整理のまま残っている（仕様の整理はユーザー判断）。main で作られたDRAFTのProductionは、スキーマ1.48.0のアップグレードでPLANNINGへ移す（ユーザー判断 2026-11-14。該当行のstatusだけを変更し、削除はしない）。
+
 基本的なProduction StatusのLifecycleは、以下とする。
 
 DRAFT

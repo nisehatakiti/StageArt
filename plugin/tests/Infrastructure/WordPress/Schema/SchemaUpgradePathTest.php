@@ -87,9 +87,32 @@ final class SchemaUpgradePathTest extends TestCase
         return false;
     }
 
-    public function test_the_current_version_is_1_47_0(): void
+    /**
+     * PR #7 R14-A: 1.47.0 -> 1.48.0 (the retired DRAFT Productions move to
+     * PLANNING). Before R14-A this test was test_the_current_version_is_1_47_0.
+     */
+    public function test_the_current_version_is_1_48_0(): void
     {
-        $this->assertSame('1.47.0', SchemaUpgrader::CURRENT_VERSION);
+        $this->assertSame('1.48.0', SchemaUpgrader::CURRENT_VERSION);
+    }
+
+    /**
+     * PR #7 R14-A (N2): every upgrade (and a fresh install, where it matches
+     * no row) moves the Productions still in the retired DRAFT status to
+     * PLANNING - only those rows, only their status.
+     *
+     * @dataProvider olderInstalls
+     */
+    public function test_every_older_install_moves_retired_draft_productions_to_planning(?string $storedVersion): void
+    {
+        $this->upgradeFrom($storedVersion);
+
+        $moves = array_values(array_filter(
+            array_map(static fn (array $args): string => (string) $args[0], $GLOBALS['wpdb']->callsTo('query')),
+            static fn (string $sql): bool => str_contains($sql, 'UPDATE wp_stageart_productions')
+        ));
+        $this->assertSame(["UPDATE wp_stageart_productions SET status = 'PLANNING' WHERE status = 'DRAFT'"], $moves);
+        $this->assertSame('1.48.0', get_option('stageart_db_schema_version'));
     }
 
     /**
@@ -108,7 +131,7 @@ final class SchemaUpgradePathTest extends TestCase
      */
     public static function olderInstalls(): array
     {
-        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0'], 'from 1.46.0' => ['1.46.0']];
+        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0'], 'from 1.46.0' => ['1.46.0'], 'from 1.47.0' => ['1.47.0']];
     }
 
     public function test_an_install_already_at_the_current_version_runs_nothing(): void
@@ -217,7 +240,7 @@ final class SchemaUpgradePathTest extends TestCase
             $statements,
             static fn (string $sql): bool => str_contains($sql, 'stageart_rehearsal_create_requests') || str_contains($sql, 'UPDATE wp_stageart_rehearsals ')
         )));
-        $this->assertSame('1.47.0', get_option('stageart_db_schema_version'));
+        $this->assertSame(SchemaUpgrader::CURRENT_VERSION, get_option('stageart_db_schema_version'));
     }
 
     private function assertExpenseSchemaApplied(): void
