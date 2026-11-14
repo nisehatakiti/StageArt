@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Domain\Performance;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 use StageArt\Domain\Production\ProductionId;
 
@@ -315,11 +316,25 @@ final class Performance
      * 時間前まで" rule) and by Reservation modification Validation (§29's
      * "開演後" cutoff), without requiring the Ticket Module to duplicate
      * Performance's own date+time composition logic.
+     *
+     * PR #7 R14-A (F13): the stored date and time are the theatre's
+     * Asia/Tokyo wall clock, so the instant is built in Asia/Tokyo, never
+     * in PHP's default timezone. WordPress sets that default to UTC, which
+     * made 19:00 mean 19:00 UTC (04:00 JST the next day): the 「開演後」
+     * cutoffs and the sales-end deadline ran 9 hours late. Comparisons with
+     * `new DateTimeImmutable()` compare instants, so they are now correct
+     * whatever the default timezone is. Stored values are unchanged.
      */
     public function startDateTime(): DateTimeImmutable
     {
-        return new DateTimeImmutable($this->performanceDate->format('Y-m-d') . ' ' . $this->startTime);
+        return new DateTimeImmutable(
+            $this->performanceDate->format('Y-m-d') . ' ' . $this->startTime,
+            new DateTimeZone(self::TIMEZONE)
+        );
     }
+
+    /** PR #7 R14-A (F13): the timezone of the stored date and time. */
+    public const TIMEZONE = 'Asia/Tokyo';
 
     public function endTime(): ?string
     {

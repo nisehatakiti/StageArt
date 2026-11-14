@@ -226,6 +226,15 @@ Performance Cancellationに伴うBusiness Processとして処理する。
 
 ---
 
+# Date and Time Zone（PR #7 R14-A、2026-11-14）
+
+公演日・開演時刻は、劇場のAsia/Tokyoの時刻として保存・解釈する（`Performance::TIMEZONE`）。開演時刻の瞬間（`Performance::startDateTime()`）はAsia/Tokyoで組み立て、PHPの既定タイムゾーン（WordPressではUTC）に依存しない。
+
+- R14-A以前は既定タイムゾーンで解釈していたため、19:00が「UTCの19:00＝日本時間の翌04:00」となり、開演後の締切（予約の作成・変更・取消、当日券、人数の減少）と販売終了日時が9時間遅れていた。
+- 保存値（公演日と開演時刻の文字列）は変更していない。値の意味はもともと日本時間の時刻である。
+
+---
+
 # Status and Operations（PR #7 R14-A、2026-11-14 確定）
 
 公演回のStatusごとに受け付ける操作を以下とする（ユーザー判断、2026-11-14）。Productionの状態による制限（ProductionLifecycle.md）とは別に、両方を満たす必要がある。

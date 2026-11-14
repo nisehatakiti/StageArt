@@ -133,6 +133,12 @@ final class ReservationUseCaseTest extends TestCase
 
     private function alignedDateTime(DateTimeImmutable $dt): DateTimeImmutable
     {
+        // PR #7 R14-A (F13): a Performance's date and time are Asia/Tokyo
+        // wall clock, so the fixture's digits are taken in Asia/Tokyo (the
+        // same instant). Before R14-A they were the PHP default timezone's
+        // digits, which only worked because the code read them back in that
+        // same timezone.
+        $dt = $dt->setTimezone(new \DateTimeZone('Asia/Tokyo'));
         $minute = (int) $dt->format('i');
 
         return $dt->setTime((int) $dt->format('H'), $minute - ($minute % 5));
