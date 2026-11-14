@@ -58,6 +58,25 @@ final class UpdateProductionCommand
     public ?string $performanceCommonRemarks;
     public ?int $performanceDurationMinutes;
 
+    /**
+     * PR #7 R14-A (N1): the request fields that were actually sent, by
+     * their API names (`description`, `venue_published_at`, `capacity`, …).
+     * A field that was not sent keeps its current value; one sent as null
+     * is cleared. Before R14-A every field not sent was cleared, so a screen
+     * that sent only `published` wiped the description, venue, schedule,
+     * credits, capacity and duration (and cascaded the duration to the
+     * Performances). null means "every field was sent" (a complete form).
+     *
+     * @var string[]|null
+     */
+    public ?array $providedFields;
+
+    /** Whether the request sent this field (see $providedFields). */
+    public function isProvided(string $field): bool
+    {
+        return $this->providedFields === null || in_array($field, $this->providedFields, true);
+    }
+
     public function __construct(
         string $productionId,
         int $requestedByWordPressUserId,
@@ -81,8 +100,10 @@ final class UpdateProductionCommand
         ?string $memberInfoPublishedAt = null,
         ?int $capacity = null,
         ?string $performanceCommonRemarks = null,
-        ?int $performanceDurationMinutes = null
+        ?int $performanceDurationMinutes = null,
+        ?array $providedFields = null
     ) {
+        $this->providedFields = $providedFields;
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
         $this->name = $name;

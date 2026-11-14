@@ -114,8 +114,19 @@ final class UpdateProductionUseCase
                 throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
             }
 
-            $production->rename(new ProductionName($command->name));
-            $production->changeTitleHeading($command->titleHeading);
+            // PR #7 R14-A (N1): a field the request did not send keeps its
+            // current value (UpdateProductionCommand::$providedFields); one
+            // sent as null is cleared.
+            $sent = static fn (string $field): bool => $command->isProvided($field);
+            $date = fn (string $field, ?string $value, ?DateTimeImmutable $current): ?DateTimeImmutable => $sent($field) ? $this->parseOptionalDateTime($value) : $current;
+
+            if ($sent('name')) {
+                $production->rename(new ProductionName($command->name));
+            }
+
+            if ($sent('title_heading')) {
+                $production->changeTitleHeading($command->titleHeading);
+            }
 
             if ($command->slug !== null) {
                 $newSlug = new ProductionSlug($command->slug);
@@ -138,29 +149,50 @@ final class UpdateProductionUseCase
                 $production->unpublish();
             }
 
-            $production->updateDescription($command->description, $this->parseOptionalDateTime($command->descriptionPublishedAt));
-            $production->updateFlyer($command->flyerUrl, $this->parseOptionalDateTime($command->flyerPublishedAt));
-            $production->updateVenue($command->venueName, $this->parseOptionalDateTime($command->venuePublishedAt));
+            $production->updateDescription(
+                $sent('description') ? $command->description : $production->description(),
+                $date('description_published_at', $command->descriptionPublishedAt, $production->descriptionPublishedAt())
+            );
+            $production->updateFlyer(
+                $sent('flyer_url') ? $command->flyerUrl : $production->flyerUrl(),
+                $date('flyer_published_at', $command->flyerPublishedAt, $production->flyerPublishedAt())
+            );
+            $production->updateVenue(
+                $sent('venue_name') ? $command->venueName : $production->venueName(),
+                $date('venue_published_at', $command->venuePublishedAt, $production->venuePublishedAt())
+            );
             $production->updateSchedule(
-                $this->parseOptionalDateTime($command->scheduleStartDate),
-                $this->parseOptionalDateTime($command->scheduleEndDate),
-                $this->parseOptionalDateTime($command->schedulePublishedAt)
+                $date('schedule_start_date', $command->scheduleStartDate, $production->scheduleStartDate()),
+                $date('schedule_end_date', $command->scheduleEndDate, $production->scheduleEndDate()),
+                $date('schedule_published_at', $command->schedulePublishedAt, $production->schedulePublishedAt())
             );
             $production->updateScriptDirection(
-                $command->scriptCredit,
-                $command->directionCredit,
-                $this->parseOptionalDateTime($command->scriptDirectionPublishedAt)
+                $sent('script_credit') ? $command->scriptCredit : $production->scriptCredit(),
+                $sent('direction_credit') ? $command->directionCredit : $production->directionCredit(),
+                $date('script_direction_published_at', $command->scriptDirectionPublishedAt, $production->scriptDirectionPublishedAt())
             );
-            $production->updateMemberInfoPublishedAt($this->parseOptionalDateTime($command->memberInfoPublishedAt));
-            $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
+            $production->updateMemberInfoPublishedAt(
+                $date('member_info_published_at', $command->memberInfoPublishedAt, $production->memberInfoPublishedAt())
+            );
+
+            if ($sent('performance_common_remarks')) {
+                $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
+            }
 
             $previousDuration = $production->performanceDurationMinutes();
-            $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
+
+            if ($sent('performance_duration_minutes')) {
+                $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
+            }
+
             $newDuration = $production->performanceDurationMinutes();
             $durationChanged = $newDuration !== $previousDuration;
 
             $previousCapacity = $production->capacity();
-            $production->changeCapacity($command->capacity);
+
+            if ($sent('capacity')) {
+                $production->changeCapacity($command->capacity);
+            }
             $newCapacity = $production->capacity();
             $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
 

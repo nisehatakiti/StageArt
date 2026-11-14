@@ -302,6 +302,20 @@ final class ProductionRestController
     }
 
     /**
+     * PR #7 R14-A (N1): the fields PUT /productions/{id} can change. A field
+     * the request does not include keeps its current value (partial update);
+     * one included as null is cleared.
+     */
+    private const UPDATABLE_FIELDS = [
+        'name', 'title_heading', 'slug', 'published', 'published_at',
+        'description', 'description_published_at', 'flyer_url', 'flyer_published_at',
+        'venue_name', 'venue_published_at', 'schedule_start_date', 'schedule_end_date',
+        'schedule_published_at', 'script_credit', 'direction_credit',
+        'script_direction_published_at', 'member_info_published_at', 'capacity',
+        'performance_common_remarks', 'performance_duration_minutes',
+    ];
+
+    /**
      * Phase 6.1: `status` is no longer an updatable field here -
      * ProductionLifecycle.md's Action-based model moved Status changes to
      * the dedicated Lifecycle Action endpoints below. A request that
@@ -349,7 +363,10 @@ final class ProductionRestController
                 $this->stringOrNull($request->get_param('member_info_published_at')),
                 $this->intOrNull($request->get_param('capacity')),
                 $this->stringOrNull($request->get_param('performance_common_remarks')),
-                $this->intOrNull($request->get_param('performance_duration_minutes'))
+                $this->intOrNull($request->get_param('performance_duration_minutes')),
+                // PR #7 R14-A (N1): only the fields actually sent are
+                // changed; one sent as null is cleared.
+                array_values(array_filter(self::UPDATABLE_FIELDS, static fn (string $field): bool => $request->has_param($field)))
             );
 
             return new WP_REST_Response($this->updateProduction->execute($command)->toArray(), 200);

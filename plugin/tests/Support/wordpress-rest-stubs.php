@@ -35,6 +35,15 @@ if (! class_exists('WP_REST_Request', false)) {
         {
             return $this->params[$key] ?? null;
         }
+
+        /**
+         * Like WordPress's own (WP 5.3+): array_key_exists, so a key sent
+         * as null counts as sent.
+         */
+        public function has_param($key): bool
+        {
+            return array_key_exists($key, $this->params);
+        }
     }
 }
 

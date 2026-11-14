@@ -75,10 +75,11 @@ export function createProduction(
  * Production Information sections - `description`/`flyerUrl`/
  * `venueName`/`scheduleStartDate`/`scheduleEndDate`/`scriptCredit`/
  * `directionCredit` and each section's own `*PublishedAt` are all
- * optional/trailing. Every field this function is called with replaces
- * the Production's current value (matching `titleHeading`'s existing
- * convention - omitting a key sends it as `undefined`, which the
- * backend then reads as `null`/"clear this field").
+ * optional/trailing. PR #7 R14-A (N1): a key left out (undefined is
+ * dropped from the JSON body) keeps the Production's current value; a key
+ * sent as null clears it. Before R14-A the Backend cleared every key left
+ * out, so screens that sent only some fields (publish toggle, member
+ * management, the create screen's 「公開する」) wiped the rest.
  */
 export function updateProduction(
   client: ApiClient,
@@ -102,10 +103,8 @@ export function updateProduction(
     directionCredit?: string | null;
     scriptDirectionPublishedAt?: string | null;
     memberInfoPublishedAt?: string | null;
-    /** Internal-only (never shown on the Public Page). Like `name`, null
-     * here REPLACES the current value (it does not mean "leave
-     * unchanged") - a caller that wants to keep the existing capacity
-     * must send it back explicitly. Changing it cascades server-side to
+    /** Internal-only (never shown on the Public Page). null clears it;
+     * leaving the key out keeps the current capacity (R14-A). Changing it cascades server-side to
      * overwrite every existing Performance's own capacity for this
      * Production (UpdateProductionUseCase's own confirmed behavior). */
     capacity?: number | null;
