@@ -356,6 +356,31 @@ final class Performance
         return $this->status;
     }
 
+    /**
+     * PR #7 R14-A (F1, user decision 2026-11-14): new seats - a public
+     * Reservation, a walk-up sale, a guest count increase - only on a
+     * PUBLISHED Performance. SOLD_OUT is 「新規予約を受け付けない状態」
+     * (Performance.md), CANCELLED is called off and FINISHED is over.
+     * Reducing or cancelling a Reservation and reversing a Check-in stay
+     * allowed in every status (that is how a cancelled Performance's
+     * bookings are wound down).
+     */
+    public function acceptsNewReservations(): bool
+    {
+        return $this->status->equals(PerformanceStatus::fromString(PerformanceStatus::PUBLISHED));
+    }
+
+    /**
+     * PR #7 R14-A (F1, user decision 2026-11-14): Check-in is refused only
+     * on a CANCELLED Performance. SOLD_OUT is checked in as usual, and a
+     * FINISHED one still accepts it so the record can be corrected after
+     * the show.
+     */
+    public function acceptsCheckIn(): bool
+    {
+        return ! $this->status->equals(PerformanceStatus::fromString(PerformanceStatus::CANCELLED));
+    }
+
     public function createdAt(): DateTimeImmutable
     {
         return $this->createdAt;

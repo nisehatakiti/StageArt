@@ -6,6 +6,7 @@ namespace StageArt\Presentation\Rest;
 
 use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Application\Production\ProductionClosedException;
+use StageArt\Application\Reservation\PerformanceNotAcceptingException;
 use StageArt\Application\Shared\DatabaseBusyException;
 use Throwable;
 use WP_REST_Request;
@@ -91,6 +92,13 @@ final class RestFailureResponder
     {
         if ($exception instanceof ProductionClosedException) {
             return self::error('stageart_production_closed', $exception->getMessage(), 409);
+        }
+
+        // (R14-A, F1) The Performance's status refuses the operation (a new
+        // seat on a Performance that is not PUBLISHED, a Check-in on a
+        // CANCELLED one): nothing changed, and sending it again does not help.
+        if ($exception instanceof PerformanceNotAcceptingException) {
+            return self::error('stageart_performance_not_accepting', $exception->getMessage(), 409, ['performance_status' => $exception->performanceStatus()]);
         }
 
         // (R6) A capacity below the seats already reserved: nothing changed.

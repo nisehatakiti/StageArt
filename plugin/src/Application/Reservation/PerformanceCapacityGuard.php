@@ -59,6 +59,7 @@ final class PerformanceCapacityGuard
      *
      * @throws \StageArt\Application\Production\ProductionClosedException when the Production is completed
      * @throws PerformanceNotFoundException when it no longer exists
+     * @throws PerformanceNotAcceptingException when it is not PUBLISHED
      * @throws CapacityExceededException when $guestCount more seats do not fit
      * @throws \RuntimeException when a locking read fails (the repositories
      *         never report a failed read as no rows)
@@ -71,6 +72,14 @@ final class PerformanceCapacityGuard
 
         if ($performance === null) {
             throw new PerformanceNotFoundException($performanceId->toString());
+        }
+
+        // PR #7 R14-A (F1): only a PUBLISHED Performance takes new seats,
+        // checked on the row as read under its lock - a cancellation
+        // (which takes the same row lock) either committed before this read
+        // or waits until this booking has committed.
+        if (! $performance->acceptsNewReservations()) {
+            throw new PerformanceNotAcceptingException($performanceId->toString(), $performance->status()->toString(), 'new reservations');
         }
 
         $occupied = array_sum(array_map(

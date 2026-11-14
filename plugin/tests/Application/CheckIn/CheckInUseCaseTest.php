@@ -1050,4 +1050,93 @@ final class CheckInUseCaseTest extends TestCase
         $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
         $this->assertCount(1, $this->journalEntries->all(), 'no reversal entry');
     }
+
+    // --- PR #7 R14-A (F1): the Performance's own status ------------------
+
+    private function setPerformanceStatus(Performance $performance, string $status): void
+    {
+        $performance->changeStatus(\StageArt\Domain\Performance\PerformanceStatus::fromString($status));
+        $this->performances->save($performance);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function notPublished(): array
+    {
+        return ['SOLD_OUT' => ['SOLD_OUT'], 'CANCELLED' => ['CANCELLED'], 'FINISHED' => ['FINISHED']];
+    }
+
+    /**
+     * @dataProvider notPublished
+     */
+    public function test_r14a_no_walk_up_sale_on_a_performance_that_is_not_published(string $status): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $this->setPerformanceStatus($performance, $status);
+
+        try {
+            $this->createWalkUp->execute(new CreateWalkUpReservationCommand($performance->id()->toString(), $ticketId, '当日券太郎', 'walkup@example.com', 1, null, 1, 'walkup-r14a-' . $status));
+            $this->fail("Sold a walk-up ticket on a {$status} Performance.");
+        } catch (\StageArt\Application\Reservation\PerformanceNotAcceptingException $expected) {
+            $this->assertSame($status, $expected->performanceStatus());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+        $this->assertSame([], $this->journalEntries->all(), 'no cash recorded');
+    }
+
+    public function test_r14a_a_cancelled_performance_refuses_check_in(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->setPerformanceStatus($performance, 'CANCELLED');
+
+        try {
+            $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+            $this->fail('Checked in on a CANCELLED Performance.');
+        } catch (\StageArt\Application\Reservation\PerformanceNotAcceptingException $expected) {
+            $this->assertSame('CANCELLED', $expected->performanceStatus());
+        }
+
+        $this->assertSame('RESERVED', $this->reservations->findById($reservation->id())->status()->toString());
+        $this->assertSame([], $this->journalEntries->all(), 'no cash recorded');
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function checkInAllowed(): array
+    {
+        return ['PUBLISHED' => ['PUBLISHED'], 'SOLD_OUT' => ['SOLD_OUT'], 'FINISHED (correcting the record)' => ['FINISHED']];
+    }
+
+    /**
+     * @dataProvider checkInAllowed
+     */
+    public function test_r14a_check_in_is_accepted_unless_cancelled(string $status): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket();
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->setPerformanceStatus($performance, $status);
+
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->assertSame('CHECKED_IN', $this->reservations->findById($reservation->id())->status()->toString());
+    }
+
+    public function test_r14a_a_cancelled_performance_still_allows_decreasing_and_reversing(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reduced = $this->givenReservedReservation($performance, $ticketId, 4);
+        $checkedIn = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1));
+        $this->setPerformanceStatus($performance, 'CANCELLED');
+
+        $this->decreaseGuestCount->execute(new DecreaseReservationGuestCountCommand($performance->id()->toString(), $reduced->id()->toString(), 2, 1));
+        $this->reverseCheckIn->execute(new ReverseCheckInCommand($performance->id()->toString(), $checkedIn->id()->toString(), 1, true));
+
+        $this->assertSame(2, $this->reservations->findById($reduced->id())->guestCount());
+        $this->assertSame('RESERVED', $this->reservations->findById($checkedIn->id())->status()->toString());
+    }
 }

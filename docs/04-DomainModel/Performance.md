@@ -226,6 +226,22 @@ Performance Cancellationに伴うBusiness Processとして処理する。
 
 ---
 
+# Status and Operations（PR #7 R14-A、2026-11-14 確定）
+
+公演回のStatusごとに受け付ける操作を以下とする（ユーザー判断、2026-11-14）。Productionの状態による制限（ProductionLifecycle.md）とは別に、両方を満たす必要がある。
+
+| 操作 | PUBLISHED | SOLD_OUT | CANCELLED | FINISHED |
+| --- | --- | --- | --- | --- |
+| 新規予約・当日券・人数の追加 | 可 | 拒否 | 拒否 | 拒否 |
+| 受付（Check-in） | 可 | 可 | 拒否 | 可（終了後の記録の訂正） |
+| 人数の減少・セルフサービスの取消・受付取消 | 可 | 可 | 可（中止公演の予約の整理・返金） | 可 |
+
+- 拒否はHTTP 409 `stageart_performance_not_accepting`（`data.performance_status` に状態）で、何も変更しない。
+- 状態はPerformance行のロックを取った後に読み直して判定する（ロック順序 Production → Performance → Reservation）。中止と予約が同時でも、中止が先に確定していれば予約は拒否される。
+- 実装：`Performance::acceptsNewReservations()`／`acceptsCheckIn()`、`PerformanceCapacityGuard::lockAndReserve()`、`CheckInProcessor::lockForCheckIn()`。
+
+---
+
 # Lifecycle
 
 基本的なLifecycle（Version 4.2でDRAFTを廃止、PUBLISHEDから開始）：

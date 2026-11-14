@@ -38,6 +38,15 @@ final class RestFailureResponderTest extends TestCase
         $this->assertSame(['status' => 409, 'capacity' => 40, 'reserved_seats' => 45], $response->get_data()['data']);
     }
 
+    public function test_r14a_a_performance_that_does_not_accept_the_operation_is_409_with_its_status(): void
+    {
+        $response = RestFailureResponder::toResponse(new \StageArt\Application\Reservation\PerformanceNotAcceptingException('perf-1', 'SOLD_OUT', 'new reservations'));
+        $this->assertSame(409, $response->get_status());
+        $this->assertSame('stageart_performance_not_accepting', $response->get_data()['code']);
+        $this->assertSame(['status' => 409, 'performance_status' => 'SOLD_OUT'], $response->get_data()['data']);
+        $this->assertArrayNotHasKey('Retry-After', $response->get_headers());
+    }
+
     public function test_a_closed_production_is_409(): void
     {
         $response = RestFailureResponder::toResponse(new ProductionClosedException('p-1', 'CANCELLED'));

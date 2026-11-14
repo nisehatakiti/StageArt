@@ -23,6 +23,15 @@ describe('getErrorMessage', () => {
     expect(getErrorMessage(new ApiError(503, 'Service Unavailable'))).toBe('読み込みに失敗しました。(503)');
   });
 
+  it('explains a Performance that does not accept the operation (R14-A, 409)', () => {
+    const refused = (status?: string) =>
+      getErrorMessage(new ApiError(409, 'x', 'stageart_performance_not_accepting', status ? { status: 409, performance_status: status } : { status: 409 }));
+    expect(refused('CANCELLED')).toBe('この公演回は中止されているため、この操作はできません。');
+    expect(refused('SOLD_OUT')).toBe('この公演回は満席のため、新しい予約・当日券・人数の追加はできません。');
+    expect(refused('FINISHED')).toBe('この公演回は終了しているため、新しい予約・当日券・人数の追加はできません。');
+    expect(refused()).toBe('この公演回は現在、この操作を受け付けていません。');
+  });
+
   it('explains a capacity below the reserved seats (409)', () => {
     expect(getErrorMessage(new ApiError(409, 'below', 'stageart_capacity_below_reservations'))).toBe(
       '予約済みの席数より少ない定員には変更できません。定員は変更されていません。'

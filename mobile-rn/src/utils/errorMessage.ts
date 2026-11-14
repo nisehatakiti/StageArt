@@ -39,6 +39,22 @@ export function getErrorMessage(error: unknown): string {
       return '同じ送信キーで異なる内容の稽古を登録しようとしました。画面を再読み込みして、もう一度登録してください。';
     }
     // PR #7 review (R6): a capacity below the seats already reserved.
+    // PR #7 R14-A (F1): the Performance's status refuses the operation -
+    // a new reservation / walk-up sale / increase on a Performance that is
+    // not on sale (満席・中止・終了), or a Check-in on a cancelled one.
+    if (error.code === 'stageart_performance_not_accepting') {
+      const status = error.data?.performance_status;
+      if (status === 'CANCELLED') {
+        return 'この公演回は中止されているため、この操作はできません。';
+      }
+      if (status === 'SOLD_OUT') {
+        return 'この公演回は満席のため、新しい予約・当日券・人数の追加はできません。';
+      }
+      if (status === 'FINISHED') {
+        return 'この公演回は終了しているため、新しい予約・当日券・人数の追加はできません。';
+      }
+      return 'この公演回は現在、この操作を受け付けていません。';
+    }
     if (error.code === 'stageart_capacity_below_reservations') {
       return '予約済みの席数より少ない定員には変更できません。定員は変更されていません。';
     }

@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace StageArt\Application\CheckIn;
 
 use DateTimeImmutable;
+use StageArt\Application\Performance\PerformanceNotFoundException;
+use StageArt\Application\Reservation\PerformanceNotAcceptingException;
 use StageArt\Application\Reservation\ReservationNotFoundException;
+use StageArt\Domain\Performance\PerformanceRepositoryInterface;
 use StageArt\Core\Contract\ProductionActivityLockContract;
 use StageArt\Core\Contract\OrganizationContextContract;
 use StageArt\Core\Contract\ProductionContextContract;
@@ -98,6 +101,29 @@ final class CheckInProcessor
         // between this read and the commit.
         // (R5) A CANCELLED Production refuses them too.
         $this->productionLock->lockOpenProduction($productionId);
+
+        return $this->lockReservation($reservation);
+    }
+
+    /**
+     * PR #7 R14-A (F1): lock() for a Check-in, plus the Performance row in
+     * between (lock order Production -> Performance -> Reservation) so its
+     * status is the committed one: a CANCELLED Performance refuses
+     * Check-in (Performance::acceptsCheckIn()).
+     */
+    public function lockForCheckIn(Reservation $reservation, ProductionId $productionId, PerformanceRepositoryInterface $performances): Reservation
+    {
+        $this->productionLock->lockOpenProduction($productionId);
+
+        $performance = $performances->findByIdForUpdate($reservation->performanceId());
+
+        if ($performance === null) {
+            throw new PerformanceNotFoundException($reservation->performanceId()->toString());
+        }
+
+        if (! $performance->acceptsCheckIn()) {
+            throw new PerformanceNotAcceptingException($performance->id()->toString(), $performance->status()->toString(), 'check-in');
+        }
 
         return $this->lockReservation($reservation);
     }

@@ -993,4 +993,156 @@ final class ReservationUseCaseTest extends TestCase
 
         $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
     }
+
+    // --- PR #7 R14-A (F1): the Performance's own status ------------------
+
+    private function givenPerformanceIn(string $status): array
+    {
+        [$production, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $performance->changeStatus(\StageArt\Domain\Performance\PerformanceStatus::fromString($status));
+        $this->performances->save($performance);
+
+        return [$production, $performance, $ticketId];
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function notBookable(): array
+    {
+        return ['SOLD_OUT' => ['SOLD_OUT'], 'CANCELLED' => ['CANCELLED'], 'FINISHED' => ['FINISHED']];
+    }
+
+    /**
+     * @dataProvider notBookable
+     */
+    public function test_r14a_a_performance_that_is_not_published_takes_no_new_reservation(string $status): void
+    {
+        [, $performance, $ticketId] = $this->givenPerformanceIn($status);
+
+        try {
+            $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 1));
+            $this->fail("Booked a {$status} Performance.");
+        } catch (\StageArt\Application\Reservation\PerformanceNotAcceptingException $expected) {
+            $this->assertSame($status, $expected->performanceStatus());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+    }
+
+    /**
+     * @dataProvider notBookable
+     */
+    public function test_r14a_an_existing_reservation_cannot_grow_but_can_shrink_or_be_cancelled(string $status): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $created = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 2));
+        $performance->changeStatus(\StageArt\Domain\Performance\PerformanceStatus::fromString($status));
+        $this->performances->save($performance);
+
+        try {
+            $this->updateReservation->execute(new UpdateReservationCommand($created->reservationNumber, 'yamada@example.com', 3));
+            $this->fail("Increased a Reservation of a {$status} Performance.");
+        } catch (\StageArt\Application\Reservation\PerformanceNotAcceptingException $expected) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame(1, $this->updateReservation->execute(new UpdateReservationCommand($created->reservationNumber, 'yamada@example.com', 1))->guestCount);
+        $this->assertSame('CANCELLED', $this->cancelReservation->execute(new CancelReservationCommand($created->reservationNumber, 'yamada@example.com'))->status);
+    }
+
+    public function test_r14a_a_cancelled_reservation_cannot_be_booked_again_on_a_cancelled_performance(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $first = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 1));
+        $performance->cancel();
+        $this->performances->save($performance);
+        $this->cancelReservation->execute(new CancelReservationCommand($first->reservationNumber, 'yamada@example.com'));
+
+        $this->expectException(\StageArt\Application\Reservation\PerformanceNotAcceptingException::class);
+        $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 1));
+    }
+
+    public function test_r14a_a_published_performance_still_takes_reservations(): void
+    {
+        [, $performance, $ticketId] = $this->givenPerformanceIn('PUBLISHED');
+
+        $created = $this->createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 2));
+
+        $this->assertSame(3, $this->updateReservation->execute(new UpdateReservationCommand($created->reservationNumber, 'yamada@example.com', 3))->guestCount);
+    }
+
+    /**
+     * The status is checked on the row read under its lock: a cancellation
+     * that commits while this booking waits for the Performance row (what
+     * the cancelling request holds) is seen, although the check before the
+     * transaction read it PUBLISHED.
+     */
+    public function test_r14a_a_cancellation_committed_while_the_booking_waited_for_the_lock_is_seen(): void
+    {
+        [, $performance, $ticketId] = $this->givenOnSaleTicketAndPerformance(new DateTimeImmutable('+10 days'));
+        $inner = $this->performances;
+        $cancelledOnLock = new class ($inner) implements \StageArt\Domain\Performance\PerformanceRepositoryInterface {
+            private InMemoryPerformanceRepository $inner;
+
+            public function __construct(InMemoryPerformanceRepository $inner)
+            {
+                $this->inner = $inner;
+            }
+
+            public function save(Performance $performance): void
+            {
+                $this->inner->save($performance);
+            }
+
+            public function findById(\StageArt\Domain\Performance\PerformanceId $id): ?Performance
+            {
+                return $this->inner->findById($id);
+            }
+
+            public function findByIdForUpdate(\StageArt\Domain\Performance\PerformanceId $id): ?Performance
+            {
+                // The other request's cancellation commits; the lock is granted.
+                $current = $this->inner->findById($id);
+                $locked = clone $current;
+                $locked->cancel();
+
+                return $locked;
+            }
+
+            public function findByProductionId(\StageArt\Domain\Production\ProductionId $productionId): array
+            {
+                return $this->inner->findByProductionId($productionId);
+            }
+
+            public function findByIds(array $ids): array
+            {
+                return $this->inner->findByIds($ids);
+            }
+
+            public function findByProductionAndDateTime(\StageArt\Domain\Production\ProductionId $productionId, DateTimeImmutable $performanceDate, string $startTime, ?\StageArt\Domain\Performance\PerformanceId $excluding = null): ?Performance
+            {
+                return $this->inner->findByProductionAndDateTime($productionId, $performanceDate, $startTime, $excluding);
+            }
+        };
+        $createReservation = new CreateReservationUseCase(
+            $cancelledOnLock,
+            $this->tickets,
+            $this->reservations,
+            $this->issuedTickets,
+            new \StageArt\Core\Adapter\CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new \StageArt\Tests\Support\InMemoryProjectRepository())),
+            new \StageArt\Core\Adapter\CoreIdentityAdapter($this->people),
+            new InMemoryTransactionManager(),
+            new \StageArt\Core\Adapter\CoreProductionActivityLockAdapter($this->productions)
+        );
+
+        try {
+            $createReservation->execute(new CreateReservationCommand($performance->id()->toString(), $ticketId, '山田太郎', 'yamada@example.com', 1));
+            $this->fail('Booked a Performance cancelled while the booking waited for its lock.');
+        } catch (\StageArt\Application\Reservation\PerformanceNotAcceptingException $expected) {
+            $this->assertSame('CANCELLED', $expected->performanceStatus());
+        }
+
+        $this->assertSame([], $this->reservations->findByPerformanceId($performance->id()));
+    }
 }
