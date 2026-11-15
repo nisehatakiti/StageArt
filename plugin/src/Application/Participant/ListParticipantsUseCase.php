@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
@@ -15,16 +20,22 @@ final class ListParticipantsUseCase
 {
     private ParticipantRepositoryInterface $participants;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        PersonRepositoryInterface $people,
+        ProductionAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     /**
@@ -44,15 +55,48 @@ final class ListParticipantsUseCase
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->authorization->canManageParticipants($requester, $production)) {
+        // StageArt 稽古作成画面の参加メンバー表示修正 instruction: listing/
+        // viewing Participants is a Read operation, gated by
+        // canReadParticipants() (Participant.Read) - not
+        // canManageParticipants() (Participant.Update), which stays the
+        // gate for Create/Update/Cancel below. This is what admits a
+        // REHEARSAL_MANAGER delegate (who has Participant.Read but not
+        // Participant.Update) without giving them any write access.
+        if (! $this->authorization->canReadParticipants($requester, $production)) {
             throw new ParticipantAccessDeniedException(
-                'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER Role can view Participants.'
+                'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER or REHEARSAL_MANAGER Role can view Participants.'
             );
         }
 
+        $participants = $this->participants->findByProductionId($production->id());
+
+        $personIds = array_values(array_unique(array_map(
+            static fn (Participant $participant): string => $participant->subjectId(),
+            array_filter($participants, static fn (Participant $participant): bool => $participant->subjectType()->equals(ParticipantSubjectType::person()))
+        )));
+
+        /** @var array<string, Person> $peopleById */
+        $peopleById = [];
+        foreach ($personIds as $personId) {
+            $person = $this->people->findById(PersonId::fromString($personId));
+            if ($person) {
+                $peopleById[$personId] = $person;
+            }
+        }
+
+        /** @var array<string, ?string> $emailsByPersonId */
+        $emailsByPersonId = [];
+        foreach ($personIds as $personId) {
+            $emailsByPersonId[$personId] = $this->personEmailResolver->resolve(PersonId::fromString($personId));
+        }
+
         return array_map(
-            static fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain($participant),
-            $this->participants->findByProductionId($production->id())
+            fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain(
+                $participant,
+                $peopleById[$participant->subjectId()] ?? null,
+                $emailsByPersonId[$participant->subjectId()] ?? null
+            ),
+            $participants
         );
     }
 }

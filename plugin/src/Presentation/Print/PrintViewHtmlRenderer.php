@@ -180,7 +180,7 @@ HTML;
     private function renderItemRow(TimetableItemResult $item): string
     {
         $start = (new \DateTimeImmutable($item->startDateTime))->format('H:i');
-        $end = $item->endDateTime !== null ? (new \DateTimeImmutable($item->endDateTime))->format('H:i') : '';
+        $end = $item->endDateTime !== null ? $this->endTime($item->startDateTime, $item->endDateTime) : '';
         $timeLabel = $end !== '' ? "{$start} - {$end}" : $start;
 
         $isStage = $item->venue !== null && mb_strpos($item->venue, '舞台') !== false;
@@ -330,6 +330,26 @@ CSS;
         }
 
         return 'file://' . __DIR__ . '/../../../assets/fonts/';
+    }
+
+    /**
+     * PR #7 R12: an item ending after midnight shows "翌00:30" (the next
+     * day), any later day "M/D 00:30" - the same as the app's list.
+     */
+    private function endTime(string $startDateTime, string $endDateTime): string
+    {
+        $start = new \DateTimeImmutable($startDateTime);
+        $end = (new \DateTimeImmutable($endDateTime))->setTimezone($start->getTimezone());
+
+        if ($end->format('Y-m-d') === $start->format('Y-m-d')) {
+            return $end->format('H:i');
+        }
+
+        if ($end->format('Y-m-d') === $start->modify('+1 day')->format('Y-m-d')) {
+            return '翌' . $end->format('H:i');
+        }
+
+        return $end->format('n/j H:i');
     }
 
     private function esc(string $value): string

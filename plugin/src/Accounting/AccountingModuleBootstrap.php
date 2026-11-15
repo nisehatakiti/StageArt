@@ -6,26 +6,39 @@ namespace StageArt\Accounting;
 
 use StageArt\Application\Account\CreateAccountUseCase;
 use StageArt\Application\Account\ListAccountsUseCase;
+use StageArt\Application\Accounting\PresetAccountProvisioner;
+use StageArt\Application\Budget\BudgetItemCatalog;
+use StageArt\Application\Budget\BudgetItemLineFactory;
+use StageArt\Application\Budget\ListBudgetItemsUseCase;
 use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetUseCase;
 use StageArt\Application\Budget\GetBudgetUseCase;
 use StageArt\Application\Budget\ListBudgetsUseCase;
+use StageArt\Application\Accounting\StandardPayableAccountResolver;
 use StageArt\Application\Budget\UpdateBudgetUseCase;
+use StageArt\Application\Expense\ApplicantExpenseTransitionUseCase;
+use StageArt\Application\Expense\ApproveExpenseUseCase;
 use StageArt\Application\Expense\ConfirmExpenseUseCase;
 use StageArt\Application\Expense\CreateExpenseUseCase;
 use StageArt\Application\Expense\ExpenseLineFactory;
+use StageArt\Application\Expense\ExpenseWorkflowNotifier;
 use StageArt\Application\Expense\GetExpenseUseCase;
 use StageArt\Application\Expense\ListExpensesUseCase;
+use StageArt\Application\Expense\RejectExpenseUseCase;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\JournalEntry\ListJournalEntriesUseCase;
 use StageArt\Application\JournalEntry\PostJournalEntryUseCase;
+use StageArt\Application\OrganizationAccounting\ListOrganizationProductionResultsUseCase;
+use StageArt\Application\ProductionAccounting\GetProductionAccountingDetailUseCase;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\NotificationContract;
 use StageArt\Core\Contract\OrganizationContextContract;
+use StageArt\Core\Contract\ProductionCapabilityDirectoryContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\AccountRepositoryInterface;
 use StageArt\Domain\Budget\BudgetRepositoryInterface;
@@ -71,7 +84,9 @@ final class AccountingModuleBootstrap
         IdentityContract $identity,
         AuthorizationContract $authorization,
         MembershipContract $membership,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        NotificationContract $notifications,
+        ProductionCapabilityDirectoryContract $capabilityDirectory
     ) {
         $budgetLineFactory = new BudgetLineFactory($accounts);
         $expenseLineFactory = new ExpenseLineFactory($accounts);
@@ -79,13 +94,17 @@ final class AccountingModuleBootstrap
         $createAccount = new CreateAccountUseCase($accounts, $organizationContext, $identity, $authorization);
         $listAccounts = new ListAccountsUseCase($accounts, $organizationContext, $identity, $authorization);
 
+        $presetAccounts = new PresetAccountProvisioner($accounts);
+        $budgetItemLineFactory = new BudgetItemLineFactory($accounts, $presetAccounts);
+
         $createBudget = new CreateBudgetUseCase(
             $budgets,
             $productionContext,
             $identity,
             $authorization,
             $budgetLineFactory,
-            $transactions
+            $transactions,
+            $budgetItemLineFactory
         );
         $updateBudget = new UpdateBudgetUseCase(
             $budgets,
@@ -93,11 +112,18 @@ final class AccountingModuleBootstrap
             $identity,
             $authorization,
             $budgetLineFactory,
-            $transactions
+            $transactions,
+            $budgetItemLineFactory
         );
         $getBudget = new GetBudgetUseCase($budgets, $identity, $authorization);
         $listBudgets = new ListBudgetsUseCase($budgets, $productionContext, $identity, $authorization);
         $activateBudget = new ActivateBudgetUseCase($budgets, $identity, $authorization, $transactions);
+        $listBudgetItems = new ListBudgetItemsUseCase(
+            new BudgetItemCatalog($accounts, $presetAccounts),
+            $productionContext,
+            $identity,
+            $authorization
+        );
 
         $createExpense = new CreateExpenseUseCase(
             $expenses,
@@ -111,21 +137,33 @@ final class AccountingModuleBootstrap
             $expenses,
             $productionContext,
             $identity,
-            $authorization,
             $expenseLineFactory,
             $transactions
         );
-        $confirmExpense = new ConfirmExpenseUseCase(
+        $confirmExpense = new ConfirmExpenseUseCase($expenses, $identity, $authorization);
+        $expenseNotifier = new ExpenseWorkflowNotifier($notifications, $capabilityDirectory, $productionContext);
+        $applicantExpenseTransitions = new ApplicantExpenseTransitionUseCase(
             $expenses,
-            $productionContext,
-            $accounts,
+            $identity,
+            $membership,
+            $transactions,
+            $expenseNotifier
+        );
+        $approveExpense = new ApproveExpenseUseCase(
+            $expenses,
             $journalEntries,
+            $accounts,
+            new StandardPayableAccountResolver($accounts),
+            $productionContext,
+            $organizationContext,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $expenseNotifier
         );
-        $getExpense = new GetExpenseUseCase($expenses, $identity, $membership);
-        $listExpenses = new ListExpensesUseCase($expenses, $productionContext, $membership, $identity);
+        $rejectExpense = new RejectExpenseUseCase($expenses, $identity, $authorization, $transactions, $expenseNotifier);
+        $getExpense = new GetExpenseUseCase($expenses, $identity, $membership, $authorization);
+        $listExpenses = new ListExpensesUseCase($expenses, $productionContext, $membership, $identity, $authorization);
 
         $listJournalEntries = new ListJournalEntriesUseCase($journalEntries, $productionContext, $identity, $authorization);
         $postJournalEntry = new PostJournalEntryUseCase(
@@ -146,23 +184,34 @@ final class AccountingModuleBootstrap
         );
 
         $this->restControllers = [
-            new AccountRestController($createAccount, $listAccounts),
+            new AccountRestController(
+                $createAccount,
+                $listAccounts,
+                new ListOrganizationProductionResultsUseCase($journalEntries, $accounts, $productionContext, $organizationContext, $authorization, $identity)
+            ),
             new BudgetRestController(
                 $createBudget,
                 $updateBudget,
                 $getBudget,
                 $listBudgets,
-                $activateBudget
+                $activateBudget,
+                $listBudgetItems
             ),
             new ExpenseRestController(
                 $createExpense,
                 $updateExpense,
                 $confirmExpense,
                 $getExpense,
-                $listExpenses
+                $listExpenses,
+                $applicantExpenseTransitions,
+                $approveExpense,
+                $rejectExpense
             ),
             new JournalEntryRestController($listJournalEntries, $postJournalEntry),
-            new ProductionAccountingRestController($getProductionAccountingSummary),
+            new ProductionAccountingRestController(
+                $getProductionAccountingSummary,
+                new GetProductionAccountingDetailUseCase($budgets, $journalEntries, $accounts, $productionContext, $authorization, $identity)
+            ),
         ];
     }
 

@@ -21,4 +21,11 @@ final class CoreOrganizationContextAdapter implements OrganizationContextContrac
     {
         return $this->organizations->findById($organizationId) !== null;
     }
+
+    public function isAccountingEnabled(OrganizationId $organizationId): bool
+    {
+        $organization = $this->organizations->findById($organizationId);
+
+        return $organization !== null && $organization->isAccountingEnabled();
+    }
 }

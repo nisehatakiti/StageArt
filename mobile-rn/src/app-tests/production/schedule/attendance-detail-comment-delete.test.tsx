@@ -97,6 +97,8 @@ describe('Attendance detail: Rehearsal comment delete', () => {
     fireEvent.press(screen.getByTestId('comment-delete-comment-1'));
 
     await waitFor(() => expect(deleteCalled).toBe(true));
-    await waitFor(() => expect(screen.getByTestId('comments-empty')).toBeVisible());
+    // 51b144c: an empty list shows nothing - the deleted comment is gone.
+    await waitFor(() => expect(screen.queryByTestId('comment-comment-1')).toBeNull());
+    expect(screen.queryByTestId('comment-list')).toBeNull();
   });
 });

@@ -43,6 +43,8 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             'person_id' => $attendance->personId()->toString(),
             'phase' => $attendance->phase()->toString(),
             'status' => $attendance->status()->toString(),
+            'remarks' => $attendance->remarks(),
+            'actual_status' => $attendance->actualStatus() ? $attendance->actualStatus()->toString() : null,
             'updated_at' => $attendance->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -112,11 +114,9 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
         return $row ? $this->hydrate($row) : null;
     }
 
-    public function findUpcomingByPersonId(
+    public function findByPersonIdExcludingRehearsalStatuses(
         PersonId $personId,
-        DateTimeImmutable $from,
-        array $excludedRehearsalStatuses,
-        int $limit
+        array $excludedRehearsalStatuses
     ): array {
         $rehearsalsTable = $this->wpdb->prefix . 'stageart_rehearsals';
 
@@ -125,19 +125,13 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             ? ''
             : "AND r.status NOT IN ({$statusPlaceholders})";
 
-        $params = array_merge(
-            [$personId->toString(), $from->format('Y-m-d H:i:s')],
-            $excludedRehearsalStatuses,
-            [$limit]
-        );
+        $params = array_merge([$personId->toString()], $excludedRehearsalStatuses);
 
         $rows = $this->wpdb->get_results(
             $this->wpdb->prepare(
                 "SELECT ra.* FROM {$this->table} ra "
                 . "INNER JOIN {$rehearsalsTable} r ON r.id = ra.rehearsal_id "
-                . "WHERE ra.person_id = %s AND r.start_date_time >= %s {$statusClause} "
-                . "ORDER BY r.start_date_time ASC "
-                . "LIMIT %d",
+                . "WHERE ra.person_id = %s {$statusClause}",
                 $params
             ),
             ARRAY_A
@@ -155,7 +149,9 @@ final class WordPressRehearsalAttendanceRepository implements RehearsalAttendanc
             RehearsalAttendancePhase::fromString($row['phase']),
             RehearsalAttendanceStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            ! empty($row['remarks']) ? $row['remarks'] : null,
+            ! empty($row['actual_status']) ? RehearsalAttendanceStatus::fromString($row['actual_status']) : null
         );
     }
 }

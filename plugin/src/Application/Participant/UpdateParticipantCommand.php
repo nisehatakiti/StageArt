@@ -10,16 +10,19 @@ final class UpdateParticipantCommand
     public int $requestedByWordPressUserId;
     public string $participantType;
     public string $status;
+    public ?string $remarks;
 
     public function __construct(
         string $participantId,
         int $requestedByWordPressUserId,
         string $participantType,
-        string $status
+        string $status,
+        ?string $remarks = null
     ) {
         $this->participantId = $participantId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
         $this->participantType = $participantType;
         $this->status = $status;
+        $this->remarks = $remarks;
     }
 }

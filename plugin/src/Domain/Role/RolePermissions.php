@@ -10,32 +10,76 @@ namespace StageArt\Domain\Role;
  * Phase's explicit instruction not to build a general RBAC/ABAC engine
  * beyond what Blueprint currently requires:
  *
- * Only PARTICIPANT_MANAGER and REHEARSAL_MANAGER have real entries here,
- * copied verbatim from Authorization.md's own worked examples
- * ("REHEARSAL_MANAGER ↓ Rehearsal.Read/Create/Update/Delete, Schedule.
- * Read" / "PARTICIPANT_MANAGER ↓ Participant.Read/Create/Update/
- * Delete"). These are the two Roles ProductionAuthorizationService
- * actually gates Production-Scope operations on
- * (canManageParticipants/canManageRehearsals).
+ * PARTICIPANT_MANAGER, REHEARSAL_MANAGER and PERFORMANCE_MANAGER have
+ * real entries here, copied verbatim from Authorization.md's own worked
+ * examples ("REHEARSAL_MANAGER ↓ Rehearsal.Read/Create/Update/Delete,
+ * Schedule.Read" / "PARTICIPANT_MANAGER ↓ Participant.Read/Create/
+ * Update/Delete"). PARTICIPANT_MANAGER/REHEARSAL_MANAGER are the two
+ * Roles ProductionAuthorizationService gates its own
+ * canManageParticipants/canManageRehearsals on; PERFORMANCE_MANAGER
+ * (added by Phase 2 Performance基盤, per that Phase's own instruction
+ * §17/§18) is instead evaluated generically through
+ * `AuthorizationContract::canForProduction()` against
+ * `PerformanceCapability::CREATE/UPDATE/CANCEL`, the same Core/Module
+ * Capability-check path REHEARSAL_MANAGER's own
+ * `RehearsalCapability::MANAGE` already uses - no
+ * ProductionAuthorizationService-level `canManagePerformances()` method
+ * was added, since Core does not need to know a Capability string exists
+ * ahead of time (see AuthorizationContract's own docblock).
+ *
+ * StageArt 稽古作成画面の参加メンバー表示修正 instruction: REHEARSAL_MANAGER's
+ * entry also carries `Participant.Read` now (Authorization.md's worked
+ * example updated to match) - 稽古管理者 must be able to read the
+ * Production's Participant roster to pick Rehearsal Attendance targets
+ * (CreateRehearsalUseCase already validates those targets against
+ * MembershipContract::activeProductionMemberPersonIds(), the same
+ * Participant data). Deliberately Read-only: Participant.Create/Update/
+ * Delete are NOT added, so REHEARSAL_MANAGER still cannot add/remove/
+ * edit Participants - that stays PARTICIPANT_MANAGER-only via
+ * ProductionAuthorizationService::canManageParticipants()'s own
+ * unchanged Participant.Update check. See
+ * ProductionAuthorizationService::canReadParticipants() for the new
+ * Read-level gate this gets checked against.
  *
  * OWNER and MEMBER intentionally have no entry here. Organization Scope
  * authorization (OrganizationAuthorizationService::hasRole()) continues
  * to check membership in an explicit allowed-RoleKey list per call site
  * (e.g. [RoleKey::OWNER] for Account creation) rather than a Permission
  * lookup - Authorization.md gives no enumerated Permission catalog for
- * "every Organization-Scope operation" the way it does for the two
+ * "every Organization-Scope operation" the way it does for the
  * Production-Scope Roles above, and inventing one here would be
  * building Permission strings Blueprint never defined. Both paths
  * apply the exact same Domain\Role\RoleKey type, which is what Role.md
  * requires ("同じRole Definitionを両Scopeで利用できる") - a shared
  * Permission-lookup mechanism for every Role is not itself required.
  *
- * RESERVATION_MANAGER and PERFORMANCE_MANAGER (also named in
- * Authorization.md's examples) are not added: their Domains (Reservation,
- * Performance) are not implemented in Backend yet (see the Phase 5.6
- * audit), so there is nothing yet for a Permission Set to gate access
- * to. ACCOUNTING_MANAGER is likewise not added as a RoleKey value at all
- * this Phase - see this Phase's report's "Accounting" section for why.
+ * TICKET_MANAGER and RESERVATION_MANAGER (Phase 3 Ticket/Reservation
+ * 基盤, instruction §23/§32) follow the same generic Capability-check
+ * path as PERFORMANCE_MANAGER - `TicketCapability::MANAGE`/
+ * `ReservationCapability::MANAGE` - not a
+ * ProductionAuthorizationService-level method. RESERVATION_MANAGER now
+ * has a real entry (superseding the earlier "not implemented yet" note
+ * this docblock previously carried).
+ *
+ * CHECKIN_MANAGER (Phase 4 Check-in/精算/会計連携, per that Phase's
+ * instruction confirming a dedicated reception-staff Role) follows the
+ * same generic path via `CheckInCapability::MANAGE` - reception staff
+ * need Check-in/Reservation-search/walk-up capability but explicitly do
+ * NOT need Settlement or Accounting-close authority, which stay
+ * PrimaryManager/ACCOUNTING_MANAGER-only, so CHECKIN_MANAGER's own
+ * Permission Set is scoped narrowly to `CheckIn.Manage` alone.
+ *
+ * ACCOUNTING_MANAGER (担当者権限をメンバー管理へ統合・整理 instruction §会計担当
+ * 仕様訂正): grants the Production's accounting処理全般 - Budget/Expense/
+ * JournalEntry management (`Accounting.Update`) AND Settlement
+ * (`Settlement.Manage` - settling/cancelling a member's Ticket Back
+ * payout). This round's explicit correction of an earlier instruction
+ * in this same series that excluded Settlement.Manage as "too sensitive
+ * to delegate" - re-confirmed here as in-scope: 会計担当 covers the whole
+ * post-Production accounting flow (予算/支出/仕訳/メンバーへの精算), not
+ * bookkeeping alone. PrimaryManager's own authority is unchanged either
+ * way (`hasProductionCapability()` already OR's PrimaryManager in
+ * regardless of any Role's Permission Set).
  */
 final class RolePermissions
 {
@@ -53,6 +97,45 @@ final class RolePermissions
             'Rehearsal.Update',
             'Rehearsal.Delete',
             'Schedule.Read',
+            // StageArt 稽古作成画面の参加メンバー表示修正 instruction:
+            // CreateRehearsalUseCase already validates target selection
+            // against the Production's active Person-Participants
+            // (MembershipContract::activeProductionMemberPersonIds()) -
+            // 稽古管理者 needs to be able to READ that same roster to
+            // pick targets in the first place. `Participant.Read` was
+            // already declared here in the catalog (unused until now -
+            // see ProductionAuthorizationService::canReadParticipants())
+            // for PARTICIPANT_MANAGER; this does not grant Create/
+            // Update/Delete, which stay PARTICIPANT_MANAGER-only via
+            // canManageParticipants()'s own unchanged Participant.Update
+            // check.
+            'Participant.Read',
+        ],
+        RoleKey::PERFORMANCE_MANAGER => [
+            'Performance.Read',
+            'Performance.Create',
+            'Performance.Update',
+            'Performance.Cancel',
+        ],
+        RoleKey::TICKET_MANAGER => [
+            'Ticket.Manage',
+        ],
+        RoleKey::RESERVATION_MANAGER => [
+            'Reservation.Manage',
+        ],
+        RoleKey::CHECKIN_MANAGER => [
+            'CheckIn.Manage',
+        ],
+        RoleKey::QUESTIONNAIRE_MANAGER => [
+            'Questionnaire.Manage',
+        ],
+        RoleKey::ACCOUNTING_MANAGER => [
+            'Accounting.Update',
+            'Settlement.Manage',
+            // 経費承認・決算確定 (統合・会計仕様の確定事項 2026-10-28 §2) -
+            // also held by a 代理人, see ProductionAuthorizationService.
+            'Expense.Approve',
+            'Production.Complete',
         ],
     ];
 

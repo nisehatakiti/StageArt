@@ -6,6 +6,10 @@ namespace StageArt\Application\RehearsalAttendance;
 
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendance;
 
+/**
+ * `status` is the member's own answer; `actualStatus` (PR #7 R9) is the
+ * Manager's recorded result, or null when none has been recorded.
+ */
 final class RehearsalAttendanceResult
 {
     public string $id;
@@ -13,6 +17,8 @@ final class RehearsalAttendanceResult
     public string $personId;
     public string $phase;
     public string $status;
+    public ?string $actualStatus;
+    public ?string $remarks;
     public string $createdAt;
     public string $updatedAt;
 
@@ -22,6 +28,8 @@ final class RehearsalAttendanceResult
         string $personId,
         string $phase,
         string $status,
+        ?string $actualStatus,
+        ?string $remarks,
         string $createdAt,
         string $updatedAt
     ) {
@@ -30,6 +38,8 @@ final class RehearsalAttendanceResult
         $this->personId = $personId;
         $this->phase = $phase;
         $this->status = $status;
+        $this->actualStatus = $actualStatus;
+        $this->remarks = $remarks;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -42,6 +52,8 @@ final class RehearsalAttendanceResult
             $attendance->personId()->toString(),
             $attendance->phase()->toString(),
             $attendance->status()->toString(),
+            $attendance->actualStatus() ? $attendance->actualStatus()->toString() : null,
+            $attendance->remarks(),
             $attendance->createdAt()->format(DATE_ATOM),
             $attendance->updatedAt()->format(DATE_ATOM)
         );
@@ -58,6 +70,8 @@ final class RehearsalAttendanceResult
             'person_id' => $this->personId,
             'phase' => $this->phase,
             'status' => $this->status,
+            'actual_status' => $this->actualStatus,
+            'remarks' => $this->remarks,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
         ];

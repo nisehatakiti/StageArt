@@ -15,6 +15,11 @@ final class UpdateOrganizationCommand
     public ?string $slug;
     public ?bool $published;
     public ?string $publishedAt;
+    /** StageArt 団体管理UI整理: unconditional overwrite, matching type/
+     * description's own convention (not slug/published's "null = leave
+     * unchanged" one) - the caller always resends the current value to
+     * keep it as-is, null clears it. */
+    public ?string $logoUrl;
 
     /**
      * StageArt Web First Phase 2 / Publication State Model:
@@ -38,7 +43,8 @@ final class UpdateOrganizationCommand
         string $status,
         ?string $slug = null,
         ?bool $published = null,
-        ?string $publishedAt = null
+        ?string $publishedAt = null,
+        ?string $logoUrl = null
     ) {
         $this->organizationId = $organizationId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
@@ -49,5 +55,6 @@ final class UpdateOrganizationCommand
         $this->slug = $slug;
         $this->published = $published;
         $this->publishedAt = $publishedAt;
+        $this->logoUrl = $logoUrl;
     }
 }

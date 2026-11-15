@@ -253,6 +253,14 @@ A member's current ticket-back estimate shown on Home is calculated from reserva
 
 The final ticket-back amount after the Performance is based on actual attendance according to the existing Production Ticket Sales Rules.
 
+Confirmed 2026-11-10 (PR #7):
+
+- The final quantity is the sum of `guestCount` over the member's **CHECKED_IN** Reservations, counted per ticket type.
+- NO_SHOW and CANCELLED Reservations are not counted.
+- Each seat is valued at its Reservation's booking-time `priceSnapshot`, never the current ticket price.
+
+See Chapter 29 §7.1.
+
 ---
 
 ## 9. Save

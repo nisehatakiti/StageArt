@@ -46,8 +46,10 @@ final class DeleteProductionDelegateUseCase
             throw new ProductionNotFoundException($delegate->productionId()->toString());
         }
 
-        if (! $this->authorization->canManageProductionDelegates($requester, $production)) {
-            throw new ProductionDelegateAccessDeniedException('Only the PrimaryManager can manage ProductionDelegates.');
+        if (! $this->authorization->canManageProductionDelegateRole($requester, $production, $delegate->role())) {
+            throw new ProductionDelegateAccessDeniedException(
+                'Only the PrimaryManager, or a 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) managing 代理人/会計担当/受付担当, can remove this Role.'
+            );
         }
 
         $this->delegates->delete($delegate->id());

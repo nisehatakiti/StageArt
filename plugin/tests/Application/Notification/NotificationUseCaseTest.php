@@ -18,6 +18,10 @@ use StageArt\Application\Notification\UpdatePushPreferenceCommand;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotification;
 use StageArt\Domain\Organization\Organization;
@@ -38,6 +42,7 @@ use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
 use StageArt\Tests\Support\InMemoryPushPreferenceRepository;
 use StageArt\Tests\Support\InMemoryTimetableVersionPublishedNotificationRepository;
 
@@ -77,17 +82,23 @@ final class NotificationUseCaseTest extends TestCase
             $this->participants
         );
 
+        $productionContext = new CoreProductionContextAdapter($this->productions, new ProductionOrganizationResolver(new InMemoryProjectRepository()));
+        $identity = new CoreIdentityAdapter($this->people);
+        $membership = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $productionAuthorization);
+
         $this->listNotifications = new ListNotificationsForProductionUseCase(
-            $this->productions,
+            $productionContext,
             $this->notifications,
             $this->readStates,
-            $productionAuthorization
+            $identity,
+            $membership
         );
         $this->markRead = new MarkNotificationReadUseCase(
             $this->notifications,
             $this->readStates,
-            $this->productions,
-            $productionAuthorization
+            $productionContext,
+            $identity,
+            $membership
         );
         $this->getPushPreference = new GetPushPreferenceUseCase($this->pushPreferences, $productionAuthorization);
         $this->updatePushPreference = new UpdatePushPreferenceUseCase($this->pushPreferences, $productionAuthorization);

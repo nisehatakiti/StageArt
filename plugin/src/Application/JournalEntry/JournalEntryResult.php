@@ -12,6 +12,8 @@ final class JournalEntryResult
     public string $organizationId;
     public ?string $productionId;
     public string $journalDate;
+    /** The 仕訳日: the JST calendar date of journalDate (AccountingDate), Y-m-d. */
+    public string $accountingDate;
     public string $description;
     public string $status;
     public ?string $sourceEventType;
@@ -34,6 +36,7 @@ final class JournalEntryResult
         string $organizationId,
         ?string $productionId,
         string $journalDate,
+        string $accountingDate,
         string $description,
         string $status,
         ?string $sourceEventType,
@@ -51,6 +54,7 @@ final class JournalEntryResult
         $this->organizationId = $organizationId;
         $this->productionId = $productionId;
         $this->journalDate = $journalDate;
+        $this->accountingDate = $accountingDate;
         $this->description = $description;
         $this->status = $status;
         $this->sourceEventType = $sourceEventType;
@@ -72,6 +76,7 @@ final class JournalEntryResult
             $entry->organizationId()->toString(),
             $entry->productionId() !== null ? $entry->productionId()->toString() : null,
             $entry->journalDate()->format(DATE_ATOM),
+            $entry->accountingDate(),
             $entry->description(),
             $entry->status()->toString(),
             $entry->sourceEventType(),
@@ -97,6 +102,7 @@ final class JournalEntryResult
             'organization_id' => $this->organizationId,
             'production_id' => $this->productionId,
             'journal_date' => $this->journalDate,
+            'accounting_date' => $this->accountingDate,
             'description' => $this->description,
             'status' => $this->status,
             'source_event_type' => $this->sourceEventType,

@@ -23,11 +23,34 @@ final class ProductionSummary
     public ProductionId $id;
     public string $name;
     public string $status;
+    /**
+     * Phase 2 Performance基盤: the Performance Module's own capacity-
+     * inheritance requirement (§10 - a new Performance's capacity starts
+     * as a copy of the parent Production's) is the reason this joins
+     * `status` here rather than staying Production-internal - the same
+     * "a Module needs a read-only slice of Production" rationale this
+     * class's own docblock already gives for `status`. Null for a
+     * Production whose capacity was never set (Production.capacity is
+     * itself nullable - see Production::class).
+     */
+    public ?int $capacity;
 
-    public function __construct(ProductionId $id, string $name, string $status)
+    /**
+     * 公演スケジュール Phase: the Performance Module's own auto-end-time
+     * calculation (CreatePerformanceUseCase/UpdatePerformanceUseCase -
+     * `Performance::calculateEndTime()`) needs the parent Production's
+     * configured duration, joining `capacity` here for the identical
+     * "a Module needs a read-only slice of Production" reason this
+     * class's own docblock already gives.
+     */
+    public ?int $performanceDurationMinutes;
+
+    public function __construct(ProductionId $id, string $name, string $status, ?int $capacity = null, ?int $performanceDurationMinutes = null)
     {
         $this->id = $id;
         $this->name = $name;
         $this->status = $status;
+        $this->capacity = $capacity;
+        $this->performanceDurationMinutes = $performanceDurationMinutes;
     }
 }

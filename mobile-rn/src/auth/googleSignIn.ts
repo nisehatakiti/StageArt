@@ -1,5 +1,38 @@
+import { Platform } from 'react-native';
+
 import { getGoogleWebClientId } from '@/api/config';
 import { checkGoogleSigninModuleStatus } from '@/auth/googleModuleDiagnostics';
+
+/**
+ * StageArt mobile-rn 修正指示書 §6: whether "Googleで続ける"/"Googleアカウント
+ * を連携" should even be offered as a tappable action, decided from the
+ * same two preconditions signInWithGoogleDiagnostic() already checks one
+ * at a time (module registration, Client ID) - collapsed here into one
+ * synchronous yes/no so a screen can hide the action entirely instead of
+ * showing a button that always fails.
+ *
+ * `@react-native-google-signin/google-signin` is a native-only module
+ * (TurboModuleRegistry/NativeModules, confirmed via
+ * googleModuleDiagnostics.ts) - it is never registered under
+ * react-native-web, so this is unconditionally false on Web regardless of
+ * Client ID configuration. A real Web-capable Google Sign-In needs a
+ * different implementation entirely (Google's own Identity Services JS
+ * SDK, or expo-auth-session against Google's OAuth endpoint) - not built
+ * here; see the completion report for why this was disclosed rather than
+ * attempted.
+ */
+export function isGoogleSignInAvailable(): boolean {
+  if (Platform.OS === 'web') {
+    return false;
+  }
+
+  const moduleStatus = checkGoogleSigninModuleStatus();
+  if (!moduleStatus.turboModuleFound && !moduleStatus.legacyBridgeModuleFound) {
+    return false;
+  }
+
+  return !!getGoogleWebClientId();
+}
 
 export class GoogleSignInNotConfiguredError extends Error {
   constructor() {

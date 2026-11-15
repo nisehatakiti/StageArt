@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
+use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
 
 /**
- * Recording the day-of actual result (ATTENDED/LATE/ABSENT) is
+ * Recording the day-of actual result (ATTENDED/LATE/EARLY_LEFT/ABSENT) is
  * management-only, not self-service: RehearsalAttendance.md draws a hard
  * line between a Person's own prior intent (ATTENDING/NOT_ATTENDING, via
  * RespondRehearsalAttendanceUseCase) and the actual outcome, which only
@@ -29,24 +32,42 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  */
 final class RecordActualRehearsalAttendanceStatusUseCase
 {
+    /**
+     * docs/04-DomainModel/RehearsalAttendance.md "Rehearsal Status x
+     * Attendance Operation Policy": Actual Status may be recorded (and,
+     * per that doc, re-recorded/corrected) only while the Rehearsal is
+     * ACTIVE or COMPLETED - never before ACTIVE (no actual result exists
+     * yet) and never once CANCELLED (the Rehearsal never happened).
+     * COMPLETED is intentionally included, not excluded: this is not a
+     * lock, it is the documented "Manager may correct Actual Status
+     * after the fact" behavior.
+     */
+    private const ACTUAL_STATUS_ALLOWED_STATUSES = [
+        RehearsalStatus::ACTIVE,
+        RehearsalStatus::COMPLETED,
+    ];
+
     private RehearsalAttendanceRepositoryInterface $attendances;
     private RehearsalRepositoryInterface $rehearsals;
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalAttendanceRepositoryInterface $attendances,
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        AuthorizationContract $authorization
+        AuthorizationContract $authorization,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->attendances = $attendances;
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->authorization = $authorization;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(RecordActualRehearsalAttendanceStatusCommand $command): RehearsalAttendanceResult
@@ -79,6 +100,18 @@ final class RecordActualRehearsalAttendanceStatusUseCase
         if (! $this->authorization->canForProduction($requesterId, $productionId, RehearsalCapability::MANAGE)) {
             throw new RehearsalAttendanceAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the REHEARSAL_MANAGER Role can record the actual attendance result.'
+            );
+        }
+
+        // Synced before the allowed-status check below: a CONFIRMED
+        // Rehearsal whose start time has passed must become ACTIVE here
+        // so recording an actual result is correctly permitted without
+        // requiring a manual "稽古を開始する" first.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
+
+        if (! in_array($rehearsal->status()->toString(), self::ACTUAL_STATUS_ALLOWED_STATUSES, true)) {
+            throw new InvalidArgumentException(
+                "Actual attendance status cannot be recorded while the Rehearsal is {$rehearsal->status()->toString()}."
             );
         }
 

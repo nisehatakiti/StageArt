@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
+use mysqli;
+use StageArt\Application\Shared\DatabaseBusyException;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use Throwable;
 use wpdb;
@@ -13,9 +15,47 @@ use wpdb;
  * TRANSACTION/COMMIT/ROLLBACK via $wpdb->query() is the standard
  * approach WordPress plugins use. Requires the storage engine to
  * support transactions (InnoDB, the modern WordPress default).
+ *
+ * $wpdb->query() returns false when one of these fails (0 otherwise) and
+ * never throws, so each result is checked (PR #6 review F1):
+ * - START TRANSACTION fails: the operation is not run.
+ * - COMMIT fails, or ran on another connection than the one the
+ *   transaction started on: the run fails after a ROLLBACK, never
+ *   reporting success.
+ * - ROLLBACK fails: that failure is thrown, carrying the original one as
+ *   its previous exception, and the connection - which may still hold the
+ *   open transaction - is closed and opened afresh, so nothing later in
+ *   the request (whose next START TRANSACTION would implicitly commit it)
+ *   runs inside that transaction.
+ *
+ * A lost connection is never silently replaced while the transaction is
+ * open: on MySQL error 2006 $wpdb reconnects and repeats the statement on
+ * the new connection, where it - and every statement after it - would be
+ * autocommitted on its own while the work before it was rolled back with
+ * the old connection (verified on MySQL 5.7.44: an approval left POSTED
+ * without its Journal Entry). So from START TRANSACTION until the
+ * transaction ends, $wpdb->reconnect_retries is 0 - wpdb then ends the
+ * request with its database connection error (wp_die) instead, or, after
+ * template_redirect, reports the statement as failed - and its previous
+ * value is put back afterwards. The connection check above stays for a
+ * $wpdb that does not honour reconnect_retries.
+ *
+ * PR #7 review (R5): when the operation failed because its last statement
+ * hit a lock wait timeout (MySQL 1205) or a deadlock (1213), what is thrown
+ * after the ROLLBACK is DatabaseBusyException (with the original failure
+ * as its previous exception): the whole transaction is known to be rolled
+ * back, so the request may be sent again (REST 503). Any other failure is
+ * passed on unchanged.
+ *
+ * Failures are TransactionFailedException (a RuntimeException), so callers
+ * treat them like any other failed write. Nested run() calls are not
+ * supported (MySQL would commit the outer transaction); no caller nests.
  */
 final class WordPressTransactionManager implements TransactionManagerInterface
 {
+    /** ER_LOCK_WAIT_TIMEOUT, ER_LOCK_DEADLOCK */
+    private const BUSY_ERRORS = [1205, 1213];
+
     private wpdb $wpdb;
 
     public function __construct(wpdb $wpdb)
@@ -25,18 +65,170 @@ final class WordPressTransactionManager implements TransactionManagerInterface
 
     public function run(callable $operation)
     {
-        $this->wpdb->query('START TRANSACTION');
+        if ($this->wpdb->query('START TRANSACTION') === false) {
+            throw TransactionFailedException::startFailed($this->databaseError());
+        }
+
+        $reconnectRetries = $this->suppressReconnect();
+
+        try {
+            return $this->runStarted($operation);
+        } finally {
+            $this->restoreReconnect($reconnectRetries);
+        }
+    }
+
+    /**
+     * @return mixed the operation's result, once committed
+     */
+    private function runStarted(callable $operation)
+    {
+        $connection = $this->connectionId();
 
         try {
             $result = $operation();
         } catch (Throwable $exception) {
-            $this->wpdb->query('ROLLBACK');
+            $busy = $this->busyError();
+            $this->rollBack($exception);
+
+            if ($busy !== null && ! $exception instanceof DatabaseBusyException) {
+                throw new DatabaseBusyException($busy, $exception);
+            }
 
             throw $exception;
         }
 
-        $this->wpdb->query('COMMIT');
+        if ($this->wpdb->query('COMMIT') === false) {
+            $failure = TransactionFailedException::commitFailed($this->databaseError());
+            $this->rollBack($failure);
+
+            throw $failure;
+        }
+
+        $committedOn = $this->connectionId();
+
+        if ($connection !== null && $committedOn !== null && $committedOn !== $connection) {
+            $failure = TransactionFailedException::connectionChanged($connection, $committedOn);
+            $this->rollBack($failure);
+
+            throw $failure;
+        }
 
         return $result;
+    }
+
+    /**
+     * @throws TransactionFailedException when the ROLLBACK itself fails
+     */
+    private function rollBack(Throwable $cause): void
+    {
+        if ($this->wpdb->query('ROLLBACK') === false) {
+            $failure = TransactionFailedException::rollbackFailed($this->databaseError(), $cause);
+            $this->discardConnection();
+
+            throw $failure;
+        }
+    }
+
+    /**
+     * Closing the connection makes MySQL discard whatever transaction it
+     * still holds. wpdb::close() also marks $wpdb not ready - every later
+     * query would just return false - so a fresh connection is opened at
+     * once, without bailing when that fails.
+     */
+    private function discardConnection(): void
+    {
+        try {
+            $this->wpdb->close();
+        } catch (Throwable $exception) {
+            // Nothing more can be done for a handle that cannot be closed.
+        }
+
+        try {
+            $this->wpdb->db_connect(false);
+        } catch (Throwable $exception) {
+            // Left not ready: later queries fail rather than reuse the old connection.
+        }
+    }
+
+    /**
+     * @return int|null the reconnect_retries to put back, or null when this
+     *                  $wpdb has none
+     */
+    private function suppressReconnect(): ?int
+    {
+        $retries = $this->wpdb->reconnect_retries ?? null;
+
+        if (! is_int($retries)) {
+            return null;
+        }
+
+        $this->wpdb->reconnect_retries = 0;
+
+        return $retries;
+    }
+
+    private function restoreReconnect(?int $retries): void
+    {
+        if ($retries !== null) {
+            $this->wpdb->reconnect_retries = $retries;
+        }
+    }
+
+    /**
+     * The error of the statement that ran last, when it was a lock wait
+     * timeout or a deadlock; null otherwise. Read before the ROLLBACK,
+     * which clears it. mysqli's error number is used when there is a
+     * mysqli connection, the error text otherwise.
+     */
+    private function busyError(): ?string
+    {
+        $error = $this->databaseError();
+
+        if ($error === '') {
+            return null;
+        }
+
+        $handle = $this->wpdb->dbh;
+
+        if ($handle instanceof mysqli) {
+            try {
+                $errno = mysqli_errno($handle);
+            } catch (Throwable $exception) {
+                $errno = 0;
+            }
+
+            if (in_array($errno, self::BUSY_ERRORS, true)) {
+                return $error;
+            }
+        }
+
+        return preg_match('/^(Lock wait timeout exceeded|Deadlock found when trying to get lock)/', $error) === 1 ? $error : null;
+    }
+
+    private function databaseError(): string
+    {
+        return (string) ($this->wpdb->last_error ?? '');
+    }
+
+    /**
+     * The MySQL thread id of $wpdb's connection, or null when it cannot be
+     * told (no mysqli connection, or a closed one).
+     */
+    private function connectionId(): ?int
+    {
+        $handle = $this->wpdb->dbh;
+
+        if (! $handle instanceof mysqli) {
+            return null;
+        }
+
+        try {
+            $id = mysqli_thread_id($handle);
+        } catch (Throwable $exception) {
+            return null;
+        }
+
+        return is_int($id) && $id > 0 ? $id : null;
     }
 }

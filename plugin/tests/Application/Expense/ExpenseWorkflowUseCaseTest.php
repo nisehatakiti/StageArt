@@ -1,0 +1,1757 @@
+<?php
+
+declare(strict_types=1);
+
+namespace StageArt\Tests\Application\Expense;
+
+use DateTimeImmutable;
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+use StageArt\Application\Account\CreateAccountCommand;
+use StageArt\Application\Account\CreateAccountUseCase;
+use StageArt\Application\Accounting\AccountingCapability;
+use StageArt\Application\Accounting\StandardPayableAccountResolver;
+use StageArt\Application\Expense\ApplicantExpenseTransitionUseCase;
+use StageArt\Application\Expense\ApproveExpenseCommand;
+use StageArt\Application\Expense\ApproveExpenseUseCase;
+use StageArt\Application\Expense\CreateExpenseCommand;
+use StageArt\Application\Expense\CreateExpenseUseCase;
+use StageArt\Application\Expense\ExpenseAccessDeniedException;
+use StageArt\Application\Expense\ExpenseAccountingDisabledException;
+use StageArt\Application\Expense\ExpenseLineFactory;
+use StageArt\Application\Expense\ExpenseTransitionCommand;
+use StageArt\Application\Expense\ExpenseWorkflowNotifier;
+use StageArt\Application\Expense\RejectExpenseCommand;
+use StageArt\Application\Expense\RejectExpenseUseCase;
+use StageArt\Application\Expense\UpdateExpenseCommand;
+use StageArt\Application\Expense\UpdateExpenseUseCase;
+use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
+use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Adapter\CoreAuthorizationAdapter;
+use StageArt\Core\Adapter\CoreIdentityAdapter;
+use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
+use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Domain\Account\Account;
+use StageArt\Domain\Account\AccountId;
+use StageArt\Domain\Account\AccountType;
+use StageArt\Domain\Expense\Expense;
+use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
+use StageArt\Domain\Expense\ExpenseId;
+use StageArt\Domain\Expense\ExpenseLine;
+use StageArt\Domain\Expense\ExpenseReview;
+use StageArt\Domain\Expense\ExpenseStateConflictException;
+use StageArt\Domain\Expense\ExpenseStatus;
+use StageArt\Domain\JournalEntry\AccountingDate;
+use StageArt\Domain\JournalEntry\DebitCredit;
+use StageArt\Domain\JournalEntry\JournalEntry;
+use StageArt\Domain\JournalEntry\JournalEntryLine;
+use StageArt\Domain\Membership\Membership;
+use StageArt\Domain\Organization\Organization;
+use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Participant\ParticipantType;
+use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
+use StageArt\Domain\Project\Project;
+use StageArt\Domain\Role\RoleKey;
+use StageArt\Infrastructure\WordPress\Persistence\TransactionFailedException;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
+use StageArt\Tests\Support\FakeMysqli;
+use StageArt\Tests\Support\FakeWpdb;
+use StageArt\Tests\Support\FakeWpdbDefault;
+use StageArt\Tests\Support\InMemoryAccountRepository;
+use StageArt\Tests\Support\InMemoryBudgetRepository;
+use StageArt\Tests\Support\InMemoryExpenseRepository;
+use StageArt\Tests\Support\InMemoryJournalEntryRepository;
+use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPersonRepository;
+use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
+use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryProjectRepository;
+use StageArt\Tests\Support\RecordingNotificationContract;
+use StageArt\Tests\Support\RollbackingTransactionManager;
+
+/**
+ * 修正8 経費ワークフロー, Application level: submit / withdraw / resubmit
+ * by the applicant, approve (posting) and reject by an approver, the
+ * revision check, double-posting protection, rollback on a failed write,
+ * post-commit notifications, and who may do what.
+ *
+ * WordPress user ids: 1 = PrimaryManager, 2 = applicant (Cast
+ * Participant), 3 = another Cast Participant, 4 = ACCOUNTING_MANAGER,
+ * 5 = TICKET_MANAGER, 6 = Organization member outside the Production,
+ * 7 = a second ACCOUNTING_MANAGER, 8 = 代理人 (ACTIVE PARTICIPANT_MANAGER
+ * + REHEARSAL_MANAGER), 9 = PARTICIPANT_MANAGER only, 10 = a former 代理人
+ * whose REHEARSAL_MANAGER Role was deactivated.
+ *
+ * Approving and rejecting need `Expense.Approve` - PrimaryManager,
+ * 会計管理者 and 代理人 (StageArt 統合・会計仕様の確定事項 2026-10-28 §2) -
+ * and the same people are the approvers the submission is announced to.
+ */
+final class ExpenseWorkflowUseCaseTest extends TestCase
+{
+    private InMemoryOrganizationRepository $organizations;
+    private InMemoryPersonRepository $people;
+    private InMemoryMembershipRepository $memberships;
+    private InMemoryProjectRepository $projects;
+    private InMemoryProductionRepository $productions;
+    private InMemoryAccountRepository $accounts;
+    private InMemoryExpenseRepository $expenses;
+    private InMemoryJournalEntryRepository $journalEntries;
+    private InMemoryParticipantRepository $participants;
+    private InMemoryProductionDelegateRepository $delegates;
+    private RollbackingTransactionManager $transactions;
+    private RecordingNotificationContract $notifications;
+
+    private CreateAccountUseCase $createAccount;
+    private CreateExpenseUseCase $createExpense;
+    private UpdateExpenseUseCase $updateExpense;
+    private ApplicantExpenseTransitionUseCase $applicantTransitions;
+    private ApproveExpenseUseCase $approveExpense;
+    private RejectExpenseUseCase $rejectExpense;
+    private GetProductionAccountingSummaryUseCase $summary;
+    /** @var callable(TransactionManagerInterface): ApproveExpenseUseCase */
+    private $approveWith;
+    /** @var array<int, mixed> reconnect_retries in force at each COMMIT of approveOnWordPressTransactions() */
+    private array $retriesAtCommit = [];
+
+    private Organization $organization;
+    private Production $production;
+    private string $expenseAccountId;
+    /** @var array<int, Person> */
+    private array $person = [];
+
+    protected function setUp(): void
+    {
+        $this->build(true);
+    }
+
+    private function build(bool $accountingEnabled): void
+    {
+        $this->person = [];
+        $this->organizations = new InMemoryOrganizationRepository();
+        $this->people = new InMemoryPersonRepository();
+        $this->memberships = new InMemoryMembershipRepository();
+        $this->projects = new InMemoryProjectRepository();
+        $this->productions = new InMemoryProductionRepository();
+        $this->accounts = new InMemoryAccountRepository();
+        $this->expenses = new InMemoryExpenseRepository();
+        $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->participants = new InMemoryParticipantRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->transactions = new RollbackingTransactionManager($this->expenses, $this->journalEntries);
+        $this->notifications = new RecordingNotificationContract($this->transactions);
+
+        $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
+        $prodAuth = new ProductionAuthorizationService($orgAuth, $this->delegates, $this->participants);
+        $resolver = new ProductionOrganizationResolver($this->projects);
+        $lineFactory = new ExpenseLineFactory($this->accounts);
+
+        $productionContext = new CoreProductionContextAdapter($this->productions, $resolver);
+        $identity = new CoreIdentityAdapter($this->people);
+        $authorization = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
+        $membership = new CoreMembershipAdapter($this->participants, $this->productions, $this->people, $prodAuth);
+        $organizationContext = new CoreOrganizationContextAdapter($this->organizations);
+        $directory = new CoreProductionCapabilityDirectoryAdapter($prodAuth, $this->productions, $this->delegates, $this->people);
+        $notifier = new ExpenseWorkflowNotifier($this->notifications, $directory, $productionContext);
+
+        $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorization);
+        $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membership, $identity, $lineFactory, $this->transactions);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $this->transactions);
+        $this->applicantTransitions = new ApplicantExpenseTransitionUseCase($this->expenses, $identity, $membership, $this->transactions, $notifier);
+        $this->approveWith = fn (TransactionManagerInterface $transactions): ApproveExpenseUseCase => new ApproveExpenseUseCase(
+            $this->expenses,
+            $this->journalEntries,
+            $this->accounts,
+            new StandardPayableAccountResolver($this->accounts),
+            $productionContext,
+            $organizationContext,
+            $identity,
+            $authorization,
+            $transactions,
+            $notifier
+        );
+        $this->approveExpense = ($this->approveWith)($this->transactions);
+        $this->rejectExpense = new RejectExpenseUseCase($this->expenses, $identity, $authorization, $this->transactions, $notifier);
+        $this->summary = new GetProductionAccountingSummaryUseCase(
+            new InMemoryBudgetRepository(),
+            $this->journalEntries,
+            $this->accounts,
+            $productionContext,
+            $membership,
+            $identity
+        );
+
+        $this->givenProduction($accountingEnabled);
+    }
+
+    private function givenProduction(bool $accountingEnabled): void
+    {
+        $this->organization = Organization::create(new OrganizationName('Theatre Co'));
+
+        if ($accountingEnabled) {
+            $this->organization->enableAccounting();
+        }
+
+        $this->organizations->save($this->organization);
+
+        $manager = Person::create(1);
+        $this->people->save($manager);
+        $this->person[1] = $manager;
+        $this->memberships->save(Membership::createOwnerMembership($this->organization->id(), $manager->id()));
+
+        $project = Project::create($this->organization->id(), 'Spring Season');
+        $this->projects->save($project);
+
+        $this->production = Production::create($project->id(), new ProductionName('Autumn Play'), $manager->id());
+        $this->productions->save($this->production);
+
+        $this->givenPerson(2);
+        $this->givenPerson(3);
+        $this->givenPerson(4, RoleKey::accountingManager());
+        $this->givenPerson(5, RoleKey::ticketManager());
+        $this->givenPerson(6, null, false);
+        $this->givenPerson(7, RoleKey::accountingManager());
+        $this->givenDelegatePerson(8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegatePerson(9, [RoleKey::participantManager()]);
+        $this->givenDelegatePerson(10, [RoleKey::participantManager(), RoleKey::rehearsalManager()], true);
+
+        $this->expenseAccountId = $this->createAccount->execute(
+            new CreateAccountCommand(1, $this->organization->id()->toString(), '消耗品費', AccountType::EXPENSE)
+        )->id;
+    }
+
+    private function givenPerson(int $wordPressUserId, ?RoleKey $delegateRole = null, bool $inProduction = true): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+        $this->person[$wordPressUserId] = $person;
+        $this->memberships->save(Membership::create($this->organization->id(), $person->id(), RoleKey::member()));
+
+        if (! $inProduction) {
+            return $person;
+        }
+
+        if ($delegateRole === null) {
+            $this->participants->save(Participant::create(
+                $this->production->id(),
+                ParticipantSubjectType::person(),
+                $person->id()->toString(),
+                ParticipantType::cast()
+            ));
+        } else {
+            $this->delegates->save(ProductionDelegate::create($this->production->id(), $person->id(), $delegateRole, $this->production->primaryManagerPersonId()));
+        }
+
+        return $person;
+    }
+
+    /**
+     * An Organization MEMBER who is an ACTIVE Delegate of this Production
+     * with every given Role; with $deactivateLast the last Role is then
+     * deactivated, leaving the others ACTIVE.
+     *
+     * @param RoleKey[] $roles
+     */
+    private function givenDelegatePerson(int $wordPressUserId, array $roles, bool $deactivateLast = false): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+        $this->person[$wordPressUserId] = $person;
+        $this->memberships->save(Membership::create($this->organization->id(), $person->id(), RoleKey::member()));
+
+        $delegate = null;
+        foreach ($roles as $role) {
+            $delegate = ProductionDelegate::create($this->production->id(), $person->id(), $role, $this->production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
+        }
+
+        if ($deactivateLast && $delegate !== null) {
+            $delegate->deactivate($this->production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
+        }
+
+        return $person;
+    }
+
+    /**
+     * @param int[] $amounts
+     */
+    private function draftBy(int $wordPressUserId, array $amounts = [5000], ?string $payerPersonId = null): string
+    {
+        $lines = array_map(fn (int $amount): array => ['account_id' => $this->expenseAccountId, 'amount' => $amount], $amounts);
+
+        return $this->createExpense->execute(new CreateExpenseCommand($wordPressUserId, $this->production->id()->toString(), $lines, $payerPersonId))->id;
+    }
+
+    /**
+     * @param int[] $amounts
+     */
+    private function submittedBy(int $wordPressUserId, array $amounts = [5000], ?string $payerPersonId = null): string
+    {
+        $id = $this->draftBy($wordPressUserId, $amounts, $payerPersonId);
+        $this->applicantTransitions->submit(new ExpenseTransitionCommand($id, $wordPressUserId));
+
+        return $id;
+    }
+
+    private function status(string $expenseId): string
+    {
+        return $this->expenses->findById(ExpenseId::fromString($expenseId))->status()->toString();
+    }
+
+    /**
+     * @return JournalEntry[]
+     */
+    private function approvalEntries(): array
+    {
+        return array_values(array_filter(
+            $this->journalEntries->all(),
+            static fn (JournalEntry $entry): bool => $entry->sourceEventType() === ApproveExpenseUseCase::SOURCE_EVENT_TYPE
+        ));
+    }
+
+    /**
+     * @return string[] "wpUserId:type" for each notification sent
+     */
+    private function notified(): array
+    {
+        $byPerson = [];
+
+        foreach ($this->person as $wordPressUserId => $person) {
+            $byPerson[$person->id()->toString()] = $wordPressUserId;
+        }
+
+        return array_map(
+            static fn (array $sent): string => ($byPerson[$sent['person_id']] ?? '?') . ':' . $sent['type'],
+            $this->notifications->sent()
+        );
+    }
+
+    // --- submit / withdraw / resubmit ------------------------------------
+
+    public function test_creating_an_expense_does_not_submit_it_or_notify_anyone(): void
+    {
+        $id = $this->draftBy(2);
+
+        $this->assertSame(ExpenseStatus::DRAFT, $this->status($id));
+        $this->assertSame([], $this->notifications->sent());
+    }
+
+    public function test_the_applicant_submits_their_draft_and_every_approver_is_notified(): void
+    {
+        $id = $this->draftBy(2, [4200]);
+
+        $result = $this->applicantTransitions->submit(new ExpenseTransitionCommand($id, 2));
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $result->status);
+        $this->assertSame(4200, $result->requestedAmount);
+        $this->assertSame(1, $result->revision);
+
+        $notified = $this->notified();
+        sort($notified);
+        $this->assertSame(['1:expense_submitted', '4:expense_submitted', '7:expense_submitted', '8:expense_submitted'], $notified);
+
+        $payload = $this->notifications->sent()[0]['payload'];
+        $this->assertSame('expense', $payload['target_type']);
+        $this->assertSame($id, $payload['target_id']);
+        $this->assertSame($this->production->id()->toString(), $payload['production_id']);
+        $this->assertStringContainsString('Autumn Play', $payload['message']);
+        $this->assertStringContainsString('4,200円', $payload['message']);
+        $this->assertSame(0, $this->notifications->sentInsideTransaction());
+    }
+
+    public function test_an_approver_who_submits_their_own_expense_is_not_asked_to_approve_it(): void
+    {
+        $this->submittedBy(4);
+
+        $notified = $this->notified();
+        sort($notified);
+        $this->assertSame(['1:expense_submitted', '7:expense_submitted', '8:expense_submitted'], $notified);
+    }
+
+    /**
+     * @dataProvider othersThanTheApplicant
+     */
+    public function test_nobody_else_can_submit_withdraw_or_resubmit_the_applicants_expense(int $wordPressUserId): void
+    {
+        $draft = $this->draftBy(2);
+        $submitted = $this->submittedBy(2);
+        $rejected = $this->submittedBy(2);
+        $this->rejectExpense->execute(new RejectExpenseCommand($rejected, 1, '不備あり'));
+
+        $attempts = [
+            'submit' => fn () => $this->applicantTransitions->submit(new ExpenseTransitionCommand($draft, $wordPressUserId)),
+            'withdraw' => fn () => $this->applicantTransitions->withdraw(new ExpenseTransitionCommand($submitted, $wordPressUserId)),
+            'resubmit' => fn () => $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($rejected, $wordPressUserId)),
+        ];
+
+        foreach ($attempts as $name => $attempt) {
+            try {
+                $attempt();
+                $this->fail("{$name} by user {$wordPressUserId} must be refused.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertSame(ExpenseStatus::DRAFT, $this->status($draft));
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($submitted));
+        $this->assertSame(ExpenseStatus::REJECTED, $this->status($rejected));
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function othersThanTheApplicant(): array
+    {
+        return [
+            'primary manager' => [1],
+            'another member' => [3],
+            'accounting manager' => [4],
+            'ticket manager' => [5],
+            'outsider' => [6],
+        ];
+    }
+
+    public function test_an_applicant_who_left_the_production_can_no_longer_submit(): void
+    {
+        $id = $this->draftBy(5);
+
+        foreach ($this->delegates->findByProductionId($this->production->id()) as $delegate) {
+            if ($delegate->role()->equals(RoleKey::ticketManager())) {
+                $delegate->deactivate($this->production->primaryManagerPersonId());
+                $this->delegates->save($delegate);
+            }
+        }
+
+        $this->expectException(ExpenseAccessDeniedException::class);
+
+        $this->applicantTransitions->submit(new ExpenseTransitionCommand($id, 5));
+    }
+
+    public function test_the_applicant_withdraws_a_submitted_expense_back_to_draft(): void
+    {
+        $id = $this->submittedBy(2);
+
+        $result = $this->applicantTransitions->withdraw(new ExpenseTransitionCommand($id, 2));
+
+        $this->assertSame(ExpenseStatus::DRAFT, $result->status);
+        $this->assertSame(
+            [ExpenseReview::SUBMITTED, ExpenseReview::WITHDRAWN],
+            array_map(static fn (array $review): string => $review['action'], $result->reviews)
+        );
+    }
+
+    public function test_the_applicant_edits_a_submitted_expense_before_approval(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+
+        $result = $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 5500],
+        ]));
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $result->status);
+        $this->assertSame(5500, $result->requestedAmount);
+        $this->assertSame(2, $result->revision);
+    }
+
+    /**
+     * @dataProvider othersThanTheApplicant
+     */
+    public function test_nobody_else_can_edit_a_submitted_expense(int $wordPressUserId): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 1],
+            ]));
+            $this->fail('Only the applicant may edit a submitted Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($id))->requestedAmount());
+        }
+    }
+
+    // --- edit: the applicant only (Version 1.11) ---------------------------
+
+    /**
+     * An Expense of WordPress user 2 in the given status: DRAFT, SUBMITTED
+     * (revision 1), REJECTED (returned by the PrimaryManager) or POSTED
+     * (approved by the PrimaryManager).
+     */
+    private function expenseOfTheApplicantIn(string $status): string
+    {
+        if ($status === ExpenseStatus::DRAFT) {
+            return $this->draftBy(2, [5000]);
+        }
+
+        $id = $this->submittedBy(2, [5000]);
+
+        if ($status === ExpenseStatus::REJECTED) {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '領収書の金額を確認してください'));
+        } elseif ($status === ExpenseStatus::POSTED) {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+        }
+
+        $this->assertSame($status, $this->status($id));
+
+        return $id;
+    }
+
+    /**
+     * What an edit must not change when it is refused.
+     *
+     * @return array<string, mixed>
+     */
+    private function editableState(string $expenseId): array
+    {
+        $expense = $this->expenses->findById(ExpenseId::fromString($expenseId));
+
+        return [
+            'status' => $expense->status()->toString(),
+            'revision' => $expense->revision(),
+            'requested' => $expense->requestedAmount(),
+            'lines' => array_map(static fn ($line): int => $line->amount(), $expense->lines()),
+            'reviews' => count($expense->reviews()),
+            'updated_by' => $expense->updatedBy()->toString(),
+        ];
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function editableStatuses(): array
+    {
+        return [
+            'DRAFT' => [ExpenseStatus::DRAFT],
+            'SUBMITTED' => [ExpenseStatus::SUBMITTED],
+            'REJECTED' => [ExpenseStatus::REJECTED],
+        ];
+    }
+
+    /**
+     * The applicant edits their own Expense in each editable status. A
+     * SUBMITTED edit still opens a new submission revision with the new
+     * requested amount; a DRAFT or REJECTED edit does not.
+     *
+     * @dataProvider editableStatuses
+     */
+    public function test_the_applicant_edits_their_own_expense(string $status): void
+    {
+        $id = $this->expenseOfTheApplicantIn($status);
+        $before = $this->editableState($id);
+
+        $result = $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+        ]));
+
+        $this->assertSame($status, $result->status);
+        $this->assertSame(4800, $result->totalAmount);
+
+        if ($status === ExpenseStatus::SUBMITTED) {
+            $this->assertSame($before['revision'] + 1, $result->revision);
+            $this->assertSame(4800, $result->requestedAmount);
+        } else {
+            $this->assertSame($before['revision'], $result->revision);
+            $this->assertSame($before['requested'], $result->requestedAmount);
+        }
+    }
+
+    /**
+     * Everybody but the applicant, Role or not: the PrimaryManager and the
+     * 会計管理者 (both hold `Accounting.Update`), a 代理人, other Delegates,
+     * another member and an outsider.
+     *
+     * @return array<string, array{int}>
+     */
+    public static function everybodyButTheApplicant(): array
+    {
+        return [
+            'primary manager (Accounting.Update)' => [1],
+            'another member' => [3],
+            'accounting manager (Accounting.Update)' => [4],
+            'ticket manager' => [5],
+            'outsider' => [6],
+            'another accounting manager (Accounting.Update)' => [7],
+            'proxy manager (代理人)' => [8],
+            'participant manager only' => [9],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string, int}>
+     */
+    public static function othersInEachEditableStatus(): array
+    {
+        $cases = [];
+
+        foreach (self::editableStatuses() as $statusLabel => [$status]) {
+            foreach (self::everybodyButTheApplicant() as $personLabel => [$wordPressUserId]) {
+                $cases["{$statusLabel} by {$personLabel}"] = [$status, $wordPressUserId];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Version 1.11: the requester's Person ID must be the applicant's. No
+     * Role - `Accounting.Update`, PrimaryManager, 会計管理者, 代理人 - lets
+     * anyone else edit, in any editable status; the refusal is access
+     * denied (403) and changes nothing.
+     *
+     * @dataProvider othersInEachEditableStatus
+     */
+    public function test_nobody_but_the_applicant_edits_an_expense(string $status, int $wordPressUserId): void
+    {
+        $id = $this->expenseOfTheApplicantIn($status);
+        $before = $this->editableState($id);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 1],
+            ]));
+            $this->fail('Only the applicant may edit the Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame($before, $this->editableState($id));
+        }
+    }
+
+    /**
+     * POSTED is never edited, not even by the applicant (a state conflict,
+     * 409); anyone else is refused as access denied first.
+     */
+    public function test_a_posted_expense_is_not_edited_even_by_the_applicant(): void
+    {
+        $id = $this->expenseOfTheApplicantIn(ExpenseStatus::POSTED);
+        $before = $this->editableState($id);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+            ]));
+            $this->fail('A POSTED Expense must not be edited.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertSame($before, $this->editableState($id));
+        }
+
+        foreach (self::everybodyButTheApplicant() as [$wordPressUserId]) {
+            try {
+                $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                    ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+                ]));
+                $this->fail('Only the applicant gets past the identity check.');
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame($before, $this->editableState($id));
+            }
+        }
+    }
+
+    // --- approve ---------------------------------------------------------
+
+    /**
+     * @dataProvider approvers
+     */
+    public function test_approving_posts_one_balanced_journal_entry_against_unpaid_expenses(int $wordPressUserId): void
+    {
+        $id = $this->submittedBy(2, [1200, 800]);
+
+        $result = $this->approveExpense->execute(new ApproveExpenseCommand($id, $wordPressUserId, 1));
+
+        $this->assertSame(ExpenseStatus::POSTED, $result->status);
+        $this->assertSame(2000, $result->requestedAmount);
+        $this->assertSame(2000, $result->approvedAmount);
+        $this->assertSame($this->person[$wordPressUserId]->id()->toString(), $result->approvedBy);
+
+        $entries = $this->approvalEntries();
+        $this->assertCount(1, $entries);
+        $entry = $entries[0];
+        $this->assertTrue($entry->isPosted(), 'Approval posts at once; there is no separate Post step.');
+        $this->assertSame($id, $entry->sourceEventId());
+        $this->assertSame($entry->id()->toString(), $result->postedJournalEntryId);
+
+        $debits = [];
+        $credits = [];
+        foreach ($entry->lines() as $line) {
+            $account = $this->accounts->findById($line->accountId());
+            if ($line->debitCredit()->toString() === 'DEBIT') {
+                $debits[] = [$account->name(), $line->amount()];
+            } else {
+                $credits[] = [$account->name(), $account->type()->toString(), $line->amount()];
+            }
+        }
+        $this->assertSame([['消耗品費', 1200], ['消耗品費', 800]], $debits);
+        $this->assertSame([['未払金', 'LIABILITY', 2000]], $credits);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function approvers(): array
+    {
+        return ['primary manager' => [1], 'accounting manager' => [4], 'proxy manager' => [8]];
+    }
+
+    public function test_the_approved_amount_reaches_actual_only_once_approved(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+
+        $before = $this->summary->execute(new GetProductionAccountingSummaryQuery($this->production->id()->toString(), 1))->toArray();
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1, 5000));
+        $after = $this->summary->execute(new GetProductionAccountingSummaryQuery($this->production->id()->toString(), 1))->toArray();
+
+        $this->assertFalse($before['has_actual'], 'A SUBMITTED Expense is not part of Actual.');
+        $this->assertSame(0, $before['total_actual']);
+        $this->assertTrue($after['has_actual']);
+        $this->assertSame(-5000, $after['total_actual'], 'Actual reflects the approved amount, which is the requested one (Version 1.10).');
+    }
+
+    public function test_approval_reuses_the_organizations_active_unpaid_expenses_account(): void
+    {
+        $existing = Account::create($this->organization->id(), '未払金', AccountType::fromString(AccountType::LIABILITY));
+        $this->accounts->save($existing);
+        $id = $this->submittedBy(2);
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        $credit = array_values(array_filter(
+            $this->approvalEntries()[0]->lines(),
+            static fn ($line): bool => $line->debitCredit()->toString() === 'CREDIT'
+        ))[0];
+        $this->assertTrue($credit->accountId()->equals($existing->id()));
+        $this->assertCount(1, array_filter(
+            $this->accounts->findByOrganizationId($this->organization->id()),
+            static fn (Account $account): bool => $account->name() === '未払金'
+        ));
+    }
+
+    /**
+     * Version 1.10: approving with the requested amount given explicitly
+     * posts exactly as approving without one - every Line at its own
+     * amount, the total to 未払金.
+     *
+     * @dataProvider requestedAmountInputs
+     */
+    public function test_an_expense_is_approved_for_exactly_its_requested_amount(?int $amount): void
+    {
+        $id = $this->submittedBy(2, [3000, 2000]);
+
+        $result = $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, $amount));
+
+        $this->assertSame([5000, 5000], [$result->requestedAmount, $result->approvedAmount]);
+        $amounts = array_map(static fn ($line): array => [$line->debitCredit()->toString(), $line->amount()], $this->approvalEntries()[0]->lines());
+        $this->assertSame([['DEBIT', 3000], ['DEBIT', 2000], ['CREDIT', 5000]], $amounts);
+        $approval = $result->reviews[1];
+        $this->assertSame([ExpenseReview::APPROVED, 5000, 5000], [$approval['action'], $approval['requested_amount'], $approval['approved_amount']]);
+    }
+
+    /**
+     * @return array<string, array{?int}>
+     */
+    public static function requestedAmountInputs(): array
+    {
+        return ['the requested amount' => [5000], 'no amount (approve as requested)' => [null]];
+    }
+
+    /**
+     * @dataProvider refusedApprovals
+     *
+     * @param class-string<\Throwable> $expected
+     */
+    public function test_refused_approvals_change_nothing(string $case, int $wordPressUserId, ?int $amount, int $revision, string $expected): void
+    {
+        $id = str_starts_with($case, 'multi-line')
+            ? $this->submittedBy(2, [3000, 2000])
+            : ($case === 'payer approves' ? $this->submittedBy(3, [5000], $this->person[4]->id()->toString()) : $this->submittedBy(2));
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, $wordPressUserId, $revision, $amount));
+            $this->fail("{$case} must be refused.");
+        } catch (\Throwable $exception) {
+            $this->assertInstanceOf($expected, $exception, $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertSame([], array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved')));
+        $expense = $this->expenses->findById(ExpenseId::fromString($id));
+        $this->assertSame([ExpenseReview::SUBMITTED], array_map(static fn (ExpenseReview $r): string => $r->action(), $expense->reviews()));
+        $this->assertSame(5000, $expense->requestedAmount());
+        $this->assertNull($expense->approvedAmount());
+    }
+
+    /**
+     * @return array<string, array{string, int, ?int, int, class-string<\Throwable>}>
+     */
+    public static function refusedApprovals(): array
+    {
+        return [
+            'zero amount' => ['zero amount', 1, 0, 1, ExpenseApprovedAmountMismatchException::class],
+            'negative amount' => ['negative amount', 1, -1, 1, ExpenseApprovedAmountMismatchException::class],
+            // Version 1.10: the approved amount must equal the requested 5,000.
+            'one yen more' => ['one yen more', 1, 5001, 1, ExpenseApprovedAmountMismatchException::class],
+            'one yen less' => ['one yen less', 1, 4999, 1, ExpenseApprovedAmountMismatchException::class],
+            'half' => ['half', 4, 2500, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line changed total' => ['multi-line changed total', 1, 4000, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line one yen more' => ['multi-line one yen more', 1, 5001, 1, ExpenseApprovedAmountMismatchException::class],
+            'multi-line one yen less' => ['multi-line one yen less', 8, 4999, 1, ExpenseApprovedAmountMismatchException::class],
+            'stale revision' => ['stale revision', 1, null, 2, ExpenseStateConflictException::class],
+            'payer approves' => ['payer approves', 4, null, 1, ExpenseAccessDeniedException::class],
+            'another member' => ['another member', 3, null, 1, ExpenseAccessDeniedException::class],
+            'ticket manager' => ['ticket manager', 5, null, 1, ExpenseAccessDeniedException::class],
+            'participant manager only' => ['participant manager only', 9, null, 1, ExpenseAccessDeniedException::class],
+            'proxy with a deactivated role' => ['proxy with a deactivated role', 10, null, 1, ExpenseAccessDeniedException::class],
+            'outsider' => ['outsider', 6, null, 1, ExpenseAccessDeniedException::class],
+            'the applicant' => ['the applicant', 2, null, 1, ExpenseAccessDeniedException::class],
+        ];
+    }
+
+    public function test_an_accounting_manager_cannot_approve_their_own_expense(): void
+    {
+        $id = $this->submittedBy(4);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->fail('Self-approval must be refused.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        }
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 7, 1));
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+    }
+
+    /**
+     * 自己承認の禁止 applies to every approver: neither the PrimaryManager
+     * nor a 代理人 may approve an Expense they submitted, and a 代理人 may
+     * not approve one that reimburses them. Nothing is posted or announced
+     * as approved; another approver still can.
+     */
+    public function test_no_approver_can_approve_an_expense_they_submitted_or_are_reimbursed_by(): void
+    {
+        $cases = [
+            'primary manager submits' => [$this->submittedBy(1), 1],
+            'proxy manager submits' => [$this->submittedBy(8), 8],
+            'proxy manager is reimbursed' => [$this->submittedBy(3, [5000], $this->person[8]->id()->toString()), 8],
+        ];
+
+        foreach ($cases as $case => [$id, $approver]) {
+            try {
+                $this->approveExpense->execute(new ApproveExpenseCommand($id, $approver, 1));
+                $this->fail("{$case}: self-approval must be refused.");
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id), $case);
+            }
+        }
+
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertSame([], array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved')));
+
+        foreach ($cases as [$id]) {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        }
+        $this->assertCount(3, $this->approvalEntries());
+    }
+
+    /**
+     * Approval rights add nothing else: a 代理人 can approve, but cannot edit
+     * someone else's Expense - nobody but the applicant can (Version 1.11).
+     */
+    public function test_a_proxy_manager_cannot_edit_someone_elses_expense(): void
+    {
+        $id = $this->draftBy(2);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 8, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 9000],
+            ]));
+            $this->fail('A proxy manager must not edit another member\'s Expense.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($id))->totalAmount());
+        }
+    }
+
+    public function test_approving_content_edited_after_review_is_refused_with_a_conflict(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+        $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 9000],
+        ]));
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('Revision 1 was reviewed but revision 2 is current.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertSame([], $this->approvalEntries());
+        }
+
+        $this->assertSame(9000, $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 2))->approvedAmount);
+    }
+
+    public function test_approving_twice_never_posts_a_second_journal_entry(): void
+    {
+        $id = $this->submittedBy(2);
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        foreach ([1, 4] as $wordPressUserId) {
+            try {
+                $this->approveExpense->execute(new ApproveExpenseCommand($id, $wordPressUserId, 1));
+                $this->fail('A second approval must be refused.');
+            } catch (ExpenseStateConflictException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertCount(1, $this->approvalEntries());
+    }
+
+    public function test_an_existing_approval_journal_entry_blocks_another_posting(): void
+    {
+        $id = $this->submittedBy(2);
+        $existing = JournalEntry::create(
+            $this->organization->id(),
+            $this->production->id(),
+            new DateTimeImmutable(),
+            'Expense Approved (other request)',
+            [
+                JournalEntryLine::create(AccountId::fromString($this->expenseAccountId), DebitCredit::debit(), 5000),
+                JournalEntryLine::create(AccountId::fromString($this->expenseAccountId), DebitCredit::credit(), 5000),
+            ],
+            $this->person[1]->id(),
+            ApproveExpenseUseCase::SOURCE_EVENT_TYPE,
+            $id
+        );
+        $existing->post($this->person[1]->id());
+        $this->journalEntries->save($existing);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->fail('The Expense already has its approval Journal Entry.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertCount(1, $this->approvalEntries());
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        }
+    }
+
+    /**
+     * PR #7 review item 7: two approvers approve the same Expense at once.
+     * Both read it SUBMITTED before their transactions; the competing
+     * approval commits while this request waits for the row lock. The
+     * locked re-read inside the transaction sees it POSTED, so this request
+     * is refused and only one Journal Entry exists.
+     */
+    public function test_a_concurrent_second_approval_posts_no_second_journal_entry(): void
+    {
+        $id = $this->submittedBy(2);
+        $competing = $this->approveExpense;
+        $stored = $this->transactions;
+        $commitsFirstWhileWaitingForTheLock = new class ($stored, function () use ($competing, $id): void {
+            $competing->execute(new ApproveExpenseCommand($id, 1, 1));
+        }) implements TransactionManagerInterface {
+            private TransactionManagerInterface $inner;
+            /** @var callable|null */
+            private $competing;
+
+            public function __construct(TransactionManagerInterface $inner, callable $competing)
+            {
+                $this->inner = $inner;
+                $this->competing = $competing;
+            }
+
+            public function run(callable $operation)
+            {
+                if ($this->competing !== null) {
+                    $competing = $this->competing;
+                    $this->competing = null;
+                    $competing();
+                }
+
+                return $this->inner->run($operation);
+            }
+        };
+
+        try {
+            ($this->approveWith)($commitsFirstWhileWaitingForTheLock)->execute(new ApproveExpenseCommand($id, 4, 1));
+            $this->fail('The Expense was approved twice.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertCount(1, $this->approvalEntries(), 'Exactly one Journal Entry');
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        }
+    }
+
+    public function test_a_failed_journal_entry_write_rolls_everything_back_and_notifies_nobody(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        $this->journalEntries->failNextSave();
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated JournalEntry save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(1, $this->transactions->rollbacks());
+    }
+
+    public function test_a_failed_expense_write_after_posting_rolls_the_journal_entry_back(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        $this->expenses->failNextSave();
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries(), 'The Journal Entry saved first must be rolled back too.');
+        $this->assertCount($sentBefore, $this->notifications->sent());
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+        $this->assertCount(1, $this->approvalEntries());
+    }
+
+    // --- approval on the real WordPressTransactionManager (PR #6 review F1)
+
+    /**
+     * ApproveExpenseUseCase on the real WordPressTransactionManager, over a
+     * $wpdb that acts like InnoDB for the in-memory repositories: START
+     * TRANSACTION takes a snapshot of the Expenses and Journal Entries,
+     * ROLLBACK restores it, and a connection lost before COMMIT is rolled
+     * back by the server (after which $wpdb reconnects, so the repeated
+     * COMMIT "succeeds" on another thread). Closing the connection also
+     * makes the server discard the open transaction. $failing names the
+     * statements that fail. reconnect_retries at each COMMIT is recorded in
+     * $this->retriesAtCommit. Only for @runInSeparateProcess tests
+     * (wordpress-stubs).
+     *
+     * @param string[] $failing
+     * @return array{0: ApproveExpenseUseCase, 1: FakeWpdb}
+     */
+    private function approveOnWordPressTransactions(array $failing = [], bool $reconnectAtCommit = false): array
+    {
+        require_once __DIR__ . '/../../Support/wordpress-stubs.php';
+        require_once __DIR__ . '/../../Support/fake-mysqli.php';
+        FakeMysqli::$threadId = 41;
+        $snapshot = null;
+
+        $restore = function (?array $taken): void {
+            if ($taken !== null) {
+                $this->expenses->restore($taken[0]);
+                $this->journalEntries->restore($taken[1]);
+            }
+        };
+
+        $wpdb = new \wpdb(function (string $method, array $args, FakeWpdb $db) use (&$snapshot, $failing, $reconnectAtCommit, $restore) {
+            if ($method === 'close') {
+                $restore($snapshot);
+                $snapshot = null;
+
+                return true;
+            }
+
+            if ($method !== 'query') {
+                return FakeWpdbDefault::VALUE;
+            }
+
+            $sql = (string) $args[0];
+
+            if (in_array($sql, $failing, true)) {
+                $db->last_error = "Simulated {$sql} failure";
+
+                return false;
+            }
+
+            if ($sql === 'START TRANSACTION') {
+                $snapshot = [$this->expenses->snapshot(), $this->journalEntries->snapshot()];
+            } elseif ($sql === 'COMMIT') {
+                $this->retriesAtCommit[] = $db->reconnect_retries;
+
+                if ($reconnectAtCommit) {
+                    $restore($snapshot);
+                    FakeMysqli::$threadId = 42;
+                }
+
+                $snapshot = null;
+            } elseif ($sql === 'ROLLBACK') {
+                $restore($snapshot);
+                $snapshot = null;
+            }
+
+            return 0;
+        });
+        $wpdb->dbh = FakeMysqli::handle();
+
+        return [($this->approveWith)(new WordPressTransactionManager($wpdb)), $wpdb];
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function transactionStatements(FakeWpdb $wpdb): array
+    {
+        return array_map(static fn (array $args): string => (string) $args[0], $wpdb->callsTo('query'));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_an_approval_commits_the_expense_with_its_journal_entry(): void
+    {
+        $id = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+
+        $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        $this->assertCount(1, $this->approvalEntries());
+        $this->assertSame('2:expense_approved', $this->notified()[count($this->notified()) - 1]);
+        $this->assertSame(['START TRANSACTION', 'COMMIT'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_start_approves_nothing(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['START TRANSACTION']);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('An approval outside a transaction must not run.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('START TRANSACTION failed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['START TRANSACTION'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_commit_leaves_no_journal_entry_and_no_posted_expense(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['COMMIT']);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed COMMIT must not be reported as an approval.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('COMMIT failed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent(), 'Nobody is told of an approval that did not commit.');
+        $this->assertSame(['START TRANSACTION', 'COMMIT', 'ROLLBACK'], self::transactionStatements($wpdb));
+
+        [$retry] = $this->approveOnWordPressTransactions();
+        $retry->execute(new ApproveExpenseCommand($id, 1, 1));
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($id));
+        $this->assertCount(1, $this->approvalEntries());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_commit_lost_to_a_reconnect_is_not_an_approval(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve] = $this->approveOnWordPressTransactions([], true);
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A COMMIT on a new connection must not be reported as an approval.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('connection changed', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_expense_write_rolls_the_journal_entry_back(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries(), 'The Journal Entry saved first must be rolled back too.');
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::transactionStatements($wpdb));
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_rollback_keeps_the_write_failure_and_notifies_nobody(): void
+    {
+        $id = $this->submittedBy(2);
+        $sentBefore = count($this->notifications->sent());
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['ROLLBACK']);
+        $this->journalEntries->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed ROLLBACK must not be swallowed.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertStringContainsString('ROLLBACK failed', $exception->getMessage());
+            $this->assertInstanceOf(\RuntimeException::class, $exception->getPrevious());
+            $this->assertSame('Simulated JournalEntry save failure.', $exception->getPrevious()->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertCount($sentBefore, $this->notifications->sent());
+        $this->assertSame(['query', 'query', 'close', 'db_connect'], array_column($wpdb->calls, 'method'), 'The connection is closed and replaced.');
+    }
+
+    /**
+     * MySQL 5.7.44 (2026-11-09): the Journal Entry is written first; when
+     * the Expense write then fails and so does the ROLLBACK, the connection
+     * still holds the Journal Entry. Closing it discards that transaction,
+     * so no Journal Entry is left for an Expense that was not approved.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_a_failed_rollback_leaves_no_journal_entry_behind(): void
+    {
+        $id = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions(['ROLLBACK']);
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('A failed ROLLBACK must not be swallowed.');
+        } catch (TransactionFailedException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getPrevious()->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries(), 'The Journal Entry written before the failure went with the closed connection.');
+        $this->assertSame(['START TRANSACTION', 'ROLLBACK'], self::transactionStatements($wpdb));
+        $this->assertSame([[false]], $wpdb->callsTo('db_connect'));
+    }
+
+    /**
+     * MySQL 5.7.44 (2026-11-09): with wpdb free to reconnect, a connection
+     * lost before the Expense UPDATE left the Expense POSTED without its
+     * Journal Entry. The approval runs with reconnecting off, and the
+     * setting is back afterwards, approved or not.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_on_wordpress_transactions_an_approval_runs_without_reconnecting(): void
+    {
+        $approved = $this->submittedBy(2);
+        $refused = $this->submittedBy(2);
+        [$approve, $wpdb] = $this->approveOnWordPressTransactions();
+        $wpdb->reconnect_retries = 4;
+
+        $approve->execute(new ApproveExpenseCommand($approved, 1, 1));
+        $this->expenses->failNextSave();
+
+        try {
+            $approve->execute(new ApproveExpenseCommand($refused, 1, 1));
+            $this->fail('The simulated write failure must surface.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated Expense save failure.', $exception->getMessage());
+        }
+
+        $this->assertSame([0], $this->retriesAtCommit, 'The approval\'s COMMIT ran with reconnecting off.');
+        $this->assertSame(4, $wpdb->reconnect_retries, 'Restored after the commit and after the rollback.');
+        $this->assertSame(ExpenseStatus::POSTED, $this->status($approved));
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($refused));
+    }
+
+    /**
+     * PR #6 review N1: the approval's Journal Entry carries the instant the
+     * Expense was approved at, so its 仕訳日 (the JST date) is the approval
+     * date even for an approval at JST midnight.
+     */
+    public function test_the_approval_journal_date_is_the_approval_instant(): void
+    {
+        $id = $this->submittedBy(2);
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+
+        $expense = $this->expenses->findById(ExpenseId::fromString($id));
+        [$entry] = $this->approvalEntries();
+        $this->assertEquals($expense->approvedAt(), $entry->journalDate(), 'the same instant, to the microsecond');
+        $this->assertSame(AccountingDate::of($expense->approvedAt()), $entry->accountingDate());
+    }
+
+    /**
+     * PR #6 review N2/F5: a notification that fails after the commit is
+     * logged, and the submission, approval or return for correction it was
+     * about is still reported as done - not as an error a retry would turn
+     * into a 409 for a change that is already committed.
+     */
+    public function test_a_failing_notification_never_fails_the_committed_operation(): void
+    {
+        $log = (string) tempnam(sys_get_temp_dir(), 'stageart-notification-log');
+        ini_set('error_log', $log);
+        $this->notifications->failAll();
+
+        try {
+            $approved = $this->draftBy(2);
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->applicantTransitions->submit(new ExpenseTransitionCommand($approved, 2))->status);
+            $this->assertSame(ExpenseStatus::POSTED, $this->approveExpense->execute(new ApproveExpenseCommand($approved, 1, 1))->status);
+
+            $returned = $this->draftBy(2);
+            $this->applicantTransitions->submit(new ExpenseTransitionCommand($returned, 2));
+            $this->assertSame(ExpenseStatus::REJECTED, $this->rejectExpense->execute(new RejectExpenseCommand($returned, 1, '領収書を添付してください'))->status);
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($returned, 2))->status);
+
+            $this->assertSame(ExpenseStatus::POSTED, $this->status($approved));
+            $this->assertCount(1, $this->approvalEntries(), 'The approval and its Journal Entry stay committed');
+            $this->assertSame([], $this->notifications->sent());
+            $logged = (string) file_get_contents($log);
+            foreach (['expense_submitted', 'expense_approved', 'expense_rejected'] as $type) {
+                $this->assertStringContainsString("{$type} for expense", $logged);
+            }
+        } finally {
+            ini_restore('error_log');
+            @unlink($log);
+        }
+    }
+
+    // --- PR #6 review N4: other Organizations, other Productions, inactive Accounts
+
+    private function givenAccountOfAnotherOrganization(): string
+    {
+        $other = Organization::create(new OrganizationName('Other Co'));
+        $other->enableAccounting();
+        $this->organizations->save($other);
+        $account = Account::create($other->id(), '消耗品費', AccountType::fromString(AccountType::EXPENSE));
+        $this->accounts->save($account);
+
+        return $account->id()->toString();
+    }
+
+    public function test_an_account_of_another_organization_is_refused_on_create_and_update(): void
+    {
+        $foreign = $this->givenAccountOfAnotherOrganization();
+
+        try {
+            $this->createExpense->execute(new CreateExpenseCommand(2, $this->production->id()->toString(), [['account_id' => $foreign, 'amount' => 1000]]));
+            $this->fail('An Account of another Organization must be refused.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("Production's own Organization", $exception->getMessage());
+        }
+        $this->assertSame([], $this->expenses->findByProductionId($this->production->id()), 'Nothing was created');
+
+        $id = $this->draftBy(2);
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [['account_id' => $foreign, 'amount' => 1000]]));
+            $this->fail('An Account of another Organization must be refused.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("Production's own Organization", $exception->getMessage());
+        }
+        $lines = $this->expenses->findById(ExpenseId::fromString($id))->lines();
+        $this->assertSame($this->expenseAccountId, $lines[0]->accountId()->toString(), 'Lines unchanged');
+    }
+
+    /**
+     * A line can only name another Organization's Account when it was
+     * written some other way (old data, a direct write); approving refuses
+     * to post it all the same.
+     */
+    public function test_a_line_with_another_organizations_account_is_never_posted(): void
+    {
+        $foreign = $this->givenAccountOfAnotherOrganization();
+        $expense = Expense::create($this->production->id(), [ExpenseLine::create(AccountId::fromString($foreign), 5000)], $this->person[2]->id());
+        $expense->submit($this->person[2]->id());
+        $this->expenses->save($expense);
+        $id = $expense->id()->toString();
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('Another Organization\'s Account must not be posted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString("active Account of the Production's own Organization", $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+    }
+
+    public function test_an_account_deactivated_after_submission_is_not_posted(): void
+    {
+        $id = $this->submittedBy(2);
+        $account = $this->accounts->findById(AccountId::fromString($this->expenseAccountId));
+        $account->deactivate();
+        $this->accounts->save($account);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('An inactive Account must not be posted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('active Account', $exception->getMessage());
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+        $this->assertSame([], array_values(array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_approved'))));
+    }
+
+    /**
+     * Expense.Approve is a right on one Production: being PrimaryManager of
+     * another Production - in this Organization or another one - or an
+     * OWNER of the Organization without a role in this Production gives
+     * none of it (ExpenseApprovalWorkflow.md Version 1.6).
+     */
+    public function test_managers_of_another_production_or_organization_cannot_approve_or_reject(): void
+    {
+        $id = $this->submittedBy(2);
+
+        $otherProductionManager = Person::create(12);
+        $this->people->save($otherProductionManager);
+        $this->memberships->save(Membership::create($this->organization->id(), $otherProductionManager->id(), RoleKey::member()));
+        $sameOrgProject = Project::create($this->organization->id(), 'Winter Season');
+        $this->projects->save($sameOrgProject);
+        $this->productions->save(Production::create($sameOrgProject->id(), new ProductionName('Winter Play'), $otherProductionManager->id()));
+
+        $otherOrganization = Organization::create(new OrganizationName('Other Co'));
+        $otherOrganization->enableAccounting();
+        $this->organizations->save($otherOrganization);
+        $otherOwner = Person::create(13);
+        $this->people->save($otherOwner);
+        $this->memberships->save(Membership::createOwnerMembership($otherOrganization->id(), $otherOwner->id()));
+        $otherProject = Project::create($otherOrganization->id(), 'Other Season');
+        $this->projects->save($otherProject);
+        $this->productions->save(Production::create($otherProject->id(), new ProductionName('Other Play'), $otherOwner->id()));
+
+        $coOwner = Person::create(14);
+        $this->people->save($coOwner);
+        $this->memberships->save(Membership::createOwnerMembership($this->organization->id(), $coOwner->id()));
+
+        foreach ([12 => 'PrimaryManager of another Production', 13 => 'owner and PrimaryManager in another Organization', 14 => 'Organization OWNER without a role in this Production'] as $user => $who) {
+            foreach (['approve', 'reject'] as $action) {
+                try {
+                    if ($action === 'approve') {
+                        $this->approveExpense->execute(new ApproveExpenseCommand($id, $user, 1));
+                    } else {
+                        $this->rejectExpense->execute(new RejectExpenseCommand($id, $user, '確認のため'));
+                    }
+                    $this->fail("{$who} must not {$action}.");
+                } catch (ExpenseAccessDeniedException $exception) {
+                    $this->addToAssertionCount(1);
+                }
+            }
+        }
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        $this->assertSame([], $this->approvalEntries());
+    }
+
+    public function test_the_applicant_is_notified_of_the_approval_after_the_commit(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, 1, 5000));
+
+        $last = $this->notifications->sent()[count($this->notifications->sent()) - 1];
+        $this->assertSame($this->person[2]->id()->toString(), $last['person_id']);
+        $this->assertSame('expense_approved', $last['type']);
+        $this->assertSame($id, $last['payload']['target_id']);
+        $this->assertStringContainsString('申請額 5,000円 / 承認額 5,000円', $last['payload']['message']);
+        $this->assertSame(0, $this->notifications->sentInsideTransaction());
+    }
+
+    public function test_approval_is_refused_while_the_organization_has_accounting_disabled(): void
+    {
+        $this->build(false);
+        $id = $this->submittedBy(2);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 1));
+            $this->fail('Approval must be refused while accounting is disabled.');
+        } catch (ExpenseAccountingDisabledException $exception) {
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+            $this->assertSame([], $this->approvalEntries());
+        }
+
+        // Rejecting posts nothing, so it is still possible.
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '会計未開始のため'));
+        $this->assertSame(ExpenseStatus::REJECTED, $this->status($id));
+    }
+
+    // --- reject / resubmit ------------------------------------------------
+
+    /**
+     * @dataProvider approvers
+     */
+    public function test_an_approver_rejects_with_a_reason_and_the_applicant_is_told_why(int $wordPressUserId): void
+    {
+        $id = $this->submittedBy(2);
+
+        $result = $this->rejectExpense->execute(new RejectExpenseCommand($id, $wordPressUserId, '領収書を添付してください'));
+
+        $this->assertSame(ExpenseStatus::REJECTED, $result->status);
+        $this->assertSame('領収書を添付してください', $result->rejectionReason);
+        $this->assertSame([], $this->approvalEntries());
+
+        $last = $this->notifications->sent()[count($this->notifications->sent()) - 1];
+        $this->assertSame($this->person[2]->id()->toString(), $last['person_id']);
+        $this->assertSame('expense_rejected', $last['type']);
+        $this->assertStringContainsString('領収書を添付してください', $last['payload']['message']);
+        $this->assertSame(0, $this->notifications->sentInsideTransaction());
+    }
+
+    /**
+     * Version 1.4: REJECTED is shown as 差し戻し - a return for correction
+     * the applicant can resubmit - never as 却下 (a final refusal), in the
+     * applicant's notice and in the approvers' request to act.
+     */
+    public function test_notifications_call_a_return_for_correction_sashimodoshi_not_kyakka(): void
+    {
+        $id = $this->submittedBy(2, [4200]);
+        $submitted = $this->notifications->sent()[0]['payload']['message'];
+
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '金額を確認してください'));
+
+        $returned = $this->notifications->sent()[count($this->notifications->sent()) - 1];
+        $this->assertSame('expense_rejected', $returned['type']);
+        $this->assertSame(
+            '「Autumn Play」の経費申請（4,200円）が差し戻されました。内容を修正して再申請してください。理由：金額を確認してください',
+            $returned['payload']['message']
+        );
+        $this->assertStringContainsString('承認または差し戻しをしてください', $submitted);
+
+        foreach ($this->notifications->sent() as $sent) {
+            $this->assertStringNotContainsString('却下', $sent['payload']['message']);
+        }
+    }
+
+    public function test_reject_without_a_reason_is_refused_and_changes_nothing(): void
+    {
+        $id = $this->submittedBy(2);
+
+        foreach (['', '   '] as $reason) {
+            try {
+                $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, $reason));
+                $this->fail('A blank rejection reason must be refused.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+            }
+        }
+    }
+
+    /**
+     * @dataProvider nonApprovers
+     */
+    public function test_people_without_accounting_rights_cannot_reject(int $wordPressUserId): void
+    {
+        $id = $this->submittedBy(2);
+
+        try {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, $wordPressUserId, '不備あり'));
+            $this->fail('Rejecting must require accounting rights.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        }
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function nonApprovers(): array
+    {
+        return [
+            'the applicant' => [2],
+            'another member' => [3],
+            'ticket manager' => [5],
+            'outsider' => [6],
+            'participant manager only' => [9],
+            'proxy with a deactivated role' => [10],
+        ];
+    }
+
+    /**
+     * 自己却下の禁止 (Version 1.7): an approver may not reject an Expense
+     * they created and submitted, nor one that reimburses them - whether
+     * PrimaryManager, 会計管理者 or 代理人. The refusal is access denied and
+     * leaves the Expense, its history, the Journal and the notifications
+     * as they were; another approver still rejects it.
+     *
+     * @dataProvider selfRejections
+     */
+    public function test_no_approver_can_reject_an_expense_they_submitted_or_are_reimbursed_by(int $reviewer, bool $asPayer): void
+    {
+        $id = $asPayer
+            ? $this->submittedBy(3, [5000], $this->person[$reviewer]->id()->toString())
+            : $this->submittedBy($reviewer);
+        $entries = count($this->journalEntries->all());
+        $notified = $this->notified();
+
+        try {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, $reviewer, '不備あり'));
+            $this->fail('Rejecting one\'s own Expense must be refused.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $expense = $this->expenses->findById(ExpenseId::fromString($id));
+            $this->assertSame(ExpenseStatus::SUBMITTED, $expense->status()->toString());
+            $this->assertNull($expense->rejectedBy());
+            $this->assertNull($expense->rejectionReason());
+            $this->assertSame([ExpenseReview::SUBMITTED], array_map(static fn (ExpenseReview $review): string => $review->action(), $expense->reviews()));
+        }
+
+        $this->assertCount($entries, $this->journalEntries->all());
+        $this->assertSame($notified, $this->notified());
+
+        $this->assertSame(ExpenseStatus::REJECTED, $this->rejectExpense->execute(new RejectExpenseCommand($id, 7, '不備あり'))->status);
+    }
+
+    /**
+     * @return array<string, array{int, bool}>
+     */
+    public static function selfRejections(): array
+    {
+        return [
+            'primary manager submits' => [1, false],
+            'primary manager is reimbursed' => [1, true],
+            'accounting manager submits' => [4, false],
+            'accounting manager is reimbursed' => [4, true],
+            'proxy manager submits' => [8, false],
+            'proxy manager is reimbursed' => [8, true],
+        ];
+    }
+
+    /**
+     * The ban covers deciding on one's own Expense, not the applicant's
+     * own steps: an approver who submitted an Expense still withdraws it,
+     * and resubmits it once someone else has rejected it.
+     */
+    public function test_an_approver_still_withdraws_and_resubmits_their_own_expense(): void
+    {
+        $id = $this->submittedBy(8);
+
+        $this->assertSame(ExpenseStatus::DRAFT, $this->applicantTransitions->withdraw(new ExpenseTransitionCommand($id, 8))->status);
+        $this->applicantTransitions->submit(new ExpenseTransitionCommand($id, 8));
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '金額を確認してください'));
+
+        $result = $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($id, 8));
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $result->status);
+        $this->assertSame(3, $result->revision);
+    }
+
+    public function test_a_draft_or_posted_expense_cannot_be_rejected(): void
+    {
+        $draft = $this->draftBy(2);
+        $posted = $this->submittedBy(2);
+        $this->approveExpense->execute(new ApproveExpenseCommand($posted, 1, 1));
+
+        foreach ([$draft, $posted] as $id) {
+            try {
+                $this->rejectExpense->execute(new RejectExpenseCommand($id, 1, '不備あり'));
+                $this->fail('Only a SUBMITTED Expense can be rejected.');
+            } catch (ExpenseStateConflictException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_the_applicant_corrects_a_rejected_expense_and_resubmits_it(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+        $this->rejectExpense->execute(new RejectExpenseCommand($id, 4, '金額を確認してください'));
+
+        $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4600],
+        ]));
+        $result = $this->applicantTransitions->resubmit(new ExpenseTransitionCommand($id, 2));
+
+        $this->assertSame(ExpenseStatus::SUBMITTED, $result->status);
+        $this->assertSame(2, $result->revision);
+        $this->assertSame(4600, $result->requestedAmount);
+        $this->assertSame(
+            ['1:SUBMITTED:5000', '1:REJECTED:5000', '2:SUBMITTED:4600'],
+            array_map(static fn (array $review): string => "{$review['revision']}:{$review['action']}:{$review['requested_amount']}", $result->reviews)
+        );
+
+        $resubmitNotices = array_filter($this->notified(), static fn (string $n): bool => str_ends_with($n, ':expense_submitted'));
+        $this->assertCount(8, $resubmitNotices, 'Approvers 1, 4, 7 and 8 are told about the submission and again about the resubmission.');
+
+        $this->assertSame(4600, $this->approveExpense->execute(new ApproveExpenseCommand($id, 1, 2))->approvedAmount);
+    }
+
+    public function test_the_capability_directory_lists_exactly_the_people_canForProduction_accepts(): void
+    {
+        $orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
+        $prodAuth = new ProductionAuthorizationService($orgAuth, $this->delegates, $this->participants);
+        $directory = new CoreProductionCapabilityDirectoryAdapter($prodAuth, $this->productions, $this->delegates, $this->people);
+        $authorization = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
+
+        foreach ([AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8], AccountingCapability::MANAGE => [1, 4, 7]] as $capability => $expected) {
+            $listed = array_map(
+                static fn (PersonId $id): string => $id->toString(),
+                $directory->personIdsWithProductionCapability($this->production->id(), $capability)
+            );
+
+            foreach ($this->person as $wordPressUserId => $person) {
+                $this->assertSame(
+                    $authorization->canForProduction($person->id(), $this->production->id(), $capability),
+                    in_array($person->id()->toString(), $listed, true),
+                    "{$capability}: user {$wordPressUserId}"
+                );
+            }
+
+            $expectedIds = array_map(fn (int $user): string => $this->person[$user]->id()->toString(), $expected);
+            sort($expectedIds);
+            sort($listed);
+            $this->assertSame($expectedIds, $listed, $capability);
+        }
+    }
+}

@@ -13,6 +13,8 @@ use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentCommand;
 use StageArt\Application\ScheduleComment\CreateScheduleCommentUseCase;
@@ -50,7 +52,9 @@ use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
 use StageArt\Tests\Support\InMemoryProjectRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryRehearsalAttendanceRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryRehearsalRepository;
 use StageArt\Tests\Support\InMemoryScheduleCommentRepository;
 use StageArt\Tests\Support\InMemoryTimetableItemRepository;
@@ -103,15 +107,22 @@ final class ScheduleCommentUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $rehearsalAttendances = new InMemoryRehearsalAttendanceRepository();
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
+        $reminderDispatcher = new RehearsalReminderDispatcher($rehearsalAttendances, $productionContext, $notificationContract);
+        $reminderScheduler = new InMemoryRehearsalReminderScheduler();
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
-            new InMemoryRehearsalAttendanceRepository(),
+            $rehearsalAttendances,
             $memberResolver,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
 
         $this->createTimetableItem = new CreateTimetableItemUseCase(
@@ -234,9 +245,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -262,9 +273,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -282,9 +293,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -307,9 +318,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -332,9 +343,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -374,9 +385,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -399,9 +410,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -431,9 +442,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -460,9 +471,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -493,9 +504,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 
@@ -522,9 +533,9 @@ final class ScheduleCommentUseCaseTest extends TestCase
             1,
             'Act 1',
             null,
-            null,
-            null,
-            null,
+            '2099-01-01T18:00:00+09:00',
+            '2099-01-01T20:00:00+09:00',
+            'Asia/Tokyo',
             null
         ));
 

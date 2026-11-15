@@ -76,6 +76,16 @@ final class WordPressUserAccountRepository implements UserAccountRepositoryInter
         return $row ? $this->hydrate($row) : null;
     }
 
+    /**
+     * @return UserAccount[]
+     */
+    public function findAll(): array
+    {
+        $rows = $this->wpdb->get_results("SELECT * FROM {$this->table} ORDER BY created_at DESC", ARRAY_A);
+
+        return array_map([$this, 'hydrate'], $rows ?: []);
+    }
+
     private function hydrate(array $row): UserAccount
     {
         return UserAccount::reconstitute(

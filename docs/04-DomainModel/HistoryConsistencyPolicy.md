@@ -153,14 +153,15 @@ ReservationCreated、ReservationUpdated、ReservationCancelledだけではAudien
 
 # Accounting Boundary
 
-CheckInCompletedはHistoryとAccountingの双方の契機となり得る。
+CheckInCompletedはAudience History生成の契機となる。Ticket Revenueの仕訳生成根拠は、実際の代金受領を示すPayment Factであり、標準の当日受付ではCheckInCompletedと関連付けられる。
 
 ```text
-CheckInCompleted
-    ├─→ Audience History
-    └─→ Ticket Revenue Recognition
-          └─→ Journal Entry
+CheckInCompleted ──→ Audience History
+
+Payment Fact ──→ Ticket Revenue Journal Entry
 ```
+
+スタッフ事前集金ではPayment Factが先行するため、後日のCheckInCompletedから再計上しない。
 
 HistoryはJournal Entryを生成・管理しない。
 

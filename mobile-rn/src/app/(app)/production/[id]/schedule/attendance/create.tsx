@@ -1,0 +1,477 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
+import { DateTimeInput } from '@/components/date-time-input';
+import { Radius, Spacing } from '@/constants/theme';
+import { useCreateRequestKey } from '@/features/attendance/createRequestKey';
+import { useCreateRehearsal } from '@/features/attendance/useRehearsals';
+import { useParticipants } from '@/features/participant/useParticipant';
+import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { getErrorMessage, isRehearsalIdempotencyConflict } from '@/utils/errorMessage';
+import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
+import type { Participant } from '@/types/api';
+
+/** Same label map as productions/[id]/participants.tsx - Participant
+ * type is CAST/STAFF only (ParticipantType.php), not extended here. */
+const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
+
+/**
+ * docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」: 日時・場所を
+ * 入力してRehearsalを作成する。作成直後はDRAFT状態で、出欠確認
+ * (SCHEDULE_ADJUSTMENT phase)対象者のRehearsalAttendanceがBackend側で
+ * 自動作成される (CreateRehearsalUseCase.php) - このFormは日時設定・場所
+ * 設定のみを担当し、内容 (Timetable Item) の追加は作成後の稽古詳細画面
+ * で行う。
+ */
+export default function CreateRehearsalScreen() {
+  const { id: productionId } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const createRehearsal = useCreateRehearsal(productionId);
+  const participantsQuery = useParticipants(productionId);
+  const currentPersonQuery = useCurrentPerson();
+
+  const [description, setDescription] = useState('');
+  const [activityType, setActivityType] = useState('REHEARSAL');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
+
+  /**
+   * 稽古の参加対象は、稽古作成時に選択されたProductionメンバーのみ
+   * (CreateRehearsalUseCase.phpはもう「Production Participant全員」を
+   * 自動対象にしない - Backend側の対応する変更を参照)。選択対象は
+   * ACTIVEかつPerson-subjectのParticipantのみ（Backendの
+   * activeProductionMemberPersonIds()と同じ母集団）。
+   *
+   * 初期選択状態: CAST（participant_type === 'CAST'）のみチェック済み、
+   * STAFFは未チェック - あくまで初期状態の違いであり、「選択対象をCASTに
+   * 限定する」という新しいDomainルールではない。ユーザーは個別に
+   * STAFFを選択したり、全選択/全選択解除で対象を変更できる。CAST/STAFF
+   * の判定は既存のParticipant.participant_typeをそのまま利用し、Person
+   * 自身のRoleやOrganization MembershipのRoleとは無関係。
+   */
+  const eligibleMembers = (participantsQuery.data ?? []).filter(
+    (participant): participant is Participant => participant.subject_type === 'PERSON' && participant.status === 'ACTIVE'
+  );
+  const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set());
+  // Tracks which fetch of participantsQuery.data the current selection was
+  // seeded from, so the "default to CAST selected" initialization happens
+  // exactly once per fresh fetch without an Effect (React's own "adjusting
+  // state during render" pattern - https://react.dev/learn/you-might-not-need-an-effect).
+  const [selectionSeededFrom, setSelectionSeededFrom] = useState<typeof participantsQuery.data>(undefined);
+
+  if (participantsQuery.data && participantsQuery.data !== selectionSeededFrom) {
+    setSelectionSeededFrom(participantsQuery.data);
+    setSelectedPersonIds(
+      new Set(eligibleMembers.filter((participant) => participant.participant_type === 'CAST').map((participant) => participant.subject_id))
+    );
+  }
+
+  function toggleMember(personId: string) {
+    setSelectedPersonIds((current) => {
+      const next = new Set(current);
+      if (next.has(personId)) {
+        next.delete(personId);
+      } else {
+        next.add(personId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllMembers() {
+    setSelectedPersonIds(new Set(eligibleMembers.map((participant) => participant.subject_id)));
+  }
+
+  function deselectAllMembers() {
+    setSelectedPersonIds(new Set());
+  }
+  /**
+   * UI-only choice of whether to confirm right after creation - kept as
+   * its own boolean rather than a Domain RehearsalStatus value, since the
+   * screen's「調整」「確定」labels are not the same thing as SCHEDULED/
+   * CONFIRMED (see this Phase's report §3). create() itself always
+   * starts a Rehearsal at SCHEDULED (Rehearsal.php has no way to create
+   * directly into CONFIRMED). PR #7 R9: choosing「確定」sends
+   * `confirm_on_create`, and the Backend confirms it inside the same
+   * transaction, so the members get only the §11「確定しました」
+   * notification (the earlier create-then-confirm pair of requests would
+   * also have sent the §9.1「計画されています」one).
+   */
+  const [confirmOnCreate, setConfirmOnCreate] = useState(false);
+
+  /** PR #7 R12: the same content sent again (after a network error) reuses
+   * its idempotency key, so it is never created twice. */
+  const requestKey = useCreateRequestKey();
+
+  async function handleSubmit() {
+    const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
+    const endDateTime = date && endTime ? `${date}T${endTime}:00+09:00` : undefined;
+    const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
+
+    const fields = {
+      title: null,
+      description: description.trim() || null,
+      activityType,
+      startDateTime,
+      endDateTime,
+      timezone: 'Asia/Tokyo',
+      location: location.trim() || undefined,
+      targetPersonIds: Array.from(selectedPersonIds),
+      responseDeadline,
+      confirmOnCreate,
+    };
+
+    let rehearsal;
+    try {
+      rehearsal = await createRehearsal.mutateAsync({ ...fields, idempotencyKey: requestKey.keyFor(fields) });
+    } catch (error) {
+      // Shown below from createRehearsal.error; pressing 作成 again with
+      // the same content resends with the same key - except after the
+      // Backend said that key already belongs to different content (409
+      // stageart_rehearsal_idempotency_conflict): that key can never
+      // succeed, so the next 作成 (or the reloaded screen) uses a new one.
+      if (isRehearsalIdempotencyConflict(error)) {
+        requestKey.reset();
+      }
+      return;
+    }
+    requestKey.reset();
+
+    router.replace(`/production/${productionId}/schedule/attendance/${rehearsal.id}`);
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <ThemedText type="title" style={styles.title}>稽古を作成</ThemedText>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>基本情報</ThemedText>
+
+          <ThemedText type="small" themeColor="textSecondary">予定の種別</ThemedText>
+          <View style={styles.activityTypeRow}>
+            {REHEARSAL_ACTIVITY_TYPES.map((option) => {
+              const selected = activityType === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  testID={`rehearsal-create-activity-type-${option.value}`}
+                  onPress={() => setActivityType(option.value)}
+                  style={[styles.activityTypeOption, selected && styles.activityTypeOptionSelected]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <ThemedText style={selected ? styles.activityTypeOptionTextSelected : undefined}>{option.label}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <ThemedText type="small" themeColor="textSecondary">備考</ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-create-description"
+            placeholder="例：通し稽古／発声練習／台本○ページ。持ち物：台本、衣装、筆記用具"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            textAlignVertical="top"
+            style={[styles.input, styles.textarea]}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">ステータス</ThemedText>
+          <View style={styles.statusRow}>
+            <TouchableOpacity
+              testID="rehearsal-create-status-adjustment"
+              onPress={() => setConfirmOnCreate(false)}
+              style={[styles.statusOption, !confirmOnCreate && styles.statusOptionSelected]}
+            >
+              <ThemedText style={!confirmOnCreate ? styles.statusOptionTextSelected : undefined}>調整</ThemedText>
+              <ThemedText type="small" style={!confirmOnCreate ? styles.statusHintSelected : styles.statusHint}>回答を集める</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="rehearsal-create-status-confirmed"
+              onPress={() => setConfirmOnCreate(true)}
+              style={[styles.statusOption, confirmOnCreate && styles.statusOptionSelected]}
+            >
+              <ThemedText style={confirmOnCreate ? styles.statusOptionTextSelected : undefined}>確定</ThemedText>
+              <ThemedText type="small" style={confirmOnCreate ? styles.statusHintSelected : styles.statusHint}>作成後に確定</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>日時</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">日付（YYYY-MM-DD）</ThemedText>
+          <DateTimeInput
+            mode="date"
+            testID="rehearsal-create-date"
+            placeholder="2026-09-10"
+            value={date}
+            onChangeText={setDate}
+          />
+
+          <View style={styles.fieldRow}>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">開始時刻（HH:mm）</ThemedText>
+              <DateTimeInput
+                mode="time"
+                testID="rehearsal-create-time"
+                placeholder="18:00"
+                value={time}
+                onChangeText={setTime}
+              />
+            </View>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">終了時刻（HH:mm）</ThemedText>
+              <DateTimeInput
+                mode="time"
+                testID="rehearsal-create-end-time"
+                placeholder="20:00"
+                value={endTime}
+                onChangeText={setEndTime}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>場所・回答期限</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">場所</ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-create-location"
+            placeholder="例：○○スタジオ"
+            value={location}
+            onChangeText={setLocation}
+            style={styles.input}
+          />
+
+          <View style={styles.fieldRow}>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">回答期限（任意）</ThemedText>
+              <DateTimeInput
+                mode="date"
+                testID="rehearsal-create-deadline-date"
+                placeholder="YYYY-MM-DD"
+                value={deadlineDate}
+                onChangeText={setDeadlineDate}
+              />
+            </View>
+            <View style={styles.fieldHalf}>
+              <ThemedText type="small" themeColor="textSecondary">回答期限の時刻</ThemedText>
+              <DateTimeInput
+                mode="time"
+                testID="rehearsal-create-deadline-time"
+                placeholder="HH:mm"
+                value={deadlineTime}
+                onChangeText={setDeadlineTime}
+              />
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.helperText}>
+            回答期限を設定すると、メンバーは期限までに出欠を回答できます。
+          </ThemedText>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.memberHeader}>
+            <View style={styles.memberHeaderText}>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>参加メンバー</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                この稽古の出欠確認対象を選択してください。
+              </ThemedText>
+            </View>
+            <View style={styles.memberSelectRow}>
+              <TouchableOpacity testID="rehearsal-create-select-all" onPress={selectAllMembers}>
+                <ThemedText type="link">全選択</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity testID="rehearsal-create-deselect-all" onPress={deselectAllMembers}>
+                <ThemedText type="link">全解除</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {participantsQuery.isLoading && <ActivityIndicator testID="rehearsal-create-members-loading" />}
+
+          {participantsQuery.isError && (
+            <View style={styles.errorBox}>
+              <ThemedText style={styles.error} testID="rehearsal-create-members-error">
+                {getErrorMessage(participantsQuery.error)}
+              </ThemedText>
+            </View>
+          )}
+
+          {!participantsQuery.isLoading && !participantsQuery.isError && eligibleMembers.length === 0 && (
+            <View style={styles.emptyBox}>
+              <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-create-members-empty">
+                参加可能なメンバーがいません。
+              </ThemedText>
+            </View>
+          )}
+
+          {!participantsQuery.isError && eligibleMembers.map((participant) => {
+            const isSelf = participant.subject_id === currentPersonQuery.data?.id;
+            const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+            const label = participant.display_name?.trim() || fullName || (isSelf ? 'あなた' : `Person ID: ${participant.subject_id}`);
+            const typeLabel = PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type;
+            const isChecked = selectedPersonIds.has(participant.subject_id);
+
+            return (
+              <TouchableOpacity
+                key={participant.id}
+                testID={`rehearsal-create-member-${participant.subject_id}`}
+                onPress={() => toggleMember(participant.subject_id)}
+                style={[styles.memberRow, isChecked && styles.memberRowSelected]}
+              >
+                <View
+                  testID={`rehearsal-create-member-checkbox-${participant.subject_id}`}
+                  style={[styles.checkbox, isChecked && styles.checkboxChecked]}
+                >
+                  {isChecked && <ThemedText style={styles.checkboxMark}>✓</ThemedText>}
+                </View>
+                <View style={styles.memberIdentity}>
+                  <ThemedText style={styles.memberName}>{label}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">{typeLabel}</ThemedText>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+
+          {!participantsQuery.isError && eligibleMembers.length > 0 && (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.selectionSummary}>
+              {selectedPersonIds.size}人を選択中
+            </ThemedText>
+          )}
+        </View>
+
+        {createRehearsal.isError && (
+          <View style={styles.errorBox}>
+            <ThemedText style={styles.error} testID="rehearsal-create-error">
+              {getErrorMessage(createRehearsal.error)}
+            </ThemedText>
+          </View>
+        )}
+
+        <TouchableOpacity
+          testID="rehearsal-create-submit"
+          onPress={handleSubmit}
+          disabled={createRehearsal.isPending}
+          style={[styles.button, createRehearsal.isPending && styles.buttonDisabled]}
+        >
+          {createRehearsal.isPending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <ThemedText style={styles.buttonText}>作成する</ThemedText>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  )
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  container: { padding: Spacing.four, gap: Spacing.three },
+  title: { fontSize: 22, lineHeight: 28, marginBottom: Spacing.one },
+  section: {
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+    borderRadius: Radius.medium,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    backgroundColor: '#fff',
+  },
+  sectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: '700', marginBottom: Spacing.one },
+  activityTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  activityTypeOption: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  activityTypeOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  activityTypeOptionTextSelected: { color: '#fff', fontWeight: '600' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 16,
+    marginBottom: Spacing.one,
+    minHeight: 44,
+  },
+  textarea: { minHeight: 100, paddingTop: Spacing.two },
+  fieldRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  fieldHalf: { flex: 1, minWidth: 240 },
+  helperText: { lineHeight: 18 },
+  button: {
+    backgroundColor: '#4a3f7a',
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    marginTop: Spacing.one,
+    minHeight: 48,
+  },
+  buttonDisabled: { opacity: 0.6 },
+  buttonText: { color: '#fff', fontWeight: '600' },
+  error: { color: '#a6483a' },
+  errorBox: {
+    borderWidth: 1,
+    borderColor: '#e3b5ac',
+    borderRadius: 8,
+    padding: Spacing.two,
+    backgroundColor: '#fff7f5',
+  },
+  emptyBox: {
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+    borderRadius: 8,
+    padding: Spacing.three,
+    backgroundColor: '#fafafa',
+  },
+  statusRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  statusOption: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: Radius.medium,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    minWidth: 120,
+  },
+  statusOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  statusOptionTextSelected: { color: '#fff', fontWeight: '600' },
+  statusHint: { marginTop: 2 },
+  statusHintSelected: { color: '#fff', opacity: 0.9, marginTop: 2 },
+  memberHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: Spacing.two, flexWrap: 'wrap' },
+  memberHeaderText: { flex: 1, minWidth: 240 },
+  memberSelectRow: { flexDirection: 'row', gap: Spacing.three, marginBottom: Spacing.one },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    borderRadius: 8,
+  },
+  memberRowSelected: { borderColor: '#b7afd7', backgroundColor: '#f7f5fc' },
+  memberIdentity: { flex: 1, minWidth: 0 },
+  memberName: { fontWeight: '600' },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 1,
+    borderColor: '#bbb',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkboxChecked: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  checkboxMark: { color: '#fff', fontSize: 14, lineHeight: 16 },
+  selectionSummary: { textAlign: 'right', marginTop: Spacing.one },
+});

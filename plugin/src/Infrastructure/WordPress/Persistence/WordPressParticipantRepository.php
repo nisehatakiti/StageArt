@@ -33,6 +33,8 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
             'subject_id' => $participant->subjectId(),
             'participant_type' => $participant->participantType()->toString(),
             'status' => $participant->status()->toString(),
+            'remarks' => $participant->remarks(),
+            'display_name' => $participant->displayName(),
             'updated_at' => $participant->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -116,7 +118,9 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
             ParticipantType::fromString($row['participant_type']),
             ParticipantStatus::fromString($row['status']),
             new DateTimeImmutable($row['created_at']),
-            new DateTimeImmutable($row['updated_at'])
+            new DateTimeImmutable($row['updated_at']),
+            $row['remarks'] ?? null,
+            $row['display_name'] ?? null
         );
     }
 }

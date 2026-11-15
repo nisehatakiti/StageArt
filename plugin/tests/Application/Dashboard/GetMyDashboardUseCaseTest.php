@@ -16,10 +16,14 @@ use StageArt\Application\Rehearsal\ConfirmRehearsalCommand;
 use StageArt\Application\Rehearsal\ConfirmRehearsalUseCase;
 use StageArt\Application\Rehearsal\CreateRehearsalCommand;
 use StageArt\Application\Rehearsal\CreateRehearsalUseCase;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
+use StageArt\Application\Rehearsal\RehearsalReminderDispatcher;
+use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Rehearsal\RehearsalUpcomingRehearsalProvider;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationReadState;
 use StageArt\Domain\Notification\TimetableVersionPublishedNotification;
@@ -37,7 +41,9 @@ use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Timetable\TimetableId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryNotificationReadStateRepository;
+use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
@@ -95,15 +101,22 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
         $transactions = new InMemoryTransactionManager();
+        $notificationContract = new CoreNotificationAdapter(new InMemoryNotificationDispatcher());
+        $reminderDispatcher = new RehearsalReminderDispatcher($this->attendances, $productionContext, $notificationContract);
+        $reminderScheduler = new InMemoryRehearsalReminderScheduler();
+        $statusTimeSync = new RehearsalStatusTimeSync($this->rehearsals);
 
         $this->createRehearsal = new CreateRehearsalUseCase(
             $productionContext,
             $this->rehearsals,
             $this->attendances,
             $memberResolver,
+            $reminderDispatcher,
+            $reminderScheduler,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
         );
         $this->confirmRehearsal = new ConfirmRehearsalUseCase(
             $this->rehearsals,
@@ -112,15 +125,22 @@ final class GetMyDashboardUseCaseTest extends TestCase
             $memberResolver,
             $identity,
             $authorization,
-            $transactions
+            $transactions,
+            $statusTimeSync,
+            new \StageArt\Application\Rehearsal\RehearsalLifecycleNotifier(new \StageArt\Core\Adapter\CoreNotificationAdapter(new \StageArt\Tests\Support\InMemoryNotificationDispatcher()))
+        );
+
+        $upcomingRehearsalProvider = new RehearsalUpcomingRehearsalProvider(
+            $this->rehearsals,
+            $this->attendances,
+            $productionContext
         );
 
         $this->getMyDashboard = new GetMyDashboardUseCase(
             $this->productions,
             $this->delegates,
             $this->participants,
-            $this->rehearsals,
-            $this->attendances,
+            $upcomingRehearsalProvider,
             $this->notifications,
             $this->readStates,
             $this->follows,
@@ -174,17 +194,31 @@ final class GetMyDashboardUseCaseTest extends TestCase
         return $person;
     }
 
-    private function createRehearsalAt(Production $production, int $creatorWordPressUserId, string $startDateTime): RehearsalId
-    {
+    /**
+     * @param string[] $targetPersonIds
+     */
+    private function createRehearsalAt(
+        Production $production,
+        int $creatorWordPressUserId,
+        string $startDateTime,
+        array $targetPersonIds = []
+    ): RehearsalId {
+        // PR #7 R10: the API takes ISO 8601 only (RehearsalDateTime), so the
+        // relative "+10 days" these tests are written with is turned into
+        // one here - the same instant as before.
+        $start = new DateTimeImmutable($startDateTime);
+        $endDateTime = $start->modify('+2 hours')->format(DATE_ATOM);
+
         $result = $this->createRehearsal->execute(new CreateRehearsalCommand(
             $production->id()->toString(),
             $creatorWordPressUserId,
             'Rehearsal',
             null,
-            $startDateTime,
+            $start->format(DATE_ATOM),
+            $endDateTime,
             null,
-            null,
-            'Studio A'
+            'Studio A',
+            $targetPersonIds
         ));
 
         $rehearsalId = RehearsalId::fromString($result->id);
@@ -243,7 +277,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $cast = $this->addActivePersonParticipant($production, 2);
 
-        $this->createRehearsalAt($production, 1, '+10 days');
+        $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
 
@@ -298,8 +332,8 @@ final class GetMyDashboardUseCaseTest extends TestCase
             ParticipantType::cast()
         ));
 
-        $this->createRehearsalAt($productionA, 1, '+20 days');
-        $this->createRehearsalAt($productionB, 11, '+5 days');
+        $this->createRehearsalAt($productionA, 1, '+20 days', [$cast->id()->toString()]);
+        $this->createRehearsalAt($productionB, 11, '+5 days', [$cast->id()->toString()]);
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
 
@@ -312,9 +346,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_completed_rehearsal_excluded_even_with_attendance(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsalId->toString(), 1));
         $rehearsal = $this->rehearsals->findById($rehearsalId);
         $rehearsal->activate();
@@ -330,9 +364,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_cancelled_rehearsal_excluded_even_with_future_date(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         $rehearsal = $this->rehearsals->findById($rehearsalId);
         $rehearsal->cancel();
         $this->rehearsals->save($rehearsal);
@@ -345,9 +379,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_confirmed_rehearsal_returns_exactly_one_entry_not_both_phases(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
-        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days');
+        $rehearsalId = $this->createRehearsalAt($production, 1, '+10 days', [$cast->id()->toString()]);
         // At this point a SCHEDULE_ADJUSTMENT record exists for Person 2.
         $this->confirmRehearsal->execute(new ConfirmRehearsalCommand($rehearsalId->toString(), 1));
         // confirm() generates a fresh ATTENDANCE_CONFIRMATION record too;
@@ -362,10 +396,10 @@ final class GetMyDashboardUseCaseTest extends TestCase
     public function test_upcoming_rehearsal_limit_is_capped(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-        $this->addActivePersonParticipant($production, 2);
+        $cast = $this->addActivePersonParticipant($production, 2);
 
         for ($day = 1; $day <= 52; $day++) {
-            $this->createRehearsalAt($production, 1, "+{$day} days");
+            $this->createRehearsalAt($production, 1, "+{$day} days", [$cast->id()->toString()]);
         }
 
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
@@ -477,6 +511,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
             null,
             new \StageArt\Domain\Production\ProductionSlug('new-show')
         );
+        $production->activate();
         $production->publish();
         $this->productions->save($production);
 
@@ -532,6 +567,7 @@ final class GetMyDashboardUseCaseTest extends TestCase
             null,
             new \StageArt\Domain\Production\ProductionSlug('new-show-2')
         );
+        $production->activate();
         $production->publish();
         $this->productions->save($production);
 

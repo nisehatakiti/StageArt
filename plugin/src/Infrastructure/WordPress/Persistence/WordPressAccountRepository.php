@@ -87,6 +87,10 @@ final class WordPressAccountRepository implements AccountRepositoryInterface
             ARRAY_A
         );
 
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Accounts of the Organization.');
+
         return array_map([$this, 'hydrate'], $rows ?: []);
     }
 

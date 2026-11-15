@@ -115,16 +115,20 @@ export class ApiClient {
 
     let message = `Request failed (${response.status})`;
     let code: string | undefined;
+    let data: Record<string, unknown> | undefined;
 
     try {
-      const decoded = (await response.json()) as { message?: string; code?: string };
+      const decoded = (await response.json()) as { message?: string; code?: string; data?: unknown };
       message = decoded.message ?? message;
       code = decoded.code;
+      if (decoded.data !== null && typeof decoded.data === 'object' && !Array.isArray(decoded.data)) {
+        data = decoded.data as Record<string, unknown>;
+      }
     } catch {
       // Non-JSON error body: keep the generic message above.
     }
 
-    throw new ApiError(response.status, message, code);
+    throw new ApiError(response.status, message, code, data);
   }
 
   async get<T = unknown>(path: string, query?: QueryParams): Promise<T> {
@@ -165,5 +169,34 @@ export class ApiClient {
     }
 
     return response.arrayBuffer();
+  }
+
+  /**
+   * StageArt Organization管理UI/UX統一 "団体ロゴ": the first multipart
+   * upload this Client makes - deliberately a separate method rather
+   * than teaching post()/put() about FormData, since every other
+   * request body here is plain JSON. No `Content-Type` header is set
+   * explicitly; fetch() derives the correct `multipart/form-data;
+   * boundary=...` value from the FormData instance itself, which a
+   * manually-set header would only break.
+   */
+  async postFile<T = unknown>(path: string, fieldName: string, file: Blob, fileName: string): Promise<T> {
+    const url = this.buildUrl(path);
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader(),
+      Accept: 'application/json',
+    };
+
+    const body = new FormData();
+    body.append(fieldName, file, fileName);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'POST', headers, body });
+    } catch (cause) {
+      throw new NetworkError(cause);
+    }
+
+    return this.decodeJson(response) as Promise<T>;
   }
 }

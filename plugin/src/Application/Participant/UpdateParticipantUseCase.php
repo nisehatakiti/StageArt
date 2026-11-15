@@ -4,28 +4,38 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\ParticipantId;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
+use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Participant\ParticipantType;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 final class UpdateParticipantUseCase
 {
     private ParticipantRepositoryInterface $participants;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        PersonRepositoryInterface $people,
+        ProductionAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     public function execute(UpdateParticipantCommand $command): ParticipantResult
@@ -56,9 +66,14 @@ final class UpdateParticipantUseCase
 
         $participant->changeParticipantType(ParticipantType::fromString($command->participantType));
         $participant->changeStatus(ParticipantStatus::fromString($command->status));
+        $participant->changeRemarks($command->remarks);
 
         $this->participants->save($participant);
 
-        return ParticipantResult::fromDomain($participant);
+        $isPersonSubject = $participant->subjectType()->equals(ParticipantSubjectType::person());
+        $person = $isPersonSubject ? $this->people->findById(PersonId::fromString($participant->subjectId())) : null;
+        $email = $isPersonSubject ? $this->personEmailResolver->resolve(PersonId::fromString($participant->subjectId())) : null;
+
+        return ParticipantResult::fromDomain($participant, $person, $email);
     }
 }

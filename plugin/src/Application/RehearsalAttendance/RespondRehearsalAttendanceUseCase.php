@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace StageArt\Application\RehearsalAttendance;
 
+use DateTimeImmutable;
+use InvalidArgumentException;
+use StageArt\Application\Rehearsal\RehearsalNotFoundException;
+use StageArt\Application\Rehearsal\RehearsalStatusTimeSync;
 use StageArt\Core\Contract\IdentityContract;
+use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
+use StageArt\Domain\Rehearsal\RehearsalStatus;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceId;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendancePhase;
 use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
@@ -22,19 +28,40 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceStatus;
  * check.
  *
  * StageArt Core/Module Architecture Phase 2: depends only on
- * `IdentityContract`, not `ProductionAuthorizationService` directly -
- * this UseCase never needed Production/Authorization at all, only
- * WordPress-user -> PersonId resolution.
+ * `IdentityContract` plus `RehearsalRepositoryInterface` (added for the
+ * Rehearsal Status guard below), not `ProductionAuthorizationService`/
+ * `AuthorizationContract` - this UseCase still never needed Production/
+ * Authorization at all, only WordPress-user -> PersonId resolution.
  */
 final class RespondRehearsalAttendanceUseCase
 {
-    private RehearsalAttendanceRepositoryInterface $attendances;
-    private IdentityContract $identity;
+    /**
+     * docs/04-DomainModel/RehearsalAttendance.md "Rehearsal Status x
+     * Attendance Operation Policy": Attendance response is not allowed
+     * once the Rehearsal is ACTIVE, COMPLETED, or CANCELLED - by then
+     * "誰が対象者か"/事前回答は確定した情報として扱う, per that doc.
+     */
+    private const RESPONSE_BLOCKED_STATUSES = [
+        RehearsalStatus::ACTIVE,
+        RehearsalStatus::COMPLETED,
+        RehearsalStatus::CANCELLED,
+    ];
 
-    public function __construct(RehearsalAttendanceRepositoryInterface $attendances, IdentityContract $identity)
-    {
+    private RehearsalAttendanceRepositoryInterface $attendances;
+    private RehearsalRepositoryInterface $rehearsals;
+    private IdentityContract $identity;
+    private RehearsalStatusTimeSync $statusTimeSync;
+
+    public function __construct(
+        RehearsalAttendanceRepositoryInterface $attendances,
+        RehearsalRepositoryInterface $rehearsals,
+        IdentityContract $identity,
+        RehearsalStatusTimeSync $statusTimeSync
+    ) {
         $this->attendances = $attendances;
+        $this->rehearsals = $rehearsals;
         $this->identity = $identity;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(RespondRehearsalAttendanceCommand $command): RehearsalAttendanceResult
@@ -55,12 +82,49 @@ final class RespondRehearsalAttendanceUseCase
             throw new RehearsalAttendanceAccessDeniedException('You can only respond to your own RehearsalAttendance record.');
         }
 
+        $rehearsal = $this->rehearsals->findById($attendance->rehearsalId());
+
+        if (! $rehearsal) {
+            throw new RehearsalNotFoundException($attendance->rehearsalId()->toString());
+        }
+
+        // Synced before the blocked-status check below: a Rehearsal
+        // whose start time has passed must be treated as ACTIVE (and
+        // self-response correctly blocked) even if nothing had triggered
+        // the DB update yet - never a stale CONFIRMED read that would
+        // wrongly still allow a response.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
+
+        if (in_array($rehearsal->status()->toString(), self::RESPONSE_BLOCKED_STATUSES, true)) {
+            throw new InvalidArgumentException(
+                "Attendance response is not allowed while the Rehearsal is {$rehearsal->status()->toString()}."
+            );
+        }
+
+        /*
+         * Phase 7 (Rehearsal仕様整合) §4: "予定稽古には回答期限を設定する" -
+         * `responseDeadline` governs Phase 1 (SCHEDULE_ADJUSTMENT)
+         * self-response specifically; a Phase 2 (ATTENDANCE_CONFIRMATION)
+         * response is unaffected by it (it is a separate, later
+         * response period this deadline does not describe). Checked here
+         * (Application), not only in Frontend, per this Phase's explicit
+         * "Backend/Applicationでも同じルールを保証する" requirement -
+         * management-side operations (RecordActualRehearsalAttendanceStatus
+         * UseCase) are untouched, matching "管理者側による管理操作まで
+         * 禁止する仕様ではない".
+         */
+        if ($attendance->phase()->equals(RehearsalAttendancePhase::scheduleAdjustment())
+            && $rehearsal->hasResponseDeadlinePassed(new DateTimeImmutable())
+        ) {
+            throw new InvalidArgumentException('The response deadline for this Rehearsal has already passed.');
+        }
+
         $status = RehearsalAttendanceStatus::fromString($command->status);
 
         if ($attendance->phase()->equals(RehearsalAttendancePhase::scheduleAdjustment())) {
-            $attendance->respondScheduleAdjustment($status);
+            $attendance->respondScheduleAdjustment($status, $command->remarks);
         } else {
-            $attendance->respondAttendanceConfirmation($status);
+            $attendance->respondAttendanceConfirmation($status, $command->remarks);
         }
 
         $this->attendances->save($attendance);

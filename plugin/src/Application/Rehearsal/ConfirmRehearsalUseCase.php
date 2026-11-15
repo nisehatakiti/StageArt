@@ -10,6 +10,7 @@ use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Rehearsal\Rehearsal;
 use StageArt\Domain\Rehearsal\RehearsalId;
 use StageArt\Domain\Rehearsal\RehearsalRepositoryInterface;
@@ -27,6 +28,12 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * change too - a CONFIRMED Rehearsal with incomplete Phase 2 records can
  * never be observed.
  *
+ * Phase 2 target selection: see the inline comment above the
+ * intersection logic in execute() - targets are Phase 1's own person
+ * list intersected with currently-active Production members, not a
+ * fresh "every active member" query, so confirm() cannot reintroduce a
+ * member who was deliberately left unselected at creation time.
+ *
  * Idempotency against double-generation is layered: Rehearsal::confirm()
  * itself throws unless the Rehearsal is currently SCHEDULED, so a second
  * call (once already CONFIRMED) never reaches the generation loop at
@@ -40,6 +47,14 @@ use StageArt\Domain\RehearsalAttendance\RehearsalAttendanceRepositoryInterface;
  * on `ProductionRepositoryInterface`/`ProductionAuthorizationService`
  * directly.
  */
+/**
+ * PR #7 R9 (§11): after the confirmation commits, the "confirmed"
+ * notification goes to exactly the members whose confirmed-attendance
+ * record this confirmation created. A second confirmation is rejected by
+ * Rehearsal::confirm() (SCHEDULED only) before anything is sent, and a
+ * racing duplicate that finds the records already there creates none, so
+ * nobody is notified twice.
+ */
 final class ConfirmRehearsalUseCase
 {
     private RehearsalRepositoryInterface $rehearsals;
@@ -49,6 +64,8 @@ final class ConfirmRehearsalUseCase
     private IdentityContract $identity;
     private AuthorizationContract $authorization;
     private TransactionManagerInterface $transactions;
+    private RehearsalStatusTimeSync $statusTimeSync;
+    private RehearsalLifecycleNotifier $lifecycleNotifier;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
@@ -57,7 +74,9 @@ final class ConfirmRehearsalUseCase
         MembershipContract $membership,
         IdentityContract $identity,
         AuthorizationContract $authorization,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        RehearsalStatusTimeSync $statusTimeSync,
+        RehearsalLifecycleNotifier $lifecycleNotifier
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
@@ -66,6 +85,8 @@ final class ConfirmRehearsalUseCase
         $this->identity = $identity;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
+        $this->statusTimeSync = $statusTimeSync;
+        $this->lifecycleNotifier = $lifecycleNotifier;
     }
 
     public function execute(ConfirmRehearsalCommand $command): RehearsalResult
@@ -95,14 +116,48 @@ final class ConfirmRehearsalUseCase
             );
         }
 
+        // A no-op in practice: sync() only acts on CONFIRMED/ACTIVE, and
+        // $rehearsal->confirm() below requires SCHEDULED - included for
+        // the same "every Rehearsal read/write path syncs" consistency
+        // as the other UseCases, not because confirming a Rehearsal can
+        // itself trigger a transition.
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
+
         $phase = RehearsalAttendancePhase::attendanceConfirmation();
 
+        /*
+         * Phase 2 targets = whoever was actually targeted at creation
+         * time (Phase 1's own person list - the confirmed member
+         * selection, see CreateRehearsalUseCase's docblock), intersected
+         * with who is still an active Production member right now. This
+         * intersection - rather than re-querying "every active member"
+         * outright - is what stops confirm() from silently re-adding a
+         * Production member who was deliberately left unselected at
+         * creation, while still excluding someone who was selected but
+         * has since been deactivated (preserving the pre-existing
+         * "deactivated participants are excluded from Phase 2" behavior).
+         */
+        $phase1PersonIdStrings = array_map(
+            static fn (RehearsalAttendance $attendance): string => $attendance->personId()->toString(),
+            $this->attendances->findByRehearsalIdAndPhase($rehearsal->id(), RehearsalAttendancePhase::scheduleAdjustment())
+        );
+        $activeMemberIdStrings = array_map(
+            static fn (PersonId $personId): string => $personId->toString(),
+            $this->membership->activeProductionMemberPersonIds($productionId)
+        );
+        $targetPersonIdStrings = array_intersect($phase1PersonIdStrings, $activeMemberIdStrings);
+
+        /** @var PersonId[] $created */
+        $created = [];
+
         $rehearsal = $this->transactions->run(
-            function () use ($rehearsal, $productionId, $phase): Rehearsal {
+            function () use ($rehearsal, $phase, $targetPersonIdStrings, &$created): Rehearsal {
+                $created = [];
                 $rehearsal->confirm();
                 $this->rehearsals->save($rehearsal);
 
-                foreach ($this->membership->activeProductionMemberPersonIds($productionId) as $personId) {
+                foreach ($targetPersonIdStrings as $targetPersonIdString) {
+                    $personId = PersonId::fromString($targetPersonIdString);
                     $existing = $this->attendances->findByRehearsalIdAndPersonIdAndPhase($rehearsal->id(), $personId, $phase);
 
                     if ($existing !== null) {
@@ -110,11 +165,14 @@ final class ConfirmRehearsalUseCase
                     }
 
                     $this->attendances->save(RehearsalAttendance::createPhase2($rehearsal->id(), $personId));
+                    $created[] = $personId;
                 }
 
                 return $rehearsal;
             }
         );
+
+        $this->lifecycleNotifier->confirmed($rehearsal, $production->name, $created);
 
         return RehearsalResult::fromDomain($rehearsal);
     }

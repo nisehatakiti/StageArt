@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace StageArt\Application\TimetableItem;
 
-use DateTimeImmutable;
-use Exception;
-use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Rehearsal\RehearsalCapability;
 use StageArt\Application\Rehearsal\RehearsalNotFoundException;
@@ -114,8 +111,8 @@ final class UpdateTimetableItemUseCase
         $item->update(
             $command->title,
             $command->description,
-            $this->parseRequiredDateTime($command->startDateTime),
-            $this->parseOptionalDateTime($command->endDateTime),
+            TimetableItemDateTime::parseRequired($command->startDateTime, 'start_date_time'),
+            TimetableItemDateTime::parseOptional($command->endDateTime),
             $command->displayOrder,
             $command->category,
             $command->venue,
@@ -129,23 +126,5 @@ final class UpdateTimetableItemUseCase
         });
 
         return TimetableItemResult::fromDomain($item);
-    }
-
-    private function parseRequiredDateTime(string $value): DateTimeImmutable
-    {
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
-        }
-    }
-
-    private function parseOptionalDateTime(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return $this->parseRequiredDateTime($value);
     }
 }

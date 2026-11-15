@@ -46,6 +46,71 @@ final class RolePermissionsTest extends TestCase
         $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Participant.Update')));
     }
 
+    public function test_performance_manager_has_performance_permissions(): void
+    {
+        $role = RoleKey::performanceManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Read')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Create')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Update')));
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Performance.Cancel')));
+    }
+
+    public function test_performance_manager_does_not_have_rehearsal_permissions(): void
+    {
+        $role = RoleKey::performanceManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Rehearsal.Update')));
+    }
+
+    public function test_checkin_manager_has_checkin_permission(): void
+    {
+        $role = RoleKey::checkInManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('CheckIn.Manage')));
+    }
+
+    public function test_checkin_manager_does_not_have_ticket_permissions(): void
+    {
+        $role = RoleKey::checkInManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('Ticket.Manage')));
+    }
+
+    public function test_questionnaire_manager_has_questionnaire_permission(): void
+    {
+        $role = RoleKey::questionnaireManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Questionnaire.Manage')));
+    }
+
+    public function test_questionnaire_manager_does_not_have_checkin_permissions(): void
+    {
+        $role = RoleKey::questionnaireManager();
+
+        $this->assertFalse(RolePermissions::hasPermission($role, Permission::fromString('CheckIn.Manage')));
+    }
+
+    public function test_accounting_manager_has_accounting_update_permission(): void
+    {
+        $role = RoleKey::accountingManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Accounting.Update')));
+    }
+
+    /**
+     * 担当者権限をメンバー管理へ統合・整理 instruction §会計担当仕様訂正: 会計担当
+     * covers the Production's accounting処理全般 (予算/支出/仕訳/メンバーへの
+     * 精算), so Settlement.Manage is included alongside Accounting.Update -
+     * corrects an earlier instruction in this same series that excluded it.
+     */
+    public function test_accounting_manager_has_settlement_permission(): void
+    {
+        $role = RoleKey::accountingManager();
+
+        $this->assertTrue(RolePermissions::hasPermission($role, Permission::fromString('Settlement.Manage')));
+    }
+
     public function test_owner_and_member_have_no_entries_in_the_permission_set_registry(): void
     {
         // Organization Scope authorization (OrganizationAuthorizationService::hasRole())

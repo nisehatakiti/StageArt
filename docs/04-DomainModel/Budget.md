@@ -71,11 +71,10 @@ Variance
 
 # Ownership
 
-Budgetは、
-ProjectまたはProductionに関連付ける。
+Version 1.0では、BudgetをProjectまたはProductionに関連付ける。
 
-公演の予算を管理する場合は、
-Productionに紐付ける。
+Production Budgetは個別公演の予算、Project Budgetは団体全体の予算である。
+Project BudgetはOrganization Budgetと同義であり、別個の予算機能として作成しない。
 
 基本構造：
 
@@ -115,7 +114,7 @@ Budgetには、
 
 # Multiple Budgets
 
-一つのProductionに対して、
+一つのProductionまたはProjectに対して、
 複数のBudgetを保持できる。
 
 例えば、
@@ -184,7 +183,7 @@ ARCHIVEDは、
 
 # Active Budget
 
-一つのProductionについて、
+一つのScope（ProductionまたはProject）について、
 Version 1.0では
 ACTIVEなBudgetを一つに限定する。
 
@@ -599,26 +598,19 @@ Budget LineのAccountを
 
 # Ticket Actual
 
-Ticket売上のActualは、
-Check InCompletedから
-生成されたJournal Entryを
-Account単位で集計する。
+Ticketに関するActualは、Ticket・Reservation・Payment等の業務Factに対して既存のTicket / Payment / Accountingルールに従って生成されたJournal Entryを、Account単位で集計する。
+
+Actualの正本はJournal Entryであり、CheckInCompletedそのものを売上認識や仮売上振替のトリガーとして扱わない。Check Inは来場実績を表すFactであり、売上認識のタイミングはTicket / Payment / Accountingの各仕様に従う。会計期間末の仮売上振替は、決算未確定Productionの売上残高に対して別途行う。
 
 基本Flow：
 
-Ticket
+Ticket / Reservation / Payment等の業務Fact
   ↓
-Reservation
-  ↓
-Check In
-  ↓
-CheckInCompleted
-  ↓
-Ticket Revenue Recognition
+既存のTicket / Payment / Accountingルール
   ↓
 Journal Entry
   ↓
-Actual
+Account単位でActualを集計
 
 ---
 
@@ -654,34 +646,20 @@ Expense
 
 # Project Accounting
 
-Project単位で、
-複数ProductionのBudget / Actualを
-集計できる。
+Project Budgetは団体全体の予算を表す。
+Project Actualは、団体に属するすべてのJournal Entryを重複なく集計し、Productionに直接紐づく取引と団体共通費用・一般管理費を含める。
 
-例えば、
-
-Project
-  ↓
-Production A
-  ↓
-Production B
-  ↓
-Production C
-
-それぞれのBudget / Actualを
-Project単位で確認できる。
+Project BudgetとProject Actualを比較して団体全体の予実を確認する。Production Budget / Actualは個別公演の予実として別に管理する。団体共通費用をProductionへ按分・配賦しない。
 
 ---
 
 # Organization Accounting
 
-Organization単位でも、
-複数Project / Productionの
-Budget / Actualを集計できる。
+Organization Accountingは団体全体の会計実績を集計する。団体全体の予算はProject Budgetとして管理し、Organization Budgetという別個の予算機能は設けない。
 
-ただし、
-Budgetは必ず所属する
-Project / ProductionのScopeに従う。
+団体全体のActualには、Productionに直接紐づく取引と団体共通費用・一般管理費の両方を含める。団体共通費用はProductionへ按分・配賦せず、Production Actualにも含めない。
+
+Project Actualは団体に属するJournal Entryを重複なく集計する。Production Actualを再加算したり、仕訳を複製したりして二重計上してはならない。
 
 ---
 
@@ -689,18 +667,12 @@ Project / ProductionのScopeに従う。
 
 BudgetのScopeを明確にする。
 
-基本的には、
+Version 1.0では、次の2つのBudget Scopeをサポートする。
 
-Production Budget
+- Production Budget：個別公演の計画
+- Project Budget：団体全体の計画（Organization Budgetと同義）
 
-として公演単位で管理する。
-
-将来的には、
-
-- Project Budget
-- Organization Budget
-
-へ拡張できる構造を持つ。
+Project BudgetとOrganization Budgetを別々の予算機能として作成しない。
 
 ---
 
@@ -753,13 +725,14 @@ ARCHIVEDとして保持する。
 
 - Budgetは計画を表す。
 - Budgetは実績ではない。
-- BudgetはProjectまたはProductionに関連付ける。
+- Version 1.0ではBudgetをProjectまたはProductionに関連付けられる。
 - Productionの予算はProductionに関連付ける。
-- 一つのProductionに複数Budgetを保持できる。
+- Project Budgetは団体全体の予算として管理できる。Organization Budgetと同義であり、別個のBudget Scopeとして作成しない。
+- 一つのProductionまたはProjectに複数Budgetを保持できる。
 - Budgetには簡単な名称を設定できる。
 - 「A会場案」「一日2公演案」などの名称を許可する。
 - BudgetはDRAFT / ACTIVE / ARCHIVEDの状態を持つ。
-- Version 1.0ではProductionごとにACTIVE Budgetを一つとする。
+- Version 1.0ではProductionまたはProjectのScopeごとにACTIVE Budgetを一つとする。
 - Budgetは複数Budgetを比較できる。
 - Budgetは複数のBudget Lineから構成される。
 - Budget LineはAccountを参照する。
@@ -777,12 +750,13 @@ ARCHIVEDとして保持する。
 - VarianceはBudgetとActualから算出する。
 - Varianceを独立した正本として保存しない。
 - Budgetは会計仕訳を生成しない。
-- Ticket RevenueのActualはJournal Entryから取得する。
-- CheckInCompletedをTicket Revenueの実績認識に利用する。
+- 会計期間末に仮売上へ振り替えられた金額は仮売上として扱い、正式な売上ActualはProduction決算確定時の振替後に集計する。
+- 仮売上への振替は会計期間末に行う。CheckInCompletedを仮売上仕訳の契機にしない。正式な売上への振替はProduction決算確定時に行う。
 - BudgetはTicketを直接所有しない。
 - BudgetはProduction単位で予実管理できる。
-- Project単位でBudget / Actualを集計できる。
-- Organization単位でBudget / Actualを集計できる。
+- Version 1.0ではProject Budgetを団体全体の予算として作成できる。
+- Project Actualは団体に属するすべてのJournal Entryを重複なく集計し、Production Actualおよび団体共通費用を含める。団体共通費用をProductionへ按分・配賦しない。
+- Organization BudgetはProject Budgetと同義であり、別個の予算機能として作成しない。
 - Budgetは適切な会計管理権限を持つPersonのみが管理できる。
 - Organization Administratorは自身のOrganizationについて全権限を持つ。
 - Budgetには監査情報を保持する。
@@ -878,8 +852,6 @@ Variance
 - Seat数による自動計画
 - 前回公演実績からのBudget作成
 - Budget / Actual / Variance Dashboard
-- Project Budget
-- Organization Budget
 - キャッシュフロー予測
 - 損益予測
 - 損益分岐点分析
@@ -902,10 +874,10 @@ Journal Entry
 - Budgetは計画である。
 - Journal Entryは実績である。
 - BudgetとActualを分離する。
-- BudgetはProduction単位で管理できる。
-- 一つのProductionに複数のBudget Scenarioを持てる。
+- BudgetはProductionまたはProject単位で管理できる。
+- 一つのProductionまたはProjectに複数のBudget Scenarioを持てる。
 - Budgetには自由な識別名称を設定できる。
-- ACTIVE BudgetはProductionごとに一つとする。
+- ACTIVE BudgetはScope（ProductionまたはProject）ごとに一つとする。
 - Budget LineはAccountを参照する。
 - BudgetとJournal Entryで同じAccount分類を利用する。
 - ActualはJournal Entryから集計する。
@@ -914,9 +886,9 @@ Journal Entry
 - Actualを二重管理しない。
 - Varianceを二重管理しない。
 - Budgetは会計Factを生成しない。
-- CheckInCompletedによるTicket RevenueをActualとして集計できる。
+- Ticket RevenueのActualは既存のTicket / Payment / Accountingルールに従って生成されたJournal Entryから集計する。CheckInCompleted自体を売上認識の契機にしない。
 - BudgetはTicketを所有しない。
-- BudgetはProduction / Project / OrganizationのScopeに従う。
+- Version 1.0のBudget ScopeはProductionまたはProjectとする。Project Budgetは団体全体の予算を意味し、Organization Budgetと同義とする。
 - 採用されないBudgetも履歴として保持する。
 - 会計管理権限を適切に分離する。
 - Blueprintを唯一の設計基準とする。

@@ -308,9 +308,23 @@ HTTP Status Codeを利用する。
 |409|Conflict|
 |422|Validation Error|
 |500|Internal Server Error|
+|503|Service Unavailable（一時的。再実行可能）|
 
 Business ErrorはHTTP Errorではなく、
 Domain Layerで表現する。
+
+## 公演状態・ロック・DB障害の共通エラー（PR #7 レビュー R5）
+
+`stageart/v1` の全エンドポイントで、Controllerが個別に変換しない以下の例外を同じ形で返す（`RestFailureResponder`）。本文はWP RESTのエラー形式 `{ code, message, data: { status } }` とする。
+
+| HTTP | code | 意味 | クライアントの扱い |
+|------|------|------|------|
+|409|`stageart_production_closed`|公演がCANCELLED / COMPLETED / ARCHIVEDで、その操作を受け付けない（`message` にStatusを含む）|再実行しても成功しない。公演が中止・決算完了済みであることを表示する|
+|409|`stageart_capacity_below_reservations`|定員を予約済み席数より少なくしようとした（R6）。`data.capacity`、`data.reserved_seats` 付き。何も変更しない|予約済み席数以上の定員を指定し直してもらう|
+|503|`stageart_database_busy`|ロック待ちタイムアウト・デッドロック。トランザクション全体をROLLBACK済みで、何も保存されていない。`data.retryable: true`、`Retry-After: 2` ヘッダー付き|自動では再送しない。「保存されなかったので、少し待ってから再度実行してほしい」と表示し、利用者の操作で再実行する|
+|500|`stageart_internal_error`|その他のサーバー・DB障害。詳細はサーバーログのみに出力し、応答には含めない|再試行可能とは表示しない|
+
+どの操作がどの公演状態で拒否されるか、およびロックの取得順序は `04-DomainModel/ProductionLifecycle.md`「公演活動の制限」「Production単位のロック規約」を正とする。
 
 ---
 

@@ -2,7 +2,7 @@
 
 # Domain Model : Journal Entry
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -39,18 +39,7 @@ Journal Entryは、
 
 # Accounting Event
 
-Journal Entryは、
-Domain Eventを契機として生成できる。
-
-例えば、
-
-CheckInCompleted
-  ↓
-Ticket Revenue Recognition
-  ↓
-Journal Entry
-
-という流れを取る。
+Journal Entryは、会計上の取引Factを示すDomain Eventを契機として生成できる。チケット売上では、実際の代金受領を示すPayment Factを仕訳生成の正本トリガーとする。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生するため、CheckInCompletedを連携・照合に利用できる。スタッフ預りTicketではPayment Factが先行する場合があり、後続のCheckInCompletedから売上を再計上してはならない。
 
 Journal Entry自身が
 Business Eventを発生させるのではなく、
@@ -192,6 +181,22 @@ Ticket RevenueのJournal Dateを
 
 具体的な会計期間ルールは、
 Accounting Domainで定義する。
+
+## 日本時間（JST）基準（Version 1.1）
+
+会計上の日付は日本時間（JST、Asia/Tokyo）を基準とする。
+DateTime.md「Version 1.0では日本時間(JST)を標準とする」に従う。
+
+- Journal Dateは日時（時点）として保持する。DBには既存の他の日時と同じくUTCで保存し（`journal_date` DATETIME。保存方式は変更しない）、保存時・読込時ともにUTCとして扱う。
+- 仕訳日・取引日（会計上の日付）は、Journal DateをJSTに変換した暦日（YYYY-MM-DD）とする。UTCの日付部分をそのまま日付として扱ってはならない。
+  - 例：2026-03-31 14:59:59 UTC は 2026-03-31 23:59:59 JST であり、仕訳日は2026-03-31。
+  - 例：2026-03-31 15:00:00 UTC は 2026-04-01 00:00:00 JST であり、仕訳日は2026-04-01。
+- 会計期間の判定、月次集計、年度集計は、仕訳日（JSTの暦日）に基づいて行う。月はJSTの暦月とする。会計年度の開始月・締め処理は会計期間の仕様で定める（未確定）が、その判定にもJSTの仕訳日を用いる。
+- 日時（Journal Date、Created At等）と日付（仕訳日）を区別する。
+  - Journal Entry APIの`journal_date`は時点（ISO 8601、UTC表記）、`accounting_date`は仕訳日（YYYY-MM-DD、JST）とする。
+  - 公演会計の取引明細の`journal_date`は仕訳日（YYYY-MM-DD、JST）とする。
+- 現在の実装で自動作成する仕訳のJournal Dateは、その取引が発生した時点（Check In処理、経費の承認、会計機能の有効化）とする。経費承認の仕訳のJournal DateはExpenseの承認日時（approved_at）と同じ時点とし、仕訳日は承認日（JST）となる。
+- Organization Timezone（OrganizationSetupPolicy.md）を会計に適用する場合の扱いは、Timezone関連の詳細設計で定める。それまでは全OrganizationでJSTを用いる。
 
 ---
 
@@ -535,9 +540,7 @@ Idempotencyを確保する。
 
 # Ticket Revenue
 
-Ticket Revenueは、
-CheckInCompletedを契機として
-Journal Entryへ変換される。
+Ticket RevenueのJournal Entryは、実際の代金受領を示すPayment Factに基づいて生成する。通常の当日精算ではPayment FactとCheckInCompletedが同時に発生する。スタッフ預りTicketでは受付担当者が現金を受領し支払済みを確定した時点のPayment Factで計上し、後続のCheckInCompletedでは再計上しない。
 
 基本Flow：
 
@@ -824,7 +827,7 @@ Organization内部の権限を持つPersonのみが
 - Reversal Journal Entryは元Journal Entryを参照する。
 - 同一Business Eventから会計取引を二重生成しない。
 - Source Event IDなどによってIdempotencyを確保する。
-- CheckInCompletedをTicket Revenue Recognitionの契機として利用できる。
+- Ticket Revenue Recognitionの仕訳生成根拠はPayment Factとする。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketでは後続のCheckInCompletedから再計上しない。
 - Ticket Revenueの金額はReservationの取引価格を利用する。
 - Ticketの現在価格から過去の売上金額を再計算しない。
 - Payment Accountは決済手段に応じてAccounting Domainで決定する。
@@ -892,7 +895,7 @@ ActualはJournal Entryから
 を同じProduction単位で比較できる。
 
 また、
-CheckInCompletedをチケット売上認識の起点とすることで、
+実際の代金受領を示すPayment Factをチケット売上認識の起点とし、通常の当日精算では同時に発生するCheckInCompletedを来場記録・照合に利用することで、
 
 Reservation
   ↓
@@ -951,7 +954,7 @@ Journal Entryを会計実績の正本として扱う。
 - 会計Factを物理削除しない。
 - Source Eventとの関連を保持する。
 - 同一Eventから二重仕訳を生成しない。
-- CheckInCompletedをTicket Revenue Recognitionの起点とする。
+- Payment FactをTicket Revenue Recognitionの仕訳生成根拠とする。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketの売上は受付担当者による現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Ticket RevenueはReservationの取引価格を利用する。
 - Ticketの現在価格を過去取引へ遡及させない。
 - Budgetは計画値である。

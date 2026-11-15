@@ -7,6 +7,7 @@ namespace StageArt\Application\Organization;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
+use StageArt\Application\Shared\WebUrl;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
@@ -36,9 +37,10 @@ final class UpdateOrganizationUseCase
         }
 
         $organizationId = OrganizationId::fromString($command->organizationId);
+        $role = $this->authorization->roleFor($person, $organizationId);
 
-        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new OrganizationAccessDeniedException('Only an Organization Owner can update this Organization.');
+        if ($role === null || ! in_array($role->toString(), [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER], true)) {
+            throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can update this Organization.');
         }
 
         $organization = $this->organizations->findById($organizationId);
@@ -50,6 +52,8 @@ final class UpdateOrganizationUseCase
         $organization->rename(new OrganizationName($command->name));
         $organization->changeType($command->type);
         $organization->changeDescription($command->description);
+        // PR #7 R14-A (F9): a logo URL is shown on the public page - http(s) only.
+        $organization->changeLogoUrl(WebUrl::optional($command->logoUrl, 'logo_url'));
 
         if ($command->slug !== null) {
             $newSlug = new OrganizationSlug($command->slug);
@@ -90,7 +94,7 @@ final class UpdateOrganizationUseCase
 
         $this->organizations->save($organization);
 
-        return OrganizationResult::fromDomain($organization, RoleKey::owner());
+        return OrganizationResult::fromDomain($organization, $role);
     }
 
     private function parseOptionalDateTime(?string $value): ?DateTimeImmutable

@@ -15,31 +15,51 @@ use StageArt\Application\Production\CancelProductionCommand;
 use StageArt\Application\Production\CancelProductionUseCase;
 use StageArt\Application\Production\CompleteProductionCommand;
 use StageArt\Application\Production\CompleteProductionUseCase;
+use StageArt\Application\Production\GetProductionQuery;
+use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
-use StageArt\Application\Production\StartProductionPlanningCommand;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
+use StageArt\Application\Production\ProductionSettlementIncompleteException;
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\Production\ProductionSlug;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Role\RoleKey;
+use StageArt\Domain\Ticket\TicketBackCondition;
+use StageArt\Domain\Ticket\TicketBackMode;
+use StageArt\Domain\Ticket\TicketId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
+use StageArt\Tests\Support\InMemoryReservationRepository;
+use StageArt\Tests\Support\InMemorySettlementRepository;
+use StageArt\Tests\Support\InMemoryTicketRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\ReadFailingReservationRepository;
+use StageArt\Tests\Support\RollbackingTransactionManager;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Reservation\ReservationRepositoryInterface;
 
 /**
- * Phase 6.1: covers the Production Lifecycle Action UseCases end to end -
- * the full DRAFT -> PLANNING -> ACTIVE -> COMPLETED -> ARCHIVED chain,
- * Cancel from a mid-chain state, invalid-transition rejection at the
- * Application layer (surfaced from the Domain Guard), unauthorized
- * rejection, and Production Scope isolation (PrimaryManager of a
- * different Production cannot act).
+ * Covers the Production Lifecycle Action UseCases end to end - the
+ * confirmed PLANNING -> ACTIVE -> COMPLETED -> ARCHIVED chain (a
+ * Production starts at PLANNING directly, per this round's Production
+ * Lifecycle整理 instruction; there is no longer a separate "start
+ * planning" Action), Cancel from a mid-chain state, invalid-transition
+ * rejection at the Application layer (surfaced from the Domain Guard),
+ * unauthorized rejection, and Production Scope isolation (PrimaryManager
+ * of a different Production cannot act).
  */
 final class ProductionLifecycleUseCaseTest extends TestCase
 {
@@ -47,12 +67,18 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private InMemoryPersonRepository $people;
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
+    private InMemoryPerformanceRepository $performances;
+    private InMemoryReservationRepository $reservations;
+    private InMemoryTicketRepository $tickets;
+    private InMemorySettlementRepository $settlements;
+    private InMemoryProductionDelegateRepository $delegates;
 
-    private StartProductionPlanningUseCase $startPlanning;
     private ActivateProductionUseCase $activate;
     private CompleteProductionUseCase $complete;
     private ArchiveProductionUseCase $archive;
     private CancelProductionUseCase $cancel;
+    private GetProductionUseCase $get;
+    private ProductionAuthorizationService $productionAuthorization;
 
     protected function setUp(): void
     {
@@ -60,26 +86,47 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->people = new InMemoryPersonRepository();
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
+        $this->performances = new InMemoryPerformanceRepository();
+        $this->reservations = new InMemoryReservationRepository();
+        $this->tickets = new InMemoryTicketRepository();
+        $this->settlements = new InMemorySettlementRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             new InMemoryParticipantRepository()
         );
+        $this->productionAuthorization = $productionAuthorization;
 
-        $this->startPlanning = new StartProductionPlanningUseCase($this->productions, $productionAuthorization);
-        $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization);
-        $this->complete = new CompleteProductionUseCase($this->productions, $productionAuthorization);
-        $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization);
-        $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization);
+        $this->activate = new ActivateProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
+        $this->complete = new CompleteProductionUseCase(
+            $this->productions,
+            $productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
+            $this->settlements,
+            $this->performances,
+            $this->reservations,
+            new InMemoryTransactionManager()
+        );
+        $this->archive = new ArchiveProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
+        $this->cancel = new CancelProductionUseCase($this->productions, $productionAuthorization, new InMemoryTransactionManager());
+        $this->get = new GetProductionUseCase($this->productions, $productionAuthorization);
     }
 
     /**
      * @return array{0: Production, 1: Person} Production, PrimaryManager
+     *
+     * Every call gets its own fresh, random slug (needed for any test
+     * that reaches ACTIVE - activate() now publishes, and publish()
+     * requires a slug) so two Productions from the same test (e.g.
+     * isolation tests) never collide.
      */
     private function givenProduction(int $primaryManagerWordPressUserId): array
     {
+        $slug = 'lifecycle-test-production-' . bin2hex(random_bytes(4));
+
         $organization = Organization::create(new OrganizationName('Theatre Co'));
         $this->organizations->save($organization);
 
@@ -89,18 +136,40 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $project = Project::create($organization->id(), 'Season');
 
-        $production = Production::create($project->id(), new ProductionName('Show'), $primaryManager->id());
+        $production = Production::create(
+            $project->id(),
+            new ProductionName('Show'),
+            $primaryManager->id(),
+            null,
+            new ProductionSlug($slug)
+        );
         $this->productions->save($production);
 
         return [$production, $primaryManager];
     }
 
-    public function test_primary_manager_can_advance_through_the_full_lifecycle(): void
+    /**
+     * StageArt Production Lifecycle整理 instruction: "「公演を作る」を押した
+     * 直後はPLANNING" - the created Production is already PLANNING with no
+     * separate "start planning" Action needed.
+     */
+    public function test_new_production_starts_in_planning(): void
     {
         [$production] = $this->givenProduction(1);
 
-        $result = $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
-        $this->assertSame('PLANNING', $result->status);
+        $this->assertSame('PLANNING', $production->status()->toString());
+    }
+
+    public function test_new_production_is_not_published(): void
+    {
+        [$production] = $this->givenProduction(1);
+
+        $this->assertFalse($production->isPublished());
+    }
+
+    public function test_primary_manager_can_advance_through_the_full_lifecycle(): void
+    {
+        [$production] = $this->givenProduction(1);
 
         $result = $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
         $this->assertSame('ACTIVE', $result->status);
@@ -112,27 +181,42 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->assertSame('ARCHIVED', $result->status);
     }
 
+    /**
+     * "公演を確定する" (PLANNING -> ACTIVE) also makes the Production public -
+     * see Production::activate()'s docblock.
+     */
+    public function test_confirming_the_production_activates_and_publishes_it(): void
+    {
+        [$production] = $this->givenProduction(1);
+
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $reloaded = $this->productions->findById($production->id());
+        $this->assertSame('ACTIVE', $reloaded->status()->toString());
+        $this->assertTrue($reloaded->isPublished());
+    }
+
     public function test_primary_manager_can_cancel_from_active(): void
     {
         [$production] = $this->givenProduction(1);
 
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
         $result = $this->cancel->execute(new CancelProductionCommand($production->id()->toString(), 1));
 
         $this->assertSame('CANCELLED', $result->status);
     }
 
-    public function test_skipping_planning_to_activate_is_rejected(): void
+    public function test_activating_an_already_active_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
 
         $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
     }
 
-    public function test_completing_a_draft_production_is_rejected(): void
+    public function test_completing_a_planning_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
 
@@ -144,7 +228,6 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     public function test_archiving_a_non_completed_production_is_rejected(): void
     {
         [$production] = $this->givenProduction(1);
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 1));
 
         $this->expectException(InvalidArgumentException::class);
 
@@ -160,7 +243,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->expectException(ProductionAccessDeniedException::class);
 
-        $this->startPlanning->execute(new StartProductionPlanningCommand($production->id()->toString(), 2));
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 2));
     }
 
     public function test_primary_manager_of_a_different_production_cannot_advance_this_one(): void
@@ -172,6 +255,660 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         // WordPress user 2 (PrimaryManager of Production B only) attempts
         // to advance Production A's Lifecycle.
-        $this->startPlanning->execute(new StartProductionPlanningCommand($productionA->id()->toString(), 2));
+        $this->activate->execute(new ActivateProductionCommand($productionA->id()->toString(), 2));
+    }
+
+    // --- Phase 4 (Check-in/精算/会計連携): the settlement Guard fills in
+    // Production::complete()'s own long-standing disclosed Open Item.
+
+    private function givenActiveProductionWithUnsettledTicketBack(): Production
+    {
+        [$production, $primaryManager] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $production->updateTicketBack(
+            TicketBackMode::PROGRESSIVE,
+            json_encode([['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => 10]])
+        );
+        $this->productions->save($production);
+
+        $performance = \StageArt\Domain\Performance\Performance::create(
+            $production->id(),
+            new \DateTimeImmutable('-1 day'),
+            '18:00',
+            null,
+            20,
+            null,
+            null
+        );
+        $this->performances->save($performance);
+
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+
+        $member = Person::create(5);
+        $this->people->save($member);
+
+        $reservation = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 1, 3000, null, $member->id());
+        $reservation->checkIn(null);
+        $this->reservations->save($reservation);
+
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        return $production;
+    }
+
+    public function test_complete_is_blocked_while_a_member_has_an_unsettled_ticket_back_amount(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+
+        $this->expectException(ProductionSettlementIncompleteException::class);
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+    }
+
+    /**
+     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 決算確定 is open to a
+     * 代理人 and a 会計管理者 as well, under the same settlement guard;
+     * other delegates are still refused.
+     */
+    public function test_a_proxy_manager_or_accounting_manager_can_complete_but_other_delegates_cannot(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $this->givenDelegate($production, 7, [RoleKey::checkInManager()]);
+        $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 7));
+            $this->fail('A CHECKIN_MANAGER must not complete the Production.');
+        } catch (ProductionAccessDeniedException $exception) {
+            $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        }
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8))->status);
+
+        [$other] = $this->givenProduction(11);
+        $this->activate->execute(new ActivateProductionCommand($other->id()->toString(), 11));
+        $this->givenDelegate($other, 12, [RoleKey::accountingManager()]);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($other->id()->toString(), 12))->status);
+    }
+
+    public function test_the_settlement_guard_also_applies_to_a_proxy_manager(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+
+        $this->expectException(ProductionSettlementIncompleteException::class);
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8));
+    }
+
+    /**
+     * can_complete in the Production response follows the same right
+     * CompleteProductionUseCase checks - PrimaryManager, 会計管理者 and an
+     * active 代理人, nobody else - and is true only while the Production
+     * is ACTIVE. The other lifecycle actions stay PrimaryManager-only.
+     */
+    public function test_can_complete_follows_the_completion_right_and_the_active_status(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $id = $production->id()->toString();
+        $proxyRoles = $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegate($production, 9, [RoleKey::accountingManager()]);
+        $this->givenDelegate($production, 7, [RoleKey::checkInManager()]);
+        $this->givenDelegate($production, 10, [RoleKey::participantManager()]);
+
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 1))->canComplete, 'A PLANNING Production cannot be completed.');
+
+        $this->activate->execute(new ActivateProductionCommand($id, 1));
+
+        foreach ([1 => true, 8 => true, 9 => true, 7 => false, 10 => false] as $user => $expected) {
+            $result = $this->get->execute(new GetProductionQuery($id, $user));
+            $this->assertSame($expected, $result->canComplete, "can_complete for user {$user}");
+            $this->assertSame($expected, $result->toArray()['can_complete']);
+        }
+
+        foreach ([8, 9] as $delegateUser) {
+            try {
+                $this->cancel->execute(new CancelProductionCommand($id, $delegateUser));
+                $this->fail("User {$delegateUser} must not cancel the Production.");
+            } catch (ProductionAccessDeniedException $exception) {
+                $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+            }
+        }
+
+        $proxyRoles[1]->deactivate($production->primaryManagerPersonId());
+        $this->delegates->save($proxyRoles[1]);
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 8))->canComplete, 'A proxy with a deactivated Role is no longer a proxy.');
+
+        $completed = $this->complete->execute(new CompleteProductionCommand($id, 9));
+        $this->assertSame('COMPLETED', $completed->status);
+        $this->assertFalse($completed->isPrimaryManager, 'The accounting manager who completed it is not the PrimaryManager.');
+        $this->assertFalse($completed->canComplete);
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 1))->canComplete);
+    }
+
+    /**
+     * @param RoleKey[] $roles
+     * @return ProductionDelegate[]
+     */
+    private function givenDelegate(Production $production, int $wordPressUserId, array $roles): array
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+
+        $delegates = [];
+        foreach ($roles as $role) {
+            $delegate = ProductionDelegate::create($production->id(), $person->id(), $role, $production->primaryManagerPersonId());
+            $this->delegates->save($delegate);
+            $delegates[] = $delegate;
+        }
+
+        return $delegates;
+    }
+
+    public function test_complete_succeeds_once_the_member_is_fully_settled(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+
+        // Confirmed Ticket Back for 1 sold unit at 3000円, 10% rate = 300円.
+        $member = null;
+        foreach ($this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id()) as $reservation) {
+            $member = $reservation->attributedPersonId();
+        }
+
+        $settlement = \StageArt\Domain\Settlement\ProductionMemberSettlement::openFor($production->id(), $member);
+        $settlement->recordSettlement(300, $member);
+        $this->settlements->save($settlement);
+
+        $result = $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+    }
+
+    /**
+     * StageArt 予約→発券→受付Check-in一連接続 instruction (confirmed this
+     * round): "Production終了時に残っているRESERVEDはCANCELLEDにします" -
+     * confirmed via the ACTIVE -> COMPLETED transition. A CHECKED_IN
+     * Reservation for the same Performance must be left untouched.
+     */
+    public function test_completing_a_production_cancels_remaining_reserved_reservations(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $this->productions->save($production);
+
+        $performance = \StageArt\Domain\Performance\Performance::create(
+            $production->id(),
+            new \DateTimeImmutable('-1 day'),
+            '18:00',
+            null,
+            20,
+            null,
+            null
+        );
+        $this->performances->save($performance);
+
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+
+        $stillReserved = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 2, 3000, null);
+        $this->reservations->save($stillReserved);
+
+        $alreadyCheckedIn = Reservation::create($performance->id(), $ticket->id(), 'B', 'b@example.com', 1, 3000, null);
+        $alreadyCheckedIn->checkIn(null);
+        $this->reservations->save($alreadyCheckedIn);
+
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $reloadedStillReserved = $this->reservations->findById($stillReserved->id());
+        $reloadedCheckedIn = $this->reservations->findById($alreadyCheckedIn->id());
+
+        $this->assertSame('CANCELLED', $reloadedStillReserved->status()->toString());
+        $this->assertSame('CHECKED_IN', $reloadedCheckedIn->status()->toString());
+    }
+
+    // --- PR #7 review: a failed Reservation read is not "no Reservations" ---
+
+    private function completeUseCaseWith(ReservationRepositoryInterface $reservations, TransactionManagerInterface $transactions): CompleteProductionUseCase
+    {
+        return new CompleteProductionUseCase(
+            $this->productions,
+            $this->productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $reservations, $this->tickets),
+            $this->settlements,
+            $this->performances,
+            $reservations,
+            $transactions
+        );
+    }
+
+    /**
+     * A Production whose Ticket Back is configured but which genuinely
+     * has no Reservations has nothing to settle and completes as before.
+     */
+    public function test_a_production_with_genuinely_no_reservations_still_completes(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $production->updateTicketBack(
+            TicketBackMode::PROGRESSIVE,
+            json_encode([['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => 10]])
+        );
+        $this->productions->save($production);
+        $this->performances->save(\StageArt\Domain\Performance\Performance::create($production->id(), new \DateTimeImmutable('-1 day'), '18:00', null, 20, null, null));
+        $this->tickets->save(\StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null));
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $transactions = new RollbackingTransactionManager();
+
+        $result = $this->completeUseCaseWith($this->reservations, $transactions)
+            ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * The settlement guard's Reservation read fails (a DB error): the
+     * guard must not see "no checked-in seats, nothing owed" and let the
+     * Production complete - it stops before any write. Since PR #7 R4 the
+     * guard runs inside the completion's transaction, under the Production
+     * lock, so the failure rolls that transaction back (it used to stop
+     * before the transaction started).
+     */
+    public function test_a_failed_reservation_read_in_the_settlement_guard_does_not_complete_the_production(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $failing = new ReadFailingReservationRepository($this->reservations);
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($failing, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('The Production completed although its Reservations could not be read.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Reservations', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks(), 'the guard failed inside the completion transaction, before complete() was saved');
+    }
+
+    /**
+     * Same with a Production that has no Ticket Back (the guard reads no
+     * Reservations) and still-RESERVED Reservations: the read inside the
+     * transaction that cancels them fails, so the transaction is rolled
+     * back instead of committing COMPLETED with the RESERVED left over.
+     */
+    public function test_a_failed_reservation_read_while_completing_rolls_the_completion_back(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $production->changeCapacity(20);
+        $this->productions->save($production);
+        $performance = \StageArt\Domain\Performance\Performance::create($production->id(), new \DateTimeImmutable('-1 day'), '18:00', null, 20, null, null);
+        $this->performances->save($performance);
+        $ticket = \StageArt\Domain\Ticket\Ticket::create($production->id(), '一般', 3000, null);
+        $this->tickets->save($ticket);
+        $stillReserved = Reservation::create($performance->id(), $ticket->id(), 'A', 'a@example.com', 2, 3000, null);
+        $this->reservations->save($stillReserved);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+
+        $failing = new ReadFailingReservationRepository($this->reservations);
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($failing, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('The Production completed although its Reservations could not be read.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Reservations', $exception->getMessage());
+        }
+
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
+        $this->assertSame('RESERVED', $this->reservations->findById($stillReserved->id())->status()->toString());
+    }
+
+    // --- PR #7 review (R4): Production Completion under the exclusive Production lock ---
+
+    /** Settles the member of givenActiveProductionWithUnsettledTicketBack() (300円). */
+    private function settleTheMember(Production $production): void
+    {
+        $member = $this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id())[0]->attributedPersonId();
+        $settlement = \StageArt\Domain\Settlement\ProductionMemberSettlement::openFor($production->id(), $member);
+        $settlement->recordSettlement(300, $member);
+        $this->settlements->save($settlement);
+    }
+
+    public function test_completion_takes_the_exclusive_production_lock_first_inside_its_transaction(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $transactions = new RollbackingTransactionManager();
+        $inTransactionAtLock = null;
+        $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransactionAtLock): void {
+            $inTransactionAtLock = $transactions->isInTransaction();
+        };
+        $this->productions->locks = []; // (R5) the setup's activation locks the Production too
+
+        $result = $this->completeUseCaseWith($this->reservations, $transactions)
+            ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertTrue($inTransactionAtLock);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * A Check-in that committed while the completion waited for the lock
+     * creates new Ticket Back: the settlement check, read under the lock,
+     * sees it and refuses to complete.
+     */
+    public function test_a_check_in_committed_while_completion_waited_blocks_the_completion(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $performance = $this->performances->findByProductionId($production->id())[0];
+            $ticket = $this->tickets->findByProductionId($production->id())[0];
+            $member = $this->reservations->findByPerformanceId($performance->id())[0]->attributedPersonId();
+            $late = Reservation::create($performance->id(), $ticket->id(), 'Late', 'late@example.com', 1, 3000, null, $member);
+            $late->checkIn(null);
+            $this->reservations->save($late);
+        };
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed with Ticket Back owed on a Check-in committed just before.');
+        } catch (ProductionSettlementIncompleteException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    public function test_a_second_concurrent_completion_is_refused_after_the_first_commits(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+        };
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed twice.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('COMPLETED to COMPLETED', $exception->getMessage());
+        }
+
+        $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    public function test_a_failed_production_lock_does_not_complete(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->lockFailure = new \RuntimeException('Failed to lock the Production. Lock wait timeout exceeded; try restarting transaction');
+        $transactions = new RollbackingTransactionManager();
+
+        try {
+            $this->completeUseCaseWith($this->reservations, $transactions)
+                ->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed without the Production lock.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
+    }
+
+    // --- PR #7 review (R5): every Production write decides on the row read under the exclusive lock ---
+
+    /**
+     * What Production Completion commits while another request waits for
+     * the lock: a new copy of the row, COMPLETED (the waiting request
+     * still holds the copy it read before).
+     */
+    private function completedWhileWaiting(Production $production): void
+    {
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $completed = clone $production;
+            \StageArt\Tests\Support\ProductionStatusFixture::force($completed, 'COMPLETED');
+            $this->productions->save($completed);
+        };
+    }
+
+    public function test_cancelling_a_production_takes_the_exclusive_lock_inside_its_transaction(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $transactions = new RollbackingTransactionManager();
+        $inTransaction = null;
+        $this->productions->beforeLockGranted = static function () use ($transactions, &$inTransaction): void {
+            $inTransaction = $transactions->isInTransaction();
+        };
+        $this->productions->locks = [];
+
+        $result = (new CancelProductionUseCase($this->productions, $this->productionAuthorization, $transactions))
+            ->execute(new CancelProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('CANCELLED', $result->status);
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+        $this->assertTrue($inTransaction);
+        $this->assertSame(1, $transactions->commits());
+    }
+
+    /**
+     * The old code cancelled the copy it read before Completion committed
+     * and saved it: a COMPLETED Production became CANCELLED.
+     */
+    public function test_a_cancellation_waiting_for_completion_does_not_overwrite_it(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $this->completedWhileWaiting($this->productions->findById($production->id()));
+
+        try {
+            $this->cancel->execute(new CancelProductionCommand($production->id()->toString(), 1));
+            $this->fail('A completed Production was cancelled.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('from COMPLETED to CANCELLED', $exception->getMessage());
+        }
+
+        $this->assertSame('COMPLETED', $this->productions->findById($production->id())->status()->toString());
+    }
+
+    /**
+     * A basic-info update saves every column: applied to the copy read
+     * before Completion committed, it used to put the status back to
+     * ACTIVE.
+     */
+    public function test_a_production_update_waiting_for_completion_keeps_it_completed(): void
+    {
+        [$production] = $this->givenProduction(1);
+        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $update = new \StageArt\Application\Production\UpdateProductionUseCase($this->productions, $this->productionAuthorization, $this->performances, new InMemoryTransactionManager(), $this->reservations);
+        $this->completedWhileWaiting($this->productions->findById($production->id()));
+        $this->productions->locks = [];
+
+        $result = $update->execute(new \StageArt\Application\Production\UpdateProductionCommand($production->id()->toString(), 1, 'Renamed Show'));
+
+        $this->assertSame('Renamed Show', $result->name);
+        $stored = $this->productions->findById($production->id());
+        $this->assertSame('COMPLETED', $stored->status()->toString());
+        $this->assertSame('Renamed Show', $stored->name()->toString());
+        $this->assertSame([['FOR UPDATE', $production->id()->toString()]], $this->productions->locks);
+    }
+
+    // --- PR #7 review (R7): no completion with a member settled more than confirmed ---
+
+    private function theCheckedInSeat(Production $production): Reservation
+    {
+        return $this->reservations->findByPerformanceId($this->performances->findByProductionId($production->id())[0]->id())[0];
+    }
+
+    /** A Check-in reversed (refunded) after the settlement, as ReverseCheckInUseCase commits it. */
+    private function refund(Reservation $reservation): void
+    {
+        $reservation->reverseCheckIn(null);
+        $this->reservations->save($reservation);
+    }
+
+    /** One more seat sold by the same member and checked in. */
+    private function anotherCheckedInSeat(Production $production): Reservation
+    {
+        $first = $this->theCheckedInSeat($production);
+        $seat = Reservation::create($first->performanceId(), $first->ticketId(), 'B', 'b@example.com', 1, 3000, null, $first->attributedPersonId());
+        $seat->checkIn(null);
+        $this->reservations->save($seat);
+
+        return $seat;
+    }
+
+    public function test_settled_then_refunded_is_overpaid_and_refuses_completion_with_the_amounts(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $member = $this->theCheckedInSeat($production)->attributedPersonId();
+        $this->refund($this->theCheckedInSeat($production));
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed with 300 settled and 0 confirmed.');
+        } catch (\StageArt\Application\Production\ProductionSettlementOverpaidException $exception) {
+            $this->assertSame(300, $exception->totalOverpaid());
+            $this->assertSame([[
+                'person_id' => $member->toString(),
+                'confirmed_ticket_back_amount' => 0,
+                'settled_amount' => 300,
+                'overpaid_amount' => 300,
+            ]], $exception->members());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame('RESERVED', $this->theCheckedInSeat($production)->status()->toString(), 'nothing of the completion was applied');
+    }
+
+    public function test_a_refund_that_brings_the_confirmed_amount_down_to_the_settled_one_completes(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);              // 300 settled for the first seat
+        $second = $this->anotherCheckedInSeat($production); // confirmed 600: 300 unsettled
+        $this->refund($second);                             // confirmed back to 300 = settled
+
+        $result = $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+
+        $this->assertSame('COMPLETED', $result->status);
+    }
+
+    public function test_settled_without_any_refund_still_completes(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1))->status);
+    }
+
+    /**
+     * The over-payment is resolved with what exists today: the member's
+     * last settlement is cancelled (allowed before completion).
+     */
+    public function test_completion_goes_through_once_the_over_payment_is_resolved(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $member = $this->theCheckedInSeat($production)->attributedPersonId();
+        $this->refund($this->theCheckedInSeat($production));
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed while overpaid.');
+        } catch (\StageArt\Application\Production\ProductionSettlementOverpaidException $exception) {
+            $this->addToAssertionCount(1);
+        }
+
+        $settlement = $this->settlements->findByProductionAndPerson($production->id(), $member);
+        $settlement->cancelLastSettlement($member);
+        $this->settlements->save($settlement);
+
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1))->status);
+    }
+
+    /**
+     * A refund committed while the completion waited for the exclusive
+     * lock is seen by the check.
+     */
+    public function test_a_refund_committed_while_completion_waited_refuses_the_completion(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $this->productions->beforeLockGranted = function () use ($production): void {
+            $this->refund($this->theCheckedInSeat($production));
+        };
+
+        $this->expectException(\StageArt\Application\Production\ProductionSettlementOverpaidException::class);
+
+        try {
+            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+        } finally {
+            $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        }
+    }
+
+    public function test_a_failed_settlement_read_does_not_complete_and_rolls_back(): void
+    {
+        $production = $this->givenActiveProductionWithUnsettledTicketBack();
+        $this->settleTheMember($production);
+        $failing = new class ($this->settlements) implements \StageArt\Domain\Settlement\SettlementRepositoryInterface {
+            private \StageArt\Domain\Settlement\SettlementRepositoryInterface $inner;
+
+            public function __construct(\StageArt\Domain\Settlement\SettlementRepositoryInterface $inner)
+            {
+                $this->inner = $inner;
+            }
+
+            public function save(\StageArt\Domain\Settlement\ProductionMemberSettlement $settlement): void
+            {
+                $this->inner->save($settlement);
+            }
+
+            public function findByProductionAndPerson(\StageArt\Domain\Production\ProductionId $productionId, \StageArt\Domain\Person\PersonId $personId): ?\StageArt\Domain\Settlement\ProductionMemberSettlement
+            {
+                return $this->inner->findByProductionAndPerson($productionId, $personId);
+            }
+
+            public function findByProductionId(\StageArt\Domain\Production\ProductionId $productionId): array
+            {
+                throw new \RuntimeException('Failed to read the Settlements of the Production. MySQL server has gone away');
+            }
+        };
+        $transactions = new RollbackingTransactionManager();
+        $useCase = new CompleteProductionUseCase(
+            $this->productions,
+            $this->productionAuthorization,
+            new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets),
+            $failing,
+            $this->performances,
+            $this->reservations,
+            $transactions
+        );
+
+        try {
+            $useCase->execute(new CompleteProductionCommand($production->id()->toString(), 1));
+            $this->fail('Completed without reading the settlements.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to read the Settlements', $exception->getMessage());
+        }
+
+        $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        $this->assertSame(0, $transactions->commits());
+        $this->assertSame(1, $transactions->rollbacks());
     }
 }

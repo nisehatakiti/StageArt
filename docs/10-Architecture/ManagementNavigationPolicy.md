@@ -2,7 +2,7 @@
 
 # Management Navigation Policy
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -220,6 +220,8 @@ Accountingは二つのContextから利用する。
 - 決算
 
 Production AccountingをOrganization Accountingの単なる別名として扱わない。
+
+Organization Contextの会計では、配下の公演ごとの売上・原価・収支・決算状態と合計を確認する。費目別の原価・取引明細はProduction Contextの会計で確認し、Organization Contextの公演別実績から対象公演の会計へ遷移できる構造とする（`OrganizationAccountingAndProductionCostPolicy.md`）。
 
 Organization-level BS / PLは、Organization全体の会計状況を財務諸表として確認するための機能とする。
 

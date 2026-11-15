@@ -36,11 +36,20 @@ code above, which stays in its existing DDD-layered location:
   is its only caller today.
 - `RehearsalModuleDescriptor` - declares `moduleId() = 'rehearsal'`,
   its own `version()`, `requiredContracts()` (the 5 Contracts below),
-  and `ownedTables()` (the 7 tables below). Registers into
+  and `ownedTables()` (the 8 tables below; PR #7 R12 added
+  `stageart_rehearsal_create_requests`). Registers into
   `Core\Module\ModuleRegistry`.
-- `RehearsalInstaller` - owns this Module's 7 tables' `CREATE TABLE`/
+- `RehearsalInstaller` - owns this Module's 8 tables' `CREATE TABLE`/
   `ALTER TABLE` statements, called from Core's own
   `Infrastructure\WordPress\Schema\Installer::install()`.
+- `RehearsalUpcomingRehearsalProvider` (Phase 4 §1) - the reverse
+  direction from the three above: implements Core's own
+  `Application\Dashboard\UpcomingRehearsalProviderInterface` Port, so
+  Core's `GetMyDashboardUseCase` can get "this Person's upcoming
+  Rehearsals" without importing
+  `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+  itself. Exposed via `RehearsalModuleBootstrap::upcomingRehearsalProvider()`.
+  See `docs/architecture/WordPressPluginModuleBoundary.md` §15.
 
 ## Core Contract usage (fully adopted)
 
@@ -51,7 +60,7 @@ directly (24 migrated in Phase 2, 2 more found and migrated in Phase 3
 
 | UseCase group | Contracts depended on |
 |---|---|
-| Management ops (`ActivateRehearsalUseCase`, `CancelRehearsalUseCase`, `CompleteRehearsalUseCase`, `UpdateRehearsalUseCase`) | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| Management ops (`ActivateRehearsalUseCase`, `CancelRehearsalUseCase`, `CompleteRehearsalUseCase`, `UpdateRehearsalUseCase`) | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` (PR #7 R10: `Activate`/`Complete` are no longer exposed over REST - see docs/20-RehearsalManagementScreen.md §23.1) |
 | Read ops (`GetRehearsalUseCase`, `ListRehearsalsUseCase`) | `ProductionContextContract`, `IdentityContract`, `MembershipContract` |
 | Creation (`CreateRehearsalUseCase`, `ConfirmRehearsalUseCase`) | `ProductionContextContract`, `MembershipContract`, `IdentityContract`, `AuthorizationContract` |
 | RehearsalAttendance UseCases (4) | `IdentityContract` (+ `MembershipContract`/`ProductionContextContract` where needed - `RespondRehearsalAttendanceUseCase` needs only `IdentityContract`, since it checks `$attendance->personId()->equals($requesterId)` directly) |
@@ -101,7 +110,9 @@ Verified two ways:
 
 `stageart_rehearsals`, `stageart_rehearsal_attendances`,
 `stageart_timetables`, `stageart_timetable_items`,
-`stageart_timetable_item_participants`, `stageart_schedule_comments`.
+`stageart_timetable_item_participants`, `stageart_schedule_comments`,
+`stageart_rehearsal_create_requests` (PR #7 R12: idempotency keys of
+Rehearsal create requests, docs/20-RehearsalManagementScreen.md §26).
 None of these are read or written by Core code paths outside the
 Rehearsal Application/Domain namespaces. `stageart_timetable_version_published_notifications`
 is a partial exception - see Known remaining coupling.

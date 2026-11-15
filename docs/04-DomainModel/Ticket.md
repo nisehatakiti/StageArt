@@ -435,8 +435,7 @@ CheckInCompleted
 
 # Ticket Revenue
 
-CheckInCompletedは、
-チケット売上をAccounting Domainへ連携する契機となる。
+通常の当日精算では、Check In時の代金受領とCheckInCompletedが同時に発生するため、CheckInCompletedをAccounting連携の契機として利用できる。ただし会計仕訳の正本トリガーは実際の代金受領を示すPayment Factとする。スタッフ預りTicketは、受付担当者がスタッフから現金を受領して支払済みを確定した時点でPayment Factを記録し、入金と売上を同時に計上する。後続のCheckInCompletedで再計上しない。
 
 基本Flow：
 
@@ -462,9 +461,7 @@ Journal Entryを管理しない。
 Ticketは、
 販売条件としてのPriceを提供する。
 
-Ticket Revenueは、
-CheckInCompletedによって確定した
-チケット売上の会計連携用Factである。
+Ticket Revenueは、チケット取引の売上相当額を表すFactである。CheckInCompletedは仮売上への振替契機ではない。会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時にAccounting Domainが正式な売上へ振り替える。
 
 具体的な勘定科目やDebit / Creditの処理は、
 Accounting Domainで定義する。
@@ -483,20 +480,19 @@ Productionにおける
 
 Ticket Revenue：
 
-CheckInCompletedによって確定した
-実際のチケット売上Fact。
+Payment Factによって確定した実際のチケット売上相当Fact。通常の当日精算ではCheckInCompletedと同時に記録されるが、スタッフ預りTicketでは受付担当者が現金を受領して支払済みを確定した時点で確定する。会計期間末時点でProduction決算が未確定の場合、売上残高を仮売上へ振り替える。CheckInCompleted自体は仮売上振替の契機ではない。
 
 基本構造：
 
 Ticket.Price
   ↓
-Reservation Price Snapshot
+Reservation Price Snapshot / Ticket取引Fact
   ↓
-CheckInCompleted
+Ticket Revenue相当Fact
   ↓
-Ticket Revenue
+既存の売上Journal Entry
   ↓
-Accounting
+会計期間末に仮売上へ振替
 
 Ticket.Priceを変更しても、
 過去のReservationや確定済みTicket Revenueを変更しない。
@@ -555,8 +551,9 @@ StatusをCLOSEDとして保持する。
 - TicketそのものをCheck Inしない。
 - Check InはReservation単位で実施する。
 - CheckInCompletedは観劇実績を確定する。
-- CheckInCompletedを契機としてTicket RevenueをAccounting Domainへ連携する。
-- Ticket DomainはJournal Entryを管理しない。
+- Ticket取引FactをAccounting Domainへ連携する。CheckInCompletedを仮売上振替の契機にしない。
+- Production決算確定前は仮売上として管理し、決算確定時に正式な売上へ振り替える。
+- Ticket DomainはJournal Entryを管理しない.
 - Ticket.PriceとTicket Revenueを同一視しない。
 - Ticket RevenueはAccounting Domainで管理する。
 - 過去のReservationから参照されるTicketを物理削除しない。
@@ -613,8 +610,8 @@ Productionに所属するTicketを販売対象として利用する。
 PerformanceごとのTicket Availabilityは、
 将来的に実装する。
 
-Ticketが実際の売上として会計へ連携されるのは、
-CheckInCompletedが発生した時点である。
+通常の当日精算では代金受領とCheckInCompletedが同時に発生する。スタッフ預りTicketでは受付担当者が現金を受領し支払済みを確定した時点でPayment Factを記録し、その時点で入金と売上を計上する。
+正式な売上への振替はProduction決算確定時に行う。
 
 Ticket.Priceは販売条件であり、
 Ticket Revenueは会計上の売上Factである。
@@ -666,7 +663,7 @@ Productionにおける販売条件の管理から逸脱させない。
 - QR TicketはIssued Ticketの受付用Artifactである。
 - Check InはReservation単位で行う。
 - CheckInCompletedは観劇実績を確定する。
-- CheckInCompletedをTicket RevenueのAccounting連携契機とする。
+- 通常の当日精算ではCheckInCompletedをAccounting連携の契機として利用できるが、仕訳はPayment Factに基づいて生成する。スタッフ預りTicketでは現金受領時のPayment Factを計上根拠とし、後続のCheckInCompletedで二重計上しない。
 - Ticket.PriceとTicket Revenueを分離する。
 - Ticket DomainはJournal Entryを管理しない。
 - 過去のReservationから参照されるTicketを物理削除しない。

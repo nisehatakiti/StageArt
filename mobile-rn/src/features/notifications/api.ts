@@ -1,5 +1,5 @@
 import type { ApiClient } from '@/api/client';
-import type { NotificationFact } from '@/types/api';
+import type { MyNotification, NotificationFact } from '@/types/api';
 
 /**
  * GET /productions/{id}/notifications (Backend Phase 3.5's
@@ -22,4 +22,20 @@ export function fetchProductionNotifications(client: ApiClient, productionId: st
  */
 export function markNotificationRead(client: ApiClient, notificationId: string): Promise<{ id: string; is_read: boolean }> {
   return client.patch<{ id: string; is_read: boolean }>(`/notifications/${notificationId}/read`);
+}
+
+/**
+ * GET /me/notifications (Notification基盤実装 phase). The caller's own
+ * personal Notification feed (Rehearsal Cancel/Reminder today) - a
+ * separate id namespace and endpoint from `fetchProductionNotifications`
+ * above, since this Fact type is per-recipient, not Production-shared.
+ */
+export function fetchMyNotifications(client: ApiClient): Promise<MyNotification[]> {
+  return client.get<MyNotification[]>('/me/notifications');
+}
+
+/** PATCH /me/notifications/{id}/read. Idempotent on the Backend side,
+ * same as `markNotificationRead` above. */
+export function markMyNotificationRead(client: ApiClient, notificationId: string): Promise<{ id: string; is_read: boolean }> {
+  return client.patch<{ id: string; is_read: boolean }>(`/me/notifications/${notificationId}/read`);
 }

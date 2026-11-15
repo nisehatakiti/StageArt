@@ -26,12 +26,14 @@ use StageArt\Presentation\Rest\ProductionAccountingRestController;
 use StageArt\Tests\Support\FakeAuthorizationContract;
 use StageArt\Tests\Support\FakeIdentityContract;
 use StageArt\Tests\Support\FakeMembershipContract;
+use StageArt\Tests\Support\FakeProductionCapabilityDirectoryContract;
 use StageArt\Tests\Support\FakeProductionContextContract;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\RecordingNotificationContract;
 
 /**
  * StageArt Core/Module Architecture Phase 3 (continued): the Accounting
@@ -120,7 +122,7 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
         $this->accountId = $account->id();
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($this->productionId, 'Show', 'DRAFT', $this->organizationId);
+        $productionContext->register($this->productionId, 'Show', 'PLANNING', $this->organizationId);
 
         $organizationContext = new FakeOrganizationContextContract([$this->organizationId->toString()]);
 
@@ -143,7 +145,9 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
             $identity,
             $authorization,
             $membership,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new RecordingNotificationContract(),
+            new FakeProductionCapabilityDirectoryContract()
         );
     }
 
@@ -159,7 +163,7 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
         $this->accountId = $account->id();
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($this->productionId, 'Show', 'DRAFT', $this->organizationId);
+        $productionContext->register($this->productionId, 'Show', 'PLANNING', $this->organizationId);
 
         $organizationContext = new FakeOrganizationContextContract([$this->organizationId->toString()]);
 
@@ -182,7 +186,9 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
             $identity,
             $authorization,
             $membership,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new RecordingNotificationContract(),
+            new FakeProductionCapabilityDirectoryContract()
         );
     }
 }
@@ -209,5 +215,17 @@ final class FakeOrganizationContextContract implements OrganizationContextContra
     public function organizationExists(OrganizationId $organizationId): bool
     {
         return isset($this->existing[$organizationId->toString()]);
+    }
+
+    /**
+     * Backend PHPUnit環境整備 Phase: OrganizationContextContract gained
+     * isAccountingEnabled() during Phase 4 Check-in/精算/会計連携 work,
+     * after this Fake was written - neither test using this Fake
+     * exercises Accounting-enabled behavior (both are Module Bootstrap
+     * wiring/isolation tests), so a fixed `false` is sufficient here.
+     */
+    public function isAccountingEnabled(OrganizationId $organizationId): bool
+    {
+        return false;
     }
 }

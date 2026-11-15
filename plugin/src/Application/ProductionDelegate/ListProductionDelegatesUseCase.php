@@ -6,6 +6,7 @@ namespace StageArt\Application\ProductionDelegate;
 
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
@@ -15,15 +16,18 @@ final class ListProductionDelegatesUseCase
 {
     private ProductionDelegateRepositoryInterface $delegates;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
 
     public function __construct(
         ProductionDelegateRepositoryInterface $delegates,
         ProductionRepositoryInterface $productions,
+        PersonRepositoryInterface $people,
         ProductionAuthorizationService $authorization
     ) {
         $this->delegates = $delegates;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
     }
 
@@ -49,7 +53,10 @@ final class ListProductionDelegatesUseCase
         }
 
         return array_map(
-            static fn (ProductionDelegate $delegate): ProductionDelegateResult => ProductionDelegateResult::fromDomain($delegate),
+            fn (ProductionDelegate $delegate): ProductionDelegateResult => ProductionDelegateResult::fromDomain(
+                $delegate,
+                $this->people->findById($delegate->personId())
+            ),
             $this->delegates->findByProductionId($production->id())
         );
     }

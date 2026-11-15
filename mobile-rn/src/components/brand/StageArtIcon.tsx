@@ -1,38 +1,35 @@
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Ellipse, G, Path, Rect } from 'react-native-svg';
 
 type Props = {
   size?: number;
 };
 
 /**
- * StageArt Web First Phase 1: the canonical app icon, transcribed
- * verbatim from docs/assets/brand/stageart-icon.svg into react-native-svg
- * primitives (paths/circle/coordinates unchanged) - never redrawn by
- * hand, per docs/03-BrandIdentity.md's explicit instruction. Beige
- * circular field (#E8D7B8) with the black S + ladder-like A mark
- * (#0A0A0A).
+ * The canonical app icon, transcribed verbatim from
+ * docs/assets/brand/stageart-icon.svg into react-native-svg primitives
+ * (paths/coordinates/colors unchanged) - never redrawn by hand, per
+ * docs/03-BrandIdentity.md's explicit instruction. Black field (#050505)
+ * with the beige S (#E8D7B8) wrapping the bronze ladder-like A
+ * (#C89B5E).
  */
 export function StageArtIcon({ size = 96 }: Props) {
   return (
     <Svg width={size} height={size} viewBox="0 0 512 512" role="img" aria-label="StageArt app icon">
-      <Circle cx={256} cy={256} r={236} fill="#E8D7B8" />
-      <Path
-        d="M344 116C312 87 253 78 204 99C150 122 139 174 181 205C218 232 291 234 321 269C351 304 322 359 267 379C220 396 167 380 136 349"
-        fill="none"
-        stroke="#0A0A0A"
-        strokeWidth={22}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M171 394L256 150L341 394"
-        fill="none"
-        stroke="#0A0A0A"
-        strokeWidth={20}
-        strokeLinecap="square"
-        strokeLinejoin="round"
-      />
-      <Path d="M203 302H309M220 250H292" fill="none" stroke="#0A0A0A" strokeWidth={16} strokeLinecap="square" />
+      <Rect width={512} height={512} fill="#050505" />
+      <G fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <Path
+          d="M352 108C316 80 258 78 211 99C160 122 151 171 191 202C228 230 298 234 325 268C353 303 325 355 273 376C223 397 171 382 137 349"
+          stroke="#E8D7B8"
+          strokeWidth={23}
+        />
+        <Path
+          d="M171 401L256 151L341 401M201 306H311M220 251H292"
+          stroke="#C89B5E"
+          strokeWidth={20}
+          strokeLinecap="square"
+        />
+      </G>
+      <Ellipse cx={256} cy={411} rx={150} ry={13} fill="#C89B5E" opacity={0.35} />
     </Svg>
   );
 }

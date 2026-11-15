@@ -18,6 +18,13 @@ jest.mock('expo-secure-store', () => ({
 // google-login-module-not-found.test.tsx for the "not found" case.
 jest.mock('@/auth/googleSignIn', () => ({
   ...jest.requireActual('@/auth/googleSignIn'),
+  // isGoogleSignInAvailable() would otherwise be false under Jest (the
+  // real, unmocked module-status probe reports RNGoogleSignin as "not
+  // found" here, same as it does on every real Web deploy) - forced true
+  // so this success-path test can still exercise the button itself. See
+  // google-login-module-not-found.test.tsx for the real, unmocked "hidden"
+  // case this test deliberately overrides.
+  isGoogleSignInAvailable: jest.fn(() => true),
   signInWithGoogleDiagnostic: jest.fn(async () => ({
     ok: true,
     idToken: 'mock-google-id-token',
@@ -59,7 +66,12 @@ describe('login flow: Google', () => {
 
     fireEvent.press(screen.getByTestId('login-google-button'));
 
-    await waitFor(() => expect(screen.getByTestId('home-primary-nav')).toBeVisible());
+    // StageArt Home仕様追加 (2026-09-05): home-primary-nav is now
+    // conditional on having favorites - home-quick-action-create-organization
+    // is the unconditional "we've reached Home" marker instead.
+    // R7: the 「団体を作る」 quick action this test waited for was removed from
+    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
 
     const googleCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/auth/google'));
     expect(googleCall).toBeDefined();

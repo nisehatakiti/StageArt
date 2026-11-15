@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Application\ProductionSchedule;
 
 use DateTimeImmutable;
-use Exception;
-use InvalidArgumentException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\TimetableItem\TimetableItemDateTime;
 use StageArt\Application\TimetableItem\TimetableItemResult;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
@@ -135,23 +134,14 @@ final class ListProductionTimetableItemsUseCase
             return null;
         }
 
-        try {
-            $parsed = new DateTimeImmutable($value);
-        } catch (Exception $exception) {
-            throw new InvalidArgumentException("Invalid date/time value: {$value}");
-        }
-
-        // TimetableItem's stored start/end date-times are persisted as bare
-        // wall-clock strings (see WordPressTimetableItemRepository::save(),
-        // which writes DateTimeImmutable::format('Y-m-d H:i:s') and thereby
-        // drops whatever offset the value carried) and are re-hydrated
-        // without an explicit timezone, so they always compare as naive
-        // wall-clock values. A from/to bound supplied with an explicit
-        // offset (e.g. "+09:00") must be reduced to the same wall-clock
-        // convention before comparing, or it silently compares against the
-        // wrong instant whenever the offset differs from the server's
-        // default timezone. This mirrors the existing storage convention;
-        // it does not fix the deeper pre-existing timezone-handling gap.
-        return new DateTimeImmutable($parsed->format('Y-m-d H:i:s'));
+        // PR #7 R11: Timetable Item times are real Asia/Tokyo instants
+        // (WordPressTimetableItemRepository reads them in that zone), so a
+        // bound is compared as an instant too: with an offset it is that
+        // instant, without one it is Asia/Tokyo wall-clock time - the same
+        // rule as the items themselves (TimetableItemDateTime). Before R11
+        // both sides were compared as naive wall-clock digits, so a bound
+        // sent in another offset (e.g. "Z") compared against the wrong
+        // instant.
+        return TimetableItemDateTime::parseOptional($value);
     }
 }
