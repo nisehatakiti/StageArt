@@ -6,6 +6,7 @@ namespace StageArt\Domain\ParticipantInvitation;
 
 use DateTimeImmutable;
 use InvalidArgumentException;
+use StageArt\Domain\Participant\ParticipantId;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
@@ -34,6 +35,14 @@ use StageArt\Domain\Production\ProductionId;
  * directly on this Entity, since a ParticipantInvitation and its
  * "current token" are a strict 1:1 relationship with no need to keep
  * issuance history.
+ *
+ * R14-B (docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md §5.1): the
+ * invitation now records the invitee's own response (ACCEPTED / REJECTED
+ * with inviteePersonId, respondedAt, participantId) and a past
+ * invalidation (closeReason / closedAt / closedByPersonId, written once).
+ * The token above is no longer used to look invitations up (U5 C案); the
+ * auto-resolution described above is retired by the Application layer in
+ * a later step.
  */
 final class ParticipantInvitation
 {
@@ -60,6 +69,17 @@ final class ParticipantInvitation
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $expiresAt;
     private ?DateTimeImmutable $consumedAt;
+    /** R14-B §6.1: the Person who accepted/rejected (recorded on response). */
+    private ?PersonId $inviteePersonId;
+    /** R14-B §6.1: when the invitee accepted/rejected. */
+    private ?DateTimeImmutable $respondedAt;
+    /** R14-B §6.1: the Participant created/re-enrolled/consented by acceptance. */
+    private ?ParticipantId $participantId;
+    /** R14-B §5.1: past invalidation - written once, never overwritten. */
+    private ?ParticipantInvitationCloseReason $closeReason;
+    private ?DateTimeImmutable $closedAt;
+    /** R14-B §5.1: only for MANAGER (the manager who cancelled); NULL for system closes. */
+    private ?PersonId $closedByPersonId;
 
     private function __construct(
         ParticipantInvitationId $id,
@@ -73,8 +93,24 @@ final class ParticipantInvitation
         ParticipantInvitationStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $expiresAt,
-        ?DateTimeImmutable $consumedAt
+        ?DateTimeImmutable $consumedAt,
+        ?PersonId $inviteePersonId = null,
+        ?DateTimeImmutable $respondedAt = null,
+        ?ParticipantId $participantId = null,
+        ?ParticipantInvitationCloseReason $closeReason = null,
+        ?DateTimeImmutable $closedAt = null,
+        ?PersonId $closedByPersonId = null
     ) {
+        if (($closeReason === null) !== ($closedAt === null)) {
+            throw new InvalidArgumentException('closeReason and closedAt must be both set or both null.');
+        }
+
+        $this->inviteePersonId = $inviteePersonId;
+        $this->respondedAt = $respondedAt;
+        $this->participantId = $participantId;
+        $this->closeReason = $closeReason;
+        $this->closedAt = $closedAt;
+        $this->closedByPersonId = $closedByPersonId;
         $this->id = $id;
         $this->productionId = $productionId;
         $this->email = $email;
@@ -138,6 +174,11 @@ final class ParticipantInvitation
         );
     }
 
+    /**
+     * The trailing R14-B arguments default to NULL so the current
+     * Repository (no columns for them yet) keeps reconstituting rows
+     * exactly as before.
+     */
     public static function reconstitute(
         ParticipantInvitationId $id,
         ProductionId $productionId,
@@ -150,7 +191,13 @@ final class ParticipantInvitation
         ParticipantInvitationStatus $status,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $expiresAt,
-        ?DateTimeImmutable $consumedAt
+        ?DateTimeImmutable $consumedAt,
+        ?PersonId $inviteePersonId = null,
+        ?DateTimeImmutable $respondedAt = null,
+        ?ParticipantId $participantId = null,
+        ?ParticipantInvitationCloseReason $closeReason = null,
+        ?DateTimeImmutable $closedAt = null,
+        ?PersonId $closedByPersonId = null
     ): self {
         return new self(
             $id,
@@ -164,7 +211,13 @@ final class ParticipantInvitation
             $status,
             $createdAt,
             $expiresAt,
-            $consumedAt
+            $consumedAt,
+            $inviteePersonId,
+            $respondedAt,
+            $participantId,
+            $closeReason,
+            $closedAt,
+            $closedByPersonId
         );
     }
 
@@ -187,6 +240,164 @@ final class ParticipantInvitation
     public function isPending(): bool
     {
         return $this->status->toString() === ParticipantInvitationStatus::PENDING;
+    }
+
+    /** Same rule as isExpired(), against an explicit instant (instants compare timezone-independently). */
+    public function isExpiredAt(DateTimeImmutable $now): bool
+    {
+        return $this->expiresAt <= $now;
+    }
+
+    /**
+     * R14-B §5.1 / §7.2 accept: the invitee themselves accepts. Only a
+     * PENDING invitation within its expiry can be accepted; CANCELLED (any
+     * reason), REJECTED and the legacy CONSUMED cannot. Whether the
+     * production is closed or the inviter still has permission is decided
+     * by the Application layer BEFORE calling this (it closes the
+     * invitation with close() instead). Repeating the acceptance by the
+     * same Person is an idempotent no-op.
+     *
+     * @return bool true when the invitation actually changed
+     */
+    public function accept(PersonId $inviteePersonId, ParticipantId $participantId, ?DateTimeImmutable $now = null): bool
+    {
+        $now = $now ?? new DateTimeImmutable();
+
+        if ($this->status->toString() === ParticipantInvitationStatus::ACCEPTED) {
+            if ($this->inviteePersonId !== null && $this->inviteePersonId->equals($inviteePersonId)) {
+                return false;
+            }
+
+            throw new InvalidArgumentException('This ParticipantInvitation was already accepted by someone else.');
+        }
+
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be accepted.');
+        }
+
+        if ($this->isExpiredAt($now)) {
+            throw new InvalidArgumentException('An expired ParticipantInvitation cannot be accepted.');
+        }
+
+        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::ACCEPTED);
+        $this->inviteePersonId = $inviteePersonId;
+        $this->respondedAt = $now;
+        $this->participantId = $participantId;
+
+        return true;
+    }
+
+    /**
+     * R14-B §4.3 / §5.1 / §7.2 reject (U7): the invitee themselves declines.
+     * Allowed, within the expiry, from:
+     * - PENDING (including when the production is closed or the inviter
+     *   lost permission - pass that as `$firstDetectedCloseReason` when the
+     *   reject is the write that first detects it, so it is recorded as the
+     *   past invalidation without overwriting anything), and
+     * - CANCELLED(PRODUCTION_CLOSED / INVITER_REVOKED), keeping the original
+     *   close reason and time.
+     * Not allowed from CANCELLED(MANAGER), a reason-less (pre-R14-B)
+     * CANCELLED, ACCEPTED or CONSUMED, nor after expiry. Repeating the
+     * rejection by the same Person is an idempotent no-op.
+     *
+     * @return bool true when the invitation actually changed
+     */
+    public function reject(
+        PersonId $inviteePersonId,
+        ?ParticipantInvitationCloseReason $firstDetectedCloseReason = null,
+        ?DateTimeImmutable $now = null
+    ): bool {
+        $now = $now ?? new DateTimeImmutable();
+        $status = $this->status->toString();
+
+        if ($status === ParticipantInvitationStatus::REJECTED) {
+            if ($this->inviteePersonId !== null && $this->inviteePersonId->equals($inviteePersonId)) {
+                return false;
+            }
+
+            throw new InvalidArgumentException('This ParticipantInvitation was already rejected by someone else.');
+        }
+
+        if ($status === ParticipantInvitationStatus::PENDING) {
+            if ($firstDetectedCloseReason !== null && ! $firstDetectedCloseReason->allowsInviteeRejection()) {
+                throw new InvalidArgumentException('Only PRODUCTION_CLOSED or INVITER_REVOKED can be detected at reject time.');
+            }
+        } elseif ($status === ParticipantInvitationStatus::CANCELLED
+            && $this->closeReason !== null
+            && $this->closeReason->allowsInviteeRejection()
+        ) {
+            if ($firstDetectedCloseReason !== null) {
+                throw new InvalidArgumentException('A recorded close reason is never overwritten.');
+            }
+        } else {
+            throw new InvalidArgumentException("A {$status} ParticipantInvitation cannot be rejected.");
+        }
+
+        if ($this->isExpiredAt($now)) {
+            throw new InvalidArgumentException('An expired ParticipantInvitation cannot be rejected.');
+        }
+
+        if ($firstDetectedCloseReason !== null) {
+            $this->closeReason = $firstDetectedCloseReason;
+            $this->closedAt = $now;
+        }
+
+        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::REJECTED);
+        $this->inviteePersonId = $inviteePersonId;
+        $this->respondedAt = $now;
+
+        return true;
+    }
+
+    /**
+     * R14-B §5.1 invalidation: PENDING → CANCELLED with the reason recorded
+     * once (with `closedAt`); a recorded reason is never overwritten.
+     * MANAGER requires the cancelling manager (`closedByPersonId`) and is
+     * idempotent on an invitation already CANCELLED(MANAGER); the system
+     * reasons (PRODUCTION_CLOSED / INVITER_REVOKED) take no actor.
+     * Expiry does not matter here (a manager may cancel an expired PENDING
+     * invitation). The legacy cancel() (no reason) is left as it is until
+     * the Application layer is switched over.
+     *
+     * @return bool true when the invitation actually changed
+     */
+    public function close(
+        ParticipantInvitationCloseReason $reason,
+        ?PersonId $closedByPersonId = null,
+        ?DateTimeImmutable $now = null
+    ): bool {
+        $isManager = ! $reason->allowsInviteeRejection();
+
+        if ($isManager && $closedByPersonId === null) {
+            throw new InvalidArgumentException('A MANAGER close requires the cancelling manager.');
+        }
+
+        if (! $isManager && $closedByPersonId !== null) {
+            throw new InvalidArgumentException('A system close (PRODUCTION_CLOSED / INVITER_REVOKED) takes no actor.');
+        }
+
+        if ($isManager
+            && $this->status->toString() === ParticipantInvitationStatus::CANCELLED
+            && $this->closeReason !== null
+            && $this->closeReason->equals($reason)
+        ) {
+            return false;
+        }
+
+        if ($this->closeReason !== null) {
+            throw new InvalidArgumentException('A recorded close reason is never overwritten.');
+        }
+
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be closed.');
+        }
+
+        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::CANCELLED);
+        $this->closeReason = $reason;
+        $this->closedAt = $now ?? new DateTimeImmutable();
+        $this->closedByPersonId = $closedByPersonId;
+
+        return true;
     }
 
     /** Called once the invitee's registration has been used to fulfil
@@ -290,5 +501,35 @@ final class ParticipantInvitation
     public function consumedAt(): ?DateTimeImmutable
     {
         return $this->consumedAt;
+    }
+
+    public function inviteePersonId(): ?PersonId
+    {
+        return $this->inviteePersonId;
+    }
+
+    public function respondedAt(): ?DateTimeImmutable
+    {
+        return $this->respondedAt;
+    }
+
+    public function participantId(): ?ParticipantId
+    {
+        return $this->participantId;
+    }
+
+    public function closeReason(): ?ParticipantInvitationCloseReason
+    {
+        return $this->closeReason;
+    }
+
+    public function closedAt(): ?DateTimeImmutable
+    {
+        return $this->closedAt;
+    }
+
+    public function closedByPersonId(): ?PersonId
+    {
+        return $this->closedByPersonId;
     }
 }
