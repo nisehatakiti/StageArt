@@ -3,9 +3,10 @@
 - 作成：2026-11-15（第1版、`f13196c`）
 - 改訂：2026-11-16（第2版、`979de28`）。ChatGPTの設計レビューと、ユーザーの判断（D1〜D11）を反映した。
 - 改訂：2026-11-16（第3版、`8200b89`）。第2版のレビュー結果と、ユーザーの追加回答（U6ほか）を反映した。
-- 改訂：2026-11-16（第4版）。第3版の再レビュー結果と、ユーザーの判断（U9・U12・U15）を反映した。
+- 改訂：2026-11-16（第4版、`2238177`）。第3版の再レビュー結果と、ユーザーの判断（U9・U12・U15）を反映した。
+- 改訂：2026-11-16（第5版）。第4版の再レビュー結果と、ユーザーの判断（U10）を反映した。
 - 対象：Head `c6480c2`（R14-A後）、スキーマ1.48.0
-- 状態：**設計のみ（未実装）**。第4版の再レビューの後に、実装を始めるかを判断する。
+- 状態：**設計のみ（未実装）**。第5版の最終レビューの後に、実装を始めるかを判断する。
 - 確定方針（R14-B指示書 §3）：
   - 公演参加者への登録は、招待と本人の承諾を経由する方式に統一する。
   - 管理者が人物IDを指定して直接登録する方式は採用しない。
@@ -20,6 +21,15 @@
 - 【未解決】：実装前に確認または判断が必要な事項。§16.2 に一覧と決定者がある。
 
 本文中の「管理者」は、PrimaryManager、または `Participant.Update` 権限を持つ**有効な**担当者（PARTICIPANT_MANAGER など）を指す（`ProductionAuthorizationService::canManageParticipants()`）。「有効な担当者」の定義は §4.6 で変更する。
+
+### 第5版の主な変更点
+
+| 項目 | 内容 | 主な節 |
+|---|---|---|
+| email_key の記述の統一 | §6.4 に残っていた「SHA-256」の記述を HMAC-SHA-256 に直した。鍵なしの SHA-256 単独での計算は認めない | §6.4、§6.7 |
+| 鍵のローテーション | 「現在の鍵と前の鍵」の2つから、複数の版を持てる鍵の束に変えた。30日以内に何回ローテーションしても、期間内に使われたすべての版で計算し、版と `email_key` の組で集計する。旧い版を外せる条件、緊急のローテーション、インデックスと集計のSQLを記載した | §6.2、§6.7 |
+| `close_reason` の意味 | `status` は現在の状態、`close_reason`・`closed_at` は過去の無効化の記録、`closed_by_person_id` は管理者が無効化した場合の実行者、と定義を統一した。無効化の後に辞退した招待は REJECTED で、元の `close_reason`・`closed_at` を保持する | §5.1、§6.1、§7 |
+| U10 | 【確定】招待者の権限喪失を最初に検出した書き込み処理（承諾・辞退）で、PrimaryManager に一度だけ通知する。読み取り処理では通知しない。`revocation_notified_at` で二重通知を防ぐ | §11.5 |
 
 ### 第4版の主な変更点
 
@@ -412,21 +422,45 @@
 |---|---|---|
 | PENDING | ○ | 承諾待ち |
 | ACCEPTED | ○（新設） | 本人が承諾した（参加者になった、または既存の参加者として同意を記録した） |
-| REJECTED | ○（新設） | 本人が辞退した |
+| REJECTED | ○（新設） | 本人が辞退した。無効化（`PRODUCTION_CLOSED`・`INVITER_REVOKED`）の後の辞退では、`close_reason`・`closed_at` も値を持つ（第5版） |
 | CANCELLED | ○（既存） | 招待が無効になった。理由は `close_reason`（下記）。`PRODUCTION_CLOSED`・`INVITER_REVOKED` の場合だけ、期限内なら本人の辞退（REJECTED）へ遷移できる（第4版） |
 | EXPIRED | ×（導出） | PENDING かつ `expires_at <= 現在`。保存せず、APIでは `effective_status` として返す |
 | PRODUCTION_CLOSED | ×（導出） | PENDING・期限内かつ公演が COMPLETED／ARCHIVED／CANCELLED。保存せず、一覧では「無効（公演終了）」と表示する（D5）。本人は辞退だけできる（U7） |
 | INVITER_REVOKED | ×（導出） | PENDING・期限内かつ招待者が `canManageParticipants` を満たさない。一覧では「無効（招待者の権限なし）」と表示する。本人は辞退だけできる（U7） |
 | CONSUMED | ○（既存のみ） | R14-B以前に自動解決された招待。新しくは作らない。表示上は「参加済み（旧方式）」とする |
 
-`close_reason`（CANCELLED のときだけ値を持つ）
+**状態と無効化の記録の列の意味**（第5版で統一。§6.1・§7・監査ログ・テストはこの定義に従う）
+
+| 列 | 意味 |
+|---|---|
+| `status` | 招待の**現在の**状態（PENDING／ACCEPTED／REJECTED／CANCELLED／CONSUMED） |
+| `close_reason` | 招待が**過去に無効化された理由**。一度記録したら変更しない。無効化されていなければ NULL |
+| `closed_at` | その無効化が発生した（記録された）日時。`close_reason` と同時に記録し、変更しない |
+| `closed_by_person_id` | 管理者が無効化した場合（`close_reason=MANAGER`）の実行者。システムが無効化した場合は NULL |
+
+- 無効化は、招待1件につき最大1回だけ記録する。`close_reason` が既にある招待に、別の理由を上書きしない。
+- `status` と `close_reason` の組み合わせは次のどれかになる。
+
+| `status` | `close_reason` | 意味 |
+|---|---|---|
+| PENDING・ACCEPTED・CONSUMED | NULL | 無効化されていない |
+| CANCELLED | MANAGER | 管理者が取り消した（終端。本人は辞退できない） |
+| CANCELLED | PRODUCTION_CLOSED／INVITER_REVOKED | 本人が承諾しようとした時点で、システムが無効化した（本人は期限内なら辞退できる） |
+| CANCELLED | NULL | R14-B以前に取り消された（理由不明。終端） |
+| REJECTED | NULL | 有効な招待を、本人が辞退した |
+| REJECTED | PRODUCTION_CLOSED／INVITER_REVOKED | 無効化された招待（または、辞退の時点で無効化を初めて検出した招待）を、本人が辞退した。最終の状態は REJECTED で、元の `close_reason`・`closed_at` を保持する |
+
+`close_reason` の値
 
 | 値 | 意味 | 記録する時点 |
 |---|---|---|
 | MANAGER | 管理者が取り消した | 取消の操作 |
-| PRODUCTION_CLOSED | 公演が終了・中止になっていた | 本人が承諾しようとした時点（D5） |
-| INVITER_REVOKED | 招待者が参加者を管理する権限を失っていた | 本人が承諾しようとした時点（D3） |
-| NULL | R14-B以前に取り消された（理由不明） | — |
+| PRODUCTION_CLOSED | 公演が終了・中止になっていた | 本人の承諾・辞退の書き込み処理で、初めて検出した時点（D5） |
+| INVITER_REVOKED | 招待者が参加者を管理する権限を失っていた | 本人の承諾・辞退の書き込み処理で、初めて検出した時点（D3）。PrimaryManager への通知の契機（§11.5、U10） |
+| NULL | 無効化されていない、または R14-B以前に取り消された（理由不明） | — |
+
+- 一覧・lookup などの読み取り処理は、公演の状態・招待者の権限から `effective_status` を導くだけで、`close_reason` を書き込まない。
+- 再送・取消（管理者の操作）は、招待者の権限喪失を検出しても `close_reason` を書き込まない（再送は409を返すだけ。取消は `MANAGER` として記録する）。
 
 導出の状態は、次の優先順で1つだけ返す：EXPIRED → PRODUCTION_CLOSED → INVITER_REVOKED → PENDING。
 
@@ -441,7 +475,7 @@
               │      └─► accept時に招待者が権限を喪失 ──────────► CANCELLED(INVITER_REVOKED) ──┤
               │                                                                              │
               │                         reject（本人。期限内のみ）◄────────────────────────────┘
-              │                              └──────────────────────────────────────────► REJECTED
+              │                              └────────────► REJECTED（close_reason・closed_at は保持）
               ├─(expires_at経過)─► EXPIRED（導出。resendでPENDINGに戻る。accept・reject不可）
               ├─(公演が終了・中止)─► PRODUCTION_CLOSED（導出。resend・accept不可、reject可）
               └─(招待者が権限を喪失)─► INVITER_REVOKED（導出。accept・resend不可、reject可）
@@ -457,14 +491,14 @@
 | 保存された状態 | 期限 | 公演・招待者 | `effective_status`（一覧・lookup） | 承諾 | 辞退 | 本人の一覧（`/me`）に出すか | 再送・取消（管理者） |
 |---|---|---|---|---|---|---|---|
 | PENDING | 期限内 | 受付中・権限あり | PENDING | ○ | ○ | 出す（`can_accept=true`） | ○ |
-| PENDING | 期限内 | 公演が終了・中止 | PRODUCTION_CLOSED | ×（409。招待を `CANCELLED(PRODUCTION_CLOSED)` にする） | ○ | 出す（`can_accept=false`） | 再送×・取消○ |
-| PENDING | 期限内 | 招待者が権限なし | INVITER_REVOKED | ×（409。招待を `CANCELLED(INVITER_REVOKED)` にする） | ○ | 出す（`can_accept=false`） | 再送×・取消○ |
+| PENDING | 期限内 | 公演が終了・中止 | PRODUCTION_CLOSED | ×（409。招待を `CANCELLED(PRODUCTION_CLOSED)` にする） | ○（REJECTED、`close_reason=PRODUCTION_CLOSED` を記録） | 出す（`can_accept=false`） | 再送×・取消○ |
+| PENDING | 期限内 | 招待者が権限なし | INVITER_REVOKED | ×（409。招待を `CANCELLED(INVITER_REVOKED)` にし、PrimaryManager に通知） | ○（REJECTED、`close_reason=INVITER_REVOKED` を記録し、PrimaryManager に通知） | 出す（`can_accept=false`） | 再送×・取消○ |
 | PENDING | 期限切れ | — | EXPIRED | ×（410） | ×（410） | 出さない | 再送○（公演が受付中で、招待者に権限がある場合）・取消○ |
 | CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED) | 期限内 | — | CANCELLED（`close_reason` 付き） | ×（409 `closed`） | ○ | 出す（`can_accept=false`） | × |
 | CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED) | 期限切れ | — | CANCELLED | ×（409 `closed`） | ×（410） | 出さない | × |
 | CANCELLED(MANAGER)・理由 NULL | — | — | CANCELLED | ×（409 `not_pending`） | ×（409 `not_pending`） | 出さない | 取消は冪等（MANAGER のみ） |
 | ACCEPTED | — | — | ACCEPTED | 本人なら200（冪等） | ×（409） | 出さない | × |
-| REJECTED | — | — | REJECTED | ×（409） | 本人なら200（冪等） | 出さない | × |
+| REJECTED（`close_reason` の有無を問わない） | — | — | REJECTED（`close_reason`・`closed_at` があれば併せて返す） | ×（409） | 本人なら200（冪等。通知・監査ログは追加しない） | 出さない | × |
 | CONSUMED | — | — | CONSUMED | ×（409） | ×（409） | 出さない | × |
 
 - `lookup` は、本人宛ての招待について、この表の承諾・辞退の可否を `can_accept`・`can_reject` として返す。期限切れは410、承諾も辞退もできない処理済みの招待は409を返す。
@@ -552,9 +586,10 @@
 | `invitee_person_id` | CHAR(36) NULL | 承諾・辞退した本人。応答した時点で記録する |
 | `responded_at` | DATETIME NULL | 承諾・辞退の日時（30日の制限の起点） |
 | `participant_id` | CHAR(36) NULL | 承諾で作成・再有効化・同意記録した参加者 |
-| `closed_at` | DATETIME NULL | 取消・無効化の日時 |
-| `closed_by_person_id` | CHAR(36) NULL | 取消した管理者（自動の無効化ではNULL） |
-| `close_reason` | VARCHAR(30) NULL | MANAGER／PRODUCTION_CLOSED／INVITER_REVOKED |
+| `closed_at` | DATETIME NULL | 無効化が発生した日時（§5.1。`close_reason` と同時に記録し、変更しない） |
+| `closed_by_person_id` | CHAR(36) NULL | 管理者が無効化した場合（MANAGER）の実行者。システムによる無効化では NULL |
+| `close_reason` | VARCHAR(30) NULL | 過去に無効化された理由：MANAGER／PRODUCTION_CLOSED／INVITER_REVOKED（§5.1）。現在の状態は `status` で表す。無効化の後に辞退した招待（`status=REJECTED`）でも保持する |
+| `revocation_notified_at` | DATETIME NULL | 招待者の権限喪失（INVITER_REVOKED）を PrimaryManager に通知すると決めた日時（第5版、§11.5）。二重通知の防止に使う |
 | `resend_count` | INT UNSIGNED NOT NULL DEFAULT 0 | この招待の再送の回数（初回は含めない。上限5、D6）。受け付けた時点で数える |
 | `current_send_id` | CHAR(36) NULL | 最新の送信の試行（§6.2 の行）。古い試行の結果で、表示の状態を上書きしないために使う |
 | `last_sent_at` | DATETIME NULL | 最新の送信を受け付けた日時 |
@@ -597,14 +632,16 @@ CREATE TABLE {prefix}stageart_participant_invitation_sends (
   requested_at DATETIME NOT NULL,      -- APIが受け付けた日時（回数の集計に使う）
   completed_at DATETIME NULL,          -- 送信の結果を記録した日時
   PRIMARY KEY (id),
-  KEY production_email_requested (production_id, email_key, requested_at),
+  KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at),
+  KEY production_requested (production_id, requested_at),
+  KEY version_requested (email_key_version, requested_at),
   KEY invitation_id (invitation_id, requested_at),
   KEY requested_at (requested_at)
 );
 ```
 
 - **数え方**：作成・再送のAPIが受け付けたときに、トランザクションの中で1行を `status=PENDING` で追加する（§5.4）。この行の数が送信の回数になる。送信の結果で行を削除したり、回数を戻したりしない。
-- **集計**：`production_id` と `email_key` が同じで、`requested_at` が直近30日の行を数える。キャンセル済み・期限切れ・辞退済みの招待の送信も含まれる。鍵のローテーション中は、現在の鍵と前の鍵の両方で計算した `email_key` を対象にする（§6.7）。SUPERSEDED の行も数える（受け付けた時点で数えるため）。
+- **集計**：`production_id` が同じで、`requested_at` が直近30日の行のうち、**`email_key_version` と `email_key` の組**が宛先に一致する行を数える。期間内に使われたすべての鍵の版で HMAC を計算して照合する（§6.7。30日以内に複数回ローテーションしても合算される）。キャンセル済み・期限切れ・辞退済みの招待の送信も含まれる。SUPERSEDED の行も数える（受け付けた時点で数えるため）。
 - **状態**：
 
 | 保存する値 | 意味 |
@@ -667,7 +704,7 @@ CREATE TABLE {prefix}stageart_participant_events (
 ### 6.4 メールアドレスの正規化（D6）
 
 - **方針**【確定】（第3版）：比較と集計には「前後の空白を除き、全体を小文字にした値」を使う。保存する値は、入力された値（`trim` 後）のままにする。
-- 比較・集計の場所：招待の重複確認（作成・再送）、30日間の送信の上限（`email_key` はこの値の SHA-256）、辞退後30日の制限、本人の判定（`FindPersonByEmailUseCase` との照合）、`GET /me/participant-invitations`。
+- 比較・集計の場所：招待の重複確認（作成・再送）、30日間の送信の上限（`email_key` は、この正規化した値を入力とする HMAC-SHA-256。鍵は §6.7。鍵なしの SHA-256 単独では計算しない）、辞退後30日の制限、本人の判定（`FindPersonByEmailUseCase` との照合）、`GET /me/participant-invitations`。
 - DBの照合順序が `_ci`（大文字小文字を区別しない）であれば、SQLの `=` でも同じ結果になる。PHP側で比較する場合は `mb_strtolower` を使い、SQLとPHPの結果が食い違わないようにする（R13 Medium「メールアドレスの大文字小文字の照合」）。
 - 既存の行を正規化して書き換えることはしない（Migrationでデータを変更しない）。
 - **DBの照合順序とアプリ側の正規化の整合性を確認する**（§16.2 U9）。ユーザーから、読み取り専用のSELECTの実行が許可された（Dev：§12 のSELECT、Production：§12 の `information_schema.COLUMNS` の照合順序のSELECTだけ）。確認は、実装開始後の事前確認（§15の0）として行い、結果を記録する。本書の改訂ではDBに接続しない。`_ci` 以外（`_bin` など）だった場合は、比較の方法を見直し、本書を改訂する。
@@ -709,16 +746,70 @@ CREATE TABLE {prefix}stageart_participant_events (
 ### 6.7 email_key の鍵の管理（第4版で追加）
 
 - `email_key = HMAC-SHA-256(鍵, 正規化したメールアドレス)` を16進で保存する（§6.2）。正規化は §6.4（前後の空白を除き、全体を小文字）。
-- **鍵はDBに保存しない。**`wp-config.php` の定数（例：`STAGEART_EMAIL_KEY_SECRET`、32バイト以上のランダムな値）で与える。既存の `STAGEART_JWT_SECRET` とは別の鍵にする（用途を分け、片方の漏えいやローテーションが他方に影響しないように）。
-- **鍵の版**：定数 `STAGEART_EMAIL_KEY_VERSION`（例：`v1`）を、送信の記録の `email_key_version` に保存する。
-- **鍵がない場合**：招待の作成・再送を、安全側で拒否する（500 `stageart_email_key_not_configured`。管理者には「サーバーの設定が不足しています」とだけ表示する）。鍵なしで単純なハッシュに切り替えることはしない。リリースの手順に、鍵の設定を含める。
-- **ローテーション**：
-  1. 新しい鍵と版を設定し、古い鍵を「前の鍵」（例：`STAGEART_EMAIL_KEY_PREVIOUS_SECRET`・`_PREVIOUS_VERSION`）として残す。
-  2. 新しい送信の記録は、新しい鍵で計算する。
-  3. 30日間の集計では、現在の鍵と前の鍵の両方で計算した `email_key` を、それぞれの版の行に対して数える。ローテーションで回数が数え直されないようにするため。
-  4. 30日が過ぎたら、前の鍵の設定を外してよい（30日より古い行は集計に使わないため）。古い版の行は、§6.6 の保存期間で削除される。
-  5. 鍵が漏えいした場合も同じ手順でローテーションする。漏えいした鍵で計算された行は、§6.6 の期間で削除されるまで残る。
-- 鍵の値は、ログ・エラーメッセージ・監査ログに出力しない。
+- **SHA-256 単独（鍵なし）での計算は認めない。**鍵が使えない場合も、単純なハッシュに切り替えない。
+- **鍵はDBに保存しない。**`wp-config.php` の定数で与える。既存の `STAGEART_JWT_SECRET` とは別の鍵にする（用途を分け、片方の漏えいやローテーションが他方に影響しないように）。
+
+**鍵の束（キーリング）**（第5版で変更。30日以内の複数回のローテーションに対応する）
+
+- `STAGEART_EMAIL_KEYS`：鍵の版と鍵の値の組を、**複数**持てる設定にする（例：`['v1' => '…', 'v2' => '…', 'v3' => '…']`。各値は32バイト以上のランダムな値）。
+- `STAGEART_EMAIL_KEY_CURRENT`：新しい送信の記録に使う版（例：`v3`）。`STAGEART_EMAIL_KEYS` に含まれている必要がある。
+- 新しい送信の記録は、現在の版の鍵で `email_key` を計算し、その版を `email_key_version` に保存する。
+- 第4版の「現在の鍵と前の鍵の2つ」の設計は、30日以内に2回以上ローテーションすると集計から漏れるため、この鍵の束に置き換える。
+
+**30日間の集計**
+
+1. 集計対象の期間（直近30日）に、その公演の送信の記録で使われている鍵の版を求める。
+
+   ```sql
+   SELECT DISTINCT email_key_version FROM {prefix}stageart_participant_invitation_sends
+    WHERE production_id = %s AND requested_at >= %s;   -- %s: 現在 - 30日
+   ```
+
+2. 求めた版のそれぞれについて、鍵の束にあるその版の鍵で、正規化したメールアドレスの HMAC を計算する（現在の版だけでなく、期間内に使われた旧い版も使う）。
+3. **`email_key_version` と `email_key` の組み合わせ**で数える。
+
+   ```sql
+   SELECT COUNT(*) FROM {prefix}stageart_participant_invitation_sends
+    WHERE production_id = %s AND requested_at >= %s
+      AND ((email_key_version = 'v1' AND email_key = %s)
+        OR (email_key_version = 'v2' AND email_key = %s)
+        OR (email_key_version = 'v3' AND email_key = %s));
+   ```
+
+4. 期間内に使われている版の鍵が、鍵の束にない場合は、正しく数えられないため、招待の作成・再送を安全側で拒否する（500 `stageart_email_key_not_configured`）。少なく数えて送信を許すことはしない。
+- インデックス：`KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at)` を使う（§6.2）。手順1は `production_id` と `requested_at` の範囲で、手順3は版と `email_key` の組で、このインデックスを使える。版ごとに `email_key` の値が異なるため、版を含めなくても結果は同じだが、組で数えることを明確にし、版の偶然の一致を避けるため、版を含める。
+
+**鍵の版を外せる（削除できる）条件**
+
+- その版で作った送信の記録が、**すべて30日間の集計対象から外れた後**。つまり、その版の行の `requested_at` の最大値が、現在から30日より前になった後。
+- 確認には、次の読み取りだけのSELECTを使う（Production での実行は、ユーザーの承認を得てから）。
+
+  ```sql
+  SELECT MAX(requested_at) FROM {prefix}stageart_participant_invitation_sends
+   WHERE email_key_version = %s;   -- 結果が「現在 - 30日」より前（または行がない）なら外せる
+  ```
+
+- 外した版の行は、集計に使われないまま、§6.6 の保存期間（原則90日、最新の試行は保持）で削除される。外した後に、その版の行が集計の期間に入ることはない（新しい行は現在の版で作るため）。
+- 30日の境界での時刻の誤差に備え、実際には1日程度の余裕を見てから外す【推奨】。
+
+**ローテーションの手順**
+
+1. 新しい版の鍵を `STAGEART_EMAIL_KEYS` に追加する。
+2. `STAGEART_EMAIL_KEY_CURRENT` を新しい版に切り替える。以後の送信の記録は新しい版で作る。
+3. 旧い版の鍵は、上の「外せる条件」を満たすまで、鍵の束に残す（30日以内に何回ローテーションしても、期間内に使われたすべての版が残る）。
+4. 条件を満たした版から、鍵の束から外す。
+
+**鍵が漏えいした場合（緊急のローテーション）**
+
+1. 直ちに新しい版を追加して、現在の版に切り替える（上の手順1・2）。以後、漏えいした鍵で新しい記録を作らない。
+2. 漏えいした鍵は、**集計のためだけに**、外せる条件を満たすまで鍵の束に残す。漏えいした鍵で計算済みの値は、既に漏えいの影響を受けていて、集計に使い続けても新しい危険は増えない。
+3. どうしても直ちに外す必要がある場合は、外した版の行を集計に使えなくなり、手順4の安全側の動作で、その公演の招待の作成・再送が、最大30日間止まる。これを避けたい場合は、ユーザーの判断で、外した版の行を数えない（送信の上限が実質的に数え直される）運用に一時的に切り替える。どちらにするかは、緊急時にユーザーが判断する。
+4. 漏えいした鍵で計算された行は、§6.6 の保存期間で削除されるまで残る。
+
+**その他**
+
+- 鍵の束の設定がない、または `STAGEART_EMAIL_KEY_CURRENT` の版の鍵がない場合：招待の作成・再送を、安全側で拒否する（500 `stageart_email_key_not_configured`。管理者には「サーバーの設定が不足しています」とだけ表示する）。リリースの手順に、鍵の設定を含める。
+- 鍵の値は、ログ・エラーメッセージ・監査ログに出力しない。版の名前は出力してよい。
 
 ## 7. API仕様
 
@@ -730,7 +821,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 |---|---|
 | `POST /productions/{id}/participants` | `subject_type=PERSON`・`ORGANIZATION` を拒否する（422 `stageart_participant_requires_invitation`。D10）。NAME_ONLY（アカウントを持たない、公演側だけの記録）は残し、`enrollment_source=MANAGER_RECORD` を記録する |
 | `POST /productions/{id}/participant-invitations` | 既存利用者の分岐を削除し、常に招待する。**宛先の人物の検索（`FindPersonByEmailUseCase`）もしない。アプリ内通知も送らない**（§9.2）。公演の状態（D5）・辞退後30日（D6）・送信の上限・レート制限を確認する。有効期間は7日（D4）。応答の `outcome` は `INVITATION_SENT`・`INVITATION_RESENT` だけにし、`participant` は返さない |
-| `GET /productions/{id}/participant-invitations` | `effective_status`（PENDING／EXPIRED／PRODUCTION_CLOSED／INVITER_REVOKED／ACCEPTED／REJECTED／CANCELLED／CONSUMED）、`responded_at`、`close_reason`、`resend_count`・`resend_remaining`（この招待の残り）、`send_status`（最新の送信：PENDING／SENT／FAILED／UNKNOWN）、`last_sent_at`、`send_limit`（`sent_in_30_days`・`remaining_in_30_days`・`available_at`）、辞退の場合は再招待できる日時（`reinvite_available_at`）を追加する。招待先の人物ID・氏名は返さない |
+| `GET /productions/{id}/participant-invitations` | `effective_status`（PENDING／EXPIRED／PRODUCTION_CLOSED／INVITER_REVOKED／ACCEPTED／REJECTED／CANCELLED／CONSUMED）、`responded_at`、`close_reason`・`closed_at`（§5.1。REJECTED でも、無効化の後の辞退なら値を持つ）、`resend_count`・`resend_remaining`（この招待の残り）、`send_status`（最新の送信：PENDING／SENT／FAILED／UNKNOWN）、`last_sent_at`、`send_limit`（`sent_in_30_days`・`remaining_in_30_days`・`available_at`）、辞退の場合は再招待できる日時（`reinvite_available_at`）を追加する。招待先の人物ID・氏名は返さない |
 | `POST /participant-invitations/{id}/cancel` | `closed_by_person_id`・`closed_at`・`close_reason=MANAGER` を記録する。既に CANCELLED(MANAGER) なら同じ結果を返す（冪等）。他の終端の状態なら409 |
 | `POST /participant-invitations/{id}/resend` | 公演の状態（D5）・招待者の権限（INVITER_REVOKED なら409）・招待1件あたりの上限・30日間の上限を確認する。期限を再送の時点から7日に更新し、トークンを差し替え、送信の記録を追加する。上限を超えれば429 |
 | `GET /participant-invitations/resolve?token=` | **廃止**。`POST /participant-invitations/registration-hint`（未ログイン、メールだけ）と `POST /participant-invitations/lookup`（ログイン必須、内容）に分ける（§7.2） |
@@ -779,7 +870,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
   1. 公演を FOR UPDATE でロックする。
   2. 招待を FOR UPDATE でロックする。
   3. 招待が既に ACCEPTED で、`invitee_person_id` が本人なら、最初の結果をそのまま返す（冪等。通知・監査ログは追加しない）。
-  4. §4.3 の承諾の条件を確認する。公演の終了（D5）・招待者の権限喪失（D3）なら、招待を CANCELLED にし、監査ログ `INVITATION_CLOSED` を記録して、コミットしてから409を返す。
+  4. §4.3 の承諾の条件を確認する。公演の終了（D5）・招待者の権限喪失（D3）なら、招待を CANCELLED にし、`close_reason`・`closed_at` を記録する（§5.1）。INVITER_REVOKED で `revocation_notified_at` が NULL なら、それも記録する（§11.5）。監査ログ `INVITATION_CLOSED` を記録して、コミットしてから409を返す。コミットの後に、PrimaryManager へ通知する（このトランザクションで `revocation_notified_at` を記録した場合だけ）。
   5. 参加者の行を FOR UPDATE で読み、同じ (公演, PERSON, 本人, 種別) の行の有無と状態に応じて、作成・再有効化・承認・同意の記録をする（§5.2）。`display_name` には、管理者が入力した `invited_name` を使う（既存の方針）。`enrollment_source` は、新しく行を作る場合だけ INVITATION にする。
   6. 参加者が ACTIVE でない状態から ACTIVE になった場合は、本人のこの公演での担当者の行のうち ACTIVE のものを INACTIVE にする（§4.6 `DORMANT_ON_ENROLLMENT`）。
   7. 招待を ACCEPTED にし、`invitee_person_id`・`responded_at`・`participant_id` を記録する。
@@ -791,7 +882,11 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 **`POST /participant-invitations/{id}/reject`**（ログイン必須）
 
 - ロックは §5.4（公演 → 招待）。条件は §4.3 の辞退の条件と §5.1 の判定表（【確定】U7）。**公演の終了・招待者の権限喪失の後でも、期限内なら辞退できる。**承諾を試みて `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)` になった招待も辞退できる。`CANCELLED(MANAGER)` は409 `not_pending`。
-- 招待を REJECTED にし、`invitee_person_id`・`responded_at` を記録する。CANCELLED から辞退した場合も、`close_reason`・`closed_at` は残す（監査ログの `detail` に、辞退の前の状態と `close_reason` を記録する）。参加者は作らず、既存の参加者の行も変更しない。参加の権限は発生しない。
+- 招待を REJECTED にし、`invitee_person_id`・`responded_at` を記録する。参加者は作らず、既存の参加者の行も変更しない。参加の権限は発生しない。
+- `close_reason`・`closed_at` の扱い（§5.1）：
+  - CANCELLED（PRODUCTION_CLOSED・INVITER_REVOKED）から辞退した場合：元の `close_reason`・`closed_at` をそのまま保持する。
+  - PENDING の招待で、辞退の時点で公演の終了・招待者の権限喪失を**初めて検出した**場合：その理由を `close_reason`、検出した日時を `closed_at` に記録する。INVITER_REVOKED で `revocation_notified_at` が NULL なら、それも記録する（§11.5）。
+  - 監査ログ `REJECTED` の `detail` に、辞退の前の `status` と、`close_reason`（あれば）を記録する。辞退の時点で初めて検出した場合は、`INVITATION_CLOSED` も記録する。
 - 既に REJECTED で本人の辞退なら、同じ結果を返す（冪等）。
 - コミットした後に、通知する（§11）。辞退者の氏名は通知に含めず、招待時に管理者が入力した氏名を使う。
 
@@ -969,8 +1064,8 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | type | 宛先 | 契機 | message（例） | target |
 |---|---|---|---|---|
 | `participant_invitation_accepted` | 招待者 | 承諾 | 「{招待時の氏名}さんが『{公演名}』への招待を承諾しました」 | `PRODUCTION`／公演ID |
-| `participant_invitation_rejected` | 招待者（権限がなければ PrimaryManager） | 辞退 | 「{招待時の氏名}さんが『{公演名}』への招待を辞退しました」 | 同上 |
-| `participant_invitation_closed` | PrimaryManager（U10） | 承諾時の無効化（INVITER_REVOKED） | 「{招待時の氏名}さん宛ての招待は、招待者の権限がなくなったため無効になりました。必要なら改めて招待してください」 | 同上 |
+| `participant_invitation_rejected` | 招待者（権限がなければ PrimaryManager） | 辞退 | 「{招待時の氏名}さんが『{公演名}』への招待を辞退しました」。辞退の時点で招待者の権限喪失を初めて検出した場合は、「（招待者の権限がなくなっていたため、この招待は無効になっていました）」を加え、§11.5 の通知を兼ねる | 同上 |
+| `participant_invitation_closed` | PrimaryManager（U10） | 承諾の時点での招待者の権限喪失（INVITER_REVOKED）の初めての検出（§11.5） | 「{招待時の氏名}さん宛ての招待は、招待者の権限がなくなったため無効になりました。必要なら改めて招待してください」 | 同上 |
 | `participant_withdrawn` | PrimaryManager と、有効な PARTICIPANT_MANAGER | 本人による辞退 | 「{公演側の氏名}さんが『{公演名}』の参加をやめました」 | 同上 |
 
 - 招待メール（未登録者を含む全員宛て）は、既存の `ParticipantInvitationMailer` を使い、文面を1種類にする。
@@ -1030,6 +1125,30 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 - 承諾・辞退・取消・参加辞退は冪等にする。2回目の呼び出しは、状態を変えず、通知も監査ログも追加しない（通知は、実際に状態が変わった1回だけ送る）。
 - 再送は、毎回トークンを差し替えるため、古いメールのリンクは無効になる。同じ再送のリクエストが二重に届いた場合は、公演の行ロックで直列化され、2回の送信として数えられる。先の試行は、多くの場合 SUPERSEDED になってメールを送らない（§11.3 の再送の競合）。状態の矛盾は起きない。Frontend は、再送のボタンを送信中は無効にする。
 - 非同期の仕組み（キュー）は導入しない。現在の通知基盤は同期で送る方式で、WP-Cron は稽古のリマインダーにしか使われていない（§1.6）。存在しない仕組みを前提にしない。
+
+### 11.5 招待者の権限喪失の PrimaryManager への通知（【確定】U10、第5版）
+
+**通知の契機**
+
+- 招待者の権限喪失（INVITER_REVOKED）を**最初に検出した書き込み処理**で、PrimaryManager へ**一度だけ**通知する。
+- 対象の書き込み処理は、本人の**承諾**と**辞退**（§7.2）。承諾では `participant_invitation_closed`、辞退では `participant_invitation_rejected`（権限喪失の説明を加えたもの）を送り、どちらも1通で済ませる。
+- **読み取り処理では通知しない**：`GET /me/participant-invitations`・`lookup`・管理者の招待一覧は、`effective_status=INVITER_REVOKED` を導いて返すだけで、DBに書き込まず、通知もしない。
+- 管理者の再送・取消でも通知しない（再送は409を返すだけで状態を変えない。操作した管理者は応答で知る。取消は管理者の意思による `MANAGER` の無効化）。
+- **公演の終了（PRODUCTION_CLOSED）による無効化は通知しない**（管理者は公演の状態を知っているため）。
+
+**二重通知の防止**
+
+1. 承諾・辞退の処理は、§5.4 の順に公演 → 招待をロックする。
+2. 招待者の権限喪失を検出し、招待の `revocation_notified_at` が NULL の場合だけ、同じトランザクションで `revocation_notified_at` を現在の日時にし、「このトランザクションで通知する」と覚える。NULL でなければ、既に通知が決まっているため、通知しない。
+3. コミットした後に、手順2で覚えた場合だけ通知を送る。
+- 招待の行ロックで直列化されるため、承諾と辞退が同時に来ても、`revocation_notified_at` を記録できるのは1つの処理だけで、通知は1回になる。
+- 例：承諾で権限喪失を検出して `CANCELLED(INVITER_REVOKED)` になり通知した後、本人が辞退した場合は、権限喪失の通知は送らない（`revocation_notified_at` が記録済み）。辞退の通知（`participant_invitation_rejected`、権限喪失の説明なし）は、辞退の事実を知らせるため通常どおり送る。
+- 通知の送信が失敗しても、`revocation_notified_at` は戻さない（通知は既存どおり失敗をログに記録するだけ。§11.3）。再送はしない。
+
+**監査ログ**
+
+- 初めて検出したトランザクションで `INVITATION_CLOSED` を記録する（`detail`：`close_reason=INVITER_REVOKED`、検出した操作 `ACCEPT` または `REJECT`、`primary_manager_notified=true`）。
+- 通知が決まらなかった場合（既に通知済み）は、`INVITATION_CLOSED` を重ねて記録しない。
 
 ## 12. 既存データとの互換性
 
@@ -1183,11 +1302,17 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T96 | 同じメールアドレス（大文字小文字・前後の空白の違いを含む）から `email_key` を計算する | 同じ鍵なら、常に同じ値になる |
 | T97 | 異なるメールアドレスから計算する | 異なる値になる（集計が混ざらない） |
 | T98 | 鍵を変えて計算する | 同じアドレスでも値が変わる（鍵なしの SHA-256 とも一致しない） |
-| T99 | 鍵のローテーション（前の鍵を設定したまま新しい鍵に切り替える） | 切り替えの前後の送信が、30日間の回数として合算される |
+| T99 | 鍵のローテーション（旧い版を鍵の束に残したまま、現在の版を新しい版に切り替える） | 切り替えの前後の送信が、30日間の回数として合算される（複数回のローテーションは T104） |
 | T100 | 鍵が設定されていない | 招待の作成・再送が500 `email_key_not_configured`。送信の記録は作られない。鍵の値はログに出ない |
 | T101 | 保存期間による削除 | 2年を過ぎた監査ログと、90日を過ぎた送信記録（最新の試行を除く）だけが削除される。最新の試行・期間内の行・参加者・招待・出欠・会計の行は残る |
 | T102 | 削除の処理の件数の上限 | 1回の実行で上限の件数までしか削除せず、残りは次回に削除される |
 | T103 | 90日を過ぎた最新の試行がある招待の一覧 | 最新の送信状態が表示される |
+| T104 | 30日以内に v1 → v2 → v3 と2回ローテーションし、各版で同じ公演・同じメールに送信する | v1・v2・v3 の送信回数が合算される（例：各2回なら6回で、7回目は429） |
+| T105 | v1 の最後の記録が30日間の集計の対象から外れた後に、v1 を鍵の束から外す | 集計はエラーにならず、v2・v3 の記録だけで正しく数えられる。v1 の行は集計に使われず、§6.6 の期間で削除される |
+| T106 | 30日以内に使われた版の鍵が、鍵の束にない | 招待の作成・再送が500 `email_key_not_configured`（少なく数えて送らない） |
+| T107 | `STAGEART_EMAIL_KEY_CURRENT` の版の鍵がない | 招待の作成・再送が500。送信の記録は作られない |
+| T108 | 現在の版で計算した値と、旧い版で計算した値 | 同じアドレスでも版ごとに値が異なり、版と `email_key` の組でだけ一致する |
+| T109 | 鍵なしの SHA-256 で計算した値 | どの版の `email_key` とも一致せず、集計に数えられない |
 
 **担当者（D9・第3版）**
 
@@ -1233,12 +1358,19 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T59 | 公演の終了後の参加者一覧 | メールは PrimaryManager だけに返る。行は削除されない |
 | T80 | 公演の終了後に、本人が `lookup` する | 200、`can_accept=false`・`can_reject=true`・`unavailable_reason=PRODUCTION_CLOSED` |
 | T81 | 公演の終了後・招待者の権限喪失後に、本人が辞退する（PENDING のまま） | 200、招待は REJECTED。参加者は作られず、参加の権限も発生しない |
-| T82 | 承諾を試みて `CANCELLED(PRODUCTION_CLOSED)`・`CANCELLED(INVITER_REVOKED)` になった招待を、期限内に辞退する | 200、招待は REJECTED（`close_reason` は残る）。参加者は作られない（第4版） |
+| T82 | 承諾を試みて `CANCELLED(PRODUCTION_CLOSED)`・`CANCELLED(INVITER_REVOKED)` になった招待を、期限内に辞退する | 200、招待は REJECTED。元の `close_reason`・`closed_at` は変わらない。参加者は作られない |
 | T83 | 招待の取消を2回行う | 2回目も同じ結果（冪等） |
 | T89 | `CANCELLED(MANAGER)` の招待を辞退する | 409 `not_pending` |
 | T90 | 期限切れの `CANCELLED(PRODUCTION_CLOSED)` を辞退する | 410 |
 | T91 | `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)` の招待を、再び承諾する | 409 `closed`。状態は変わらない |
 | T92 | §5.1 の判定表の各行 | accept・reject・`/me`・`lookup`・管理者の一覧が、同じ判定（`effective_status`・`can_accept`・`can_reject`・一覧に出すか）を返す |
+| T110 | PENDING の招待を、公演の終了の後に辞退する（初めての検出） | REJECTED、`close_reason=PRODUCTION_CLOSED`・`closed_at` が記録される。`closed_by_person_id` は NULL。PrimaryManager への権限喪失の通知はない |
+| T111 | PENDING の招待を、招待者の権限喪失の後に辞退する（初めての検出） | REJECTED、`close_reason=INVITER_REVOKED`・`closed_at`・`revocation_notified_at` が記録される。PrimaryManager に、権限喪失の説明を加えた `participant_invitation_rejected` が1通だけ届く。監査ログ `INVITATION_CLOSED`（`primary_manager_notified=true`）と `REJECTED` |
+| T112 | 承諾で権限喪失を検出した（通知済み）後に、本人が辞退する | `close_reason`・`closed_at`・`revocation_notified_at` は変わらない。権限喪失の通知は送られない（辞退の通知だけ）。`INVITATION_CLOSED` は重ねて記録されない |
+| T113 | 権限喪失の招待に、承諾と辞退が同時に来る | どちらか一方だけが `revocation_notified_at` を記録し、権限喪失の通知は1回だけ |
+| T114 | 権限喪失の招待を、本人が `lookup`・`/me` で開く／管理者が一覧で見る／管理者が再送する | `effective_status=INVITER_REVOKED` が返る。DBの `close_reason`・`revocation_notified_at` は変わらず、通知もない（再送は409） |
+| T115 | 管理者の取消（`CANCELLED(MANAGER)`） | `close_reason=MANAGER`・`closed_at`・`closed_by_person_id` が記録される。本人の辞退は409 |
+| T116 | 管理者の一覧の応答 | `status`・`effective_status`・`close_reason`・`closed_at` が §5.1 の組み合わせのとおりに返る（REJECTED で `close_reason` を持つ行を含む） |
 | T93 | `CANCELLED(PRODUCTION_CLOSED)` の招待の `lookup`・`/me` | 期限内なら200で `can_accept=false`・`can_reject=true`。期限切れなら `lookup` は410、`/me` には出ない |
 
 **アカウントの有無の推測・不正利用対策（第3版）**
@@ -1391,6 +1523,14 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 | 再送の競合 | 送信の直前に最新の試行かを確認し、古い試行のメールを送らない。防げない競合は案内で補う。回数の計上ルールは変えない | §11.3 |
 | 既存担当者の移行 | リリース前・リリース後の運用手順 | §16.3.1 |
 
+**第5版で確定した事項（ユーザー判断・第4版レビューの指示）**
+
+| 事項 | 確定方針 | 反映した節 |
+|---|---|---|
+| U10 PrimaryManager への通知 | 招待者の権限喪失を最初に検出した書き込み処理（承諾・辞退）で、一度だけ通知する。読み取り処理・管理者の再送・取消、公演の終了による無効化では通知しない。`revocation_notified_at` で二重通知を防ぐ | §11.5 |
+| `close_reason` の意味 | `status`＝現在の状態、`close_reason`・`closed_at`＝過去の無効化の記録（変更しない）、`closed_by_person_id`＝管理者が無効化した場合の実行者。無効化の後の辞退は REJECTED で、元の記録を保持する。`CANCELLED(MANAGER)` からの辞退は禁止 | §5.1、§6.1、§7 |
+| email_key と鍵のローテーション | HMAC-SHA-256 だけ（SHA-256 単独は不可）。複数の版を持つ鍵の束で、期間内に使われたすべての版で集計する。旧い版は、その版の記録がすべて30日間の集計から外れた後に外せる | §6.2、§6.4、§6.7 |
+
 ### 16.2 未解決事項の状態（第4版）
 
 | # | 事項 | 状態 | 扱い・理由 | 決定者 |
@@ -1404,7 +1544,7 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 | U7 | 公演の終了後・招待者の権限喪失後に辞退できるか | **解決** | 正当な招待対象者は辞退できる。承諾はできない。照会画面も辞退だけを出す（§4.2、§4.3、§7.2） | — |
 | U8 | 処理時間の差によるアカウントの有無の推測 | **解決** | 招待作成時のアプリ内通知と宛先の検索をやめ、処理を同じにした（§9.2） | — |
 | U9 | DBの照合順序と、アプリ側のメールアドレスの正規化の整合性 | **実行許可済み・確認待ち** | ユーザーが読み取り専用のSELECTの実行を許可した（Dev：許可、Production：照合順序のSELECTだけ。§12）。実装開始後の事前確認（§15の0）で実行して結果を記録する。本書の改訂ではDBに接続していない。`_ci` 以外なら、比較の方法を見直し、本書を改訂する | 実装担当（実行と記録）、ユーザー（結果が `_ci` 以外だった場合の判断） |
-| U10 | 招待者の権限喪失で招待が無効になったときの PrimaryManager への通知 | **設計に反映（再レビューで確認）** | PrimaryManager に `participant_invitation_closed` を通知する（§11.1）。管理者が改めて招待できるようにするため。通知しない案もあるため、再レビューで確認する | ユーザー（再レビュー） |
+| U10 | 招待者の権限喪失で招待が無効になったときの PrimaryManager への通知 | **解決** | ユーザー判断（第5版）：最初に検出した書き込み処理（承諾・辞退）で、PrimaryManager に一度だけ通知する。読み取り処理と、公演の終了による無効化では通知しない。`revocation_notified_at` で二重通知を防ぐ（§11.5）。管理者が改めて招待できるようにするため | — |
 | U11 | 送信に失敗した招待の再送を回数に数えるか | **解決** | 受け付けた時点で数え、失敗しても戻さない（§5.3、§11.3） | — |
 | U12 | 監査ログ（と送信の記録）の保持期間と削除の方針 | **解決** | ユーザー判断：監査ログ2年、送信記録は原則90日（最新の試行は保持）、同意の情報は参加者・公演の履歴と同じ期間。削除の定期処理を R14-B に含める（§6.6） | — |
 | U13 | Join Key の申請時に、CANCELLED・REJECTED の行があると UNIQUE キーに当たる可能性 | **未解決（再現確認待ち）** | 実装の最初に、隔離したテストDBで再現を確認する（§15の0、§14.3）。**再現した場合は、参加者のライフサイクル（R14-B）のリリース前に必ず対応する**（WITHDRAWN が増え、再参加の経路として使われるため）。対応の範囲は再現の結果を見て判断する | 実装担当（再現）、ユーザー（対応範囲の判断） |
