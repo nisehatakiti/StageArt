@@ -8,7 +8,8 @@
 - 追記：2026-11-16（第5版への追記、`b285965`）。実装前の事前検証（§15の0：U4・U5・U9・U13）の結果と、第5版レビューで残った3点の対応案を §17 に記録した。
 - 改訂：2026-11-16（第6版）。事前検証の結果に対するユーザーの判断（U5＝C案、U13＝A＋C案、§17.5 の3点の採用、U4＝個人宛てAPIの `Cache-Control: no-store` の必須化）を本文に反映した。Dev での追加確認（U4）の結果を §17.6 に記録した。
 - 改訂：2026-11-16（第7版）。第6版のレビュー結果と、ユーザーの判断（N1〜N5）を反映した。個人宛てAPIの `no-store` のテストの範囲を補強し、Dev の検証用アカウントの残存の確認結果を §17.6 に追記した。
-- 改訂：2026-11-16（第8版）。ユーザーの判断（N6：`PUT /participants/{id}` で指定できる状態の変更を ACTIVE → INACTIVE だけにする）と、状態の変更の責務を反映した。`PUT` の現在のコードの調査結果を記録し、最終レビューの確認で見つかった未決定事項（N7〜N10）を §16.2 に記録した。
+- 改訂：2026-11-16（第8版）。ユーザーの判断（N6：`PUT /participants/{id}` で指定できる状態の変更を ACTIVE → INACTIVE だけにする）と、状態の変更の責務を反映した。`PUT` の現在のコードの調査結果を記録し、最終レビューの確認で見つかった未決定事項（N7〜N11）を §16.2 に記録した。
+- 改訂：2026-11-16（第9版）。第8版の最終レビューの結果と、ユーザーの判断（N7〜N11）を反映した。N7〜N11 はすべて解決し、テスト（T150〜T176）を追加した。
 - 対象：Head `c6480c2`（R14-A後）、スキーマ1.48.0
 - 状態：**設計のみ（未実装）**。最終レビューの後に、実装を始めるかをユーザーが判断する。
 - 確定方針（R14-B指示書 §3）：
@@ -23,7 +24,18 @@
 - 【確定】：ユーザーが判断した事項（D1〜D11、U6・U9・U12・U15などの回答）と、レビューの指示で方針が決まった事項。
 - 【推奨】：設計者の提案。再レビューで否定されなければ実装する。
 - 【未解決】：実装前に確認または判断が必要な事項。§16.2 に一覧と決定者がある。
-- 【未決定】：第6版の改訂で見つかり、ユーザーの判断を待つ事項。設計者は仕様を決めていない（§16.2 の末尾）。
+- 【未決定】：改訂で見つかり、ユーザーの判断を待つ事項。設計者は仕様を決めていない（§16.2）。第9版の時点で、【未決定】の事項は残っていない。
+
+### 第9版の主な変更点
+
+| 項目 | 内容 | 主な節 |
+|---|---|---|
+| N7 種別の変更の衝突 | 【確定】`PUT` で `participant_type` の変更は認める。変更先の種別に、同じ公演・同じ対象の行が既にあれば409 `stageart_participant_type_conflict`。DBの UNIQUE 制約の違反も409に変換し、それ以外の保存の失敗は500。衝突のときは PUT 全体をロールバックする。実際に変わったときだけ監査ログ `TYPE_CHANGED` | §5.2、§7.1 |
+| N8 `remarks` | 【確定】送らなければ既存の値を保持、null・空文字は NULL、文字列はその値、不正な型は422（ほかの項目も更新しない）。`participant_type` は引き続き必須 | §5.2、§7.1 |
+| N9 同じ状態の指定 | 【確定】有効な状態で、現在と同じ値の指定は冪等な成功（状態・担当者・監査ログは変えない）。状態の遷移ではない | §5.2、§7.1 |
+| N10 `DELETE` | 【確定】ACTIVE・INACTIVE → CANCELLED。CANCELLED は冪等。PENDING・DRAFT・REJECTED・WITHDRAWN は409 `stageart_participant_cancel_not_allowed` | §5.2、§7.1、§10 |
+| N11 DRAFT と招待の承諾 | 【確定】同じ組（同じ種別）に DRAFT の行があれば、承諾は409 `stageart_participant_draft_exists`。招待・DRAFT の行は変えない | §5.2、§7.2、§10 |
+| テスト | N7〜N11 の T150〜T176。T146 を N9 と整合させた | §14 |
 
 ### 第8版の主な変更点
 
@@ -33,7 +45,7 @@
 | 状態の変更の責務 | 【確定】状態ごとに、変更できるAPI・UseCase を決めた（CANCELLED：管理者の削除、WITHDRAWN：本人の辞退、PENDING：参加申請、REJECTED：申請の却下、ACTIVE：招待の承諾・申請の承認、INACTIVE：`PUT`、DRAFT：作らない・戻さない） | §5.2 |
 | `PUT` のコードの調査 | `c6480c2` の Controller・Command・UseCase・Domain の動作を記録した（`status` の未指定・null は422になる、状態の遷移の確認がない、担当者の解除はない、`remarks` を送らないと消える、`display_name` は変更できない、種別の変更は UNIQUE キーに当たりうる） | §5.2 |
 | テスト | N6 の12のケース（T138〜T149） | §14 |
-| 未決定事項 | 最終レビューの確認で、N7〜N10 を記録した（設計者は決めていない） | §16.2 |
+| 未決定事項 | 最終レビューの確認で、N7〜N11 を記録した（設計者は決めていない。第9版で解決） | §16.2 |
 
 ### 第7版の主な変更点
 
@@ -551,7 +563,8 @@
 | PENDING（参加申請中）→ ACTIVE | 本人の承諾 | 同上（§4.7） | 同上 |
 | PENDING（参加申請中）→ ACTIVE | 管理者の承認 | 既存の承認 API（ロックを追加） | R14-B以降の申請（`requested_at` が NULL でない行）なら、`consent_source=JOIN_REQUEST`、`consented_at`＝`requested_at`（申請の日時）。R14-B以前の申請（`requested_at` が NULL）は記録しない（第6版で、判定の根拠を `enrollment_source` から `requested_at` に変更。再申請で行を再利用すると、`enrollment_source` が別の経路のままになるため） |
 | ACTIVE → ACTIVE（同意の記録だけ） | 本人の承諾 | 承諾 API（既に ACTIVE の場合） | `enrollment_source` は変更しない。`consent_source=INVITATION`、`consented_at` |
-| ACTIVE → CANCELLED | 管理者 | `DELETE /participants/{id}`（既存） | 担当者の役割を解除（§4.6） |
+| ACTIVE → CANCELLED | 管理者 | `DELETE /participants/{id}`（既存。第9版、N10） | 担当者の役割を解除（§4.6）。監査ログ `REMOVED_BY_MANAGER`・`DELEGATE_DEACTIVATED`（`detail.reason=PARTICIPANT_REMOVED`） |
+| INACTIVE → CANCELLED | 管理者 | 同上（第9版、N10） | 監査ログ `REMOVED_BY_MANAGER`。担当者の行は INACTIVE への変更の時点で解除済み（下記の `DELETE` の仕様） |
 | ACTIVE → WITHDRAWN | 本人 | `POST /participants/{id}/withdraw`（新設） | 担当者の役割を解除（D9） |
 | ACTIVE → INACTIVE | 管理者 | `PUT /participants/{id}`（`status: "INACTIVE"`。`PUT` で指定できる唯一の状態の変更。第8版、N6） | 担当者の役割を解除（§4.6）。監査ログ `DEACTIVATED`・`DELEGATE_DEACTIVATED` |
 | （行なし）→ PENDING | 本人の申請 | 既存の申請 API（ロックを追加） | `enrollment_source=JOIN_REQUEST`、`requested_at`＝申請の日時 |
@@ -566,7 +579,7 @@
 - 参加者のUNIQUEキー `(production_id, subject_type, subject_id, participant_type)` は変更しない。同じ組の行は、状態にかかわらず1行だけで、**新しい参加者IDを発行して同じ組の行を追加することはしない**。
 - 招待の承諾と参加申請は、どちらも、同じ組の行を `SELECT … FOR UPDATE` で読み、行があれば、その行の状態を変える（参加者IDは変わらない）。
   - 参加申請：CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING。ACTIVE・PENDING なら、既存どおり409 `stageart_participant_already_exists`。DRAFT も409（第7版、N1。下記）。
-  - 招待の承諾：上の表のとおり ACTIVE にする（PENDING の申請中の行も含む。§4.7）。
+  - 招待の承諾：上の表のとおり ACTIVE にする（PENDING の申請中の行も含む。§4.7）。同じ組に DRAFT の行がある場合は409（第9版、N11。下記）。
 - 参加者IDが変わらないため、過去の出欠・精算などの記録は、同じ参加者IDにつながったまま残る（削除・変更しない）。再参加の前後は、監査ログで区別する（下記）。
 - 監査ログ：再申請は `JOIN_REQUESTED`、再参加（承諾）は `ACCEPTED` を記録し、`detail` に `previous_status`（再利用の前の状態）と `reused_participant=true` を入れる。これで、再申請・再参加の前後の状態を追跡できる。
 - 行が既にある場合の判定と状態の変更は、公演の行ロック（§5.4）の中で行うため、同時の申請・承諾で、行が2つになったり、状態が食い違ったりしない。UNIQUEキーは最後の防御として残る（それでも重複になった場合は、DBの失敗として扱い、成功を返さない。§7.4）。
@@ -589,25 +602,68 @@
 | INACTIVE | INACTIVE | 冪等として許可（状態・担当者・監査ログは変えない） |
 | ACTIVE | DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN | 422 `stageart_participant_status_change_not_allowed` |
 | INACTIVE | ACTIVE | 422 `stageart_participant_status_requires_consent`（ACTIVE に戻すのは、招待の承諾・参加申請の承認だけ。P5） |
-| DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN | 任意の状態の変更 | 422 `stageart_participant_status_change_not_allowed` |
+| DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN | 現在と異なる任意の状態 | 422 `stageart_participant_status_change_not_allowed` |
+| 任意の有効な状態 | 現在と同じ状態（ACTIVE → ACTIVE、INACTIVE → INACTIVE、DRAFT → DRAFT、PENDING → PENDING、REJECTED → REJECTED、CANCELLED → CANCELLED、WITHDRAWN → WITHDRAWN） | 冪等な成功（第9版、N9。下記） |
 
 - **`status` がリクエストに含まれない場合**：状態を変更しない（ほかの項目だけを更新する）。Backend は、パラメーターが「送られていない」ことと「null・空文字で送られた」ことを区別する（例：`WP_REST_Request::has_param('status')`）。
 - **`status` が null・空文字・未知の値・文字列でない値など、不正な形式で送られた場合**：状態の変更として受け付けず、422（`stageart_participant_invalid`）にする。ほかの項目も更新しない。
-- ACTIVE → ACTIVE（同じ値の指定）と、DRAFT などの行で同じ値を指定した場合の扱いは、【未決定】N9（§16.2）。
+- **現在と同じ状態の指定**（【確定】第9版、N9）：有効な `ParticipantStatus` で、現在の状態と同じ値を指定した場合は、冪等な成功とする。**状態の遷移ではない**ため、状態を変えず、担当者の行を変えず、状態の変更の監査ログ（`DEACTIVATED` など）も記録しない。同じ PUT に含まれるほかの項目（`participant_type`・`remarks`）は、通常どおり更新する。
+  - `updated_at`：既存の更新の方針（`Participant` の変更のメソッドが `touch()` を呼び、`PUT` が成功すると行を保存する）に合わせ、成功した `PUT` では、値が変わらない場合も `updated_at` を更新する。同じ状態の指定によって、`updated_at` 以外の列は変わらない。
+  - DRAFT → DRAFT などの同じ値の指定を認めても、DRAFT の新しい作成・DRAFT への復帰・DRAFT から別の状態への変更は認めない（N1・N6 を維持する）。
+  - ACTIVE → ACTIVE を認めるため、R14-B以前の画面のように `status: "ACTIVE"` を送る更新も、ACTIVE の行では成功する（R14-Bの画面は `status` を送らない。§10）。
 - 判定は、§5.4 の順（公演 → 参加者 → 担当者）にロックしてから、ロックした行の現在の状態で行う。
 - ACTIVE → INACTIVE では、同じトランザクションで、その人物のこの公演での担当者の行をすべて INACTIVE にし（`ParticipantDelegateRoleReleaser`。§4.6）、監査ログ `DEACTIVATED` と `DELEGATE_DEACTIVATED`（`detail.reason=PARTICIPANT_DEACTIVATED`）を記録する。
 - 画面（`productions/[id]/participants.tsx`）は、氏名・備考などの更新では `status` を送らない（§10）。
+
+**`PUT /participants/{id}` の `participant_type`・`remarks`**（【確定】第9版、N7・N8）
+
+| 項目 | 指定 | 結果 |
+|---|---|---|
+| `participant_type` | 必須。未指定・null・空文字・不正な値 | 422 `stageart_participant_invalid`（既存どおり。ほかの項目も更新しない） |
+| `participant_type` | 現在と同じ種別 | 冪等な成功。種別・状態は変えず、`TYPE_CHANGED` を記録しない |
+| `participant_type` | 別の種別で、変更先の種別に、同じ公演・同じ対象（`production_id`・`subject_type`・`subject_id`）の行が既にある（状態を問わない） | 409 `stageart_participant_type_conflict`。PUT 全体をロールバックし、`remarks`・`status` も含めて何も更新しない。変更先の既存の行の状態・参加の履歴・参加者IDも変えない |
+| `participant_type` | 別の種別で、衝突がない | 変更する。監査ログ `TYPE_CHANGED`（`detail` に変更前・変更後の種別） |
+| `remarks` | リクエストに含まれない | 既存の値を保持する |
+| `remarks` | `null` または `""` | 既存の値を消去し、NULL にする（空白だけの文字列も、既存の正規化〔前後の空白を除いて空なら NULL〕で NULL） |
+| `remarks` | 文字列 | その値に更新する（既存どおり前後の空白を除く） |
+| `remarks` | 文字列・null 以外の型（数値・真偽値・配列・オブジェクトなど） | 422 `stageart_participant_invalid`。ほかの項目も更新しない（現在の `stringOrNull()` は文字列に変換して受け付けているため、変更する） |
+
+- Backend は、`remarks` が「送られていない」ことと「null・空文字で送られた」ことを区別する（`has_param('remarks')`）。
+- **処理の順序とトランザクション**（N7）：1つのトランザクションで、§5.4 の順に、(1) 公演をロック、(2) 対象の参加者の行を FOR UPDATE で読む、(3) 入力をすべて検証する（不正なら422で終了）、(4) 種別を変える場合は、変更先の組（同じ公演・同じ対象・変更先の種別）の行を `SELECT … FOR UPDATE` で読み、あれば409で終了、(5) 状態（N6・N9）・種別・備考を反映して保存する、(6) 必要なら担当者の役割の解除（ACTIVE → INACTIVE の場合）と監査ログ（`DEACTIVATED`・`DELEGATE_DEACTIVATED`・`TYPE_CHANGED`）を記録する、(7) コミットする。どの段階で失敗しても、全体をロールバックする。
+- **事前の確認だけに依存しない**（N7）：(4) の確認の後に、並行したリクエストなどで同じ組の行ができ、(5) の保存で DBの UNIQUE 制約の違反（MySQL の 1062）になった場合も、409 `stageart_participant_type_conflict` に変換し、ロールバックする。Repository は、UNIQUE 制約の違反を、ほかの保存の失敗と区別できる例外（例：`UniqueConstraintViolationException`）で伝える。**UNIQUE 制約の違反以外の保存の失敗は、N2 の方針どおり500**（`stageart_persistence_failed`）にする。
+- 種別の変更は、担当者の行（人物単位）と同意の記録（`consent_source`・`consented_at`）を変えない。
+
+**`DELETE /participants/{id}`（管理者の削除）**（【確定】第9版、N10）
+
+| 現在の状態 | 結果 |
+|---|---|
+| ACTIVE | 204。CANCELLED にする。同じトランザクションで、その人物のこの公演での担当者の行をすべて INACTIVE にし（`ParticipantDelegateRoleReleaser`）、監査ログ `REMOVED_BY_MANAGER` と `DELEGATE_DEACTIVATED`（`detail.reason=PARTICIPANT_REMOVED`）を記録する |
+| INACTIVE | 204。CANCELLED にし、監査ログ `REMOVED_BY_MANAGER` を記録する。担当者の行は、INACTIVE にした時点で解除済みのため、既に INACTIVE の行は変更しない。R14-B以前に INACTIVE にされ、担当者の行が ACTIVE のまま残っている場合は、§4.6 の規則（参加者が ACTIVE でなくなった時点で解除）に従い、この削除で INACTIVE にし、`DELEGATE_DEACTIVATED` を記録する |
+| CANCELLED | 204（冪等）。副作用はない（行を保存せず、`updated_at`・担当者の行・監査ログを変えない） |
+| PENDING・DRAFT・REJECTED・WITHDRAWN | 409 `stageart_participant_cancel_not_allowed`。参加者・担当者・監査ログは変えない |
+
+- PENDING の参加申請を終わらせる場合は、参加申請の却下のAPI（`POST /participation-requests/{id}/reject`、REJECTED）を使う。`DELETE` で申請の履歴を CANCELLED に上書きしない。WITHDRAWN（本人の辞退）・REJECTED（却下）・DRAFT も、`DELETE` で上書きしない。
+- ロックは §5.4（公演 → 参加者 → 担当者）。判定はロックした行の現在の状態で行う。担当者の行の更新・監査ログの保存のどれかが失敗したら、全体をロールバックし、成功を返さない（§7.4）。
+
+**DRAFT の行がある人の招待の承諾**（【確定】第9版、N11）
+
+- 招待の承諾で、同じ公演・PERSON・同じ人物・**同じ種別**（`participant_type`）の参加者の行が DRAFT なら、承諾を409 `stageart_participant_draft_exists` で拒否する。
+- このとき、DRAFT の行を ACTIVE にせず、削除も再利用もしない。参加者の行を新しく作らない。招待は ACCEPTED・CONSUMED にせず、状態・期限・`responded_at` などを変えない（PENDING のまま残る）。トランザクションはロールバックする（監査ログも記録しない）。
+- 判定は、§7.2 の承諾の処理で、公演・招待をロックし、公演の終了・招待者の権限喪失の確認（§4.3）の後、参加者の行を FOR UPDATE で読んだ時点で行う（公演の終了・権限喪失が先に当たれば、そちらの処理になる）。
+- 同じ人物でも、**種別が異なる** DRAFT の行だけがある場合は、それを理由に拒否しない（UNIQUE キーの範囲が種別ごとのため。招待の種別の行の有無と状態で判定する）。
+- N1 と合わせて、DRAFT の行は、参加申請で PENDING にすることも、招待の承諾で ACTIVE にすることもできない。
+- `GET /me/participant-invitations` の `can_accept` は、参加者の行の DRAFT を判定しない（§5.1 の判定表のとおり）。承諾を試みた時点で409になり、画面はその文言を表示する（§10）。
 
 **状態の変更の責務**（【確定】第8版）：参加者の状態は、次のAPI・UseCase だけが変更する。ほかのAPIでは、その状態にできない。
 
 | 変更後の状態 | 変更するAPI・UseCase | 変更前に認める状態 |
 |---|---|---|
-| ACTIVE | 招待の承諾（`POST /participant-invitations/{id}/accept`）、参加申請の承認（`POST /participation-requests/{id}/approve`） | 承諾：行なし・PENDING・CANCELLED・WITHDRAWN・REJECTED・INACTIVE、ACTIVE（同意の記録だけ）。DRAFT の行がある場合の承諾は【未決定】N11（§16.2）。承認：PENDING だけ（既存の `Participant::approve()`） |
+| ACTIVE | 招待の承諾（`POST /participant-invitations/{id}/accept`）、参加申請の承認（`POST /participation-requests/{id}/approve`） | 承諾：行なし・PENDING・CANCELLED・WITHDRAWN・REJECTED・INACTIVE、ACTIVE（同意の記録だけ）。同じ種別の DRAFT の行がある場合は409（第9版、N11）。承認：PENDING だけ（既存の `Participant::approve()`） |
 | PENDING | 参加申請（`POST /participation-requests`） | 行なし・CANCELLED・REJECTED・WITHDRAWN・INACTIVE（行の再利用。U13）。DRAFT・ACTIVE・PENDING は409（N1） |
 | REJECTED | 参加申請の却下（`POST /participation-requests/{id}/reject`） | PENDING だけ（既存の `Participant::reject()`） |
-| CANCELLED | 管理者の削除（`DELETE /participants/{id}`） | 【未決定】N10（§16.2。現在のコードは状態を確認していない） |
+| CANCELLED | 管理者の削除（`DELETE /participants/{id}`） | ACTIVE・INACTIVE（CANCELLED は冪等）。PENDING・DRAFT・REJECTED・WITHDRAWN は409（第9版、N10。現在のコードは状態を確認していないため変更する） |
 | WITHDRAWN | 本人の辞退（`POST /participants/{id}/withdraw`） | ACTIVE だけ（§7.2） |
-| INACTIVE | `PUT /participants/{id}`（`status: "INACTIVE"`） | ACTIVE（INACTIVE は冪等） |
+| INACTIVE | `PUT /participants/{id}`（`status: "INACTIVE"`） | ACTIVE（INACTIVE は冪等。ほかの状態の同じ値の指定も冪等で、遷移ではない。N9） |
 | DRAFT | なし（作らない・戻さない） | — |
 
 - DRAFT の行は、既存の状態のまま残す。`PUT` で DRAFT を作ること・DRAFT から別の状態に戻すことは認めない。参加申請でも DRAFT を PENDING にしない（N1）。
@@ -626,7 +682,7 @@
 - **有効な値**：現在の状態にかかわらず、そのまま保存される（DRAFT の行の唯一の作成経路。CANCELLED などを ACTIVE に戻せる P5 も、この経路）。
 - **ACTIVE → INACTIVE での担当者の役割の解除**：現在のコードにはない（`UpdateParticipantUseCase`・`CancelParticipantUseCase` とも、担当者の行を扱わない）。R14-B で `ParticipantDelegateRoleReleaser` を加える（§4.6・§7.4）。
 - **`status` 以外の項目の更新が状態を変えるか**：現在は、`status` が必須で毎回 `changeStatus()` が呼ばれるため、氏名・備考などだけを更新したくても、送った `status` の値で状態が上書きされる（画面は常に `status: 'ACTIVE'` を送っている）。N6 の後は、`status` を送らなければ状態は変わらない。`changeParticipantType()`・`changeRemarks()` は状態を変えない。
-- **関連して見つかった点**（【未決定】、§16.2）：`remarks` を送らないと、`stringOrNull(null)` で null になり、既存の備考が消える（N8）。`participant_type` を、同じ人物の別の種別の行がある種別に変えると、UNIQUE キーに当たり、現在は保存の失敗が握りつぶされて200が返る（N7。R14-B では N2 の保存の失敗の検出で500になる）。
+- **関連して見つかった点**（第8版で【未決定】、第9版で解決）：`remarks` を送らないと、`stringOrNull(null)` で null になり、既存の備考が消える（N8 で「送らなければ保持」に変更）。`stringOrNull()` は文字列でない値も文字列に変換して受け付ける（N8 で422に変更）。`participant_type` を、同じ人物の別の種別の行がある種別に変えると、UNIQUE キーに当たり、現在は保存の失敗が握りつぶされて200が返る（N7 で409に変更）。`CancelParticipantUseCase` は状態を確認せずに CANCELLED にする（N10 で変更）。
 
 ### 5.3 招待の制約
 
@@ -968,8 +1024,8 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | `POST /participant-invitations/{id}/resend` | 公演の状態（D5）・招待者の権限（INVITER_REVOKED なら409）・招待1件あたりの上限・30日間の上限を確認する。期限を再送の時点から7日に更新し、送信の記録を追加する（トークンは差し替えない。第6版）。上限を超えれば429 |
 | `GET /participant-invitations/resolve?token=` | **廃止**（ルートを削除する）。第5版で代わりに設けるとしていた `POST /participant-invitations/registration-hint`・`POST /participant-invitations/lookup` も、**第6版で廃止**（設けない。U5＝C案）。トークンで招待を照会する経路は、どのAPIにも残さない |
 | `POST /auth/email/register` の `invitation_token` | **第6版で処理しない**。値が送られても無視し、メールを確認済みにせず、招待も探さない（応答は、`invitation_token` がない場合と同じ）。登録した人は通常のメール確認を行う。古いアプリ・古いリンクから送られても、招待の内容は分からない |
-| `PUT /participants/{id}` | 【確定】第8版、N6：`status` で指定できる状態の変更は ACTIVE → INACTIVE だけ（INACTIVE → INACTIVE は冪等）。ほかの状態の指定は422 `stageart_participant_status_change_not_allowed`、INACTIVE → ACTIVE は422 `stageart_participant_status_requires_consent`。`status` を送らない場合は状態を変えない。null・空文字・未知の値は422 `stageart_participant_invalid`。INACTIVE にした場合は、同じトランザクションで担当者の役割を解除し、監査ログを記録する（§4.6）。ロックは §5.4。詳細と状態ごとの責務は §5.2。画面は `status` を送らないようにする。`remarks`・`participant_type` の扱いは【未決定】N7・N8（§16.2） |
-| `DELETE /participants/{id}` | 既存どおり CANCELLED にする。担当者の役割を解除する（§4.6）。行・出欠・会計の記録は削除しない |
+| `PUT /participants/{id}` | 【確定】第8版、N6：`status` で指定できる状態の変更は ACTIVE → INACTIVE だけ（INACTIVE → INACTIVE は冪等）。ほかの状態の指定は422 `stageart_participant_status_change_not_allowed`、INACTIVE → ACTIVE は422 `stageart_participant_status_requires_consent`。`status` を送らない場合は状態を変えない。null・空文字・未知の値は422 `stageart_participant_invalid`。INACTIVE にした場合は、同じトランザクションで担当者の役割を解除し、監査ログを記録する（§4.6）。ロックは §5.4。詳細と状態ごとの責務は §5.2。画面は `status` を送らないようにする。【確定】第9版：現在と同じ状態の指定は冪等な成功（N9）。`participant_type` は必須で、変更先の種別に同じ公演・同じ対象の行があれば409 `stageart_participant_type_conflict`（DBの UNIQUE 制約の違反も409、ほかの保存の失敗は500、PUT 全体をロールバック。実際に変われば `TYPE_CHANGED`）（N7）。`remarks` は、送らなければ保持、null・空文字は NULL、文字列はその値、不正な型は422（N8）。詳細は §5.2 |
+| `DELETE /participants/{id}` | 【確定】第9版、N10：ACTIVE・INACTIVE の行を CANCELLED にする（204）。CANCELLED は冪等（204、副作用なし）。PENDING・DRAFT・REJECTED・WITHDRAWN は409 `stageart_participant_cancel_not_allowed`（参加申請の終了は却下のAPIを使う）。ACTIVE の削除では、同じトランザクションで担当者の役割を解除し（§4.6）、監査ログを記録する。失敗したら全体をロールバックする。行・出欠・会計の記録は削除しない。詳細は §5.2 |
 | `GET /productions/{id}/participants` | §7.3 のとおり、個人情報を絞る。各行に `enrollment_source`・`consent_status`（CONFIRMED／UNCONFIRMED／NOT_APPLICABLE）・`consented_at` を追加する（§4.5） |
 | 参加申請の作成・承認・却下 | §5.4 の順にロックし、参加者の行を読み直してから処理する。承認・却下は、PENDING でなければ409 `stageart_participant_request_not_pending`（§4.7）。作成時に、新しく行を作る場合は `enrollment_source=JOIN_REQUEST` を記録し、`requested_at` を記録する |
 | 参加申請の作成（既存の行がある場合）（第6版、U13＝A＋C案） | 同じ組（公演・PERSON・本人・種別）の行を `SELECT … FOR UPDATE` で読む。CANCELLED・REJECTED・WITHDRAWN・INACTIVE なら、**その行を PENDING に戻す**（新しい行を作らない。参加者IDは変わらない。§5.2）。ACTIVE・PENDING なら409 `stageart_participant_already_exists`（既存どおり）。DRAFT も409（DRAFT を PENDING に変えない。第7版、N1）。応答の `id` は、保存した行のID |
@@ -1013,13 +1069,13 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
   2. 招待を FOR UPDATE でロックする。
   3. 招待が既に ACCEPTED で、`invitee_person_id` が本人なら、最初の結果をそのまま返す（冪等。通知・監査ログは追加しない）。
   4. §4.3 の承諾の条件を確認する。公演の終了（D5）・招待者の権限喪失（D3）なら、招待を CANCELLED にし、`close_reason`・`closed_at` を記録する（§5.1）。INVITER_REVOKED で `revocation_notified_at` が NULL なら、それも記録する（§11.5）。監査ログ `INVITATION_CLOSED` を記録して、コミットしてから409を返す。コミットの後に、PrimaryManager へ通知する（このトランザクションで `revocation_notified_at` を記録した場合だけ）。
-  5. 参加者の行を FOR UPDATE で読み、同じ (公演, PERSON, 本人, 種別) の行の有無と状態に応じて、作成・再有効化・承認・同意の記録をする（§5.2）。`display_name` には、管理者が入力した `invited_name` を使う（既存の方針）。`enrollment_source` は、新しく行を作る場合だけ INVITATION にする。
+  5. 参加者の行を FOR UPDATE で読み、同じ (公演, PERSON, 本人, 種別) の行の有無と状態に応じて、作成・再有効化・承認・同意の記録をする（§5.2）。**その行が DRAFT なら、409 `stageart_participant_draft_exists` を返し、ロールバックする**（第9版、N11。DRAFT の行・招待は変えず、参加者の行も作らない。種別が異なる DRAFT の行は判定に使わない）。`display_name` には、管理者が入力した `invited_name` を使う（既存の方針）。`enrollment_source` は、新しく行を作る場合だけ INVITATION にする。
   6. 参加者が ACTIVE でない状態から ACTIVE になった場合は、本人のこの公演での担当者の行のうち ACTIVE のものを INACTIVE にする（§4.6 `DORMANT_ON_ENROLLMENT`）。
   7. 招待を ACCEPTED にし、`invitee_person_id`・`responded_at`・`participant_id` を記録する。
   8. 監査ログを記録する（`ACCEPTED`、必要に応じて `CONSENT_RECORDED`・`DELEGATE_DEACTIVATED`）。
 - コミットした後に、招待者へ通知する（§11）。
 - 応答：200。項目は `participant_id`・`production_id`・`status=ACTIVE`。
-- エラー：403（アカウントが無効・アドレスが未確認。内容は返さない）、404 `stageart_participant_invitation_not_found`（存在しない、または本人宛てでない招待。上記）、409 `stageart_participant_invitation_not_pending`（取消済み・辞退済み・処理済み）、409 `stageart_participant_invitation_closed`（`close_reason` 付き。公演の終了・招待者の権限喪失）、410 `stageart_participant_invitation_expired`、429（レート制限）、500（DBへの保存の失敗。§7.4。成功を返さない）。
+- エラー：403（アカウントが無効・アドレスが未確認。内容は返さない）、404 `stageart_participant_invitation_not_found`（存在しない、または本人宛てでない招待。上記）、409 `stageart_participant_invitation_not_pending`（取消済み・辞退済み・処理済み）、409 `stageart_participant_invitation_closed`（`close_reason` 付き。公演の終了・招待者の権限喪失）、409 `stageart_participant_draft_exists`（同じ種別の DRAFT の参加者の行がある。第9版、N11。招待は PENDING のまま）、410 `stageart_participant_invitation_expired`、429（レート制限）、500（DBへの保存の失敗。§7.4。成功を返さない）。
 - 応答に `Cache-Control: no-store` を付ける（§9.2）。
 
 **`POST /participant-invitations/{id}/reject`**（ログイン必須）
@@ -1225,12 +1281,12 @@ Dev の確認（§17.6）で、ConoHa の nginx は、`Cache-Control` のない2
 
 | 画面 | 変更 |
 |---|---|
-| 公演のメンバー管理（`productions/[id]/participants.tsx`） | 「メンバーを追加」を「メンバーを招待」に変える。結果の文言は「招待メールを送信しました。本人が承諾するとメンバーに追加されます」と「承諾待ちの招待に再送しました」の2種類にする（「メンバーを追加しました」をなくす）。「招待中のメンバー」の表に、承諾待ち・期限切れ・無効（公演終了／招待者の権限なし）・辞退（再招待できる日時）・取消の状態、送信の状態（送信中・送信済み・送信失敗・送信結果不明）、この招待の再送の残り回数、30日間の残り送信回数、再送・取消の操作を表示する。参加者の一覧に「同意未確認（旧方式）」の表示と、「同意の確認を依頼」の操作を加える（§4.5）。更新時に `status: 'ACTIVE'` を送らないようにする。PERSON・ORGANIZATION を直接追加する操作をなくす（D10） |
+| 公演のメンバー管理（`productions/[id]/participants.tsx`） | 「メンバーを追加」を「メンバーを招待」に変える。結果の文言は「招待メールを送信しました。本人が承諾するとメンバーに追加されます」と「承諾待ちの招待に再送しました」の2種類にする（「メンバーを追加しました」をなくす）。「招待中のメンバー」の表に、承諾待ち・期限切れ・無効（公演終了／招待者の権限なし）・辞退（再招待できる日時）・取消の状態、送信の状態（送信中・送信済み・送信失敗・送信結果不明）、この招待の再送の残り回数、30日間の残り送信回数、再送・取消の操作を表示する。参加者の一覧に「同意未確認（旧方式）」の表示と、「同意の確認を依頼」の操作を加える（§4.5）。更新時に `status: 'ACTIVE'` を送らないようにする。PERSON・ORGANIZATION を直接追加する操作をなくす（D10）。第9版：削除の操作は ACTIVE・INACTIVE の行にだけ表示する（PENDING の申請は「却下」を使う。N10）。種別の変更で409 `type_conflict` のときは「この人は、変更先の区分で既にこの公演に登録されています」と表示する（N7）。備考を空にして保存すると備考を消去する（N8） |
 | 送信の上限に達したとき | 作成・再送のボタンを無効にし、「このメールアドレスへの送信は30日間で6回までです。{available_at}以降に送信できます」と表示する。招待1件の上限では「この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません」と表示する |
 | 送信の状態の表示 | 送信済み：「送信しました（相手に届いたかどうかは確認できません）」。送信失敗：「送信に失敗しました。再送してください（再送も送信回数に数えます）」。送信結果不明：「送信の結果を確認できませんでした。メールが届いていない場合は再送してください」 |
 | 担当者（`productions/[id]/delegates.tsx`） | 人物IDの自由入力欄を削除し、同意が確認できる ACTIVE な PERSON 参加者の候補からの選択だけにする。一覧を「有効な担当者」と「無効な担当者」に分け、無効な理由（同意未確認・メンバーではない・解除済み）と、次の操作（同意の確認を依頼・招待）を表示する（§4.6） |
 | 招待一覧（新設：`(app)/participant-invitations/index.tsx`、URL `/participant-invitations`。第6版） | 招待メールのリンク先。ログインが必要な画面にし、未ログインならログイン画面へ移動する（ログイン後の移動先は `/participant-invitations`）。未ログインの時点では、招待の存在・内容を一切表示しない。ログイン後、`GET /me/participant-invitations` の招待（本人の確認済みアドレス宛てだけ）を一覧にする。空のときは「招待が見つからない場合は、招待メールを受け取ったメールアドレスでログインしてください。登録したばかりの場合は、メールアドレスの確認を済ませてください」と表示する |
-| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 招待一覧から開く。公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。表示には一覧APIの項目を使い、データがなければ一覧APIを再取得する（【確定】第7版、N5。§7.2）。一覧にない招待IDでは、詳細を表示せず、期限切れ・処理済み・存在しないを区別しない共通の案内を表示して、招待一覧へ戻す。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。承諾・辞退の操作の結果は、APIの応答で判定し、404（本人宛てでない・存在しない）・410（期限切れ）・409（処理済み）は、それぞれの文言を表示する |
+| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 招待一覧から開く。公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。表示には一覧APIの項目を使い、データがなければ一覧APIを再取得する（【確定】第7版、N5。§7.2）。一覧にない招待IDでは、詳細を表示せず、期限切れ・処理済み・存在しないを区別しない共通の案内を表示して、招待一覧へ戻す。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。承諾・辞退の操作の結果は、APIの応答で判定し、404（本人宛てでない・存在しない）・410（期限切れ）・409（処理済み）は、それぞれの文言を表示する。409 `participant_draft_exists`（第9版、N11）では「この公演での参加の情報に確認が必要なため、承諾できません。公演の管理者に問い合わせてください」と表示する（招待は承諾待ちのまま残る） |
 | 自分宛ての招待（ホーム） | 承諾できる招待があれば、ホームに件数と、招待一覧へのリンクを表示する。招待作成時のアプリ内通知はないため、これが登録済みの人への主な導線になる |
 | 登録（`register.tsx`） | メールアドレスは本人が入力する（招待から初期値を取得しない。第6版）。登録の後は通常のメール確認の画面へ進み、確認が済んだら招待一覧へ移動できるようにする。自動では参加させない。古いリンク（`/register?token=`）で開かれた場合は、トークンを読まず、処理せず、すぐにURLから取り除いて、通常の登録・ログインの導線に乗せる（招待の内容は表示しない） |
 | ログイン（既存） | 招待一覧から来た場合は、ログイン後に `/participant-invitations` へ戻る（`return_to`）。`return_to` は、アプリ内のパスだけを受け付けるよう検証する（R13 Medium の修正を同時に行う）。`return_to` にトークンなどを入れない |
@@ -1569,10 +1625,42 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T143 | ACTIVE の行に `status: "CANCELLED"` | 同上（削除は `DELETE` を使う） |
 | T144 | ACTIVE の行に `status: "WITHDRAWN"` | 同上（本人の辞退は `withdraw` を使う） |
 | T145 | INACTIVE の行に `status: "ACTIVE"` | 422 `status_requires_consent`。行は INACTIVE のまま |
-| T146 | DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN の各行に、`PUT` で各状態（ACTIVE・INACTIVE を含む）を指定する | すべて422。行の状態は変わらない |
+| T146 | DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN の各行に、`PUT` で**現在と異なる**各状態（ACTIVE・INACTIVE を含む）を指定する（第9版で N9 と整合） | すべて422。行の状態は変わらない（現在と同じ状態の指定は T161・T162） |
 | T147 | `status` を含まない `PUT`（`participant_type`・`remarks` だけ）を、ACTIVE・INACTIVE の行に送る | 状態は変わらない。担当者の行・監査ログ（状態の変更）も変わらない |
 | T148 | `status` に null・空文字・未知の値（例：`"FOO"`）・文字列でない値を送る | 422 `stageart_participant_invalid`。ほかの項目も更新されない |
 | T149 | ACTIVE（担当者を兼ねる、同意済み）の行を `PUT` で INACTIVE にする | 同じトランザクションで、その人物のこの公演での担当者の行がすべて INACTIVE になり、権限が止まる。監査ログ `DEACTIVATED` と `DELEGATE_DEACTIVATED`（`detail.reason=PARTICIPANT_DEACTIVATED`）が記録される。担当者の行の更新が失敗したら、全体がロールバックされる（§7.4） |
+
+**`PUT` の種別・備考・同じ状態の指定、`DELETE`、DRAFT と承諾（【確定】第9版、N7〜N11）**
+
+| # | ケース | 期待 |
+|---|---|---|
+| T150 | （N7）同じ人物の別の種別の行（状態を問わない）がある種別へ `participant_type` を変える | 409 `stageart_participant_type_conflict`。対象の行・変更先の既存の行（状態・参加者ID・履歴）は変わらない |
+| T151 | （N7）T150 と同じ PUT に `remarks`・`status: "INACTIVE"` も含める | 409。備考・状態・担当者の行・監査ログのどれも変わらない（全体のロールバック） |
+| T152 | （N7）衝突しない種別へ変える | 200。種別が変わる。監査ログ `TYPE_CHANGED`（変更前・変更後）。参加者ID・状態・同意の記録・担当者の行は変わらない |
+| T153 | （N7）現在と同じ種別を指定する | 200（冪等）。`TYPE_CHANGED` は記録されない |
+| T154 | （N7）事前の確認の後、保存の前に、別の接続が変更先の組の行を作る（並行・DBの失敗の差し込み） | 保存で UNIQUE 制約の違反（1062）になり、409 `type_conflict` に変換される。全体がロールバックされる |
+| T155 | （N7）種別の変更の保存で、UNIQUE 制約の違反以外の失敗が起きる | 500 `stageart_persistence_failed`。全体がロールバックされる |
+| T156 | （N8）`remarks` を含まない PUT | 既存の備考が残る |
+| T157 | （N8）`remarks: null` | 備考が NULL になる |
+| T158 | （N8）`remarks: ""` | 備考が NULL になる |
+| T159 | （N8）`remarks: "新しい備考"` | その値（前後の空白を除く）に更新される |
+| T160 | （N8）`remarks` に数値・真偽値・配列・オブジェクトを送る | 422 `stageart_participant_invalid`。種別・状態などほかの項目も更新されない |
+| T161 | （N9）ACTIVE・INACTIVE・DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN の各行に、現在と同じ `status` を指定する | すべて200（冪等）。状態は変わらない |
+| T162 | （N9）DRAFT の行に `status: "DRAFT"` と `status: "ACTIVE"`（など異なる値）を指定する | `DRAFT` は200（冪等）、異なる値は422（T146）。DRAFT から別の状態にならない |
+| T163 | （N9）担当者を兼ねる ACTIVE の行に `status: "ACTIVE"`、INACTIVE の行に `status: "INACTIVE"` | 担当者の行は変わらず、状態の変更の監査ログ（`DEACTIVATED`・`DELEGATE_DEACTIVATED`）も記録されない。`updated_at` は既存の方針どおり更新される |
+| T164 | （N9）`status` を送らない PUT と、不正な `status` の PUT | T147（状態は変わらない）・T148（422）と同じ結果になり、N9 の冪等の扱いと混同されない |
+| T165 | （N10）ACTIVE の行を `DELETE` | 204。CANCELLED になる |
+| T166 | （N10）INACTIVE の行を `DELETE` | 204。CANCELLED になる。監査ログ `REMOVED_BY_MANAGER` |
+| T167 | （N10）CANCELLED の行を、もう一度 `DELETE` | 204（冪等）。`updated_at`・担当者の行・監査ログは変わらない |
+| T168 | （N10）PENDING・DRAFT・REJECTED・WITHDRAWN の各行を `DELETE` | 409 `stageart_participant_cancel_not_allowed` |
+| T169 | （N10）T168 の拒否のとき | 参加者の行・担当者の行・監査ログは変わらない |
+| T170 | （N10）担当者を兼ねる ACTIVE の行を `DELETE` | 同じトランザクションで担当者の行が INACTIVE になり、監査ログ `REMOVED_BY_MANAGER`・`DELEGATE_DEACTIVATED`（`PARTICIPANT_REMOVED`）が記録される。担当者の行の更新か監査ログの保存が失敗したら、全体がロールバックされる（行は ACTIVE のまま） |
+| T171 | （N10）R14-B以前に INACTIVE にされ、担当者の行が ACTIVE のまま残っている行を `DELETE` | CANCELLED になり、残っていた担当者の行が INACTIVE になる（`DELEGATE_DEACTIVATED`）。既に INACTIVE の担当者の行は変わらない |
+| T172 | （N11）同じ人物・同じ種別の DRAFT の行がある人が、招待を承諾する | 409 `stageart_participant_draft_exists` |
+| T173 | （N11）T172 のとき | DRAFT の行は変わらない（状態・`updated_at` など） |
+| T174 | （N11）T172 のとき | 招待は PENDING のまま（ACCEPTED・CONSUMED にならず、`responded_at`・`invitee_person_id`・期限も変わらない）。通知・監査ログもない |
+| T175 | （N11）T172 のとき | 参加者の行は新しく作られない（その組の行は DRAFT の1行だけ） |
+| T176 | （N11）種別が異なる DRAFT の行だけがある人（例：STAFF が DRAFT で、CAST の招待を承諾） | 承諾できる（200）。CAST の行が作成または再有効化され、STAFF の DRAFT の行は変わらない |
 
 **旧方式の参加者（D2）・個人情報（D7・D11・U3）・辞退（U7）**
 
@@ -1785,7 +1873,17 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 | N6 `PUT` の状態の変更 | ACTIVE → INACTIVE だけ（INACTIVE → INACTIVE は冪等）。ほかの指定・不正な形式は422。`status` を送らなければ状態を変えない | §5.2、§7.1、§14 |
 | 状態の変更の責務 | CANCELLED：管理者の削除、WITHDRAWN：本人の辞退、PENDING：参加申請、REJECTED：申請の却下、ACTIVE：招待の承諾・申請の承認、INACTIVE：`PUT`、DRAFT：作らない・戻さない | §5.2 |
 
-### 16.2 未解決事項の状態（第4版、第6版で更新）
+**第9版で確定した事項（ユーザー判断）**
+
+| 事項 | 確定方針 | 反映した節 |
+|---|---|---|
+| N7 `PUT` の種別の変更 | 衝突は409 `stageart_participant_type_conflict`（DBの UNIQUE 制約の違反も409に変換）。それ以外の保存の失敗は500。PUT 全体をロールバック。実際に変わったときだけ `TYPE_CHANGED` | §5.2、§7.1、§14 |
+| N8 `PUT` の `remarks` | 送らなければ保持、null・空文字は NULL、文字列はその値、不正な型は422 | §5.2、§7.1、§14 |
+| N9 同じ状態の指定 | 有効な状態の同じ値の指定は冪等な成功で、状態の遷移ではない | §5.2、§7.1、§14 |
+| N10 `DELETE` | ACTIVE・INACTIVE → CANCELLED。CANCELLED は冪等。PENDING・DRAFT・REJECTED・WITHDRAWN は409 `stageart_participant_cancel_not_allowed` | §5.2、§7.1、§10、§14 |
+| N11 DRAFT と招待の承諾 | 同じ種別の DRAFT の行があれば409 `stageart_participant_draft_exists`。DRAFT の行・招待は変えない | §5.2、§7.2、§10、§14 |
+
+### 16.2 未解決事項の状態（第4版、第6版〜第9版で更新）
 
 | # | 事項 | 状態 | 扱い・理由 | 決定者 |
 |---|---|---|---|---|
@@ -1821,15 +1919,17 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 |---|---|---|---|
 | N6 | `PUT /participants/{id}` で任意の `status` にできる経路 | **解決（第8版）** | `PUT` で指定できる状態の変更は ACTIVE → INACTIVE だけ（INACTIVE → INACTIVE は冪等）。ほかは422。`status` を送らなければ状態を変えない。不正な形式は422。状態ごとの変更の責務を1つのAPI・UseCase に集約する（§5.2、§7.1、T138〜T149） |
 
-**【未決定】第8版の改訂（最終レビューの確認）で見つかった事項**（設計者は仕様を決めていない。ユーザーの判断を待つ）
+**第8版の改訂（最終レビューの確認）で見つかった事項（N7〜N11）と、その判断**（第9版でユーザーが判断した。すべて解決）
 
-| # | 事項 | 内容 |
-|---|---|---|
-| N7 | `PUT` で `participant_type` を変えたときの UNIQUE キーの衝突 | 同じ人物の別の種別の行がある種別に変えると、UNIQUE キー（公演・対象・種別）に当たる。現在は保存の失敗が握りつぶされて200が返る。R14-B では N2 の保存の失敗の検出で500になる。事前に確認して409などの専用のエラーにするか |
-| N8 | `PUT` で `remarks` を送らない場合 | 現在は null として扱われ、既存の備考が消える（`participant_type` は実質的に必須）。N6 で `status` は「送らなければ変えない」になったが、ほかの項目を同じ扱い（送らなければ変えない）にするか |
-| N9 | 現在と同じ状態の指定 | ACTIVE の行への `status: "ACTIVE"`（現在の画面は常にこれを送る）と、DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN の行への同じ値の指定を、冪等として許可するか、422にするか（N6 の表は INACTIVE → INACTIVE だけを冪等と定めている）。画面は R14-B で `status` を送らないようにする（§10）ため、画面の動作には影響しない |
-| N10 | 管理者の削除（`DELETE /participants/{id}`、CANCELLED）を認める状態 | 現在のコード（`CancelParticipantUseCase`）は状態を確認せず、どの状態からでも CANCELLED にする（PENDING の申請・WITHDRAWN・REJECTED・DRAFT・INACTIVE を含む）。§5.2 の遷移の表は ACTIVE → CANCELLED だけを挙げている。どの状態から認めるか（例：ACTIVE・INACTIVE だけ） |
-| N11 | DRAFT の行がある人の招待の承諾 | N1 で参加申請は409にしたが、招待の承諾で DRAFT の行を ACTIVE にするか（§5.2 の承諾の再利用の表は CANCELLED・WITHDRAWN・REJECTED・INACTIVE・PENDING を挙げ、DRAFT を挙げていない） |
+| # | 事項 | 状態 | 判断の内容 |
+|---|---|---|---|
+| N7 | `PUT` で `participant_type` を変えたときの UNIQUE キーの衝突 | **解決（第9版）** | 変更は認める。変更先の種別に同じ公演・同じ対象の行があれば409 `stageart_participant_type_conflict`。事前の確認だけに依存せず、DBの UNIQUE 制約の違反も409に変換する。それ以外の保存の失敗は500。衝突のときは PUT 全体をロールバックする。実際に変わったときだけ `TYPE_CHANGED`。同じ種別の指定は冪等（§5.2、T150〜T155） |
+| N8 | `PUT` で `remarks` を送らない場合 | **解決（第9版）** | 送らなければ保持、null・空文字は NULL、文字列はその値、不正な型は422（ほかの項目も更新しない）。`participant_type` は引き続き必須（§5.2、T156〜T160） |
+| N9 | 現在と同じ状態の指定 | **解決（第9版）** | 有効な状態で、現在と同じ値の指定は冪等な成功（状態の遷移ではない。状態・担当者・状態の変更の監査ログは変えない。`updated_at` は既存の方針どおり更新）。DRAFT → DRAFT を認めても、DRAFT の作成・復帰・別の状態への変更は認めない（§5.2、T161〜T164） |
+| N10 | 管理者の削除（`DELETE /participants/{id}`）を認める状態 | **解決（第9版）** | ACTIVE・INACTIVE → CANCELLED。CANCELLED は冪等（副作用なし）。PENDING・DRAFT・REJECTED・WITHDRAWN は409 `stageart_participant_cancel_not_allowed`。PENDING の申請の終了は却下のAPIを使う（§5.2、T165〜T171） |
+| N11 | DRAFT の行がある人の招待の承諾 | **解決（第9版）** | 同じ種別の DRAFT の行があれば409 `stageart_participant_draft_exists`。DRAFT の行・招待は変えず、参加者の行も作らない。種別が異なる DRAFT の行だけでは拒否しない（§5.2、§7.2、T172〜T176） |
+
+- 第9版の時点で、【未決定】の事項は残っていない。
 
 **PR #7 の Production への適用の前の必須の確認**（【確定】第7版、N3。R14-Bの対象外）
 
