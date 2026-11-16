@@ -7,6 +7,7 @@
 - 改訂：2026-11-16（第5版、`f6cdfa6`）。第4版の再レビュー結果と、ユーザーの判断（U10）を反映した。
 - 追記：2026-11-16（第5版への追記、`b285965`）。実装前の事前検証（§15の0：U4・U5・U9・U13）の結果と、第5版レビューで残った3点の対応案を §17 に記録した。
 - 改訂：2026-11-16（第6版）。事前検証の結果に対するユーザーの判断（U5＝C案、U13＝A＋C案、§17.5 の3点の採用、U4＝個人宛てAPIの `Cache-Control: no-store` の必須化）を本文に反映した。Dev での追加確認（U4）の結果を §17.6 に記録した。
+- 改訂：2026-11-16（第7版）。第6版のレビュー結果と、ユーザーの判断（N1〜N5）を反映した。個人宛てAPIの `no-store` のテストの範囲を補強し、Dev の検証用アカウントの残存の確認結果を §17.6 に追記した。
 - 対象：Head `c6480c2`（R14-A後）、スキーマ1.48.0
 - 状態：**設計のみ（未実装）**。第5版の最終レビューの後に、実装を始めるかを判断する。
 - 確定方針（R14-B指示書 §3）：
@@ -22,6 +23,17 @@
 - 【推奨】：設計者の提案。再レビューで否定されなければ実装する。
 - 【未解決】：実装前に確認または判断が必要な事項。§16.2 に一覧と決定者がある。
 - 【未決定】：第6版の改訂で見つかり、ユーザーの判断を待つ事項。設計者は仕様を決めていない（§16.2 の末尾）。
+
+### 第7版の主な変更点
+
+| 項目 | 内容 | 主な節 |
+|---|---|---|
+| N1 DRAFT からの再申請 | 【確定】認めない。DRAFT の行がある場合、参加申請は409で拒否し、DRAFT を自動で PENDING にしない。DRAFT の行の作成経路の調査結果を記録した | §5.2、§16.2 |
+| N2 保存の失敗の検出の範囲 | 【確定】R14-Bで変更・新設する Repository に限る。それ以外は別の課題（Repository の保存の失敗の検出の横断的な監査）として記録した | §7.4、§16.2 |
+| N3 `PublicResponseCachePolicy` | 【確定】R14-Bの対象外。ただし、PR #7 を Production に適用する前の必須の確認事項とした | §16.2、§16.3 |
+| N4 `requested_at` | 【確定】追加する（スキーマ1.49.0） | §5.2、§6.1、§6.5 |
+| N5 招待確認画面 | 【確定】一覧APIの項目を使う。招待1件を取得するAPIは設けない。一覧にない招待IDを開いた場合の扱いを明記した | §7.2、§10 |
+| U4 `no-store` のテスト | 対象（R14-Bで追加・変更する個人宛てAPIのすべて）と、既存の `/me` 系9つのAPIの回帰の確認を、§9.2 とテスト（T66・T135）で一致させた | §9.2、§14 |
 
 ### 第6版の主な変更点
 
@@ -542,12 +554,19 @@
 
 - 参加者のUNIQUEキー `(production_id, subject_type, subject_id, participant_type)` は変更しない。同じ組の行は、状態にかかわらず1行だけで、**新しい参加者IDを発行して同じ組の行を追加することはしない**。
 - 招待の承諾と参加申請は、どちらも、同じ組の行を `SELECT … FOR UPDATE` で読み、行があれば、その行の状態を変える（参加者IDは変わらない）。
-  - 参加申請：CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING。ACTIVE・PENDING なら、既存どおり409 `stageart_participant_already_exists`。
+  - 参加申請：CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING。ACTIVE・PENDING なら、既存どおり409 `stageart_participant_already_exists`。DRAFT も409（第7版、N1。下記）。
   - 招待の承諾：上の表のとおり ACTIVE にする（PENDING の申請中の行も含む。§4.7）。
 - 参加者IDが変わらないため、過去の出欠・精算などの記録は、同じ参加者IDにつながったまま残る（削除・変更しない）。再参加の前後は、監査ログで区別する（下記）。
 - 監査ログ：再申請は `JOIN_REQUESTED`、再参加（承諾）は `ACCEPTED` を記録し、`detail` に `previous_status`（再利用の前の状態）と `reused_participant=true` を入れる。これで、再申請・再参加の前後の状態を追跡できる。
 - 行が既にある場合の判定と状態の変更は、公演の行ロック（§5.4）の中で行うため、同時の申請・承諾で、行が2つになったり、状態が食い違ったりしない。UNIQUEキーは最後の防御として残る（それでも重複になった場合は、DBの失敗として扱い、成功を返さない。§7.4）。
-- 【未決定】参加者の状態の DRAFT（`ParticipantStatus::DRAFT`）の行からの再申請を認めるか。現在のコードで DRAFT の行がどの経路で作られるかは、未調査。
+- **DRAFT の行からの再申請は認めない**（【確定】第7版、N1）。同じ組に DRAFT（`ParticipantStatus::DRAFT`）の行がある場合、参加申請は409 `stageart_participant_already_exists` で拒否する。DRAFT を自動で PENDING に変えない。将来必要になった場合は、別に仕様を決める。
+  - **DRAFT の行の作成経路の調査**（第7版。`c6480c2` のコードを読んだもの）：
+    - 参加者を作る処理（`Participant::create()`・`createNameOnly()`・`requestParticipation()`）は、ACTIVE か PENDING で作り、DRAFT では作らない（`Participant` の docblock：「確定の手順がないため、作成時は DRAFT ではなく ACTIVE にする」）。
+    - 表の定義（`Installer`）の `status` の既定値は `'ACTIVE'`。Migration（`Installer`・`SchemaUpgrader`）で参加者の行を INSERT・UPDATE する処理はない。
+    - **唯一の経路**：`PUT /participants/{id}`（`UpdateParticipantUseCase`）が、送られた `status` をそのまま `ParticipantStatus::fromString()` → `Participant::changeStatus()` に渡す。`changeStatus()` には遷移の制限がなく、DRAFT も有効な値のため、管理者（`canManageParticipants`）がAPIで `status: "DRAFT"` を送ると、行が DRAFT になる。
+    - アプリの画面（`productions/[id]/participants.tsx`）は、更新のときに常に `status: 'ACTIVE'` を送るため、画面から DRAFT になることはない。
+    - Dev・Production に DRAFT の参加者の行があるかは、確認していない（実データの確認には承認が必要）。
+  - 【未決定】N6：`PUT /participants/{id}` で `status` を DRAFT（と PENDING・REJECTED・CANCELLED・WITHDRAWN）にできる経路を閉じるか（§7.1 の `PUT` の行は「ACTIVE 以外から ACTIVE への変更を拒否する」だけで、ほかの値への変更は定めていない）。設計者の推奨は、`PUT` で受け付ける `status` の変更を INACTIVE だけにし、それ以外は422にすること。
 
 ### 5.3 招待の制約
 
@@ -639,7 +658,7 @@
 | `enrollment_source` | VARCHAR(20) NULL | 最初に行が作られた経路：INVITATION／JOIN_REQUEST／MANAGER_RECORD。以後は変更しない。NULL は R14-B以前の行 |
 | `consent_source` | VARCHAR(20) NULL | 本人が同意した経路（直近）：INVITATION／JOIN_REQUEST。NULL は同意の記録なし |
 | `consented_at` | DATETIME NULL | 本人が同意した日時（直近）。NULL は同意の記録なし |
-| `requested_at` | DATETIME NULL | R14-B以降の参加申請の日時（直近の申請）【推奨】（第6版で追加）。申請で行を再利用すると、`created_at` は最初の行の作成日時のままになるため、承認時の `consented_at`（申請の日時）の根拠として使う（§5.2）。NULL は R14-B以前の申請、または申請でない行 |
+| `requested_at` | DATETIME NULL | R14-B以降の参加申請の日時（直近の申請）（【確定】第7版、N4）。新しい申請では申請の日時を、再申請（行の再利用）では今回の申請の日時を記録する。承認時の `consented_at` の根拠にする（§5.2）。**`created_at` で代用しない**（再申請では最初の行の作成日時のままになるため）。NULL は R14-B以前の申請、または申請でない行で、**NULL を同意済みとみなさない** |
 
 - 既存の行は、4列とも NULL のまま（値を入れない）。
 - 担当者の有効性の判定（§4.6）のため、`KEY production_subject_status (production_id, subject_type, subject_id, status)` を追加する【推奨】（既存のUNIQUEキーで足りるかは実装時に確認する）。
@@ -760,7 +779,7 @@ CREATE TABLE {prefix}stageart_participant_events (
 
 ### 6.5 Migration（`Installer`、スキーマ1.48.0 → 1.49.0）
 
-1. `dbDelta` で、6.1の列とインデックス（招待の `current_send_id`、参加者の `requested_at` を含む）、6.2の送信の記録、6.3の監査ログ、§9.2 のレート制限の表を追加する。
+1. `dbDelta` で、6.1の列とインデックス（招待の `current_send_id`、参加者の `requested_at DATETIME NULL` を含む）、6.2の送信の記録、6.3の監査ログ、§9.2 のレート制限の表を追加する。参加者の `requested_at` は、既存の行では NULL のまま（値を入れない）。
 2. **データの更新はしない**（UPDATE・DELETE文を実行しない）。
    - 既存の PENDING の招待は、そのまま承諾待ちとして扱う。期限（24時間で作られたもの）は既存の値のまま（D4）。
    - 既存の CONSUMED は終端として残す。
@@ -893,7 +912,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | `DELETE /participants/{id}` | 既存どおり CANCELLED にする。担当者の役割を解除する（§4.6）。行・出欠・会計の記録は削除しない |
 | `GET /productions/{id}/participants` | §7.3 のとおり、個人情報を絞る。各行に `enrollment_source`・`consent_status`（CONFIRMED／UNCONFIRMED／NOT_APPLICABLE）・`consented_at` を追加する（§4.5） |
 | 参加申請の作成・承認・却下 | §5.4 の順にロックし、参加者の行を読み直してから処理する。承認・却下は、PENDING でなければ409 `stageart_participant_request_not_pending`（§4.7）。作成時に、新しく行を作る場合は `enrollment_source=JOIN_REQUEST` を記録し、`requested_at` を記録する |
-| 参加申請の作成（既存の行がある場合）（第6版、U13＝A＋C案） | 同じ組（公演・PERSON・本人・種別）の行を `SELECT … FOR UPDATE` で読む。CANCELLED・REJECTED・WITHDRAWN・INACTIVE なら、**その行を PENDING に戻す**（新しい行を作らない。参加者IDは変わらない。§5.2）。ACTIVE・PENDING なら409 `stageart_participant_already_exists`（既存どおり）。応答の `id` は、保存した行のID |
+| 参加申請の作成（既存の行がある場合）（第6版、U13＝A＋C案） | 同じ組（公演・PERSON・本人・種別）の行を `SELECT … FOR UPDATE` で読む。CANCELLED・REJECTED・WITHDRAWN・INACTIVE なら、**その行を PENDING に戻す**（新しい行を作らない。参加者IDは変わらない。§5.2）。ACTIVE・PENDING なら409 `stageart_participant_already_exists`（既存どおり）。DRAFT も409（DRAFT を PENDING に変えない。第7版、N1）。応答の `id` は、保存した行のID |
 | 参加申請の作成（保存と Join Key の順序）（第6版） | 1つのトランザクションで、(1) 公演のロック、(2) 参加者の行の作成または更新（**保存の結果を確認する**）、(3) Join Key による申請の場合だけ、使用回数を `UPDATE … SET use_count = use_count + 1 WHERE id = %s AND status = 'ACTIVE' AND (max_uses IS NULL OR use_count < max_uses) AND (expires_at IS NULL OR expires_at > %s)` で原子的に加算する（影響した行が0なら、鍵が使えないとして404 `stageart_join_key_not_found` を返し、ロールバックする）、(4) 監査ログ、の順に行い、すべて成功したらコミットする。**どれかが失敗したらロールバックし、申請も使用回数も残さない。**申請が保存されなかったのに使用回数だけが増える状態は起きない。列名は `stageart_join_keys`（`status`・`expires_at`・`max_uses`・`use_count`）の定義で確認した。既存の `JoinKey::recordUse()` が、上限に達したときに鍵の状態も変えている動作は、同じトランザクションの中で維持する（実装時に既存の動作を確認する） |
 | `POST /productions/{id}/delegates` | 対象者を、その公演の ACTIVE な PERSON 参加者で、同意が確認できる人に限る（422 `stageart_production_delegate_target_not_participant`／`stageart_production_delegate_target_not_consented`）。同じ役割の INACTIVE の行があれば ACTIVE に戻す |
 | `GET /productions/{id}/delegates` | 各行に `effective`（bool）と `ineffective_reason`（`INACTIVE`／`NOT_ACTIVE_PARTICIPANT`／`CONSENT_UNCONFIRMED`）を追加する（§4.6） |
@@ -908,7 +927,12 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 
 - 本人の確認済みアドレス（ログイン用と通知用）に一致し、§5.1 の判定表で「本人の一覧に出す」ものを返す。具体的には、期限内の PENDING（公演の終了・招待者の権限喪失を含む）と、期限内の `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)`。後の2種類は辞退できるように含める（U7）。
 - **本人の確認済みアドレスに一致する招待だけを返す**（第6版。招待メールのリンクから来た場合も、ホームから来た場合も同じ）。一致の判定は §6.4 のとおり、SQLで候補を絞った後に PHP の完全一致で確かめる。未確認のアドレスは使わない。
-- 招待メールのリンクから開いた場合も、このAPIが唯一の入口になる（第6版で `lookup` を廃止したため）。招待確認画面は、この一覧の項目を使って表示する【推奨】（招待1件を取得する別のAPIは設けない）。
+- 招待メールのリンクから開いた場合も、このAPIが唯一の入口になる（第6版で `lookup` を廃止したため）。
+- **招待確認画面のデータ**（【確定】第7版、N5）
+  - 招待確認画面は、この一覧APIの項目を使って表示する。**招待1件を取得するAPIは新設しない。**
+  - 画面の再読み込みなどで一覧のデータが失われた場合は、この一覧APIを再取得し、その中から招待IDの項目を探す。
+  - 一覧に存在しない招待ID（URLを直接開いた場合を含む）では、招待の詳細を表示しない。期限切れ・処理済み・存在しない・本人宛てでない、を区別せず、共通の案内（例：「この招待は表示できません。招待一覧から確認してください」）を表示して、招待一覧へ戻す。
+  - 承諾・辞退の結果は、`accept`・`reject` のAPIの応答（200・404・409・410 など）で判定する。一覧の項目（`can_accept` など）は表示に使うだけで、操作の結果の判定には使わない。
 - 応答に `Cache-Control: no-store` を付ける（§9.2）。
 - 応答の項目（D7）：`id`・`production_name`・`organization_name`・`participant_type`・`invited_by_display_name`（招待者の公演側の表示名。ない場合は「公演の管理者」）・`expires_at`・`already_participant`（本人が既に ACTIVE な参加者か。本人に関する情報なので本人には返す）・`can_accept`（bool）・`can_reject`（bool）・`unavailable_reason`（`PRODUCTION_CLOSED`／`INVITER_REVOKED`／null）。
 - 返さない項目：招待先のメール、管理者が入力した氏名・備考。
@@ -989,7 +1013,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 - **DBへの保存の失敗の検出**（第6版、U13＝C案）：
   - R14-Bで変更・新設する Repository（参加者・招待・送信の記録・監査ログ・担当者・Join Key・レート制限）は、`$wpdb->insert()`・`update()`・`delete()`・`query()` の戻り値を必ず確認し、`false` なら例外（例：`PersistenceException`）を投げる。`update()` が0を返す（変更した行がない）ことは失敗ではないが、条件付きの更新（`WHERE … AND status = 'PENDING'` など）で0なら、呼び出し元が意味を判定する。
   - 例外はトランザクションの外へ伝え、`TransactionManager` がロールバックする。REST の層では500（`stageart_persistence_failed`。DBのエラー文・SQL・メールアドレスは応答とログに出さない）にし、**成功の応答（201・200）を返さない。**
-  - 【未決定】R14-Bで触れない、ほかの Repository（`$wpdb->insert()` などの戻り値を確認していないもの）の修正を、R14-Bに含めるか、別の作業にするか。
+  - **対象は、R14-Bで変更・新設する Repository に限る**（【確定】第7版、N2）。対象の Repository の `insert`・`update`・`delete`・`query` の戻り値の確認は必須。R14-Bで触れない Repository を横断的に直すことはしない。別の課題「Repository の保存の失敗の検出の横断的な監査」として記録する（§16.2）。
 - `InvitationRecipientVerifier`（Application）を新設する。`FindPersonByEmailUseCase` を使って「この招待のメールの持ち主が本人か」を判定し、UserAccount の状態も確認する。招待の取得系と承諾系で共有する。比較は §6.4 の正規化で行う。招待の作成では使わない。
 - `InvitationSendService`（仮称）を新設し、送信の上限の確認、送信の記録の追加、コミット後の送信と結果の記録（§11.3）を1か所にまとめる。作成と再送から使う。
 - 参加者の作成は、`CreateParticipantUseCase` の重複確認と作成部分を、権限確認を含まない内部サービス（例：`ParticipantEnrollmentService::enrollFromInvitation()`）に分けて共有する。外部APIの `CreateParticipantUseCase` は、NAME_ONLY 専用に縮小する。
@@ -1115,12 +1139,16 @@ CREATE TABLE {prefix}stageart_rate_limit_buckets (
 
 Dev の確認（§17.6）で、ConoHa の nginx は、`Cache-Control` のない200の応答を、`Authorization` の有無・値にかかわらずキャッシュし、別の利用者に返すことが分かった。ログイン済みの StageArt のAPIの応答には、WordPress が no-cache のヘッダーを付けるため、現在は混ざらない（§17.6 の実アカウントの確認）。この状態に依存しないよう、次を必須にする。
 
-1. 認証済みの利用者に、個人の情報・個人の状態を返すAPIは、すべて応答に `Cache-Control: no-store` を明示的に付ける（R14-Bの対象：`GET /me/participant-invitations`、`accept`、`reject`、`withdraw`、参加者一覧・担当者一覧・招待一覧（公演）、`GET /me/*` のうち R14-B で変更するもの）。
+1. 認証済みの利用者に、個人の情報・個人の状態を返すAPIは、すべて応答に `Cache-Control: no-store` を明示的に付ける。**R14-Bで追加・変更する、個人宛てのAPIのすべてが対象**（第7版で範囲を明確にした）：
+   - 本人向け：`GET /me/participant-invitations`、`POST /participant-invitations/{id}/accept`・`reject`、`POST /participants/{id}/withdraw`
+   - 管理者向け（招待先・参加者・担当者の個人の情報を含む）：`GET /productions/{id}/participant-invitations`、`POST /productions/{id}/participant-invitations`、`POST /participant-invitations/{id}/resend`・`cancel`、`GET /productions/{id}/participants`、`POST /productions/{id}/participants`（NAME_ONLY）、`PUT`・`DELETE /participants/{id}`、`GET /productions/{id}/delegates`、`POST /productions/{id}/delegates`、`PUT /production-delegates/{id}`
+   - 参加申請：`POST /participation-requests`、`POST /participation-requests/{id}/approve`・`reject`、`GET /productions/{id}/participation-requests`
+   - **既存の `/me` 系の9つのAPI**（`/me`・`/me/notification-email`・`/me/dashboard`・`/me/notifications`・`/me/memberships`・`/me/participating-productions`・`/me/favorites`・`/me/follows`・`/me/push-preference`）は、R14-Bで変更しないが、**回帰の確認の対象**にする（§17.6 で、現在は WordPress の no-cache のヘッダーが付くことを確認済み。R14-Bの変更の後も、`no-store` を含むことを確認する。`GET /me/dashboard` は §4.6 で判定を変えるため、R14-Bの変更の対象でもある）。
 2. 認証の状態（ログインの有無・誰か）によって応答の内容が変わるAPIも、同じく `no-store` にする（利用者の間で応答が混ざらないように）。エラーの応答（401・403・404・409・410・429・500）も含める。
 3. ヘッダーは、WordPress REST API の側（Backend）で確実に付ける。WordPress 本体の no-cache のヘッダー（`rest_send_nocache_headers`）だけに依存せず、StageArt の REST の層で明示的に付ける（例：`rest_post_dispatch` のフィルターで、対象のルートに付ける。Dev の既存のコードには、公開ページの読み取りに no-cache を付ける `PublicResponseCachePolicy` がある）。
 4. Frontend のキャッシュ制御（fetch のオプションなど）だけに依存しない。
-5. APIを新しく追加・変更するときは、この要件に当たるかを確認する（コードレビューの確認項目にする）。
-6. 自動テスト（PHPUnit で、対象のルートの応答ヘッダーを確認する）と、実環境（Dev）のHTTPの応答の確認（2つのテスト用アカウントと未ログインで、`Cache-Control` と `X-Nginx-Cache` を確認する。§17.6 の手順）で検証する。
+5. **コードレビューの確認項目**：APIを新しく追加・変更するときは、(a) 応答が個人の情報・個人の状態を含むか、(b) 認証の状態で応答の内容が変わるか、を確認し、どちらかに当たれば、成功とエラーの両方の応答に、Backend で `Cache-Control: no-store` を付けていることと、テスト（T66 の形）があることを確認する。
+6. 自動テスト（PHPUnit で、対象のルートの成功の応答と、認証のエラー（401・403）などのエラーの応答のヘッダーを確認する。T66・T135）と、実環境（Dev）のHTTPの応答の確認（2つのテスト用アカウントと未ログインで、`Cache-Control` と `X-Nginx-Cache` を確認する。§17.6 の手順）で検証する。
 7. nginx などのキャッシュの設定が変わった場合（ConoHa の設定の変更・サーバーの移転など）は、6の実環境の確認をやり直す。
 
 - ConoHa のキャッシュの設定は変更しない。
@@ -1142,7 +1170,7 @@ Dev の確認（§17.6）で、ConoHa の nginx は、`Cache-Control` のない2
 | 送信の状態の表示 | 送信済み：「送信しました（相手に届いたかどうかは確認できません）」。送信失敗：「送信に失敗しました。再送してください（再送も送信回数に数えます）」。送信結果不明：「送信の結果を確認できませんでした。メールが届いていない場合は再送してください」 |
 | 担当者（`productions/[id]/delegates.tsx`） | 人物IDの自由入力欄を削除し、同意が確認できる ACTIVE な PERSON 参加者の候補からの選択だけにする。一覧を「有効な担当者」と「無効な担当者」に分け、無効な理由（同意未確認・メンバーではない・解除済み）と、次の操作（同意の確認を依頼・招待）を表示する（§4.6） |
 | 招待一覧（新設：`(app)/participant-invitations/index.tsx`、URL `/participant-invitations`。第6版） | 招待メールのリンク先。ログインが必要な画面にし、未ログインならログイン画面へ移動する（ログイン後の移動先は `/participant-invitations`）。未ログインの時点では、招待の存在・内容を一切表示しない。ログイン後、`GET /me/participant-invitations` の招待（本人の確認済みアドレス宛てだけ）を一覧にする。空のときは「招待が見つからない場合は、招待メールを受け取ったメールアドレスでログインしてください。登録したばかりの場合は、メールアドレスの確認を済ませてください」と表示する |
-| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 招待一覧から開く。公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。表示には一覧の項目を使う【推奨】。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。本人宛てでない・存在しない（404）・期限切れ（410）・処理済み（409）は、それぞれの文言を表示する |
+| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 招待一覧から開く。公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。表示には一覧APIの項目を使い、データがなければ一覧APIを再取得する（【確定】第7版、N5。§7.2）。一覧にない招待IDでは、詳細を表示せず、期限切れ・処理済み・存在しないを区別しない共通の案内を表示して、招待一覧へ戻す。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。承諾・辞退の操作の結果は、APIの応答で判定し、404（本人宛てでない・存在しない）・410（期限切れ）・409（処理済み）は、それぞれの文言を表示する |
 | 自分宛ての招待（ホーム） | 承諾できる招待があれば、ホームに件数と、招待一覧へのリンクを表示する。招待作成時のアプリ内通知はないため、これが登録済みの人への主な導線になる |
 | 登録（`register.tsx`） | メールアドレスは本人が入力する（招待から初期値を取得しない。第6版）。登録の後は通常のメール確認の画面へ進み、確認が済んだら招待一覧へ移動できるようにする。自動では参加させない。古いリンク（`/register?token=`）で開かれた場合は、トークンを読まず、処理せず、すぐにURLから取り除いて、通常の登録・ログインの導線に乗せる（招待の内容は表示しない） |
 | ログイン（既存） | 招待一覧から来た場合は、ログイン後に `/participant-invitations` へ戻る（`return_to`）。`return_to` は、アプリ内のパスだけを受け付けるよう検証する（R13 Medium の修正を同時に行う）。`return_to` にトークンなどを入れない |
@@ -1466,6 +1494,8 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T131 | 招待の承諾による再利用と、参加申請による再利用 | どちらも同じ `ParticipantEnrollmentService` を通り、行の特定・ロック・状態の変更の規則が一致する（§5.2） |
 | T132 | 再申請・再参加の監査ログ | `JOIN_REQUESTED`・`ACCEPTED` の `detail` に `previous_status` と `reused_participant=true` が入る |
 | T133 | R14-B以前の申請（`requested_at` が NULL）を承認する | 同意は記録されない（T79と同じ） |
+| T136 | DRAFT の行がある人が、同じ種別を申請する（第7版、N1） | 409 `already_exists`。行は DRAFT のまま（PENDING にならない）。Join Key の使用回数は増えない |
+| T137 | 再申請で行を再利用する（第7版、N4） | `requested_at` は今回の申請の日時に更新され、`created_at` は変わらない。承認すると `consented_at` は `requested_at` の値になる（`created_at` ではない） |
 
 **旧方式の参加者（D2）・個人情報（D7・D11・U3）・辞退（U7）**
 
@@ -1502,7 +1532,8 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T63 | 招待の作成をレート制限の上限まで行う | 上限を超えると429。超えるまでは通常どおり |
 | T64 | 他人宛て・存在しない招待IDで `accept`・`reject` を繰り返す（第6版） | 失敗が10分に10回を超えると429。それまでは404 |
 | T65 | 各処理のログと監査ログ | トークン・メールアドレスを出力しない（ログの出力を差し替えて確認する） |
-| T66 | 個人宛てのAPI（`GET /me/participant-invitations`・`accept`・`reject`・`withdraw`・参加者一覧・担当者一覧・招待一覧）の応答ヘッダー（第6版、U4） | 成功・エラー（401・403・404・409・410・429・500）のすべてで `Cache-Control: no-store` |
+| T66 | §9.2 の1に挙げた、R14-Bで追加・変更する個人宛てのAPIのすべての応答ヘッダー（第6版、第7版で範囲を明確化。U4） | 成功の応答と、認証のエラー（401・403）・404・409・410・422・429・500 の応答のすべてで `Cache-Control: no-store` が含まれる。ヘッダーは Backend（REST の層）で付けられている（Frontend の設定に依存しない） |
+| T135 | 既存の `/me` 系の9つのAPIの回帰の確認（第7版） | R14-Bの変更の後も、成功の応答と401の応答で、`Cache-Control` に `no-store` が含まれる（WordPress の no-cache のヘッダーを含む）。Dev の実環境の確認（§14.3）でも、2つのテスト用アカウントの間で応答が混ざらず、`X-Nginx-Cache` が HIT にならない |
 | T85 | （第6版で削除。接続元IPを使うレート制限がなくなったため） | — |
 | T117 | 固定の時間枠の境目（第6版） | 枠の終わりの直前に上限まで通り、次の枠の始まりで、また上限まで通る（最大2倍。仕様どおり）。同じ枠の中では、上限を超えると429で、`retry_after` は枠の終了までの秒数 |
 | T118 | レート制限の加算で 1213（デッドロック）が起きる（DBの失敗を差し込む） | 最大3回まで再試行する。3回とも失敗したら429。業務の処理は行われない |
@@ -1515,7 +1546,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 - 送信の上限に達したときに、ボタンが無効になり、`available_at` が表示される。
 - 参加者の一覧に「同意未確認（旧方式）」と「同意の確認を依頼」が表示される。
 - 招待一覧（第6版）：未ログインではログイン画面へ移動し、招待の存在・内容を表示しない。ログイン後は `/me` の招待だけを表示する。空のときの案内の文言。
-- 招待確認画面：承諾・辞退・存在しない／本人宛てでない（404）・期限切れ（410）・処理済み（409）・既に参加者・承諾できない招待（辞退だけ）の表示。
+- 招待確認画面：承諾・辞退・存在しない／本人宛てでない（404）・期限切れ（410）・処理済み（409）・既に参加者・承諾できない招待（辞退だけ）の表示。一覧のデータがない状態で開くと、一覧APIを再取得する。一覧にない招待IDを直接開くと、詳細を出さずに共通の案内を表示して一覧へ戻す（第7版、N5）。
 - 登録画面（第6版）：メールアドレスの初期値がない（本人が入力する）。古いリンク（`/register?token=`）で開くと、トークンを処理せず、URLから取り除き、招待の内容を表示しない。
 - 招待メールの文面（Backend のテスト）：リンクが `/participant-invitations` で、トークンを含まない。
 - ログイン：`return_to` にアプリ外のURLを渡しても、そこへ移動しない。
@@ -1536,7 +1567,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 - Migration（アップグレードと新規インストールの一致、既存の行が変化しないこと、既存の検証DBのチェックサム）。
 - レート制限の表で、複数のPHPプロセスから数え漏れがない（§17.5.3 の方法）。
 - U13：CANCELLED・REJECTED・WITHDRAWN の行がある人の Join Key の申請が、同じ行の再利用で201になり、DBに保存されること（第6版。修正前の再現は §17.2）。同時の申請（T129）と、承諾との競合（T130）。
-- **個人宛てのAPIのキャッシュ**（第6版、U4）：Dev で、2つのテスト用アカウントと未ログインから、R14-Bの個人宛てのAPIを呼び、`Cache-Control: no-store`、`X-Nginx-Cache` が HIT にならないこと、応答が混ざらないことを確認する（§17.6 の手順。テスト用アカウントと関連データは確認の後に削除する。Dev での実施は、その都度ユーザーの承認を得る）。
+- **個人宛てのAPIのキャッシュ**（第6版、U4。第7版で既存の `/me` 系の9つのAPIを回帰の確認に追加）：Dev で、2つのテスト用アカウントと未ログインから、R14-Bの個人宛てのAPI（§9.2 の1）と既存の `/me` 系の9つのAPIを呼び、`Cache-Control: no-store`、`X-Nginx-Cache` が HIT にならないこと、応答が混ざらないことを確認する（§17.6 の手順。テスト用アカウントと関連データは確認の後に削除する。Dev での実施は、その都度ユーザーの承認を得る）。
 
 ### 14.4 既存テストへの影響
 
@@ -1690,15 +1721,37 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 | U14 | `registration-hint` を置くか | **第6版で取り消し** | 第3版で「置く」としたが、U5のC案で、トークンを使うAPIを廃止したため、置かない | — |
 | U15 | 同意未確認の参加者に付いている担当者の行は、本人が同意を記録した後、再任命なしで有効になるか（第3版で追加） | **解決** | ユーザー判断：ACTIVE な担当者の行は再任命なしに有効になる。INACTIVE の行と、再参加の前の担当者の権限は自動で戻さない。参加者でなかった人物が承諾した場合は、INACTIVE にして改めて任命する（§4.6） | — |
 
-**【未決定】第6版の改訂で見つかった事項**（設計者は仕様を決めていない。ユーザーの判断を待つ）
+**第6版の改訂で見つかった事項（N1〜N5）と、その判断**（第7版でユーザーが判断した）
+
+| # | 事項 | 状態 | 判断の内容 |
+|---|---|---|---|
+| N1 | DRAFT の参加者の行からの再申請 | **解決（第7版）** | 認めない。DRAFT の行がある場合は409で拒否し、自動で PENDING にしない。将来必要になった場合は別に仕様を決める。作成経路の調査結果は §5.2 |
+| N2 | ほかの Repository の保存の失敗の検出 | **解決（第7版）** | R14-Bで変更・新設する Repository に限る。それ以外は別の課題（下記） |
+| N3 | PR #7 に `PublicResponseCachePolicy` がない | **解決（第7版）：R14-Bの対象外。PR #7 の Production への適用の前の必須の確認事項** | 下記「PR #7 の Production への適用の前の必須の確認」 |
+| N4 | `requested_at` 列の追加 | **解決（第7版）** | 追加する（スキーマ1.49.0。§6.1） |
+| N5 | 招待確認画面のデータの取得 | **解決（第7版）** | 一覧APIの項目を使い、招待1件を取得するAPIは設けない（§7.2・§10） |
+
+**【未決定】第7版の改訂で見つかった事項**（設計者は仕様を決めていない。ユーザーの判断を待つ）
 
 | # | 事項 | 内容 |
 |---|---|---|
-| N1 | DRAFT の参加者の行からの再申請 | `ParticipantStatus::DRAFT` の行から、参加申請（→ PENDING）を認めるか。DRAFT の行がどの経路で作られるかは未調査（§5.2） |
-| N2 | ほかの Repository の保存の失敗の検出 | R14-Bで触れない Repository の `$wpdb->insert()` などの戻り値の確認を、R14-Bに含めるか、別の作業にするか（§7.4） |
-| N3 | PR #7 に `PublicResponseCachePolicy` がない | Dev に配置されているコード（PR #7 の前の、元の作業ツリーのコード）には、公開ページの読み取りに no-cache を付ける `PublicResponseCachePolicy` があるが、PR #7（`c6480c2`）にはない。PR #7 をそのまま配置すると、公開ページが nginx に約1分キャッシュされる動作に戻る可能性がある（Dev の既存のコードのコメントによる。PR #7 では未確認）。R14-Bの範囲外で、PR #7 の取り込みの判断に関わる（§17.6） |
-| N4 | `requested_at` 列の追加【推奨】 | 再申請の日時を残すための列（§6.1）。U13のA案に伴って設計者が提案したもので、追加してよいかの確認が必要 |
-| N5 | 招待確認画面のデータの取得 | 招待1件を取得するAPIを設けず、一覧の項目で表示する【推奨】（§7.2、§10）。一覧に出ない招待（期限切れなど）を確認画面で開いた場合は「見つからない」と表示する |
+| N6 | `PUT /participants/{id}` で任意の `status` にできる経路 | 現在のコードでは、管理者がAPIで `status` に DRAFT・PENDING・REJECTED・CANCELLED・WITHDRAWN を送ると、そのまま保存される（§5.2 の調査。DRAFT の行の唯一の作成経路）。§7.1 は「ACTIVE 以外から ACTIVE への変更の拒否」だけを定めている。設計者の推奨は、`PUT` で受け付ける `status` の変更を INACTIVE だけにし、それ以外を422にすること |
+
+**PR #7 の Production への適用の前の必須の確認**（【確定】第7版、N3。R14-Bの対象外）
+
+- PR #7 の Head `c6480c2` に、`PublicResponseCachePolicy` に相当する実装がないことを確認した（`git grep` で該当なし。§17.6）。
+- Dev に PR #7 のコードを適用した状態で、公開ページ（公開の団体のページ、公開の公演のページ、公開の検索、公演回・チケットの公開の一覧など）の応答のキャッシュの動作を、別に検証する（`Cache-Control`・`X-Nginx-Cache`、公開の内容を変えた直後に古い内容が返らないか）。
+- 応答の混ざりや、不適切なキャッシュが確認された場合は、PR #7 の側で修正する。
+- **修正と検証が終わるまで、PR #7 の Production への適用を保留する。**
+- ConoHa のキャッシュの設定は変更しない。
+
+**別の課題として記録する事項**（R14-Bの対象外）
+
+| 課題 | 内容 |
+|---|---|
+| Repository の保存の失敗の検出の横断的な監査（第7版、N2） | R14-Bで触れない Repository で、`$wpdb->insert()`・`update()`・`delete()`・`query()` の戻り値を確認していない箇所を洗い出し、保存の失敗が成功の応答として返らないかを調べる |
+| PR #7 の公開ページのキャッシュ（第7版、N3） | 上記「PR #7 の Production への適用の前の必須の確認」 |
+| メールのリンクのアプリでの起動（第6版） | Android App Links・iOS Universal Links の設定（§9.2、§16.3） |
 
 ### 16.3 リスク
 
@@ -1712,6 +1765,7 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 - **未登録の招待先の手間**（第6版、U5＝C案）：招待メールのリンクから、メールアドレスを自分で入力して登録し、メールの確認を済ませるまで、招待が見えない。招待を受け取ったアドレスと別のアドレスで登録すると、招待は一覧に出ない。メールの文面と、空の一覧の案内で補う。
 - **メールのリンクがアプリで開かない**（第6版で別の課題として記録）：Android App Links・iOS Universal Links が未設定のため、`https://` のリンクは、アプリが入っていても Web 版で開く。R14-Bでは実装しない。
 - **nginx のキャッシュ**（第6版、U4）：`Cache-Control` のない200の応答は、`Authorization` にかかわらずキャッシュされ、利用者の間で混ざる（§17.6）。個人宛てのAPIに `no-store` を付け忘れると、個人情報が他人に返る。§9.2 の必須の要件と、テスト（T66）・実環境の確認で防ぐ。キャッシュの設定が変わったら確認をやり直す。
+- **PR #7 の公開ページのキャッシュ**（第7版、N3。R14-Bの対象外）：PR #7（`c6480c2`）には、Dev のコードにある `PublicResponseCachePolicy` に相当する実装がない。Dev で PR #7 のコードの公開ページのキャッシュの動作を検証し、問題があれば PR #7 で修正するまで、PR #7 の Production への適用を保留する（§16.2）。
 - **アクセストークンの有効期間**（R13 Low）：SUSPENDED にしたアカウントでも、発行済みのアクセストークンの期限までは有効。承諾APIでは、UserAccount の状態を都度確認して防ぐ（§4.3）。
 - **レート制限の新設**（U4）：既存の仕組みがないため、新しく作る。固定の時間枠のため、境目の前後で最大2倍まで通る（許容した）。R14-Bの制限は人物・公演の単位で、接続元IPは使わない。
 - **送信の結果不明**：PHPの処理が止まると、送信の記録が PENDING のまま残り、「結果不明」と表示される。メールが送られたかどうかは分からないため、管理者が再送の要否を判断する。
@@ -1766,7 +1820,7 @@ R14-Bの本体実装の前に行った事前検証の記録。**実装・Migrati
 
 > **第6版**：この検証の結果を受けて、ユーザーは **C案**（メールのリンクにトークンを入れない）を選んだ。本文（§4.2・§7・§9.2・§10）に反映した。以下は検証の記録で、フラグメント方式は採用していない。ネイティブの検証は不要になった。
 >
-> **検証の手順についての記録**：この検証で使った使い捨ての Edge のプロファイル（Playwright が `--user-data-dir` に新しい空のディレクトリを指定して起動。`--no-first-run`・`--disable-sync` 付き）の閲覧履歴のデータベースに、この検証と関係のない、PCの利用者の閲覧の記録の一部が入っていた。原因は特定できていない（Edge の初回起動時の自動の取り込み〔`AutoImportAtFirstRun` の既定の動作〕の可能性があるが、確認していない）。該当のプロファイルと出力は削除した。以後のブラウザでの検証では、専用の空のユーザーデータのディレクトリを新しく作って明示的に指定し、開始前に空であることを確かめ、既存のプロファイルを参照・複製せず、閲覧履歴のデータベースを読む場合は検証のサーバーのURLだけに絞り、終了後にプロファイルを削除する。
+> **検証の手順についての記録**：この検証で使った使い捨ての Edge のプロファイル（Playwright が `--user-data-dir` に新しい空のディレクトリを指定して起動。`--no-first-run`・`--disable-sync` 付き）の閲覧履歴のデータベースに、この検証と関係のない、PCの利用者の閲覧の記録の一部が入っていた。原因は特定できていない（Edge の初回起動時の自動の取り込み〔`AutoImportAtFirstRun` の既定の動作〕の可能性があるが、確認していない）。該当のプロファイルと出力は削除した。外部への送信・同期がなかったことは確認できていない。その一部は、作業の会話の中で出力として表示されたため、作業端末の会話の記録のファイル（JSONL）に残っている。このファイルを削除するかは、ユーザーが端末で判断・実行する。なお、会話の一部として既に送信された情報は、端末のファイルを削除しても取り消されない。以後のブラウザでの検証では、専用の空のユーザーデータのディレクトリを新しく作って明示的に指定し、開始前に空であることを確かめ、既存のプロファイルを参照・複製せず、閲覧履歴のデータベースを読む場合は検証のサーバーのURLだけに絞り、終了後にプロファイルを削除する。
 
 **環境**：expo-router 57.0.14、expo 57.0.14、expo-linking 57.0.6、react-native 0.86.2、react-native-web 0.21.2。`app.config.ts` は `scheme: 'stageart'`、`web.output: 'static'`。Android App Links（`intentFilters`）・iOS Universal Links（`associatedDomains`）の設定はない。
 
@@ -1853,7 +1907,7 @@ R14-Bの本体実装の前に行った事前検証の記録。**実装・Migrati
 **関連して見つかった点**（実行はしていない。コードを読んだもの）
 
 - `ResolveParticipantInvitationUseCase`：同じ組の行が CANCELLED などで存在すると、参加者を ACTIVE に戻さないまま、招待だけを使用済み（CONSUMED）にする。R14-B で、この自動解決は廃止の予定（§7.1）。
-- ほかのリポジトリにも、`$wpdb->insert()`・`update()` の戻り値を確認しない書き方があるかは、未調査。
+- ほかのリポジトリにも、`$wpdb->insert()`・`update()` の戻り値を確認しない書き方があるかは、未調査（第7版：別の課題「Repository の保存の失敗の検出の横断的な監査」として記録した。§16.2）。
 
 **対応案（ユーザー判断）**【提案・未承認】
 
@@ -2049,8 +2103,9 @@ Dev（dev-api）だけで行った。Production には何も置かず、接続�
 - アカウントの作成と、そのログインで作られた行（人物・利用者アカウント・ログイン用の認証情報・メール確認のトークン・リフレッシュトークン・WordPress のユーザーとユーザーメタ）を、テスト用のIDとメールアドレスで全テーブルを検索して特定し、その行だけを削除した。WordPress のユーザーは `wp_delete_user()` で削除した。
 - 削除の後に、もう一度全テーブルを検索し、テスト用のIDとメールアドレスを持つ行が0件であることを確かめた。2回目の確認では、作成の前と削除の後で、StageArt の全テーブルと `wp_users`・`wp_usermeta` の行数が一致した。
 - 1回目の確認は、確認用のスクリプトの不具合（削除の処理に、作成したIDが渡らなかった）で、削除の段階が失敗したため、同じ方法で手動で削除し、0件を確かめてから、2回目の確認をやり直した。1回目の確認の結果（応答の記録）は残っていないため、上の結果は2回目のもの。
-- WP-CLI の実行に伴う `wp_options`（transient など）の変化は、確認していない。
+- **残存の確認**（第7版、2026-11-16）：削除した2組（計4つ）のテスト用アカウントの人物ID・利用者アカウントID・メールアドレスと、WordPress のユーザーIDだけを条件にして、Dev の StageArt の全テーブルと `wp_users`・`wp_usermeta`・`wp_options`（58テーブル、317列。文字列の列は完全一致、TEXT の列は部分一致、`ID`・`user_id`・`wp_user_id` の列はユーザーID）を、読み取りだけのSELECTで数えた。**該当する行は0件だった。**実行は、`wp-config.php` をテキストとして読んで mysqli で接続する方法で、WordPress を読み込まず、サーバーにファイルを置かず、件数だけを出力した（行の内容・個人情報は出力していない）。
+- WP-CLI の実行に伴う `wp_options` の変化のうち、テスト用のIDを含まないもの（transient・cron など）は、作成の前の状態を記録していないため、**確認していない（未確認）**。
 
 **4. 関連して分かったこと**
 
-- Dev に配置されているコード（PR #7 の前の、元の作業ツリーのコード）には、公開ページの読み取り（公開の団体・公演のページなど）に no-cache のヘッダーを付ける `PublicResponseCachePolicy` があり、そのコメントに「nginx が200の応答を約1分キャッシュし、全員に返していた」とある。**PR #7（`c6480c2`）には、このクラスがない。**PR #7 を配置すると、公開ページが再びキャッシュされる可能性がある（【未決定】N3、§16.2）。
+- Dev に配置されているコード（PR #7 の前の、元の作業ツリーのコード）には、公開ページの読み取り（公開の団体・公演のページなど）に no-cache のヘッダーを付ける `PublicResponseCachePolicy` があり、そのコメントに「nginx が200の応答を約1分キャッシュし、全員に返していた」とある。**PR #7（`c6480c2`）には、このクラスがない。**PR #7 を配置すると、公開ページが再びキャッシュされる可能性がある（N3。第7版で、R14-Bの対象外・PR #7 の Production への適用の前の必須の確認事項と判断した。§16.2）。
