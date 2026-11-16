@@ -36,6 +36,19 @@ final class Participant
     /** Only meaningful when subjectType is NAME_ONLY - see
      * ParticipantSubjectType::NAME_ONLY's own docblock. */
     private ?string $displayName;
+    /**
+     * R14-B §4.5 (D2): the route by which this row was first created.
+     * Set once at creation, never changed (row reuse keeps it). NULL =
+     * created before R14-B.
+     */
+    private ?ParticipantEnrollmentSource $enrollmentSource;
+    /**
+     * R14-B §4.5: the Person's own most recent consent. Both NULL =
+     * no recorded consent; NULL is never read as "consented" (existing
+     * data stays unconsented).
+     */
+    private ?ParticipantConsentSource $consentSource;
+    private ?DateTimeImmutable $consentedAt;
 
     private function __construct(
         ParticipantId $id,
@@ -47,8 +60,15 @@ final class Participant
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?string $remarks = null,
-        ?string $displayName = null
+        ?string $displayName = null,
+        ?ParticipantEnrollmentSource $enrollmentSource = null,
+        ?ParticipantConsentSource $consentSource = null,
+        ?DateTimeImmutable $consentedAt = null
     ) {
+        if (($consentSource === null) !== ($consentedAt === null)) {
+            throw new InvalidArgumentException('consentSource and consentedAt must be both set or both null.');
+        }
+
         $this->id = $id;
         $this->productionId = $productionId;
         $this->subjectType = $subjectType;
@@ -59,6 +79,9 @@ final class Participant
         $this->updatedAt = $updatedAt;
         $this->remarks = $remarks;
         $this->displayName = $displayName;
+        $this->enrollmentSource = $enrollmentSource;
+        $this->consentSource = $consentSource;
+        $this->consentedAt = $consentedAt;
     }
 
     public static function create(
@@ -101,16 +124,66 @@ final class Participant
             throw new InvalidArgumentException('displayName must not be empty for a NAME_ONLY Participant.');
         }
 
-        return self::create(
+        $now = new DateTimeImmutable();
+
+        // R14-B §4.5: a NAME_ONLY member is a manager's record, not a
+        // consent-bearing enrolment (consent stays NULL / not applicable).
+        return new self(
+            ParticipantId::generate(),
             $productionId,
             ParticipantSubjectType::nameOnly(),
             ParticipantId::generate()->toString(),
             $participantType,
-            $remarks,
-            $displayName
+            ParticipantStatus::active(),
+            $now,
+            $now,
+            self::normalizeNullableString($remarks),
+            self::normalizeNullableString($displayName),
+            ParticipantEnrollmentSource::managerRecord()
         );
     }
 
+    /**
+     * R14-B §5.2 "(行なし) → ACTIVE": a new PERSON Participant created
+     * because the Person themselves accepted an invitation. Records the
+     * enrolment route (INVITATION, never changed later) and the Person's
+     * consent (INVITATION at `$acceptedAt`) together. Row REUSE for an
+     * existing (subject, type) row goes through reenroll() + recordConsent()
+     * instead - a second row is never created for the same key (U13).
+     */
+    public static function enrollFromInvitation(
+        ProductionId $productionId,
+        string $personId,
+        ParticipantType $participantType,
+        DateTimeImmutable $acceptedAt,
+        ?string $remarks = null,
+        ?string $displayName = null
+    ): self {
+        $now = new DateTimeImmutable();
+
+        return new self(
+            ParticipantId::generate(),
+            $productionId,
+            ParticipantSubjectType::person(),
+            $personId,
+            $participantType,
+            ParticipantStatus::active(),
+            $now,
+            $now,
+            self::normalizeNullableString($remarks),
+            self::normalizeNullableString($displayName),
+            ParticipantEnrollmentSource::invitation(),
+            ParticipantConsentSource::invitation(),
+            $acceptedAt
+        );
+    }
+
+    /**
+     * The trailing R14-B arguments default to NULL so existing callers
+     * (the current Repository, which has no columns for them yet) keep
+     * reconstituting rows exactly as before: NULL = pre-R14-B / no
+     * recorded consent.
+     */
     public static function reconstitute(
         ParticipantId $id,
         ProductionId $productionId,
@@ -121,7 +194,10 @@ final class Participant
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?string $remarks = null,
-        ?string $displayName = null
+        ?string $displayName = null,
+        ?ParticipantEnrollmentSource $enrollmentSource = null,
+        ?ParticipantConsentSource $consentSource = null,
+        ?DateTimeImmutable $consentedAt = null
     ): self {
         return new self(
             $id,
@@ -133,7 +209,10 @@ final class Participant
             $createdAt,
             $updatedAt,
             $remarks,
-            $displayName
+            $displayName,
+            $enrollmentSource,
+            $consentSource,
+            $consentedAt
         );
     }
 
@@ -160,7 +239,10 @@ final class Participant
             $participantType,
             ParticipantStatus::fromString(ParticipantStatus::PENDING),
             $now,
-            $now
+            $now,
+            null,
+            null,
+            ParticipantEnrollmentSource::joinRequest()
         );
     }
 
@@ -217,6 +299,56 @@ final class Participant
     public function cancel(): void
     {
         $this->changeStatus(ParticipantStatus::fromString(ParticipantStatus::CANCELLED));
+    }
+
+    /**
+     * R14-B §4.5 / §5.2: record the Person's own consent (most recent one
+     * wins - an earlier consent is kept only in the audit log, §6.3).
+     * Only an ACTIVE PERSON Participant can carry consent: invitation
+     * acceptance records it after (re)activating the row, and join-request
+     * approval records it when it activates the row. NAME_ONLY and
+     * ORGANIZATION subjects are outside consent ("NOT_APPLICABLE").
+     * Never touches enrollmentSource.
+     */
+    public function recordConsent(ParticipantConsentSource $source, DateTimeImmutable $consentedAt): void
+    {
+        if (! $this->subjectType->equals(ParticipantSubjectType::person())) {
+            throw new InvalidArgumentException('Consent can only be recorded for a PERSON Participant.');
+        }
+
+        if (! $this->isActive()) {
+            throw new InvalidArgumentException('Consent can only be recorded for an ACTIVE Participant.');
+        }
+
+        $this->consentSource = $source;
+        $this->consentedAt = $consentedAt;
+        $this->touch();
+    }
+
+    /** R14-B §4.5: true only when consent was actually recorded. NULL
+     * (existing data) is never treated as consented. */
+    public function hasRecordedConsent(): bool
+    {
+        return $this->consentedAt !== null;
+    }
+
+    /**
+     * R14-B §4.6 base condition for an effective ProductionDelegate: an
+     * ACTIVE PERSON Participant with recorded consent. This only describes
+     * the Participant's own state - the delegate permission decision itself
+     * (and the PrimaryManager's separate treatment) lives in the
+     * Application layer, not here.
+     */
+    public function isConsentedActivePerson(): bool
+    {
+        return $this->subjectType->equals(ParticipantSubjectType::person())
+            && $this->isActive()
+            && $this->hasRecordedConsent();
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status->toString() === ParticipantStatus::ACTIVE;
     }
 
     public function changeRemarks(?string $remarks): void
@@ -289,5 +421,20 @@ final class Participant
     public function displayName(): ?string
     {
         return $this->displayName;
+    }
+
+    public function enrollmentSource(): ?ParticipantEnrollmentSource
+    {
+        return $this->enrollmentSource;
+    }
+
+    public function consentSource(): ?ParticipantConsentSource
+    {
+        return $this->consentSource;
+    }
+
+    public function consentedAt(): ?DateTimeImmutable
+    {
+        return $this->consentedAt;
     }
 }
