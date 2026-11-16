@@ -81,6 +81,9 @@ final class Installer
         $joinKeys = $wpdb->prefix . 'stageart_join_keys';
         $favorites = $wpdb->prefix . 'stageart_favorites';
         $participantInvitations = $wpdb->prefix . 'stageart_participant_invitations';
+        $participantInvitationSends = $wpdb->prefix . 'stageart_participant_invitation_sends';
+        $participantEvents = $wpdb->prefix . 'stageart_participant_events';
+        $rateLimitBuckets = $wpdb->prefix . 'stageart_rate_limit_buckets';
         $organizationSns = $wpdb->prefix . 'stageart_organization_sns';
         $organizationExternalLinks = $wpdb->prefix . 'stageart_organization_external_links';
         $organizationInvitations = $wpdb->prefix . 'stageart_organization_invitations';
@@ -355,6 +358,13 @@ final class Installer
             UNIQUE KEY production_person_role (production_id, person_id, role)
         ) {$charsetCollate};");
 
+        // Schema 1.49.0 (PR #7 R14-B, design doc §6.1 / §6.5): the four
+        // nullable columns enrollment_source / consent_source /
+        // consented_at / requested_at and KEY production_subject_status
+        // are added only. dbDelta adds them to an existing table with an
+        // ALTER TABLE ... ADD; existing rows keep NULL in all four (no
+        // UPDATE is issued - NULL means "pre-R14-B / no recorded
+        // consent"). The UNIQUE KEY production_subject_type is unchanged.
         dbDelta("CREATE TABLE {$participants} (
             id CHAR(36) NOT NULL,
             production_id CHAR(36) NOT NULL,
@@ -366,10 +376,15 @@ final class Installer
             display_name VARCHAR(255) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
+            enrollment_source VARCHAR(20) NULL,
+            consent_source VARCHAR(20) NULL,
+            consented_at DATETIME NULL,
+            requested_at DATETIME NULL,
             PRIMARY KEY  (id),
             KEY production_id (production_id),
             KEY subject (subject_type, subject_id),
-            UNIQUE KEY production_subject_type (production_id, subject_type, subject_id, participant_type)
+            UNIQUE KEY production_subject_type (production_id, subject_type, subject_id, participant_type),
+            KEY production_subject_status (production_id, subject_type, subject_id, status)
         ) {$charsetCollate};");
 
         // StageArt メール招待によるProductionParticipant追加機能: no
@@ -395,6 +410,16 @@ final class Installer
         // failing under MySQL strict mode; the Domain layer's own
         // ParticipantInvitation::create() still enforces a real,
         // non-empty name for every row created going forward.
+        //
+        // Schema 1.49.0 (PR #7 R14-B, design doc §6.1 / §6.5): eleven
+        // columns and four KEYs are added only. All new columns are
+        // nullable except resend_count, which existing rows get as its
+        // DEFAULT 0 from the ADD COLUMN itself (no UPDATE is issued).
+        // token_hash (NOT NULL, UNIQUE), the existing rows' token_hash /
+        // expires_at / status (CONSUMED included) and every existing key
+        // stay as they are; no new UNIQUE key is added - rows for the same
+        // recipient accumulate as history, and the single PENDING row is
+        // guarded by the Production row lock (§5.3 / §5.4).
         dbDelta("CREATE TABLE {$participantInvitations} (
             id CHAR(36) NOT NULL,
             production_id CHAR(36) NOT NULL,
@@ -408,10 +433,85 @@ final class Installer
             created_at DATETIME NOT NULL,
             expires_at DATETIME NOT NULL,
             consumed_at DATETIME NULL,
+            invitee_person_id CHAR(36) NULL,
+            responded_at DATETIME NULL,
+            participant_id CHAR(36) NULL,
+            closed_at DATETIME NULL,
+            closed_by_person_id CHAR(36) NULL,
+            close_reason VARCHAR(30) NULL,
+            revocation_notified_at DATETIME NULL,
+            resend_count INT UNSIGNED NOT NULL DEFAULT 0,
+            current_send_id CHAR(36) NULL,
+            last_sent_at DATETIME NULL,
+            updated_at DATETIME NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY token_hash (token_hash),
             KEY production_id (production_id),
-            KEY email (email)
+            KEY email (email),
+            KEY production_email_type (production_id, email, participant_type),
+            KEY production_email_status (production_id, email, status, responded_at),
+            KEY invitee_person_id (invitee_person_id),
+            KEY current_send_id (current_send_id)
+        ) {$charsetCollate};");
+
+        // Schema 1.49.0 (PR #7 R14-B, design doc §6.2): one row per send
+        // attempt of an invitation e-mail - the 30-day send count and each
+        // attempt's state. New table only. email_key is the keyed HMAC of
+        // the normalised address (§6.7); the address itself is not stored.
+        dbDelta("CREATE TABLE {$participantInvitationSends} (
+            id CHAR(36) NOT NULL,
+            invitation_id CHAR(36) NOT NULL,
+            production_id CHAR(36) NOT NULL,
+            email_key CHAR(64) NOT NULL,
+            email_key_version VARCHAR(20) NOT NULL,
+            kind VARCHAR(10) NOT NULL,
+            status VARCHAR(12) NOT NULL,
+            requested_by_person_id CHAR(36) NOT NULL,
+            requested_at DATETIME NOT NULL,
+            completed_at DATETIME NULL,
+            PRIMARY KEY  (id),
+            KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at),
+            KEY production_requested_version (production_id, requested_at, email_key_version),
+            KEY version_requested (email_key_version, requested_at),
+            KEY invitation_id (invitation_id, requested_at),
+            KEY requested_at (requested_at)
+        ) {$charsetCollate};");
+
+        // Schema 1.49.0 (PR #7 R14-B, design doc §6.3, D8): the append-only
+        // audit log of participant / invitation / delegate state changes.
+        // New table only; no reading API, no UPDATE / DELETE from the
+        // application (only the §6.6 retention purge deletes). detail holds
+        // no e-mail address, name or token.
+        dbDelta("CREATE TABLE {$participantEvents} (
+            id CHAR(36) NOT NULL,
+            production_id CHAR(36) NOT NULL,
+            participant_id CHAR(36) NULL,
+            invitation_id CHAR(36) NULL,
+            delegate_id CHAR(36) NULL,
+            event_type VARCHAR(40) NOT NULL,
+            enrollment_path VARCHAR(20) NULL,
+            actor_person_id CHAR(36) NULL,
+            subject_person_id CHAR(36) NULL,
+            detail TEXT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY production_id (production_id, created_at),
+            KEY participant_id (participant_id),
+            KEY invitation_id (invitation_id),
+            KEY created_at (created_at)
+        ) {$charsetCollate};");
+
+        // Schema 1.49.0 (PR #7 R14-B, design doc §9.2): fixed-window rate
+        // limit counters (UTC windows), shared by every PHP process. New
+        // table only. bucket_key is a hex HMAC, hence ASCII with a binary
+        // collation.
+        dbDelta("CREATE TABLE {$rateLimitBuckets} (
+            bucket_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            window_start DATETIME NOT NULL,
+            hits INT UNSIGNED NOT NULL,
+            expires_at DATETIME NOT NULL,
+            PRIMARY KEY  (bucket_key, window_start),
+            KEY expires_at (expires_at)
         ) {$charsetCollate};");
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's

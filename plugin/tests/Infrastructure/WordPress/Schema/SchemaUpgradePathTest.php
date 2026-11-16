@@ -88,12 +88,14 @@ final class SchemaUpgradePathTest extends TestCase
     }
 
     /**
-     * PR #7 R14-A: 1.47.0 -> 1.48.0 (the retired DRAFT Productions move to
-     * PLANNING). Before R14-A this test was test_the_current_version_is_1_47_0.
+     * PR #7 R14-B: 1.48.0 -> 1.49.0 (participant consent / invitation
+     * response columns and the send, event and rate limit tables). Before
+     * R14-B this test was test_the_current_version_is_1_48_0, and before
+     * R14-A test_the_current_version_is_1_47_0.
      */
-    public function test_the_current_version_is_1_48_0(): void
+    public function test_the_current_version_is_1_49_0(): void
     {
-        $this->assertSame('1.48.0', SchemaUpgrader::CURRENT_VERSION);
+        $this->assertSame('1.49.0', SchemaUpgrader::CURRENT_VERSION);
     }
 
     /**
@@ -112,7 +114,7 @@ final class SchemaUpgradePathTest extends TestCase
             static fn (string $sql): bool => str_contains($sql, 'UPDATE wp_stageart_productions')
         ));
         $this->assertSame(["UPDATE wp_stageart_productions SET status = 'PLANNING' WHERE status = 'DRAFT'"], $moves);
-        $this->assertSame('1.48.0', get_option('stageart_db_schema_version'));
+        $this->assertSame(SchemaUpgrader::CURRENT_VERSION, get_option('stageart_db_schema_version'));
     }
 
     /**
@@ -131,7 +133,7 @@ final class SchemaUpgradePathTest extends TestCase
      */
     public static function olderInstalls(): array
     {
-        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0'], 'from 1.46.0' => ['1.46.0'], 'from 1.47.0' => ['1.47.0']];
+        return ['fresh install' => [null], 'from 1.40.3' => ['1.40.3'], 'from 1.43.0' => ['1.43.0'], 'from 1.44.0' => ['1.44.0'], 'from 1.45.0' => ['1.45.0'], 'from 1.46.0' => ['1.46.0'], 'from 1.47.0' => ['1.47.0'], 'from 1.48.0' => ['1.48.0']];
     }
 
     public function test_an_install_already_at_the_current_version_runs_nothing(): void

@@ -48,7 +48,18 @@ final class SchemaUpgrader
      * failed to load (500). Only the status column of those rows changes;
      * no row is deleted. User decision 2026-11-14.
      */
-    public const CURRENT_VERSION = '1.48.0';
+    /*
+     * 1.49.0 (PR #7 R14-B, design doc §6.1-§6.3 / §6.5 / §9.2): additions
+     * only - the consent / enrollment / request columns of
+     * stageart_participants, the response / close / resend / send columns
+     * of stageart_participant_invitations with their KEYs, and three new
+     * tables (stageart_participant_invitation_sends,
+     * stageart_participant_events, stageart_rate_limit_buckets). No
+     * existing row is updated or deleted and no existing key changes; the
+     * new tables and columns are checked by assertApplied() like every
+     * other CREATE TABLE.
+     */
+    public const CURRENT_VERSION = '1.49.0';
 
     /**
      * @return bool whether the schema is now at CURRENT_VERSION
