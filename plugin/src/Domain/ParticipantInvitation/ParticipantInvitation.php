@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Domain\ParticipantInvitation;
 
+use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Domain\Participant\ParticipantId;
@@ -54,8 +55,15 @@ final class ParticipantInvitation
      * "24時間" in more than one place - both UseCases compute
      * `expiresAt` from this single constant before calling create()/
      * rotateToken().
+     *
+     * R14-B (design doc D4, §6.1): 7 days (was 'PT24H'). A resend moves the
+     * expiry to 7 days from the resend. Existing invitations keep the
+     * expires_at they were created with (no data change).
      */
-    public const TOKEN_LIFETIME_SPEC = 'PT24H';
+    public const TOKEN_LIFETIME_SPEC = 'P7D';
+
+    /** R14-B (design doc D6, §5.3): resends per invitation, not counting the first send (max 6 sends in total). */
+    public const MAX_RESENDS = 5;
 
     private ParticipantInvitationId $id;
     private ProductionId $productionId;
@@ -80,6 +88,8 @@ final class ParticipantInvitation
     private ?DateTimeImmutable $closedAt;
     /** R14-B §5.1: only for MANAGER (the manager who cancelled); NULL for system closes. */
     private ?PersonId $closedByPersonId;
+    /** R14-B §6.1 (D6): resends accepted for this invitation (the first send is not counted). */
+    private int $resendCount;
 
     private function __construct(
         ParticipantInvitationId $id,
@@ -99,12 +109,18 @@ final class ParticipantInvitation
         ?ParticipantId $participantId = null,
         ?ParticipantInvitationCloseReason $closeReason = null,
         ?DateTimeImmutable $closedAt = null,
-        ?PersonId $closedByPersonId = null
+        ?PersonId $closedByPersonId = null,
+        int $resendCount = 0
     ) {
         if (($closeReason === null) !== ($closedAt === null)) {
             throw new InvalidArgumentException('closeReason and closedAt must be both set or both null.');
         }
 
+        if ($resendCount < 0) {
+            throw new InvalidArgumentException('resendCount must not be negative.');
+        }
+
+        $this->resendCount = $resendCount;
         $this->inviteePersonId = $inviteePersonId;
         $this->respondedAt = $respondedAt;
         $this->participantId = $participantId;
@@ -197,7 +213,8 @@ final class ParticipantInvitation
         ?ParticipantId $participantId = null,
         ?ParticipantInvitationCloseReason $closeReason = null,
         ?DateTimeImmutable $closedAt = null,
-        ?PersonId $closedByPersonId = null
+        ?PersonId $closedByPersonId = null,
+        int $resendCount = 0
     ): self {
         return new self(
             $id,
@@ -217,8 +234,15 @@ final class ParticipantInvitation
             $participantId,
             $closeReason,
             $closedAt,
-            $closedByPersonId
+            $closedByPersonId,
+            $resendCount
         );
+    }
+
+    /** R14-B (D4): the expiry of an invitation sent (or resent) at `$sentAt` - 7 days later. */
+    public static function expiresAtFrom(DateTimeImmutable $sentAt): DateTimeImmutable
+    {
+        return $sentAt->add(new DateInterval(self::TOKEN_LIFETIME_SPEC));
     }
 
     /** PENDING and not yet expired - mirrors JoinKey::isUsable()'s own
@@ -441,6 +465,44 @@ final class ParticipantInvitation
 
         $this->tokenHash = $newTokenHash;
         $this->expiresAt = $newExpiresAt;
+    }
+
+    /**
+     * R14-B resend (D4, D6, §5.3): a PENDING invitation (an expired one
+     * included - that is how a resend revives it) is resent: the resend is
+     * counted and the expiry moves to 7 days from now. The token is NOT
+     * changed (U5 C案: the invitation e-mail carries no token). At most
+     * MAX_RESENDS resends per invitation; the per-address 30-day cap, the
+     * production state and the inviter's permission are checked by the
+     * Application layer, not here.
+     */
+    public function resend(?DateTimeImmutable $now = null): void
+    {
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be resent.');
+        }
+
+        if ($this->hasReachedResendLimit()) {
+            throw new InvalidArgumentException('This ParticipantInvitation has reached its resend limit.');
+        }
+
+        $this->resendCount++;
+        $this->expiresAt = self::expiresAtFrom($now ?? new DateTimeImmutable());
+    }
+
+    public function hasReachedResendLimit(): bool
+    {
+        return $this->resendCount >= self::MAX_RESENDS;
+    }
+
+    public function remainingResends(): int
+    {
+        return max(0, self::MAX_RESENDS - $this->resendCount);
+    }
+
+    public function resendCount(): int
+    {
+        return $this->resendCount;
     }
 
     public function id(): ParticipantInvitationId
