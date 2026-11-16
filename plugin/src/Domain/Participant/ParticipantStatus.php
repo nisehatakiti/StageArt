@@ -20,8 +20,12 @@ final class ParticipantStatus
      * request. */
     public const PENDING = 'PENDING';
     public const REJECTED = 'REJECTED';
+    /** R14-B (design doc §5.2, D9): the Person themselves left the
+     * Production (Participant::withdraw()). Distinct from CANCELLED,
+     * which is a manager's removal. VARCHAR(20) column - no DDL needed. */
+    public const WITHDRAWN = 'WITHDRAWN';
 
-    private const VALID = [self::DRAFT, self::ACTIVE, self::INACTIVE, self::CANCELLED, self::PENDING, self::REJECTED];
+    private const VALID = [self::DRAFT, self::ACTIVE, self::INACTIVE, self::CANCELLED, self::PENDING, self::REJECTED, self::WITHDRAWN];
 
     private string $value;
 

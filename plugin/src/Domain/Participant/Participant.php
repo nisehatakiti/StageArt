@@ -302,6 +302,69 @@ final class Participant
     }
 
     /**
+     * R14-B §5.2 / §7.2 withdraw (D9): the Person leaves the Production
+     * themselves. Only an ACTIVE PERSON Participant can withdraw; the row
+     * is kept (WITHDRAWN), as are attendance/settlement records. Repeating
+     * it on an already WITHDRAWN row is an idempotent no-op (returns
+     * false). Who may call it (the Person themselves, not the
+     * PrimaryManager) is checked in the Application layer.
+     *
+     * @return bool true when the status actually changed
+     */
+    public function withdraw(): bool
+    {
+        if (! $this->subjectType->equals(ParticipantSubjectType::person())) {
+            throw new InvalidArgumentException('Only a PERSON Participant can withdraw.');
+        }
+
+        if ($this->status->toString() === ParticipantStatus::WITHDRAWN) {
+            return false;
+        }
+
+        if (! $this->isActive()) {
+            throw new InvalidArgumentException('Only an ACTIVE Participant can withdraw.');
+        }
+
+        $this->changeStatus(ParticipantStatus::fromString(ParticipantStatus::WITHDRAWN));
+
+        return true;
+    }
+
+    /**
+     * R14-B §5.2 row reuse (U13 A案) on invitation acceptance: bring the
+     * existing row for this (production, subject, type) back to ACTIVE
+     * instead of inserting a second row - the Participant id, the original
+     * enrollmentSource and every attendance/settlement record linked to the
+     * id stay as they are. Allowed from CANCELLED / WITHDRAWN / REJECTED /
+     * INACTIVE / PENDING (a pending join request superseded by the
+     * acceptance, §4.7). Not allowed from DRAFT (N11: acceptance is refused
+     * while a DRAFT row exists) or ACTIVE (an already-ACTIVE Participant
+     * only gets its consent recorded - recordConsent()). The caller records
+     * consent with recordConsent() right after this.
+     */
+    public function reenroll(): void
+    {
+        if (! $this->subjectType->equals(ParticipantSubjectType::person())) {
+            throw new InvalidArgumentException('Only a PERSON Participant can be re-enrolled.');
+        }
+
+        $from = $this->status->toString();
+        $allowed = [
+            ParticipantStatus::CANCELLED,
+            ParticipantStatus::WITHDRAWN,
+            ParticipantStatus::REJECTED,
+            ParticipantStatus::INACTIVE,
+            ParticipantStatus::PENDING,
+        ];
+
+        if (! in_array($from, $allowed, true)) {
+            throw new InvalidArgumentException("A {$from} Participant cannot be re-enrolled.");
+        }
+
+        $this->changeStatus(ParticipantStatus::active());
+    }
+
+    /**
      * R14-B §4.5 / §5.2: record the Person's own consent (most recent one
      * wins - an earlier consent is kept only in the audit log, §6.3).
      * Only an ACTIVE PERSON Participant can carry consent: invitation
