@@ -5,7 +5,8 @@
 - 改訂：2026-11-16（第3版、`8200b89`）。第2版のレビュー結果と、ユーザーの追加回答（U6ほか）を反映した。
 - 改訂：2026-11-16（第4版、`2238177`）。第3版の再レビュー結果と、ユーザーの判断（U9・U12・U15）を反映した。
 - 改訂：2026-11-16（第5版、`f6cdfa6`）。第4版の再レビュー結果と、ユーザーの判断（U10）を反映した。
-- 追記：2026-11-16（第5版への追記）。実装前の事前検証（§15の0：U4・U5・U9・U13）の結果と、第5版レビューで残った3点の対応案を §17 に記録し、§16.2 の状態を更新した。**確定した設計の本文は変更していない。**§17 の対応案は【提案・未承認】で、ユーザーの判断を待つ。
+- 追記：2026-11-16（第5版への追記、`b285965`）。実装前の事前検証（§15の0：U4・U5・U9・U13）の結果と、第5版レビューで残った3点の対応案を §17 に記録した。
+- 改訂：2026-11-16（第6版）。事前検証の結果に対するユーザーの判断（U5＝C案、U13＝A＋C案、§17.5 の3点の採用、U4＝個人宛てAPIの `Cache-Control: no-store` の必須化）を本文に反映した。Dev での追加確認（U4）の結果を §17.6 に記録した。
 - 対象：Head `c6480c2`（R14-A後）、スキーマ1.48.0
 - 状態：**設計のみ（未実装）**。第5版の最終レビューの後に、実装を始めるかを判断する。
 - 確定方針（R14-B指示書 §3）：
@@ -20,6 +21,19 @@
 - 【確定】：ユーザーが判断した事項（D1〜D11、U6・U9・U12・U15などの回答）と、レビューの指示で方針が決まった事項。
 - 【推奨】：設計者の提案。再レビューで否定されなければ実装する。
 - 【未解決】：実装前に確認または判断が必要な事項。§16.2 に一覧と決定者がある。
+- 【未決定】：第6版の改訂で見つかり、ユーザーの判断を待つ事項。設計者は仕様を決めていない（§16.2 の末尾）。
+
+### 第6版の主な変更点
+
+| 項目 | 内容 | 主な節 |
+|---|---|---|
+| U5（C案） | 【確定】招待メールのリンクにトークンを入れない。リンク先は `/participant-invitations`（招待一覧）だけで、ログイン後に、本人の確認済みアドレス宛ての招待を `GET /me/participant-invitations` で表示する。`POST /participant-invitations/lookup`・`registration-hint` と、トークンによる照合を廃止する。登録では本人がメールアドレスを入力し、通常のメール確認の後に招待一覧へ進む。既存の `token_hash` 列はDDLを変えずに残し、照合には使わない | §4.2、§6.1、§7、§9.2、§10、§11、§12、§14、§16 |
+| U13（A＋C案） | 【確定】参加申請でも、同じ組の既存の参加者の行を再利用する（UNIQUE キーは変えない）。DBへの保存の失敗を必ず検出し、成功の応答を返さない。Join Key の使用回数は、申請が保存された場合だけ増やす | §5.2、§5.4、§6.1、§7.1、§7.4、§14 |
+| email_key のインデックス | 【確定】`(production_id, requested_at)` を `(production_id, requested_at, email_key_version)` に置き換え、招待の表に `KEY current_send_id` を追加する。削除は、IDを求めてから削除する2段階にする | §6.1、§6.2、§6.6、§6.7 |
+| U10 の表現 | 【確定】「一度だけ通知する」を「通知を一度だけ試みる（配達の保証・自動の再試行なし）」に統一した | §6.1、§11.5、§16.2 |
+| レート制限 | 【確定】固定の時間枠（UTC）と、`INSERT … ON DUPLICATE KEY UPDATE` による原子的な加算。境目の前後で最大2倍まで通りうる。トークンの照合のAPIの廃止に合わせ、`registration-hint`・`lookup`・`link_invalid` の制限を削除した | §6.6、§9.2、§14 |
+| U9 | 【確定】Dev・Production の `email` 列は `utf8mb4_unicode_520_ci`。メールアドレスの入力が ASCII に限られることを、SQLとPHPの比較の一致の前提として明記した。本人の判定は PHP の完全一致で確かめる | §6.4 |
+| U4 | 【確定】個人宛て、または認証の状態で内容が変わるAPIの応答に、`Cache-Control: no-store` を明示的に付けることを必須にした。接続元IPは `REMOTE_ADDR` だけを使う（Dev で確認） | §9.2、§14、§16.3、§17.6 |
 
 本文中の「管理者」は、PrimaryManager、または `Participant.Update` 権限を持つ**有効な**担当者（PARTICIPANT_MANAGER など）を指す（`ProductionAuthorizationService::canManageParticipants()`）。「有効な担当者」の定義は §4.6 で変更する。
 
@@ -197,14 +211,14 @@
 | 再利用するもの | 用途 |
 |---|---|
 | `stageart_participant_invitations` と `ParticipantInvitation` | 招待の本体。列を追加し、状態を拡張する（§6） |
-| トークンの生成・SHA-256保存・`findByTokenHash` | 招待メールのリンク。生成と保存の方式は変更しない |
-| `rotateToken()` と `ResendParticipantInvitationUseCase` | 再送。期限を7日にし、回数の上限を加える |
+| `token_hash` 列 | **第6版で、照合には使わない**（U5＝C案）。列は残し（DDLを変えない）、新しい招待には、リンクに使わない値を入れる（§6.1）。`findByTokenHash` を呼ぶ経路はなくす |
+| `ResendParticipantInvitationUseCase` | 再送。期限を7日にし、回数の上限を加える。第6版ではトークンを差し替えない（`rotateToken()` は使わない） |
 | `CancelParticipantInvitationUseCase` | 管理者による取消。理由と実行者を記録し、冪等にする |
 | `ListParticipantInvitationsUseCase` と画面の「招待中のメンバー」表 | 招待一覧。状態の表示を拡張 |
 | `CreateParticipantUseCase` の重複確認と `Participant::create()` | 承諾時の参加者作成。管理者の権限確認の代わりに、本人の承諾を条件にする内部サービスへ分ける（§7.4） |
 | `Participant::approve()` | 参加申請中（PENDING）の行に、本人が承諾した場合の扱い |
 | `FindPersonByEmailUseCase`（確認済みメールのみ） | 「この招待のメールが本人の確認済みアドレスか」の判定と、本人宛ての招待の検索。招待の作成では使わない（§9.2） |
-| `RegisterWithEmailUseCase` の招待トークン経路 | 招待リンクから登録した人のメールを確認済みにする。参加者は作らない |
+| `RegisterWithEmailUseCase` の招待トークン経路 | **第6版で使わない**。`invitation_token` を受け取っても処理しない（メールを確認済みにせず、招待も探さない）。登録した人は、通常のメール確認を行う |
 | `NotificationDispatcherInterface` | 承諾・辞退・参加辞退の通知（アプリ内とメール） |
 | `ProductionRepositoryInterface::findByIdForUpdate` | 参加者を更新するすべての処理の直列化（§5.4） |
 | `TransactionManagerInterface` | 承諾などの一連の処理を1トランザクションにまとめる |
@@ -226,30 +240,26 @@
 4. 招待メールを送る。**登録済みかどうかにかかわらず、同じ方式・同じ文面のメールだけを送る。招待作成時のアプリ内通知は送らない**（【確定】第3版。アカウントの有無の推測を防ぐため、§9.2）。
    - 文面には「承諾するまで参加者にはなりません」「有効期限は7日間です」と書く。
    - 登録済みの人は、ログイン後のホームの件数と、自分宛ての招待一覧（`GET /me/participant-invitations`）からも確認できる。
-   - 登録前の人は、メールのリンクから登録・ログインを経て招待を確認する（§4.2）。
+   - 登録前の人は、メールのリンクから登録（メールアドレスは本人が入力）・メールの確認・ログインを経て、招待一覧で招待を確認する（§4.2）。
+   - **メールのリンクは、トークンを含まない `/participant-invitations`（招待一覧）だけにする**（【確定】第6版、U5＝C案）。リンクを開いただけでは、招待の存在・公演名などは分からない。
 5. 招待の有効期間は**7日間**（【確定】D4）。
 
 ### 4.2 承諾・辞退（本人）
 
-【確定】D7に従い、ログイン済みの場合と未ログインの場合の導線を次のとおり統一する。**招待トークンだけでは、招待の詳細（公演名・団体名・役割・招待者・期限）を返さない。**
+【確定】D7と、第6版の U5（C案）に従い、導線を次のとおりにする。**招待メールのリンクにトークンを入れない。招待は、ログインした本人の確認済みアドレスに一致するものだけを、本人に表示する。**
 
-**ログイン済みで招待リンクを開いた場合**
+**招待メールのリンクを開いた場合**（リンク先は `/participant-invitations`。トークンなし）
 
-1. 招待確認画面が、トークンを `POST /participant-invitations/lookup`（ログイン必須）に送る。
-2. 招待のメールが本人の確認済みアドレスなら、招待の内容を表示する。
-3. 一致しなければ、内容を表示せず、「このアカウント宛ての招待ではありません。招待を受け取ったメールアドレスでログインし直してください」と表示する。
+1. **未ログイン**：招待一覧の画面は表示せず、ログイン画面へ移動する（ログイン後の移動先は `/participant-invitations`。固定のアプリ内のパスで、トークンなどは含まない）。この時点では、招待の存在・公演名・団体名・招待者・役割などを一切表示しない。画面の文言は「StageArtにログインすると、あなた宛ての招待を確認できます」のような一般的なものにする。
+2. **未登録**：ログイン画面から通常の登録へ進む。**メールアドレスは本人が入力する**（招待から初期値を取得する仕組みは廃止した。第6版）。登録の後、通常のメール確認を行う。メールの確認が済むまで、そのアドレス宛ての招待は一覧に出ない（未確認のアドレスは本人の判定に使わない。F6）。
+3. **ログイン済み**（またはログイン・メール確認の後）：`GET /me/participant-invitations` で、本人の確認済みアドレス（ログイン用と通知用）に一致する招待だけを一覧に表示する。
+4. 本人が一覧から招待を選び、招待確認画面で内容を確認して、承諾・辞退する。
+5. 招待を受け取ったアドレスとは別のアドレスでログインしている場合は、一覧にその招待は出ない。一覧が空のときは「招待が見つからない場合は、招待メールを受け取ったメールアドレスでログインしてください」と案内する（アカウントの有無・招待の存在は伝えない）。
 
-**未ログインで招待リンクを開いた場合**
+**ホームから開いた場合**：ログイン済みなので、ホームの件数から招待一覧を開く。
 
-1. 招待リンクを開く。画面には「StageArtの公演への招待です。内容を確認するには、ログインまたは登録してください」とだけ表示する。公演名などは表示しない。
-2. 登録またはログインへ誘導する。
-   - 登録を選んだ場合は、`POST /participant-invitations/registration-hint`（未ログインで可）で、招待先のメールアドレスだけを取得し、登録画面の初期値にする（D7で許容された範囲、U14）。無効なトークンでは何も返さない（§9.2）。
-   - 招待リンクから、招待先と同じアドレスで登録した場合は、メールを確認済みにする（R14-A F6の既存動作。参加者は作らない）。
-3. 登録またはログインの後、招待確認画面に戻る（§10）。ここで初めて `lookup` を呼び、確認済みメールを照合する。
-4. 一致した場合だけ、招待確認画面を表示する。
-5. 一致しない場合は、招待を受け取ったアドレスでログインし直すよう案内する。
-
-**ホームから開いた場合**：ログイン済みなので、`GET /me/participant-invitations` の内容から招待確認画面を開く（トークンは使わない）。
+- 登録・メールの確認・Googleサインインだけでは、参加者を作らない（自動解決の廃止。既存の方針どおり）。招待の承諾は、本人が招待確認画面で明示的に行う。
+- トークンを使う照合（`lookup`・`registration-hint`・`resolve?token=`）は、すべて廃止する（§7.1）。
 
 **招待確認画面の表示**（【確定】D7）
 
@@ -284,7 +294,7 @@
   - 現在の PrimaryManager が代わりに承諾を認めるような、暗黙の処理はしない。
   - 再び招待する場合は、現在の権限を持つ管理者が新しい招待を作る。
 
-**承諾は、本人がAPIを明示的に呼んだときだけ成立する**。メールの一致やログイン、登録、メール確認、Googleサインインだけでは成立しない（自動解決は廃止する）。トークンは招待を見つけるためのもので、承諾の権限の根拠にはしない。リンクを転送されても、別のアカウントでは承諾できない。
+**承諾は、本人がAPIを明示的に呼んだときだけ成立する**。メールの一致やログイン、登録、メール確認、Googleサインインだけでは成立しない（自動解決は廃止する）。招待は、本人の確認済みアドレスと、`GET /me/participant-invitations` で得た招待IDだけで特定する（トークンは使わない。第6版）。招待メールを転送されても、別のアカウントでは一覧に出ず、承諾もできない。
 
 **辞退の条件**（【確定】U7、第4版で状態遷移を整理）
 
@@ -302,7 +312,7 @@
 
 - 管理者による削除（既存の `DELETE /participants/{id}`）は CANCELLED にする。本人による辞退（新設）は WITHDRAWN にして、区別する（§5.2）。
 - いずれも行は削除しない。**稽古の出欠・精算・会計などの過去の記録は、削除も変更もしない。**
-- 役割（CAST／STAFF）・備考・公演側の氏名は、管理者が変更できる（既存の `PUT`）。ただし、`status` を ACTIVE 以外から ACTIVE に戻す操作はできなくする（P5）。参加者に戻すには、もう一度招待して承諾してもらう。
+- 役割（CAST／STAFF）・備考・公演側の氏名は、管理者が変更できる（既存の `PUT`）。ただし、`status` を ACTIVE 以外から ACTIVE に戻す操作はできなくする（P5）。参加者に戻すには、もう一度招待して承諾してもらうか、本人が参加申請をして管理者が承認する（どちらも同じ行を再利用する。第6版、§5.2）。
 - 参加者が ACTIVE でなくなった時点（本人の辞退・管理者の削除・INACTIVE への変更）で、その人物のこの公演での担当者の役割も解除する（§4.6）。
 - ORGANIZATION の参加者は、新しく追加できない（【確定】D10）。既存の行は変更・削除しない。団体のメンバーであることを理由に、公演の参加者として扱わない。将来必要になった場合は、団体の OWNER による承諾の方式を別に設計する。
 
@@ -321,13 +331,13 @@
 | 経路 | 行を作るとき（`enrollment_source`） | 同意の記録（`consent_source`／`consented_at`） |
 |---|---|---|
 | 招待の承諾で新しく行を作る | INVITATION | INVITATION／承諾の日時 |
-| 参加申請（R14-B以降の申請） | JOIN_REQUEST（PENDING の行を作るとき） | 管理者が承認した時点で JOIN_REQUEST／申請の日時（行の `created_at`。本人の意思表示の時点） |
+| 参加申請（R14-B以降の申請） | JOIN_REQUEST（PENDING の行を新しく作るとき。既存の行を再利用する場合は変更しない。第6版） | 管理者が承認した時点で JOIN_REQUEST／申請の日時（`requested_at`。本人の意思表示の時点。第6版で `created_at` から変更。再申請では `created_at` が古いままのため） |
 | NAME_ONLY の追加 | MANAGER_RECORD | 記録しない（同意の対象外） |
 | R14-B以前に作られた行（既存データ） | NULL のまま | NULL のまま |
 | 既存の行（どの経路でも）の本人が、後から招待を承諾する | **変更しない** | INVITATION／承諾の日時（上書き） |
 
 - **既存データは同意済みとみなさない。**Migrationでは、`enrollment_source`・`consent_source`・`consented_at` に値を入れない（NULL のまま）。
-- R14-B以前に申請され、R14-B以降に承認された行は、`enrollment_source` が NULL（既存データ）なので、承認しても同意を記録しない（既存データを同意済みとみなさないため）。本人の同意を記録するには、招待を送って承諾してもらう。
+- R14-B以前に申請され、R14-B以降に承認された行は、`requested_at` が NULL（既存データ）なので、承認しても同意を記録しない（既存データを同意済みとみなさないため。第6版で判定の根拠を `requested_at` にした）。本人の同意を記録するには、招待を送って承諾してもらう。
 - 本人が辞退（WITHDRAWN）した後に、再び招待を承諾した場合は、`consented_at` を新しい承諾の日時に更新する。過去の同意の履歴は監査ログに残る（§6.3）。
 - 参加者一覧の `consent_status`：`consented_at` があれば CONFIRMED、PERSON で `consented_at` が NULL なら UNCONFIRMED（「同意未確認」。既存データの場合は「旧方式」と併記）、NAME_ONLY・ORGANIZATION は NOT_APPLICABLE。
 
@@ -460,13 +470,13 @@
 | INVITER_REVOKED | 招待者が参加者を管理する権限を失っていた | 本人の承諾・辞退の書き込み処理で、初めて検出した時点（D3）。PrimaryManager への通知の契機（§11.5、U10） |
 | NULL | 無効化されていない、または R14-B以前に取り消された（理由不明） | — |
 
-- 一覧・lookup などの読み取り処理は、公演の状態・招待者の権限から `effective_status` を導くだけで、`close_reason` を書き込まない。
+- 一覧（`GET /me/participant-invitations`・管理者の招待一覧）などの読み取り処理は、公演の状態・招待者の権限から `effective_status` を導くだけで、`close_reason` を書き込まない。
 - 再送・取消（管理者の操作）は、招待者の権限喪失を検出しても `close_reason` を書き込まない（再送は409を返すだけ。取消は `MANAGER` として記録する）。
 
 導出の状態は、次の優先順で1つだけ返す：EXPIRED → PRODUCTION_CLOSED → INVITER_REVOKED → PENDING。
 
 ```
-            resend（期限切れでも可。トークンを差し替え、期限を再送時点から7日に更新。
+            resend（期限切れでも可。期限を再送時点から7日に更新。トークンは使わない（第6版）。
               ┌──────┐   上限：招待1件あたり5回、同じ公演・メールで30日間に6回の送信）
               ▼      │
  create ──► PENDING ─┴─► accept（本人）────────────────────────► ACCEPTED
@@ -485,11 +495,11 @@
 - ACCEPTED・REJECTED・`CANCELLED(MANAGER)`・理由が NULL の CANCELLED・CONSUMED は終端の状態。`CANCELLED(PRODUCTION_CLOSED)`・`CANCELLED(INVITER_REVOKED)` は、本人の辞退（REJECTED）への遷移だけを残し、それ以外の操作（承諾・再送・取消）はできない（第4版）。
 - 同じ宛先にもう一度招待する場合は、新しい行を作る（辞退後30日の制限と、30日間の送信上限がある。§5.3）。
 
-**操作の可否の判定**（第4版。accept・reject・`GET /me/participant-invitations`・`lookup`・管理者の一覧は、すべてこの表で判定する）
+**操作の可否の判定**（第4版。accept・reject・`GET /me/participant-invitations`・管理者の一覧は、すべてこの表で判定する。`lookup` は第6版で廃止）
 
 判定は「保存された状態と `close_reason`」「期限」「公演の状態」「招待者の権限」の順に見る。
 
-| 保存された状態 | 期限 | 公演・招待者 | `effective_status`（一覧・lookup） | 承諾 | 辞退 | 本人の一覧（`/me`）に出すか | 再送・取消（管理者） |
+| 保存された状態 | 期限 | 公演・招待者 | `effective_status`（一覧） | 承諾 | 辞退 | 本人の一覧（`/me`）に出すか | 再送・取消（管理者） |
 |---|---|---|---|---|---|---|---|
 | PENDING | 期限内 | 受付中・権限あり | PENDING | ○ | ○ | 出す（`can_accept=true`） | ○ |
 | PENDING | 期限内 | 公演が終了・中止 | PRODUCTION_CLOSED | ×（409。招待を `CANCELLED(PRODUCTION_CLOSED)` にする） | ○（REJECTED、`close_reason=PRODUCTION_CLOSED` を記録） | 出す（`can_accept=false`） | 再送×・取消○ |
@@ -502,8 +512,8 @@
 | REJECTED（`close_reason` の有無を問わない） | — | — | REJECTED（`close_reason`・`closed_at` があれば併せて返す） | ×（409） | 本人なら200（冪等。通知・監査ログは追加しない） | 出さない | × |
 | CONSUMED | — | — | CONSUMED | ×（409） | ×（409） | 出さない | × |
 
-- `lookup` は、本人宛ての招待について、この表の承諾・辞退の可否を `can_accept`・`can_reject` として返す。期限切れは410、承諾も辞退もできない処理済みの招待は409を返す。
-- 本人宛てでない招待の扱い（403・404）は、§7.2 のとおりで、この表より先に判定する。
+- `GET /me/participant-invitations` は、本人宛ての招待について、この表の承諾・辞退の可否を `can_accept`・`can_reject` として返す（第6版。`lookup` の役割を引き継ぐ）。
+- 本人宛てでない招待の扱い（404）は、§7.2 のとおりで、この表より先に判定する。
 - 公演の状態が変わったときに、未処理の招待をまとめて更新する処理は追加しない（【確定】D5）。
 - **冪等性**：承諾・辞退・取消は、同じ操作を繰り返しても、最初の結果を返し、状態・通知・監査ログを重ねない（§5.3）。
 
@@ -516,16 +526,28 @@
 | （行なし）→ ACTIVE | 本人の承諾 | `POST /participant-invitations/{id}/accept` | `enrollment_source=INVITATION`、`consent_source=INVITATION`、`consented_at` |
 | CANCELLED／WITHDRAWN／REJECTED／INACTIVE → ACTIVE | 本人の承諾 | 同上（UNIQUEキーにより同じ行を再び ACTIVE にする） | `enrollment_source` は変更しない。`consent_source=INVITATION`、`consented_at` |
 | PENDING（参加申請中）→ ACTIVE | 本人の承諾 | 同上（§4.7） | 同上 |
-| PENDING（参加申請中）→ ACTIVE | 管理者の承認 | 既存の承認 API（ロックを追加） | `enrollment_source=JOIN_REQUEST` の行なら、`consent_source=JOIN_REQUEST`、`consented_at`＝申請の日時。NULL の行（既存データ）は記録しない |
+| PENDING（参加申請中）→ ACTIVE | 管理者の承認 | 既存の承認 API（ロックを追加） | R14-B以降の申請（`requested_at` が NULL でない行）なら、`consent_source=JOIN_REQUEST`、`consented_at`＝`requested_at`（申請の日時）。R14-B以前の申請（`requested_at` が NULL）は記録しない（第6版で、判定の根拠を `enrollment_source` から `requested_at` に変更。再申請で行を再利用すると、`enrollment_source` が別の経路のままになるため） |
 | ACTIVE → ACTIVE（同意の記録だけ） | 本人の承諾 | 承諾 API（既に ACTIVE の場合） | `enrollment_source` は変更しない。`consent_source=INVITATION`、`consented_at` |
 | ACTIVE → CANCELLED | 管理者 | `DELETE /participants/{id}`（既存） | 担当者の役割を解除（§4.6） |
 | ACTIVE → WITHDRAWN | 本人 | `POST /participants/{id}/withdraw`（新設） | 担当者の役割を解除（D9） |
 | ACTIVE → INACTIVE | 管理者 | `PUT`（既存。ACTIVE への復帰は不可） | 担当者の役割を解除 |
-| （行なし）→ PENDING | 本人の申請 | 既存の申請 API（ロックを追加） | `enrollment_source=JOIN_REQUEST` |
+| （行なし）→ PENDING | 本人の申請 | 既存の申請 API（ロックを追加） | `enrollment_source=JOIN_REQUEST`、`requested_at`＝申請の日時 |
+| CANCELLED／REJECTED／WITHDRAWN／INACTIVE → PENDING | 本人の申請 | 同上（**同じ行を再利用する**。第6版、U13＝A案） | `enrollment_source` は変更しない。`requested_at`＝今回の申請の日時。`consent_source`・`consented_at` は変更しない（承認の時点で記録する） |
 | PENDING → REJECTED | 管理者 | 既存の却下 API（ロックを追加） | — |
 
 - 管理者の操作で ACTIVE にする経路は、参加申請の承認だけになる（本人の申請が起点のため）。
 - どの遷移でも、参加者の行は削除しない。出欠・精算・会計の記録も変更しない。
+
+**既存の行の再利用**（【確定】第6版、U13＝A＋C案。§17.2 の再現の結果による）
+
+- 参加者のUNIQUEキー `(production_id, subject_type, subject_id, participant_type)` は変更しない。同じ組の行は、状態にかかわらず1行だけで、**新しい参加者IDを発行して同じ組の行を追加することはしない**。
+- 招待の承諾と参加申請は、どちらも、同じ組の行を `SELECT … FOR UPDATE` で読み、行があれば、その行の状態を変える（参加者IDは変わらない）。
+  - 参加申請：CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING。ACTIVE・PENDING なら、既存どおり409 `stageart_participant_already_exists`。
+  - 招待の承諾：上の表のとおり ACTIVE にする（PENDING の申請中の行も含む。§4.7）。
+- 参加者IDが変わらないため、過去の出欠・精算などの記録は、同じ参加者IDにつながったまま残る（削除・変更しない）。再参加の前後は、監査ログで区別する（下記）。
+- 監査ログ：再申請は `JOIN_REQUESTED`、再参加（承諾）は `ACCEPTED` を記録し、`detail` に `previous_status`（再利用の前の状態）と `reused_participant=true` を入れる。これで、再申請・再参加の前後の状態を追跡できる。
+- 行が既にある場合の判定と状態の変更は、公演の行ロック（§5.4）の中で行うため、同時の申請・承諾で、行が2つになったり、状態が食い違ったりしない。UNIQUEキーは最後の防御として残る（それでも重複になった場合は、DBの失敗として扱い、成功を返さない。§7.4）。
+- 【未決定】参加者の状態の DRAFT（`ParticipantStatus::DRAFT`）の行からの再申請を認めるか。現在のコードで DRAFT の行がどの経路で作られるかは、未調査。
 
 ### 5.3 招待の制約
 
@@ -534,7 +556,7 @@
 | 同じ公演・同じメール・同じ種別に PENDING（期限内）がある | 新しく作らず、再送する（既存どおり。再送の上限に数える）。作成は公演の行をロックして直列化し、二重に作らない |
 | 同じ公演・同じメールで、種別が異なる | 別の招待として作れる（参加者のUNIQUEキーが種別ごとのため、既存どおり）。送信の上限は、種別を問わず合算する |
 | 有効期間 | 新しい招待は**作成から7日間**（D4） |
-| 再送 | 同じ行のトークンを差し替え、**期限を再送の時点から7日間に更新する**。古いトークン（古いリンク）は無効になる |
+| 再送 | **期限を再送の時点から7日間に更新する**。招待メールにトークンを入れないため（第6版）、トークンの差し替えはしない。どのメールのリンクも同じ `/participant-invitations` になる |
 | 招待1件あたりの再送の上限（D6） | 初回の送信は再送の回数に含めない。**再送は最大5回**（初回を含めて最大6回の送信）。6回目の再送は429 `stageart_participant_invitation_resend_limit` |
 | 同じ公演・同じメールアドレスへの送信の上限（第3版） | **キャンセル済み・期限切れ・辞退済みを含む過去の招待をまたいで、初回の送信を含めて直近30日間に6回まで。**取消して新しく招待を作っても、数え直さない。メールアドレスは §6.4 の正規化で集計する。超えた場合は、作成・再送とも429 `stageart_participant_invitation_send_limit`（`available_at`：30日の枠から最も古い送信が外れる日時）。R14-B以前の送信は記録がないため数えない |
 | 送信の数え方（第3版） | **作成・再送のAPIが受け付けた時点で、送信1回として数える。**`wp_mail()` の成功・失敗によって回数を戻さない。送信の状態は回数と別に管理する（§11.3） |
@@ -557,7 +579,7 @@
 
 参加者・招待・担当者を更新するすべての処理で、次の順序でロックを取る。デッドロックを防ぐため、逆の順序で取る処理を作らない。
 
-**公演（`findByIdForUpdate`） → 招待 → 参加者 → 担当者 → 送信の記録**
+**公演（`findByIdForUpdate`） → 招待 → 参加者 → Join Key → 担当者 → 送信の記録**（Join Key は第6版で追加。参加申請だけが使う）
 
 | 処理 | ロックする行（この順） |
 |---|---|
@@ -565,13 +587,15 @@
 | 招待の取消 | 公演 → 招待 |
 | 承諾 | 公演 → 招待 → 参加者 → 担当者 |
 | 辞退 | 公演 → 招待 |
-| 参加申請の作成・承認・却下 | 公演 → 参加者 |
+| 参加申請の作成 | 公演 → 参加者（同じ組の行を FOR UPDATE。なければ新しい行を INSERT） → Join Key（使用回数の加算。Join Key による申請の場合だけ。§7.1） |
+| 参加申請の承認・却下 | 公演 → 参加者 |
 | 参加者の更新（PUT）・削除（DELETE） | 公演 → 参加者 → 担当者 |
 | 本人による参加辞退（withdraw） | 公演 → 参加者 → 担当者 |
 | NAME_ONLY の追加 | 公演 → 参加者 |
 | 担当者の任命・状態の変更 | 公演 → 参加者（対象者の確認） → 担当者 |
 | 送信の直前の確認・送信の結果の記録（コミットの後） | 送信の記録だけ（§11.3。招待の `current_send_id` はロックせずに読むだけで、招待の行は更新しない。表示の状態は `current_send_id` から導くため、招待の行の更新は不要） |
-| 保存期間による削除（定期処理） | 監査ログ・送信の記録だけ（§6.6。他の表はロックしない） |
+| 保存期間による削除（定期処理） | 監査ログ・送信の記録・レート制限の行だけ（§6.6。他の表はロックしない） |
+| レート制限の加算（§9.2） | レート制限の行だけ。**業務のトランザクションの外で、その前に**、自動コミットで実行する（業務のロックと同時に持たない） |
 
 - 監査ログ（追記だけ）は、ロックを取らずに同じトランザクションで INSERT する。
 - 通知とメールの送信は、すべてコミットの後に行う（§11.2）。
@@ -590,13 +614,18 @@
 | `closed_at` | DATETIME NULL | 無効化が発生した日時（§5.1。`close_reason` と同時に記録し、変更しない） |
 | `closed_by_person_id` | CHAR(36) NULL | 管理者が無効化した場合（MANAGER）の実行者。システムによる無効化では NULL |
 | `close_reason` | VARCHAR(30) NULL | 過去に無効化された理由：MANAGER／PRODUCTION_CLOSED／INVITER_REVOKED（§5.1）。現在の状態は `status` で表す。無効化の後に辞退した招待（`status=REJECTED`）でも保持する |
-| `revocation_notified_at` | DATETIME NULL | 招待者の権限喪失（INVITER_REVOKED）を PrimaryManager に通知すると決めた日時（第5版、§11.5）。二重通知の防止に使う |
+| `revocation_notified_at` | DATETIME NULL | 招待者の権限喪失（INVITER_REVOKED）の PrimaryManager への**通知を試みると決めた日時**（第5版、第6版で表現を統一。§11.5）。通知が届いたこと（配達の完了）は意味しない。通知を試みる処理が重ならないようにするために使う |
 | `resend_count` | INT UNSIGNED NOT NULL DEFAULT 0 | この招待の再送の回数（初回は含めない。上限5、D6）。受け付けた時点で数える |
 | `current_send_id` | CHAR(36) NULL | 最新の送信の試行（§6.2 の行）。古い試行の結果で、表示の状態を上書きしないために使う |
 | `last_sent_at` | DATETIME NULL | 最新の送信を受け付けた日時 |
 | `updated_at` | DATETIME NULL | 更新日時 |
 
-- インデックス：`KEY production_email_type (production_id, email, participant_type)`、`KEY production_email_status (production_id, email, status, responded_at)`（30日の制限の判定）、`KEY invitee_person_id (invitee_person_id)`。
+- インデックス：`KEY production_email_type (production_id, email, participant_type)`、`KEY production_email_status (production_id, email, status, responded_at)`（30日の制限の判定）、`KEY invitee_person_id (invitee_person_id)`、**`KEY current_send_id (current_send_id)`**（第6版。§6.6 の削除の処理で、送信の記録が最新の試行かを確かめるため。ないと候補の1行ごとに招待の表を全件読む。§17.5.1）。
+- **`token_hash` 列**（第6版、U5＝C案）：既存の `token_hash`（NOT NULL・UNIQUE）は、DDLを変えずに残す。
+  - 既存の行の値は変更しない（UPDATE しない）。どのAPIからも、`token_hash` で招待を探さない（`findByTokenHash` を呼ぶ経路を削除する）。古いメールのトークンは、照合されずに無効になる。
+  - 新しい招待：列が NOT NULL・UNIQUE のため、値は入れる。`random_bytes(32)` から作った値のハッシュを入れ、元の値はその場で捨てる（メールにも画面にもログにも出さない。照合にも使わない）。**利用者に送るトークンは生成しない。**
+  - 再送では `token_hash` を変更しない（`rotateToken()` は使わない）。
+  - 列を NULL 可能にする・削除する変更は、DDLが増えるため、R14-Bでは行わない。
 - 一意制約は追加しない。同じ宛先の履歴の行が並ぶため。PENDING の一意性は、公演の行ロックで保証する。
 - `status` の値に ACCEPTED／REJECTED を追加する。VARCHAR(20) なので、DDLの変更は不要。
 - `TOKEN_LIFETIME_SPEC` を `'PT24H'` から `'P7D'` に変更する（D4）。既存の招待の `expires_at` は変更しない。
@@ -610,8 +639,9 @@
 | `enrollment_source` | VARCHAR(20) NULL | 最初に行が作られた経路：INVITATION／JOIN_REQUEST／MANAGER_RECORD。以後は変更しない。NULL は R14-B以前の行 |
 | `consent_source` | VARCHAR(20) NULL | 本人が同意した経路（直近）：INVITATION／JOIN_REQUEST。NULL は同意の記録なし |
 | `consented_at` | DATETIME NULL | 本人が同意した日時（直近）。NULL は同意の記録なし |
+| `requested_at` | DATETIME NULL | R14-B以降の参加申請の日時（直近の申請）【推奨】（第6版で追加）。申請で行を再利用すると、`created_at` は最初の行の作成日時のままになるため、承認時の `consented_at`（申請の日時）の根拠として使う（§5.2）。NULL は R14-B以前の申請、または申請でない行 |
 
-- 既存の行は、3列とも NULL のまま（値を入れない）。
+- 既存の行は、4列とも NULL のまま（値を入れない）。
 - 担当者の有効性の判定（§4.6）のため、`KEY production_subject_status (production_id, subject_type, subject_id, status)` を追加する【推奨】（既存のUNIQUEキーで足りるかは実装時に確認する）。
 
 **`stageart_production_delegates`**：列の追加はしない。役割の解除には既存の `status`（INACTIVE）・`updated_by`・`updated_at` を使う。
@@ -634,7 +664,7 @@ CREATE TABLE {prefix}stageart_participant_invitation_sends (
   completed_at DATETIME NULL,          -- 送信の結果を記録した日時
   PRIMARY KEY (id),
   KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at),
-  KEY production_requested (production_id, requested_at),
+  KEY production_requested_version (production_id, requested_at, email_key_version),  -- 第6版：(production_id, requested_at) を置き換え
   KEY version_requested (email_key_version, requested_at),
   KEY invitation_id (invitation_id, requested_at),
   KEY requested_at (requested_at)
@@ -658,6 +688,17 @@ CREATE TABLE {prefix}stageart_participant_invitation_sends (
   - 送信の記録の `email_key`：30日間の送信回数の集計だけに使う。宛先として使わず、アドレスに戻すこともしない。HMAC にしたのは、送信の記録だけが漏れた場合に、よく使われるアドレスの一覧から総当たりでアドレスを推測されないようにするため（単純な SHA-256 では、鍵がないため推測できる）。
   - 新しく個人情報を増やすものではない（招待の行に同じアドレスがある）。
 - この表は送信の制御のためのもので、監査ログ（§6.3）とは別にする。保持期間は §6.6（原則90日、最新の試行は保持）。
+- **インデックスと用途**（第6版、§17.5.1 の EXPLAIN による。MySQL 5.7.44、合成データ）
+
+| インデックス | 使うSQL | EXPLAIN の結果 |
+|---|---|---|
+| `production_version_email_requested` | §6.7 の手順3（版と `email_key` の組で数える） | `range`、4列すべて（key_len 487）、インデックスだけで処理 |
+| `production_requested_version` | §6.7 の手順1（期間内の鍵の版）。`production_id` だけでの絞り込みにも使える（先頭の列） | `range`（`production_id`＋`requested_at`、key_len 149）、インデックスだけで処理（DISTINCT のための小さな一時表を使う）。置き換え前の `(production_id, requested_at)` の用途を兼ねるため、インデックスの数は増えない |
+| `version_requested` | §6.7 の鍵の版を外せるかの確認（`MAX(requested_at) WHERE email_key_version=?`） | Select tables optimized away |
+| `requested_at` | §6.6 の削除の候補（`requested_at < ?`） | `range` |
+| `invitation_id` | 招待ごとの送信の履歴 | — |
+
+- 重複したインデックスは作らない（`production_requested_version` の先頭の2列が、置き換えた `(production_id, requested_at)` を兼ねる）。
 
 ### 6.3 参加者の監査ログ（新テーブル、追加のみ。【確定】D8）
 
@@ -706,13 +747,20 @@ CREATE TABLE {prefix}stageart_participant_events (
 
 - **方針**【確定】（第3版）：比較と集計には「前後の空白を除き、全体を小文字にした値」を使う。保存する値は、入力された値（`trim` 後）のままにする。
 - 比較・集計の場所：招待の重複確認（作成・再送）、30日間の送信の上限（`email_key` は、この正規化した値を入力とする HMAC-SHA-256。鍵は §6.7。鍵なしの SHA-256 単独では計算しない）、辞退後30日の制限、本人の判定（`FindPersonByEmailUseCase` との照合）、`GET /me/participant-invitations`。
-- DBの照合順序が `_ci`（大文字小文字を区別しない）であれば、SQLの `=` でも同じ結果になる。PHP側で比較する場合は `mb_strtolower` を使い、SQLとPHPの結果が食い違わないようにする（R13 Medium「メールアドレスの大文字小文字の照合」）。
 - 既存の行を正規化して書き換えることはしない（Migrationでデータを変更しない）。
-- **DBの照合順序とアプリ側の正規化の整合性を確認する**（§16.2 U9）。ユーザーから、読み取り専用のSELECTの実行が許可された（Dev：§12 のSELECT、Production：§12 の `information_schema.COLUMNS` の照合順序のSELECTだけ）。確認は、実装開始後の事前確認（§15の0）として行い、結果を記録する。本書の改訂ではDBに接続しない。`_ci` 以外（`_bin` など）だった場合は、比較の方法を見直し、本書を改訂する。
+
+**DBの照合順序と比較の前提**（【確定】第6版、U9。§17.3）
+
+- 確認した照合順序：Dev の `email` 列4つと、Production の `wp_stageart_email_credentials.email` は、すべて `utf8mb4_unicode_520_ci`（2026-11-16、§12 の照合順序のSELECTだけを実行）。Production の他のテーブル（PR #7 で作られるもの）とDBの既定の照合順序は、確認していない（許可の範囲外）。
+- `utf8mb4_unicode_520_ci` の `=` は、大文字小文字だけでなく、アクセント・全角と半角・`ß` と `ss`・末尾の空白も同じとみなす。PHP の `trim`＋`mb_strtolower` はこれらを同じとみなさない。
+- **SQLとPHPの比較が一致する前提**：StageArt のメールアドレスの入力（招待・ログイン用の認証情報・通知先など）は、すべて `filter_var(…, FILTER_VALIDATE_EMAIL)`（Unicode を許可するフラグなし）で検証され、ASCII 以外の文字と前後の空白を拒否する。保存される値が ASCII に限られるため、`_ci` の `=` と、小文字化した値の比較は一致する。**この入力の制約が、比較の一致の前提である。**
+- 将来、国際化メールアドレス（ASCII 以外を含むアドレス）を受け付ける変更をする場合は、この比較の方法を見直す。
+- **本人の判定**（招待のメールと、本人の確認済みアドレスの照合。`InvitationRecipientVerifier`・`GET /me/participant-invitations`）は、SQLで候補を絞った後、**PHP で正規化した値（`mb_strtolower(trim(…))`）が完全に一致すること**を確かめる。SQLの候補の抽出だけに依存しない。
+- 重複の確認・辞退後30日の制限も、同じ正規化で比較する。`email_key`（送信の上限）は、PHP で正規化した値の HMAC のため、もともと完全一致で数える。
 
 ### 6.5 Migration（`Installer`、スキーマ1.48.0 → 1.49.0）
 
-1. `dbDelta` で、6.1の列とインデックス、6.2の送信の記録、6.3の監査ログ、§9.2 のレート制限の表を追加する。
+1. `dbDelta` で、6.1の列とインデックス（招待の `current_send_id`、参加者の `requested_at` を含む）、6.2の送信の記録、6.3の監査ログ、§9.2 のレート制限の表を追加する。
 2. **データの更新はしない**（UPDATE・DELETE文を実行しない）。
    - 既存の PENDING の招待は、そのまま承諾待ちとして扱う。期限（24時間で作られたもの）は既存の値のまま（D4）。
    - 既存の CONSUMED は終端として残す。
@@ -731,6 +779,7 @@ CREATE TABLE {prefix}stageart_participant_events (
 | 参加者の同意の情報（`consent_source`・`consented_at`） | 参加者の行と同じ期間（参加者・公演の履歴を保持する間） | 参加者の行の一部として保持する。この処理では削除しない |
 | 参加者の行・出欠・精算・会計の記録 | 既存どおり（この設計では期間を設けない） | **削除しない** |
 | 招待の行 | 既存どおり（この設計では期間を設けない） | 削除しない |
+| レート制限の行（`stageart_rate_limit_buckets`、§9.2） | 時間枠の終了（`expires_at`）まで | `expires_at < 現在` の行を削除する |
 
 - 30日間の送信回数の集計には直近30日の行だけが必要で、90日の保存期間で正しく集計できる。最新の試行の行を残しても、集計の結果は変わらない（30日より古い行は数えないため）。
 - 監査ログの `detail` には、メールアドレス・氏名・トークンを保存しない（§6.3）。
@@ -738,9 +787,22 @@ CREATE TABLE {prefix}stageart_participant_events (
 **削除の処理**【推奨】
 
 - 1日1回の定期処理にする。WP-Cron（`wp_schedule_event`）を使う。WP-Cron の実行時刻は保証されないが、削除が遅れるだけで、正しさには影響しない。
-- 対象を期間で限定する：監査ログは `created_at < 現在 - 2年`、送信記録は `requested_at < 現在 - 90日` かつ、どの招待の `current_send_id` からも指されていない行。
+- 対象を期間で限定する：監査ログは `created_at < 現在 - 2年`、送信記録は `requested_at < 現在 - 90日` かつ、どの招待の `current_send_id` からも指されていない行、レート制限の行は `expires_at < 現在`。
 - 一度に大量の行を削除しないよう、件数を区切って削除する（例：1回に1,000行まで、残りは次回）。
-- この2つの表以外は削除しない。参加者・招待・出欠・会計の表には触れない。
+- **削除は2段階で行う**（【確定】第6版、§17.5.1）。MySQL は、複数のテーブルを結合した DELETE に `LIMIT` を付けられない（ERROR 1064 を確認）ため、送信記録は次のとおりにする。
+
+  ```sql
+  -- 1. 対象のIDを求める（招待の KEY current_send_id を使う）
+  SELECT s.id FROM {prefix}stageart_participant_invitation_sends s
+   WHERE s.requested_at < %s
+     AND NOT EXISTS (SELECT 1 FROM {prefix}stageart_participant_invitations i WHERE i.current_send_id = s.id)
+   ORDER BY s.requested_at LIMIT 1000;
+  -- 2. 求めたIDだけを削除する（念のため期間の条件も重ねる）
+  DELETE FROM {prefix}stageart_participant_invitation_sends WHERE id IN (%s, …) AND requested_at < %s;
+  ```
+
+  監査ログとレート制限の行は、単一テーブルの DELETE のため、`DELETE … WHERE created_at < %s ORDER BY created_at LIMIT 1000`（レート制限は `expires_at`）で削除できる。手順1と2の間に、その送信記録が最新の試行になることはない（新しい試行は常に新しい行で、古い行が `current_send_id` に戻ることはない）。
+- この3つの表以外は削除しない。参加者・招待・出欠・会計の表には触れない。
 - 削除した件数だけをログに出す（行の内容は出さない）。
 - 削除の処理は、R14-Bの実装に含める（本番での利用の開始前に動いている必要がある）。
 
@@ -778,7 +840,7 @@ CREATE TABLE {prefix}stageart_participant_events (
    ```
 
 4. 期間内に使われている版の鍵が、鍵の束にない場合は、正しく数えられないため、招待の作成・再送を安全側で拒否する（500 `stageart_email_key_not_configured`）。少なく数えて送信を許すことはしない。
-- インデックス：`KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at)` を使う（§6.2）。手順1は `production_id` と `requested_at` の範囲で、手順3は版と `email_key` の組で、このインデックスを使える。版ごとに `email_key` の値が異なるため、版を含めなくても結果は同じだが、組で数えることを明確にし、版の偶然の一致を避けるため、版を含める。
+- インデックス（第6版で訂正。§6.2 の表、§17.5.1 の EXPLAIN）：手順1は `KEY production_requested_version (production_id, requested_at, email_key_version)` で、`production_id` と `requested_at` の範囲を絞り、版をインデックスから読む。手順3は `KEY production_version_email_requested (production_id, email_key_version, email_key, requested_at)` の4列すべてを使う。第5版の「手順1も `production_version_email_requested` で範囲を絞れる」という記述は誤りだった（`production_id` だけでしか絞れない）。版ごとに `email_key` の値が異なるため、版を含めなくても結果は同じだが、組で数えることを明確にし、版の偶然の一致を避けるため、版を含める。
 
 **鍵の版を外せる（削除できる）条件**
 
@@ -824,49 +886,44 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | `POST /productions/{id}/participant-invitations` | 既存利用者の分岐を削除し、常に招待する。**宛先の人物の検索（`FindPersonByEmailUseCase`）もしない。アプリ内通知も送らない**（§9.2）。公演の状態（D5）・辞退後30日（D6）・送信の上限・レート制限を確認する。有効期間は7日（D4）。応答の `outcome` は `INVITATION_SENT`・`INVITATION_RESENT` だけにし、`participant` は返さない |
 | `GET /productions/{id}/participant-invitations` | `effective_status`（PENDING／EXPIRED／PRODUCTION_CLOSED／INVITER_REVOKED／ACCEPTED／REJECTED／CANCELLED／CONSUMED）、`responded_at`、`close_reason`・`closed_at`（§5.1。REJECTED でも、無効化の後の辞退なら値を持つ）、`resend_count`・`resend_remaining`（この招待の残り）、`send_status`（最新の送信：PENDING／SENT／FAILED／UNKNOWN）、`last_sent_at`、`send_limit`（`sent_in_30_days`・`remaining_in_30_days`・`available_at`）、辞退の場合は再招待できる日時（`reinvite_available_at`）を追加する。招待先の人物ID・氏名は返さない |
 | `POST /participant-invitations/{id}/cancel` | `closed_by_person_id`・`closed_at`・`close_reason=MANAGER` を記録する。既に CANCELLED(MANAGER) なら同じ結果を返す（冪等）。他の終端の状態なら409 |
-| `POST /participant-invitations/{id}/resend` | 公演の状態（D5）・招待者の権限（INVITER_REVOKED なら409）・招待1件あたりの上限・30日間の上限を確認する。期限を再送の時点から7日に更新し、トークンを差し替え、送信の記録を追加する。上限を超えれば429 |
-| `GET /participant-invitations/resolve?token=` | **廃止**。`POST /participant-invitations/registration-hint`（未ログイン、メールだけ）と `POST /participant-invitations/lookup`（ログイン必須、内容）に分ける（§7.2） |
+| `POST /participant-invitations/{id}/resend` | 公演の状態（D5）・招待者の権限（INVITER_REVOKED なら409）・招待1件あたりの上限・30日間の上限を確認する。期限を再送の時点から7日に更新し、送信の記録を追加する（トークンは差し替えない。第6版）。上限を超えれば429 |
+| `GET /participant-invitations/resolve?token=` | **廃止**（ルートを削除する）。第5版で代わりに設けるとしていた `POST /participant-invitations/registration-hint`・`POST /participant-invitations/lookup` も、**第6版で廃止**（設けない。U5＝C案）。トークンで招待を照会する経路は、どのAPIにも残さない |
+| `POST /auth/email/register` の `invitation_token` | **第6版で処理しない**。値が送られても無視し、メールを確認済みにせず、招待も探さない（応答は、`invitation_token` がない場合と同じ）。登録した人は通常のメール確認を行う。古いアプリ・古いリンクから送られても、招待の内容は分からない |
 | `PUT /participants/{id}` | ACTIVE 以外への `status` 変更（INACTIVE）は残し、ACTIVE 以外から ACTIVE への変更は拒否する（422 `stageart_participant_status_requires_consent`）。INACTIVE にした場合は担当者の役割を解除する（§4.6）。画面は `status` を送らないようにする |
 | `DELETE /participants/{id}` | 既存どおり CANCELLED にする。担当者の役割を解除する（§4.6）。行・出欠・会計の記録は削除しない |
 | `GET /productions/{id}/participants` | §7.3 のとおり、個人情報を絞る。各行に `enrollment_source`・`consent_status`（CONFIRMED／UNCONFIRMED／NOT_APPLICABLE）・`consented_at` を追加する（§4.5） |
-| 参加申請の作成・承認・却下 | §5.4 の順にロックし、参加者の行を読み直してから処理する。承認・却下は、PENDING でなければ409 `stageart_participant_request_not_pending`（§4.7）。作成時に `enrollment_source=JOIN_REQUEST` を記録する |
+| 参加申請の作成・承認・却下 | §5.4 の順にロックし、参加者の行を読み直してから処理する。承認・却下は、PENDING でなければ409 `stageart_participant_request_not_pending`（§4.7）。作成時に、新しく行を作る場合は `enrollment_source=JOIN_REQUEST` を記録し、`requested_at` を記録する |
+| 参加申請の作成（既存の行がある場合）（第6版、U13＝A＋C案） | 同じ組（公演・PERSON・本人・種別）の行を `SELECT … FOR UPDATE` で読む。CANCELLED・REJECTED・WITHDRAWN・INACTIVE なら、**その行を PENDING に戻す**（新しい行を作らない。参加者IDは変わらない。§5.2）。ACTIVE・PENDING なら409 `stageart_participant_already_exists`（既存どおり）。応答の `id` は、保存した行のID |
+| 参加申請の作成（保存と Join Key の順序）（第6版） | 1つのトランザクションで、(1) 公演のロック、(2) 参加者の行の作成または更新（**保存の結果を確認する**）、(3) Join Key による申請の場合だけ、使用回数を `UPDATE … SET use_count = use_count + 1 WHERE id = %s AND status = 'ACTIVE' AND (max_uses IS NULL OR use_count < max_uses) AND (expires_at IS NULL OR expires_at > %s)` で原子的に加算する（影響した行が0なら、鍵が使えないとして404 `stageart_join_key_not_found` を返し、ロールバックする）、(4) 監査ログ、の順に行い、すべて成功したらコミットする。**どれかが失敗したらロールバックし、申請も使用回数も残さない。**申請が保存されなかったのに使用回数だけが増える状態は起きない。列名は `stageart_join_keys`（`status`・`expires_at`・`max_uses`・`use_count`）の定義で確認した。既存の `JoinKey::recordUse()` が、上限に達したときに鍵の状態も変えている動作は、同じトランザクションの中で維持する（実装時に既存の動作を確認する） |
 | `POST /productions/{id}/delegates` | 対象者を、その公演の ACTIVE な PERSON 参加者で、同意が確認できる人に限る（422 `stageart_production_delegate_target_not_participant`／`stageart_production_delegate_target_not_consented`）。同じ役割の INACTIVE の行があれば ACTIVE に戻す |
 | `GET /productions/{id}/delegates` | 各行に `effective`（bool）と `ineffective_reason`（`INACTIVE`／`NOT_ACTIVE_PARTICIPANT`／`CONSENT_UNCONFIRMED`）を追加する（§4.6） |
 | `PUT /production-delegates/{id}`（担当者の役割・状態の変更） | ACTIVE に戻す場合も、対象者が同意を確認できる ACTIVE な PERSON 参加者であることを確認する |
 | `GET /people?email=` | **削除**（F5、U6）。ルート・UseCase・Query を削除する |
 | `GET /people/{id}` | **削除**（U6）。任意の人物IDから他人の情報を取得できるAPIは残さない |
-| 自動解決（登録・メール確認・Googleサインイン） | 公演の招待については、`ResolveParticipantInvitationUseCase` の呼び出しを削除する。招待リンクから招待先と同じアドレスで登録した場合に、メールを確認済みにする処理は残す。**団体招待の自動解決（`ResolveOrganizationInvitationUseCase`）は、R14-Bでは変更しない**（D1） |
+| 自動解決（登録・メール確認・Googleサインイン） | 公演の招待については、`ResolveParticipantInvitationUseCase` の呼び出しを削除する。招待トークンによってメールを確認済みにする処理も、公演の招待については削除する（第6版。上の `invitation_token` の行）。**団体招待の自動解決（`ResolveOrganizationInvitationUseCase`）と、団体招待のトークンの処理は、R14-Bでは変更しない**（D1） |
 
 ### 7.2 新設
 
 **`GET /me/participant-invitations`**（ログイン必須）：自分宛ての招待一覧
 
 - 本人の確認済みアドレス（ログイン用と通知用）に一致し、§5.1 の判定表で「本人の一覧に出す」ものを返す。具体的には、期限内の PENDING（公演の終了・招待者の権限喪失を含む）と、期限内の `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)`。後の2種類は辞退できるように含める（U7）。
+- **本人の確認済みアドレスに一致する招待だけを返す**（第6版。招待メールのリンクから来た場合も、ホームから来た場合も同じ）。一致の判定は §6.4 のとおり、SQLで候補を絞った後に PHP の完全一致で確かめる。未確認のアドレスは使わない。
+- 招待メールのリンクから開いた場合も、このAPIが唯一の入口になる（第6版で `lookup` を廃止したため）。招待確認画面は、この一覧の項目を使って表示する【推奨】（招待1件を取得する別のAPIは設けない）。
+- 応答に `Cache-Control: no-store` を付ける（§9.2）。
 - 応答の項目（D7）：`id`・`production_name`・`organization_name`・`participant_type`・`invited_by_display_name`（招待者の公演側の表示名。ない場合は「公演の管理者」）・`expires_at`・`already_participant`（本人が既に ACTIVE な参加者か。本人に関する情報なので本人には返す）・`can_accept`（bool）・`can_reject`（bool）・`unavailable_reason`（`PRODUCTION_CLOSED`／`INVITER_REVOKED`／null）。
 - 返さない項目：招待先のメール、管理者が入力した氏名・備考。
 - ホームの件数は、`can_accept=true` の件数を表示する。
 
-**`POST /participant-invitations/lookup`**（ログイン必須）：リンクから招待を開く
+**`POST /participant-invitations/lookup`・`POST /participant-invitations/registration-hint`**：**第6版で廃止**（設けない。U5＝C案）。第5版の U14（`registration-hint` を置く）も取り消す。
 
-- 本文：`{ "token": "..." }`。トークンはクエリではなく本文で送る（§9.2）。
-- トークンが招待に一致し、招待のメールが本人の確認済みアドレスなら、§5.1 の判定表に従う。
-  - 承諾か辞退のどちらかができる招待（期限内の PENDING と、期限内の `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)`）：上と同じ項目を返す（200）。公演の終了・招待者の権限喪失の場合は、`can_accept=false`・`can_reject=true`・`unavailable_reason` を返す（照会と辞退の扱いを一致させる。U7）。
-  - 期限切れ：410。承諾も辞退もできない処理済みの招待（ACCEPTED・REJECTED・`CANCELLED(MANAGER)`・理由 NULL の CANCELLED・CONSUMED）：409（本人には状態を伝える）。
-- トークンは再送のたびに差し替わるため、古いメールのリンクのトークンは、どの招待にも一致しない（404 `link_invalid`。§11.3）。
-- 招待が PENDING で、本人宛てでない場合は403 `stageart_participant_invitation_not_for_you`（「このアカウント宛ての招待ではありません。招待を受け取ったメールアドレスでログインし直してください」）。招待の内容は返さない。
-- トークンが一致しない場合、または本人宛てでない招待が PENDING 以外の場合は、すべて同じ404 `stageart_participant_invitation_link_invalid` を返す（§9.2）。
-- 応答に `Cache-Control: no-store` を付ける。
+**本人宛てでない招待IDへの操作**（第6版）
 
-**`POST /participant-invitations/registration-hint`**（ログイン不要）：登録画面の初期値（【確定】U14）
-
-- 本文：`{ "token": "..." }`。
-- トークンが PENDING かつ期限内の招待に一致する場合だけ、`{ "email": "..." }` を返す。公演名・団体名・氏名・役割・期限・状態などは返さない（D7）。
-- それ以外（不一致・期限切れ・処理済み・取消）は、すべて同じ404 `stageart_participant_invitation_link_invalid`。
-- レート制限の対象（§9.2）。応答に `Cache-Control: no-store` を付ける。
+- `accept`・`reject` に、本人の確認済みアドレス宛てでない招待のIDを指定した場合は、招待の状態にかかわらず、すべて同じ404 `stageart_participant_invitation_not_found` を返す（存在しない招待IDと区別しない）。招待の内容・状態・宛先のアカウントの有無を返さない。
+- 第5版の403 `not_for_you`（宛先違いの案内）は、トークンのリンクを持つ人への案内のためのもので、第6版では不要になったため設けない。宛先違いの案内は、招待一覧が空のときの文言で行う（§4.2）。
 
 **`POST /participant-invitations/{id}/accept`**（ログイン必須）
 
-- 本文：なし（任意で `token`。リンクから開いた場合の確認用。ただし、権限の根拠にはしない）。
+- 本文：なし（第6版でトークンを受け取らない）。
 - 処理（1トランザクション。ロックは §5.4）：
   1. 公演を FOR UPDATE でロックする。
   2. 招待を FOR UPDATE でロックする。
@@ -878,7 +935,8 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
   8. 監査ログを記録する（`ACCEPTED`、必要に応じて `CONSENT_RECORDED`・`DELEGATE_DEACTIVATED`）。
 - コミットした後に、招待者へ通知する（§11）。
 - 応答：200。項目は `participant_id`・`production_id`・`status=ACTIVE`。
-- エラー：403（宛先が違う・アカウントが無効・未確認。内容は返さない）、404（`link_invalid` と同じ扱い）、409 `stageart_participant_invitation_not_pending`（取消済み・辞退済み・他人が処理済み）、409 `stageart_participant_invitation_closed`（`close_reason` 付き。公演の終了・招待者の権限喪失）、410 `stageart_participant_invitation_expired`、429（レート制限）。
+- エラー：403（アカウントが無効・アドレスが未確認。内容は返さない）、404 `stageart_participant_invitation_not_found`（存在しない、または本人宛てでない招待。上記）、409 `stageart_participant_invitation_not_pending`（取消済み・辞退済み・処理済み）、409 `stageart_participant_invitation_closed`（`close_reason` 付き。公演の終了・招待者の権限喪失）、410 `stageart_participant_invitation_expired`、429（レート制限）、500（DBへの保存の失敗。§7.4。成功を返さない）。
+- 応答に `Cache-Control: no-store` を付ける（§9.2）。
 
 **`POST /participant-invitations/{id}/reject`**（ログイン必須）
 
@@ -890,6 +948,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
   - 監査ログ `REJECTED` の `detail` に、辞退の前の `status` と、`close_reason`（あれば）を記録する。辞退の時点で初めて検出した場合は、`INVITATION_CLOSED` も記録する。
 - 既に REJECTED で本人の辞退なら、同じ結果を返す（冪等）。
 - コミットした後に、通知する（§11）。辞退者の氏名は通知に含めず、招待時に管理者が入力した氏名を使う。
+- エラーは accept と同じ（本人宛てでない招待は404 `not_found`）。応答に `Cache-Control: no-store` を付ける。
 
 **`POST /participants/{id}/withdraw`**（ログイン必須）：本人による参加辞退
 
@@ -925,7 +984,12 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 
 ### 7.4 UseCase の構成
 
-- `AcceptParticipantInvitationUseCase`・`RejectParticipantInvitationUseCase`・`ListMyParticipantInvitationsUseCase`・`LookupParticipantInvitationUseCase`・`GetInvitationRegistrationHintUseCase`・`WithdrawParticipationUseCase` を新設する。
+- `AcceptParticipantInvitationUseCase`・`RejectParticipantInvitationUseCase`・`ListMyParticipantInvitationsUseCase`・`WithdrawParticipationUseCase` を新設する（第5版の `LookupParticipantInvitationUseCase`・`GetInvitationRegistrationHintUseCase` は、第6版で作らない）。
+- **既存の参加者の行の再利用**（第6版、U13）：`ParticipantEnrollmentService`（下記）に、同じ組の行を `findByProductionAndSubjectForUpdate()`（新設、`SELECT … FOR UPDATE`）で読み、なければ作成、あれば状態を変える処理をまとめる。招待の承諾（→ ACTIVE）と参加申請（→ PENDING）の両方が、この1か所を使う。`Participant` に `reopenRequest()`（CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING）を追加する。`RequestProductionParticipationUseCase` は、新しい行を作る前に必ずこの処理を通す。
+- **DBへの保存の失敗の検出**（第6版、U13＝C案）：
+  - R14-Bで変更・新設する Repository（参加者・招待・送信の記録・監査ログ・担当者・Join Key・レート制限）は、`$wpdb->insert()`・`update()`・`delete()`・`query()` の戻り値を必ず確認し、`false` なら例外（例：`PersistenceException`）を投げる。`update()` が0を返す（変更した行がない）ことは失敗ではないが、条件付きの更新（`WHERE … AND status = 'PENDING'` など）で0なら、呼び出し元が意味を判定する。
+  - 例外はトランザクションの外へ伝え、`TransactionManager` がロールバックする。REST の層では500（`stageart_persistence_failed`。DBのエラー文・SQL・メールアドレスは応答とログに出さない）にし、**成功の応答（201・200）を返さない。**
+  - 【未決定】R14-Bで触れない、ほかの Repository（`$wpdb->insert()` などの戻り値を確認していないもの）の修正を、R14-Bに含めるか、別の作業にするか。
 - `InvitationRecipientVerifier`（Application）を新設する。`FindPersonByEmailUseCase` を使って「この招待のメールの持ち主が本人か」を判定し、UserAccount の状態も確認する。招待の取得系と承諾系で共有する。比較は §6.4 の正規化で行う。招待の作成では使わない。
 - `InvitationSendService`（仮称）を新設し、送信の上限の確認、送信の記録の追加、コミット後の送信と結果の記録（§11.3）を1か所にまとめる。作成と再送から使う。
 - 参加者の作成は、`CreateParticipantUseCase` の重複確認と作成部分を、権限確認を含まない内部サービス（例：`ParticipantEnrollmentService::enrollFromInvitation()`）に分けて共有する。外部APIの `CreateParticipantUseCase` は、NAME_ONLY 専用に縮小する。
@@ -943,8 +1007,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 |---|---|---|---|---|---|---|---|---|---|
 | 招待の作成・再送・取消・同意の確認の依頼 | ○ | ○ | ○ | × | × | × | × | × | × |
 | 招待一覧（公演） | ○ | ○ | ○ | × | × | × | × | × | × |
-| 自分宛ての招待一覧・内容確認（lookup） | 本人宛てのみ | 同左 | 同左 | 同左 | 同左 | ○ | 本人宛てのみ | 本人宛てのみ（なければ空） | × |
-| 登録画面の初期値（registration-hint） | — | — | — | — | — | — | — | — | メールだけ（有効なトークン） |
+| 自分宛ての招待一覧・内容確認（`GET /me/participant-invitations`） | 本人宛てのみ | 同左 | 同左 | 同左 | 同左 | ○ | 本人宛てのみ | 本人宛てのみ（なければ空） | ×（ログイン画面へ） |
 | 承諾 | 本人宛てのみ | 同左 | 同左 | 同左 | 同左 | ○（確認済みアドレス・ACTIVE アカウント・受付中の招待） | 本人宛てのみ | 本人宛てのみ | × |
 | 辞退 | 本人宛てのみ | 同左 | 同左 | 同左 | 同左 | ○（公演終了・招待者の権限喪失の後も可） | 本人宛てのみ | 本人宛てのみ | × |
 | 参加者一覧（メールあり） | ○ | ○（公演の終了後は×） | ○（公演の終了後は×） | × | × | × | × | × | × |
@@ -972,7 +1035,7 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | 時点 | 管理者が見られるもの | 招待された本人が見られるもの |
 |---|---|---|
 | 招待前 | 自分で入力した氏名・メールだけ。アカウントの有無・人物の氏名は分からない（F5の廃止と、招待作成の処理・応答の統一） | — |
-| 招待中 | 招待の状態（承諾待ち・期限切れ・無効）、入力した氏名・メール・役割・備考、送信の状態と回数 | ログイン後、本人宛てと確認できた場合だけ：公演名・団体名・役割・招待者の公演側の表示名・期限（D7）。未ログインでは、登録画面の初期値のメールアドレスだけ |
+| 招待中 | 招待の状態（承諾待ち・期限切れ・無効）、入力した氏名・メール・役割・備考、送信の状態と回数 | ログイン後、本人の確認済みアドレス宛ての招待だけ：公演名・団体名・役割・招待者の公演側の表示名・期限（D7）。未ログインでは何も表示しない（第6版） |
 | 辞退後 | 「辞退」という状態と、再招待できる日時だけ（辞退した人物のID・氏名・アカウントの有無は分からない） | — |
 | 取消・期限切れ・無効化の後 | 状態と理由だけ | 承諾できない招待は「辞退」だけ可能（U7）。期限切れ・処理済みは、本人宛てなら状態を表示する |
 | 承諾後（ACTIVE） | 公演側の氏名（`display_name`）、人物の姓・名、通知先のメール（`PersonEmailResolver`）、同意の状態。承諾画面で、共有されることを本人に明示する | 自分の参加公演 |
@@ -993,37 +1056,74 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 |---|---|---|---|
 | 招待の作成・再送 | 操作する人物ごと | 1時間に30件 | 429 `stageart_rate_limited`（`retry_after` 付き） |
 | 招待の作成・再送 | 公演ごと | 1日に100件 | 同上 |
-| `registration-hint`・`lookup` | 接続元IPごと | 10分に20回 | 同上 |
-| トークンの照合の失敗（`link_invalid`） | 接続元IPごと | 10分に10回 | 同上（以後は一致するトークンでも429） |
 | `accept`・`reject` の失敗（403・404） | 人物ごと | 10分に10回 | 同上 |
 
+- 第6版で、`registration-hint`・`lookup`（接続元IPごと10分に20回）と、トークンの照合の失敗（`link_invalid`、接続元IPごと10分に10回）の制限を削除した（APIの廃止、U5＝C案）。**R14-Bのレート制限は、すべてログインした人物か公演の単位になり、接続元IPを使う制限はなくなった。**
 - 現在、プラグインにレート制限の仕組みはない（§1.7）。新しく作る。
-- **保存先は、DBの表とする**【推奨】（`stageart_rate_limit_buckets`：キーのハッシュ・時間枠・回数。複数のPHPプロセスで正しく数えるため。transient はオブジェクトキャッシュがない環境で `wp_options` に書き込み続けるため採用しない）。スキーマ1.49.0に含める。
-- **接続元IPの判定**：ConoHa などのリバースプロキシの環境では、`X-Forwarded-For` などのヘッダーは利用者が偽装できる。**信頼するプロキシのアドレスを設定で明示し、そのプロキシから来た接続の場合だけヘッダーを使う**。設定がなければ `REMOTE_ADDR` だけを使う。本番の構成（プロキシの有無とアドレス）は、実装時に読み取りだけで確認し、ユーザーの承認を得て設定する（§16.2 U4）。
 - 送信の上限（招待1件あたり5回、同じ公演・メールで30日間に6回）と辞退後30日の制限は、レート制限とは別に、業務上の制限として常に適用する。
 
-**トークンの扱い**
+**レート制限の方式**（【確定】第6版、固定の時間枠。§17.5.3 の検証による）
 
-- トークンは、ログ（`error_log`・アクセスログ・例外メッセージ・エラー報告）と監査ログに記録しない。新しいコードで、トークン・メールアドレスを含む例外メッセージを作らない。Frontend でも、トークンを `console` に出力しない。
-- APIへは、トークンをクエリではなく、POSTの本文で送る（`lookup`・`registration-hint`）。
-- **招待メールのリンクでは、トークンをURLのフラグメント（`/participant-invitations/open#token=...`）に入れる**（【確定】U5の方針）。フラグメントはサーバーに送られないため、Webサーバーのアクセスログに残らない。
-  - Expo Router の Web とネイティブのディープリンクの両方で、フラグメントを読めること、読んだ後に消せることを、実装の最初に検証する。
-  - **フラグメントを安全に扱えない場合は、安易にクエリ文字列に切り替えず、設計を再検討する**（§16.2 U5）。
-- 画面がトークンを読んだら、すぐに `router.replace` などで、URLと閲覧履歴からトークンを取り除く。
-- トークンは、画面の状態（メモリ）と、ログイン後に戻るための一時保存（Webでは `sessionStorage`、ネイティブでは `SecureStore`）にだけ置く。`return_to` などのURLに入れない。招待の処理が終わったら一時保存から消す。
-- 古いメールのリンク（`/register?token=...`）は、クエリにトークンが入ったままのため、Frontendを配信するサーバーのアクセスログに残りうる。古いリンクの期限（24時間）が過ぎれば無効になる。画面は、開いた直後にURLからトークンを取り除く。
+```sql
+CREATE TABLE {prefix}stageart_rate_limit_buckets (
+  bucket_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, -- 制限の種類と対象の HMAC-SHA-256（16進）
+  window_start DATETIME NOT NULL,   -- 時間枠の開始（UTC）
+  hits INT UNSIGNED NOT NULL,
+  expires_at DATETIME NOT NULL,     -- 時間枠の終了（UTC）。削除に使う
+  PRIMARY KEY (bucket_key, window_start),
+  KEY expires_at (expires_at)
+);
+```
+
+- 保存先はDBの表にする（複数のPHPプロセスで正しく数えるため。transient はオブジェクトキャッシュがない環境で `wp_options` に書き込み続けるため使わない）。スキーマ1.49.0に含める。
+- 一意の対象：`(bucket_key, window_start)`（主キー）。`bucket_key` は「制限の種類｜対象の種類｜対象」（例：`invitation_create|person|<人物ID>`、`invitation_create|production|<公演ID>`、`invitation_respond_failure|person|<人物ID>`）の HMAC-SHA-256。鍵は §6.7 の鍵の束とは別にする（例：WordPress の `wp_salt()` から作る）。
+- 時間枠：**UTC の固定の時間枠**。`window_start = floor(現在の UNIX 時刻 ÷ 枠の長さ) × 枠の長さ`、終了（`expires_at`）は `window_start + 枠の長さ`。枠の長さは、制限ごとに1時間・1日・10分。
+- 枠の切り替え：次の枠は、新しい `window_start` の行として自動で始まる。古い行を更新・リセットしない。
+- **固定の時間枠の境目の問題**：枠の境目の直前と直後に、それぞれ上限まで通るため、**境目の前後の短い時間に、最大で上限の2倍まで通りうる**（例：1時間に30件の制限で、境目の前後に30件ずつ、計60件）。これを許容する（【確定】第6版）。
+- **原子的な加算**（SELECT の後に UPDATE する方式は使わない）
+
+  ```sql
+  INSERT INTO {prefix}stageart_rate_limit_buckets (bucket_key, window_start, hits, expires_at)
+  VALUES (%s, %s, LAST_INSERT_ID(1), %s)
+  ON DUPLICATE KEY UPDATE hits = LAST_INSERT_ID(hits + 1);
+  SELECT LAST_INSERT_ID();   -- この接続で加算した後の回数
+  ```
+
+  - 1文で、行の作成または加算と、加算後の値の取得を行う。`LAST_INSERT_ID(式)` の値は接続ごとのため、ほかのPHPプロセスの加算と混ざらない（§17.5.3：8プロセスの並行実行で、数え漏れ・重複なし）。
+  - 判定：加算後の回数が上限を超えたら429（`retry_after` は枠の終了までの秒数）。上限を超えた試みも数える（安全側）。
+  - 失敗の回数の制限（`accept`・`reject` の失敗）：リクエストの最初に、現在の枠の `hits` を読み、上限以上なら429（読むだけで加算しない）。処理が失敗したときだけ、上の文で加算する。読んだ後に加算するまでの間に、並行したリクエストが数件通りうるが、上限を数件超えるだけで、数え漏れはない。
+  - トランザクション：**業務のトランザクションの外で、その前に**、自動コミットで実行する（§5.4）。レート制限の行のロックを、業務のロックと同時に持たない。
+  - **デッドロック（1213）**：高い並行度では、`INSERT … ON DUPLICATE KEY UPDATE` がデッドロックになりうる（検証では発生しなかった）。1213 の場合は、同じ文を最大3回まで、短い待ち時間（例：10〜50ミリ秒のランダム）を置いて再試行する。3回とも失敗した場合は、レート制限の判定ができないため、安全側で429（`retry_after` は短い値）を返す【推奨】。1213 以外のDBの失敗は、§7.4 のとおり500にする。
+- 古い行の削除：§6.6 の定期処理で、`expires_at < 現在` の行を、件数を区切って削除する。判定は現在の枠の行だけを見るため、削除が遅れても結果は変わらない。
+- **接続元IPの判定**：R14-Bでは、接続元IPを使うレート制限はない（上記）。将来、接続元IPを使う場合は、`REMOTE_ADDR` だけを使う。Dev の確認（§17.6）で、`REMOTE_ADDR` は利用者のIPで、利用者が送った `X-Forwarded-For` はそのまま届く（偽装できる）ことが分かったため、`X-Forwarded-For` は使わない。信頼するプロキシの設定は不要（Production は同じ構成と見込まれるが、Production では確認していない）。
+
+**招待メールのリンクとトークン**（【確定】第6版、U5＝C案）
+
+- **招待メールのリンクにトークンを入れない。**リンク先は、すべての招待メールで同じ `/participant-invitations`（招待一覧）にする。新しい招待・再送のメールに、トークンを生成して送ることはしない（`token_hash` 列の扱いは §6.1）。
+- 招待一覧は、ログインした本人の確認済みアドレスに一致する招待だけを表示する（§4.2、§7.2）。リンクを開いただけでは、招待の存在・公演名・団体名・招待者・役割を表示しない。
+- そのため、URL・閲覧履歴・アクセスログ・Referer にトークンが残る問題（§17.1）は、新しいメールでは起きない。第5版のフラグメント方式（`/participant-invitations/open#token=…`）・`sessionStorage`／`SecureStore` への一時保存は、採用しない。
+- **古いメールのリンク**（R14-B以前の `/register?token=…`。第5版の方式のリンクは配布されていない）：Frontend は、`token` を読まず、処理せず、`return_to` などにも入れずに、すぐにURLから取り除いて、一般の導線（未ログインならログイン画面、ログイン後は招待一覧）へ移動する。Backend の `/register` は `invitation_token` を処理しない（§7.1）。古いリンクから、招待の内容を照会する経路は残さない。古いリンクのクエリのトークンは、Frontendを配信するサーバーのアクセスログに残りうるが、照合に使われないため、招待の内容は分からない。
+- メールアドレス・トークンを、ログ（`error_log`・例外メッセージ・エラー報告）と監査ログに記録しない（既存の方針を維持する）。
+- **ネイティブアプリ**：第6版では、フラグメントのネイティブでの検証は不要になった。メールの `https://` のリンクが、アプリが入っていても Web 版で開く問題（Android App Links・iOS Universal Links が未設定。§17.1）は、別の課題として記録し、R14-Bでは実装しない（§16.3）。
 
 **画面とHTTPヘッダー**
 
-- 招待のリンク画面・招待確認画面・登録画面では、第三者（解析・広告など）へ情報を送るスクリプトを読み込まない（現行の Frontend には、外部のエラー報告・解析サービスは見つからない。§1.7）。
-- 招待のリンク画面・招待確認画面（Web）に `Referrer-Policy: no-referrer`（またはmetaタグ）を設定し、外部リンクへ移動したときにURLが送られないようにする。
-- `lookup`・`registration-hint`・`accept`・`reject`・`GET /me/participant-invitations` の応答に `Cache-Control: no-store` を付ける。
+- 招待一覧・招待確認画面・登録画面では、第三者（解析・広告など）へ情報を送るスクリプトを読み込まない（現行の Frontend には、外部のエラー報告・解析サービスは見つからない。§1.7）。
+- 招待一覧・招待確認画面（Web）に `Referrer-Policy: no-referrer`（またはmetaタグ）を設定する【推奨】（URLにトークンはないが、招待IDなどを外部へ送らないため）。
 
-**照合に失敗したときの応答**
+**個人宛てのAPIの `Cache-Control: no-store`**（【確定】第6版、U4）
 
-- 一致しないトークン、本人宛てでない処理済みの招待は、すべて同じ404 `link_invalid` を返す。招待先の存在・アカウントの有無・招待の状態を推測できる情報を返さない。
-- `registration-hint` は、有効なトークンにだけメールアドレスを返す。それ以外は同じ404。
-- 本人宛てでない PENDING の招待に `lookup` した場合だけ、403 `not_for_you` を返す。リンクを持っている人に「別のアドレスでログインし直す」ことを案内するために必要で、アカウントの有無は含まない。
+Dev の確認（§17.6）で、ConoHa の nginx は、`Cache-Control` のない200の応答を、`Authorization` の有無・値にかかわらずキャッシュし、別の利用者に返すことが分かった。ログイン済みの StageArt のAPIの応答には、WordPress が no-cache のヘッダーを付けるため、現在は混ざらない（§17.6 の実アカウントの確認）。この状態に依存しないよう、次を必須にする。
+
+1. 認証済みの利用者に、個人の情報・個人の状態を返すAPIは、すべて応答に `Cache-Control: no-store` を明示的に付ける（R14-Bの対象：`GET /me/participant-invitations`、`accept`、`reject`、`withdraw`、参加者一覧・担当者一覧・招待一覧（公演）、`GET /me/*` のうち R14-B で変更するもの）。
+2. 認証の状態（ログインの有無・誰か）によって応答の内容が変わるAPIも、同じく `no-store` にする（利用者の間で応答が混ざらないように）。エラーの応答（401・403・404・409・410・429・500）も含める。
+3. ヘッダーは、WordPress REST API の側（Backend）で確実に付ける。WordPress 本体の no-cache のヘッダー（`rest_send_nocache_headers`）だけに依存せず、StageArt の REST の層で明示的に付ける（例：`rest_post_dispatch` のフィルターで、対象のルートに付ける。Dev の既存のコードには、公開ページの読み取りに no-cache を付ける `PublicResponseCachePolicy` がある）。
+4. Frontend のキャッシュ制御（fetch のオプションなど）だけに依存しない。
+5. APIを新しく追加・変更するときは、この要件に当たるかを確認する（コードレビューの確認項目にする）。
+6. 自動テスト（PHPUnit で、対象のルートの応答ヘッダーを確認する）と、実環境（Dev）のHTTPの応答の確認（2つのテスト用アカウントと未ログインで、`Cache-Control` と `X-Nginx-Cache` を確認する。§17.6 の手順）で検証する。
+7. nginx などのキャッシュの設定が変わった場合（ConoHa の設定の変更・サーバーの移転など）は、6の実環境の確認をやり直す。
+
+- ConoHa のキャッシュの設定は変更しない。
 
 **アカウントの有無の推測の防止**（【確定】第3版、U8）
 
@@ -1041,16 +1141,15 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 | 送信の上限に達したとき | 作成・再送のボタンを無効にし、「このメールアドレスへの送信は30日間で6回までです。{available_at}以降に送信できます」と表示する。招待1件の上限では「この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません」と表示する |
 | 送信の状態の表示 | 送信済み：「送信しました（相手に届いたかどうかは確認できません）」。送信失敗：「送信に失敗しました。再送してください（再送も送信回数に数えます）」。送信結果不明：「送信の結果を確認できませんでした。メールが届いていない場合は再送してください」 |
 | 担当者（`productions/[id]/delegates.tsx`） | 人物IDの自由入力欄を削除し、同意が確認できる ACTIVE な PERSON 参加者の候補からの選択だけにする。一覧を「有効な担当者」と「無効な担当者」に分け、無効な理由（同意未確認・メンバーではない・解除済み）と、次の操作（同意の確認を依頼・招待）を表示する（§4.6） |
-| 招待のリンク（新設：`/participant-invitations/open`） | URLのフラグメントからトークンを読み、すぐにURLから取り除く。ログイン済みなら `lookup` を呼んで招待確認画面へ。未ログインなら、公演名などを出さずに「ログイン」「登録」を選ぶ画面を表示する（§4.2） |
-| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。宛先が違う場合（403）は、「招待を受け取ったアドレスでログインし直してください」と表示し、ログアウトして入り直す操作を出す。期限切れ（410）・処理済み（409）は、それぞれの文言を表示する |
-| 自分宛ての招待（ホーム） | 承諾できる招待があれば、ホームに件数とリンクを表示する（新しい一覧画面は作らず、確認画面への導線だけにする）。招待作成時のアプリ内通知はないため、これが登録済みの人への主な導線になる |
-| 登録（`register.tsx`） | 招待リンクから来た場合は、`registration-hint` で取得したメールアドレスだけを初期値にする（公演名・氏名の事前表示はやめる。D7）。登録が完了したら、自動では参加させず、招待確認画面に移動する。古いリンク（`/register?token=`）で開かれた場合は、URLからトークンを取り除き、同じ導線に乗せる |
-| ログイン（既存） | 招待リンクから来た場合は、ログイン後に招待のリンクの画面へ戻る（`return_to`）。`return_to` は、アプリ内のパスだけを受け付けるよう検証する（R13 Medium の修正を同時に行う）。トークンは `return_to` に入れず、一時保存から読む（§9.2） |
+| 招待一覧（新設：`(app)/participant-invitations/index.tsx`、URL `/participant-invitations`。第6版） | 招待メールのリンク先。ログインが必要な画面にし、未ログインならログイン画面へ移動する（ログイン後の移動先は `/participant-invitations`）。未ログインの時点では、招待の存在・内容を一切表示しない。ログイン後、`GET /me/participant-invitations` の招待（本人の確認済みアドレス宛てだけ）を一覧にする。空のときは「招待が見つからない場合は、招待メールを受け取ったメールアドレスでログインしてください。登録したばかりの場合は、メールアドレスの確認を済ませてください」と表示する |
+| 招待確認（新設：`(app)/participant-invitations/[id].tsx`） | 招待一覧から開く。公演名・団体名・役割・招待者・期限・共有される情報の説明と、「参加する」「参加しない」のボタン（D7）。表示には一覧の項目を使う【推奨】。既に参加者なら、その旨を表示する（§4.5）。`can_accept=false` のときは「この招待は現在承諾できません」と表示し、「参加しない」だけを出す（U7）。本人宛てでない・存在しない（404）・期限切れ（410）・処理済み（409）は、それぞれの文言を表示する |
+| 自分宛ての招待（ホーム） | 承諾できる招待があれば、ホームに件数と、招待一覧へのリンクを表示する。招待作成時のアプリ内通知はないため、これが登録済みの人への主な導線になる |
+| 登録（`register.tsx`） | メールアドレスは本人が入力する（招待から初期値を取得しない。第6版）。登録の後は通常のメール確認の画面へ進み、確認が済んだら招待一覧へ移動できるようにする。自動では参加させない。古いリンク（`/register?token=`）で開かれた場合は、トークンを読まず、処理せず、すぐにURLから取り除いて、通常の登録・ログインの導線に乗せる（招待の内容は表示しない） |
+| ログイン（既存） | 招待一覧から来た場合は、ログイン後に `/participant-invitations` へ戻る（`return_to`）。`return_to` は、アプリ内のパスだけを受け付けるよう検証する（R13 Medium の修正を同時に行う）。`return_to` にトークンなどを入れない |
 | 参加公演（`participating-productions.tsx`） | 各公演に「参加をやめる」（`withdraw`）を追加し、確認ダイアログを表示する。担当者を兼ねている場合は「担当者の役割も解除されます」と書く（D9）。PrimaryManager の公演には表示しない（引き継ぎの案内を出す） |
 | 公演の画面（担当者本人） | 自分の担当者権限が無効な場合は、その理由（同意未確認など）を表示する【推奨】（§4.6） |
 | アプリ内通知（`my-notifications.tsx`） | 承諾・辞退・参加辞退・招待の無効化の通知から、公演のメンバー管理へ移動する。招待作成の通知はない |
-| 招待メール | リンク先を `/participant-invitations/open#token=...`（§9.2、U5）に変える。本文に「承諾するまで参加者にはなりません」「有効期限は7日間です」「このメールが複数届いた場合は、最も新しいメールのリンクを使ってください」と書く（§11.3）。登録済みかどうかで文面を変えない |
-| 無効なリンク（404 `link_invalid`） | 「このリンクは無効です。最新の招待メールのリンクを開くか、ログインしてホームから招待を確認してください」と表示する（§11.3） |
+| 招待メール | リンク先を、トークンを含まない `/participant-invitations`（招待一覧）に変える（第6版、U5＝C案、§9.2）。本文に「承諾するまで参加者にはなりません」「有効期限は7日間です」「このメールを受け取ったメールアドレスでStageArtにログイン（未登録の場合は登録とメールアドレスの確認）すると、招待を確認できます」と書く。登録済みかどうかで文面を変えない |
 
 団体メンバー管理（`organizations/[id]/members.tsx`・`invite.tsx`）とは画面を分けたままにする。公演の参加者は、団体のメンバーかどうかにかかわらず、公演ごとに招待する。団体招待の画面と動作は、R14-Bでは変更しない（D1）。
 
@@ -1078,15 +1177,15 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 
 - **招待・承諾・辞退・参加辞退のDB更新を、先にコミットする。**メールの送信とアプリ内通知の作成は、コミットの後に行う。
 - 通知の失敗によって、招待や承諾のDB処理をロールバックしない。APIの応答も成功のままにする。
-- 招待の作成・再送の場合も、招待の行（新しいトークンのハッシュ・期限・`resend_count`）と送信の記録（PENDING）をコミットしてから、メールを送る。メールの送信が失敗しても、招待は作られたまま残る。
+- 招待の作成・再送の場合も、招待の行（期限・`resend_count`・`current_send_id`）と送信の記録（PENDING）をコミットしてから、メールを送る。メールの送信が失敗しても、招待は作られたまま残る。
 
 ### 11.3 送信の状態と送信失敗の扱い（第3版で変更）
 
 **流れ**
 
-1. 作成・再送のAPIが受け付けたら、トランザクションの中で（公演 → 招待の順にロック、§5.4）、新しいトークンを作って招待の `token_hash` を差し替え、送信の記録（§6.2）を `status=PENDING`、新しい `id`（送信の試行の識別子）で追加し、招待の `current_send_id` をその `id` にする。`resend_count`（再送の場合）を増やす。ここで回数が確定する。**`current_send_id` とトークンは、このロックの中でだけ、同時に更新する。**トークンの平文は、このリクエストのメモリにだけ置く。
+1. 作成・再送のAPIが受け付けたら、トランザクションの中で（公演 → 招待の順にロック、§5.4）、送信の記録（§6.2）を `status=PENDING`、新しい `id`（送信の試行の識別子）で追加し、招待の `current_send_id` をその `id` にする。`resend_count`（再送の場合）を増やす。ここで回数が確定する。`current_send_id` は、このロックの中でだけ更新する。（第6版：トークンは生成・差し替えしない。§6.1・§9.2）
 2. コミットする。
-3. **送信の直前の確認**（第4版）：招待の `current_send_id` をDBから読み直す（ロックは取らない）。自分の試行の `id` と違えば、より新しい試行が受け付けられているため、メールを送らず、送信の記録を `SUPERSEDED` にして終わる（手順4の記録だけを行う）。自分の試行のトークンは、既に無効になっているため。
+3. **送信の直前の確認**（第4版）：招待の `current_send_id` をDBから読み直す（ロックは取らない）。自分の試行の `id` と違えば、より新しい試行が受け付けられているため、メールを送らず、送信の記録を `SUPERSEDED` にして終わる（手順4の記録だけを行う）。第6版ではどのメールも同じ内容（トークンなし）になるため、この確認の目的は、同じ招待のメールが続けて何通も届くことを減らすことになる【推奨】（第4版の目的だった「古いトークンのメールを送らない」は、トークンの廃止でなくなった）。
 4. 一致すれば、メールを送る（`StageArtMail::send()`）。
 5. 結果を、短い別のトランザクションで記録する。
    - 送信の記録：`UPDATE ... SET status = 'SENT' または 'FAILED', completed_at = 現在 WHERE id = {試行のID} AND status = 'PENDING'`。**自分の試行の行だけ**を、PENDING のときだけ更新する。
@@ -1098,13 +1197,10 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 
 同じ招待への再送が重なった場合（管理者が続けて押した、2人の管理者が同時に押したなど）の扱い。
 
-- 受け付けは公演の行ロックで直列化され、後の試行が `current_send_id` とトークンを上書きする。回数は、どちらの試行も1回ずつ数える（計上のルールは変えない）。
-- 先の試行は、手順3の確認で自分が最新でないことを知り、メールを送らない（SUPERSEDED）。古いトークンのメールが、新しいメールより後に届くことを、多くの場合で防げる。
-- **完全には防げない競合**：先の試行が手順3の確認を通った直後に、後の試行が受け付けられた場合は、先の試行も古いトークンのメールを送る。この場合、受信者には2通のメールが届き、先のメールのリンク（古いトークン）は無効になっている。メールの配送の順序は保証されないため、古いメールが後に届くこともある。確認と送信の間をロックで守ることはしない（送信の間、公演の行をロックし続けることになり、他の操作を止めるため）。
-- **利用者への案内**
-  - 招待メールの本文に「このメールが複数届いた場合は、最も新しいメールのリンクを使ってください」と書く。
-  - 無効なリンクを開いた画面（404 `link_invalid`）に「このリンクは無効です。最新の招待メールのリンクを開くか、ログインしてホームから招待を確認してください」と表示する。登録済みの人は、トークンなしでホームから招待を確認できる。
-  - 管理者の画面では、送信中（PENDING）の招待の再送ボタンを無効にし、続けて押すことを防ぐ。
+- 受け付けは公演の行ロックで直列化され、後の試行が `current_send_id` を上書きする。回数は、どちらの試行も1回ずつ数える（計上のルールは変えない）。
+- 先の試行は、手順3の確認で自分が最新でないことを知り、メールを送らない（SUPERSEDED）。同じ内容のメールが重複して届くことを、多くの場合で防げる。
+- **完全には防げない競合**：先の試行が手順3の確認を通った直後に、後の試行が受け付けられた場合は、2通のメールが送られる。第6版では、どちらのメールのリンクも同じ `/participant-invitations`（トークンなし）のため、どちらを開いても同じ招待一覧になり、古いリンクが無効になる問題はない。確認と送信の間をロックで守ることはしない（送信の間、公演の行をロックし続けることになり、他の操作を止めるため）。
+- **利用者への案内**：管理者の画面では、送信中（PENDING）の招待の再送ボタンを無効にし、続けて押すことを防ぐ。（第5版の「最も新しいメールのリンクを使ってください」の文言と、無効なリンクの画面は、第6版で不要になった）
 
 **回数の扱い**
 
@@ -1124,31 +1220,33 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 ### 11.4 二重送信と状態の二重更新の防止
 
 - 承諾・辞退・取消・参加辞退は冪等にする。2回目の呼び出しは、状態を変えず、通知も監査ログも追加しない（通知は、実際に状態が変わった1回だけ送る）。
-- 再送は、毎回トークンを差し替えるため、古いメールのリンクは無効になる。同じ再送のリクエストが二重に届いた場合は、公演の行ロックで直列化され、2回の送信として数えられる。先の試行は、多くの場合 SUPERSEDED になってメールを送らない（§11.3 の再送の競合）。状態の矛盾は起きない。Frontend は、再送のボタンを送信中は無効にする。
+- 再送は、トークンを差し替えない（第6版。メールのリンクはすべて同じ）。同じ再送のリクエストが二重に届いた場合は、公演の行ロックで直列化され、2回の送信として数えられる。先の試行は、多くの場合 SUPERSEDED になってメールを送らない（§11.3 の再送の競合）。状態の矛盾は起きない。Frontend は、再送のボタンを送信中は無効にする。
 - 非同期の仕組み（キュー）は導入しない。現在の通知基盤は同期で送る方式で、WP-Cron は稽古のリマインダーにしか使われていない（§1.6）。存在しない仕組みを前提にしない。
 
-### 11.5 招待者の権限喪失の PrimaryManager への通知（【確定】U10、第5版）
+### 11.5 招待者の権限喪失の PrimaryManager への通知（【確定】U10、第5版。第6版で表現を統一）
 
 **通知の契機**
 
-- 招待者の権限喪失（INVITER_REVOKED）を**最初に検出した書き込み処理**で、PrimaryManager へ**一度だけ**通知する。
+- 招待者の権限喪失（INVITER_REVOKED）を**最初に検出した書き込み処理**で、PrimaryManager への**通知を一度だけ試みる**。
+- **「一度だけ試みる」の意味**（第6版）：保証するのは、通知を試みる処理が重複しない（2回以上試みない）ことだけである。**通知が届くこと（配達）は保証しない。**通知の作成・送信に失敗しても、再試行しない（自動の再試行の仕組みはない）。`revocation_notified_at` は「通知を試みると決めた日時」で、通知が届いたことを意味しない。
+- PrimaryManager は、通知が届かなかった場合でも、公演の招待一覧の `effective_status=INVITER_REVOKED`（と `close_reason`）の表示から、招待が無効になったことを確認できる。
 - 対象の書き込み処理は、本人の**承諾**と**辞退**（§7.2）。承諾では `participant_invitation_closed`、辞退では `participant_invitation_rejected`（権限喪失の説明を加えたもの）を送り、どちらも1通で済ませる。
-- **読み取り処理では通知しない**：`GET /me/participant-invitations`・`lookup`・管理者の招待一覧は、`effective_status=INVITER_REVOKED` を導いて返すだけで、DBに書き込まず、通知もしない。
+- **読み取り処理では通知しない**：`GET /me/participant-invitations`・管理者の招待一覧は、`effective_status=INVITER_REVOKED` を導いて返すだけで、DBに書き込まず、通知もしない。
 - 管理者の再送・取消でも通知しない（再送は409を返すだけで状態を変えない。操作した管理者は応答で知る。取消は管理者の意思による `MANAGER` の無効化）。
 - **公演の終了（PRODUCTION_CLOSED）による無効化は通知しない**（管理者は公演の状態を知っているため）。
 
 **二重通知の防止**
 
 1. 承諾・辞退の処理は、§5.4 の順に公演 → 招待をロックする。
-2. 招待者の権限喪失を検出し、招待の `revocation_notified_at` が NULL の場合だけ、同じトランザクションで `revocation_notified_at` を現在の日時にし、「このトランザクションで通知する」と覚える。NULL でなければ、既に通知が決まっているため、通知しない。
-3. コミットした後に、手順2で覚えた場合だけ通知を送る。
-- 招待の行ロックで直列化されるため、承諾と辞退が同時に来ても、`revocation_notified_at` を記録できるのは1つの処理だけで、通知は1回になる。
+2. 招待者の権限喪失を検出し、招待の `revocation_notified_at` が NULL の場合だけ、同じトランザクションで `revocation_notified_at` を現在の日時にし、「このトランザクションで通知を試みる」と覚える。NULL でなければ、既に通知を試みることが決まっているため、試みない。
+3. コミットした後に、手順2で覚えた場合だけ通知を試みる（1回だけ。失敗しても再試行しない）。
+- 招待の行ロックで直列化されるため、承諾と辞退が同時に来ても、`revocation_notified_at` を記録できるのは1つの処理だけで、通知を試みるのは1回になる。
 - 例：承諾で権限喪失を検出して `CANCELLED(INVITER_REVOKED)` になり通知した後、本人が辞退した場合は、権限喪失の通知は送らない（`revocation_notified_at` が記録済み）。辞退の通知（`participant_invitation_rejected`、権限喪失の説明なし）は、辞退の事実を知らせるため通常どおり送る。
-- 通知の送信が失敗しても、`revocation_notified_at` は戻さない（通知は既存どおり失敗をログに記録するだけ。§11.3）。再送はしない。
+- 通知の作成・送信が失敗しても、`revocation_notified_at` は戻さない（通知は既存どおり失敗をログに記録するだけ。§11.3）。再試行・再送はしない（配達の保証はない）。
 
 **監査ログ**
 
-- 初めて検出したトランザクションで `INVITATION_CLOSED` を記録する（`detail`：`close_reason=INVITER_REVOKED`、検出した操作 `ACCEPT` または `REJECT`、`primary_manager_notified=true`）。
+- 初めて検出したトランザクションで `INVITATION_CLOSED` を記録する（`detail`：`close_reason=INVITER_REVOKED`、検出した操作 `ACCEPT` または `REJECT`、`primary_manager_notify_attempted=true`（通知を試みたことを表す。届いたことは意味しない））。
 - 通知が決まらなかった場合（既に通知済み）は、`INVITATION_CLOSED` を重ねて記録しない。
 
 ## 12. 既存データとの互換性
@@ -1157,13 +1255,15 @@ StageArt API はアプリ専用である（U6）。以下の変更は、アプ�
 |---|---|
 | 直接追加された ACTIVE な PERSON 参加者（過去の P1・P3・P4）を含む、既存のすべての参加者 | **変更しない**（D2）。`enrollment_source`・`consent_source`・`consented_at` は NULL のままで、「同意未確認（旧方式）」と表示する。同意済みとはみなさない。参加者としての機能はこれまでどおり。本人は参加公演の画面から辞退できる。管理者は「同意の確認を依頼」で再確認できる |
 | 既存の担当者の行 | **行は変更しない。**参加者でない人物の行は `NOT_ACTIVE_PARTICIPANT`、同意未確認の参加者の行は `CONSENT_UNCONFIRMED` として、権限を有効にしない（§4.6）。PrimaryManager 以外の既存の担当者は、リリースの時点で全員が無効になる |
-| PENDING の招待（R14-B以前に作成） | 承諾待ちとして扱う。期限（24時間）は既存の値のまま（D4）。古いメールのリンク（`/register?token=`）からも、確認画面への導線に乗せる。`resend_count` は0から数え、送信の記録もR14-B以降の送信から数える |
+| PENDING の招待（R14-B以前に作成） | 承諾待ちとして扱う。期限（24時間）は既存の値のまま（D4）。本人がログインすれば、確認済みアドレス宛てなら招待一覧に出る。古いメールのリンク（`/register?token=`）のトークンは処理せず、一般の導線（ログイン・招待一覧）へ誘導する（第6版。§9.2）。`resend_count` は0から数え、送信の記録もR14-B以降の送信から数える |
+| 既存の招待の `token_hash` | 変更しない（UPDATE しない）。照合に使わない（第6版。§6.1） |
 | CONSUMED の招待 | 終端のまま残す。一覧では「参加済み（旧方式）」と表示する |
 | CANCELLED の招待 | `close_reason` は NULL（理由不明）のまま |
 | ORGANIZATION の参加者 | 変更しない（D10）。新しい直接追加だけを止める |
 | 参加申請中（PENDING）の行 | 変更しない。`enrollment_source` は NULL のまま。管理者が承認しても同意は記録しない（§4.5）。本人が招待を承諾すれば同意を記録する |
 | 出欠・精算・会計の記録 | 変更しない |
 | 監査ログ・送信の記録 | 1.49.0以前の操作は記録されない |
+| CANCELLED・REJECTED の参加者の行（過去の削除・却下） | 変更しない。R14-B以降、同じ人の再申請・承諾では、この行を再利用する（第6版、§5.2）。U13 の再現で、R14-B以前は再申請で保存が失敗し、成功の応答だけが返っていた（§17.2）。その間に失われた申請は、DBに残っていないため復元できない（Join Key の使用回数だけが増えている可能性がある） |
 | 団体の招待・メンバー | R14-Bでは変更しない（D1、R14-C） |
 
 既存データの確認用SQL（読み取りのみ。**本書の作成時点では、Dev・Productionとも未実行**）。
@@ -1234,7 +1334,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | # | ケース | 期待 |
 |---|---|---|
 | T1 | 招待先の本人（確認済みアドレス、ACTIVE）が承諾する | ACTIVE の参加者が1件でき、招待は ACCEPTED（`invitee_person_id`・`participant_id`・`responded_at`）。`enrollment_source=INVITATION`・`consent_source=INVITATION`・`consented_at` が入る。招待者に通知される。監査ログ `ACCEPTED` |
-| T2 | 別のアカウント（アドレスが異なる）が、IDやトークンを使って承諾する | 403。参加者は作られず、招待は PENDING のまま |
+| T2 | 別のアカウント（アドレスが異なる）が、招待IDを使って承諾・辞退する | 404 `not_found`（存在しない招待と区別しない。第6版）。参加者は作られず、招待は PENDING のまま。内容・状態は返さない |
 | T3 | 招待先と同じアドレスを未確認で登録したアカウントが承諾する | 403（F6と一致） |
 | T4 | 招待先のアドレスが、確認済みの通知先メールとしてだけ一致する（Googleアカウント） | 承諾できる |
 | T5 | アドレスが複数の人物に一致する | 403 |
@@ -1258,10 +1358,10 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T23 | `GET /people?email=`・`GET /people/{id}` | ルートが存在しない（404）。`PersonRestController` が登録されない |
 | T24 | 参加者一覧を REHEARSAL_MANAGER が取得する | メールなし。CANCELLED などの行は含まない |
 | T25 | 本人が参加をやめる | WITHDRAWN になり、管理者に通知される。他人の参加者IDでは403。PrimaryManager は409。出欠・会計の記録は変わらない |
-| T26 | 招待リンクから登録する | メールは確認済みになり、参加者は作られない（招待は PENDING のまま） |
+| T26 | 招待先のアドレスで新しく登録する（第6版） | メールは未確認のまま。確認が済むまで `GET /me/participant-invitations` に招待は出ない。確認の後に出る。参加者は作られない（招待は PENDING のまま） |
 | T27 | 自己登録の後にメールを確認する／Googleでサインインする | 参加者は作られない（自動解決の廃止）。F6のテスト（確認前に招待を取得しない）も成り立つ。団体招待の自動解決は従来どおり動く（D1） |
 | T28 | 自分宛ての招待一覧 | 確認済みアドレスに一致する PENDING・期限内のものだけを返す。他人宛ては含まない。項目は D7 の範囲だけ（氏名・備考・メールなし）。公演終了の招待は `can_accept=false`・`can_reject=true` |
-| T29 | `lookup` を別のアカウントで開く | PENDING なら403で、内容を返さない。処理済みなら404 `link_invalid` |
+| T29 | 別のアカウントの `GET /me/participant-invitations`（第6版） | 他人宛ての招待は、状態にかかわらず含まれない |
 | T30 | Migration 1.48.0 → 1.49.0 | 列とテーブルが追加される。既存の行は変化しない（`resend_count` の既定値0を除く）。2回実行しても同じ結果。新規インストールと一致する |
 
 **有効期間・送信の上限・再招待（D4・D6・第3版）**
@@ -1269,7 +1369,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | # | ケース | 期待 |
 |---|---|---|
 | T31 | 新しい招待の期限 | 作成から7日 |
-| T32 | 再送 | トークンが変わり、古いトークンでは `lookup`・`registration-hint` が404。期限は再送の時点から7日 |
+| T32 | 再送（第6版） | 期限は再送の時点から7日。`token_hash` は変わらない。招待メールの本文・リンクにトークンが含まれない（リンクは `/participant-invitations`） |
 | T33 | 5回再送した後に、6回目の再送をする | 429 `resend_limit`。送信は最大6回（初回＋再送5回） |
 | T34 | 同じ宛先・種別の PENDING がある状態で、招待の作成（再送扱い）を繰り返す | T33と同じく上限で429 |
 | T35 | 辞退から29日後に、同じ公演・同じメール（別の種別を含む）で招待する | 409 `recently_rejected`、`available_at` 付き |
@@ -1294,7 +1394,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T73 | 古い試行の結果が、新しい再送の後に記録される | 古い試行の行だけが更新され、招待の `send_status` は新しい試行の状態のまま |
 | T74 | 同じ試行の結果を2回記録する | 2回目は更新されない（PENDING のときだけ更新） |
 | T94 | 同じ招待に再送を2回続けて受け付け、先の試行の送信の直前の確認を、後の試行の受け付けの後に行う | 先の試行はメールを送らず SUPERSEDED。後の試行だけが送られる。回数は2回分数える |
-| T95 | 先の試行が送信の直前の確認を通った後に、後の試行を受け付ける | 2通送られる（防げない競合）。先のメールのトークンでは `lookup` が404。招待の表示は後の試行の状態 |
+| T95 | 先の試行が送信の直前の確認を通った後に、後の試行を受け付ける | 2通送られる（防げない競合）。2通のリンクは同じ（トークンなし）。招待の表示は後の試行の状態 |
 
 **email_key・保存期間（第4版）**
 
@@ -1305,7 +1405,7 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T98 | 鍵を変えて計算する | 同じアドレスでも値が変わる（鍵なしの SHA-256 とも一致しない） |
 | T99 | 鍵のローテーション（旧い版を鍵の束に残したまま、現在の版を新しい版に切り替える） | 切り替えの前後の送信が、30日間の回数として合算される（複数回のローテーションは T104） |
 | T100 | 鍵が設定されていない | 招待の作成・再送が500 `email_key_not_configured`。送信の記録は作られない。鍵の値はログに出ない |
-| T101 | 保存期間による削除 | 2年を過ぎた監査ログと、90日を過ぎた送信記録（最新の試行を除く）だけが削除される。最新の試行・期間内の行・参加者・招待・出欠・会計の行は残る |
+| T101 | 保存期間による削除 | 2年を過ぎた監査ログと、90日を過ぎた送信記録（最新の試行を除く）と、期限の過ぎたレート制限の行だけが削除される。最新の試行・期間内の行・参加者・招待・出欠・会計の行は残る。送信記録は、IDを求めてから削除する2段階で削除される（第6版） |
 | T102 | 削除の処理の件数の上限 | 1回の実行で上限の件数までしか削除せず、残りは次回に削除される |
 | T103 | 90日を過ぎた最新の試行がある招待の一覧 | 最新の送信状態が表示される |
 | T104 | 30日以内に v1 → v2 → v3 と2回ローテーションし、各版で同じ公演・同じメールに送信する | v1・v2・v3 の送信回数が合算される（例：各2回なら6回で、7回目は429） |
@@ -1346,7 +1446,26 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 | T51 | 招待の承諾の後に、管理者が同じ申請を承認・却下する | 409 `request_not_pending`。行は ACTIVE のまま |
 | T52 | 管理者の承認の後に、本人が招待を承諾する | 200。招待は ACCEPTED、行は ACTIVE のまま。`consent_source` は INVITATION に更新される |
 | T53 | 管理者の却下の後に、本人が招待を承諾する | 200。行は REJECTED → ACTIVE |
-| T54 | 参加申請（R14-B以降）の承認 | `enrollment_source=JOIN_REQUEST`・`consent_source=JOIN_REQUEST`・`consented_at`（申請の日時）が入る。監査ログ `JOIN_APPROVED` |
+| T54 | 参加申請（R14-B以降）の承認 | `enrollment_source=JOIN_REQUEST`・`consent_source=JOIN_REQUEST`・`consented_at`（`requested_at`＝申請の日時）が入る。監査ログ `JOIN_APPROVED` |
+
+**既存の参加者の行の再利用とDBの失敗（【確定】第6版、U13＝A＋C案）**
+
+| # | ケース | 期待 |
+|---|---|---|
+| T120 | CANCELLED の行がある人が、Join Key で同じ種別を申請する | 201。同じ行（同じ参加者ID）が PENDING になる。`requested_at` が記録される。`enrollment_source` は変わらない。新しい行は作られない |
+| T121 | REJECTED の行がある人が、再び申請する | T120と同じ |
+| T122 | WITHDRAWN の行がある人が、再び申請する | T120と同じ |
+| T123 | 再申請・再承諾の後の行の数 | 同じ (公演, PERSON, 本人, 種別) の行は1つだけ |
+| T124 | 再申請・再承諾の前後の参加者ID | 変わらない。応答の `id` も同じ |
+| T125 | 過去の出欠・精算の記録がある人が再申請し、承認される | 出欠・精算の行は変わらず、同じ参加者IDにつながったまま |
+| T126 | 参加者の行の保存（INSERT・UPDATE）が失敗する（DBの失敗を差し込む） | 201・200 を返さない（500 `stageart_persistence_failed`）。トランザクションはロールバックされ、参加者の行・監査ログ・Join Key の使用回数のどれも変わらない |
+| T127 | Join Key の申請で、参加者の保存が成功し、使用回数の加算が0行（鍵が直前に無効・上限に達した） | 404 `join_key_not_found`。ロールバックされ、参加者の行は変わらない |
+| T128 | Join Key の申請が成功する／409（既に ACTIVE・PENDING）で拒否される | 成功のときだけ使用回数が1増える。409・404・500 のときは増えない |
+| T129 | 同じ人が同じ種別を同時に2回申請する（2接続） | 1回だけ PENDING になり、もう1回は409。行は1つ。使用回数は1だけ増える |
+| T130 | 招待の承諾と参加申請が、同じ CANCELLED の行に同時に来る | §5.4 で直列化され、行は1つ。申請が先なら CANCELLED → PENDING → ACTIVE（承諾）、承諾が先なら ACTIVE になり申請は409。どちらの順でも最終的に ACTIVE で、状態は食い違わない |
+| T131 | 招待の承諾による再利用と、参加申請による再利用 | どちらも同じ `ParticipantEnrollmentService` を通り、行の特定・ロック・状態の変更の規則が一致する（§5.2） |
+| T132 | 再申請・再参加の監査ログ | `JOIN_REQUESTED`・`ACCEPTED` の `detail` に `previous_status` と `reused_participant=true` が入る |
+| T133 | R14-B以前の申請（`requested_at` が NULL）を承認する | 同意は記録されない（T79と同じ） |
 
 **旧方式の参加者（D2）・個人情報（D7・D11・U3）・辞退（U7）**
 
@@ -1354,25 +1473,26 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 |---|---|---|
 | T55 | 既存データの ACTIVE 参加者 | 一覧で `consent_status=UNCONFIRMED`。稽古・出欠・精算などの既存機能はこれまでどおり対象になる |
 | T56 | 既存データの参加者が招待を辞退する | 招待は REJECTED、参加者の行は ACTIVE のまま |
-| T57 | `lookup`・`GET /me/participant-invitations` の応答 | 公演名・団体名・役割・招待者の表示名・期限（と `can_accept` などの本人向けの項目）だけ。管理者が入力した氏名・備考・メールを含まない |
-| T58 | `registration-hint` | 有効なトークンではメールだけを返す。無効・期限切れ・処理済みでは、すべて同じ404。`Cache-Control: no-store` |
+| T57 | `GET /me/participant-invitations` の応答 | 公演名・団体名・役割・招待者の表示名・期限（と `can_accept` などの本人向けの項目）だけ。管理者が入力した氏名・備考・メールを含まない |
+| T58 | 廃止したAPI（第6版） | `POST /participant-invitations/lookup`・`registration-hint`・`GET /participant-invitations/resolve` のルートが存在しない（404）。`POST /auth/email/register` に `invitation_token`（有効な古いトークンを含む）を送っても、メールは未確認のまま、招待の情報は応答に含まれず、応答の形は `invitation_token` がない場合と同じ |
 | T59 | 公演の終了後の参加者一覧 | メールは PrimaryManager だけに返る。行は削除されない |
-| T80 | 公演の終了後に、本人が `lookup` する | 200、`can_accept=false`・`can_reject=true`・`unavailable_reason=PRODUCTION_CLOSED` |
+| T80 | 公演の終了後に、本人が `GET /me/participant-invitations` を開く | 招待が含まれ、`can_accept=false`・`can_reject=true`・`unavailable_reason=PRODUCTION_CLOSED` |
 | T81 | 公演の終了後・招待者の権限喪失後に、本人が辞退する（PENDING のまま） | 200、招待は REJECTED。参加者は作られず、参加の権限も発生しない |
 | T82 | 承諾を試みて `CANCELLED(PRODUCTION_CLOSED)`・`CANCELLED(INVITER_REVOKED)` になった招待を、期限内に辞退する | 200、招待は REJECTED。元の `close_reason`・`closed_at` は変わらない。参加者は作られない |
 | T83 | 招待の取消を2回行う | 2回目も同じ結果（冪等） |
 | T89 | `CANCELLED(MANAGER)` の招待を辞退する | 409 `not_pending` |
 | T90 | 期限切れの `CANCELLED(PRODUCTION_CLOSED)` を辞退する | 410 |
 | T91 | `CANCELLED(PRODUCTION_CLOSED／INVITER_REVOKED)` の招待を、再び承諾する | 409 `closed`。状態は変わらない |
-| T92 | §5.1 の判定表の各行 | accept・reject・`/me`・`lookup`・管理者の一覧が、同じ判定（`effective_status`・`can_accept`・`can_reject`・一覧に出すか）を返す |
+| T92 | §5.1 の判定表の各行 | accept・reject・`/me`・管理者の一覧が、同じ判定（`effective_status`・`can_accept`・`can_reject`・一覧に出すか）を返す |
 | T110 | PENDING の招待を、公演の終了の後に辞退する（初めての検出） | REJECTED、`close_reason=PRODUCTION_CLOSED`・`closed_at` が記録される。`closed_by_person_id` は NULL。PrimaryManager への権限喪失の通知はない |
-| T111 | PENDING の招待を、招待者の権限喪失の後に辞退する（初めての検出） | REJECTED、`close_reason=INVITER_REVOKED`・`closed_at`・`revocation_notified_at` が記録される。PrimaryManager に、権限喪失の説明を加えた `participant_invitation_rejected` が1通だけ届く。監査ログ `INVITATION_CLOSED`（`primary_manager_notified=true`）と `REJECTED` |
+| T111 | PENDING の招待を、招待者の権限喪失の後に辞退する（初めての検出） | REJECTED、`close_reason=INVITER_REVOKED`・`closed_at`・`revocation_notified_at` が記録される。PrimaryManager への、権限喪失の説明を加えた `participant_invitation_rejected` の通知が1回だけ試みられる（通知の送信の呼び出しが1回。配達は保証しない）。監査ログ `INVITATION_CLOSED`（`primary_manager_notify_attempted=true`（通知を試みたことを表す。届いたことは意味しない））と `REJECTED` |
 | T112 | 承諾で権限喪失を検出した（通知済み）後に、本人が辞退する | `close_reason`・`closed_at`・`revocation_notified_at` は変わらない。権限喪失の通知は送られない（辞退の通知だけ）。`INVITATION_CLOSED` は重ねて記録されない |
-| T113 | 権限喪失の招待に、承諾と辞退が同時に来る | どちらか一方だけが `revocation_notified_at` を記録し、権限喪失の通知は1回だけ |
-| T114 | 権限喪失の招待を、本人が `lookup`・`/me` で開く／管理者が一覧で見る／管理者が再送する | `effective_status=INVITER_REVOKED` が返る。DBの `close_reason`・`revocation_notified_at` は変わらず、通知もない（再送は409） |
+| T113 | 権限喪失の招待に、承諾と辞退が同時に来る | どちらか一方だけが `revocation_notified_at` を記録し、権限喪失の通知を試みるのは1回だけ |
+| T134 | 権限喪失の通知の送信が失敗する（第6版） | `revocation_notified_at` は戻らず、再試行もされない。招待一覧では `effective_status=INVITER_REVOKED` が見える |
+| T114 | 権限喪失の招待を、本人が `/me` で開く／管理者が一覧で見る／管理者が再送する | `effective_status=INVITER_REVOKED` が返る。DBの `close_reason`・`revocation_notified_at` は変わらず、通知もない（再送は409） |
 | T115 | 管理者の取消（`CANCELLED(MANAGER)`） | `close_reason=MANAGER`・`closed_at`・`closed_by_person_id` が記録される。本人の辞退は409 |
 | T116 | 管理者の一覧の応答 | `status`・`effective_status`・`close_reason`・`closed_at` が §5.1 の組み合わせのとおりに返る（REJECTED で `close_reason` を持つ行を含む） |
-| T93 | `CANCELLED(PRODUCTION_CLOSED)` の招待の `lookup`・`/me` | 期限内なら200で `can_accept=false`・`can_reject=true`。期限切れなら `lookup` は410、`/me` には出ない |
+| T93 | `CANCELLED(PRODUCTION_CLOSED)` の招待の `/me` | 期限内なら含まれ、`can_accept=false`・`can_reject=true`。期限切れなら含まれない（辞退は410） |
 
 **アカウントの有無の推測・不正利用対策（第3版）**
 
@@ -1380,10 +1500,13 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 |---|---|---|
 | T84 | 登録済み・未登録のアドレスで招待を作成する | どちらも、アプリ内通知が作られない。`FindPersonByEmailUseCase` が呼ばれない。応答の形・状態コードが同じ |
 | T63 | 招待の作成をレート制限の上限まで行う | 上限を超えると429。超えるまでは通常どおり |
-| T64 | 一致しないトークンで `lookup` を繰り返す | 上限を超えると429 |
+| T64 | 他人宛て・存在しない招待IDで `accept`・`reject` を繰り返す（第6版） | 失敗が10分に10回を超えると429。それまでは404 |
 | T65 | 各処理のログと監査ログ | トークン・メールアドレスを出力しない（ログの出力を差し替えて確認する） |
-| T66 | `lookup`・`accept` などの応答ヘッダー | `Cache-Control: no-store` |
-| T85 | 信頼するプロキシの設定がない状態で `X-Forwarded-For` を偽装する | レート制限は `REMOTE_ADDR` で数えられる |
+| T66 | 個人宛てのAPI（`GET /me/participant-invitations`・`accept`・`reject`・`withdraw`・参加者一覧・担当者一覧・招待一覧）の応答ヘッダー（第6版、U4） | 成功・エラー（401・403・404・409・410・429・500）のすべてで `Cache-Control: no-store` |
+| T85 | （第6版で削除。接続元IPを使うレート制限がなくなったため） | — |
+| T117 | 固定の時間枠の境目（第6版） | 枠の終わりの直前に上限まで通り、次の枠の始まりで、また上限まで通る（最大2倍。仕様どおり）。同じ枠の中では、上限を超えると429で、`retry_after` は枠の終了までの秒数 |
+| T118 | レート制限の加算で 1213（デッドロック）が起きる（DBの失敗を差し込む） | 最大3回まで再試行する。3回とも失敗したら429。業務の処理は行われない |
+| T119 | レート制限の加算を、業務のトランザクションの前に行う | 業務のトランザクションの中で、レート制限の行をロックしない |
 
 ### 14.2 Jest（画面）
 
@@ -1391,9 +1514,10 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 - 招待中の表に、承諾待ち・期限切れ・無効（公演終了／招待者の権限なし）・辞退（再招待できる日時）・取消、送信の状態（送信中・送信済み・送信失敗・結果不明）、残りの送信回数が表示される。
 - 送信の上限に達したときに、ボタンが無効になり、`available_at` が表示される。
 - 参加者の一覧に「同意未確認（旧方式）」と「同意の確認を依頼」が表示される。
-- 招待のリンク画面：フラグメントからトークンを読み、URLから取り除く。未ログインでは公演名を出さず、ログイン・登録を選べる。ログイン済みなら確認画面へ進む。
-- 招待確認画面：承諾・辞退・宛先違い（403）・期限切れ（410）・処理済み（409）・既に参加者・承諾できない招待（辞退だけ）の表示。
-- 登録画面：招待リンクからの登録で、メールだけが初期値になる。登録後に招待確認画面へ移動する。古いリンク（`/register?token=`）でも同じ導線になり、URLからトークンが消える。
+- 招待一覧（第6版）：未ログインではログイン画面へ移動し、招待の存在・内容を表示しない。ログイン後は `/me` の招待だけを表示する。空のときの案内の文言。
+- 招待確認画面：承諾・辞退・存在しない／本人宛てでない（404）・期限切れ（410）・処理済み（409）・既に参加者・承諾できない招待（辞退だけ）の表示。
+- 登録画面（第6版）：メールアドレスの初期値がない（本人が入力する）。古いリンク（`/register?token=`）で開くと、トークンを処理せず、URLから取り除き、招待の内容を表示しない。
+- 招待メールの文面（Backend のテスト）：リンクが `/participant-invitations` で、トークンを含まない。
 - ログイン：`return_to` にアプリ外のURLを渡しても、そこへ移動しない。
 - 担当者画面：人物IDの入力欄がない。有効・無効の担当者が分けて表示され、無効の理由と次の操作が表示される。
 - 参加公演：参加をやめる操作と、その確認（担当者の解除の説明）。PrimaryManager の公演には表示されない。
@@ -1410,8 +1534,9 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 - 古い招待（R14-B以前の PENDING）からの承諾。
 - 参加者でない担当者・同意未確認の担当者がいる公演で、その人物の担当者のAPIがすべて403になり、PrimaryManager は影響を受けない。
 - Migration（アップグレードと新規インストールの一致、既存の行が変化しないこと、既存の検証DBのチェックサム）。
-- レート制限の表で、複数のPHPプロセスから数え漏れがない。
-- U13：CANCELLED・REJECTED の行がある人の Join Key の申請を再現する（§16.2）。
+- レート制限の表で、複数のPHPプロセスから数え漏れがない（§17.5.3 の方法）。
+- U13：CANCELLED・REJECTED・WITHDRAWN の行がある人の Join Key の申請が、同じ行の再利用で201になり、DBに保存されること（第6版。修正前の再現は §17.2）。同時の申請（T129）と、承諾との競合（T130）。
+- **個人宛てのAPIのキャッシュ**（第6版、U4）：Dev で、2つのテスト用アカウントと未ログインから、R14-Bの個人宛てのAPIを呼び、`Cache-Control: no-store`、`X-Nginx-Cache` が HIT にならないこと、応答が混ざらないことを確認する（§17.6 の手順。テスト用アカウントと関連データは確認の後に削除する。Dev での実施は、その都度ユーザーの承認を得る）。
 
 ### 14.4 既存テストへの影響
 
@@ -1425,7 +1550,8 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
   - `GetPersonByIdUseCaseTest`（ルートの削除の確認へ）
   - `Authentication` 系の招待解決の確認
   - `ProductionAuthorizationService`・ダッシュボード・公演一覧・会計・稽古などのテストのうち、担当者を準備データに使うもの（準備データに、同意済みの ACTIVE な参加者を加える）
-  - 参加申請の作成・承認・却下のテスト（ロックの追加、`enrollment_source`）
+  - 参加申請の作成・承認・却下のテスト（ロックの追加、`enrollment_source`、既存の行の再利用。第6版）
+  - 招待のトークン・`resolve`・`register` の `invitation_token` を扱うテスト（第6版：廃止の確認へ書き直す）
 - Jest：`web-production-participants-add-existing-person`、`-add-member-ui`、`-add-unregistered-person`、`-invitation-list`、`register-invitation-*`、`participating-productions-*`、担当者画面のテスト。
 
 担当者の有効性の変更（§4.6、同意の条件を含む）は、担当者を準備データに使う多くのテストに影響する。実装の最初に、影響するテストを洗い出す。
@@ -1434,32 +1560,32 @@ SELECT status, COUNT(*) FROM wp_stageart_participants
 
 PR #7上で、1項目を1コミットにする。実装を始めるかは、第3版の再レビューの後に判断する。
 
-0. **事前の検証**（実装の前）
-   - U5（Expo Router でのフラグメントの扱い）と U13（Join Key の申請の再現）を、隔離した環境で確認する。U5が成り立たない場合は、§9.2 の設計を再検討してから進む。
-   - U9（照合順序）：許可された範囲（§12）で、Dev・Production の読み取り専用のSELECTを実行し、結果を記録する。`_ci` 以外なら、§6.4 を見直す。
+0. **事前の検証**（実装の前）：**2026-11-16 に実施した**（§17）。U5 は C案に変更し（フラグメントの検証は不要になった）、U13 は再現して A＋C案に決め、U9 は確認済み、U4 は Dev で確認した（§17.6）。実装の開始は、第6版のレビューの後にユーザーが判断する。
 1. **Domain**
    - 招待の状態（ACCEPTED／REJECTED）、`accept()`・`reject()`・`close(reason)`、再送の上限、期限7日、新しい列の属性
    - `ParticipantStatus::WITHDRAWN`、`Participant::withdraw()`・`reenroll()`・`recordConsent(source, at)`、`enrollmentSource`・`consentSource`・`consentedAt`
    - Domainテスト
-2. **Schema 1.49.0**：列・インデックス・送信の記録・監査ログ・レート制限の表の追加。Repository（`findByIdForUpdate`、`findPendingForEmails`、`existsConsentedActivePersonParticipant`、辞退後30日・30日間の送信回数の集計）。`SchemaUpgradePathTest`。
-3. **承諾・辞退・自分宛て一覧・lookup・registration-hint のAPI**
-   - `InvitationRecipientVerifier`、`ParticipantEnrollmentService`、`ParticipantDelegateRoleReleaser`、`ParticipantEventRecorder`
+2. **Schema 1.49.0**：列・インデックス・送信の記録・監査ログ・レート制限の表の追加。Repository（`findByIdForUpdate`、`findPendingForEmails`、`findByProductionAndSubjectForUpdate`、`existsConsentedActivePersonParticipant`、辞退後30日・30日間の送信回数の集計）。**保存の失敗の検出**（§7.4）。`SchemaUpgradePathTest`。
+3. **承諾・辞退・自分宛て一覧のAPI**（第6版で `lookup`・`registration-hint` は作らない）
+   - `InvitationRecipientVerifier`、`ParticipantEnrollmentService`（既存の行の再利用。§5.2）、`ParticipantDelegateRoleReleaser`、`ParticipantEventRecorder`
    - 通知と監査ログ
-   - 参加申請の作成・承認・却下へのロックと `enrollment_source`・同意の記録の追加
+   - 参加申請の作成・承認・却下へのロックと `enrollment_source`・`requested_at`・同意の記録の追加、既存の行の再利用、Join Key の使用回数の原子的な加算（§7.1）
+   - 個人宛てのAPIの `Cache-Control: no-store`（§9.2）
 4. **直接追加の経路を閉じ、担当者の有効性を変える**
    - `POST /participants` の PERSON・ORGANIZATION
    - 招待作成の既存利用者分岐（と宛先の検索・アプリ内通知）の削除、公演の状態・30日・送信の上限（`InvitationSendService`）
    - 自動解決の削除（登録・確認・Google。団体招待の解決は残す）
+   - 公演の招待のトークンの照合の削除（`resolve`、`register` の `invitation_token`）と、招待メールのリンクの変更（トークンなし、`/participant-invitations`）
    - `PUT` の status、担当者の任命の対象制限
    - **担当者の有効性の判定（§4.6、同意の条件を含む）**：`ProductionAuthorizationService`、ダッシュボード、公演一覧
    - 3と同時に出さないと、承諾の手段がないまま追加の手段だけがなくなるため、**3と4は同じリリースにする**。担当者の有効性の変更も、同意の確認の依頼・承諾・再任命の手段と同時に出す
 5. **F5**：`/people` の2つのAPIと、Frontendの未使用のファイル・型を削除する（§13）。
 6. **個人情報の絞り込み**：`ParticipantResult`（REHEARSAL_MANAGER、終了済みの行、公演の終了後。D11・U3）。
 7. **本人による辞退**：API（担当者の役割の解除を含む）、参加公演の画面。
-8. **不正利用対策・保存期間**：レート制限（信頼するプロキシの設定を含む）、`Cache-Control`、トークン・メールのログ出力の確認、`email_key` の鍵の設定（§6.7）、保存期間による削除の定期処理（§6.6）。
+8. **不正利用対策・保存期間**：レート制限（固定の時間枠。§9.2）、`Cache-Control: no-store` の確認、トークン・メールのログ出力の確認、`email_key` の鍵の設定（§6.7）、保存期間による削除の定期処理（§6.6）。
 9. **Frontend**
    - メンバー管理の文言と状態表示、送信の状態と上限、同意未確認の表示と「同意の確認を依頼」
-   - 招待のリンク画面（フラグメント）・招待確認画面、登録・ログインからの導線（`return_to` の検証）、ホームの件数
+   - 招待一覧（`/participant-invitations`、ログイン必須）・招待確認画面、登録・ログインからの導線（`return_to` の検証）、古いリンク（`/register?token=`）の処理、ホームの件数
    - 担当者画面（有効・無効の区別と理由）
 10. **文書**：`docs/08-API/ParticipantAPI.md`、`docs/21-MemberManagementScreen.md`、ドメインイベント文書、本書の確定版。
 11. **検証**：PHPUnit・Jest・実MySQL。
@@ -1476,7 +1602,7 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
   - 送信の記録・レート制限（新規）
 - Frontend：
   - `productions/[id]/participants.tsx`、`productions/[id]/delegates.tsx`、`register.tsx`、ログイン画面、`participating-productions.tsx`、`home.tsx`、`my-notifications.tsx`
-  - 新しい招待のリンク画面・招待確認画面
+  - 新しい招待一覧・招待確認画面
   - `features/participantInvitation/*`、`features/participant/*`、`features/productionDelegate/*`、`features/person/api.ts`（削除）
   - `types/api.ts`、`utils/errorMessage.ts`
 - 規模の目安：Backend 40〜50ファイル、Frontend 15〜22ファイル、テスト 45ファイル前後（第2版から、送信の記録・同意の条件の分を増やした）。
@@ -1492,10 +1618,10 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 | D1 | 団体メンバーの招待 | R14-Cで本人同意の方式を導入する。公演参加者と団体メンバーの招待は別の機能として扱う。R14-Bでは団体招待の実装を変更せず、R14-Cまでの間は団体招待の既存の動作（既存利用者の即時追加・自動解決）が残る | §1.3、§7.1、§10、§13、§16.3 |
 | D2 | 過去に同意なく追加された ACTIVE 参加者 | 既存データを維持する。一括で変更・削除しない。同意済みとみなさない。本人は辞退できる。管理者が同意未確認の参加者を認識できる。将来、本人への再確認ができる。既存の稽古・出欠・タイムテーブル・精算・実績集計に影響を与えない。一斉の再招待・無効化は対象外 | §4.5、§6.1、§7.1、§12 |
 | D3 | 承諾時に招待者が権限を失っている | 招待を無効にする（`close_reason=INVITER_REVOKED`）。参加者は作らない。PrimaryManager が代わりに承諾を認める暗黙の処理はしない。再び招待する場合は、現在の権限を持つ管理者が新しい招待を作る | §4.3、§5.1、§5.3、§7.2 |
-| D4 | 招待の有効期間 | 7日間。再送時は再送の時点から7日間に更新し、古いトークンは無効にする。既存の招待の期限はMigrationで変更しない | §4.1、§5.3、§6.1、§6.5 |
+| D4 | 招待の有効期間 | 7日間。再送時は再送の時点から7日間に更新し、古いトークンは無効にする。既存の招待の期限はMigrationで変更しない（第6版の注：U5＝C案でトークンを使わなくなったため、「古いトークンは無効にする」は該当しない。期限の扱いは変わらない） | §4.1、§5.3、§6.1、§6.5 |
 | D5 | 公演の終了・中止時の未処理の招待 | 承諾時に判定する。COMPLETED／ARCHIVED／CANCELLED なら承諾を拒否し、`close_reason=PRODUCTION_CLOSED`。一覧では無効と表示する。公演の状態の変更時に一括で更新する処理は追加しない。新しい招待・再送も拒否する | §4.3、§5.1、§5.3、§7.1 |
-| D6 | 再送・再招待の上限 | 初回の送信は含めず、再送は最大5回（初回を含めて最大6回）。再送時はトークンを更新し、期限を7日間延長する。6回目の再送は429。辞退後30日間は、同じ公演・同じメールアドレスへの新しい招待を拒否し、30日を過ぎれば作れる。辞退の履歴は削除しない。メールアドレスの正規化を統一する | §5.3、§6.1、§6.4 |
-| D7 | 招待先に表示する情報 | 公演名・団体名・役割・招待者の公演側の表示名・期限と、共有される情報の説明だけ。管理者が入力した氏名・備考・内部メモ、不要な個人情報は承諾前に表示しない。未ログインの登録画面でメールアドレスを初期値にすることは許容するが、トークンだけで招待の詳細を返さない | §4.2、§7.2、§9.1、§10 |
+| D6 | 再送・再招待の上限 | 初回の送信は含めず、再送は最大5回（初回を含めて最大6回）。再送時はトークンを更新し（第6版の注：トークンを使わないため該当しない）、期限を7日間延長する。6回目の再送は429。辞退後30日間は、同じ公演・同じメールアドレスへの新しい招待を拒否し、30日を過ぎれば作れる。辞退の履歴は削除しない。メールアドレスの正規化を統一する | §5.3、§6.1、§6.4 |
+| D7 | 招待先に表示する情報 | 公演名・団体名・役割・招待者の公演側の表示名・期限と、共有される情報の説明だけ。管理者が入力した氏名・備考・内部メモ、不要な個人情報は承諾前に表示しない。未ログインの登録画面でメールアドレスを初期値にすることは許容するが（第6版の注：U5＝C案で、初期値の取得の仕組みは設けない）、トークンだけで招待の詳細を返さない | §4.2、§7.2、§9.1、§10 |
 | D8 | 監査ログ | 導入する。追記専用。氏名・メールアドレスを保存しない。操作した人・対象・種別・日時を記録する。閲覧権限を限定する。保持期間は将来変更できるようにし、現時点では無期限保持も確定しない | §6.3 |
 | D9 | 本人の辞退時の担当者の権限 | 本人が WITHDRAWN になった時点で、担当者としての有効な権限も止める。担当者の行は削除しない。PrimaryManager 本人は通常の辞退ができず、先に管理者の権限を引き継ぐ | §4.6、§7.2、§10 |
 | D10 | ORGANIZATION の参加者 | 当面、新しい追加を禁止する（直接追加は拒否、画面にも操作を出さない）。既存のデータは変更・削除しない。将来、団体の OWNER による承諾の方式を別に設計する。団体のメンバーであることを理由に、公演の参加者として扱わない | §4.4、§7.1、§10、§12 |
@@ -1528,29 +1654,51 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 
 | 事項 | 確定方針 | 反映した節 |
 |---|---|---|
-| U10 PrimaryManager への通知 | 招待者の権限喪失を最初に検出した書き込み処理（承諾・辞退）で、一度だけ通知する。読み取り処理・管理者の再送・取消、公演の終了による無効化では通知しない。`revocation_notified_at` で二重通知を防ぐ | §11.5 |
+| U10 PrimaryManager への通知 | 招待者の権限喪失を最初に検出した書き込み処理（承諾・辞退）で、通知を一度だけ試みる（第6版で表現を統一。配達の保証・自動の再試行なし）。読み取り処理・管理者の再送・取消、公演の終了による無効化では通知しない。`revocation_notified_at` で、通知を試みる処理の重複を防ぐ | §11.5 |
 | `close_reason` の意味 | `status`＝現在の状態、`close_reason`・`closed_at`＝過去の無効化の記録（変更しない）、`closed_by_person_id`＝管理者が無効化した場合の実行者。無効化の後の辞退は REJECTED で、元の記録を保持する。`CANCELLED(MANAGER)` からの辞退は禁止 | §5.1、§6.1、§7 |
 | email_key と鍵のローテーション | HMAC-SHA-256 だけ（SHA-256 単独は不可）。複数の版を持つ鍵の束で、期間内に使われたすべての版で集計する。旧い版は、その版の記録がすべて30日間の集計から外れた後に外せる | §6.2、§6.4、§6.7 |
 
-### 16.2 未解決事項の状態（第4版）
+**第6版で確定した事項（ユーザー判断・事前検証の結果）**
+
+| 事項 | 確定方針 | 反映した節 |
+|---|---|---|
+| U5 招待のリンク | C案：招待メールのリンクにトークンを入れず、ログイン後に本人の確認済みアドレス宛ての招待を一覧で表示する。`lookup`・`registration-hint`・トークンの照合を廃止。登録ではメールを本人が入力し、通常のメール確認を行う。`token_hash` 列は残し、照合に使わない。ネイティブのフラグメントの検証は不要。App Links／Universal Links は実装しない（別の課題） | §4.2、§6.1、§7、§9.2、§10、§11、§12、§14 |
+| U13 再申請 | A＋C案：同じ組の既存の参加者の行を再利用する（UNIQUE キーは変えない。新しい参加者IDを発行しない）。DBへの保存の失敗を検出し、成功を返さない。Join Key の使用回数は、申請の保存が成功した場合だけ、同じトランザクションで増やす | §5.2、§5.4、§7.1、§7.4、§14 |
+| email_key のインデックス | §17.5.1 の案を採用 | §6.1、§6.2、§6.6、§6.7 |
+| U10 の表現 | 「通知を一度だけ試みる」に統一 | §6.1、§11.5 |
+| レート制限 | 固定の時間枠（UTC）。境目の前後で最大2倍まで通ることを許容する。トークンの照合のAPIの廃止に合わせ、IPごとの制限を削除 | §9.2、§14 |
+| U9 照合順序 | ASCII のメールアドレスを前提とした照合の仕様。本人の判定は PHP の完全一致で確かめる | §6.4 |
+| U4 キャッシュ | 個人宛て、または認証の状態で内容が変わるAPIの応答に、`Cache-Control: no-store` を明示的に付けることを必須にする。ConoHa のキャッシュの設定は変更しない | §9.2、§14、§17.6 |
+
+### 16.2 未解決事項の状態（第4版、第6版で更新）
 
 | # | 事項 | 状態 | 扱い・理由 | 決定者 |
 |---|---|---|---|---|
 | U1 | 取消して作り直すと再送の上限を回避できる | **解決** | 同じ公演・同じメールで、招待をまたいで30日間に6回までにした（§5.3、§6.2） | — |
 | U2 | 同意未確認の参加者を担当者に任命できるか | **解決** | 有効な担当者の条件に同意を加えたため、任命できない（422）。同意の確認の依頼を承諾した後に任命できる（§4.6） | — |
 | U3 | 公演の終了後のメールアドレスの閲覧範囲 | **解決** | PrimaryManager だけ（§7.3） | — |
-| U4 | レート制限の値と保存先、接続元IPの判定 | **一部確認（事前検証済み、§17.4）** | 値は提案どおり採用し、保存先はDBの表（§9.2）。読み取りの確認で、前段に nginx（コンテンツキャッシュあり）、後段に lsphp の構成と分かった。`REMOTE_ADDR` の中身と `X-Forwarded-For` の扱い、プロキシのアドレスは確認不能。REST の応答が nginx にキャッシュされることも確認した（§17.4）。追加の確認方法と設定は、ユーザーの承認を待つ | 実装担当（確認）、ユーザー（Dev での確認・本番の設定の承認） |
-| U5 | 招待リンクのトークンをURLのフラグメントに入れられるか | **Web は一部不合格・ネイティブは未検証（§17.1）。ユーザー判断待ち** | Web：フラグメントの取得、URLとタブの履歴からの除去、ログインをまたいだ保持はできた。ただし、**ブラウザ自体の閲覧履歴には、最初に開いたURL（トークンを含む）が残り、ページから消せない**。ネイティブ：端末・エミュレーターがなく未検証。クエリ文字列には切り替えない。代替方式を §17.1 に整理した | 実装担当（検証）、ユーザー（方式の判断） |
+| U4 | レート制限の値と保存先、接続元IPの判定、キャッシュ | **解決（第6版）** | Dev で確認した（§17.6）：`REMOTE_ADDR` は利用者のIP、利用者の送った `X-Forwarded-For` はそのまま届く（使わない）。nginx は `Cache-Control` のない200の応答を、`Authorization` にかかわらずキャッシュするが、ログイン済みの応答（WordPress の no-cache のヘッダー付き）はキャッシュせず、2つのアカウントの間で混ざらなかった。個人宛てのAPIに `no-store` を必須にした（§9.2）。R14-Bには接続元IPを使う制限はない。Production では確認していない | — |
+| U5 | 招待リンクのトークンをURLのフラグメントに入れられるか | **解決（第6版、C案）** | フラグメントの検証（§17.1）で、ブラウザの閲覧履歴にトークンが残ることが分かったため、ユーザー判断でC案（リンクにトークンを入れない）にした。ネイティブの検証は不要になった | — |
 | U6 | `/people` の外部の利用者 | **解決** | ユーザー回答：外部からの利用は想定しない。削除する（§13） | — |
 | U7 | 公演の終了後・招待者の権限喪失後に辞退できるか | **解決** | 正当な招待対象者は辞退できる。承諾はできない。照会画面も辞退だけを出す（§4.2、§4.3、§7.2） | — |
 | U8 | 処理時間の差によるアカウントの有無の推測 | **解決** | 招待作成時のアプリ内通知と宛先の検索をやめ、処理を同じにした（§9.2） | — |
 | U9 | DBの照合順序と、アプリ側のメールアドレスの正規化の整合性 | **確認済み（§17.3）** | 2026-11-16 に §12 の照合順序のSELECTだけを実行した。Dev・Production とも、`email` 列はすべて `utf8mb4_unicode_520_ci`（`_ci`）。入力は `FILTER_VALIDATE_EMAIL` でASCIIに限られるため、§6.4 の正規化と整合する。ASCII以外では、SQLの `=` の方が広く一致する（§17.3） | — |
-| U10 | 招待者の権限喪失で招待が無効になったときの PrimaryManager への通知 | **解決** | ユーザー判断（第5版）：最初に検出した書き込み処理（承諾・辞退）で、PrimaryManager に一度だけ通知する。読み取り処理と、公演の終了による無効化では通知しない。`revocation_notified_at` で二重通知を防ぐ（§11.5）。管理者が改めて招待できるようにするため | — |
+| U10 | 招待者の権限喪失で招待が無効になったときの PrimaryManager への通知 | **解決** | ユーザー判断（第5版）：最初に検出した書き込み処理（承諾・辞退）で、PrimaryManager への通知を一度だけ試みる（第6版で表現を統一。配達の保証・自動の再試行なし）。読み取り処理と、公演の終了による無効化では通知しない。`revocation_notified_at` で、通知を試みる処理の重複を防ぐ（§11.5）。管理者が改めて招待できるようにするため | — |
 | U11 | 送信に失敗した招待の再送を回数に数えるか | **解決** | 受け付けた時点で数え、失敗しても戻さない（§5.3、§11.3） | — |
 | U12 | 監査ログ（と送信の記録）の保持期間と削除の方針 | **解決** | ユーザー判断：監査ログ2年、送信記録は原則90日（最新の試行は保持）、同意の情報は参加者・公演の履歴と同じ期間。削除の定期処理を R14-B に含める（§6.6） | — |
-| U13 | Join Key の申請時に、CANCELLED・REJECTED の行があると UNIQUE キーに当たる可能性 | **再現した（§17.2）。対応範囲はユーザー判断待ち** | 隔離したテストDBで再現した。UNIQUE キーに当たって行は保存されないのに、APIは **201（PENDING）を返し**、Join Key の使用回数も増える（エラーが握りつぶされる）。管理者の申請一覧には出ない。**R14-Bのリリース前に必ず対応する**（既定の方針どおり）。対応案は §17.2 | ユーザー（対応範囲の判断） |
-| U14 | `registration-hint` を置くか | **解決** | 置く。有効な招待トークンに対して、メールアドレスだけを返す。レート制限・`Cache-Control: no-store`・無効なトークンへの同じ404（§7.2、§9.2） | — |
+| U13 | Join Key の申請時に、CANCELLED・REJECTED の行があると UNIQUE キーに当たる可能性 | **解決（第6版、A＋C案）** | 再現した（§17.2：201を返すのに保存されない）。ユーザー判断で、既存の行の再利用と、保存の失敗の検出にした（§5.2、§7.1、§7.4）。R14-Bに含める | — |
+| U14 | `registration-hint` を置くか | **第6版で取り消し** | 第3版で「置く」としたが、U5のC案で、トークンを使うAPIを廃止したため、置かない | — |
 | U15 | 同意未確認の参加者に付いている担当者の行は、本人が同意を記録した後、再任命なしで有効になるか（第3版で追加） | **解決** | ユーザー判断：ACTIVE な担当者の行は再任命なしに有効になる。INACTIVE の行と、再参加の前の担当者の権限は自動で戻さない。参加者でなかった人物が承諾した場合は、INACTIVE にして改めて任命する（§4.6） | — |
+
+**【未決定】第6版の改訂で見つかった事項**（設計者は仕様を決めていない。ユーザーの判断を待つ）
+
+| # | 事項 | 内容 |
+|---|---|---|
+| N1 | DRAFT の参加者の行からの再申請 | `ParticipantStatus::DRAFT` の行から、参加申請（→ PENDING）を認めるか。DRAFT の行がどの経路で作られるかは未調査（§5.2） |
+| N2 | ほかの Repository の保存の失敗の検出 | R14-Bで触れない Repository の `$wpdb->insert()` などの戻り値の確認を、R14-Bに含めるか、別の作業にするか（§7.4） |
+| N3 | PR #7 に `PublicResponseCachePolicy` がない | Dev に配置されているコード（PR #7 の前の、元の作業ツリーのコード）には、公開ページの読み取りに no-cache を付ける `PublicResponseCachePolicy` があるが、PR #7（`c6480c2`）にはない。PR #7 をそのまま配置すると、公開ページが nginx に約1分キャッシュされる動作に戻る可能性がある（Dev の既存のコードのコメントによる。PR #7 では未確認）。R14-Bの範囲外で、PR #7 の取り込みの判断に関わる（§17.6） |
+| N4 | `requested_at` 列の追加【推奨】 | 再申請の日時を残すための列（§6.1）。U13のA案に伴って設計者が提案したもので、追加してよいかの確認が必要 |
+| N5 | 招待確認画面のデータの取得 | 招待1件を取得するAPIを設けず、一覧の項目で表示する【推奨】（§7.2、§10）。一覧に出ない招待（期限切れなど）を確認画面で開いた場合は「見つからない」と表示する |
 
 ### 16.3 リスク
 
@@ -1560,14 +1708,16 @@ PR #7上で、1項目を1コミットにする。実装を始めるかは、第3
 - **リリースの順序**：承諾API（§15の3）と直接追加の廃止・担当者の有効性の変更（4）を分けてリリースすると、参加者・担当者を増やす手段がなくなる。BackendとFrontendも同時に配布する必要がある（R11・R12と同じ制約。APIはアプリ専用のため、古いアプリとの互換性は考慮しない）。
 - **団体招待の問題が残る期間**（D1）：R14-Cまでの間、団体招待では既存利用者の即時追加と、Googleサインインを含む自動解決が残る。団体のメンバーになっても公演の参加者にはならない（D10、§4.4）ため、公演の参加者情報には影響しないが、団体のメンバー一覧でメールアドレスが見える問題は残る。
 - **メールアドレスの大文字小文字**（R13 Medium）：招待と認証情報の照合が、DBの照合順序（`_ci`）に依存している。§6.4 の方針に統一し、U9で照合順序を確認する。
-- **`return_to` の未検証**（R13 Medium）：ログイン後に招待のリンクの画面へ戻す導線を追加するため、同時に検証を直さないと、オープンリダイレクトの経路が増える。
+- **`return_to` の未検証**（R13 Medium）：ログイン後に招待一覧へ戻す導線を追加するため、同時に検証を直さないと、オープンリダイレクトの経路が増える。
+- **未登録の招待先の手間**（第6版、U5＝C案）：招待メールのリンクから、メールアドレスを自分で入力して登録し、メールの確認を済ませるまで、招待が見えない。招待を受け取ったアドレスと別のアドレスで登録すると、招待は一覧に出ない。メールの文面と、空の一覧の案内で補う。
+- **メールのリンクがアプリで開かない**（第6版で別の課題として記録）：Android App Links・iOS Universal Links が未設定のため、`https://` のリンクは、アプリが入っていても Web 版で開く。R14-Bでは実装しない。
+- **nginx のキャッシュ**（第6版、U4）：`Cache-Control` のない200の応答は、`Authorization` にかかわらずキャッシュされ、利用者の間で混ざる（§17.6）。個人宛てのAPIに `no-store` を付け忘れると、個人情報が他人に返る。§9.2 の必須の要件と、テスト（T66）・実環境の確認で防ぐ。キャッシュの設定が変わったら確認をやり直す。
 - **アクセストークンの有効期間**（R13 Low）：SUSPENDED にしたアカウントでも、発行済みのアクセストークンの期限までは有効。承諾APIでは、UserAccount の状態を都度確認して防ぐ（§4.3）。
-- **URLのフラグメント**（U5）：Expo Router で扱えない場合、トークンの受け渡しの設計を見直す必要があり、実装の開始が遅れる。
-- **レート制限の新設**（U4）：既存の仕組みがないため、新しく作る。接続元IPの判定を誤ると、正当な利用者がまとめて制限される、または制限が効かない。
+- **レート制限の新設**（U4）：既存の仕組みがないため、新しく作る。固定の時間枠のため、境目の前後で最大2倍まで通る（許容した）。R14-Bの制限は人物・公演の単位で、接続元IPは使わない。
 - **送信の結果不明**：PHPの処理が止まると、送信の記録が PENDING のまま残り、「結果不明」と表示される。メールが送られたかどうかは分からないため、管理者が再送の要否を判断する。
 - **担当者の有効性の判定の性能**：権限の判定のたびに参加者と同意の確認が加わる。現在の `isActivePersonParticipant()` は公演の参加者を全件読むため、専用のクエリに置き換える（§7.4）。
 - **既存テストの書き直し**：§14.4のとおり、多数のテストが現行の仕様（直接追加・自動解決・参加者でない担当者・同意のない担当者）を固定している。仕様変更として書き直す（削除・無効化はしない）。
-- **古い招待メールのリンク**：`/register?token=` を、確認画面への導線に転送し続ける必要がある。クエリのトークンがアクセスログに残る（期限24時間で無効になる）。
+- **古い招待メールのリンク**：`/register?token=` のトークンは処理せず、一般の導線（ログイン・招待一覧）へ誘導する（第6版）。クエリのトークンは、Frontendを配信するサーバーのアクセスログに残りうるが、照合に使わないため、招待の内容は分からない。
 - **メールの到達**：`wp_mail()` の成功は配達を保証しない。届かない場合は、管理者の再送で対応する（送信の上限の範囲内）。
 - **email_key の鍵の設定漏れ**：鍵が設定されていないと、招待の作成・再送が止まる（§6.7。安全側の動作）。リリースの手順に、Dev・Production の `wp-config.php` への鍵の設定を含める（設定の変更は、ユーザーの承認を得て行う）。
 - **削除の定期処理**：WP-Cron はアクセスを契機に動くため、削除が遅れることがある。削除の対象は監査ログと送信の記録だけに限定し、誤って他の表を削除しないことをテストで確認する（T101）。
@@ -1613,6 +1763,10 @@ R14-Bの本体実装の前に行った事前検証の記録。**実装・Migrati
 - Dev・Production：U9 の照合順序のSELECT（§12）だけを実行した。U4 は設定ファイルの読み取りと、公開URLの応答ヘッダーの確認だけを行った。変更・デプロイ・アクセスログの閲覧はしていない。
 
 ### 17.1 U5：URLのフラグメント（Web は一部不合格、ネイティブは未検証）
+
+> **第6版**：この検証の結果を受けて、ユーザーは **C案**（メールのリンクにトークンを入れない）を選んだ。本文（§4.2・§7・§9.2・§10）に反映した。以下は検証の記録で、フラグメント方式は採用していない。ネイティブの検証は不要になった。
+>
+> **検証の手順についての記録**：この検証で使った使い捨ての Edge のプロファイル（Playwright が `--user-data-dir` に新しい空のディレクトリを指定して起動。`--no-first-run`・`--disable-sync` 付き）の閲覧履歴のデータベースに、この検証と関係のない、PCの利用者の閲覧の記録の一部が入っていた。原因は特定できていない（Edge の初回起動時の自動の取り込み〔`AutoImportAtFirstRun` の既定の動作〕の可能性があるが、確認していない）。該当のプロファイルと出力は削除した。以後のブラウザでの検証では、専用の空のユーザーデータのディレクトリを新しく作って明示的に指定し、開始前に空であることを確かめ、既存のプロファイルを参照・複製せず、閲覧履歴のデータベースを読む場合は検証のサーバーのURLだけに絞り、終了後にプロファイルを削除する。
 
 **環境**：expo-router 57.0.14、expo 57.0.14、expo-linking 57.0.6、react-native 0.86.2、react-native-web 0.21.2。`app.config.ts` は `scheme: 'stageart'`、`web.output: 'static'`。Android App Links（`intentFilters`）・iOS Universal Links（`associatedDomains`）の設定はない。
 
@@ -1661,6 +1815,8 @@ R14-Bの本体実装の前に行った事前検証の記録。**実装・Migrati
 - `sessionStorage` に置いたトークンは、招待の処理の後に必ず消す。
 
 ### 17.2 U13：Join Key の申請と UNIQUE キー（再現した）
+
+> **第6版**：ユーザーは **A＋C案**（既存の行の再利用と、保存の失敗の検出）を選んだ。本文（§5.2・§5.4・§7.1・§7.4・§14）に反映した。以下は再現の記録。
 
 **実際の UNIQUE キー**（`Installer`、c6480c2）：`UNIQUE KEY production_subject_type (production_id, subject_type, subject_id, participant_type)`。`status` を含まない。同じ人物・同じ公演・同じ参加区分の行は、状態にかかわらず1行だけ。
 
@@ -1711,6 +1867,8 @@ R14-Bの本体実装の前に行った事前検証の記録。**実装・Migrati
 
 ### 17.3 U9：DBの照合順序（確認済み）
 
+> **第6版**：下の提案（ASCII の前提の明記、PHP の完全一致による本人の判定）を §6.4 に反映した。
+
 **実行したSQL**（§12 の照合順序のSELECTだけ。接頭辞は両環境とも `wp_`）
 
 ```sql
@@ -1742,6 +1900,8 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 ### 17.4 U4：本番のプロキシの構成（一部確認）
 
+> **第6版**：ユーザーの承認を得て、Dev で追加の確認をした（§17.6）。下の「確認不能」の項目のうち、`REMOTE_ADDR`・`X-Forwarded-For`・`X-Real-IP`・`Authorization` 付きの応答のキャッシュは、Dev で確認できた。
+
 **確認できたこと**（読み取りだけ）
 
 - 公開URLの応答ヘッダー（api・app・dev-api）：`Server: nginx`、`X-Nginx-Cache: MISS／HIT／EXPIRED`。前段に、キャッシュの機能を持つ nginx がある。app の `ETag` は Apache 形式。
@@ -1768,7 +1928,9 @@ WHERE TABLE_SCHEMA = DATABASE()
    - `REMOTE_ADDR` が一覧にある場合だけ、`X-Forwarded-For` を右から見て、最初の信頼しないアドレスを接続元とする。
 4. 確認の結果、`REMOTE_ADDR` が常に nginx のIPで、信頼できるヘッダーもない場合は、IPごとのレート制限が全員で1つの枠になる。この場合は、IP単位の制限の代わりに、トークン・人物単位の制限を強める（ユーザー判断）。
 
-### 17.5 第5版レビューで残った3点の対応案【提案・未承認】
+### 17.5 第5版レビューで残った3点の対応案（第6版で3点とも採用）
+
+> **第6版**：17.5.1 は §6.1・§6.2・§6.6・§6.7 に、17.5.2 は §6.1・§11.5・§16 に、17.5.3 は §9.2・§6.6 に反映した。レート制限は固定の時間枠を採用し、境目の前後で最大2倍まで通ることを許容した。
 
 #### 17.5.1 email_key のインデックス（§6.2・§6.7）
 
@@ -1843,3 +2005,52 @@ SELECT LAST_INSERT_ID();   -- この接続で加算した後の回数
 
 - §6.6 の1日1回の定期処理で、`expires_at < 現在` の行を、`DELETE … WHERE expires_at < %s ORDER BY expires_at LIMIT 1000` で区切って削除する（単一テーブルの DELETE は `LIMIT` を付けられる）。
 - 判定は `window_start` が現在の枠の行だけを見るため、削除が遅れても結果は変わらない。
+
+### 17.6 U4：Dev での追加の確認（2026-11-16、第6版。ユーザーの承認による）
+
+Dev（dev-api）だけで行った。Production には何も置かず、接続もしていない。ConoHa・nginx・`.htaccess`・`wp-config.php` の設定は変更していない。
+
+**1. 一時的な確認用のファイル**（接続元IPと、キャッシュの動作）
+
+- 推測されにくい名前のPHPファイルを、Dev の公開ディレクトリに一時的に置いた。正しいキーがなければ、空の404を返す（キーなしで404を確認）。出力は、`REMOTE_ADDR`・`X-Forwarded-For`・`X-Real-IP`・`Forwarded` の値と、ダミーの `Authorization` の値の識別値（ハッシュの先頭）・乱数だけ。認証トークン・Cookie・利用者のデータは出力しない。
+- 確認の後すぐに削除し、サーバー上にファイルがないこと、キーあり・キーなし・キャッシュの確認に使ったURLのいずれも404になることを確かめた。
+
+| 確認 | 結果 |
+|---|---|
+| `REMOTE_ADDR` | 利用者（確認した端末）のIP（SSH の接続元のアドレスと一致） |
+| `X-Real-IP` | 利用者のIP。利用者が偽の値を送っても、利用者のIPのまま（nginx が上書きする） |
+| `X-Forwarded-For` | 通常は付かない。利用者が送った値は、**そのまま届く**（nginx は追記も上書きもしない。偽装できる） |
+| `Forwarded` | 付かない |
+| `REMOTE_ADDR` への偽装の影響 | なし（利用者が `X-Forwarded-For` を送っても、`REMOTE_ADDR` は変わらない） |
+
+→ 接続元IPは `REMOTE_ADDR` だけを使えばよく、`X-Forwarded-For` は使わない。信頼するプロキシの設定は不要（§9.2）。
+
+| 応答の `Cache-Control` | ダミーの認証A・B・未ログインの順に、同じURLを要求した結果 |
+|---|---|
+| なし | **最初の応答がキャッシュされ（`X-Nginx-Cache: HIT`）、A・B・未ログインの区別なく、同じ応答（同じ乱数）が返った。利用者の間で応答が混ざる** |
+| `no-store` | すべて MISS。それぞれ自分の応答が返った |
+| WordPress の no-cache（`no-cache, must-revalidate, max-age=0, no-store, private`） | すべて MISS。それぞれ自分の応答が返った |
+
+**2. 実際のアカウントによる確認**（ログイン済みの StageArt のAPI）
+
+- Dev に、検証専用のダミーのアカウントを2つ作った（架空のメールアドレス、`@example.com`、ランダムなパスワード）。作成は、Dev の WP-CLI で、StageArt の登録のAPIをサーバーの中で呼んだ（確認のメールが外へ送られないよう、その処理の中だけでメールの送信を止めた）。ログインは、通常の `POST /auth/email/login`（HTTPS）で行った。
+- 2つのアカウント（A・B）と未ログインから、`/me`・`/me/notification-email`・`/me/dashboard`・`/me/notifications`・`/me/memberships`・`/me/participating-productions`・`/me/favorites`・`/me/follows`・`/me/push-preference` を、未ログイン → A → B → A → B → 未ログインの順に要求した。
+
+| 結果 | 内容 |
+|---|---|
+| ログイン済み（A・B） | すべて200、`Cache-Control: no-cache, must-revalidate, max-age=0, no-store, private`、`X-Nginx-Cache: MISS`。A の応答にBの情報、B の応答にAの情報が入ることはなかった（`/me`・`/me/notification-email` で、本人の人物ID・メールアドレスで確認） |
+| 未ログイン | すべて401（キャッシュの印なし）。A・B の情報は入らなかった |
+| ログイン（`POST`） | `Cache-Control`・`X-Nginx-Cache` なし（POST はキャッシュされない） |
+
+- **応答の混ざり：なし。**ただし、これはログイン済みの応答に WordPress が no-cache のヘッダーを付けているためで、`Cache-Control` を付けない200の応答は混ざる（上の1）。そのため、§9.2 で `no-store` の明示を必須にした。
+
+**3. テスト用アカウントと関連データの削除**
+
+- アカウントの作成と、そのログインで作られた行（人物・利用者アカウント・ログイン用の認証情報・メール確認のトークン・リフレッシュトークン・WordPress のユーザーとユーザーメタ）を、テスト用のIDとメールアドレスで全テーブルを検索して特定し、その行だけを削除した。WordPress のユーザーは `wp_delete_user()` で削除した。
+- 削除の後に、もう一度全テーブルを検索し、テスト用のIDとメールアドレスを持つ行が0件であることを確かめた。2回目の確認では、作成の前と削除の後で、StageArt の全テーブルと `wp_users`・`wp_usermeta` の行数が一致した。
+- 1回目の確認は、確認用のスクリプトの不具合（削除の処理に、作成したIDが渡らなかった）で、削除の段階が失敗したため、同じ方法で手動で削除し、0件を確かめてから、2回目の確認をやり直した。1回目の確認の結果（応答の記録）は残っていないため、上の結果は2回目のもの。
+- WP-CLI の実行に伴う `wp_options`（transient など）の変化は、確認していない。
+
+**4. 関連して分かったこと**
+
+- Dev に配置されているコード（PR #7 の前の、元の作業ツリーのコード）には、公開ページの読み取り（公開の団体・公演のページなど）に no-cache のヘッダーを付ける `PublicResponseCachePolicy` があり、そのコメントに「nginx が200の応答を約1分キャッシュし、全員に返していた」とある。**PR #7（`c6480c2`）には、このクラスがない。**PR #7 を配置すると、公開ページが再びキャッシュされる可能性がある（【未決定】N3、§16.2）。
