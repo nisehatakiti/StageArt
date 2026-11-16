@@ -49,6 +49,16 @@ final class Participant
      */
     private ?ParticipantConsentSource $consentSource;
     private ?DateTimeImmutable $consentedAt;
+    /**
+     * R14-B §6.1 (N4): when the latest join request (R14-B onwards) was
+     * made - the basis of consentedAt on approval. NULL = a request made
+     * before R14-B, or a row that is not a request; NULL is never read as
+     * consent, and createdAt is never used in its place (a re-request
+     * reuses the row, so createdAt stays the first request's). Only held
+     * and persisted here: setting it on a request / re-request is the
+     * Application step's (reopenRequest()).
+     */
+    private ?DateTimeImmutable $requestedAt;
 
     private function __construct(
         ParticipantId $id,
@@ -63,7 +73,8 @@ final class Participant
         ?string $displayName = null,
         ?ParticipantEnrollmentSource $enrollmentSource = null,
         ?ParticipantConsentSource $consentSource = null,
-        ?DateTimeImmutable $consentedAt = null
+        ?DateTimeImmutable $consentedAt = null,
+        ?DateTimeImmutable $requestedAt = null
     ) {
         if (($consentSource === null) !== ($consentedAt === null)) {
             throw new InvalidArgumentException('consentSource and consentedAt must be both set or both null.');
@@ -82,6 +93,7 @@ final class Participant
         $this->enrollmentSource = $enrollmentSource;
         $this->consentSource = $consentSource;
         $this->consentedAt = $consentedAt;
+        $this->requestedAt = $requestedAt;
     }
 
     public static function create(
@@ -197,7 +209,8 @@ final class Participant
         ?string $displayName = null,
         ?ParticipantEnrollmentSource $enrollmentSource = null,
         ?ParticipantConsentSource $consentSource = null,
-        ?DateTimeImmutable $consentedAt = null
+        ?DateTimeImmutable $consentedAt = null,
+        ?DateTimeImmutable $requestedAt = null
     ): self {
         return new self(
             $id,
@@ -212,7 +225,8 @@ final class Participant
             $displayName,
             $enrollmentSource,
             $consentSource,
-            $consentedAt
+            $consentedAt,
+            $requestedAt
         );
     }
 
@@ -499,5 +513,10 @@ final class Participant
     public function consentedAt(): ?DateTimeImmutable
     {
         return $this->consentedAt;
+    }
+
+    public function requestedAt(): ?DateTimeImmutable
+    {
+        return $this->requestedAt;
     }
 }
