@@ -64,6 +64,53 @@ final class WordPressCheckedWrites
     }
 
     /**
+     * @param array<string, mixed> $where
+     * @return int the number of rows deleted (0 is not a failure)
+     */
+    public static function delete(wpdb $wpdb, string $table, array $where): int
+    {
+        $result = $wpdb->delete($table, $where);
+
+        if ($result === false) {
+            throw self::failure($wpdb, 'delete from', $table);
+        }
+
+        return (int) $result;
+    }
+
+    /**
+     * R14-B stage 3: a prepared UPDATE / DELETE statement run through
+     * $wpdb->query() (e.g. a conditional UPDATE ... WHERE ... IS NULL, or an
+     * atomic counter). false throws like insert() / update(); otherwise the
+     * number of rows affected is returned and the caller judges what 0
+     * means (design doc §7.4).
+     */
+    public static function query(wpdb $wpdb, string $operation, string $table, string $preparedSql): int
+    {
+        $result = $wpdb->query($preparedSql);
+
+        if ($result === false) {
+            throw self::failure($wpdb, $operation, $table);
+        }
+
+        return (int) $result;
+    }
+
+    /**
+     * R14-B stage 3: called right after a read whose "no rows" answer the
+     * caller acts on (a locking read, a candidate search): $wpdb answers a
+     * failed read with no rows, so a non-empty last_error throws instead.
+     * The caller clears last_error before the read. Like the writes, the
+     * exception never carries the database's error text.
+     */
+    public static function assertRead(wpdb $wpdb, string $table): void
+    {
+        if ((string) ($wpdb->last_error ?? '') !== '') {
+            throw new PersistenceException('read from', $table, self::errno($wpdb));
+        }
+    }
+
+    /**
      * The id when a row with this id exists, null when none does; a failed
      * read throws instead of reading as "none".
      */

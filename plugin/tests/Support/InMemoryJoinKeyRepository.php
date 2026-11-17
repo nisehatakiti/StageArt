@@ -23,6 +23,56 @@ final class InMemoryJoinKeyRepository implements JoinKeyRepositoryInterface
         return $this->joinKeys[$id->toString()] ?? null;
     }
 
+    public ?LockLog $lockLog = null;
+
+    /** R14-B stage 3: the next recordUseIfUsable() throws this (a failed write). */
+    public ?\Throwable $failNextUse = null;
+
+    /** Mirrors the conditional UPDATE: counts the use only while the key is usable at `$now`. */
+    public function recordUseIfUsable(JoinKeyId $id, \DateTimeImmutable $now): bool
+    {
+        if ($this->lockLog !== null) {
+            $this->lockLog->record('join_key');
+        }
+
+        if ($this->failNextUse !== null) {
+            $failure = $this->failNextUse;
+            $this->failNextUse = null;
+
+            throw $failure;
+        }
+
+        $joinKey = $this->findById($id);
+
+        if ($joinKey === null
+            || $joinKey->status() !== JoinKey::STATUS_ACTIVE
+            || ($joinKey->expiresAt() !== null && $joinKey->expiresAt() <= $now)
+            || ($joinKey->maxUses() !== null && $joinKey->useCount() >= $joinKey->maxUses())
+        ) {
+            return false;
+        }
+
+        $joinKey->recordUse();
+
+        return true;
+    }
+
+    /**
+     * @return array<string, JoinKey>
+     */
+    public function snapshot(): array
+    {
+        return array_map(static fn (JoinKey $joinKey): JoinKey => clone $joinKey, $this->joinKeys);
+    }
+
+    /**
+     * @param array<string, JoinKey> $snapshot
+     */
+    public function restore(array $snapshot): void
+    {
+        $this->joinKeys = $snapshot;
+    }
+
     public function findByCode(string $normalizedCode): ?JoinKey
     {
         foreach ($this->joinKeys as $joinKey) {

@@ -319,13 +319,17 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
         $this->assertSame(self::TOKEN_HASH, $insert['token_hash']);
     }
 
-    /** The send / notification columns are not this step's: never written, so an UPDATE keeps them. */
+    /**
+     * The send / notification columns are not save()'s: never written, so an
+     * UPDATE keeps them. (Stage 3: updated_at moved out of this list - it is
+     * now the Domain's updatedAt, see test_updated_at_is_written_as_the_domain_holds_it.)
+     */
     public function test_the_send_and_notification_columns_are_left_alone(): void
     {
         foreach ([false, true] as $existing) {
             [, , $row] = $this->saved($this->pending(), $existing);
 
-            foreach (['revocation_notified_at', 'current_send_id', 'last_sent_at', 'updated_at'] as $column) {
+            foreach (['revocation_notified_at', 'current_send_id', 'last_sent_at'] as $column) {
                 $this->assertArrayNotHasKey($column, $row);
             }
         }

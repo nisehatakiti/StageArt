@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use StageArt\Domain\Participant\ParticipantId;
 use StageArt\Domain\Participant\ParticipantType;
+use StageArt\Domain\ParticipantInvitation\InvitationEmailAddress;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationId;
@@ -29,10 +30,21 @@ use wpdb;
  *   resend_count 0. Nothing is derived or changed here.
  * - token_hash is written as the Domain holds it: this class never makes
  *   or changes one (a resend() keeps it).
- * - revocation_notified_at, current_send_id, last_sent_at and updated_at
- *   (schema 1.49.0) belong to the send / notification steps that do not
- *   exist yet: they are neither written nor read here, so an INSERT leaves
- *   them NULL and an UPDATE leaves whatever they hold.
+ * - updated_at is written and read as the Domain holds it (stage 3): set
+ *   when the invitation actually changes, NULL kept for an unchanged
+ *   pre-R14-B row - never filled in here with the current time.
+ * - revocation_notified_at is written only by
+ *   markRevocationNotificationAttempted(), a conditional UPDATE (WHERE
+ *   revocation_notified_at IS NULL) whose single success decides that the
+ *   one PrimaryManager notification is attempted (§11.5); save() never
+ *   writes it. current_send_id and last_sent_at belong to the send step
+ *   (InvitationSendService, a later stage): neither written nor read here,
+ *   so an INSERT leaves them NULL and an UPDATE leaves whatever they hold.
+ * - findByIdForUpdate() locks the row (SELECT ... FOR UPDATE, lock order
+ *   §5.4: Production first). findByVerifiedEmailCandidates() narrows by
+ *   SQL and then keeps only exact matches of the §6.4 normalisation in
+ *   PHP, so the column's _ci collation alone never decides a match. Both
+ *   throw on a failed read instead of reading it as "none".
  * - A failed write throws (WordPressCheckedWrites): UNIQUE key violation
  *   (1062, e.g. token_hash) as UniqueConstraintViolationException, other
  *   failures as PersistenceException. The message never carries the
@@ -73,6 +85,7 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             'closed_at' => self::toDbOrNull($invitation->closedAt()),
             'closed_by_person_id' => $invitation->closedByPersonId() !== null ? $invitation->closedByPersonId()->toString() : null,
             'resend_count' => $invitation->resendCount(),
+            'updated_at' => self::toDbOrNull($invitation->updatedAt()),
         ];
 
         $id = $invitation->id()->toString();
@@ -97,6 +110,74 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
         );
 
         return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForUpdate(ParticipantInvitationId $id): ?ParticipantInvitation
+    {
+        $this->wpdb->last_error = '';
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+        $this->throwIfReadFailed();
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByVerifiedEmailCandidates(array $emails): array
+    {
+        $wanted = [];
+
+        foreach ($emails as $email) {
+            $normalized = self::normalizeEmail((string) $email);
+
+            if ($normalized !== '') {
+                $wanted[$normalized] = true;
+            }
+        }
+
+        if ($wanted === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($wanted), '%s'));
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE email IN ({$placeholders})", ...array_keys($wanted)),
+            ARRAY_A
+        );
+        $this->throwIfReadFailed();
+
+        $matches = [];
+
+        foreach ($rows ?: [] as $row) {
+            if (isset($wanted[self::normalizeEmail((string) $row['email'])])) {
+                $matches[] = $this->hydrate($row);
+            }
+        }
+
+        return $matches;
+    }
+
+    public function markRevocationNotificationAttempted(ParticipantInvitationId $id, DateTimeImmutable $at): bool
+    {
+        $changed = WordPressCheckedWrites::query($this->wpdb, 'update', $this->table, $this->wpdb->prepare(
+            "UPDATE {$this->table} SET revocation_notified_at = %s WHERE id = %s AND revocation_notified_at IS NULL",
+            self::toDb($at),
+            $id->toString()
+        ));
+
+        return $changed === 1;
+    }
+
+    private function throwIfReadFailed(): void
+    {
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+    }
+
+    private static function normalizeEmail(string $email): string
+    {
+        return InvitationEmailAddress::normalize($email);
     }
 
     public function findByTokenHash(string $tokenHash): ?ParticipantInvitation
@@ -168,7 +249,8 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             isset($row['close_reason']) ? ParticipantInvitationCloseReason::fromString($row['close_reason']) : null,
             isset($row['closed_at']) ? self::fromDb($row['closed_at']) : null,
             isset($row['closed_by_person_id']) ? PersonId::fromString($row['closed_by_person_id']) : null,
-            isset($row['resend_count']) ? (int) $row['resend_count'] : 0
+            isset($row['resend_count']) ? (int) $row['resend_count'] : 0,
+            isset($row['updated_at']) ? self::fromDb($row['updated_at']) : null
         );
     }
 

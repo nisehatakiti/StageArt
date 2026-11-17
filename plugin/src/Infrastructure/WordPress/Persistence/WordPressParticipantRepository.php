@@ -31,6 +31,11 @@ use wpdb;
  *   PersistenceException; a failed existence read too, so it never turns
  *   into an INSERT. Before R14-B both write results were ignored (U13:
  *   201 with no row stored).
+ * - findByIdForUpdate() / findByProductionAndSubjectForUpdate() (stage 3)
+ *   lock the row with SELECT ... FOR UPDATE inside the caller's
+ *   transaction (after the Production lock, §5.4) and throw on a failed
+ *   read, so a failure is never taken for "no such row" (which would
+ *   create a second row).
  * - Date-times are stored as UTC wall-clock values - what every existing
  *   row already holds, since WordPress fixes PHP's default time zone to
  *   UTC - and read back as UTC. A value given in another zone (e.g. +09:00)
@@ -86,6 +91,41 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForUpdate(ParticipantId $id): ?Participant
+    {
+        $this->wpdb->last_error = '';
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByProductionAndSubjectForUpdate(
+        ProductionId $productionId,
+        ParticipantSubjectType $subjectType,
+        string $subjectId,
+        ParticipantType $participantType
+    ): ?Participant {
+        $this->wpdb->last_error = '';
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} "
+                . "WHERE production_id = %s AND subject_type = %s AND subject_id = %s AND participant_type = %s FOR UPDATE",
+                $productionId->toString(),
+                $subjectType->toString(),
+                $subjectId,
+                $participantType->toString()
+            ),
+            ARRAY_A
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
 
         return $row ? $this->hydrate($row) : null;
     }

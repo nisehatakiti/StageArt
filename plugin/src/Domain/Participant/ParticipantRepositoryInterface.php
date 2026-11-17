@@ -13,6 +13,28 @@ interface ParticipantRepositoryInterface
     public function findById(ParticipantId $id): ?Participant;
 
     /**
+     * R14-B §5.4: findById() with an exclusive row lock held until the
+     * caller's transaction ends (SELECT ... FOR UPDATE), taken after the
+     * Production lock. Throws when the read fails; null only when there is
+     * no such row.
+     */
+    public function findByIdForUpdate(ParticipantId $id): ?Participant;
+
+    /**
+     * R14-B §5.2 / §7.4 (U13): the one row of this (production, subject,
+     * type) key, locked (SELECT ... FOR UPDATE) - read again under the
+     * Production lock before a row is created or reused, so concurrent
+     * requests / acceptances never create a second row. Throws when the
+     * read fails; null only when there is no such row.
+     */
+    public function findByProductionAndSubjectForUpdate(
+        ProductionId $productionId,
+        ParticipantSubjectType $subjectType,
+        string $subjectId,
+        ParticipantType $participantType
+    ): ?Participant;
+
+    /**
      * @return Participant[]
      */
     public function findByProductionId(ProductionId $productionId): array;
