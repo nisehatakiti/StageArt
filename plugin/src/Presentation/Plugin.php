@@ -78,6 +78,9 @@ use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationUseC
 use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
 use StageArt\Application\Participant\ListPendingParticipantRequestsUseCase;
+use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
+use StageArt\Application\Participant\ParticipantEnrollmentService;
+use StageArt\Application\Participant\ParticipantEventRecorder;
 use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
@@ -179,6 +182,7 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressFavoriteRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJoinKeyRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationFollowRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantEventRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
@@ -999,9 +1003,15 @@ final class Plugin
             $cancelParticipant
         );
 
-        $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $participants, $joinKeys, $productionAuthorization);
-        $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
-        $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
+        // PR #7 R14-B stage 3: the join request / approval / rejection run in
+        // one transaction with the §5.4 locks, reuse the one Participant row
+        // and write the audit log (the routes are unchanged).
+        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
+        $participantEnrollment = new ParticipantEnrollmentService($participants);
+        $participantDelegateRoles = new ParticipantDelegateRoleReleaser($productionDelegates, $participantEventRecorder);
+        $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $joinKeys, $productionAuthorization, $participantEnrollment, $participantEventRecorder, $transactions);
+        $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $transactions);
+        $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEventRecorder, $transactions);
         $listPendingParticipantRequests = new ListPendingParticipantRequestsUseCase($participants, $productions, $people, $productionAuthorization);
 
         $participationRequestRestController = new ParticipationRequestRestController(
