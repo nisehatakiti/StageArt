@@ -111,22 +111,18 @@ final class ParticipantEnrollmentService
     /**
      * Whether the Person already holds an ACTIVE PERSON row of another type
      * in the Production. All Participant state changes of a Production run
-     * under its row lock (§5.4), so this read is stable for the
-     * transaction.
+     * under its row lock (§5.4), and the rows are read with FOR UPDATE, so
+     * this read is stable for the transaction. A failed read throws (the
+     * Repository never answers "none" for it), so the caller's transaction
+     * rolls back instead of releasing delegate roles that must be kept.
      */
     private function isActiveInAnotherType(ProductionId $productionId, PersonId $personId, ParticipantType $participantType): bool
     {
-        foreach ($this->participants->findByProductionId($productionId) as $participant) {
-            if ($participant->subjectType()->equals(ParticipantSubjectType::person())
-                && $participant->subjectId() === $personId->toString()
-                && ! $participant->participantType()->equals($participantType)
-                && $participant->isActive()
-            ) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->participants->existsActivePersonParticipantOfAnotherTypeForUpdate(
+            $productionId,
+            $personId->toString(),
+            $participantType
+        );
     }
 
     /**

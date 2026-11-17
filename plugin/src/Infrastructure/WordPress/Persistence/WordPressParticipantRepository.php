@@ -130,6 +130,34 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
         return $row ? $this->hydrate($row) : null;
     }
 
+    /**
+     * R14-B §4.6: a failed read throws (assertRead) - $wpdb answers a
+     * failed get_col() with an empty array, which would read as "no ACTIVE
+     * row of another type" and release delegate roles that must be kept.
+     */
+    public function existsActivePersonParticipantOfAnotherTypeForUpdate(
+        ProductionId $productionId,
+        string $personId,
+        ParticipantType $participantType
+    ): bool {
+        $this->wpdb->last_error = '';
+        $ids = $this->wpdb->get_col(
+            $this->wpdb->prepare(
+                "SELECT id FROM {$this->table} "
+                . "WHERE production_id = %s AND subject_type = %s AND subject_id = %s "
+                . "AND participant_type <> %s AND status = %s ORDER BY id FOR UPDATE",
+                $productionId->toString(),
+                ParticipantSubjectType::PERSON,
+                $personId,
+                $participantType->toString(),
+                ParticipantStatus::ACTIVE
+            )
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        return is_array($ids) && $ids !== [];
+    }
+
     public function findByProductionId(ProductionId $productionId): array
     {
         $rows = $this->wpdb->get_results(

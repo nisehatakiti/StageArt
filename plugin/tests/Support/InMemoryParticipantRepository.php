@@ -63,6 +63,41 @@ final class InMemoryParticipantRepository implements ParticipantRepositoryInterf
         return $found;
     }
 
+    /** R14-B §4.6: the next other-type ACTIVE check throws this (a failed read). */
+    public ?\Throwable $failNextOtherTypeCheck = null;
+
+    /** @var int how many other-type ACTIVE checks ran */
+    public int $otherTypeChecks = 0;
+
+    public function existsActivePersonParticipantOfAnotherTypeForUpdate(
+        ProductionId $productionId,
+        string $personId,
+        ParticipantType $participantType
+    ): bool {
+        $this->recordLock('participant');
+        $this->otherTypeChecks++;
+
+        if ($this->failNextOtherTypeCheck !== null) {
+            $failure = $this->failNextOtherTypeCheck;
+            $this->failNextOtherTypeCheck = null;
+
+            throw $failure;
+        }
+
+        foreach ($this->participants as $participant) {
+            if ($participant->productionId()->equals($productionId)
+                && $participant->subjectType()->equals(ParticipantSubjectType::person())
+                && $participant->subjectId() === $personId
+                && ! $participant->participantType()->equals($participantType)
+                && $participant->isActive()
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * For RollbackingTransactionManager: the stored rows as copies, so a
      * rolled-back transaction's in-place changes are undone too.

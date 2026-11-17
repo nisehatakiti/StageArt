@@ -197,6 +197,81 @@ final class R14bStage3RepositoryTest extends TestCase
         $repository->findByIdForUpdate(ParticipantId::fromString(self::ID));
     }
 
+    // --- §4.6: ACTIVE PERSON row of another type -----------------------
+
+    public function test_another_type_active_check_is_one_locking_read_of_active_person_rows_of_other_types(): void
+    {
+        $db = new \wpdb(static fn (string $method) => $method === 'get_col' ? [self::ID] : FakeWpdbDefault::VALUE);
+        $repository = new WordPressParticipantRepository($db);
+
+        $this->assertTrue($repository->existsActivePersonParticipantOfAnotherTypeForUpdate(
+            ProductionId::fromString(self::PRODUCTION),
+            self::PERSON,
+            ParticipantType::cast()
+        ));
+
+        $calls = $db->callsTo('get_col');
+        $this->assertCount(1, $calls);
+        $sql = $calls[0][0];
+        $this->assertStringEndsWith('FOR UPDATE', $sql);
+        $this->assertStringContainsString("production_id = '" . self::PRODUCTION . "'", $sql);
+        $this->assertStringContainsString("subject_type = 'PERSON'", $sql, 'NAME_ONLY rows never count');
+        $this->assertStringContainsString("subject_id = '" . self::PERSON . "'", $sql);
+        $this->assertStringContainsString("participant_type <> 'CAST'", $sql, 'The type being enrolled never counts');
+        $this->assertStringContainsString("status = 'ACTIVE'", $sql);
+        $this->assertSame([], $db->callsTo('get_results'), 'Not findByProductionId()');
+    }
+
+    public function test_another_type_active_check_is_false_for_no_row(): void
+    {
+        $repository = new WordPressParticipantRepository(new \wpdb(static fn () => FakeWpdbDefault::VALUE));
+
+        $this->assertFalse($repository->existsActivePersonParticipantOfAnotherTypeForUpdate(
+            ProductionId::fromString(self::PRODUCTION),
+            self::PERSON,
+            ParticipantType::staff()
+        ));
+    }
+
+    public function test_a_failed_another_type_active_check_throws_instead_of_reading_as_none(): void
+    {
+        $repository = new WordPressParticipantRepository(new \wpdb(static function (string $method, array $args, \wpdb $db) {
+            if ($method === 'get_col') {
+                self::failRead($db);
+
+                return [];
+            }
+
+            return FakeWpdbDefault::VALUE;
+        }));
+
+        try {
+            $repository->existsActivePersonParticipantOfAnotherTypeForUpdate(
+                ProductionId::fromString(self::PRODUCTION),
+                self::PERSON,
+                ParticipantType::cast()
+            );
+            $this->fail('A failed read must throw, not answer "none".');
+        } catch (PersistenceException $e) {
+            $this->assertNotInstanceOf(UniqueConstraintViolationException::class, $e);
+            $this->assertSame(1205, $e->mysqlErrno());
+            self::assertNoDatabaseText($e);
+        }
+    }
+
+    public function test_a_stale_error_from_an_earlier_query_does_not_fail_the_check(): void
+    {
+        $db = new \wpdb(static fn (string $method) => $method === 'get_col' ? [] : FakeWpdbDefault::VALUE);
+        $db->last_error = 'an earlier, unrelated failure';
+        $repository = new WordPressParticipantRepository($db);
+
+        $this->assertFalse($repository->existsActivePersonParticipantOfAnotherTypeForUpdate(
+            ProductionId::fromString(self::PRODUCTION),
+            self::PERSON,
+            ParticipantType::cast()
+        ), 'last_error is cleared before the read');
+    }
+
     // --- Invitation --------------------------------------------------
 
     public function test_invitation_locking_read_uses_for_update_and_a_failure_throws(): void

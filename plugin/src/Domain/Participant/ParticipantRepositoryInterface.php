@@ -35,6 +35,21 @@ interface ParticipantRepositoryInterface
     ): ?Participant;
 
     /**
+     * R14-B §4.6 (DORMANT_ON_ENROLLMENT): whether the Person holds an ACTIVE
+     * PERSON row of a type other than $participantType in the Production.
+     * The rows are read with SELECT ... FOR UPDATE (after the Production
+     * lock, §5.4). Rows of $participantType itself and non-PERSON rows
+     * (NAME_ONLY) never count. Throws when the read fails - a failure is
+     * never taken for "none" (which would release delegate roles that must
+     * be kept).
+     */
+    public function existsActivePersonParticipantOfAnotherTypeForUpdate(
+        ProductionId $productionId,
+        string $personId,
+        ParticipantType $participantType
+    ): bool;
+
+    /**
      * @return Participant[]
      */
     public function findByProductionId(ProductionId $productionId): array;
