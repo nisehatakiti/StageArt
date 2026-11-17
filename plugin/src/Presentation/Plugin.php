@@ -219,7 +219,13 @@ use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
 use StageArt\Presentation\Rest\AuthenticationRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
+use StageArt\Presentation\Rest\PersonalResponseCachePolicy;
 use StageArt\Presentation\Rest\RestFailureResponder;
+use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationRecipientVerifier;
+use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
+use StageArt\Application\Participant\ParticipantConsentNotifier;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\MeRestController;
@@ -1049,11 +1055,19 @@ final class Plugin
 
         $personRestController = new PersonRestController($getPersonById, $searchPersonByEmail);
 
+        // PR #7 R14-B stage 4: the invitee answers explicitly (the stage-3
+        // accept / reject / own-list UseCases), now that registration no
+        // longer resolves Production invitations.
+        $invitationRecipients = new InvitationRecipientVerifier($productionAuthorization, $userAccounts, $emailCredentials, $notificationEmails, $findPersonByEmail);
+        $participantConsentNotifier = new ParticipantConsentNotifier($notificationDispatcher);
         $participantInvitationRestController = new ParticipantInvitationRestController(
             $createParticipantInvitation,
             $listParticipantInvitations,
             $resendParticipantInvitation,
-            $cancelParticipantInvitation
+            $cancelParticipantInvitation,
+            new AcceptParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $participantConsentNotifier, $transactions),
+            new RejectParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEventRecorder, $participantConsentNotifier, $transactions),
+            new ListMyParticipantInvitationsUseCase($participantInvitations, $productions, $projects, $organizations, $participants, $invitationRecipients, $participantInvitationConditions)
         );
 
         $joinKeyRestController = new JoinKeyRestController(
@@ -1078,6 +1092,8 @@ final class Plugin
         // a closed Production (409), a lock timeout / deadlock (503,
         // retryable) and any other failure (500) - see RestFailureResponder.
         RestFailureResponder::register();
+        // PR #7 R14-B (§9.2): Cache-Control: no-store on every personal route, success and error.
+        PersonalResponseCachePolicy::register();
 
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
         add_action('rest_api_init', [$organizationSnsRestController, 'register_routes']);

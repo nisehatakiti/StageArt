@@ -6,7 +6,17 @@ namespace StageArt\Presentation\Rest;
 
 use InvalidArgumentException;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
+use StageArt\Application\Participant\ParticipantDraftExistsException;
+use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand;
+use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationCommand;
+use StageArt\Application\ParticipantInvitation\InvitationRecipientNotEligibleException;
+use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsQuery;
+use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationClosedException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationExpiredException;
+use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationCommand;
+use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
@@ -37,6 +47,13 @@ use WP_REST_Response;
  * `GET /participant-invitations/resolve?token=` route is removed - no API
  * looks an invitation up by token any more (a request to it is the REST
  * server's 404 for an unknown route).
+ *
+ * The invitee's own routes (stage 3 UseCases, wired in stage 4 so that an
+ * invitation can be answered at all once the auto-resolution is gone):
+ * `GET /me/participant-invitations`, `POST /participant-invitations/{id}/accept`
+ * and `/reject` - login required, identified by the verified addresses of
+ * the logged-in Person only (no token). An invitation that is not the
+ * caller's is the same 404 as a missing one (§7.2).
  */
 final class ParticipantInvitationRestController
 {
@@ -46,13 +63,22 @@ final class ParticipantInvitationRestController
     private ListParticipantInvitationsUseCase $listParticipantInvitations;
     private ResendParticipantInvitationUseCase $resendParticipantInvitation;
     private CancelParticipantInvitationUseCase $cancelParticipantInvitation;
+    private ?AcceptParticipantInvitationUseCase $acceptParticipantInvitation;
+    private ?RejectParticipantInvitationUseCase $rejectParticipantInvitation;
+    private ?ListMyParticipantInvitationsUseCase $listMyParticipantInvitations;
 
     public function __construct(
         CreateParticipantInvitationUseCase $createParticipantInvitation,
         ListParticipantInvitationsUseCase $listParticipantInvitations,
         ResendParticipantInvitationUseCase $resendParticipantInvitation,
-        CancelParticipantInvitationUseCase $cancelParticipantInvitation
+        CancelParticipantInvitationUseCase $cancelParticipantInvitation,
+        ?AcceptParticipantInvitationUseCase $acceptParticipantInvitation = null,
+        ?RejectParticipantInvitationUseCase $rejectParticipantInvitation = null,
+        ?ListMyParticipantInvitationsUseCase $listMyParticipantInvitations = null
     ) {
+        $this->acceptParticipantInvitation = $acceptParticipantInvitation;
+        $this->rejectParticipantInvitation = $rejectParticipantInvitation;
+        $this->listMyParticipantInvitations = $listMyParticipantInvitations;
         $this->createParticipantInvitation = $createParticipantInvitation;
         $this->listParticipantInvitations = $listParticipantInvitations;
         $this->resendParticipantInvitation = $resendParticipantInvitation;
@@ -86,6 +112,30 @@ final class ParticipantInvitationRestController
             [
                 'methods' => 'POST',
                 'callback' => [$this, 'cancel'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/me/participant-invitations', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listMine'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/participant-invitations/(?P<id>[^/]+)/accept', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'accept'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/participant-invitations/(?P<id>[^/]+)/reject', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'reject'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -184,6 +234,88 @@ final class ParticipantInvitationRestController
         } catch (ParticipantInvitationNotPendingException $exception) {
             return new WP_Error('stageart_participant_invitation_not_pending', $exception->getMessage(), ['status' => 422]);
         }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listMine(WP_REST_Request $request)
+    {
+        try {
+            return new WP_REST_Response(
+                array_map(
+                    static fn ($result) => $result->toArray(),
+                    $this->listMyParticipantInvitations->execute(new ListMyParticipantInvitationsQuery(get_current_user_id()))
+                ),
+                200
+            );
+        } catch (InvitationRecipientNotEligibleException $exception) {
+            return new WP_Error('stageart_participant_invitation_forbidden', 'This account cannot answer invitations.', ['status' => 403]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function accept(WP_REST_Request $request)
+    {
+        try {
+            $command = new AcceptParticipantInvitationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+            return new WP_REST_Response($this->acceptParticipantInvitation->execute($command)->toArray(), 200);
+        } catch (\Throwable $exception) {
+            return self::answerRefusal($exception);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function reject(WP_REST_Request $request)
+    {
+        try {
+            $command = new RejectParticipantInvitationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+            return new WP_REST_Response($this->rejectParticipantInvitation->execute($command)->toArray(), 200);
+        } catch (\Throwable $exception) {
+            return self::answerRefusal($exception);
+        }
+    }
+
+    /**
+     * §7.2 accept / reject errors; anything else is rethrown to
+     * RestFailureResponder (503 / 500). No invitation content, address or
+     * account state is put into a response.
+     *
+     * @return WP_Error
+     */
+    public static function answerRefusal(\Throwable $exception)
+    {
+        if ($exception instanceof InvitationRecipientNotEligibleException) {
+            return new WP_Error('stageart_participant_invitation_forbidden', 'This account cannot answer invitations.', ['status' => 403]);
+        }
+
+        if ($exception instanceof ParticipantInvitationNotFoundException) {
+            return new WP_Error('stageart_participant_invitation_not_found', 'The invitation was not found.', ['status' => 404]);
+        }
+
+        if ($exception instanceof ParticipantInvitationNotPendingException) {
+            return new WP_Error('stageart_participant_invitation_not_pending', 'The invitation has already been answered or cancelled.', ['status' => 409]);
+        }
+
+        if ($exception instanceof ParticipantInvitationClosedException) {
+            return new WP_Error('stageart_participant_invitation_closed', 'The invitation can no longer be accepted.', ['status' => 409, 'close_reason' => $exception->closeReason()]);
+        }
+
+        if ($exception instanceof ParticipantDraftExistsException) {
+            return new WP_Error('stageart_participant_draft_exists', 'The invitation cannot be accepted now; please contact the production manager.', ['status' => 409]);
+        }
+
+        if ($exception instanceof ParticipantInvitationExpiredException) {
+            return new WP_Error('stageart_participant_invitation_expired', 'The invitation has expired.', ['status' => 410]);
+        }
+
+        throw $exception;
     }
 
     /**
