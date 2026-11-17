@@ -34,9 +34,28 @@ final class ParticipantEvent
     public const WITHDRAWN = 'WITHDRAWN';
     public const CONSENT_RECORDED = 'CONSENT_RECORDED';
     public const DELEGATE_DEACTIVATED = 'DELEGATE_DEACTIVATED';
+    /** R14-B stage 4 (§6.3): invitation sends, manager changes of a Participant, delegate appointments. */
+    public const INVITED = 'INVITED';
+    public const RESENT = 'RESENT';
+    public const SEND_FAILED = 'SEND_FAILED';
+    public const NAME_ONLY_ADDED = 'NAME_ONLY_ADDED';
+    public const REMOVED_BY_MANAGER = 'REMOVED_BY_MANAGER';
+    public const DEACTIVATED = 'DEACTIVATED';
+    public const TYPE_CHANGED = 'TYPE_CHANGED';
+    public const DELEGATE_APPOINTED = 'DELEGATE_APPOINTED';
+    public const DELEGATE_REACTIVATED = 'DELEGATE_REACTIVATED';
 
-    /** §6.3 event types this stage writes (the others belong to later stages). */
+    /** §6.3 event types written so far (INVITATION_CANCELLED belongs to a later stage). */
     private const TYPES = [
+        self::INVITED,
+        self::RESENT,
+        self::SEND_FAILED,
+        self::NAME_ONLY_ADDED,
+        self::REMOVED_BY_MANAGER,
+        self::DEACTIVATED,
+        self::TYPE_CHANGED,
+        self::DELEGATE_APPOINTED,
+        self::DELEGATE_REACTIVATED,
         self::INVITATION_CLOSED,
         self::ACCEPTED,
         self::REJECTED,

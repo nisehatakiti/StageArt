@@ -7,10 +7,13 @@ namespace StageArt\Application\Participant;
 use DateTimeImmutable;
 use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantStatus;
+use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\ParticipantEvent\ParticipantEvent;
 use StageArt\Domain\ParticipantEvent\ParticipantEventRepositoryInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationId;
 use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 
 /**
@@ -236,6 +239,149 @@ final class ParticipantEventRecorder
                 'role' => $delegate->role()->toString(),
             ]
         ));
+    }
+
+    /** Stage 4 (§5.2): a manager added a NAME_ONLY row (no Person, no consent). */
+    public function nameOnlyAdded(Participant $participant, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::NAME_ONLY_ADDED,
+            $participant->productionId(),
+            $at,
+            $participant->id(),
+            null,
+            null,
+            'MANAGER_RECORD',
+            $actorPersonId,
+            null,
+            ['participant_type' => $participant->participantType()->toString()]
+        ));
+    }
+
+    /** Stage 4 (§5.2 N10): DELETE /participants/{id} - ACTIVE / INACTIVE -> CANCELLED. */
+    public function removedByManager(Participant $participant, string $previousStatus, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::REMOVED_BY_MANAGER,
+            $participant->productionId(),
+            $at,
+            $participant->id(),
+            null,
+            null,
+            null,
+            $actorPersonId,
+            self::subjectPersonOf($participant),
+            ['previous_status' => $previousStatus]
+        ));
+    }
+
+    /** Stage 4 (§5.2 N6): PUT /participants/{id} - ACTIVE -> INACTIVE. */
+    public function deactivated(Participant $participant, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::DEACTIVATED,
+            $participant->productionId(),
+            $at,
+            $participant->id(),
+            null,
+            null,
+            null,
+            $actorPersonId,
+            self::subjectPersonOf($participant),
+            ['previous_status' => ParticipantStatus::ACTIVE]
+        ));
+    }
+
+    /** Stage 4 (§5.2 N7): PUT /participants/{id} actually changed the type. */
+    public function typeChanged(Participant $participant, string $fromType, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::TYPE_CHANGED,
+            $participant->productionId(),
+            $at,
+            $participant->id(),
+            null,
+            null,
+            null,
+            $actorPersonId,
+            self::subjectPersonOf($participant),
+            ['from_type' => $fromType, 'to_type' => $participant->participantType()->toString()]
+        ));
+    }
+
+    /** Stage 4 (§11.3): a send attempt accepted by the create API (INITIAL). */
+    public function invited(ParticipantInvitation $invitation, string $sendId, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::INVITED,
+            $invitation->productionId(),
+            $at,
+            null,
+            $invitation->id(),
+            null,
+            null,
+            $actorPersonId,
+            null,
+            ['send_id' => $sendId, 'participant_type' => $invitation->participantType()->toString()]
+        ));
+    }
+
+    /** Stage 4 (§11.3): a send attempt accepted as a resend (create of a pending one, or the resend API). */
+    public function resent(ParticipantInvitation $invitation, string $sendId, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::RESENT,
+            $invitation->productionId(),
+            $at,
+            null,
+            $invitation->id(),
+            null,
+            null,
+            $actorPersonId,
+            null,
+            ['send_id' => $sendId, 'resend_count' => $invitation->resendCount()]
+        ));
+    }
+
+    /** Stage 4 (§6.3 / §11.3): written with the FAILED send record, after the commit of the send itself. */
+    public function sendFailed(ProductionId $productionId, ParticipantInvitationId $invitationId, string $sendId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::SEND_FAILED,
+            $productionId,
+            $at,
+            null,
+            $invitationId,
+            null,
+            null,
+            null,
+            null,
+            ['send_id' => $sendId]
+        ));
+    }
+
+    /** Stage 4 (§4.6): a new delegate row (DELEGATE_APPOINTED) or an INACTIVE one made ACTIVE again (DELEGATE_REACTIVATED). */
+    public function delegateAppointed(ProductionDelegate $delegate, PersonId $actorPersonId, bool $reactivated, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            $reactivated ? ParticipantEvent::DELEGATE_REACTIVATED : ParticipantEvent::DELEGATE_APPOINTED,
+            $delegate->productionId(),
+            $at,
+            null,
+            null,
+            $delegate->id(),
+            null,
+            $actorPersonId,
+            $delegate->personId(),
+            ['role' => $delegate->role()->toString()]
+        ));
+    }
+
+    private static function subjectPersonOf(Participant $participant): ?PersonId
+    {
+        return $participant->subjectType()->toString() === ParticipantSubjectType::PERSON
+            ? PersonId::fromString($participant->subjectId())
+            : null;
     }
 
     private function append(ParticipantEvent $event): void

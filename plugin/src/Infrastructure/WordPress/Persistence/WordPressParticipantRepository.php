@@ -158,6 +158,60 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
         return is_array($ids) && $ids !== [];
     }
 
+    /**
+     * R14-B §4.6 / §7.4 (stage 4): one indexed read, no FOR UPDATE (a
+     * permission decision). A failed read throws (assertRead) instead of
+     * answering "no" or "yes".
+     */
+    public function existsConsentedActivePersonParticipant(ProductionId $productionId, string $personId): bool
+    {
+        $this->wpdb->last_error = '';
+        $found = $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT id FROM {$this->table} "
+                . "WHERE production_id = %s AND subject_type = %s AND subject_id = %s AND status = %s "
+                . "AND consented_at IS NOT NULL LIMIT 1",
+                $productionId->toString(),
+                ParticipantSubjectType::PERSON,
+                $personId,
+                ParticipantStatus::ACTIVE
+            )
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        return $found !== null && $found !== '';
+    }
+
+    public function findPersonParticipants(ProductionId $productionId, string $personId): array
+    {
+        return $this->personRows($productionId, $personId, '');
+    }
+
+    public function findPersonParticipantsForUpdate(ProductionId $productionId, string $personId): array
+    {
+        return $this->personRows($productionId, $personId, ' FOR UPDATE');
+    }
+
+    /**
+     * @return Participant[]
+     */
+    private function personRows(ProductionId $productionId, string $personId, string $lock): array
+    {
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE production_id = %s AND subject_type = %s AND subject_id = %s ORDER BY id" . $lock,
+                $productionId->toString(),
+                ParticipantSubjectType::PERSON,
+                $personId
+            ),
+            ARRAY_A
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        return array_map([$this, 'hydrate'], is_array($rows) ? $rows : []);
+    }
+
     public function findByProductionId(ProductionId $productionId): array
     {
         $rows = $this->wpdb->get_results(

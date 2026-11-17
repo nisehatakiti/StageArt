@@ -63,6 +63,44 @@ final class InMemoryParticipantRepository implements ParticipantRepositoryInterf
         return $found;
     }
 
+    /** R14-B stage 4: the next consent / person-row read throws this (a failed read). */
+    public ?\Throwable $failNextConsentRead = null;
+
+    public function existsConsentedActivePersonParticipant(ProductionId $productionId, string $personId): bool
+    {
+        foreach ($this->findPersonParticipants($productionId, $personId) as $participant) {
+            if ($participant->isConsentedActivePerson()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function findPersonParticipants(ProductionId $productionId, string $personId): array
+    {
+        if ($this->failNextConsentRead !== null) {
+            $failure = $this->failNextConsentRead;
+            $this->failNextConsentRead = null;
+
+            throw $failure;
+        }
+
+        return array_values(array_filter(
+            $this->participants,
+            static fn (Participant $participant): bool => $participant->productionId()->equals($productionId)
+                && $participant->subjectType()->equals(ParticipantSubjectType::person())
+                && $participant->subjectId() === $personId
+        ));
+    }
+
+    public function findPersonParticipantsForUpdate(ProductionId $productionId, string $personId): array
+    {
+        $this->recordLock('participant');
+
+        return $this->findPersonParticipants($productionId, $personId);
+    }
+
     /** R14-B §4.6: the next other-type ACTIVE check throws this (a failed read). */
     public ?\Throwable $failNextOtherTypeCheck = null;
 
