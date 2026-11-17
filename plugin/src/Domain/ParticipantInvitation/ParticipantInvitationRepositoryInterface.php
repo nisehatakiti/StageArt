@@ -46,6 +46,35 @@ interface ParticipantInvitationRepositoryInterface
     public function markRevocationNotificationAttempted(ParticipantInvitationId $id, \DateTimeImmutable $at): bool;
 
     /**
+     * R14-B §5.3 / §5.4 (stage 4): this Production's invitations of the
+     * type to the same address (any status), locked FOR UPDATE after the
+     * Production lock - the create API decides "resend the PENDING one" or
+     * "create a new one" on them. SQL narrows by the column, then only exact
+     * §6.4 matches (trim + lower-case) are kept. Throws when the read fails.
+     *
+     * @return ParticipantInvitation[]
+     */
+    public function findByProductionEmailAndTypeForUpdate(
+        ProductionId $productionId,
+        string $email,
+        ParticipantType $participantType
+    ): array;
+
+    /**
+     * R14-B §5.3 (D6, stage 4): the latest responded_at of an invitation of
+     * this Production to the same address (any type) that the invitee
+     * rejected (status REJECTED), or null. §6.4 exact match in PHP; throws
+     * when the read fails.
+     */
+    public function latestRejectionAt(ProductionId $productionId, string $email): ?\DateTimeImmutable;
+
+    /**
+     * R14-B §11.3 step 3 (stage 4): the invitation's current_send_id read
+     * again just before a send, without a lock. Throws when the read fails.
+     */
+    public function currentSendIdOf(ParticipantInvitationId $id): ?string;
+
+    /**
      * All invitations (any status) for a given Production/email/
      * ParticipantType tuple - no DB-level uniqueness is enforced on this
      * tuple (see stageart_participant_invitations's own schema notes),

@@ -9,27 +9,33 @@ use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
 /**
  * wp_mail()-only, no new dependency - mirrors WordPressAuthMailer /
- * WordPressQuestionnaireMailer's own established shape exactly (HTML
- * body via sprintf(), single styled anchor tag, token never printed as
- * visible plain text - only inside the link's own query string). Reuses
- * the same STAGEART_EMAIL_VERIFICATION_BASE_URL Web host
- * WordPressAuthMailer already uses (see Plugin.php's wiring) rather than
- * introducing a second base-URL config, since both mailers point at the
- * same mobile-rn Web export.
+ * WordPressQuestionnaireMailer's own established shape (HTML body via
+ * sprintf(), single styled anchor tag). Reuses the
+ * STAGEART_PARTICIPANT_INVITATION_BASE_URL Web host (see Plugin.php).
+ *
+ * PR #7 R14-B stage 4 (design doc §4.1 / §9.2 / §10, U5 C案): no token.
+ * The link is always `{base}/participant-invitations` - the invitee's own
+ * invitation list, login required - so opening it shows nothing about the
+ * invitation by itself. The text is the same whether or not the address
+ * belongs to an account. Returns StageArtMail::send()'s result (the mail
+ * server accepted it; not delivery).
  */
 final class WordPressParticipantInvitationMailer implements ParticipantInvitationMailerInterface
 {
-    private string $registrationBaseUrl;
+    private string $baseUrl;
 
-    public function __construct(string $registrationBaseUrl)
+    public function __construct(string $baseUrl)
     {
-        $this->registrationBaseUrl = rtrim($registrationBaseUrl, '/');
+        $this->baseUrl = rtrim($baseUrl, '/');
     }
 
-    public function sendInvitationEmail(string $toEmail, string $productionName, string $token): void
+    public function invitationListUrl(): string
     {
-        $registrationUrl = esc_url($this->registrationBaseUrl . '/register?token=' . rawurlencode($token));
+        return $this->baseUrl . '/participant-invitations';
+    }
 
+    public function sendInvitationEmail(string $toEmail, string $productionName): bool
+    {
         $body = sprintf(
             '<div style="font-family: sans-serif; font-size: 15px; line-height: 1.7; color: #2A2320;">'
                 . '<p>%1$s</p>'
@@ -39,20 +45,22 @@ final class WordPressParticipantInvitationMailer implements ParticipantInvitatio
                 . '</p>'
                 . '<p>%5$s</p>'
                 . '<p>%6$s</p>'
+                . '<p>%7$s</p>'
             . '</div>',
             sprintf(
                 /* translators: %s: Production name */
                 esc_html__('「%s」のメンバーとしてStageArtへ招待されました。', 'stageart'),
                 esc_html($productionName)
             ),
-            esc_html__('下のボタンからStageArtへご登録いただくと、この公演のメンバーに追加されます。', 'stageart'),
-            $registrationUrl,
-            esc_html__('StageArtに登録する', 'stageart'),
-            esc_html__('このリンクの有効期限は24時間です。', 'stageart'),
+            esc_html__('このメールを受け取ったメールアドレスでStageArtにログインすると（未登録の場合は、登録とメールアドレスの確認の後に）、招待を確認できます。承諾するまで参加者にはなりません。', 'stageart'),
+            esc_url($this->invitationListUrl()),
+            esc_html__('招待を確認する', 'stageart'),
+            esc_html__('招待の有効期限は7日間です。', 'stageart'),
+            esc_html__('招待が見つからない場合は、このメールを受け取ったメールアドレスでログインしてください。', 'stageart'),
             esc_html__('心当たりがない場合は、このメールを破棄してください。', 'stageart')
         );
 
-        StageArtMail::send(
+        return StageArtMail::send(
             $toEmail,
             sprintf(
                 /* translators: %s: Production name */

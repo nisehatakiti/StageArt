@@ -320,19 +320,34 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
     }
 
     /**
-     * The send / notification columns are not save()'s: never written, so an
-     * UPDATE keeps them. (Stage 3: updated_at moved out of this list - it is
-     * now the Domain's updatedAt, see test_updated_at_is_written_as_the_domain_holds_it.)
+     * The notification column is not save()'s: never written, so an UPDATE
+     * keeps it. (Stage 3: updated_at moved out of this list - it is now the
+     * Domain's updatedAt. Stage 4: current_send_id / last_sent_at moved out
+     * too - they are the Domain's, set by recordSendAccepted(); see
+     * test_the_send_columns_are_written_as_the_domain_holds_them.)
      */
-    public function test_the_send_and_notification_columns_are_left_alone(): void
+    public function test_the_notification_column_is_left_alone(): void
     {
         foreach ([false, true] as $existing) {
             [, , $row] = $this->saved($this->pending(), $existing);
 
-            foreach (['revocation_notified_at', 'current_send_id', 'last_sent_at'] as $column) {
-                $this->assertArrayNotHasKey($column, $row);
-            }
+            $this->assertArrayNotHasKey('revocation_notified_at', $row);
         }
+    }
+
+    /** R14-B stage 4 (§6.1 / §11.3). */
+    public function test_the_send_columns_are_written_as_the_domain_holds_them(): void
+    {
+        [, , $fresh] = $this->saved($this->pending());
+        $this->assertNull($fresh['current_send_id']);
+        $this->assertNull($fresh['last_sent_at']);
+
+        $invitation = $this->pending();
+        $invitation->recordSendAccepted('99999999-9999-4999-8999-999999999999', new DateTimeImmutable('2026-11-20T09:30:00+09:00'));
+        [, , $row] = $this->saved($invitation, true);
+
+        $this->assertSame('99999999-9999-4999-8999-999999999999', $row['current_send_id']);
+        $this->assertSame('2026-11-20 00:30:00', $row['last_sent_at'], 'UTC');
     }
 
     public function test_a_new_invitation_is_inserted_with_its_id_and_creation_time(): void

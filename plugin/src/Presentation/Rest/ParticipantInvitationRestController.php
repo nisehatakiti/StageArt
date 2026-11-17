@@ -17,8 +17,12 @@ use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundExce
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotPendingException;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
-use StageArt\Application\Participant\ParticipantAlreadyExistsException;
-use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
+use StageArt\Application\ParticipantInvitation\EmailKeyNotConfiguredException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationInviterRevokedException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationProductionClosedException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationRecentlyRejectedException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationResendLimitException;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationSendLimitException;
 use StageArt\Application\Production\ProductionNotFoundException;
 use WP_Error;
 use WP_REST_Request;
@@ -112,10 +116,10 @@ final class ParticipantInvitationRestController
             return new WP_Error('stageart_participant_invitation_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        } catch (ParticipantSubjectNotEligibleException $exception) {
-            return new WP_Error('stageart_participant_subject_not_eligible', $exception->getMessage(), ['status' => 422]);
-        } catch (ParticipantAlreadyExistsException $exception) {
-            return new WP_Error('stageart_participant_already_exists', $exception->getMessage(), ['status' => 409]);
+        } catch (ParticipantInvitationRecentlyRejectedException $exception) {
+            return new WP_Error('stageart_participant_invitation_recently_rejected', $exception->getMessage(), ['status' => 409, 'available_at' => $exception->availableAt()->format(DATE_ATOM)]);
+        } catch (ParticipantInvitationProductionClosedException | ParticipantInvitationInviterRevokedException | ParticipantInvitationResendLimitException | ParticipantInvitationSendLimitException | EmailKeyNotConfiguredException $exception) {
+            return self::sendRefusal($exception);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_participant_invitation_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -157,6 +161,8 @@ final class ParticipantInvitationRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ParticipantInvitationNotPendingException $exception) {
             return new WP_Error('stageart_participant_invitation_not_pending', $exception->getMessage(), ['status' => 422]);
+        } catch (ParticipantInvitationProductionClosedException | ParticipantInvitationInviterRevokedException | ParticipantInvitationResendLimitException | ParticipantInvitationSendLimitException | EmailKeyNotConfiguredException $exception) {
+            return self::sendRefusal($exception);
         }
     }
 
@@ -178,6 +184,38 @@ final class ParticipantInvitationRestController
         } catch (ParticipantInvitationNotPendingException $exception) {
             return new WP_Error('stageart_participant_invitation_not_pending', $exception->getMessage(), ['status' => 422]);
         }
+    }
+
+    /**
+     * R14-B stage 4: the refusals shared by create and resend (§5.3 / §6.7).
+     * Nothing was written for any of them.
+     *
+     * @return WP_Error|null
+     */
+    public static function sendRefusal(\Throwable $exception)
+    {
+        if ($exception instanceof ParticipantInvitationProductionClosedException) {
+            return new WP_Error('stageart_participant_invitation_production_closed', $exception->getMessage(), ['status' => 409]);
+        }
+
+        if ($exception instanceof ParticipantInvitationInviterRevokedException) {
+            return new WP_Error('stageart_participant_invitation_inviter_revoked', $exception->getMessage(), ['status' => 409]);
+        }
+
+        if ($exception instanceof ParticipantInvitationResendLimitException) {
+            return new WP_Error('stageart_participant_invitation_resend_limit', $exception->getMessage(), ['status' => 429]);
+        }
+
+        if ($exception instanceof ParticipantInvitationSendLimitException) {
+            return new WP_Error('stageart_participant_invitation_send_limit', $exception->getMessage(), ['status' => 429, 'available_at' => $exception->availableAt()->format(DATE_ATOM)]);
+        }
+
+        if ($exception instanceof EmailKeyNotConfiguredException) {
+            // The version name may be in the exception message; the client only learns that the server is not set up.
+            return new WP_Error('stageart_email_key_not_configured', 'The server is not configured to send invitations.', ['status' => 500]);
+        }
+
+        return null;
     }
 
     /**

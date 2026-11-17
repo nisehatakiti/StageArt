@@ -37,9 +37,14 @@ use wpdb;
  *   markRevocationNotificationAttempted(), a conditional UPDATE (WHERE
  *   revocation_notified_at IS NULL) whose single success decides that the
  *   one PrimaryManager notification is attempted (§11.5); save() never
- *   writes it. current_send_id and last_sent_at belong to the send step
- *   (InvitationSendService, a later stage): neither written nor read here,
- *   so an INSERT leaves them NULL and an UPDATE leaves whatever they hold.
+ *   writes it. current_send_id and last_sent_at (stage 4) are written and
+ *   read as the Domain holds them - set by recordSendAccepted() under the
+ *   Production -> invitation locks; currentSendIdOf() reads the column
+ *   without a lock just before a send (§11.3 step 3).
+ * - Stage 4: findByProductionEmailAndTypeForUpdate() (the same-address
+ *   invitations locked, §5.4) and latestRejectionAt() (the 30-day block
+ *   after a rejection, D6) narrow by SQL and keep only exact §6.4 matches
+ *   in PHP; every read throws on failure.
  * - findByIdForUpdate() locks the row (SELECT ... FOR UPDATE, lock order
  *   §5.4: Production first). findByVerifiedEmailCandidates() narrows by
  *   SQL and then keeps only exact matches of the §6.4 normalisation in
@@ -86,6 +91,8 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             'closed_by_person_id' => $invitation->closedByPersonId() !== null ? $invitation->closedByPersonId()->toString() : null,
             'resend_count' => $invitation->resendCount(),
             'updated_at' => self::toDbOrNull($invitation->updatedAt()),
+            'current_send_id' => $invitation->currentSendId(),
+            'last_sent_at' => self::toDbOrNull($invitation->lastSentAt()),
         ];
 
         $id = $invitation->id()->toString();
@@ -180,6 +187,74 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
         return InvitationEmailAddress::normalize($email);
     }
 
+    public function findByProductionEmailAndTypeForUpdate(
+        ProductionId $productionId,
+        string $email,
+        ParticipantType $participantType
+    ): array {
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE production_id = %s AND email = %s AND participant_type = %s ORDER BY id FOR UPDATE",
+                $productionId->toString(),
+                trim($email),
+                $participantType->toString()
+            ),
+            ARRAY_A
+        );
+        $this->throwIfReadFailed();
+
+        $wanted = self::normalizeEmail($email);
+
+        return array_values(array_filter(
+            array_map(fn (array $row): ParticipantInvitation => $this->hydrate($row), is_array($rows) ? $rows : []),
+            static fn (ParticipantInvitation $invitation): bool => self::normalizeEmail($invitation->email()) === $wanted
+        ));
+    }
+
+    public function latestRejectionAt(ProductionId $productionId, string $email): ?DateTimeImmutable
+    {
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT email, responded_at FROM {$this->table} WHERE production_id = %s AND email = %s AND status = %s AND responded_at IS NOT NULL",
+                $productionId->toString(),
+                trim($email),
+                ParticipantInvitationStatus::REJECTED
+            ),
+            ARRAY_A
+        );
+        $this->throwIfReadFailed();
+
+        $wanted = self::normalizeEmail($email);
+        $latest = null;
+
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            if (self::normalizeEmail((string) $row['email']) !== $wanted) {
+                continue;
+            }
+
+            $respondedAt = self::fromDb((string) $row['responded_at']);
+
+            if ($latest === null || $respondedAt > $latest) {
+                $latest = $respondedAt;
+            }
+        }
+
+        return $latest;
+    }
+
+    public function currentSendIdOf(ParticipantInvitationId $id): ?string
+    {
+        $this->wpdb->last_error = '';
+        $value = $this->wpdb->get_var(
+            $this->wpdb->prepare("SELECT current_send_id FROM {$this->table} WHERE id = %s", $id->toString())
+        );
+        $this->throwIfReadFailed();
+
+        return $value !== null && $value !== '' ? (string) $value : null;
+    }
+
     public function findByProductionEmailAndType(
         ProductionId $productionId,
         string $email,
@@ -240,7 +315,9 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             isset($row['closed_at']) ? self::fromDb($row['closed_at']) : null,
             isset($row['closed_by_person_id']) ? PersonId::fromString($row['closed_by_person_id']) : null,
             isset($row['resend_count']) ? (int) $row['resend_count'] : 0,
-            isset($row['updated_at']) ? self::fromDb($row['updated_at']) : null
+            isset($row['updated_at']) ? self::fromDb($row['updated_at']) : null,
+            isset($row['current_send_id']) ? (string) $row['current_send_id'] : null,
+            isset($row['last_sent_at']) ? self::fromDb($row['last_sent_at']) : null
         );
     }
 

@@ -48,7 +48,13 @@ use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
+use StageArt\Application\Participant\ParticipantEventRecorder;
+use StageArt\Application\ParticipantInvitation\InvitationSendService;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
 use StageArt\Tests\Support\ConsentedParticipant;
+use StageArt\Tests\Support\InMemoryParticipantEventRepository;
+use StageArt\Tests\Support\InMemoryParticipantInvitationSendRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -112,27 +118,32 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             )
         );
 
-        $findPersonByEmail = new FindPersonByEmailUseCase(
-            $this->emailCredentials,
-            $this->userAccounts,
-            new InMemoryNotificationEmailRepository(),
-            $this->people
+        // R14-B stage 4: invitations are counted, recorded and sent by InvitationSendService.
+        $conditions = new ParticipantInvitationConditions($this->productionAuthorization, $this->people);
+        $sendService = new InvitationSendService(
+            new InMemoryParticipantInvitationSendRepository(),
+            $this->invitations,
+            new WordPressConfigEmailKeyring(['v1' => str_repeat('k', 32)], 'v1', false),
+            $this->mailer,
+            new ParticipantEventRecorder(new InMemoryParticipantEventRepository()),
+            new InMemoryTransactionManager()
         );
-
         $this->resendParticipantInvitation = new ResendParticipantInvitationUseCase(
             $this->invitations,
             $this->productions,
             $this->productionAuthorization,
-            $this->mailer
+            $conditions,
+            $sendService,
+            new InMemoryTransactionManager()
         );
         $this->createParticipantInvitation = new CreateParticipantInvitationUseCase(
             $this->productions,
             $this->productionAuthorization,
-            $findPersonByEmail,
-            $this->createParticipant,
             $this->invitations,
             $this->resendParticipantInvitation,
-            $this->mailer
+            $conditions,
+            $sendService,
+            new InMemoryTransactionManager()
         );
         $this->cancelParticipantInvitation = new CancelParticipantInvitationUseCase(
             $this->invitations,
@@ -194,14 +205,15 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             'a remark'
         ));
 
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_CREATED, $result->outcome);
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $result->outcome);
         $this->assertNotNull($result->invitation);
         $this->assertSame('invitee@example.com', $result->invitation->email);
         $this->assertSame('山田 花子', $result->invitation->invitedName);
         $this->assertSame('PENDING', $result->invitation->status);
         $this->assertCount(1, $this->mailer->invitationEmails);
         $this->assertSame('invitee@example.com', $this->mailer->invitationEmails[0]['to']);
-        $this->assertNotEmpty($this->mailer->invitationEmails[0]['token']);
+        // R14-B stage 4 (U5 C案): the e-mail carries no token.
+        $this->assertArrayNotHasKey('token', $this->mailer->invitationEmails[0]);
     }
 
     public function test_participant_manager_delegate_can_invite_an_unregistered_email(): void
@@ -217,7 +229,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             'CAST'
         ));
 
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_CREATED, $result->outcome);
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $result->outcome);
     }
 
     public function test_a_member_without_participant_manager_role_cannot_invite(): void
@@ -236,7 +248,13 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         ));
     }
 
-    public function test_inviting_an_email_that_already_belongs_to_an_existing_person_adds_them_directly(): void
+    /**
+     * R14-B stage 4 (§7.1 / §9.2, D10): an address that belongs to an
+     * existing Person is invited like any other - nobody is added directly
+     * and the response does not tell that an account exists. (Before stage 4
+     * this added the Person directly: OUTCOME_PARTICIPANT_ADDED.)
+     */
+    public function test_inviting_an_email_that_already_belongs_to_an_existing_person_invites_them_like_anyone(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
 
@@ -256,28 +274,20 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             'a remark'
         ));
 
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_PARTICIPANT_ADDED, $result->outcome);
-        $this->assertNotNull($result->participant);
-        $this->assertSame($existingPerson->id()->toString(), $result->participant->subjectId);
-        $this->assertSame('CAST', $result->participant->participantType);
-        $this->assertSame('a remark', $result->participant->remarks);
-        // AC-01: the submitted name is this Participant's own displayName,
-        // never replaced by the existing Person's own real name.
-        $this->assertSame('佐藤一郎（劇団いるか）', $result->participant->displayName);
-        $this->assertSame('佐藤', $result->participant->personFamilyName);
-        $this->assertSame('一郎', $result->participant->personGivenName);
-        $this->assertCount(0, $this->mailer->invitationEmails);
-        $this->assertCount(0, $this->invitations->findByProductionId($production->id()));
-
-        // §2-A: an existing Person is looked up and linked directly - no
-        // NAME_ONLY Participant is ever created for this path.
-        $participant = $this->participants->findByProductionAndSubject(
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $result->outcome);
+        $this->assertSame(['outcome', 'invitation'], array_keys($result->toArray()), 'No participant in the response');
+        $this->assertSame('佐藤一郎（劇団いるか）', $result->invitation->invitedName, 'The name the manager typed, never the Person\'s');
+        $text = json_encode($result->toArray(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString($existingPerson->id()->toString(), $text);
+        $this->assertStringNotContainsString('佐藤",', $text);
+        $this->assertCount(1, $this->mailer->invitationEmails);
+        $this->assertCount(1, $this->invitations->findByProductionId($production->id()));
+        $this->assertNull($this->participants->findByProductionAndSubject(
             $production->id(),
             ParticipantSubjectType::person(),
             $existingPerson->id()->toString(),
             ParticipantType::cast()
-        );
-        $this->assertNotNull($participant);
+        ), 'Nobody is added before accepting');
     }
 
     public function test_inviting_the_same_email_and_type_twice_resends_instead_of_duplicating(): void
@@ -303,7 +313,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_RESENT, $second->outcome);
         $this->assertSame($first->invitation->id, $second->invitation->id);
         $this->assertCount(2, $this->mailer->invitationEmails);
-        $this->assertNotSame($this->mailer->invitationEmails[0]['token'], $this->mailer->invitationEmails[1]['token']);
 
         // Still exactly one row for this (production, email, type) tuple.
         $matching = $this->invitations->findByProductionEmailAndType(
@@ -336,7 +345,7 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             'CAST'
         ));
 
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_CREATED, $second->outcome);
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $second->outcome);
         $this->assertNotSame($first->invitation->id, $second->invitation->id);
 
         $matching = $this->invitations->findByProductionEmailAndType(
@@ -388,13 +397,14 @@ final class ParticipantInvitationUseCaseTest extends TestCase
     }
 
     /** §9: resending an existing PENDING invitation reuses the same row -
-     * only the token hash and expiry change, the originally submitted
+     * only the expiry changes (R14-B stage 4: the token is no longer
+     * changed - the e-mail carries none), the originally submitted
      * invitedName/remarks are preserved as-is (see this round's final
      * report for the 要確認 item: ResendParticipantInvitationUseCase has
      * no name/remarks parameters, so a differing name/remarks entered on
      * a resend attempt is silently ignored rather than overwriting the
      * stored invitation - left unresolved rather than decided here). */
-    public function test_resending_the_same_invitation_updates_token_and_expiry_but_preserves_the_invited_name(): void
+    public function test_resending_the_same_invitation_keeps_the_token_and_the_invited_name(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
         $first = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
@@ -418,7 +428,9 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->assertSame($first->invitation->id, $second->invitation->id);
         $this->assertSame('山田 花子', $second->invitation->invitedName);
         $this->assertCount(2, $this->mailer->invitationEmails);
-        $this->assertNotSame($this->mailer->invitationEmails[0]['token'], $this->mailer->invitationEmails[1]['token']);
+        $tokenHash = $this->invitations->findById(ParticipantInvitationId::fromString($first->invitation->id))->tokenHash();
+        $this->assertNotEmpty($tokenHash);
+        $this->assertSame(1, $this->invitations->findById(ParticipantInvitationId::fromString($first->invitation->id))->resendCount());
     }
 
     // --- CancelParticipantInvitationUseCase ------------------------------

@@ -15,6 +15,10 @@ use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationSendService;
+use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientVerifier;
 use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
@@ -72,6 +76,12 @@ final class ParticipantConsentFixture
     public InMemoryNotificationDispatcher $dispatcher;
     public RollbackingTransactionManager $transactions;
     public LockLog $lockLog;
+    /** R14-B stage 4: invitation sends. */
+    public InMemoryParticipantInvitationSendRepository $sends;
+    public FakeParticipantInvitationMailer $mailer;
+    /** @var array<string, string> */
+    public array $emailKeys = ['v1' => 'k1-0123456789abcdef0123456789abcdef'];
+    public ?string $currentEmailKey = 'v1';
     public ProductionAuthorizationService $authorization;
     public ParticipantEventRecorder $events;
     public Production $production;
@@ -95,15 +105,18 @@ final class ParticipantConsentFixture
         $this->eventStore = new InMemoryParticipantEventRepository();
         $this->dispatcher = new InMemoryNotificationDispatcher();
         $this->lockLog = new LockLog();
+        $this->sends = new InMemoryParticipantInvitationSendRepository();
+        $this->mailer = new FakeParticipantInvitationMailer();
         $this->transactions = new RollbackingTransactionManager(
             $this->participants,
             $this->invitations,
             $this->delegates,
             $this->joinKeys,
-            $this->eventStore
+            $this->eventStore,
+            $this->sends
         );
 
-        foreach ([$this->participants, $this->invitations, $this->delegates, $this->joinKeys] as $repository) {
+        foreach ([$this->participants, $this->invitations, $this->delegates, $this->joinKeys, $this->sends] as $repository) {
             $repository->lockLog = $this->lockLog;
         }
 
@@ -385,6 +398,44 @@ final class ParticipantConsentFixture
             $this->people,
             $this->authorization,
             $this->events,
+            $this->transactions
+        );
+    }
+
+    /** R14-B stage 4: the send service over the same stores; the keyring is $emailKeys / $currentEmailKey at call time. */
+    public function sendService(): InvitationSendService
+    {
+        return new InvitationSendService(
+            $this->sends,
+            $this->invitations,
+            new WordPressConfigEmailKeyring($this->emailKeys, $this->currentEmailKey, false),
+            $this->mailer,
+            $this->events,
+            $this->transactions
+        );
+    }
+
+    public function resendInvitation(): ResendParticipantInvitationUseCase
+    {
+        return new ResendParticipantInvitationUseCase(
+            $this->invitations,
+            $this->productions,
+            $this->authorization,
+            $this->conditions(),
+            $this->sendService(),
+            $this->transactions
+        );
+    }
+
+    public function createInvitation(): CreateParticipantInvitationUseCase
+    {
+        return new CreateParticipantInvitationUseCase(
+            $this->productions,
+            $this->authorization,
+            $this->invitations,
+            $this->resendInvitation(),
+            $this->conditions(),
+            $this->sendService(),
             $this->transactions
         );
     }

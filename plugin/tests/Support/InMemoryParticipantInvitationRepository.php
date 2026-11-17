@@ -55,6 +55,78 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
         return $this->findById($id);
     }
 
+    /** R14-B stage 4: the next stage-4 read (same-address lock, rejection, current send) throws this. */
+    public ?\Throwable $failNextRead = null;
+
+    /** R14-B stage 4: overrides currentSendIdOf() once (a newer attempt accepted in between, §11.3). */
+    public ?string $nextCurrentSendIdRead = null;
+
+    private function failIfAsked(): void
+    {
+        if ($this->failNextRead !== null) {
+            $failure = $this->failNextRead;
+            $this->failNextRead = null;
+
+            throw $failure;
+        }
+    }
+
+    public function findByProductionEmailAndTypeForUpdate(
+        ProductionId $productionId,
+        string $email,
+        ParticipantType $participantType
+    ): array {
+        if ($this->lockLog !== null) {
+            $this->lockLog->record('invitation');
+        }
+
+        $this->failIfAsked();
+        $wanted = \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($email);
+
+        return array_values(array_filter(
+            $this->invitations,
+            static fn (ParticipantInvitation $invitation): bool => $invitation->productionId()->equals($productionId)
+                && $invitation->participantType()->equals($participantType)
+                && \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($invitation->email()) === $wanted
+        ));
+    }
+
+    public function latestRejectionAt(ProductionId $productionId, string $email): ?\DateTimeImmutable
+    {
+        $this->failIfAsked();
+        $wanted = \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($email);
+        $latest = null;
+
+        foreach ($this->invitations as $invitation) {
+            if ($invitation->productionId()->equals($productionId)
+                && $invitation->status()->toString() === \StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus::REJECTED
+                && $invitation->respondedAt() !== null
+                && \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($invitation->email()) === $wanted
+                && ($latest === null || $invitation->respondedAt() > $latest)
+            ) {
+                $latest = $invitation->respondedAt();
+            }
+        }
+
+        return $latest;
+    }
+
+    public function currentSendIdOf(ParticipantInvitationId $id): ?string
+    {
+        $this->failIfAsked();
+
+        if ($this->nextCurrentSendIdRead !== null) {
+            $value = $this->nextCurrentSendIdRead;
+            $this->nextCurrentSendIdRead = null;
+
+            return $value;
+        }
+
+        $invitation = $this->findById($id);
+
+        return $invitation !== null ? $invitation->currentSendId() : null;
+    }
+
     public function findByVerifiedEmailCandidates(array $emails): array
     {
         $this->candidateSearches[] = $emails;

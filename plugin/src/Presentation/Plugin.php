@@ -133,6 +133,10 @@ use StageArt\Application\Person\SearchPersonByEmailUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationSendService;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationSendRepository;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
@@ -636,20 +640,35 @@ final class Plugin
             ? STAGEART_PARTICIPANT_INVITATION_BASE_URL
             : 'https://dev.stageart.top';
         $participantInvitationMailer = new WordPressParticipantInvitationMailer($participantInvitationBaseUrl);
+        // PR #7 R14-B stage 4 (§5.3 / §6.7 / §11.3): every invitation e-mail
+        // is counted, recorded and sent by InvitationSendService; email_key
+        // uses the STAGEART_EMAIL_KEYS / STAGEART_EMAIL_KEY_CURRENT keyring
+        // from wp-config.php (missing -> create / resend refused, 500).
+        $participantInvitationConditions = new ParticipantInvitationConditions($productionAuthorization, $people);
+        $invitationSendService = new InvitationSendService(
+            new WordPressParticipantInvitationSendRepository($wpdb),
+            $participantInvitations,
+            new WordPressConfigEmailKeyring(),
+            $participantInvitationMailer,
+            $participantEventRecorder,
+            $transactions
+        );
         $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
             $participantInvitations,
             $productions,
             $productionAuthorization,
-            $participantInvitationMailer
+            $participantInvitationConditions,
+            $invitationSendService,
+            $transactions
         );
         $createParticipantInvitation = new CreateParticipantInvitationUseCase(
             $productions,
             $productionAuthorization,
-            $findPersonByEmail,
-            $createParticipant,
             $participantInvitations,
             $resendParticipantInvitation,
-            $participantInvitationMailer
+            $participantInvitationConditions,
+            $invitationSendService,
+            $transactions
         );
         $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
         $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization);

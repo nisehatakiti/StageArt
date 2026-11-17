@@ -95,6 +95,14 @@ final class ParticipantInvitation
      * in).
      */
     private ?DateTimeImmutable $updatedAt;
+    /**
+     * R14-B §6.1 / §11.3 (stage 4): the latest send attempt accepted for
+     * this invitation (stageart_participant_invitation_sends.id) and when.
+     * Changed only under the Production -> invitation locks by
+     * recordSendAccepted(); an older attempt's result never moves it.
+     */
+    private ?string $currentSendId;
+    private ?DateTimeImmutable $lastSentAt;
 
     private function __construct(
         ParticipantInvitationId $id,
@@ -116,7 +124,9 @@ final class ParticipantInvitation
         ?DateTimeImmutable $closedAt = null,
         ?PersonId $closedByPersonId = null,
         int $resendCount = 0,
-        ?DateTimeImmutable $updatedAt = null
+        ?DateTimeImmutable $updatedAt = null,
+        ?string $currentSendId = null,
+        ?DateTimeImmutable $lastSentAt = null
     ) {
         if (($closeReason === null) !== ($closedAt === null)) {
             throw new InvalidArgumentException('closeReason and closedAt must be both set or both null.');
@@ -128,6 +138,8 @@ final class ParticipantInvitation
 
         $this->resendCount = $resendCount;
         $this->updatedAt = $updatedAt;
+        $this->currentSendId = $currentSendId;
+        $this->lastSentAt = $lastSentAt;
         $this->inviteePersonId = $inviteePersonId;
         $this->respondedAt = $respondedAt;
         $this->participantId = $participantId;
@@ -231,7 +243,9 @@ final class ParticipantInvitation
         ?DateTimeImmutable $closedAt = null,
         ?PersonId $closedByPersonId = null,
         int $resendCount = 0,
-        ?DateTimeImmutable $updatedAt = null
+        ?DateTimeImmutable $updatedAt = null,
+        ?string $currentSendId = null,
+        ?DateTimeImmutable $lastSentAt = null
     ): self {
         return new self(
             $id,
@@ -253,7 +267,9 @@ final class ParticipantInvitation
             $closedAt,
             $closedByPersonId,
             $resendCount,
-            $updatedAt
+            $updatedAt,
+            $currentSendId,
+            $lastSentAt
         );
     }
 
@@ -509,6 +525,32 @@ final class ParticipantInvitation
         $this->resendCount++;
         $this->expiresAt = self::expiresAtFrom($now);
         $this->updatedAt = $now;
+    }
+
+    /**
+     * R14-B §11.3 step 1 (stage 4): a send attempt was accepted for this
+     * (PENDING) invitation - the initial send or a resend (resend() first).
+     * Called under the Production -> invitation locks only.
+     */
+    public function recordSendAccepted(string $sendId, DateTimeImmutable $at): void
+    {
+        if (! $this->isPending()) {
+            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be sent.');
+        }
+
+        $this->currentSendId = $sendId;
+        $this->lastSentAt = $at;
+        $this->updatedAt = $at;
+    }
+
+    public function currentSendId(): ?string
+    {
+        return $this->currentSendId;
+    }
+
+    public function lastSentAt(): ?DateTimeImmutable
+    {
+        return $this->lastSentAt;
     }
 
     public function hasReachedResendLimit(): bool
