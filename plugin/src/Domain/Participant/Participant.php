@@ -54,9 +54,9 @@ final class Participant
      * made - the basis of consentedAt on approval. NULL = a request made
      * before R14-B, or a row that is not a request; NULL is never read as
      * consent, and createdAt is never used in its place (a re-request
-     * reuses the row, so createdAt stays the first request's). Only held
-     * and persisted here: setting it on a request / re-request is the
-     * Application step's (reopenRequest()).
+     * reuses the row, so createdAt stays the first request's). Set by
+     * requestParticipation() (a new request) and reopenRequest() (a
+     * re-request on the same row).
      */
     private ?DateTimeImmutable $requestedAt;
 
@@ -241,10 +241,13 @@ final class Participant
         ProductionId $productionId,
         ParticipantSubjectType $subjectType,
         string $subjectId,
-        ParticipantType $participantType
+        ParticipantType $participantType,
+        ?DateTimeImmutable $requestedAt = null
     ): self {
         $now = new DateTimeImmutable();
 
+        // R14-B §5.2 "(行なし) → PENDING": the request time is recorded
+        // (requestedAt), the basis of consentedAt when a manager approves it.
         return new self(
             ParticipantId::generate(),
             $productionId,
@@ -256,8 +259,41 @@ final class Participant
             $now,
             null,
             null,
-            ParticipantEnrollmentSource::joinRequest()
+            ParticipantEnrollmentSource::joinRequest(),
+            null,
+            null,
+            $requestedAt ?? $now
         );
+    }
+
+    /**
+     * R14-B §5.2 / §7.4 (U13 A案): a new join request REUSES the existing
+     * row for this (production, subject, type) instead of inserting a second
+     * one: CANCELLED / REJECTED / WITHDRAWN / INACTIVE -> PENDING. The
+     * Participant id, enrollmentSource, consentSource / consentedAt and
+     * createdAt are kept; requestedAt becomes this request's time (consent
+     * is recorded only when a manager approves it).
+     *
+     * Not allowed from ACTIVE or PENDING (already a member / already
+     * requested) nor from DRAFT (N1: a DRAFT row is never turned into a
+     * request) - the caller answers those with 409.
+     */
+    public function reopenRequest(DateTimeImmutable $requestedAt): void
+    {
+        $from = $this->status->toString();
+        $allowed = [
+            ParticipantStatus::CANCELLED,
+            ParticipantStatus::REJECTED,
+            ParticipantStatus::WITHDRAWN,
+            ParticipantStatus::INACTIVE,
+        ];
+
+        if (! in_array($from, $allowed, true)) {
+            throw new InvalidArgumentException("A {$from} Participant cannot be requested again.");
+        }
+
+        $this->requestedAt = $requestedAt;
+        $this->changeStatus(ParticipantStatus::fromString(ParticipantStatus::PENDING));
     }
 
     public function isPending(): bool

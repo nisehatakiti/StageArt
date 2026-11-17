@@ -90,6 +90,15 @@ final class ParticipantInvitation
     private ?PersonId $closedByPersonId;
     /** R14-B §6.1 (D6): resends accepted for this invitation (the first send is not counted). */
     private int $resendCount;
+    /**
+     * R14-B stage 3 (updated_at, schema 1.49.0): when this invitation was
+     * last actually changed - set on creation and by every change below
+     * (accept, reject, close, resend, ...), never by an idempotent repeat
+     * that changes nothing, and never by merely saving it. NULL = a
+     * pre-R14-B row that has not changed since (kept NULL; nothing fills it
+     * in).
+     */
+    private ?DateTimeImmutable $updatedAt;
 
     private function __construct(
         ParticipantInvitationId $id,
@@ -110,7 +119,8 @@ final class ParticipantInvitation
         ?ParticipantInvitationCloseReason $closeReason = null,
         ?DateTimeImmutable $closedAt = null,
         ?PersonId $closedByPersonId = null,
-        int $resendCount = 0
+        int $resendCount = 0,
+        ?DateTimeImmutable $updatedAt = null
     ) {
         if (($closeReason === null) !== ($closedAt === null)) {
             throw new InvalidArgumentException('closeReason and closedAt must be both set or both null.');
@@ -121,6 +131,7 @@ final class ParticipantInvitation
         }
 
         $this->resendCount = $resendCount;
+        $this->updatedAt = $updatedAt;
         $this->inviteePersonId = $inviteePersonId;
         $this->respondedAt = $respondedAt;
         $this->participantId = $participantId;
@@ -173,6 +184,7 @@ final class ParticipantInvitation
         }
 
         $trimmedRemarks = $remarks !== null ? trim($remarks) : null;
+        $now = new DateTimeImmutable();
 
         return new self(
             ParticipantInvitationId::generate(),
@@ -184,9 +196,17 @@ final class ParticipantInvitation
             $trimmedRemarks === null || $trimmedRemarks === '' ? null : $trimmedRemarks,
             $tokenHash,
             ParticipantInvitationStatus::pending(),
-            new DateTimeImmutable(),
+            $now,
             $expiresAt,
-            null
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0,
+            $now
         );
     }
 
@@ -214,7 +234,8 @@ final class ParticipantInvitation
         ?ParticipantInvitationCloseReason $closeReason = null,
         ?DateTimeImmutable $closedAt = null,
         ?PersonId $closedByPersonId = null,
-        int $resendCount = 0
+        int $resendCount = 0,
+        ?DateTimeImmutable $updatedAt = null
     ): self {
         return new self(
             $id,
@@ -235,7 +256,8 @@ final class ParticipantInvitation
             $closeReason,
             $closedAt,
             $closedByPersonId,
-            $resendCount
+            $resendCount,
+            $updatedAt
         );
     }
 
@@ -307,6 +329,7 @@ final class ParticipantInvitation
         $this->inviteePersonId = $inviteePersonId;
         $this->respondedAt = $now;
         $this->participantId = $participantId;
+        $this->updatedAt = $now;
 
         return true;
     }
@@ -369,6 +392,7 @@ final class ParticipantInvitation
         $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::REJECTED);
         $this->inviteePersonId = $inviteePersonId;
         $this->respondedAt = $now;
+        $this->updatedAt = $now;
 
         return true;
     }
@@ -420,6 +444,7 @@ final class ParticipantInvitation
         $this->closeReason = $reason;
         $this->closedAt = $now ?? new DateTimeImmutable();
         $this->closedByPersonId = $closedByPersonId;
+        $this->updatedAt = $this->closedAt;
 
         return true;
     }
@@ -440,6 +465,7 @@ final class ParticipantInvitation
 
         $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::CONSUMED);
         $this->consumedAt = new DateTimeImmutable();
+        $this->updatedAt = $this->consumedAt;
     }
 
     public function cancel(): void
@@ -449,6 +475,7 @@ final class ParticipantInvitation
         }
 
         $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::CANCELLED);
+        $this->updatedAt = new DateTimeImmutable();
     }
 
     /** Resend: replaces this invitation's current token in place - no new
@@ -465,6 +492,7 @@ final class ParticipantInvitation
 
         $this->tokenHash = $newTokenHash;
         $this->expiresAt = $newExpiresAt;
+        $this->updatedAt = new DateTimeImmutable();
     }
 
     /**
@@ -486,8 +514,10 @@ final class ParticipantInvitation
             throw new InvalidArgumentException('This ParticipantInvitation has reached its resend limit.');
         }
 
+        $now = $now ?? new DateTimeImmutable();
         $this->resendCount++;
-        $this->expiresAt = self::expiresAtFrom($now ?? new DateTimeImmutable());
+        $this->expiresAt = self::expiresAtFrom($now);
+        $this->updatedAt = $now;
     }
 
     public function hasReachedResendLimit(): bool
@@ -593,5 +623,10 @@ final class ParticipantInvitation
     public function closedByPersonId(): ?PersonId
     {
         return $this->closedByPersonId;
+    }
+
+    public function updatedAt(): ?DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

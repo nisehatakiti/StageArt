@@ -16,8 +16,9 @@ use StageArt\Domain\Production\ProductionId;
 
 /**
  * R14-B §6.1 (N4), stage 2: the Participant holds requestedAt so the
- * Repository can store and restore it. Setting it on a (re-)request is the
- * Application step's; in this stage no factory sets it.
+ * Repository can store and restore it. Stage 3 sets it on a request
+ * (requestParticipation()) and a re-request (reopenRequest(), see
+ * ParticipantReopenRequestTest); every other factory leaves it NULL.
  */
 final class ParticipantRequestedAtTest extends TestCase
 {
@@ -63,12 +64,20 @@ final class ParticipantRequestedAtTest extends TestCase
         $this->assertNull($participant->requestedAt());
     }
 
-    public function test_no_factory_sets_it_in_this_stage(): void
+    /**
+     * Stage 3 (spec change from stage 2, design §5.2 "(行なし) → PENDING":
+     * requested_at = the request time): a new join request records it; a
+     * Participant that is not a request does not.
+     */
+    public function test_only_a_join_request_sets_it(): void
     {
         $productionId = ProductionId::generate();
         $personId = PersonId::generate()->toString();
+        $at = new DateTimeImmutable('2026-11-17T09:00:00+00:00');
 
-        $this->assertNull(Participant::requestParticipation($productionId, ParticipantSubjectType::person(), $personId, ParticipantType::cast())->requestedAt());
+        $this->assertEquals($at, Participant::requestParticipation($productionId, ParticipantSubjectType::person(), $personId, ParticipantType::cast(), $at)->requestedAt());
+        $this->assertNotNull(Participant::requestParticipation($productionId, ParticipantSubjectType::person(), $personId, ParticipantType::cast())->requestedAt());
         $this->assertNull(Participant::create($productionId, ParticipantSubjectType::person(), $personId, ParticipantType::cast())->requestedAt());
+        $this->assertNull(Participant::enrollFromInvitation($productionId, $personId, ParticipantType::cast(), $at)->requestedAt());
     }
 }
