@@ -16,6 +16,7 @@ use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
 use StageArt\Application\Participant\ParticipantNotFoundException;
+use StageArt\Application\Participant\ParticipantRequiresInvitationException;
 use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
 use StageArt\Application\Participant\UpdateParticipantCommand;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
@@ -129,6 +130,8 @@ final class ParticipantRestController
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ParticipantRequiresInvitationException $exception) {
+            return new WP_Error('stageart_participant_requires_invitation', $exception->getMessage(), ['status' => 422]);
         } catch (ParticipantSubjectNotEligibleException $exception) {
             return new WP_Error('stageart_participant_subject_not_eligible', $exception->getMessage(), ['status' => 422]);
         } catch (ParticipantAlreadyExistsException $exception) {

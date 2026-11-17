@@ -75,7 +75,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
     private InMemoryUserAccountRepository $userAccounts;
     private FakeParticipantInvitationMailer $mailer;
 
-    private CreateParticipantUseCase $createParticipant;
     private CreateParticipantInvitationUseCase $createParticipantInvitation;
     private ResendParticipantInvitationUseCase $resendParticipantInvitation;
     private CancelParticipantInvitationUseCase $cancelParticipantInvitation;
@@ -100,22 +99,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             $organizationAuthorization,
             $this->delegates,
             $this->participants
-        );
-
-        $this->createParticipant = new CreateParticipantUseCase(
-            $this->productions,
-            $this->participants,
-            $this->people,
-            $this->organizations,
-            $this->productionAuthorization,
-            new InMemoryTransactionManager(),
-            new PersonEmailResolver(
-                $this->people,
-                $this->userAccounts,
-                $this->emailCredentials,
-                new FakeWordPressUserLookup(),
-                new InMemoryNotificationEmailRepository()
-            )
         );
 
         // R14-B stage 4: invitations are counted, recorded and sent by InvitationSendService.

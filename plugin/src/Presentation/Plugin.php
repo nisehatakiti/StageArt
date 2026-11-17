@@ -351,14 +351,17 @@ final class Plugin
         // (ResolveParticipantInvitationUseCase is removed); only
         // organization invitations are.
         $findPersonByEmail = new FindPersonByEmailUseCase($emailCredentials, $userAccounts, $notificationEmails, $people);
+        // PR #7 R14-B: the Participant audit log (stage 3), also written by
+        // NAME_ONLY additions, delegate appointments and invitation sends
+        // (stage 4).
+        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
+        // R14-B stage 4 (D10): POST /participants adds NAME_ONLY members only.
         $createParticipant = new CreateParticipantUseCase(
             $productions,
             $participants,
-            $people,
-            $organizations,
             $productionAuthorization,
             $transactions,
-            $personEmailResolver
+            $participantEventRecorder
         );
         $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $memberships);
 
@@ -602,9 +605,6 @@ final class Plugin
             $transactions
         );
 
-        // PR #7 R14-B: the Participant audit log (stage 3) - also written by
-        // the delegate appointment / change below (stage 4).
-        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
         // R14-B stage 4 (§4.6): only a consented ACTIVE PERSON Participant can
         // be appointed or made ACTIVE again.
         $delegateAppointmentGuard = new DelegateAppointmentGuard($participants);
