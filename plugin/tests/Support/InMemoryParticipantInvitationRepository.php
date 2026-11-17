@@ -28,8 +28,14 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
     /** How many times findByTokenHash() was called (the R14-B flows never call it). */
     public int $tokenHashLookups = 0;
 
+    /** How many times save() / markRevocationNotificationAttempted() were called (a read calls neither). */
+    public int $saves = 0;
+    public int $revocationMarks = 0;
+
     public function save(ParticipantInvitation $invitation): void
     {
+        $this->saves++;
+
         if ($this->failNextSave !== null) {
             $failure = $this->failNextSave;
             $this->failNextSave = null;
@@ -69,6 +75,8 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
 
     public function markRevocationNotificationAttempted(ParticipantInvitationId $id, \DateTimeImmutable $at): bool
     {
+        $this->revocationMarks++;
+
         if (isset($this->revocationNotifiedAt[$id->toString()])) {
             return false;
         }

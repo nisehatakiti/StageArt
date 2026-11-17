@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientNotEligibleException;
 use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsQuery;
+use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\MyParticipantInvitationResult;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantType;
@@ -170,6 +171,111 @@ final class ListMyParticipantInvitationsUseCaseTest extends TestCase
         $this->assertNull($this->f->invitations->revocationNotifiedAt($revoked->id()));
         $this->assertSame([], $this->f->notificationTypes(), 'A read never notifies');
         $this->assertSame([], $this->f->eventStore->types());
+    }
+
+    /**
+     * §11.5 (review fix): a stored CANCELLED(INVITER_REVOKED) is shown as
+     * INVITER_REVOKED, like the derived one; the read writes, records and
+     * sends nothing.
+     */
+    public function test_a_stored_inviter_revoked_cancellation_is_shown_as_inviter_revoked(): void
+    {
+        $manager = $this->f->participantManager();
+        $stored = $this->f->invitation(self::EMAIL, $manager);
+        $stored->close(ParticipantInvitationCloseReason::inviterRevoked());
+        $this->f->invitations->markRevocationNotificationAttempted($stored->id(), new DateTimeImmutable('2026-11-01T00:00:00+00:00'));
+        $this->f->invitations->saves = 0;
+        $this->f->invitations->revocationMarks = 0;
+        $before = clone $stored;
+
+        $items = $this->listFor();
+
+        $this->assertSame([$stored->id()->toString()], self::ids($items));
+        $this->assertSame('INVITER_REVOKED', $items[0]->effectiveStatus);
+        $this->assertSame('INVITER_REVOKED', $items[0]->unavailableReason);
+        $this->assertFalse($items[0]->canAccept);
+        $this->assertTrue($items[0]->canReject);
+
+        $after = $this->f->invitations->findById($stored->id());
+        $this->assertEquals($before, $after, 'status / close_reason / closed_at / updated_at unchanged');
+        $this->assertEquals(new DateTimeImmutable('2026-11-01T00:00:00+00:00'), $this->f->invitations->revocationNotifiedAt($stored->id()));
+        $this->assertSame(0, $this->f->invitations->saves, 'A read never saves');
+        $this->assertSame(0, $this->f->invitations->revocationMarks, 'A read never marks revocation_notified_at');
+        $this->assertSame([], $this->f->eventStore->types(), 'No audit event');
+        $this->assertSame([], $this->f->notificationTypes(), 'No notification');
+    }
+
+    /** The stored reason decides even when the inviter could manage again or the Production has closed since. */
+    public function test_a_stored_inviter_revoked_cancellation_stays_inviter_revoked_whatever_is_derived_now(): void
+    {
+        $stored = $this->f->invitation(self::EMAIL);
+        $stored->close(ParticipantInvitationCloseReason::inviterRevoked());
+        $this->assertSame('INVITER_REVOKED', $this->listFor()[0]->effectiveStatus, 'The inviter (PrimaryManager) can manage again');
+
+        $this->f->forceProductionStatus(ProductionStatus::COMPLETED);
+        $this->assertSame('INVITER_REVOKED', $this->listFor()[0]->effectiveStatus);
+        $this->assertSame('INVITER_REVOKED', $this->listFor()[0]->unavailableReason);
+    }
+
+    public function test_a_stored_production_closed_cancellation_stays_cancelled(): void
+    {
+        $stored = $this->f->invitation(self::EMAIL);
+        $stored->close(ParticipantInvitationCloseReason::productionClosed());
+        $this->f->invitations->saves = 0;
+
+        $item = $this->listFor()[0];
+
+        $this->assertSame('CANCELLED', $item->effectiveStatus);
+        $this->assertSame('PRODUCTION_CLOSED', $item->unavailableReason);
+        $this->assertFalse($item->canAccept);
+        $this->assertTrue($item->canReject);
+        $this->assertSame(0, $this->f->invitations->saves);
+        $this->assertSame([], $this->f->notificationTypes());
+        $this->assertSame([], $this->f->eventStore->types());
+    }
+
+    /** A MANAGER cancellation is not listed (§5.1); its effective status would be CANCELLED. */
+    public function test_a_manager_cancellation_is_cancelled_and_not_listed(): void
+    {
+        $stored = $this->f->invitation(self::EMAIL);
+        $stored->close(ParticipantInvitationCloseReason::manager(), $this->f->primaryManager->id());
+
+        $this->assertSame([], $this->listFor());
+        $this->assertSame('CANCELLED', ListMyParticipantInvitationsUseCase::effectiveStatusOfStoredCancellation(ParticipantInvitationCloseReason::manager()));
+    }
+
+    /**
+     * @return array<string, array{0: ?string, 1: string}>
+     */
+    public static function storedCancellations(): array
+    {
+        return [
+            'PRODUCTION_CLOSED' => [ParticipantInvitationCloseReason::PRODUCTION_CLOSED, 'CANCELLED'],
+            'INVITER_REVOKED' => [ParticipantInvitationCloseReason::INVITER_REVOKED, 'INVITER_REVOKED'],
+            'MANAGER' => [ParticipantInvitationCloseReason::MANAGER, 'CANCELLED'],
+            'no reason (legacy cancel)' => [null, 'CANCELLED'],
+        ];
+    }
+
+    /**
+     * @dataProvider storedCancellations
+     */
+    public function test_effective_status_of_a_stored_cancellation(?string $reason, string $expected): void
+    {
+        $this->assertSame(
+            $expected,
+            ListMyParticipantInvitationsUseCase::effectiveStatusOfStoredCancellation(
+                $reason !== null ? ParticipantInvitationCloseReason::fromString($reason) : null
+            )
+        );
+    }
+
+    public function test_an_expired_stored_inviter_revoked_cancellation_is_not_listed(): void
+    {
+        $expired = $this->f->invitation(self::EMAIL, null, ParticipantType::CAST, new DateTimeImmutable('-1 minute'));
+        $expired->close(ParticipantInvitationCloseReason::inviterRevoked());
+
+        $this->assertSame([], $this->listFor());
     }
 
     public function test_a_closed_production_is_derived(): void

@@ -9,6 +9,7 @@ use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus;
 use StageArt\Domain\Production\Production;
@@ -30,6 +31,11 @@ use StageArt\Domain\Project\ProjectRepositoryInterface;
  *   INVITER_REVOKED (reject only) - and CANCELLED(PRODUCTION_CLOSED /
  *   INVITER_REVOKED) within its expiry (reject only). Nothing expired,
  *   answered, CONSUMED or CANCELLED(MANAGER / no reason) is listed.
+ * - §11.5: a stored CANCELLED(INVITER_REVOKED) is shown as
+ *   effective_status INVITER_REVOKED (as when it is only derived), so the
+ *   invitee sees why even if the PrimaryManager's notice never arrived; a
+ *   stored CANCELLED(PRODUCTION_CLOSED) stays CANCELLED.
+ *   unavailable_reason is the stored close_reason.
  * - Derived order: EXPIRED -> PRODUCTION_CLOSED -> INVITER_REVOKED ->
  *   PENDING.
  * - invited_by_display_name is the inviter's name as recorded on the
@@ -124,7 +130,7 @@ final class ListMyParticipantInvitationsUseCase
     private function toResult(ParticipantInvitation $invitation, Production $production, string $personId): MyParticipantInvitationResult
     {
         if ($invitation->status()->toString() === ParticipantInvitationStatus::CANCELLED) {
-            $effective = ParticipantInvitationStatus::CANCELLED;
+            $effective = self::effectiveStatusOfStoredCancellation($invitation->closeReason());
             $unavailable = $invitation->closeReason()->toString();
         } elseif ($this->conditions->isProductionClosed($production)) {
             $effective = 'PRODUCTION_CLOSED';
@@ -158,6 +164,21 @@ final class ListMyParticipantInvitationsUseCase
             true,
             $unavailable
         );
+    }
+
+    /**
+     * §11.5: effective_status of a stored CANCELLED invitation -
+     * INVITER_REVOKED for close_reason INVITER_REVOKED, CANCELLED for any
+     * other reason (PRODUCTION_CLOSED, MANAGER) or none. Only
+     * PRODUCTION_CLOSED / INVITER_REVOKED ones are listed (isListable()).
+     */
+    public static function effectiveStatusOfStoredCancellation(?ParticipantInvitationCloseReason $closeReason): string
+    {
+        if ($closeReason !== null && $closeReason->toString() === ParticipantInvitationCloseReason::INVITER_REVOKED) {
+            return ParticipantInvitationCloseReason::INVITER_REVOKED;
+        }
+
+        return ParticipantInvitationStatus::CANCELLED;
     }
 
     private function organizationName(Production $production): ?string
