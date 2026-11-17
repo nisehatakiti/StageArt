@@ -232,7 +232,8 @@ final class ParticipantInvitationRestController
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ParticipantInvitationNotPendingException $exception) {
-            return new WP_Error('stageart_participant_invitation_not_pending', $exception->getMessage(), ['status' => 422]);
+            // R14-B §5.3 / §7.1: another terminal state (accepted, rejected, closed by the system) is 409, as for accept / reject.
+            return new WP_Error('stageart_participant_invitation_not_pending', $exception->getMessage(), ['status' => 409]);
         }
     }
 

@@ -59,7 +59,7 @@ final class R14bStage4RestControllerTest extends TestCase
             $f->createInvitation(),
             new ListParticipantInvitationsUseCase($f->invitations, $f->productions, $f->authorization),
             $f->resendInvitation(),
-            new CancelParticipantInvitationUseCase($f->invitations, $f->productions, $f->authorization),
+            $f->cancelInvitation(),
             $f->accept(),
             $f->reject(),
             $f->listMine()
@@ -270,6 +270,28 @@ final class R14bStage4RestControllerTest extends TestCase
         [$status, , $list] = self::answer($this->delegates->list(new WP_REST_Request(['id' => $this->f->production->id()->toString()])));
         $this->assertSame(200, $status);
         $this->assertSame([false, 'CONSENT_UNCONFIRMED'], [$list[0]['effective'], $list[0]['ineffective_reason']]);
+    }
+
+    // --- cancel (stage 4 review fix, §5.1 / §7.1) -------------------------
+
+    public function test_cancel_answers_200_idempotently_and_409_for_other_terminal_states(): void
+    {
+        $pending = $this->f->invitation('taro@example.com');
+        $cancel = fn (string $id) => self::answer($this->invitations->cancel(new WP_REST_Request(['id' => $id])));
+
+        [$status, , $data] = $cancel($pending->id()->toString());
+        $this->assertSame([200, 'CANCELLED'], [$status, $data['status']]);
+        $this->assertSame(200, $cancel($pending->id()->toString())[0], 'idempotent');
+
+        $closed = $this->f->invitation('hanako@example.com');
+        $closed->close(\StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason::inviterRevoked());
+        $this->assertSame([409, 'stageart_participant_invitation_not_pending'], array_slice($cancel($closed->id()->toString()), 0, 2));
+
+        $this->assertSame([404, 'stageart_participant_invitation_not_found'], array_slice($cancel(\StageArt\Domain\ParticipantInvitation\ParticipantInvitationId::generate()->toString()), 0, 2));
+
+        $other = $this->f->invitation('jiro@example.com');
+        $GLOBALS['stageart_test_wp']['current_user'] = $this->f->person('outsider@example.com')->wordPressUserId();
+        $this->assertSame([403, 'stageart_participant_invitation_access_denied'], array_slice($cancel($other->id()->toString()), 0, 2));
     }
 
     // --- 500 -----------------------------------------------------------------

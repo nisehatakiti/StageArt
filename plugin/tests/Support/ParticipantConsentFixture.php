@@ -18,6 +18,7 @@ use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\InvitationSendService;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
@@ -441,6 +442,12 @@ final class ParticipantConsentFixture
             $this->sendService(),
             $this->transactions
         );
+    }
+
+    /** R14-B stage 4: a manager's invitation cancellation over the same stores. */
+    public function cancelInvitation(): CancelParticipantInvitationUseCase
+    {
+        return new CancelParticipantInvitationUseCase($this->invitations, $this->productions, $this->authorization, $this->events, $this->transactions);
     }
 
     /** R14-B stage 4: PUT / DELETE /participants/{id} over the same stores. */

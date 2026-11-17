@@ -680,7 +680,7 @@ final class Plugin
             $transactions
         );
         $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
-        $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization);
+        $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization, $participantEventRecorder, $transactions);
 
         // StageArt 団体管理UI整理 "メンバーを追加": mirrors
         // CreateParticipantInvitationUseCase's own 氏名＋メールアドレス

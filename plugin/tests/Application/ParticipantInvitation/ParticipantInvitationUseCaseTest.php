@@ -131,7 +131,9 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->cancelParticipantInvitation = new CancelParticipantInvitationUseCase(
             $this->invitations,
             $this->productions,
-            $this->productionAuthorization
+            $this->productionAuthorization,
+            new ParticipantEventRecorder(new InMemoryParticipantEventRepository()),
+            new InMemoryTransactionManager()
         );
         $this->listParticipantInvitations = new ListParticipantInvitationsUseCase(
             $this->invitations,

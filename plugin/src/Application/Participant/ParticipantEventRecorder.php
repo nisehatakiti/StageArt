@@ -343,6 +343,23 @@ final class ParticipantEventRecorder
         ));
     }
 
+    /** Stage 4 (§5.1 / §7.1): a manager cancelled a PENDING invitation - CANCELLED(MANAGER). */
+    public function invitationCancelled(ParticipantInvitation $invitation, PersonId $actorPersonId, DateTimeImmutable $at): void
+    {
+        $this->append(ParticipantEvent::record(
+            ParticipantEvent::INVITATION_CANCELLED,
+            $invitation->productionId(),
+            $at,
+            null,
+            $invitation->id(),
+            null,
+            null,
+            $actorPersonId,
+            null,
+            ['previous_status' => 'PENDING', 'close_reason' => 'MANAGER']
+        ));
+    }
+
     /** Stage 4 (§6.3 / §11.3): written with the FAILED send record, after the commit of the send itself. */
     public function sendFailed(ProductionId $productionId, ParticipantInvitationId $invitationId, string $sendId, DateTimeImmutable $at): void
     {

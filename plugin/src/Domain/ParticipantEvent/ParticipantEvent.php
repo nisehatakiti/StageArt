@@ -44,9 +44,12 @@ final class ParticipantEvent
     public const TYPE_CHANGED = 'TYPE_CHANGED';
     public const DELEGATE_APPOINTED = 'DELEGATE_APPOINTED';
     public const DELEGATE_REACTIVATED = 'DELEGATE_REACTIVATED';
+    /** R14-B stage 4 review fix (§5.1 / §6.3): a manager cancelled a PENDING invitation (close_reason MANAGER). */
+    public const INVITATION_CANCELLED = 'INVITATION_CANCELLED';
 
-    /** §6.3 event types written so far (INVITATION_CANCELLED belongs to a later stage). */
+    /** §6.3 event types (all of them are written now). */
     private const TYPES = [
+        self::INVITATION_CANCELLED,
         self::INVITED,
         self::RESENT,
         self::SEND_FAILED,
