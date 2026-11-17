@@ -112,6 +112,7 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
+use StageArt\Application\ProductionDelegate\DelegateAppointmentGuard;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateUseCase;
@@ -614,15 +615,23 @@ final class Plugin
             $transactions
         );
 
+        // PR #7 R14-B: the Participant audit log (stage 3) - also written by
+        // the delegate appointment / change below (stage 4).
+        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
+        // R14-B stage 4 (§4.6): only a consented ACTIVE PERSON Participant can
+        // be appointed or made ACTIVE again.
+        $delegateAppointmentGuard = new DelegateAppointmentGuard($participants);
         $createProductionDelegate = new CreateProductionDelegateUseCase(
             $productions,
             $productionDelegates,
             $people,
             $productionAuthorization,
-            $transactions
+            $transactions,
+            $delegateAppointmentGuard,
+            $participantEventRecorder
         );
         $listProductionDelegates = new ListProductionDelegatesUseCase($productionDelegates, $productions, $people, $productionAuthorization);
-        $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $people, $productionAuthorization);
+        $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $people, $productionAuthorization, $transactions, $delegateAppointmentGuard, $participantEventRecorder);
         $deleteProductionDelegate = new DeleteProductionDelegateUseCase($productionDelegates, $productions, $productionAuthorization);
 
         // $createParticipant itself was moved earlier in this method -
@@ -1006,7 +1015,6 @@ final class Plugin
         // PR #7 R14-B stage 3: the join request / approval / rejection run in
         // one transaction with the §5.4 locks, reuse the one Participant row
         // and write the audit log (the routes are unchanged).
-        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
         $participantEnrollment = new ParticipantEnrollmentService($participants);
         $participantDelegateRoles = new ParticipantDelegateRoleReleaser($productionDelegates, $participantEventRecorder);
         $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $joinKeys, $productionAuthorization, $participantEnrollment, $participantEventRecorder, $transactions);

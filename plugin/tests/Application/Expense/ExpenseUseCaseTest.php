@@ -46,6 +46,7 @@ use StageArt\Tests\Support\InMemoryExpenseRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -281,6 +282,7 @@ final class ExpenseUseCaseTest extends TestCase
                 ParticipantType::cast()
             ));
         } else {
+            ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
             $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $delegateRole, $production->primaryManagerPersonId()));
         }
 
@@ -452,6 +454,12 @@ final class ExpenseUseCaseTest extends TestCase
         $delegate->deactivate($production->primaryManagerPersonId());
         $this->delegates->save($delegate);
         $this->assertTrue($creator->id()->equals($delegate->personId()));
+        // R14-B stage 4: leaving also ends the (consented) participation that
+        // made the delegate row effective (D9).
+        foreach ($this->participants->findPersonParticipants($production->id(), $creator->id()->toString()) as $participant) {
+            $participant->withdraw();
+            $this->participants->save($participant);
+        }
 
         $this->expectException(ExpenseAccessDeniedException::class);
 

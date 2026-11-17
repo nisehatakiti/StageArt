@@ -53,6 +53,7 @@ use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationInvitationRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -215,6 +216,8 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
     {
         $delegatePerson = Person::create($delegateWordPressUserId);
         $this->people->save($delegatePerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),
@@ -645,7 +648,11 @@ final class ParticipantInvitationRegistrationConnectionTest extends TestCase
 
         $this->registerWithEmail->execute(new RegisterWithEmailCommand('authz-check@example.com', 'password123', $token));
 
-        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
+        // R14-B stage 4: the (former) delegate is itself a consented member; nobody else was added.
+        $this->assertSame([], array_values(array_filter(
+            $this->participants->findByProductionId($production->id()),
+            static fn ($participant): bool => $participant->subjectId() !== $delegatePerson->id()->toString()
+        )));
 
         $invitations = $this->invitations->findByEmail('authz-check@example.com');
         $this->assertSame('PENDING', $invitations[0]->status()->toString());

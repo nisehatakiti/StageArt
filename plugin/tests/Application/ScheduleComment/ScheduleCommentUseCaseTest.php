@@ -47,6 +47,7 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -373,6 +374,7 @@ final class ScheduleCommentUseCaseTest extends TestCase
 
         $delegatePerson = Person::create(4);
         $this->people->save($delegatePerson);
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),

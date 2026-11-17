@@ -37,6 +37,7 @@ use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -157,6 +158,7 @@ final class QuestionnaireUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $delegatePerson = Person::create(5);
         $this->people->save($delegatePerson);
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),

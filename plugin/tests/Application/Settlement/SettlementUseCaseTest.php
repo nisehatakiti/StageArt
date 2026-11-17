@@ -36,6 +36,7 @@ use StageArt\Domain\Ticket\Ticket;
 use StageArt\Domain\Ticket\TicketBackMode;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -58,6 +59,7 @@ final class SettlementUseCaseTest extends TestCase
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
 
     private CoreIdentityAdapter $identity;
     private CoreAuthorizationAdapter $authorization;
@@ -81,6 +83,7 @@ final class SettlementUseCaseTest extends TestCase
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->delegates = new InMemoryProductionDelegateRepository();
         $participants = new InMemoryParticipantRepository();
+        $this->participants = $participants;
         $productionAuthorization = new ProductionAuthorizationService($organizationAuthorization, $this->delegates, $participants);
         $identity = new CoreIdentityAdapter($this->people);
         $authorization = new CoreAuthorizationAdapter($productionAuthorization, $this->productions, $this->people);
@@ -271,6 +274,7 @@ final class SettlementUseCaseTest extends TestCase
 
         $accountingDelegate = Person::create(50);
         $this->people->save($accountingDelegate);
+        ConsentedParticipant::seed($this->participants, $production->id(), $accountingDelegate->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $accountingDelegate->id(),

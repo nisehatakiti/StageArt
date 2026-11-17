@@ -8,7 +8,6 @@ use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionStatus;
-use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\ProductionDelegate\ProductionDelegateRepositoryInterface;
 
 /**
@@ -52,18 +51,12 @@ final class ListProductionsUseCase
 
         $primaryManagerProductions = $this->productions->findByPrimaryManagerPersonId($person->id());
 
-        $activeDelegateProductionIds = array_values(array_unique(array_map(
-            static fn (ProductionDelegate $delegate): string => $delegate->productionId()->toString(),
-            array_values(array_filter(
-                $this->delegates->findByPersonId($person->id()),
-                static fn (ProductionDelegate $delegate): bool => $delegate->isActive()
-            ))
-        )));
-
-        $delegateProductions = $this->productions->findByIds(array_map(
-            static fn (string $id): ProductionId => ProductionId::fromString($id),
-            $activeDelegateProductionIds
-        ));
+        // R14-B §4.6 (stage 4): only EFFECTIVE delegate rows (ACTIVE row of a
+        // consented ACTIVE PERSON Participant), decided by
+        // ProductionAuthorizationService - never by the row status alone.
+        $delegateProductions = $this->productions->findByIds(
+            $this->authorization->effectiveDelegateProductionIds($person->id())
+        );
 
         $byId = [];
         foreach (array_merge($primaryManagerProductions, $delegateProductions) as $production) {

@@ -46,6 +46,7 @@ use StageArt\Tests\Support\InMemoryNotificationReadStateRepository;
 use StageArt\Tests\Support\InMemoryRehearsalReminderScheduler;
 use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -428,6 +429,9 @@ final class GetMyDashboardUseCaseTest extends TestCase
         // exactly one StageArt Person, never two.
         $person = Person::create(2);
         $this->people->save($person);
+        // R14-B stage 4: a delegate row counts only for a consented ACTIVE
+        // PERSON Participant of that Production (§4.6).
+        ConsentedParticipant::seed($this->participants, $productionB->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $productionB->id(),
             $person->id(),
@@ -461,6 +465,25 @@ final class GetMyDashboardUseCaseTest extends TestCase
         $result = $this->getMyDashboard->execute(new GetMyDashboardQuery(2));
 
         $this->assertSame([], $result->notifications);
+    }
+
+    /**
+     * R14-B §4.6 (stage 4, T42): an ACTIVE delegate row of a Person who is
+     * not a consented ACTIVE PERSON Participant does not make the
+     * Production theirs on the dashboard; once they are, it does.
+     */
+    public function test_an_ineffective_delegate_row_does_not_involve_the_person(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $manager = $this->people->findByWordPressUserId(1);
+        $delegate = $this->addProductionDelegate($production, 3, $manager);
+        $this->saveNotification($production, new DateTimeImmutable('-1 day'));
+
+        $this->assertSame([], $this->getMyDashboard->execute(new GetMyDashboardQuery(3))->notifications);
+
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegate->id());
+
+        $this->assertCount(1, $this->getMyDashboard->execute(new GetMyDashboardQuery(3))->notifications);
     }
 
     public function test_notification_is_read_reflects_existing_read_state(): void

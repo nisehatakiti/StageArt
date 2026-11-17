@@ -21,6 +21,10 @@ use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
 use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
+use StageArt\Application\ProductionDelegate\DelegateAppointmentGuard;
+use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
+use StageArt\Application\ProductionDelegate\UpdateProductionDelegateUseCase;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Notification\NotificationEmail;
 use StageArt\Domain\Organization\Organization;
@@ -383,6 +387,38 @@ final class ParticipantConsentFixture
             $this->events,
             $this->transactions
         );
+    }
+
+    /** R14-B stage 4: delegate appointment / change / list over the same stores. */
+    public function createDelegate(): CreateProductionDelegateUseCase
+    {
+        return new CreateProductionDelegateUseCase(
+            $this->productions,
+            $this->delegates,
+            $this->people,
+            $this->authorization,
+            $this->transactions,
+            new DelegateAppointmentGuard($this->participants),
+            $this->events
+        );
+    }
+
+    public function updateDelegate(): UpdateProductionDelegateUseCase
+    {
+        return new UpdateProductionDelegateUseCase(
+            $this->delegates,
+            $this->productions,
+            $this->people,
+            $this->authorization,
+            $this->transactions,
+            new DelegateAppointmentGuard($this->participants),
+            $this->events
+        );
+    }
+
+    public function listDelegates(): ListProductionDelegatesUseCase
+    {
+        return new ListProductionDelegatesUseCase($this->delegates, $this->productions, $this->people, $this->authorization);
     }
 
     /**

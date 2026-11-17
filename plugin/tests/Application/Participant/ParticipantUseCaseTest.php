@@ -43,6 +43,7 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -165,6 +166,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $delegatePerson = Person::create(2);
         $this->people->save($delegatePerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),
@@ -700,6 +703,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $rehearsalManagerPerson = Person::create(3);
         $this->people->save($rehearsalManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $rehearsalManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $rehearsalManagerPerson->id(),
@@ -709,7 +714,9 @@ final class ParticipantUseCaseTest extends TestCase
 
         $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 3));
 
-        $this->assertCount(1, $listed);
+        // R14-B stage 4: the REHEARSAL_MANAGER is itself a (consented) member now, so it is listed too.
+        $this->assertCount(2, $listed);
+        $this->assertContains($castPerson->id()->toString(), array_map(static fn ($p) => $p->subjectId, $listed));
     }
 
     /**
@@ -733,6 +740,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $rehearsalManagerPerson = Person::create(3);
         $this->people->save($rehearsalManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $rehearsalManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $rehearsalManagerPerson->id(),
@@ -783,6 +792,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $participantManagerPerson = Person::create(2);
         $this->people->save($participantManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $participantManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $participantManagerPerson->id(),
@@ -802,7 +813,8 @@ final class ParticipantUseCaseTest extends TestCase
         ));
         $this->assertSame('ACTIVE', $created->status);
 
-        $this->assertCount(1, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2)));
+        // R14-B stage 4: the PARTICIPANT_MANAGER is itself a (consented) member now, so the list has 2 rows.
+        $this->assertCount(2, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2)));
 
         $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 2, 'STAFF', 'ACTIVE'));
         $this->assertSame('STAFF', $updated->participantType);

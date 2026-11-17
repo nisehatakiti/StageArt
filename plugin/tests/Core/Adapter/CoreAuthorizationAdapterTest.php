@@ -23,6 +23,7 @@ use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -117,6 +118,8 @@ final class CoreAuthorizationAdapterTest extends TestCase
 
         $delegatePerson = Person::create(2);
         $people->save($delegatePerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($participants, $production->id(), $delegatePerson->id());
         $delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),

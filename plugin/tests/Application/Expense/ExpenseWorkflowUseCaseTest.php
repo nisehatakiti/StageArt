@@ -75,6 +75,7 @@ use StageArt\Tests\Support\InMemoryExpenseRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -252,6 +253,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
                 ParticipantType::cast()
             ));
         } else {
+            ConsentedParticipant::seed($this->participants, $this->production->id(), $person->id());
             $this->delegates->save(ProductionDelegate::create($this->production->id(), $person->id(), $delegateRole, $this->production->primaryManagerPersonId()));
         }
 
@@ -272,6 +274,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $this->person[$wordPressUserId] = $person;
         $this->memberships->save(Membership::create($this->organization->id(), $person->id(), RoleKey::member()));
 
+        ConsentedParticipant::seed($this->participants, $this->production->id(), $person->id());
         $delegate = null;
         foreach ($roles as $role) {
             $delegate = ProductionDelegate::create($this->production->id(), $person->id(), $role, $this->production->primaryManagerPersonId());
@@ -435,6 +438,13 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
                 $delegate->deactivate($this->production->primaryManagerPersonId());
                 $this->delegates->save($delegate);
             }
+        }
+
+        // R14-B stage 4: leaving also ends the (consented) participation that
+        // made the delegate row effective (D9).
+        foreach ($this->participants->findPersonParticipants($this->production->id(), $this->person[5]->id()->toString()) as $participant) {
+            $participant->withdraw();
+            $this->participants->save($participant);
         }
 
         $this->expectException(ExpenseAccessDeniedException::class);

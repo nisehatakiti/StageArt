@@ -51,6 +51,7 @@ use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
 use StageArt\Tests\Support\InMemoryParticipantInvitationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -178,6 +179,8 @@ final class ParticipantInvitationUseCaseTest extends TestCase
     {
         $delegatePerson = Person::create($delegateWordPressUserId);
         $this->people->save($delegatePerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),
@@ -710,7 +713,8 @@ final class ParticipantInvitationUseCaseTest extends TestCase
 
         $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
 
-        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
+        // R14-B stage 4: the (former) delegate is itself a consented member; the invitee was not added.
+        $this->assertSame([], $this->participants->findPersonParticipants($production->id(), $invitedPerson->id()->toString()));
 
         $stillPending = $this->invitations->findById(ParticipantInvitationId::fromString($created->invitation->id));
         $this->assertSame('PENDING', $stillPending->status()->toString());

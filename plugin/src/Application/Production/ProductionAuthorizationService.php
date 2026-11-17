@@ -6,11 +6,14 @@ namespace StageArt\Application\Production;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Domain\Organization\OrganizationId;
+use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
+use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\ProductionDelegate\ProductionDelegateRepositoryInterface;
 use StageArt\Domain\Role\Permission;
@@ -117,15 +120,94 @@ final class ProductionAuthorizationService
         return $production->primaryManagerPersonId()->equals($person->id());
     }
 
+    /**
+     * R14-B §4.6 (D9, stage 4): an EFFECTIVE delegate row only - the row is
+     * ACTIVE AND the Person is an ACTIVE PERSON Participant of the
+     * Production with recorded consent (consented_at). A row that is ACTIVE
+     * in the table but fails the participant/consent condition grants
+     * nothing (it is not changed, only not honoured). The PrimaryManager
+     * is decided separately (isPrimaryManager()) and does not depend on
+     * this. A failed participant read throws (never read as "no").
+     */
     public function activeDelegateFor(Person $person, Production $production): ?ProductionDelegate
     {
-        foreach ($this->delegates->findByProductionId($production->id()) as $delegate) {
-            if ($delegate->personId()->equals($person->id()) && $delegate->isActive()) {
-                return $delegate;
+        $delegates = $this->activeDelegatesFor($person, $production);
+
+        return $delegates[0] ?? null;
+    }
+
+    /** R14-B §4.6: INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED. */
+    public const DELEGATE_INACTIVE = 'INACTIVE';
+    public const DELEGATE_NOT_ACTIVE_PARTICIPANT = 'NOT_ACTIVE_PARTICIPANT';
+    public const DELEGATE_CONSENT_UNCONFIRMED = 'CONSENT_UNCONFIRMED';
+
+    /**
+     * R14-B §4.6 / §7.1 (stage 4): why a delegate row grants nothing, or
+     * null when it is effective. For the delegate list (`effective` /
+     * `ineffective_reason`); the permission checks use activeDelegatesFor().
+     */
+    public function delegateIneffectiveReason(ProductionDelegate $delegate): ?string
+    {
+        if (! $delegate->isActive()) {
+            return self::DELEGATE_INACTIVE;
+        }
+
+        return self::participantIneffectiveReason(
+            $this->participants->findPersonParticipants($delegate->productionId(), $delegate->personId()->toString())
+        );
+    }
+
+    /**
+     * R14-B §4.6: given the Person's PERSON rows in the Production, null
+     * when one of them is ACTIVE with recorded consent, otherwise
+     * CONSENT_UNCONFIRMED (an ACTIVE row without consent) or
+     * NOT_ACTIVE_PARTICIPANT (no ACTIVE row). Shared by the delegate list
+     * and the appointment check.
+     *
+     * @param Participant[] $personRows
+     */
+    public static function participantIneffectiveReason(array $personRows): ?string
+    {
+        $active = false;
+
+        foreach ($personRows as $participant) {
+            if ($participant->isConsentedActivePerson()) {
+                return null;
+            }
+
+            if ($participant->subjectType()->equals(ParticipantSubjectType::person()) && $participant->isActive()) {
+                $active = true;
             }
         }
 
-        return null;
+        return $active ? self::DELEGATE_CONSENT_UNCONFIRMED : self::DELEGATE_NOT_ACTIVE_PARTICIPANT;
+    }
+
+    /**
+     * R14-B §4.6 (stage 4): the Productions where the Person holds at least
+     * one effective delegate row - for GetMyDashboardUseCase and
+     * ListProductionsUseCase, so they do not decide delegate permission on
+     * their own.
+     *
+     * @return ProductionId[]
+     */
+    public function effectiveDelegateProductionIds(PersonId $personId): array
+    {
+        $ids = [];
+
+        foreach ($this->delegates->findByPersonId($personId) as $delegate) {
+            $key = $delegate->productionId()->toString();
+
+            if (! $delegate->isActive() || isset($ids[$key])) {
+                continue;
+            }
+
+            if ($this->participants->existsConsentedActivePersonParticipant($delegate->productionId(), $personId->toString())) {
+                $ids[$key] = $delegate->productionId();
+            }
+        }
+
+        return array_values($ids);
     }
 
     /**
@@ -145,11 +227,19 @@ final class ProductionAuthorizationService
      */
     public function activeDelegatesFor(Person $person, Production $production): array
     {
-        return array_values(array_filter(
+        $rows = array_values(array_filter(
             $this->delegates->findByProductionId($production->id()),
             static fn (ProductionDelegate $delegate): bool =>
                 $delegate->personId()->equals($person->id()) && $delegate->isActive()
         ));
+
+        // R14-B §4.6 (stage 4): ACTIVE rows count only while the Person is a
+        // consented ACTIVE PERSON Participant (one indexed read).
+        if ($rows === [] || ! $this->participants->existsConsentedActivePersonParticipant($production->id(), $person->id()->toString())) {
+            return [];
+        }
+
+        return $rows;
     }
 
     public function hasActiveDelegateRole(Person $person, Production $production, RoleKey $role): bool
