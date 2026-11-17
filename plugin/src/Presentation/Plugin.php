@@ -624,8 +624,11 @@ final class Plugin
         // $createParticipant itself is constructed earlier in this method.
         $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
         $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
-        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
-        $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
+        // R14-B stage 4 (N6-N10): PUT / DELETE limit the status changes, lock
+        // Production -> Participant -> delegate and release delegate roles.
+        $participantDelegateRoles = new ParticipantDelegateRoleReleaser($productionDelegates, $participantEventRecorder);
+        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver, $participantDelegateRoles, $participantEventRecorder, $transactions);
+        $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization, $participantDelegateRoles, $participantEventRecorder, $transactions);
 
         $searchPersonByEmail = new SearchPersonByEmailUseCase($productions, $productionAuthorization, $findPersonByEmail);
         // Its own constant, deliberately separate from
@@ -1015,7 +1018,6 @@ final class Plugin
         // one transaction with the §5.4 locks, reuse the one Participant row
         // and write the audit log (the routes are unchanged).
         $participantEnrollment = new ParticipantEnrollmentService($participants);
-        $participantDelegateRoles = new ParticipantDelegateRoleReleaser($productionDelegates, $participantEventRecorder);
         $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $joinKeys, $productionAuthorization, $participantEnrollment, $participantEventRecorder, $transactions);
         $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $transactions);
         $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEventRecorder, $transactions);

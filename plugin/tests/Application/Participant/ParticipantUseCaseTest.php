@@ -17,6 +17,7 @@ use StageArt\Application\Participant\ListParticipantsQuery;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
 use StageArt\Application\Participant\ParticipantEventRecorder;
 use StageArt\Application\Participant\ParticipantRequiresInvitationException;
 use StageArt\Application\Participant\ParticipantResult;
@@ -112,8 +113,9 @@ final class ParticipantUseCaseTest extends TestCase
         );
         $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
         $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
-        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
-        $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
+        $releaser = new ParticipantDelegateRoleReleaser($this->delegates, new ParticipantEventRecorder($this->events));
+        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver, $releaser, new ParticipantEventRecorder($this->events), new InMemoryTransactionManager());
+        $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization, $releaser, new ParticipantEventRecorder($this->events), new InMemoryTransactionManager());
     }
 
     /**

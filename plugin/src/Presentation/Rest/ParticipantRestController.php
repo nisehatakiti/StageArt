@@ -15,7 +15,11 @@ use StageArt\Application\Participant\ListParticipantsQuery;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Participant\ParticipantCancelNotAllowedException;
 use StageArt\Application\Participant\ParticipantNotFoundException;
+use StageArt\Application\Participant\ParticipantStatusChangeNotAllowedException;
+use StageArt\Application\Participant\ParticipantStatusRequiresConsentException;
+use StageArt\Application\Participant\ParticipantTypeConflictException;
 use StageArt\Application\Participant\ParticipantRequiresInvitationException;
 use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
 use StageArt\Application\Participant\UpdateParticipantCommand;
@@ -167,15 +171,24 @@ final class ParticipantRestController
     public function update(WP_REST_Request $request)
     {
         try {
+            // R14-B stage 4 (N6 / N8): a field that was not sent is NOT_SENT
+            // (status unchanged, remarks kept); a sent value is passed as it
+            // arrived, so a number / boolean / array is refused with 422.
             $command = new UpdateParticipantCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
-                (string) $request->get_param('participant_type'),
-                (string) $request->get_param('status'),
-                $this->stringOrNull($request->get_param('remarks'))
+                $request->get_param('participant_type'),
+                $request->has_param('status') ? $request->get_param('status') : UpdateParticipantCommand::NOT_SENT,
+                $request->has_param('remarks') ? $request->get_param('remarks') : UpdateParticipantCommand::NOT_SENT
             );
 
             return new WP_REST_Response($this->updateParticipant->execute($command)->toArray(), 200);
+        } catch (ParticipantStatusRequiresConsentException $exception) {
+            return new WP_Error('stageart_participant_status_requires_consent', $exception->getMessage(), ['status' => 422]);
+        } catch (ParticipantStatusChangeNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_status_change_not_allowed', $exception->getMessage(), ['status' => 422]);
+        } catch (ParticipantTypeConflictException $exception) {
+            return new WP_Error('stageart_participant_type_conflict', $exception->getMessage(), ['status' => 409]);
         } catch (ParticipantAccessDeniedException $exception) {
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ParticipantNotFoundException $exception) {
@@ -197,6 +210,8 @@ final class ParticipantRestController
             $this->cancelParticipant->execute($command);
 
             return new WP_REST_Response(null, 204);
+        } catch (ParticipantCancelNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_cancel_not_allowed', $exception->getMessage(), ['status' => 409]);
         } catch (ParticipantAccessDeniedException $exception) {
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ParticipantNotFoundException $exception) {

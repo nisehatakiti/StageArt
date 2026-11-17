@@ -6,7 +6,10 @@ namespace StageArt\Tests\Support;
 
 use DateTimeImmutable;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
+use StageArt\Application\Participant\CancelParticipantUseCase;
+use StageArt\Application\Participant\UpdateParticipantUseCase;
 use StageArt\Application\Participant\ParticipantConsentNotifier;
 use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
 use StageArt\Application\Participant\ParticipantEnrollmentService;
@@ -438,6 +441,26 @@ final class ParticipantConsentFixture
             $this->sendService(),
             $this->transactions
         );
+    }
+
+    /** R14-B stage 4: PUT / DELETE /participants/{id} over the same stores. */
+    public function updateParticipant(): UpdateParticipantUseCase
+    {
+        return new UpdateParticipantUseCase(
+            $this->participants,
+            $this->productions,
+            $this->people,
+            $this->authorization,
+            new PersonEmailResolver($this->people, $this->userAccounts, $this->credentials, new FakeWordPressUserLookup(), $this->notificationEmails),
+            $this->releaser(),
+            $this->events,
+            $this->transactions
+        );
+    }
+
+    public function cancelParticipant(): CancelParticipantUseCase
+    {
+        return new CancelParticipantUseCase($this->participants, $this->productions, $this->authorization, $this->releaser(), $this->events, $this->transactions);
     }
 
     /** R14-B stage 4: delegate appointment / change / list over the same stores. */
