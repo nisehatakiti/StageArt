@@ -180,16 +180,6 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
         return InvitationEmailAddress::normalize($email);
     }
 
-    public function findByTokenHash(string $tokenHash): ?ParticipantInvitation
-    {
-        $row = $this->wpdb->get_row(
-            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE token_hash = %s", $tokenHash),
-            ARRAY_A
-        );
-
-        return $row ? $this->hydrate($row) : null;
-    }
-
     public function findByProductionEmailAndType(
         ProductionId $productionId,
         string $email,

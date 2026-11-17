@@ -15,14 +15,10 @@ use StageArt\Domain\Production\ProductionId;
 /**
  * StageArt メール招待によるProductionParticipant追加機能 (docs
  * Domain調査・設計ラウンド): a PrimaryManager/PARTICIPANT_MANAGER's
- * already-authorized request to add someone, by email, who has no
- * StageArt Person yet. This Entity never creates a Participant itself -
- * see ResolveParticipantInvitationUseCase, which re-invokes the existing
- * CreateParticipantUseCase (using `invitedByPersonId` as the requester)
- * once the invitee has completed their own, ordinary registration. This
- * keeps Participant creation authorization exactly where it already
- * lives (ProductionAuthorizationService::canManageParticipants()) rather
- * than duplicating or bypassing it here.
+ * already-authorized request to add someone, by email. This Entity never
+ * creates a Participant itself. (R14-B: the invitee accepts explicitly -
+ * AcceptParticipantInvitationUseCase; the former auto-resolution on
+ * registration was removed in stage 4.)
  *
  * Deliberately minimal per this round's explicit instruction: no
  * `updatedAt`, `cancelledAt`, `cancelledByPersonId`, `resendCount`, or
@@ -449,14 +445,9 @@ final class ParticipantInvitation
         return true;
     }
 
-    /** Called once the invitee's registration has been used to fulfil
-     * this invitation (whether a fresh Participant was created, or one
-     * already existed - see ResolveParticipantInvitationUseCase). Only
-     * checks status, not expiry - the caller (ResolveParticipantInvitationUseCase)
-     * is responsible for checking isUsable() (status AND expiry) before
-     * ever calling this, the same "caller checks isUsable(), narrower
-     * mutators check only their own invariant" split JoinKey::recordUse()
-     * already uses. */
+    /** Legacy (pre-R14-B auto-resolution, removed in stage 4): CONSUMED
+     * stays a terminal state of existing rows; no current flow calls this.
+     * Only checks status, not expiry. */
     public function consume(): void
     {
         if (! $this->isPending()) {

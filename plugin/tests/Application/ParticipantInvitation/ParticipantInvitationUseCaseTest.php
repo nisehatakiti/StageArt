@@ -17,8 +17,6 @@ use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCas
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationResult;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenQuery;
-use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenUseCase;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsQuery;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationAccessDeniedException;
@@ -26,7 +24,6 @@ use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundExce
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotPendingException;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Domain\Membership\Membership;
@@ -76,8 +73,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
     private CreateParticipantInvitationUseCase $createParticipantInvitation;
     private ResendParticipantInvitationUseCase $resendParticipantInvitation;
     private CancelParticipantInvitationUseCase $cancelParticipantInvitation;
-    private GetParticipantInvitationByTokenUseCase $getParticipantInvitationByToken;
-    private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
     private ListParticipantInvitationsUseCase $listParticipantInvitations;
     private ProductionAuthorizationService $productionAuthorization;
 
@@ -143,13 +138,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             $this->invitations,
             $this->productions,
             $this->productionAuthorization
-        );
-        $this->getParticipantInvitationByToken = new GetParticipantInvitationByTokenUseCase($this->invitations, $this->productions);
-        $this->resolveParticipantInvitation = new ResolveParticipantInvitationUseCase(
-            $this->invitations,
-            $this->participants,
-            $this->people,
-            $this->createParticipant
         );
         $this->listParticipantInvitations = new ListParticipantInvitationsUseCase(
             $this->invitations,
@@ -390,9 +378,10 @@ final class ParticipantInvitationUseCaseTest extends TestCase
             'CAST'
         ));
 
-        $invitedPerson = Person::create(20);
-        $this->people->save($invitedPerson);
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
+        // A pre-R14-B CONSUMED row (the auto-resolution that produced it was removed in stage 4).
+        $consumed = $this->invitations->findById(ParticipantInvitationId::fromString($created->invitation->id));
+        $consumed->consume();
+        $this->invitations->save($consumed);
 
         $this->expectException(ParticipantInvitationNotPendingException::class);
         $this->resendParticipantInvitation->execute(new ResendParticipantInvitationCommand($created->invitation->id, 1));
@@ -468,277 +457,6 @@ final class ParticipantInvitationUseCaseTest extends TestCase
 
         $this->expectException(ParticipantInvitationAccessDeniedException::class);
         $this->cancelParticipantInvitation->execute(new CancelParticipantInvitationCommand($created->invitation->id, 3));
-    }
-
-    // --- GetParticipantInvitationByTokenUseCase --------------------------
-
-    public function test_get_by_token_returns_a_preview_for_a_usable_invitation(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-        $token = $this->mailer->invitationEmails[0]['token'];
-
-        $preview = $this->getParticipantInvitationByToken->execute(new GetParticipantInvitationByTokenQuery($token));
-
-        $this->assertSame('Show', $preview->productionName);
-        $this->assertSame('invitee@example.com', $preview->email);
-        $this->assertSame('山田 花子', $preview->name);
-        $this->assertSame('CAST', $preview->participantType);
-        $this->assertSame('PENDING', $preview->status);
-    }
-
-    public function test_get_by_token_rejects_an_unknown_token(): void
-    {
-        $this->expectException(ParticipantInvitationNotFoundException::class);
-        $this->getParticipantInvitationByToken->execute(new GetParticipantInvitationByTokenQuery('never-issued'));
-    }
-
-    public function test_get_by_token_rejects_an_expired_token(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $primaryManager = $this->people->findByWordPressUserId(1);
-
-        $rawToken = 'expired-raw-token';
-        $invitation = ParticipantInvitation::create(
-            $production->id(),
-            'invitee@example.com',
-            '山田 花子',
-            $primaryManager->id(),
-            ParticipantType::cast(),
-            null,
-            hash('sha256', $rawToken),
-            (new DateTimeImmutable())->sub(new DateInterval('PT1H'))
-        );
-        $this->invitations->save($invitation);
-
-        $this->expectException(ParticipantInvitationNotFoundException::class);
-        $this->getParticipantInvitationByToken->execute(new GetParticipantInvitationByTokenQuery($rawToken));
-    }
-
-    public function test_get_by_token_rejects_a_cancelled_token(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-        $token = $this->mailer->invitationEmails[0]['token'];
-        $this->cancelParticipantInvitation->execute(new CancelParticipantInvitationCommand($created->invitation->id, 1));
-
-        $this->expectException(ParticipantInvitationNotFoundException::class);
-        $this->getParticipantInvitationByToken->execute(new GetParticipantInvitationByTokenQuery($token));
-    }
-
-    // --- ResolveParticipantInvitationUseCase (§2 absolute condition) ----
-
-    public function test_resolve_creates_a_participant_and_consumes_the_invitation(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '佐藤一郎（劇団いるか）',
-            'invitee@example.com',
-            'CAST',
-            'remark text'
-        ));
-
-        // AC-04: the invitee registers under their OWN Person name, which
-        // must never replace the invitation's invitedName on the
-        // resulting Participant.
-        $invitedPerson = Person::create(30);
-        $invitedPerson->setName('佐藤', '一郎');
-        $this->people->save($invitedPerson);
-
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        $participant = $this->participants->findByProductionAndSubject(
-            $production->id(),
-            ParticipantSubjectType::person(),
-            $invitedPerson->id()->toString(),
-            ParticipantType::cast()
-        );
-        $this->assertNotNull($participant);
-        $this->assertSame('remark text', $participant->remarks());
-        $this->assertSame('CAST', $participant->participantType()->toString());
-        $this->assertSame('佐藤一郎（劇団いるか）', $participant->displayName());
-
-        $resolved = array_values(array_filter(
-            $this->invitations->findByProductionId($production->id()),
-            static fn ($invitation) => $invitation->id()->toString() === $created->invitation->id
-        ))[0];
-        $this->assertSame('CONSUMED', $resolved->status()->toString());
-        $this->assertNotNull($resolved->consumedAt());
-    }
-
-    /** §19: an unregistered invitee's Participant is never created as
-     * NAME_ONLY - it is always PERSON, keyed by the Person ID they get
-     * once they actually register, and only once they register. */
-    public function test_an_unregistered_invitee_is_not_provisionally_registered_as_name_only(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-
-        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
-
-        $invitedPerson = Person::create(35);
-        $this->people->save($invitedPerson);
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        $created = $this->participants->findByProductionId($production->id());
-        $this->assertCount(1, $created);
-        $this->assertSame('PERSON', $created[0]->subjectType()->toString());
-        $this->assertSame($invitedPerson->id()->toString(), $created[0]->subjectId());
-    }
-
-    public function test_resolve_does_not_duplicate_when_a_manager_already_added_the_same_person_directly(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-
-        $invitedPerson = Person::create(31);
-        $this->people->save($invitedPerson);
-
-        // §12: manager adds the same Person directly by Person ID while
-        // the invitation is still PENDING.
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $invitedPerson->id()->toString(),
-            'CAST'
-        ));
-        $this->assertCount(1, $this->participants->findByProductionId($production->id()));
-
-        // The invited Person now completes registration; resolving must
-        // not create a second Participant row.
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        $this->assertCount(1, $this->participants->findByProductionId($production->id()));
-
-        $resolved = array_values(array_filter(
-            $this->invitations->findByProductionId($production->id()),
-            static fn ($invitation) => $invitation->id()->toString() === $created->invitation->id
-        ))[0];
-        $this->assertSame('CONSUMED', $resolved->status()->toString());
-    }
-
-    public function test_resolve_does_not_touch_an_expired_invitation(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $primaryManager = $this->people->findByWordPressUserId(1);
-
-        $invitation = ParticipantInvitation::create(
-            $production->id(),
-            'invitee@example.com',
-            '山田 花子',
-            $primaryManager->id(),
-            ParticipantType::cast(),
-            null,
-            hash('sha256', 'some-token'),
-            (new DateTimeImmutable())->sub(new DateInterval('PT1H'))
-        );
-        $this->invitations->save($invitation);
-
-        $invitedPerson = Person::create(32);
-        $this->people->save($invitedPerson);
-
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
-        $stillPending = $this->invitations->findById($invitation->id());
-        $this->assertSame('PENDING', $stillPending->status()->toString());
-        $this->assertNull($stillPending->consumedAt());
-    }
-
-    /**
-     * §2's absolute condition, verified directly: if the inviting
-     * manager's own PARTICIPANT_MANAGER Role has since been deactivated,
-     * ResolveParticipantInvitationUseCase must NOT force the Participant
-     * through anyway - it must go through CreateParticipantUseCase's own
-     * canManageParticipants() check exactly as any other caller would,
-     * and that check must legitimately fail here. This is the test that
-     * proves Participant creation Authorization was not bypassed: if it
-     * had been (e.g. by calling Participant::create() directly, or by
-     * treating the invitee as a manager), this test would fail because a
-     * Participant WOULD exist despite the inviter's Role no longer being
-     * active.
-     */
-    public function test_resolve_does_not_create_a_participant_when_the_inviter_has_since_lost_participant_manager(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $delegatePerson = $this->givenParticipantManagerDelegate($production, 2);
-
-        $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            2,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-
-        // The inviting delegate's PARTICIPANT_MANAGER Role is revoked
-        // after the invitation was sent, before the invitee registers.
-        $delegate = $this->delegates->findByProductionAndPersonAndRole(
-            $production->id(),
-            $delegatePerson->id(),
-            RoleKey::participantManager()
-        );
-        $delegate->deactivate($production->primaryManagerPersonId());
-        $this->delegates->save($delegate);
-
-        $invitedPerson = Person::create(33);
-        $this->people->save($invitedPerson);
-
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        // R14-B stage 4: the (former) delegate is itself a consented member; the invitee was not added.
-        $this->assertSame([], $this->participants->findPersonParticipants($production->id(), $invitedPerson->id()->toString()));
-
-        $stillPending = $this->invitations->findById(ParticipantInvitationId::fromString($created->invitation->id));
-        $this->assertSame('PENDING', $stillPending->status()->toString());
-        $this->assertNull($stillPending->consumedAt());
-    }
-
-    public function test_resolve_ignores_a_cancelled_invitation(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-        $created = $this->createParticipantInvitation->execute(new CreateParticipantInvitationCommand(
-            $production->id()->toString(),
-            1,
-            '山田 花子',
-            'invitee@example.com',
-            'CAST'
-        ));
-        $this->cancelParticipantInvitation->execute(new CancelParticipantInvitationCommand($created->invitation->id, 1));
-
-        $invitedPerson = Person::create(34);
-        $this->people->save($invitedPerson);
-
-        $this->resolveParticipantInvitation->execute($invitedPerson->id(), 'invitee@example.com');
-
-        $this->assertCount(0, $this->participants->findByProductionId($production->id()));
     }
 
     // --- ListParticipantInvitationsUseCase --------------------------------

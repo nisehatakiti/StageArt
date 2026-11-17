@@ -10,8 +10,6 @@ use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationComman
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenQuery;
-use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenUseCase;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsQuery;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationAccessDeniedException;
@@ -27,11 +25,14 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * StageArt メール招待によるProductionParticipant追加機能: §16/§19/§20/§21.
- * `GET /participant-invitations/resolve` is the one unauthenticated
- * route here (§19: registration-screen preview by token) - every other
+ * StageArt メール招待によるProductionParticipant追加機能: §16/§20/§21. Every
  * route requires login, matching this codebase's `require_login()`
  * pattern used throughout the other REST Controllers.
+ *
+ * PR #7 R14-B stage 4 (design doc §7.1, U5 C案): the unauthenticated
+ * `GET /participant-invitations/resolve?token=` route is removed - no API
+ * looks an invitation up by token any more (a request to it is the REST
+ * server's 404 for an unknown route).
  */
 final class ParticipantInvitationRestController
 {
@@ -39,20 +40,17 @@ final class ParticipantInvitationRestController
 
     private CreateParticipantInvitationUseCase $createParticipantInvitation;
     private ListParticipantInvitationsUseCase $listParticipantInvitations;
-    private GetParticipantInvitationByTokenUseCase $getParticipantInvitationByToken;
     private ResendParticipantInvitationUseCase $resendParticipantInvitation;
     private CancelParticipantInvitationUseCase $cancelParticipantInvitation;
 
     public function __construct(
         CreateParticipantInvitationUseCase $createParticipantInvitation,
         ListParticipantInvitationsUseCase $listParticipantInvitations,
-        GetParticipantInvitationByTokenUseCase $getParticipantInvitationByToken,
         ResendParticipantInvitationUseCase $resendParticipantInvitation,
         CancelParticipantInvitationUseCase $cancelParticipantInvitation
     ) {
         $this->createParticipantInvitation = $createParticipantInvitation;
         $this->listParticipantInvitations = $listParticipantInvitations;
-        $this->getParticipantInvitationByToken = $getParticipantInvitationByToken;
         $this->resendParticipantInvitation = $resendParticipantInvitation;
         $this->cancelParticipantInvitation = $cancelParticipantInvitation;
     }
@@ -69,14 +67,6 @@ final class ParticipantInvitationRestController
                 'methods' => 'GET',
                 'callback' => [$this, 'list'],
                 'permission_callback' => [$this, 'require_login'],
-            ],
-        ]);
-
-        register_rest_route(self::API_NAMESPACE, '/participant-invitations/resolve', [
-            [
-                'methods' => 'GET',
-                'callback' => [$this, 'resolve'],
-                'permission_callback' => '__return_true',
             ],
         ]);
 
@@ -147,20 +137,6 @@ final class ParticipantInvitationRestController
             return new WP_Error('stageart_participant_invitation_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
-        }
-    }
-
-    /**
-     * @return WP_REST_Response|WP_Error
-     */
-    public function resolve(WP_REST_Request $request)
-    {
-        try {
-            $query = new GetParticipantInvitationByTokenQuery((string) $request->get_param('token'));
-
-            return new WP_REST_Response($this->getParticipantInvitationByToken->execute($query)->toArray(), 200);
-        } catch (ParticipantInvitationNotFoundException $exception) {
-            return new WP_Error('stageart_participant_invitation_not_found', $exception->getMessage(), ['status' => 404]);
         }
     }
 

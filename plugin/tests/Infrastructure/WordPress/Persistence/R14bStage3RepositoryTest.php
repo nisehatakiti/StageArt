@@ -612,9 +612,11 @@ final class R14bStage3RepositoryTest extends TestCase
     }
 
     /** Unused by the R14-B flows but kept (stage 3 does not remove it). */
-    public function test_find_by_token_hash_is_kept(): void
+    /** R14-B stage 4 (§6.1, U5 C案): the participant-invitation token lookup is gone (stage 3 kept it). */
+    public function test_find_by_token_hash_is_removed(): void
     {
-        $this->assertTrue(method_exists(WordPressParticipantInvitationRepository::class, 'findByTokenHash'));
+        $this->assertFalse(method_exists(WordPressParticipantInvitationRepository::class, 'findByTokenHash'));
+        $this->assertFalse(method_exists(\StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface::class, 'findByTokenHash'));
         $this->assertTrue(method_exists(Participant::class, 'reopenRequest'));
     }
 }

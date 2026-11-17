@@ -46,12 +46,6 @@ interface ParticipantInvitationRepositoryInterface
     public function markRevocationNotificationAttempted(ParticipantInvitationId $id, \DateTimeImmutable $at): bool;
 
     /**
-     * Kept for the existing token-based flows until they are retired in a
-     * later stage; the R14-B accept / reject / list never call it (U5 C案).
-     */
-    public function findByTokenHash(string $tokenHash): ?ParticipantInvitation;
-
-    /**
      * All invitations (any status) for a given Production/email/
      * ParticipantType tuple - no DB-level uniqueness is enforced on this
      * tuple (see stageart_participant_invitations's own schema notes),
@@ -69,10 +63,10 @@ interface ParticipantInvitationRepositoryInterface
     ): array;
 
     /**
-     * Every invitation (any Production, any status) for a given email -
-     * used by ResolveParticipantInvitationUseCase to resolve every
-     * outstanding invitation a freshly-registered email might satisfy,
-     * not just one Production's.
+     * Every invitation (any Production, any status) for a given email.
+     * (R14-B stage 4: no application flow resolves invitations by address
+     * any more - the auto-resolution was removed; the invitee's own list
+     * uses findByVerifiedEmailCandidates().)
      *
      * @return ParticipantInvitation[]
      */

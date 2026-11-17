@@ -133,10 +133,8 @@ use StageArt\Application\Person\SearchPersonByEmailUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\GetParticipantInvitationByTokenUseCase;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\LinkGoogleIdentityUseCase;
@@ -344,15 +342,10 @@ final class Plugin
             $transactions
         );
 
-        // StageArt メール招待によるProductionParticipant追加機能:
-        // $createParticipant is constructed here (earlier than its
-        // sibling Participant UseCases below) because
-        // ResolveParticipantInvitationUseCase - needed by both
-        // $authenticateWithGoogle and $registerWithEmail just below -
-        // depends on it. See ResolveParticipantInvitationUseCase's own
-        // docblock for why it re-invokes this exact, unchanged Use Case
-        // (using the inviting manager as requester) instead of creating
-        // a Participant directly.
+        // PR #7 R14-B stage 4: Production (participant) invitations are no
+        // longer resolved by registration / verification / Google sign-in
+        // (ResolveParticipantInvitationUseCase is removed); only
+        // organization invitations are.
         $findPersonByEmail = new FindPersonByEmailUseCase($emailCredentials, $userAccounts, $notificationEmails, $people);
         $createParticipant = new CreateParticipantUseCase(
             $productions,
@@ -362,12 +355,6 @@ final class Plugin
             $productionAuthorization,
             $transactions,
             $personEmailResolver
-        );
-        $resolveParticipantInvitation = new ResolveParticipantInvitationUseCase(
-            $participantInvitations,
-            $participants,
-            $people,
-            $createParticipant
         );
         $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $memberships);
 
@@ -405,7 +392,6 @@ final class Plugin
             $wordPressUserProvisioner,
             $transactions,
             $notificationEmailSeeder,
-            $resolveParticipantInvitation,
             $resolveOrganizationInvitation
         );
         $registerWithEmail = new RegisterWithEmailUseCase(
@@ -418,8 +404,6 @@ final class Plugin
             $wordPressUserProvisioner,
             $transactions,
             $authMailer,
-            $resolveParticipantInvitation,
-            $participantInvitations,
             $resolveOrganizationInvitation,
             $organizationInvitations
         );
@@ -455,7 +439,6 @@ final class Plugin
             $emailCredentials,
             $transactions,
             $userAccounts,
-            $resolveParticipantInvitation,
             $resolveOrganizationInvitation
         );
         $changePassword = new ChangePasswordUseCase($people, $userAccounts, $emailCredentials, $transactions);
@@ -634,9 +617,7 @@ final class Plugin
         $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $people, $productionAuthorization, $transactions, $delegateAppointmentGuard, $participantEventRecorder);
         $deleteProductionDelegate = new DeleteProductionDelegateUseCase($productionDelegates, $productions, $productionAuthorization);
 
-        // $createParticipant itself was moved earlier in this method -
-        // see the comment above ResolveParticipantInvitationUseCase's
-        // construction for why.
+        // $createParticipant itself is constructed earlier in this method.
         $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
         $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
         $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
@@ -671,7 +652,6 @@ final class Plugin
             $participantInvitationMailer
         );
         $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
-        $getParticipantInvitationByToken = new GetParticipantInvitationByTokenUseCase($participantInvitations, $productions);
         $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization);
 
         // StageArt 団体管理UI整理 "メンバーを追加": mirrors
@@ -1051,7 +1031,6 @@ final class Plugin
         $participantInvitationRestController = new ParticipantInvitationRestController(
             $createParticipantInvitation,
             $listParticipantInvitations,
-            $getParticipantInvitationByToken,
             $resendParticipantInvitation,
             $cancelParticipantInvitation
         );

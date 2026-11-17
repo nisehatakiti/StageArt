@@ -8,7 +8,6 @@ use DateInterval;
 use DateTimeImmutable;
 use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
@@ -49,7 +48,6 @@ final class AuthenticateWithGoogleUseCase
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
     private NotificationEmailSeeder $notificationEmailSeeder;
-    private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
     private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
 
     public function __construct(
@@ -62,7 +60,6 @@ final class AuthenticateWithGoogleUseCase
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
         NotificationEmailSeeder $notificationEmailSeeder,
-        ResolveParticipantInvitationUseCase $resolveParticipantInvitation,
         ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation
     ) {
         $this->googleVerifier = $googleVerifier;
@@ -74,7 +71,6 @@ final class AuthenticateWithGoogleUseCase
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
         $this->notificationEmailSeeder = $notificationEmailSeeder;
-        $this->resolveParticipantInvitation = $resolveParticipantInvitation;
         $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
     }
 
@@ -152,17 +148,11 @@ final class AuthenticateWithGoogleUseCase
         // shape RegisterWithEmailUseCase uses, so a resolution failure
         // can never turn a successful Google sign-in into a failed
         // response.
+        //
+        // PR #7 R14-B stage 4 (design doc §7.1): only organization
+        // invitations are resolved here; signing in with Google never makes
+        // anyone a Production participant (the invitee accepts explicitly).
         if ($claims->email !== null && $claims->emailVerified === true) {
-            try {
-                $this->resolveParticipantInvitation->execute(PersonId::fromString($result->personId), $claims->email);
-            } catch (Throwable $exception) {
-                error_log(sprintf(
-                    '[StageArt ParticipantInvitation] resolution failed after Google authentication for person=%s: %s',
-                    $result->personId,
-                    $exception->getMessage()
-                ));
-            }
-
             try {
                 $this->resolveOrganizationInvitation->execute(PersonId::fromString($result->personId), $claims->email);
             } catch (Throwable $exception) {

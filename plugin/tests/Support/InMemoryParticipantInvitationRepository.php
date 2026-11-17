@@ -25,7 +25,7 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
     /** @var string[][] the address lists findByVerifiedEmailCandidates() was asked for */
     public array $candidateSearches = [];
 
-    /** How many times findByTokenHash() was called (the R14-B flows never call it). */
+    /** R14-B stage 4: there is no token lookup any more (findByTokenHash() was removed); kept at 0 for the stage-3 assertions. */
     public int $tokenHashLookups = 0;
 
     /** How many times save() / markRevocationNotificationAttempted() were called (a read calls neither). */
@@ -113,19 +113,6 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
     public function findById(ParticipantInvitationId $id): ?ParticipantInvitation
     {
         return $this->invitations[$id->toString()] ?? null;
-    }
-
-    public function findByTokenHash(string $tokenHash): ?ParticipantInvitation
-    {
-        $this->tokenHashLookups++;
-
-        foreach ($this->invitations as $invitation) {
-            if ($invitation->tokenHash() === $tokenHash) {
-                return $invitation;
-            }
-        }
-
-        return null;
     }
 
     public function findByProductionEmailAndType(

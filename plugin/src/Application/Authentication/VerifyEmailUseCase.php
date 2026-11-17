@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace StageArt\Application\Authentication;
 
 use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\UserAccount\EmailCredentialRepositoryInterface;
@@ -22,9 +21,9 @@ use Throwable;
  *
  * PR #7 R14-A (F6): verifying the address is the moment the owner of the
  * address is known, so it is also the moment the invitations sent to that
- * address are resolved (ParticipantInvitation -> Participant,
- * OrganizationInvitation -> Membership). A self-registration without an
- * invitation token no longer resolves them (RegisterWithEmailUseCase):
+ * address are resolved (OrganizationInvitation -> Membership). A
+ * self-registration without an invitation token no longer resolves them
+ * (RegisterWithEmailUseCase):
  * anyone can register with any address, and before R14-A that let a third
  * party take the invitations sent to someone else's address.
  *
@@ -32,6 +31,11 @@ use Throwable;
  * it: a failure is logged and the invitation stays PENDING, exactly as on
  * the registration and Google paths. Without the resolvers (wiring that
  * predates R14-A) nothing is resolved here - the safe side.
+ *
+ * PR #7 R14-B stage 4 (design doc §7.1): Production (participant)
+ * invitations are no longer resolved here - verifying an address never
+ * makes anyone a participant; the invitee accepts explicitly from
+ * `GET /me/participant-invitations`.
  */
 final class VerifyEmailUseCase
 {
@@ -39,7 +43,6 @@ final class VerifyEmailUseCase
     private EmailCredentialRepositoryInterface $emailCredentials;
     private TransactionManagerInterface $transactions;
     private ?UserAccountRepositoryInterface $userAccounts;
-    private ?ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
     private ?ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
 
     public function __construct(
@@ -47,14 +50,12 @@ final class VerifyEmailUseCase
         EmailCredentialRepositoryInterface $emailCredentials,
         TransactionManagerInterface $transactions,
         ?UserAccountRepositoryInterface $userAccounts = null,
-        ?ResolveParticipantInvitationUseCase $resolveParticipantInvitation = null,
         ?ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation = null
     ) {
         $this->emailVerificationTokens = $emailVerificationTokens;
         $this->emailCredentials = $emailCredentials;
         $this->transactions = $transactions;
         $this->userAccounts = $userAccounts;
-        $this->resolveParticipantInvitation = $resolveParticipantInvitation;
         $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
     }
 
@@ -105,14 +106,6 @@ final class VerifyEmailUseCase
         }
 
         $personId = $userAccount->personId();
-
-        if ($this->resolveParticipantInvitation !== null) {
-            try {
-                $this->resolveParticipantInvitation->execute($personId, $email);
-            } catch (Throwable $exception) {
-                error_log(sprintf('[StageArt ParticipantInvitation] resolution failed after email verification for person=%s: %s', $personId->toString(), $exception->getMessage()));
-            }
-        }
 
         if ($this->resolveOrganizationInvitation !== null) {
             try {
