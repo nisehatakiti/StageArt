@@ -34,6 +34,7 @@ use StageArt\Application\ParticipantInvitation\ParticipantInvitationRecentlyReje
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationResendLimitException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationSendLimitException;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\RateLimit\InvitationRateLimit;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -66,6 +67,8 @@ final class ParticipantInvitationRestController
     private ?AcceptParticipantInvitationUseCase $acceptParticipantInvitation;
     private ?RejectParticipantInvitationUseCase $rejectParticipantInvitation;
     private ?ListMyParticipantInvitationsUseCase $listMyParticipantInvitations;
+    /** R14-B stage 8 (§9.2): the accept / reject failure limit; null only where a test leaves it out. */
+    private ?InvitationRateLimit $rateLimit;
 
     public function __construct(
         CreateParticipantInvitationUseCase $createParticipantInvitation,
@@ -74,8 +77,10 @@ final class ParticipantInvitationRestController
         CancelParticipantInvitationUseCase $cancelParticipantInvitation,
         ?AcceptParticipantInvitationUseCase $acceptParticipantInvitation = null,
         ?RejectParticipantInvitationUseCase $rejectParticipantInvitation = null,
-        ?ListMyParticipantInvitationsUseCase $listMyParticipantInvitations = null
+        ?ListMyParticipantInvitationsUseCase $listMyParticipantInvitations = null,
+        ?InvitationRateLimit $rateLimit = null
     ) {
+        $this->rateLimit = $rateLimit;
         $this->acceptParticipantInvitation = $acceptParticipantInvitation;
         $this->rejectParticipantInvitation = $rejectParticipantInvitation;
         $this->listMyParticipantInvitations = $listMyParticipantInvitations;
@@ -263,7 +268,7 @@ final class ParticipantInvitationRestController
         try {
             $command = new AcceptParticipantInvitationCommand(get_current_user_id(), (string) $request->get_param('id'));
 
-            return new WP_REST_Response($this->acceptParticipantInvitation->execute($command)->toArray(), 200);
+            return new WP_REST_Response($this->limitFailures($command->requestedByWordPressUserId, fn () => $this->acceptParticipantInvitation->execute($command))->toArray(), 200);
         } catch (\Throwable $exception) {
             return self::answerRefusal($exception);
         }
@@ -277,10 +282,24 @@ final class ParticipantInvitationRestController
         try {
             $command = new RejectParticipantInvitationCommand(get_current_user_id(), (string) $request->get_param('id'));
 
-            return new WP_REST_Response($this->rejectParticipantInvitation->execute($command)->toArray(), 200);
+            return new WP_REST_Response($this->limitFailures($command->requestedByWordPressUserId, fn () => $this->rejectParticipantInvitation->execute($command))->toArray(), 200);
         } catch (\Throwable $exception) {
             return self::answerRefusal($exception);
         }
+    }
+
+    /**
+     * R14-B stage 8 (§9.2): 10 failed (403 / 404) accept / reject per Person
+     * per 10 minutes; at the limit the request is 429 before anything is
+     * done (RateLimitedException goes on to RestFailureResponder).
+     *
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    private function limitFailures(int $wordPressUserId, callable $operation)
+    {
+        return $this->rateLimit !== null ? $this->rateLimit->guardResponse($wordPressUserId, $operation) : $operation();
     }
 
     /**

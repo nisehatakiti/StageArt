@@ -99,6 +99,8 @@ use StageArt\Application\Participant\ListMyParticipatingProductionsUseCase;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
 use StageArt\Application\Participant\WithdrawParticipationUseCase;
+use StageArt\Application\RateLimit\InvitationRateLimit;
+use StageArt\Infrastructure\WordPress\RateLimit\WordPressRateLimiter;
 use StageArt\Application\Production\ActivateProductionUseCase;
 use StageArt\Application\Production\ArchiveProductionUseCase;
 use StageArt\Application\Production\CancelProductionUseCase;
@@ -660,13 +662,21 @@ final class Plugin
             $participantEventRecorder,
             $transactions
         );
+        // PR #7 R14-B stage 8 (§9.2): the invitation rate limits, counted in
+        // stageart_rate_limit_buckets under a key derived from WordPress's
+        // salt (not the §6.7 email_key keyring).
+        $invitationRateLimit = new InvitationRateLimit(
+            new WordPressRateLimiter($wpdb, hash_hmac('sha256', 'stageart_rate_limit_buckets', wp_salt('auth'))),
+            $productionAuthorization
+        );
         $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
             $participantInvitations,
             $productions,
             $productionAuthorization,
             $participantInvitationConditions,
             $invitationSendService,
-            $transactions
+            $transactions,
+            $invitationRateLimit
         );
         $createParticipantInvitation = new CreateParticipantInvitationUseCase(
             $productions,
@@ -675,7 +685,8 @@ final class Plugin
             $resendParticipantInvitation,
             $participantInvitationConditions,
             $invitationSendService,
-            $transactions
+            $transactions,
+            $invitationRateLimit
         );
         // R14B-4R (§7.1): the managers' list adds effective_status and the send status / limits.
         $listParticipantInvitations = new ListParticipantInvitationsUseCase(
@@ -1074,7 +1085,8 @@ final class Plugin
             $cancelParticipantInvitation,
             new AcceptParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $participantConsentNotifier, $transactions),
             new RejectParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEventRecorder, $participantConsentNotifier, $transactions),
-            new ListMyParticipantInvitationsUseCase($participantInvitations, $productions, $projects, $organizations, $participants, $invitationRecipients, $participantInvitationConditions)
+            new ListMyParticipantInvitationsUseCase($participantInvitations, $productions, $projects, $organizations, $participants, $invitationRecipients, $participantInvitationConditions),
+            $invitationRateLimit
         );
 
         $joinKeyRestController = new JoinKeyRestController(

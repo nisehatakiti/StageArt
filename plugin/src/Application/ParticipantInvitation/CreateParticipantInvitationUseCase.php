@@ -10,6 +10,7 @@ use InvalidArgumentException;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\RateLimit\InvitationRateLimit;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
@@ -59,6 +60,8 @@ final class CreateParticipantInvitationUseCase
     private ParticipantInvitationConditions $conditions;
     private InvitationSendService $sendService;
     private TransactionManagerInterface $transactions;
+    /** R14-B stage 8 (§9.2); null only where a test leaves the limits out. */
+    private ?InvitationRateLimit $rateLimit;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
@@ -67,8 +70,10 @@ final class CreateParticipantInvitationUseCase
         ResendParticipantInvitationUseCase $resend,
         ParticipantInvitationConditions $conditions,
         InvitationSendService $sendService,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ?InvitationRateLimit $rateLimit = null
     ) {
+        $this->rateLimit = $rateLimit;
         $this->productions = $productions;
         $this->authorization = $authorization;
         $this->invitations = $invitations;
@@ -96,6 +101,13 @@ final class CreateParticipantInvitationUseCase
             throw new ParticipantAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER Role can invite a member.'
             );
+        }
+
+        // R14-B stage 8 (§9.2): counted once permission is confirmed, before
+        // the input is checked and outside (before) the transaction; 429 when
+        // over. A create that turns into a resend is still one attempt.
+        if ($this->rateLimit !== null) {
+            $this->rateLimit->assertSendAllowed($requester->id(), $production->id());
         }
 
         $email = trim($command->email);

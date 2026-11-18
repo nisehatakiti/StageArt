@@ -6,6 +6,7 @@ namespace StageArt\Presentation\Rest;
 
 use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Application\Production\ProductionClosedException;
+use StageArt\Application\RateLimit\RateLimitedException;
 use StageArt\Application\Reservation\PerformanceNotAcceptingException;
 use StageArt\Application\Shared\DatabaseBusyException;
 use StageArt\Application\Shared\PersistenceException;
@@ -112,6 +113,16 @@ final class RestFailureResponder
         // (R6) A capacity below the seats already reserved: nothing changed.
         if ($exception instanceof CapacityBelowReservationsException) {
             return self::error('stageart_capacity_below_reservations', $exception->getMessage(), 409, ['capacity' => $exception->capacity(), 'reserved_seats' => $exception->occupied()]);
+        }
+
+        // PR #7 R14-B stage 8 (design doc §9.2): a rate limit was reached (or
+        // its counter was unavailable): nothing was done. `retry_after` is
+        // the seconds until the window ends, also sent as Retry-After.
+        if ($exception instanceof RateLimitedException) {
+            $response = self::error('stageart_rate_limited', 'Too many requests. Please try again later.', 429, ['retry_after' => $exception->retryAfter()]);
+            $response->header('Retry-After', (string) $exception->retryAfter());
+
+            return $response;
         }
 
         if ($exception instanceof DatabaseBusyException) {

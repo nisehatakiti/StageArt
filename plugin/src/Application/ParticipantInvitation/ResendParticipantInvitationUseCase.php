@@ -7,6 +7,7 @@ namespace StageArt\Application\ParticipantInvitation;
 use DateTimeImmutable;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\RateLimit\InvitationRateLimit;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationId;
@@ -42,6 +43,8 @@ final class ResendParticipantInvitationUseCase
     private ParticipantInvitationConditions $conditions;
     private InvitationSendService $sendService;
     private TransactionManagerInterface $transactions;
+    /** R14-B stage 8 (§9.2); null only where a test leaves the limits out. */
+    private ?InvitationRateLimit $rateLimit;
 
     public function __construct(
         ParticipantInvitationRepositoryInterface $invitations,
@@ -49,8 +52,10 @@ final class ResendParticipantInvitationUseCase
         ProductionAuthorizationService $authorization,
         ParticipantInvitationConditions $conditions,
         InvitationSendService $sendService,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        ?InvitationRateLimit $rateLimit = null
     ) {
+        $this->rateLimit = $rateLimit;
         $this->invitations = $invitations;
         $this->productions = $productions;
         $this->authorization = $authorization;
@@ -84,6 +89,12 @@ final class ResendParticipantInvitationUseCase
             throw new ParticipantInvitationAccessDeniedException(
                 'Only the PrimaryManager or a ProductionDelegate with the PARTICIPANT_MANAGER Role can resend this invitation.'
             );
+        }
+
+        // R14-B stage 8 (§9.2): the same windows as create, counted once
+        // permission is confirmed and before the transaction; 429 when over.
+        if ($this->rateLimit !== null) {
+            $this->rateLimit->assertSendAllowed($requester->id(), $production->id());
         }
 
         [$locked, $pending] = $this->transactions->run(function () use ($invitationId, $production, $requester): array {
