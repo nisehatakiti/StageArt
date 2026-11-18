@@ -9,37 +9,31 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt メール招待によるProductionParticipant追加機能 §23: arriving at
- * /register via an invitation link (?token=...) pre-fills the invited
- * email address from the unauthenticated
- * GET /participant-invitations/resolve preview, and shows a notice
- * naming the Production.
+ * PR #7 R14-B (design doc §9.2 / §10 / §14.2, U5 C案; rewritten for the spec
+ * change - previously a valid token pre-filled the invited address from
+ * GET /participant-invitations/resolve, an API that no longer exists): an
+ * old invitation link `/register?token=...` opens the ordinary registration
+ * screen. The token is not read or looked up (no request is made with it),
+ * it is removed from the URL at once, the address field starts empty and
+ * editable, and nothing about any invitation is shown.
  */
-describe('register screen: valid invitation token', () => {
-  it('pre-fills the invited email and shows the production name when a valid token is present', async () => {
-    mockFetchRoutes([
-      {
-        test: (u) => u.includes('/participant-invitations/resolve') && u.includes('token=good-token'),
-        status: 200,
-        body: {
-          production_name: '踊れチュパカブラ',
-          email: 'invitee@example.com',
-          name: '山田 花子',
-          participant_type: 'CAST',
-          status: 'PENDING',
-        },
-      },
-    ]);
+describe('register screen: old invitation link with a token', () => {
+  it('ignores the token, removes it from the URL and shows the ordinary empty form', async () => {
+    mockFetchRoutes([]);
 
-    renderRouter('src/app', { initialUrl: '/register?token=good-token' });
+    const router = renderRouter('src/app', { initialUrl: '/register?token=good-token' });
 
-    await waitFor(() => expect(screen.getByTestId('register-invitation-notice')).toBeVisible());
-    expect(screen.getByText(/踊れチュパカブラ/)).toBeVisible();
-    await waitFor(() => expect(screen.getByTestId('register-email').props.value).toBe('invitee@example.com'));
-    await waitFor(() => expect(screen.getByTestId('register-invitation-name').props.value).toBe('山田 花子'));
+    await waitFor(() => expect(screen.getByTestId('register-email')).toBeVisible());
+    await waitFor(() => expect(router.getSearchParams()).toEqual({}));
+    expect(router.getPathname()).toBe('/register');
 
-    // StageArt 招待登録のメール確認省略ラウンド §7: fixed once a valid
-    // invitation preview loaded - the invited address cannot be changed.
-    expect(screen.getByTestId('register-email').props.editable).toBe(false);
+    expect(screen.getByTestId('register-email').props.value).toBe('');
+    expect(screen.getByTestId('register-email').props.editable).not.toBe(false);
+    expect(screen.queryByTestId('register-invitation-notice')).toBeNull();
+    expect(screen.queryByTestId('register-invitation-name')).toBeNull();
+
+    const calls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));
+    expect(calls.filter((url) => url.includes('good-token'))).toEqual([]);
+    expect(calls.filter((url) => url.includes('/participant-invitations'))).toEqual([]);
   });
 });

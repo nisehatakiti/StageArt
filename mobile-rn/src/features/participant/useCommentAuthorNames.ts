@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { isActivePersonParticipant } from './participantGuards';
 
 /**
  * Author names for a Production's comments, by Person id - the same rule
@@ -21,7 +22,7 @@ export function useCommentAuthorNames(productionId: string | undefined): Map<str
   return useMemo(() => {
     const map = new Map<string, string>();
     for (const participant of participantsQuery.data ?? []) {
-      if (participant.subject_type !== 'PERSON' || participant.status !== 'ACTIVE') continue;
+      if (!isActivePersonParticipant(participant)) continue;
       const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
       const name = participant.display_name?.trim() || fullName;
       if (name) map.set(participant.subject_id, name);

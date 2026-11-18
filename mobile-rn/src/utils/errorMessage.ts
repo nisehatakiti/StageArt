@@ -65,6 +65,10 @@ export function getErrorMessage(error: unknown): string {
       const amount = typeof total === 'number' ? `（合計${total.toLocaleString('ja-JP')}円）` : '';
       return `精算済みの額が確定したチケットバックを上回っているメンバーがいるため${amount}、決算を完了できません。精算画面で該当メンバーの精算を取り消し、確定額で精算し直してください。`;
     }
+    const r14b = r14bMessage(error);
+    if (r14b !== null) {
+      return r14b;
+    }
     if (error.statusCode === 401) {
       return '認証が切れました。再度ログインしてください。';
     }
@@ -78,4 +82,107 @@ export function getErrorMessage(error: unknown): string {
   }
 
   return '読み込みに失敗しました。';
+}
+
+/** A server date-time (ISO 8601) as the user's local date and time, or null when absent / unreadable. */
+export function formatServerDateTime(value: unknown): string | null {
+  if (typeof value !== 'string' || value === '') {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString('ja-JP');
+}
+
+/**
+ * PR #7 R14-B (design doc §4-§10): `retry_after` of a 429
+ * stageart_rate_limited, in whole seconds, or null.
+ */
+export function retryAfterSeconds(error: unknown): number | null {
+  if (!(error instanceof ApiError) || error.code !== 'stageart_rate_limited') {
+    return null;
+  }
+  const value = error.data?.retry_after;
+  return typeof value === 'number' && value > 0 ? Math.ceil(value) : null;
+}
+
+function waitText(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}秒`;
+  }
+  return `約${Math.ceil(seconds / 60)}分`;
+}
+
+/**
+ * PR #7 R14-B: the participant / invitation / delegate refusals the
+ * Backend answers by code (status codes as the Backend sends them - e.g.
+ * not_pending is 409 for cancel and 422 for resend; both read the same).
+ * Texts given in the design doc §10 are used verbatim. Null for any other
+ * error, which keeps its existing message.
+ */
+function r14bMessage(error: ApiError): string | null {
+  switch (error.code) {
+    // §9.2: 429 with retry_after (seconds to the end of the window).
+    case 'stageart_rate_limited': {
+      const seconds = retryAfterSeconds(error);
+      return seconds !== null
+        ? `操作の回数が上限に達しました。${waitText(seconds)}後にもう一度お試しください。`
+        : '操作の回数が上限に達しました。しばらくしてからもう一度お試しください。';
+    }
+    // §6.7: the managers are only told the server is not set up.
+    case 'stageart_email_key_not_configured':
+      return 'サーバーの設定が不足しています。';
+    // §10: the send limits.
+    case 'stageart_participant_invitation_send_limit': {
+      const availableAt = formatServerDateTime(error.data?.available_at);
+      return `このメールアドレスへの送信は30日間で6回までです。${availableAt ? `${availableAt}以降に送信できます。` : ''}`;
+    }
+    case 'stageart_participant_invitation_resend_limit':
+      return 'この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません。';
+    case 'stageart_participant_invitation_recently_rejected': {
+      const availableAt = formatServerDateTime(error.data?.available_at);
+      return `このメールアドレスへの招待は辞退されたため、${availableAt ? `${availableAt}まで` : 'しばらくの間'}再び招待できません。`;
+    }
+    case 'stageart_participant_invitation_production_closed':
+      return 'この公演は終了または中止されているため、招待・再送はできません。';
+    case 'stageart_participant_invitation_inviter_revoked':
+      return '招待した管理者の権限がなくなっているため、この招待は再送できません。取り消して、改めて招待してください。';
+    case 'stageart_participant_invitation_not_pending':
+      return 'この招待は既に承諾・辞退・取消などで処理済みのため、この操作はできません。';
+    case 'stageart_participant_invitation_access_denied':
+      return '招待の操作は、PrimaryManagerまたは参加者管理の権限を持つ担当者のみ行えます。';
+    case 'stageart_participant_invitation_invalid':
+      return '氏名・メールアドレス・役割を正しく入力してください。';
+    // §7.2: the invitee's accept / reject.
+    case 'stageart_participant_invitation_forbidden':
+      return 'このアカウントでは招待に回答できません。メールアドレスの確認が済んでいるかご確認ください。';
+    case 'stageart_participant_invitation_not_found':
+      return 'この招待は見つかりません。招待一覧から確認してください。';
+    case 'stageart_participant_invitation_expired':
+      return 'この招待は有効期限が切れています。';
+    case 'stageart_participant_invitation_closed':
+      return 'この招待は現在承諾できません（公演の終了、または招待した管理者の権限がなくなったため）。';
+    case 'stageart_participant_draft_exists':
+      return 'この公演での参加の情報に確認が必要なため、承諾できません。公演の管理者に問い合わせてください。';
+    // §7.1 / §7.2: participants.
+    case 'stageart_participant_type_conflict':
+      return 'この人は、変更先の区分で既にこの公演に登録されています。';
+    case 'stageart_participant_cancel_not_allowed':
+      return 'この状態のメンバーは削除できません。参加申請は「却下」を使ってください。';
+    case 'stageart_participant_requires_invitation':
+      return 'StageArtのアカウントを持つ方は、招待して本人に承諾してもらう必要があります。';
+    case 'stageart_participant_status_change_not_allowed':
+    case 'stageart_participant_status_requires_consent':
+      return 'この状態の変更はできません。';
+    case 'stageart_participant_withdraw_primary_manager':
+      return '公演の管理者（PrimaryManager）は参加をやめられません。先に管理者を引き継いでください。';
+    case 'stageart_participant_withdraw_not_allowed':
+      return '現在参加中ではないため、参加をやめる操作はできません。';
+    // §4.6: delegate appointment.
+    case 'stageart_production_delegate_target_not_participant':
+      return 'この方はこの公演のメンバーではないため、担当者にできません。招待して、承諾後に改めて任命してください。';
+    case 'stageart_production_delegate_target_not_consented':
+      return 'この方は同意が確認できていないため、担当者にできません。メンバー管理から「同意の確認を依頼」してください。';
+    default:
+      return null;
+  }
 }

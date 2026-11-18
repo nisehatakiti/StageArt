@@ -9,29 +9,17 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt 招待登録のメール確認省略ラウンド: completing registration via a
- * valid invitation link's token forwards that token to
- * POST /auth/email/register, and the Backend's resulting GET /me already
- * reports email_verified: true for that account (see
- * RegisterWithEmailUseCase's own docblock - the invitation link itself
- * already proved the address is reachable) - so this must land straight
- * on /set-name (a session is already established), never on
- * registration-pending.tsx's "確認メールを送信しました".
+ * PR #7 R14-B (design doc §7.1 「POST /auth/email/register の
+ * invitation_token」, §10, §14.2; rewritten for the spec change - previously
+ * a registration from an invitation link forwarded the token and skipped
+ * the mail confirmation): registering after opening an old invitation link
+ * is an ordinary registration. No invitation_token is sent, the address is
+ * the one the person typed, and the usual confirmation mail step follows
+ * (registration-pending) - nobody becomes a member by registering.
  */
-describe('register screen: invitation-sourced registration skips email verification', () => {
-  it('forwards the invitation token and lands on /set-name instead of registration-pending', async () => {
+describe('register screen: registration from an old invitation link', () => {
+  it('sends no invitation token and goes to the ordinary mail confirmation', async () => {
     mockFetchRoutes([
-      {
-        test: (u) => u.includes('/participant-invitations/resolve') && u.includes('token=good-token'),
-        status: 200,
-        body: {
-          production_name: '踊れチュパカブラ',
-          email: 'invitee@example.com',
-          name: '山田 花子',
-          participant_type: 'CAST',
-          status: 'PENDING',
-        },
-      },
       {
         test: (u) => u.endsWith('/auth/email/register'),
         status: 201,
@@ -48,29 +36,28 @@ describe('register screen: invitation-sourced registration skips email verificat
       {
         test: (u) => u.endsWith('/me'),
         status: 200,
-        body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: null, given_name: null },
+        body: { id: 'person-1', word_press_user_id: 1, email_verified: false, family_name: null, given_name: null },
       },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/register?token=good-token' });
+    const router = renderRouter('src/app', { initialUrl: '/register?token=good-token' });
 
-    await waitFor(() => expect(screen.getByTestId('register-email').props.value).toBe('invitee@example.com'));
+    await waitFor(() => expect(screen.getByTestId('register-email')).toBeVisible());
+    await waitFor(() => expect(router.getSearchParams()).toEqual({}));
+    expect(screen.getByTestId('register-email').props.value).toBe('');
 
-    // §7/AC: the email field is fixed once a valid invitation preview
-    // loaded - it cannot be changed to something other than the invited
-    // address.
-    expect(screen.getByTestId('register-email').props.editable).toBe(false);
+    await fireEvent.changeText(screen.getByTestId('register-email'), 'invitee@example.com');
+    await fireEvent.changeText(screen.getByTestId('register-password'), 'password123');
+    await fireEvent.press(screen.getByTestId('register-submit'));
 
-    fireEvent.changeText(screen.getByTestId('register-password'), 'password123');
-    fireEvent.press(screen.getByTestId('register-submit'));
-
-    await waitFor(() => expect(screen.getByTestId('set-name-submit')).toBeVisible());
-    expect(screen.queryByTestId('registration-pending-resend')).toBeNull();
+    await waitFor(() => expect(router.getPathname()).toBe('/registration-pending'));
 
     const registerCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/auth/email/register'));
     expect(registerCall).toBeDefined();
     const body = JSON.parse(registerCall![1].body as string);
-    expect(body.email).toBe('invitee@example.com');
-    expect(body.invitation_token).toBe('good-token');
+    // The typed address itself is not asserted: this harness does not reflect typing on this
+    // screen (register-flow.test.tsx does not assert it either). The empty initial address is
+    // checked in register-invitation-token-valid.test.tsx.
+    expect(body).not.toHaveProperty('invitation_token');
   });
 });

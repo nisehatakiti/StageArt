@@ -1,11 +1,11 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
+import { isActivePersonParticipant, type ActivePersonParticipant } from '@/features/participant/participantGuards';
 import { useParticipants } from '@/features/participant/useParticipant';
 import { useProduction } from '@/features/production/useProductions';
 import {
@@ -14,7 +14,7 @@ import {
   useProductionDelegates,
   useUpdateProductionDelegate,
 } from '@/features/productionDelegate/useProductionDelegate';
-import type { Participant, ProductionDelegate } from '@/types/api';
+import type { DelegateIneffectiveReason, ProductionDelegate } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -44,6 +44,23 @@ const ROLES = [
 ] as const;
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
+
+/**
+ * PR #7 R14-B (design doc §4.6 / §10): why a delegate row grants nothing -
+ * from the Backend's ineffective_reason - and what to do next. The
+ * actions (同意の確認を依頼 / 招待) are on the member management screen
+ * (confirmed by the user before stage 9).
+ */
+const INEFFECTIVE_REASON_TEXT: Record<DelegateIneffectiveReason, string> = {
+  CONSENT_UNCONFIRMED: '同意未確認のため無効です。本人に同意の確認を依頼してください',
+  NOT_ACTIVE_PARTICIPANT: 'この公演のメンバーではないため無効です。招待して、承諾後に改めて任命してください',
+  INACTIVE: '解除済み',
+};
+
+function candidateLabel(participant: ActivePersonParticipant): string {
+  const name = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+  return participant.display_name?.trim() || name || '氏名未設定';
+}
 
 function personLabel(delegate: ProductionDelegate): string {
   const name = [delegate.person_family_name, delegate.person_given_name].filter(Boolean).join(' ');
@@ -76,6 +93,7 @@ function personLabel(delegate: ProductionDelegate): string {
  */
 export default function ProductionDelegatesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const productionQuery = useProduction(id);
   const production = productionQuery.data;
   const isPrimaryManager = !!production?.is_primary_manager;
@@ -92,9 +110,10 @@ export default function ProductionDelegatesScreen() {
   const [rowErrorMessage, setRowErrorMessage] = useState<Record<string, string>>({});
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-  const personCandidates: Participant[] = (participantsQuery.data ?? []).filter(
-    (participant) => participant.subject_type === 'PERSON' && participant.status === 'ACTIVE'
-  );
+  // R14-B §4.6: only an ACTIVE PERSON member whose consent is confirmed can be appointed.
+  const personCandidates: ActivePersonParticipant[] = (participantsQuery.data ?? [])
+    .filter(isActivePersonParticipant)
+    .filter((participant) => participant.consent_status === 'CONFIRMED');
 
   async function handleAdd() {
     setAddErrorMessage(null);
@@ -110,7 +129,7 @@ export default function ProductionDelegatesScreen() {
       if (error instanceof ApiError && error.code === 'stageart_production_delegate_already_exists') {
         setAddErrorMessage('この方は、選択したRoleで既に担当者として登録されています。');
       } else if (error instanceof ApiError && error.code === 'stageart_production_delegate_target_not_eligible') {
-        setAddErrorMessage('指定されたPersonが見つかりません。Person IDをご確認ください。');
+        setAddErrorMessage('指定された方が見つかりません。');
       } else if (error instanceof ApiError && error.statusCode === 403) {
         setAddErrorMessage('担当者の設定はPrimaryManagerのみ行えます。');
       } else {
@@ -173,6 +192,100 @@ export default function ProductionDelegatesScreen() {
   }
 
   const delegates = delegatesQuery.data ?? [];
+  const effectiveDelegates = delegates.filter((delegate) => delegate.effective);
+  const ineffectiveDelegates = delegates.filter((delegate) => !delegate.effective);
+
+  const renderDelegate = (delegate: ProductionDelegate) => (
+        <View key={delegate.id} style={styles.card} testID={`production-delegate-row-${delegate.id}`}>
+          <View style={styles.cardHeader}>
+            <ThemedText type="smallBold">{personLabel(delegate)}</ThemedText>
+            <TouchableOpacity
+              testID={`production-delegate-status-${delegate.id}`}
+              onPress={() => handleToggleStatus(delegate)}
+              disabled={updateDelegate.isPending}
+              style={[styles.statusPill, delegate.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive]}
+            >
+              <ThemedText type="small" style={styles.statusPillText}>
+                {delegate.status === 'ACTIVE' ? '有効' : '無効'}
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+          {!delegate.effective && delegate.ineffective_reason && (
+            <View style={styles.reasonBox} testID={`production-delegate-reason-${delegate.id}`}>
+              <ThemedText type="small">{INEFFECTIVE_REASON_TEXT[delegate.ineffective_reason] ?? delegate.ineffective_reason}</ThemedText>
+              {delegate.ineffective_reason !== 'INACTIVE' && (
+                <TouchableOpacity
+                  testID={`production-delegate-to-members-${delegate.id}`}
+                  onPress={() => router.push(`/productions/${id}/participants`)}
+                >
+                  <ThemedText type="link">メンバー管理を開く</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          <ThemedText type="small" themeColor="textSecondary">
+            役割
+          </ThemedText>
+          <View style={styles.roleGrid}>
+            {ROLES.map((role) => (
+              <TouchableOpacity
+                key={role}
+                testID={`production-delegate-role-${delegate.id}-${role}`}
+                onPress={() => handleChangeRole(delegate, role)}
+                disabled={updateDelegate.isPending}
+                style={[styles.roleButton, delegate.role === role && styles.roleButtonActive]}
+              >
+                <ThemedText type="small" style={delegate.role === role ? styles.roleButtonTextActive : undefined}>
+                  {ROLE_LABEL[role] ?? role}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {rowErrorMessage[delegate.id] ? (
+            <ThemedText testID={`production-delegate-error-${delegate.id}`} style={styles.error}>
+              {rowErrorMessage[delegate.id]}
+            </ThemedText>
+          ) : null}
+
+          {confirmingDeleteId === delegate.id ? (
+            <View style={styles.confirmRow} testID={`production-delegate-confirm-${delegate.id}`}>
+              <ThemedText type="small">この担当者の役割を解除しますか？</ThemedText>
+              <View style={styles.confirmButtons}>
+                <TouchableOpacity
+                  testID={`production-delegate-confirm-remove-${delegate.id}`}
+                  onPress={() => handleRemove(delegate)}
+                  disabled={deleteDelegate.isPending}
+                  style={styles.destructiveButton}
+                >
+                  {deleteDelegate.isPending ? (
+                    <ActivityIndicator size="small" />
+                  ) : (
+                    <ThemedText style={styles.destructiveButtonText}>解除する</ThemedText>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID={`production-delegate-cancel-remove-${delegate.id}`}
+                  onPress={() => setConfirmingDeleteId(null)}
+                >
+                  <ThemedText type="link">キャンセル</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              testID={`production-delegate-remove-${delegate.id}`}
+              onPress={() => setConfirmingDeleteId(delegate.id)}
+              style={styles.removeLink}
+            >
+              <ThemedText type="small" style={styles.destructiveText}>
+                担当を解除する
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+  );
 
   return (
     <>
@@ -197,86 +310,29 @@ export default function ProductionDelegatesScreen() {
         </ThemedText>
       )}
 
+      {/* R14-B §4.6 / §10: effective and ineffective delegates are listed apart. */}
       {delegates.length > 0 && (
-        <View style={styles.list} testID="production-delegates-list">
-          {delegates.map((delegate) => (
-            <View key={delegate.id} style={styles.card} testID={`production-delegate-row-${delegate.id}`}>
-              <View style={styles.cardHeader}>
-                <ThemedText type="smallBold">{personLabel(delegate)}</ThemedText>
-                <TouchableOpacity
-                  testID={`production-delegate-status-${delegate.id}`}
-                  onPress={() => handleToggleStatus(delegate)}
-                  disabled={updateDelegate.isPending}
-                  style={[styles.statusPill, delegate.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive]}
-                >
-                  <ThemedText type="small" style={styles.statusPillText}>
-                    {delegate.status === 'ACTIVE' ? '有効' : '無効'}
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
-
-              <ThemedText type="small" themeColor="textSecondary">
-                役割
+        <View testID="production-delegates-list">
+          {effectiveDelegates.length > 0 && (
+            <>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>
+                有効な担当者
               </ThemedText>
-              <View style={styles.roleGrid}>
-                {ROLES.map((role) => (
-                  <TouchableOpacity
-                    key={role}
-                    testID={`production-delegate-role-${delegate.id}-${role}`}
-                    onPress={() => handleChangeRole(delegate, role)}
-                    disabled={updateDelegate.isPending}
-                    style={[styles.roleButton, delegate.role === role && styles.roleButtonActive]}
-                  >
-                    <ThemedText type="small" style={delegate.role === role ? styles.roleButtonTextActive : undefined}>
-                      {ROLE_LABEL[role] ?? role}
-                    </ThemedText>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.list} testID="production-delegates-effective">
+                {effectiveDelegates.map((delegate) => renderDelegate(delegate))}
               </View>
-
-              {rowErrorMessage[delegate.id] ? (
-                <ThemedText testID={`production-delegate-error-${delegate.id}`} style={styles.error}>
-                  {rowErrorMessage[delegate.id]}
-                </ThemedText>
-              ) : null}
-
-              {confirmingDeleteId === delegate.id ? (
-                <View style={styles.confirmRow} testID={`production-delegate-confirm-${delegate.id}`}>
-                  <ThemedText type="small">この担当者の役割を解除しますか？</ThemedText>
-                  <View style={styles.confirmButtons}>
-                    <TouchableOpacity
-                      testID={`production-delegate-confirm-remove-${delegate.id}`}
-                      onPress={() => handleRemove(delegate)}
-                      disabled={deleteDelegate.isPending}
-                      style={styles.destructiveButton}
-                    >
-                      {deleteDelegate.isPending ? (
-                        <ActivityIndicator size="small" />
-                      ) : (
-                        <ThemedText style={styles.destructiveButtonText}>解除する</ThemedText>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID={`production-delegate-cancel-remove-${delegate.id}`}
-                      onPress={() => setConfirmingDeleteId(null)}
-                    >
-                      <ThemedText type="link">キャンセル</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  testID={`production-delegate-remove-${delegate.id}`}
-                  onPress={() => setConfirmingDeleteId(delegate.id)}
-                  style={styles.removeLink}
-                >
-                  <ThemedText type="small" style={styles.destructiveText}>
-                    担当を解除する
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+            </>
+          )}
+          {ineffectiveDelegates.length > 0 && (
+            <>
+              <ThemedText type="subtitle" style={styles.sectionTitle}>
+                無効な担当者
+              </ThemedText>
+              <View style={styles.list} testID="production-delegates-ineffective">
+                {ineffectiveDelegates.map((delegate) => renderDelegate(delegate))}
+              </View>
+            </>
+          )}
         </View>
       )}
 
@@ -296,11 +352,7 @@ export default function ProductionDelegatesScreen() {
               style={[styles.candidateCard, targetPersonId === participant.subject_id && styles.candidateCardSelected]}
             >
               <ThemedText type="small">
-                参加者（{PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type}）・
-                表示名は現在取得できません
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                ID: {participant.subject_id}
+                {candidateLabel(participant)}（{PARTICIPANT_TYPE_LABEL[participant.participant_type] ?? participant.participant_type}）
               </ThemedText>
             </TouchableOpacity>
           ))}
@@ -308,20 +360,9 @@ export default function ProductionDelegatesScreen() {
       )}
       {!participantsQuery.isLoading && personCandidates.length === 0 && (
         <ThemedText testID="production-delegates-candidates-empty" type="small" themeColor="textSecondary">
-          この公演にはまだ、担当者候補となる参加者（StageArtアカウントを持つ方）がいません。下のPerson IDを直接入力してください。
+          担当者にできるのは、同意が確認できているこの公演のメンバーだけです。該当するメンバーはまだいません。
         </ThemedText>
       )}
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
-        Person IDを直接入力（担当者候補一覧に見つからない場合）
-      </ThemedText>
-      <ThemedTextInput
-        testID="production-delegates-new-person-id"
-        value={targetPersonId}
-        onChangeText={setTargetPersonId}
-        placeholder="Person ID"
-        style={styles.input}
-      />
 
       <ThemedText type="small" themeColor="textSecondary">
         役割
@@ -415,6 +456,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   error: { color: '#a6483a', marginTop: Spacing.one },
+  reasonBox: { backgroundColor: '#F7F3EC', borderRadius: Radius.medium, padding: Spacing.two, gap: Spacing.one },
   button: {
     backgroundColor: BrandColors.warmAmber,
     borderRadius: Radius.medium,
