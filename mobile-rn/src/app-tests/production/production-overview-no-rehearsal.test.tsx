@@ -23,6 +23,8 @@ describe('公演概要ダッシュボード', () => {
       { test: (u) => u.endsWith('/productions/prod-1/overview'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: { upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] } },
       { test: (u) => u.endsWith('/me/participating-productions'), status: 200, body: [] },
+      // R14-B stage 9: the overview asks for the person's own delegate roles (none here).
+      { test: (u) => u.endsWith('/productions/prod-1/delegates/me'), status: 200, body: [] },
     ]);
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/overview' });

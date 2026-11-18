@@ -10,6 +10,8 @@ import { buildUpcomingRehearsalViewModel } from '@/features/dashboard/viewModel'
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyParticipatingProductions } from '@/features/participant/useParticipant';
 import { useProductionOverview } from '@/features/production/useProductions';
+import { useMyProductionDelegateRoles } from '@/features/productionDelegate/useProductionDelegate';
+import type { DelegateIneffectiveReason } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAFF: 'スタッフ' };
@@ -35,6 +37,12 @@ const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAF
  * - 参加者本人に関係する情報: GET /me/participating-productions を
  *   このProduction IDで絞り込み（既存API再利用、新規APIなし）
  */
+/** R14-B §10 「公演の画面（担当者本人）」: why the person's own role grants nothing. */
+const OWN_ROLE_INEFFECTIVE_TEXT: Record<Exclude<DelegateIneffectiveReason, 'INACTIVE'>, string> = {
+  CONSENT_UNCONFIRMED: 'あなたの担当者の役割は、参加への同意が確認できていないため無効になっています。公演の管理者からの「同意の確認」の招待を承諾すると有効になります。',
+  NOT_ACTIVE_PARTICIPANT: 'あなたの担当者の役割は、この公演のメンバーではないため無効になっています。',
+};
+
 export default function ProductionOverviewScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -42,6 +50,16 @@ export default function ProductionOverviewScreen() {
   const overviewQuery = useProductionOverview(productionId);
   const dashboardQuery = useMyDashboard();
   const myParticipationsQuery = useMyParticipatingProductions();
+  // R14-B stage 9 (GET /productions/{id}/delegates/me): only roles still set
+  // (ACTIVE rows) that grant nothing are explained; a released role is not.
+  const myRolesQuery = useMyProductionDelegateRoles(productionId);
+  const ineffectiveReasons = Array.from(
+    new Set(
+      (myRolesQuery.data ?? [])
+        .map((role) => role.ineffective_reason)
+        .filter((reason): reason is Exclude<DelegateIneffectiveReason, 'INACTIVE'> => reason === 'CONSENT_UNCONFIRMED' || reason === 'NOT_ACTIVE_PARTICIPANT')
+    )
+  );
 
   const upcomingRehearsals = useMemo(() => {
     if (!dashboardQuery.data) {
@@ -96,6 +114,16 @@ export default function ProductionOverviewScreen() {
               <ThemedText type="smallBold" testID="production-overview-my-participant-type">
                 {PARTICIPANT_TYPE_LABEL[myParticipation.participant_type] ?? myParticipation.participant_type}
               </ThemedText>
+            </ThemedView>
+          )}
+
+          {ineffectiveReasons.length > 0 && (
+            <ThemedView style={styles.section} testID="production-overview-own-role-ineffective">
+              {ineffectiveReasons.map((reason) => (
+                <ThemedText key={reason} type="small" testID={`production-overview-own-role-${reason}`}>
+                  {OWN_ROLE_INEFFECTIVE_TEXT[reason]}
+                </ThemedText>
+              ))}
             </ThemedView>
           )}
 

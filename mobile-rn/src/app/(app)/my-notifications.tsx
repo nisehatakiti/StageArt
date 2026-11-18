@@ -26,6 +26,18 @@ import type { MyNotification } from '@/types/api';
  * neither stays on this screen - the existing "お知らせ履歴" list itself
  * already is that notification's history destination.
  */
+/**
+ * PR #7 R14-B (design doc §10 / §11.1): the notices about an invitation
+ * being accepted, declined or closed, and about a member leaving, open the
+ * Production's member management.
+ */
+const MEMBER_MANAGEMENT_NOTIFICATION_TYPES = new Set([
+  'participant_invitation_accepted',
+  'participant_invitation_rejected',
+  'participant_invitation_closed',
+  'participant_withdrawn',
+]);
+
 export default function MyNotificationsScreen() {
   const router = useRouter();
   const notificationsQuery = useMyNotifications();
@@ -36,6 +48,8 @@ export default function MyNotificationsScreen() {
     function navigateIfTargeted() {
       if (item.rehearsal_id && item.production_id) {
         router.push(`/production/${item.production_id}/schedule/attendance/${item.rehearsal_id}`);
+      } else if (item.production_id && MEMBER_MANAGEMENT_NOTIFICATION_TYPES.has(item.type)) {
+        router.push(`/productions/${item.production_id}/participants`);
       }
     }
 

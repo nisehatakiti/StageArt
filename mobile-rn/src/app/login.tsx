@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
 import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 
@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { safeReturnTo } from '@/utils/returnTo';
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -133,6 +134,9 @@ function useGoogleSigninButtonComponent(): GoogleSigninButtonComponent | null {
 function LoginScreen() {
   const { loginWithEmail, loginWithGoogle } = useAuth();
   const router = useRouter();
+  // R14-B §10 (R13 Medium): only an in-app path is followed; anything else is ignored.
+  const { return_to: returnToParam } = useLocalSearchParams<{ return_to?: string }>();
+  const returnTo = safeReturnTo(returnToParam);
   const GoogleIcon = useGoogleSigninButtonComponent();
 
   const [email, setEmail] = useState('');
@@ -161,7 +165,7 @@ function LoginScreen() {
       return;
     }
 
-    router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+    router.replace(result.hasName && returnTo ? returnTo : resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
   }
 
   /**
@@ -183,7 +187,7 @@ function LoginScreen() {
         return;
       }
 
-      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+      router.replace(result.hasName && returnTo ? returnTo : resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
     } catch (error) {
       const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
       Alert.alert('Googleサインイン診断', message);

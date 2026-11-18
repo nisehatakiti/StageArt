@@ -33,6 +33,8 @@ describe('公演概要ダッシュボード', () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/productions/prod-1/overview'), status: 200, body: overviewProduction },
+      // R14-B stage 9: the overview asks for the person's own delegate roles (none here).
+      { test: (u) => u.endsWith('/productions/prod-1/delegates/me'), status: 200, body: [] },
       {
         test: (u) => u.endsWith('/me/dashboard'),
         status: 200,
