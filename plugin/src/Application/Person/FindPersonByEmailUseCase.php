@@ -36,10 +36,11 @@ use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
  * round.
  *
  * Deliberately takes no requester/Production - this is a pure Domain
- * search with no authorization concept of its own. Both call sites
- * (SearchPersonByEmailUseCase for the REST endpoint,
- * CreateParticipantInvitationUseCase internally) are responsible for
- * checking authorization themselves before calling this.
+ * search with no authorization concept of its own. Its call sites
+ * (InvitationRecipientVerifier, CreateOrganizationInvitationUseCase) are
+ * responsible for checking authorization themselves before calling this.
+ * Internal only (R14-B §13): since stage 5 no REST endpoint exposes its
+ * result - the `/people` routes and SearchPersonByEmailUseCase are gone.
  */
 final class FindPersonByEmailUseCase
 {

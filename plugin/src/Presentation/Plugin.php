@@ -128,8 +128,6 @@ use StageArt\Application\Notification\MarkNotificationReadUseCase;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
-use StageArt\Application\Person\GetPersonByIdUseCase;
-use StageArt\Application\Person\SearchPersonByEmailUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
@@ -232,7 +230,6 @@ use StageArt\Presentation\Rest\MeRestController;
 use StageArt\Presentation\Rest\OrganizationExternalLinkRestController;
 use StageArt\Presentation\Rest\OrganizationInvitationRestController;
 use StageArt\Presentation\Rest\OrganizationSNSRestController;
-use StageArt\Presentation\Rest\PersonRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
@@ -636,7 +633,6 @@ final class Plugin
         $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver, $participantDelegateRoles, $participantEventRecorder, $transactions);
         $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization, $participantDelegateRoles, $participantEventRecorder, $transactions);
 
-        $searchPersonByEmail = new SearchPersonByEmailUseCase($productions, $productionAuthorization, $findPersonByEmail);
         // Its own constant, deliberately separate from
         // $emailVerificationBaseUrl above: that one points at the static
         // email-confirmation page (STAGEART_EMAIL_VERIFICATION_BASE_URL,
@@ -854,7 +850,6 @@ final class Plugin
         $updatePushPreference = new UpdatePushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
         $updatePersonName = new UpdatePersonNameUseCase($people);
-        $getPersonById = new GetPersonByIdUseCase($authorization, $people);
 
         // StageArt Core/Module Architecture Phase 3 (continued):
         // Accounting Module's entire own wiring (UseCase construction +
@@ -1062,8 +1057,6 @@ final class Plugin
 
         $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows, $listMyParticipatingProductions);
 
-        $personRestController = new PersonRestController($getPersonById, $searchPersonByEmail);
-
         // PR #7 R14-B stage 4: the invitee answers explicitly (the stage-3
         // accept / reject / own-list UseCases), now that registration no
         // longer resolves Production invitations.
@@ -1159,7 +1152,6 @@ final class Plugin
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
         add_action('rest_api_init', [$notificationEmailRestController, 'register_routes']);
         add_action('rest_api_init', [$meRestController, 'register_routes']);
-        add_action('rest_api_init', [$personRestController, 'register_routes']);
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
         add_action('rest_api_init', [$favoriteRestController, 'register_routes']);
