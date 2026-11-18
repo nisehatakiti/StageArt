@@ -57,7 +57,7 @@ final class R14bStage4RestControllerTest extends TestCase
 
         $this->invitations = new ParticipantInvitationRestController(
             $f->createInvitation(),
-            new ListParticipantInvitationsUseCase($f->invitations, $f->productions, $f->authorization),
+            $f->listInvitations(),
             $f->resendInvitation(),
             $f->cancelInvitation(),
             $f->accept(),
@@ -292,6 +292,31 @@ final class R14bStage4RestControllerTest extends TestCase
         $other = $this->f->invitation('jiro@example.com');
         $GLOBALS['stageart_test_wp']['current_user'] = $this->f->person('outsider@example.com')->wordPressUserId();
         $this->assertSame([403, 'stageart_participant_invitation_access_denied'], array_slice($cancel($other->id()->toString()), 0, 2));
+    }
+
+    /** R14B-4R (§7.1): the managers' list answers the added fields next to the existing ones. */
+    public function test_the_managers_list_answers_the_section_7_1_fields(): void
+    {
+        $this->invite();
+        $cancelled = $this->f->invitation('hanako@example.com');
+        $cancelled->close(\StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason::manager(), $this->f->primaryManager->id());
+        $this->f->invitations->save($cancelled);
+        $list = fn (string $productionId) => self::answer($this->invitations->list(new WP_REST_Request(['id' => $productionId])));
+
+        [$status, , $data] = $list($this->f->production->id()->toString());
+        $this->assertSame(200, $status);
+        $rows = array_column($data, null, 'email');
+        $sent = $rows['taro@example.com'];
+        $this->assertSame(['PENDING', 'PENDING', 'SENT', 0, 5], [$sent['status'], $sent['effective_status'], $sent['send_status'], $sent['resend_count'], $sent['resend_remaining']]);
+        $this->assertSame(['sent_in_30_days' => 1, 'remaining_in_30_days' => 5, 'available_at' => null], $sent['send_limit']);
+        $this->assertNotNull($sent['last_sent_at']);
+        $this->assertNull($sent['reinvite_available_at']);
+        $this->assertSame(['CANCELLED', 'MANAGER', null], [$rows['hanako@example.com']['effective_status'], $rows['hanako@example.com']['close_reason'], $rows['hanako@example.com']['send_status']]);
+        $this->assertNotNull($rows['hanako@example.com']['closed_at']);
+
+        $this->assertSame([404, 'stageart_production_not_found'], array_slice($list(\StageArt\Domain\Production\ProductionId::generate()->toString()), 0, 2));
+        $GLOBALS['stageart_test_wp']['current_user'] = $this->f->person('outsider@example.com')->wordPressUserId();
+        $this->assertSame([403, 'stageart_participant_invitation_access_denied'], array_slice($list($this->f->production->id()->toString()), 0, 2));
     }
 
     // --- 500 -----------------------------------------------------------------

@@ -103,8 +103,9 @@ final class ParticipantInvitationUseCaseTest extends TestCase
 
         // R14-B stage 4: invitations are counted, recorded and sent by InvitationSendService.
         $conditions = new ParticipantInvitationConditions($this->productionAuthorization, $this->people);
+        $sends = new InMemoryParticipantInvitationSendRepository();
         $sendService = new InvitationSendService(
-            new InMemoryParticipantInvitationSendRepository(),
+            $sends,
             $this->invitations,
             new WordPressConfigEmailKeyring(['v1' => str_repeat('k', 32)], 'v1', false),
             $this->mailer,
@@ -138,7 +139,10 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $this->listParticipantInvitations = new ListParticipantInvitationsUseCase(
             $this->invitations,
             $this->productions,
-            $this->productionAuthorization
+            $this->productionAuthorization,
+            $conditions,
+            $sendService,
+            $sends
         );
     }
 
@@ -472,8 +476,9 @@ final class ParticipantInvitationUseCaseTest extends TestCase
         $results = $this->listParticipantInvitations->execute(new ListParticipantInvitationsQuery($production->id()->toString(), 1));
 
         $this->assertCount(1, $results);
-        $this->assertSame('invitee@example.com', $results[0]->email);
-        $this->assertSame('山田 花子', $results[0]->invitedName);
+        // R14B-4R: the existing fields now sit in ManagedParticipantInvitationResult::$invitation (same values).
+        $this->assertSame('invitee@example.com', $results[0]->invitation->email);
+        $this->assertSame('山田 花子', $results[0]->invitation->invitedName);
     }
 
     public function test_list_by_someone_without_permission_is_denied(): void

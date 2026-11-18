@@ -25,6 +25,7 @@ use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCas
 use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientVerifier;
 use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
 use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
@@ -448,6 +449,12 @@ final class ParticipantConsentFixture
     public function cancelInvitation(): CancelParticipantInvitationUseCase
     {
         return new CancelParticipantInvitationUseCase($this->invitations, $this->productions, $this->authorization, $this->events, $this->transactions);
+    }
+
+    /** R14B-4R: the managers' invitation list over the same stores (keyring as set at call time). */
+    public function listInvitations(): ListParticipantInvitationsUseCase
+    {
+        return new ListParticipantInvitationsUseCase($this->invitations, $this->productions, $this->authorization, $this->conditions(), $this->sendService(), $this->sends);
     }
 
     /** R14-B stage 4: PUT / DELETE /participants/{id} over the same stores. */

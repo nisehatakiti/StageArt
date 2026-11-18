@@ -49,7 +49,8 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  */
 final class CreateParticipantInvitationUseCase
 {
-    private const REJECTION_BLOCK = 'P30D';
+    /** D6: no new invitation to the same Production + address for 30 days after a rejection (also the list's reinvite_available_at). */
+    public const REJECTION_BLOCK = 'P30D';
 
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;

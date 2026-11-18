@@ -654,8 +654,9 @@ final class Plugin
         // uses the STAGEART_EMAIL_KEYS / STAGEART_EMAIL_KEY_CURRENT keyring
         // from wp-config.php (missing -> create / resend refused, 500).
         $participantInvitationConditions = new ParticipantInvitationConditions($productionAuthorization, $people);
+        $participantInvitationSends = new WordPressParticipantInvitationSendRepository($wpdb);
         $invitationSendService = new InvitationSendService(
-            new WordPressParticipantInvitationSendRepository($wpdb),
+            $participantInvitationSends,
             $participantInvitations,
             new WordPressConfigEmailKeyring(),
             $participantInvitationMailer,
@@ -679,7 +680,15 @@ final class Plugin
             $invitationSendService,
             $transactions
         );
-        $listParticipantInvitations = new ListParticipantInvitationsUseCase($participantInvitations, $productions, $productionAuthorization);
+        // R14B-4R (§7.1): the managers' list adds effective_status and the send status / limits.
+        $listParticipantInvitations = new ListParticipantInvitationsUseCase(
+            $participantInvitations,
+            $productions,
+            $productionAuthorization,
+            $participantInvitationConditions,
+            $invitationSendService,
+            $participantInvitationSends
+        );
         $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization, $participantEventRecorder, $transactions);
 
         // StageArt 団体管理UI整理 "メンバーを追加": mirrors
