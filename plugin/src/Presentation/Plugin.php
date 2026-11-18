@@ -120,6 +120,7 @@ use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DelegateAppointmentGuard;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
+use StageArt\Application\ProductionDelegate\ListMyProductionDelegateRolesUseCase;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateUseCase;
 use StageArt\Application\Project\ArchiveProjectUseCase;
 use StageArt\Application\Project\CreateProjectUseCase;
@@ -1027,7 +1028,9 @@ final class Plugin
             $createProductionDelegate,
             $listProductionDelegates,
             $updateProductionDelegate,
-            $deleteProductionDelegate
+            $deleteProductionDelegate,
+            // PR #7 R14-B stage 9 (§10): GET /productions/{id}/delegates/me.
+            new ListMyProductionDelegateRolesUseCase($productionDelegates, $productions, $productionAuthorization)
         );
 
         // PR #7 R14-B stage 7 (§7.2, D9): the Person withdraws themselves -

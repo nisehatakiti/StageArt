@@ -11,6 +11,7 @@ use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateCommand;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesQuery;
+use StageArt\Application\ProductionDelegate\ListMyProductionDelegateRolesUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
 use StageArt\Application\ProductionDelegate\ProductionDelegateAccessDeniedException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateAlreadyExistsException;
@@ -32,13 +33,16 @@ final class ProductionDelegateRestController
     private ListProductionDelegatesUseCase $listDelegates;
     private UpdateProductionDelegateUseCase $updateDelegate;
     private DeleteProductionDelegateUseCase $deleteDelegate;
+    private ?ListMyProductionDelegateRolesUseCase $listMyRoles;
 
     public function __construct(
         CreateProductionDelegateUseCase $createDelegate,
         ListProductionDelegatesUseCase $listDelegates,
         UpdateProductionDelegateUseCase $updateDelegate,
-        DeleteProductionDelegateUseCase $deleteDelegate
+        DeleteProductionDelegateUseCase $deleteDelegate,
+        ?ListMyProductionDelegateRolesUseCase $listMyRoles = null
     ) {
+        $this->listMyRoles = $listMyRoles;
         $this->createDelegate = $createDelegate;
         $this->listDelegates = $listDelegates;
         $this->updateDelegate = $updateDelegate;
@@ -60,6 +64,16 @@ final class ProductionDelegateRestController
             ],
         ]);
 
+        // PR #7 R14-B stage 9 (§10, §4.6): the caller's own delegate rows
+        // with effective / ineffective_reason (any logged-in Person; own rows only).
+        register_rest_route(self::API_NAMESPACE, '/productions/(?P<id>[^/]+)/delegates/me', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listMine'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         register_rest_route(self::API_NAMESPACE, '/production-delegates/(?P<id>[^/]+)', [
             [
                 'methods' => 'PUT',
@@ -77,6 +91,30 @@ final class ProductionDelegateRestController
     public function require_login(): bool
     {
         return is_user_logged_in();
+    }
+
+    /**
+     * PR #7 R14-B stage 9: 200 [{id, production_id, role, status, effective,
+     * ineffective_reason}] - the caller's own rows only (empty when none);
+     * 404 for an unknown Production. Cache-Control: no-store
+     * (PersonalResponseCachePolicy covers /productions/{id}/delegates/...).
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listMine(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListProductionDelegatesQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->listMyRoles->execute($query)),
+                200
+            );
+        } catch (ProductionDelegateAccessDeniedException $exception) {
+            return new WP_Error('stageart_production_delegate_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException | InvalidArgumentException $exception) {
+            return new WP_Error('stageart_production_not_found', 'The production was not found.', ['status' => 404]);
+        }
     }
 
     /**
