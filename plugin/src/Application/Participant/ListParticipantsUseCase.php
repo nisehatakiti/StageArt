@@ -68,35 +68,50 @@ final class ListParticipantsUseCase
             );
         }
 
-        $participants = $this->participants->findByProductionId($production->id());
+        // R14-B stage 6 (§7.3, D11 / U3): each row is returned only as far
+        // as ParticipantDisclosurePolicy allows this viewer; a READER does
+        // not get the ended rows at all. A Person's name / email is looked
+        // up only for rows that will show it.
+        $viewerKind = (string) ParticipantDisclosurePolicy::viewerOf($this->authorization, $requester, $production);
 
-        $personIds = array_values(array_unique(array_map(
-            static fn (Participant $participant): string => $participant->subjectId(),
-            array_filter($participants, static fn (Participant $participant): bool => $participant->subjectType()->equals(ParticipantSubjectType::person()))
-        )));
+        /** @var array<int, array{0: Participant, 1: ParticipantDisclosure}> $visible */
+        $visible = [];
+        foreach ($this->participants->findByProductionId($production->id()) as $participant) {
+            $disclosure = ParticipantDisclosurePolicy::disclosureFor($participant, $production, $viewerKind, $requester);
 
-        /** @var array<string, Person> $peopleById */
-        $peopleById = [];
-        foreach ($personIds as $personId) {
-            $person = $this->people->findById(PersonId::fromString($personId));
-            if ($person) {
-                $peopleById[$personId] = $person;
+            if ($disclosure !== null) {
+                $visible[] = [$participant, $disclosure];
             }
         }
 
+        /** @var array<string, ?Person> $peopleById */
+        $peopleById = [];
         /** @var array<string, ?string> $emailsByPersonId */
         $emailsByPersonId = [];
-        foreach ($personIds as $personId) {
-            $emailsByPersonId[$personId] = $this->personEmailResolver->resolve(PersonId::fromString($personId));
+        foreach ($visible as [$participant, $disclosure]) {
+            if (! $participant->subjectType()->equals(ParticipantSubjectType::person())) {
+                continue;
+            }
+
+            $personId = $participant->subjectId();
+
+            if ($disclosure->names && ! array_key_exists($personId, $peopleById)) {
+                $peopleById[$personId] = $this->people->findById(PersonId::fromString($personId));
+            }
+
+            if ($disclosure->email && ! array_key_exists($personId, $emailsByPersonId)) {
+                $emailsByPersonId[$personId] = $this->personEmailResolver->resolve(PersonId::fromString($personId));
+            }
         }
 
         return array_map(
-            fn (Participant $participant): ParticipantResult => ParticipantResult::fromDomain(
-                $participant,
-                $peopleById[$participant->subjectId()] ?? null,
-                $emailsByPersonId[$participant->subjectId()] ?? null
+            static fn (array $row): ParticipantResult => ParticipantResult::disclosed(
+                $row[0],
+                $row[1],
+                $peopleById[$row[0]->subjectId()] ?? null,
+                $emailsByPersonId[$row[0]->subjectId()] ?? null
             ),
-            $participants
+            $visible
         );
     }
 }

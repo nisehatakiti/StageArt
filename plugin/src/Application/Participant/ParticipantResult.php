@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Application\Participant;
 
 use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Person\Person;
 
 /**
@@ -15,13 +16,23 @@ use StageArt\Domain\Person\Person;
  * nullability - a Person who has not completed set-name.tsx yet). Only
  * meaningful when subjectType is PERSON; null for NAME_ONLY/ORGANIZATION
  * subjects (NAME_ONLY already has its own displayName field instead).
+ *
+ * PR #7 R14-B stage 6 (§4.5, §7.1, §7.3): each row also carries
+ * `enrollment_source`, `consent_status` (CONFIRMED / UNCONFIRMED /
+ * NOT_APPLICABLE) and `consented_at`; and what a viewer sees of a row is
+ * cut down by ParticipantDisclosurePolicy - a withheld field is returned
+ * as null (disclosed()).
  */
 final class ParticipantResult
 {
+    public const CONSENT_CONFIRMED = 'CONFIRMED';
+    public const CONSENT_UNCONFIRMED = 'UNCONFIRMED';
+    public const CONSENT_NOT_APPLICABLE = 'NOT_APPLICABLE';
+
     public string $id;
     public string $productionId;
     public string $subjectType;
-    public string $subjectId;
+    public ?string $subjectId;
     public string $participantType;
     public string $status;
     public string $createdAt;
@@ -31,35 +42,28 @@ final class ParticipantResult
     public ?string $personFamilyName;
     public ?string $personGivenName;
     public ?string $email;
+    public ?string $enrollmentSource;
+    public ?string $consentStatus;
+    public ?string $consentedAt;
 
-    private function __construct(
-        string $id,
-        string $productionId,
-        string $subjectType,
-        string $subjectId,
-        string $participantType,
-        string $status,
-        string $createdAt,
-        string $updatedAt,
-        ?string $remarks,
-        ?string $displayName,
-        ?string $personFamilyName,
-        ?string $personGivenName,
-        ?string $email = null
-    ) {
-        $this->id = $id;
-        $this->productionId = $productionId;
-        $this->subjectType = $subjectType;
-        $this->subjectId = $subjectId;
-        $this->participantType = $participantType;
-        $this->status = $status;
-        $this->createdAt = $createdAt;
-        $this->updatedAt = $updatedAt;
-        $this->remarks = $remarks;
-        $this->displayName = $displayName;
-        $this->personFamilyName = $personFamilyName;
-        $this->personGivenName = $personGivenName;
-        $this->email = $email;
+    private function __construct(Participant $participant, ParticipantDisclosure $disclosure, ?Person $person, ?string $email)
+    {
+        $this->id = $participant->id()->toString();
+        $this->productionId = $participant->productionId()->toString();
+        $this->subjectType = $participant->subjectType()->toString();
+        $this->subjectId = $disclosure->identity ? $participant->subjectId() : null;
+        $this->participantType = $participant->participantType()->toString();
+        $this->status = $participant->status()->toString();
+        $this->createdAt = $participant->createdAt()->format(DATE_ATOM);
+        $this->updatedAt = $participant->updatedAt()->format(DATE_ATOM);
+        $this->remarks = $disclosure->identity ? $participant->remarks() : null;
+        $this->displayName = $participant->displayName();
+        $this->personFamilyName = $disclosure->names ? $person?->familyName() : null;
+        $this->personGivenName = $disclosure->names ? $person?->givenName() : null;
+        $this->email = $disclosure->email ? $email : null;
+        $this->enrollmentSource = $disclosure->consent ? $participant->enrollmentSource()?->toString() : null;
+        $this->consentStatus = $disclosure->consent ? self::consentStatusOf($participant) : null;
+        $this->consentedAt = $disclosure->consent ? $participant->consentedAt()?->format(DATE_ATOM) : null;
     }
 
     /**
@@ -72,24 +76,35 @@ final class ParticipantResult
      * also null for a PERSON subject with no deliverable address found
      * in any of PersonEmailResolver's sources - never a reason to fail
      * this call.
+     *
+     * Every field, as a full disclosure (a NAME_ONLY row just created by
+     * a manager; tests).
      */
     public static function fromDomain(Participant $participant, ?Person $person = null, ?string $email = null): self
     {
-        return new self(
-            $participant->id()->toString(),
-            $participant->productionId()->toString(),
-            $participant->subjectType()->toString(),
-            $participant->subjectId(),
-            $participant->participantType()->toString(),
-            $participant->status()->toString(),
-            $participant->createdAt()->format(DATE_ATOM),
-            $participant->updatedAt()->format(DATE_ATOM),
-            $participant->remarks(),
-            $participant->displayName(),
-            $person?->familyName(),
-            $person?->givenName(),
-            $email
-        );
+        return new self($participant, ParticipantDisclosure::full(), $person, $email);
+    }
+
+    /**
+     * R14-B stage 6: only the fields `$disclosure` allows; the others are null.
+     */
+    public static function disclosed(Participant $participant, ParticipantDisclosure $disclosure, ?Person $person = null, ?string $email = null): self
+    {
+        return new self($participant, $disclosure, $person, $email);
+    }
+
+    /**
+     * §4.5: CONFIRMED when consent is recorded; a PERSON without it is
+     * UNCONFIRMED (rows made before R14-B included); NAME_ONLY and
+     * ORGANIZATION rows are NOT_APPLICABLE.
+     */
+    private static function consentStatusOf(Participant $participant): string
+    {
+        if (! $participant->subjectType()->equals(ParticipantSubjectType::person())) {
+            return self::CONSENT_NOT_APPLICABLE;
+        }
+
+        return $participant->consentedAt() !== null ? self::CONSENT_CONFIRMED : self::CONSENT_UNCONFIRMED;
     }
 
     /**
@@ -111,6 +126,9 @@ final class ParticipantResult
             'person_family_name' => $this->personFamilyName,
             'person_given_name' => $this->personGivenName,
             'email' => $this->email,
+            'enrollment_source' => $this->enrollmentSource,
+            'consent_status' => $this->consentStatus,
+            'consented_at' => $this->consentedAt,
         ];
     }
 }
