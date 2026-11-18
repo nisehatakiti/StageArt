@@ -24,6 +24,10 @@ use StageArt\Application\Participant\ParticipantRequiresInvitationException;
 use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
 use StageArt\Application\Participant\UpdateParticipantCommand;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
+use StageArt\Application\Participant\ParticipantWithdrawNotAllowedException;
+use StageArt\Application\Participant\ParticipantWithdrawPrimaryManagerException;
+use StageArt\Application\Participant\WithdrawParticipationCommand;
+use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\Production\ProductionNotFoundException;
 use WP_Error;
 use WP_REST_Request;
@@ -38,19 +42,22 @@ final class ParticipantRestController
     private ListParticipantsUseCase $listParticipants;
     private UpdateParticipantUseCase $updateParticipant;
     private CancelParticipantUseCase $cancelParticipant;
+    private ?WithdrawParticipationUseCase $withdrawParticipation;
 
     public function __construct(
         CreateParticipantUseCase $createParticipant,
         GetParticipantUseCase $getParticipant,
         ListParticipantsUseCase $listParticipants,
         UpdateParticipantUseCase $updateParticipant,
-        CancelParticipantUseCase $cancelParticipant
+        CancelParticipantUseCase $cancelParticipant,
+        ?WithdrawParticipationUseCase $withdrawParticipation = null
     ) {
         $this->createParticipant = $createParticipant;
         $this->getParticipant = $getParticipant;
         $this->listParticipants = $listParticipants;
         $this->updateParticipant = $updateParticipant;
         $this->cancelParticipant = $cancelParticipant;
+        $this->withdrawParticipation = $withdrawParticipation;
     }
 
     public function register_routes(): void
@@ -82,6 +89,15 @@ final class ParticipantRestController
             [
                 'methods' => 'DELETE',
                 'callback' => [$this, 'delete'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        // PR #7 R14-B stage 7 (§7.2): the Person's own withdrawal.
+        register_rest_route(self::API_NAMESPACE, '/participants/(?P<id>[^/]+)/withdraw', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'withdraw'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -218,6 +234,37 @@ final class ParticipantRestController
             return new WP_Error('stageart_participant_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * PR #7 R14-B stage 7, `POST /participants/{id}/withdraw` (design doc
+     * §7.2, §4.6 D9): 200 {participant_id, production_id, status=WITHDRAWN},
+     * also when already WITHDRAWN (idempotent). Someone else's row - or a
+     * NAME_ONLY / ORGANIZATION one - is 403; the PrimaryManager is 409
+     * withdraw_primary_manager; a row that is not ACTIVE is 409
+     * withdraw_not_allowed. A failed write is rethrown to
+     * RestFailureResponder (500 persistence_failed / 503). The response
+     * carries Cache-Control: no-store (PersonalResponseCachePolicy).
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function withdraw(WP_REST_Request $request)
+    {
+        try {
+            $command = new WithdrawParticipationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+            return new WP_REST_Response($this->withdrawParticipation->execute($command)->toArray(), 200);
+        } catch (ParticipantWithdrawPrimaryManagerException $exception) {
+            return new WP_Error('stageart_participant_withdraw_primary_manager', 'The production manager cannot withdraw; hand the role over first.', ['status' => 409]);
+        } catch (ParticipantWithdrawNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_withdraw_not_allowed', 'Only an active member can withdraw.', ['status' => 409]);
+        } catch (ParticipantAccessDeniedException $exception) {
+            return new WP_Error('stageart_participant_access_denied', 'Only the member themselves can withdraw.', ['status' => 403]);
+        } catch (ParticipantNotFoundException $exception) {
+            return new WP_Error('stageart_participant_not_found', 'The participant was not found.', ['status' => 404]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', 'The production was not found.', ['status' => 404]);
         }
     }
 

@@ -98,6 +98,7 @@ use StageArt\Application\Participant\GetParticipantUseCase;
 use StageArt\Application\Participant\ListMyParticipatingProductionsUseCase;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
+use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\Production\ActivateProductionUseCase;
 use StageArt\Application\Production\ArchiveProductionUseCase;
 use StageArt\Application\Production\CancelProductionUseCase;
@@ -1016,12 +1017,17 @@ final class Plugin
             $deleteProductionDelegate
         );
 
+        // PR #7 R14-B stage 7 (§7.2, D9): the Person withdraws themselves -
+        // POST /participants/{id}/withdraw, with the delegate roles released
+        // in the same transaction and the managers notified after the commit.
+        $participantConsentNotifier = new ParticipantConsentNotifier($notificationDispatcher);
         $participantRestController = new ParticipantRestController(
             $createParticipant,
             $getParticipant,
             $listParticipants,
             $updateParticipant,
-            $cancelParticipant
+            $cancelParticipant,
+            new WithdrawParticipationUseCase($participants, $productions, $productionDelegates, $productionAuthorization, $participantDelegateRoles, $participantEventRecorder, $participantConsentNotifier, $transactions)
         );
 
         // PR #7 R14-B stage 3: the join request / approval / rejection run in
@@ -1061,7 +1067,6 @@ final class Plugin
         // accept / reject / own-list UseCases), now that registration no
         // longer resolves Production invitations.
         $invitationRecipients = new InvitationRecipientVerifier($productionAuthorization, $userAccounts, $emailCredentials, $notificationEmails, $findPersonByEmail);
-        $participantConsentNotifier = new ParticipantConsentNotifier($notificationDispatcher);
         $participantInvitationRestController = new ParticipantInvitationRestController(
             $createParticipantInvitation,
             $listParticipantInvitations,
