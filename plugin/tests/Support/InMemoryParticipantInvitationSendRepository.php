@@ -7,6 +7,7 @@ namespace StageArt\Tests\Support;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSend;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSendRecord;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSendRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 
@@ -89,6 +90,50 @@ final class InMemoryParticipantInvitationSendRepository implements ParticipantIn
         $this->rows[$sendId]['completedAt'] = $completedAt;
 
         return true;
+    }
+
+    /** Number of recordsSince() / recordsByIds() calls - the list must read them once, not per row. */
+    public int $recordReads = 0;
+
+    public function recordsSince(ProductionId $productionId, DateTimeImmutable $since): array
+    {
+        $this->failIfAsked();
+        $this->recordReads++;
+        $records = [];
+
+        foreach ($this->rows as $row) {
+            if ($row['send']->productionId()->equals($productionId) && $row['send']->requestedAt() >= $since) {
+                $records[] = self::record($row);
+            }
+        }
+
+        usort($records, static fn (ParticipantInvitationSendRecord $a, ParticipantInvitationSendRecord $b): int => [$a->requestedAt(), $a->id()] <=> [$b->requestedAt(), $b->id()]);
+
+        return $records;
+    }
+
+    public function recordsByIds(ProductionId $productionId, array $sendIds): array
+    {
+        $this->failIfAsked();
+        $this->recordReads++;
+        $records = [];
+
+        foreach ($sendIds as $sendId) {
+            $row = $this->rows[(string) $sendId] ?? null;
+
+            if ($row !== null && $row['send']->productionId()->equals($productionId)) {
+                $records[(string) $sendId] = self::record($row);
+            }
+        }
+
+        return $records;
+    }
+
+    private static function record(array $row): ParticipantInvitationSendRecord
+    {
+        $send = $row['send'];
+
+        return new ParticipantInvitationSendRecord($send->id(), $send->emailKeyVersion(), $send->emailKey(), $row['status'], $send->requestedAt());
     }
 
     private function failIfAsked(): void

@@ -30,6 +30,11 @@ final class ParticipantInvitationSend
     public const FAILED = 'FAILED';
     public const SUPERSEDED = 'SUPERSEDED';
 
+    /** §6.2: derived, never stored - a PENDING attempt whose result was not recorded within UNKNOWN_AFTER. */
+    public const UNKNOWN = 'UNKNOWN';
+    /** §6.2【推奨】: 10 minutes. */
+    public const UNKNOWN_AFTER = 'PT10M';
+
     private const KINDS = [self::KIND_INITIAL, self::KIND_RESEND];
     private const RESULTS = [self::SENT, self::FAILED, self::SUPERSEDED];
 

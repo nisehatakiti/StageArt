@@ -99,20 +99,82 @@ final class InvitationSendService
                 throw new EmailKeyNotConfiguredException("The email key version '{$version}' used within the last 30 days is not configured.");
             }
 
-            $keys[(string) $version] = hash_hmac('sha256', $normalized, $key);
+            $keys[(string) $version] = self::emailKey($normalized, $key);
         }
 
-        $sentAt = $this->sends->requestedAtsForKeysSince($productionId, $since, $keys);
-        $count = count($sentAt);
+        $limit = InvitationSendLimit::fromRequestedAts($this->sends->requestedAtsForKeysSince($productionId, $since, $keys));
 
-        if ($count >= self::MAX_SENDS_PER_ADDRESS) {
-            // The send that has to leave the window for one more to fit.
-            throw new ParticipantInvitationSendLimitException(
-                $sentAt[$count - self::MAX_SENDS_PER_ADDRESS]->add(new DateInterval(self::WINDOW))
-            );
+        if (! $limit->allowsAnotherSend()) {
+            throw new ParticipantInvitationSendLimitException($limit->availableAt);
         }
 
         return [$current, $keys[$current]];
+    }
+
+    /**
+     * §7.1 managers' list (R14B-4R): the 30-day send limit of each address,
+     * keyed by its §6.4 normalisation - the same count assertWithinLimit()
+     * makes, from one read of the Production's sends in the window
+     * (recordsSince()) matched in PHP, so the list never reads per row.
+     *
+     * Every version used in the window must be in the keyring, as for a
+     * send; when one is missing nothing can be counted correctly and every
+     * address maps to null (never a count that is too low). The current
+     * version is not needed to count. Reads only - nothing is written.
+     *
+     * @param string[] $emails
+     * @return array<string, InvitationSendLimit|null>
+     */
+    public function sendLimitsFor(ProductionId $productionId, array $emails, DateTimeImmutable $now): array
+    {
+        $normalized = array_values(array_unique(array_map([InvitationEmailAddress::class, 'normalize'], $emails)));
+
+        if ($normalized === []) {
+            return [];
+        }
+
+        $records = $this->sends->recordsSince($productionId, $now->sub(new DateInterval(self::WINDOW)));
+        $keyByVersion = [];
+
+        foreach ($records as $record) {
+            $version = $record->emailKeyVersion();
+
+            if (! array_key_exists($version, $keyByVersion)) {
+                $keyByVersion[$version] = $this->keyring->keyFor($version);
+            }
+
+            if ($keyByVersion[$version] === null) {
+                return array_fill_keys($normalized, null);
+            }
+        }
+
+        $limits = [];
+
+        foreach ($normalized as $address) {
+            $wanted = [];
+
+            foreach ($keyByVersion as $version => $key) {
+                $wanted[(string) $version] = self::emailKey($address, (string) $key);
+            }
+
+            $requestedAts = [];
+
+            foreach ($records as $record) {
+                if (hash_equals($wanted[$record->emailKeyVersion()], $record->emailKey())) {
+                    $requestedAts[] = $record->requestedAt();
+                }
+            }
+
+            $limits[$address] = InvitationSendLimit::fromRequestedAts($requestedAts);
+        }
+
+        return $limits;
+    }
+
+    /** §6.7: HMAC-SHA-256 of the normalised address under one key version's key, as hex. */
+    private static function emailKey(string $normalizedAddress, string $key): string
+    {
+        return hash_hmac('sha256', $normalizedAddress, $key);
     }
 
     /**

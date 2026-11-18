@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSend;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSendRecord;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSendRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use wpdb;
@@ -23,6 +24,10 @@ use wpdb;
  *   failed read throws - a failure never reads as "no sends".
  * - completeIfPending(): UPDATE ... WHERE id = ? AND status = 'PENDING'; the
  *   affected-row count says whether this call recorded the result.
+ * - recordsSince() / recordsByIds() (R14B-4R, §7.1 managers' list): one
+ *   read each for the whole list - the Production's sends in the 30-day
+ *   window (KEY production_requested_version range) and the current
+ *   attempts by primary key - checked like the other reads.
  * - The e-mail address is never stored or read here (only email_key, an
  *   HMAC); no key value is ever logged. Date-times are UTC.
  */
@@ -122,6 +127,67 @@ final class WordPressParticipantInvitationSendRepository implements ParticipantI
         );
 
         return $affected === 1;
+    }
+
+    public function recordsSince(ProductionId $productionId, DateTimeImmutable $since): array
+    {
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT id, email_key_version, email_key, status, requested_at FROM {$this->table}"
+                . ' WHERE production_id = %s AND requested_at >= %s ORDER BY requested_at ASC, id ASC',
+                $productionId->toString(),
+                self::toDb($since)
+            ),
+            ARRAY_A
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        return array_map([self::class, 'hydrateRecord'], is_array($rows) ? $rows : []);
+    }
+
+    public function recordsByIds(ProductionId $productionId, array $sendIds): array
+    {
+        $sendIds = array_values(array_unique(array_map('strval', $sendIds)));
+
+        if ($sendIds === []) {
+            return [];
+        }
+
+        $this->wpdb->last_error = '';
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT id, email_key_version, email_key, status, requested_at FROM {$this->table}"
+                . ' WHERE production_id = %s AND id IN (' . implode(', ', array_fill(0, count($sendIds), '%s')) . ')',
+                $productionId->toString(),
+                ...$sendIds
+            ),
+            ARRAY_A
+        );
+        WordPressCheckedWrites::assertRead($this->wpdb, $this->table);
+
+        $records = [];
+
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            $record = self::hydrateRecord($row);
+            $records[$record->id()] = $record;
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function hydrateRecord(array $row): ParticipantInvitationSendRecord
+    {
+        return new ParticipantInvitationSendRecord(
+            (string) $row['id'],
+            (string) $row['email_key_version'],
+            (string) $row['email_key'],
+            (string) $row['status'],
+            new DateTimeImmutable((string) $row['requested_at'], new DateTimeZone('UTC'))
+        );
     }
 
     private static function toDb(DateTimeImmutable $value): string

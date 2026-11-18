@@ -257,6 +257,57 @@ final class R14bStage4RepositoryTest extends TestCase
         $repository->completeIfPending(self::ID, 'PENDING', new \DateTimeImmutable());
     }
 
+    // --- send reads for the managers' list (R14B-4R) -----------------------
+
+    public function test_the_list_reads_the_window_and_the_current_attempts_in_one_query_each(): void
+    {
+        $row = ['id' => self::ID, 'email_key_version' => 'v1', 'email_key' => self::KEY, 'status' => 'PENDING', 'requested_at' => '2026-11-01 00:00:00'];
+        $db = new \wpdb(static fn (string $method) => $method === 'get_results' ? [$row] : FakeWpdbDefault::VALUE);
+        $repository = new WordPressParticipantInvitationSendRepository($db);
+        $production = ProductionId::fromString(self::PRODUCTION);
+
+        $records = $repository->recordsSince($production, new \DateTimeImmutable('2026-10-21T00:00:00+00:00'));
+        $byId = $repository->recordsByIds($production, [self::ID, self::ID, '44444444-4444-4444-8444-444444444444']);
+        $this->assertSame([], $repository->recordsByIds($production, []), 'No ids: no query');
+
+        [$windowSql, $idsSql] = [$db->callsTo('get_results')[0][0], $db->callsTo('get_results')[1][0]];
+        $this->assertCount(2, $db->callsTo('get_results'));
+        $this->assertStringContainsString("WHERE production_id = '" . self::PRODUCTION . "' AND requested_at >= '2026-10-21 00:00:00' ORDER BY requested_at ASC", $windowSql);
+        $this->assertStringContainsString("WHERE production_id = '" . self::PRODUCTION . "' AND id IN ('" . self::ID . "', '44444444-4444-4444-8444-444444444444')", $idsSql, 'Distinct ids');
+        $this->assertStringNotContainsString('email =', $windowSql . $idsSql, 'No address column is read');
+
+        $this->assertSame('v1', $records[0]->emailKeyVersion());
+        $this->assertSame(self::KEY, $records[0]->emailKey());
+        $this->assertSame('2026-11-01T00:00:00+00:00', $records[0]->requestedAt()->format(DATE_ATOM));
+        $this->assertSame([self::ID], array_keys($byId));
+        $this->assertSame('PENDING', $byId[self::ID]->status());
+        $this->assertSame('UNKNOWN', $byId[self::ID]->displayStatusAt(new \DateTimeImmutable('2026-11-01T00:10:00+00:00')));
+        $this->assertSame('PENDING', $byId[self::ID]->displayStatusAt(new \DateTimeImmutable('2026-11-01T00:09:59+00:00')));
+    }
+
+    public function test_a_failed_list_read_throws_instead_of_reading_no_sends(): void
+    {
+        $repository = new WordPressParticipantInvitationSendRepository(new \wpdb(static function (string $method, array $args, \wpdb $db) {
+            if ($method === 'get_results') {
+                self::failRead($db);
+
+                return [];
+            }
+
+            return FakeWpdbDefault::VALUE;
+        }));
+
+        try {
+            $repository->recordsSince(ProductionId::fromString(self::PRODUCTION), new \DateTimeImmutable());
+            $this->fail('A failed window read must throw.');
+        } catch (PersistenceException $e) {
+            $this->assertStringNotContainsString('Lock wait', $e->getMessage());
+        }
+
+        $this->expectException(PersistenceException::class);
+        $repository->recordsByIds(ProductionId::fromString(self::PRODUCTION), [self::ID]);
+    }
+
     // --- invitation reads (stage 4) --------------------------------------
 
     private function invitationRow(array $overrides = []): array

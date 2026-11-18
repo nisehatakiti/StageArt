@@ -42,4 +42,23 @@ interface ParticipantInvitationSendRepositoryInterface
      * anything else. True when this call recorded it.
      */
     public function completeIfPending(string $sendId, string $status, DateTimeImmutable $completedAt): bool;
+
+    /**
+     * §7.1 managers' list (R14B-4R): every send of this Production requested
+     * at or after `$since`, oldest first - one read for all the addresses
+     * on the list, counted in PHP (InvitationSendService::sendLimitsFor()).
+     *
+     * @return ParticipantInvitationSendRecord[]
+     */
+    public function recordsSince(ProductionId $productionId, DateTimeImmutable $since): array;
+
+    /**
+     * §7.1 / §11.3 managers' list (R14B-4R): the send attempts with these
+     * ids in this Production (the invitations' current_send_id), in one
+     * read. An id without a row is absent from the result.
+     *
+     * @param string[] $sendIds
+     * @return array<string, ParticipantInvitationSendRecord> keyed by send id
+     */
+    public function recordsByIds(ProductionId $productionId, array $sendIds): array;
 }
