@@ -101,6 +101,8 @@ use StageArt\Application\Participant\UpdateParticipantUseCase;
 use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\RateLimit\InvitationRateLimit;
 use StageArt\Infrastructure\WordPress\RateLimit\WordPressRateLimiter;
+use StageArt\Infrastructure\WordPress\Retention\ParticipantDataRetentionSchedule;
+use StageArt\Infrastructure\WordPress\Retention\WordPressParticipantDataRetention;
 use StageArt\Application\Production\ActivateProductionUseCase;
 use StageArt\Application\Production\ArchiveProductionUseCase;
 use StageArt\Application\Production\CancelProductionUseCase;
@@ -1088,6 +1090,12 @@ final class Plugin
             new ListMyParticipantInvitationsUseCase($participantInvitations, $productions, $projects, $organizations, $participants, $invitationRecipients, $participantInvitationConditions),
             $invitationRateLimit
         );
+
+        // PR #7 R14-B stage 8 (§6.6): once a day (WP-Cron), delete the audit
+        // log rows older than 2 years, the send records older than 90 days
+        // (except each invitation's latest attempt) and the expired
+        // rate-limit rows - 1,000 rows per table per run.
+        ParticipantDataRetentionSchedule::register(new WordPressParticipantDataRetention($wpdb));
 
         $joinKeyRestController = new JoinKeyRestController(
             $issueOrganizationJoinKey,
