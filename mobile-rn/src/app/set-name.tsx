@@ -12,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { updatePersonName } from '@/features/auth/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { safeReturnTo } from '@/utils/returnTo';
 
 /**
  * StageArt Authentication Phase 6: reached only once a real, persisted
@@ -32,6 +33,13 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * own "プロフィールを編集" link passes `return_to=/profile` so editing an
  * already-set name from Profile returns there instead of detouring
  * through Home.
+ *
+ * PR #7 R14-B (design doc §10 「ログイン」, §14.2, R13 Medium): login.tsx now
+ * also hands its own return_to here (e.g. /participant-invitations for a
+ * person who opened the invitation link before setting a name), so the
+ * value is checked with safeReturnTo() - only an in-app path is followed;
+ * anything else (another site, "//host", a scheme, an auth screen) falls
+ * back to '/home'.
  */
 function SetNameScreen() {
   const { apiClient } = useAuth();
@@ -51,7 +59,7 @@ function SetNameScreen() {
     try {
       await updatePersonName(apiClient, familyName.trim(), givenName.trim());
       await queryClient.invalidateQueries({ queryKey: ['me'] });
-      router.replace((params.return_to ?? '/home') as Href);
+      router.replace((safeReturnTo(params.return_to) ?? '/home') as Href);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {

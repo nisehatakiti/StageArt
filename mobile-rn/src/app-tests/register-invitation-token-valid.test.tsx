@@ -9,28 +9,28 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * PR #7 R14-B (design doc §9.2 / §10 / §14.2, U5 C案; rewritten for the spec
- * change - previously a valid token pre-filled the invited address from
- * GET /participant-invitations/resolve, an API that no longer exists): an
- * old invitation link `/register?token=...` opens the ordinary registration
- * screen. The token is not read or looked up (no request is made with it),
- * it is removed from the URL at once, the address field starts empty and
- * editable, and nothing about any invitation is shown.
+ * PR #7 R14-B (design doc §9.2 / §10 / §14.2, U5 C案; confirmed by the
+ * user): an old invitation link `/register?token=...` opened while logged
+ * out goes to the login screen with the fixed
+ * return_to=/participant-invitations. The token is not read or looked up
+ * (no request is made with it), it is not carried into the URL or
+ * return_to, no registration form is shown and nothing about any
+ * invitation is shown.
+ * (The registration form itself - empty address, typed address sent
+ * without a token - is checked in r14b-register-screen.test.tsx.)
  */
-describe('register screen: old invitation link with a token', () => {
-  it('ignores the token, removes it from the URL and shows the ordinary empty form', async () => {
+describe('register screen: old invitation link while logged out', () => {
+  it('goes to login with the fixed return_to, without the token, and shows nothing of an invitation', async () => {
     mockFetchRoutes([]);
 
     const router = renderRouter('src/app', { initialUrl: '/register?token=good-token' });
 
-    await waitFor(() => expect(screen.getByTestId('register-email')).toBeVisible());
-    await waitFor(() => expect(router.getSearchParams()).toEqual({}));
-    expect(router.getPathname()).toBe('/register');
-
-    expect(screen.getByTestId('register-email').props.value).toBe('');
-    expect(screen.getByTestId('register-email').props.editable).not.toBe(false);
+    await waitFor(() => expect(screen.getByTestId('login-register-link')).toBeVisible());
+    expect(router.getPathname()).toBe('/login');
+    expect(router.getSearchParams()).toEqual({ return_to: '/participant-invitations' });
+    expect(router.getPathnameWithParams()).not.toContain('good-token');
+    expect(screen.queryByTestId('register-email')).toBeNull();
     expect(screen.queryByTestId('register-invitation-notice')).toBeNull();
-    expect(screen.queryByTestId('register-invitation-name')).toBeNull();
 
     const calls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));
     expect(calls.filter((url) => url.includes('good-token'))).toEqual([]);

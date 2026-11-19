@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState, type ComponentType } from 'react';
 import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type ViewProps } from 'react-native';
 
@@ -51,19 +51,31 @@ import { safeReturnTo } from '@/utils/returnTo';
  * happened to carry them) are forwarded to set-name.tsx as route params
  * purely as default form values - the user still confirms/edits and
  * saves them explicitly.
+ *
+ * PR #7 R14-B (design doc §10 「ログイン」, §14.2): `returnTo` is the login
+ * screen's return_to after safeReturnTo() (an in-app path, or null). A
+ * person with a name goes there; a person without one still sets the name
+ * first, and the same checked path is handed to set-name.tsx as its own
+ * return_to, so they reach it afterwards (e.g. /participant-invitations).
  */
 function resolvePostLoginRoute(
   hasName: boolean,
   familyNameHint: string | null,
-  givenNameHint: string | null
-): '/home' | '/set-name' | { pathname: '/set-name'; params: { family_name_hint: string; given_name_hint: string } } {
+  givenNameHint: string | null,
+  returnTo: string | null
+): Href {
   if (hasName) {
-    return '/home';
+    return (returnTo ?? '/home') as Href;
   }
+  const params: Record<string, string> = {};
   if (familyNameHint && givenNameHint) {
-    return { pathname: '/set-name', params: { family_name_hint: familyNameHint, given_name_hint: givenNameHint } };
+    params.family_name_hint = familyNameHint;
+    params.given_name_hint = givenNameHint;
   }
-  return '/set-name';
+  if (returnTo) {
+    params.return_to = returnTo;
+  }
+  return Object.keys(params).length > 0 ? { pathname: '/set-name', params } : '/set-name';
 }
 
 /**
@@ -165,7 +177,7 @@ function LoginScreen() {
       return;
     }
 
-    router.replace(result.hasName && returnTo ? returnTo : resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+    router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint, returnTo));
   }
 
   /**
@@ -187,7 +199,7 @@ function LoginScreen() {
         return;
       }
 
-      router.replace(result.hasName && returnTo ? returnTo : resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint));
+      router.replace(resolvePostLoginRoute(result.hasName, result.familyNameHint, result.givenNameHint, returnTo));
     } catch (error) {
       const message = `StageArt認証への到達に失敗しました。${error instanceof Error ? `message="${error.message}"` : String(error)}`;
       Alert.alert('Googleサインイン診断', message);

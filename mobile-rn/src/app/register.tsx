@@ -28,12 +28,17 @@ import { ThemedTextInput } from '@/components/themed-text-input';
  * person opens their invitations (/participant-invitations, also from
  * Home) and accepts one themselves.
  *
- * An old link `/register?token=...` is still handled: the token is never
- * read, sent or shown - the screen removes it from the URL at once and
- * stays the ordinary registration screen.
+ * An old link `/register?token=...` is still handled (design doc §9.2,
+ * confirmed by the user): the token is never read, sent or shown, and the
+ * person is moved at once to the general route without it - the login
+ * screen when logged out, the invitation list when logged in. Nothing of
+ * the registration form is shown for such a link. The login screen gets
+ * the fixed return_to=/participant-invitations (never anything from the
+ * link), so after login - and after setting a name when needed - the
+ * person reaches the invitation list.
  */
 function RegisterScreen() {
-  const { registerWithEmail } = useAuth();
+  const { registerWithEmail, status } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams<{ token?: string }>();
   const hasTokenInUrl = params.token !== undefined;
@@ -65,9 +70,15 @@ function RegisterScreen() {
   }
 
   // Only whether a token is present is looked at - its value is never used.
-  // The URL is replaced by plain /register before the form is shown.
   if (hasTokenInUrl) {
-    return <Redirect href="/register" />;
+    if (status === 'loading' || status === 'refreshing') {
+      return null;
+    }
+    return (
+      <Redirect
+        href={status === 'authenticated' ? '/participant-invitations' : { pathname: '/login', params: { return_to: '/participant-invitations' } }}
+      />
+    );
   }
 
   return (
