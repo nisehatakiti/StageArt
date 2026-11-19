@@ -706,7 +706,8 @@ final class Plugin
         // CreateParticipantInvitationUseCase's own 氏名＋メールアドレス
         // single-entry-point shape at Organization Scope. Reuses the
         // same $participantInvitationBaseUrl Web host (same mobile-rn
-        // Web export, same /register?token=... destination) - see
+        // Web export; the mail links to /register without a token since
+        // R14-B stage 10 D-1) - see
         // WordPressOrganizationInvitationMailer's own docblock.
         $organizationInvitationMailer = new WordPressOrganizationInvitationMailer($participantInvitationBaseUrl);
         $resendOrganizationInvitation = new ResendOrganizationInvitationUseCase(
