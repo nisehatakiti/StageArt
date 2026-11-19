@@ -3,7 +3,7 @@
 // made for the wrong site or the wrong API cannot be shipped by mistake.
 //
 // Usage:
-//   node scripts/verify-web-build.js <exportDir> --site public|app --api development|production
+//   node scripts/verify-web-build.js <exportDir> --site public|app --api development|production|verification
 //
 // --site public : the public-site build (stageart.top / www / dummy).
 //                 No HTML outside the allow-list below may contain a form
@@ -12,13 +12,16 @@
 // --site app    : the application build (dev.stageart.top / app.stageart.top).
 //                 The login page must contain the login form.
 // --api         : every JavaScript bundle must reference that API host and
-//                 never the other one.
+//                 never any other one (development, production and
+//                 verification are checked against each other, so the
+//                 verification URL can never ship in a Dev or Production
+//                 build). verification is accepted for --site app only.
 //
 // Read-only: never modifies the export. Exit code 1 on any failure.
 const fs = require('fs');
 const path = require('path');
 
-const { DEV_API_BASE_URL, PROD_API_BASE_URL } = require('../src/api/environment');
+const { API_BASE_URLS } = require('../src/api/environment');
 
 /** Public pages that legitimately contain inputs (reservation lookup), plus
  * the email confirmation pages left unchanged until the host emails link
@@ -60,7 +63,8 @@ function verify({ dir, site, api }) {
 
   if (!dir || !fs.existsSync(dir)) fail(`export directory not found: ${dir}`);
   if (site !== 'public' && site !== 'app') fail('--site must be "public" or "app"');
-  if (api !== 'development' && api !== 'production') fail('--api must be "development" or "production"');
+  if (!Object.prototype.hasOwnProperty.call(API_BASE_URLS, api)) fail('--api must be "development", "production" or "verification"');
+  else if (api === 'verification' && site !== 'app') fail('--api verification is only for the app site (--site app)');
   if (errors.length) return errors;
 
   const files = listFiles(dir);
@@ -96,9 +100,12 @@ function verify({ dir, site, api }) {
 
   const bundles = files.filter((f) => f.startsWith('_expo/static/js/') && f.endsWith('.js')).map(read);
   if (bundles.length === 0) fail('no JavaScript bundles under _expo/static/js');
-  const [expected, other] = api === 'production' ? [PROD_API_BASE_URL, DEV_API_BASE_URL] : [DEV_API_BASE_URL, PROD_API_BASE_URL];
+  const expected = API_BASE_URLS[api];
   if (!bundles.some((js) => js.includes(expected))) fail(`no bundle references the ${api} API (${expected})`);
-  if (bundles.some((js) => js.includes(other))) fail(`a bundle references the other API (${other})`);
+  for (const [otherEnv, other] of Object.entries(API_BASE_URLS)) {
+    if (otherEnv === api) continue;
+    if (bundles.some((js) => js.includes(other))) fail(`a bundle references the ${otherEnv} API (${other})`);
+  }
 
   return errors;
 }

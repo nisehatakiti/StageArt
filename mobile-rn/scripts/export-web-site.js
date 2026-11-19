@@ -3,12 +3,14 @@
 // directory, then generates .htaccess and verifies the result.
 //
 // Usage:
-//   node scripts/export-web-site.js --site public|app --api development|production --out <dir>
+//   node scripts/export-web-site.js --site public|app --api development|production|verification --out <dir>
 //
 //   site=public api=development  -> dummy.stageart.top
 //   site=public api=production   -> stageart.top / www.stageart.top
 //   site=app    api=development  -> dev.stageart.top
 //   site=app    api=production   -> app.stageart.top
+//   site=app    api=verification -> verify.stageart.top (isolated R14-B
+//                                   verification environment; app site only)
 //
 // Never writes to mobile-rn/dist (the plain `npm run export:web` output is
 // left alone). `expo export` empties its output directory, so --out must
@@ -35,7 +37,8 @@ function die(message) {
 const { site, api, out } = parseArgs(process.argv.slice(2));
 
 if (site !== 'public' && site !== 'app') die('--site must be "public" or "app"');
-if (api !== 'development' && api !== 'production') die('--api must be "development" or "production"');
+if (api !== 'development' && api !== 'production' && api !== 'verification') die('--api must be "development", "production" or "verification"');
+if (api === 'verification' && site !== 'app') die('--api verification is only for the app site (--site app)');
 if (!out) die('--out <dir> is required');
 
 const outDir = path.resolve(out);
