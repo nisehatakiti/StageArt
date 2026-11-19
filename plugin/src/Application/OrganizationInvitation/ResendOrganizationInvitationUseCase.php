@@ -9,11 +9,11 @@ use DateTimeImmutable;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitation;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationId;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /** Mirrors ResendParticipantInvitationUseCase's own shape - rotates the
  * current token in place (no new OrganizationInvitation row). */
@@ -56,7 +56,7 @@ final class ResendOrganizationInvitationUseCase
             throw new OrganizationNotFoundException($invitation->organizationId()->toString());
         }
 
-        if (! $this->authorization->hasRole($requester, $invitation->organizationId(), [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $this->authorization->hasDelegateArea($requester, $invitation->organizationId(), DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can resend this invitation.');
         }
 

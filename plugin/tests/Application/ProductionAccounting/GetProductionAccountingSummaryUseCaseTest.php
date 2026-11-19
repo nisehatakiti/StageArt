@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Tests\Application\ProductionAccounting;
 
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Account\CreateAccountCommand;
 use StageArt\Application\Account\CreateAccountUseCase;
@@ -12,8 +13,6 @@ use StageArt\Application\Budget\ActivateBudgetUseCase;
 use StageArt\Application\Budget\BudgetLineFactory;
 use StageArt\Application\Budget\CreateBudgetCommand;
 use StageArt\Application\Budget\CreateBudgetUseCase;
-use StageArt\Application\Expense\ConfirmExpenseCommand;
-use StageArt\Application\Expense\ConfirmExpenseUseCase;
 use StageArt\Application\Expense\CreateExpenseCommand;
 use StageArt\Application\Expense\CreateExpenseUseCase;
 use StageArt\Application\Expense\ExpenseLineFactory;
@@ -24,21 +23,30 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Application\ProductionAccounting\ProductionAccountingAccessDeniedException;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\Account\AccountType;
+use StageArt\Domain\JournalEntry\DebitCredit;
 use StageArt\Domain\JournalEntry\JournalEntry;
+use StageArt\Domain\JournalEntry\JournalEntryLine;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationName;
+use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
+use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
+use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
@@ -71,12 +79,13 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
     private InMemoryJournalEntryRepository $journalEntries;
     private OrganizationAuthorizationService $orgAuth;
     private ProductionAuthorizationService $prodAuth;
+    private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
 
     private CreateAccountUseCase $createAccount;
     private CreateBudgetUseCase $createBudget;
     private ActivateBudgetUseCase $activateBudget;
     private CreateExpenseUseCase $createExpense;
-    private ConfirmExpenseUseCase $confirmExpense;
     private PostJournalEntryUseCase $postJournalEntry;
     private GetProductionAccountingSummaryUseCase $useCase;
 
@@ -91,12 +100,14 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $this->budgets = new InMemoryBudgetRepository();
         $this->expenses = new InMemoryExpenseRepository();
         $this->journalEntries = new InMemoryJournalEntryRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
 
         $this->orgAuth = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->prodAuth = new ProductionAuthorizationService(
             $this->orgAuth,
-            new InMemoryProductionDelegateRepository(),
-            new InMemoryParticipantRepository()
+            $this->delegates,
+            $this->participants
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
@@ -105,7 +116,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $identity = new CoreIdentityAdapter($this->people);
         $authorizationContract = new CoreAuthorizationAdapter($this->prodAuth, $this->productions, $this->people);
         $membershipContract = new CoreMembershipAdapter(
-            new InMemoryParticipantRepository(),
+            $this->participants,
             $this->productions,
             $this->people,
             $this->prodAuth
@@ -130,15 +141,6 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
             new ExpenseLineFactory($this->accounts),
             $transactions
         );
-        $this->confirmExpense = new ConfirmExpenseUseCase(
-            $this->expenses,
-            $productionContext,
-            $this->accounts,
-            $this->journalEntries,
-            $identity,
-            $authorizationContract,
-            $transactions
-        );
         $this->postJournalEntry = new PostJournalEntryUseCase(
             $this->journalEntries,
             $productionContext,
@@ -151,7 +153,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
             $this->journalEntries,
             $this->accounts,
             $productionContext,
-            $membershipContract,
+            $authorizationContract,
             $identity
         );
     }
@@ -228,6 +230,34 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $this->assertSame(-300000, $result->totalVariance);
     }
 
+    /**
+     * The DRAFT "ExpenseConfirmed" Journal Entry the retired Confirm step
+     * created (修正8): legacy data that still exists and is still posted
+     * through PostJournalEntryUseCase.
+     */
+    private function givenLegacyDraftExpenseJournalEntry(
+        Organization $organization,
+        Production $production,
+        string $expenseId,
+        string $expenseAccountId,
+        string $payableAccountId,
+        int $amount
+    ): void {
+        $this->journalEntries->save(JournalEntry::create(
+            $organization->id(),
+            $production->id(),
+            new DateTimeImmutable(),
+            "Expense Confirmed ({$expenseId})",
+            [
+                JournalEntryLine::create(AccountId::fromString($expenseAccountId), DebitCredit::debit(), $amount),
+                JournalEntryLine::create(AccountId::fromString($payableAccountId), DebitCredit::credit(), $amount),
+            ],
+            $production->primaryManagerPersonId(),
+            'ExpenseConfirmed',
+            $expenseId
+        ));
+    }
+
     public function test_actual_only_no_budget(): void
     {
         [$organization, $production] = $this->givenProductionWithPrimaryManager();
@@ -236,7 +266,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 180000],
         ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
+        $this->givenLegacyDraftExpenseJournalEntry($organization, $production, $expense->id, $expenseAccountId, $payableAccountId, 180000);
 
         $journalEntry = $this->journalEntries->findByProductionId($production->id())[0];
         $this->postJournalEntry->execute(new PostJournalEntryCommand($journalEntry->id()->toString(), 1));
@@ -264,7 +294,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 180000],
         ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
+        $this->givenLegacyDraftExpenseJournalEntry($organization, $production, $expense->id, $expenseAccountId, $payableAccountId, 180000);
         $journalEntry = $this->journalEntries->findByProductionId($production->id())[0];
         $this->postJournalEntry->execute(new PostJournalEntryCommand($journalEntry->id()->toString(), 1));
 
@@ -288,7 +318,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         ]));
         // Confirmed, but its generated JournalEntry is deliberately left
         // unposted (DRAFT) here.
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
+        $this->givenLegacyDraftExpenseJournalEntry($organization, $production, $expense->id, $expenseAccountId, $payableAccountId, 50000);
 
         $result = $this->useCase->execute(new GetProductionAccountingSummaryQuery($production->id()->toString(), 1));
 
@@ -304,7 +334,7 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
         $expense = $this->createExpense->execute(new CreateExpenseCommand(1, $production->id()->toString(), [
             ['account_id' => $expenseAccountId, 'amount' => 90000],
         ]));
-        $this->confirmExpense->execute(new ConfirmExpenseCommand($expense->id, 1, $payableAccountId));
+        $this->givenLegacyDraftExpenseJournalEntry($organization, $production, $expense->id, $expenseAccountId, $payableAccountId, 90000);
         $originalEntry = $this->journalEntries->findByProductionId($production->id())[0];
         $this->postJournalEntry->execute(new PostJournalEntryCommand($originalEntry->id()->toString(), 1));
 
@@ -323,5 +353,103 @@ final class GetProductionAccountingSummaryUseCaseTest extends TestCase
 
         $this->assertFalse($result->hasActual);
         $this->assertSame(0, $result->totalActual);
+    }
+
+    /**
+     * Adds a Person with the given WordPress user id to the Organization
+     * as a plain MEMBER (no Production Role by itself).
+     */
+    private function givenOrganizationMember(Organization $organization, int $wordPressUserId): Person
+    {
+        $person = Person::create($wordPressUserId);
+        $this->people->save($person);
+        $this->memberships->save(Membership::create($organization->id(), $person->id(), RoleKey::member()));
+
+        return $person;
+    }
+
+    private function givenDelegate(Production $production, Person $person, RoleKey $role): void
+    {
+        $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), $role, $production->primaryManagerPersonId()));
+    }
+
+    private function givenBudgetOf300000(Organization $organization, Production $production): void
+    {
+        [$revenueAccountId, $expenseAccountId] = $this->createRevenueAndExpenseAccounts($organization);
+        $budget = $this->createBudget->execute(new CreateBudgetCommand(1, $production->id()->toString(), 'A案', [
+            ['account_id' => $revenueAccountId, 'amount' => 500000],
+            ['account_id' => $expenseAccountId, 'amount' => 200000],
+        ]));
+        $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 1));
+    }
+
+    private function assertSummaryRefused(Production $production, int $wordPressUserId): void
+    {
+        try {
+            $this->useCase->execute(new GetProductionAccountingSummaryQuery($production->id()->toString(), $wordPressUserId));
+            $this->fail('Expected the Accounting Summary to be refused.');
+        } catch (ProductionAccountingAccessDeniedException $exception) {
+            // The refusal carries no figure of the Summary.
+            $this->assertStringNotContainsString('300000', $exception->getMessage());
+        }
+    }
+
+    public function test_accounting_manager_delegate_can_view_the_summary(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManager();
+        $this->givenBudgetOf300000($organization, $production);
+        $this->givenDelegate($production, $this->givenOrganizationMember($organization, 2), RoleKey::accountingManager());
+
+        $result = $this->useCase->execute(new GetProductionAccountingSummaryQuery($production->id()->toString(), 2));
+
+        $this->assertSame(300000, $result->totalBudget);
+    }
+
+    public function test_delegate_without_accounting_role_cannot_view_the_summary(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManager();
+        $this->givenBudgetOf300000($organization, $production);
+        $person = $this->givenOrganizationMember($organization, 2);
+
+        foreach ([RoleKey::ticketManager(), RoleKey::checkInManager(), RoleKey::rehearsalManager(), RoleKey::participantManager()] as $role) {
+            $this->givenDelegate($production, $person, $role);
+        }
+
+        $this->assertSummaryRefused($production, 2);
+    }
+
+    public function test_general_member_participant_cannot_view_the_summary(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManager();
+        $this->givenBudgetOf300000($organization, $production);
+        $member = $this->givenOrganizationMember($organization, 2);
+        $this->participants->save(Participant::create(
+            $production->id(),
+            ParticipantSubjectType::person(),
+            $member->id()->toString(),
+            ParticipantType::cast()
+        ));
+
+        $this->assertSummaryRefused($production, 2);
+    }
+
+    public function test_accounting_manager_of_another_production_cannot_view_the_summary(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManager();
+        $this->givenBudgetOf300000($organization, $production);
+        $other = Production::create($production->projectId(), new ProductionName('Winter Play'), $production->primaryManagerPersonId());
+        $this->productions->save($other);
+        $this->givenDelegate($other, $this->givenOrganizationMember($organization, 2), RoleKey::accountingManager());
+
+        $this->assertSummaryRefused($production, 2);
+    }
+
+    public function test_organization_member_outside_the_production_cannot_view_the_summary(): void
+    {
+        [$organization, $production] = $this->givenProductionWithPrimaryManager();
+        $this->givenBudgetOf300000($organization, $production);
+        $this->givenOrganizationMember($organization, 2);
+
+        $this->assertSummaryRefused($production, 2);
     }
 }

@@ -118,6 +118,22 @@ final class ReservationTest extends TestCase
         $this->assertTrue($reservation->occupiesCapacity());
     }
 
+    public function test_no_show_reservation_cannot_be_cancelled_and_keeps_its_seat(): void
+    {
+        $reservation = Reservation::create(PerformanceId::generate(), TicketId::generate(), '山田太郎', 'yamada@example.com', 2, 3000, null);
+        $reservation->markNoShow(null);
+
+        try {
+            $reservation->cancel(null);
+            $this->fail('Expected a NO_SHOW Reservation to refuse cancellation.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('NO_SHOW', $exception->getMessage());
+        }
+
+        $this->assertSame(ReservationStatus::NO_SHOW, $reservation->status()->toString());
+        $this->assertTrue($reservation->occupiesCapacity());
+    }
+
     public function test_price_snapshot_is_immutable_after_guest_count_change(): void
     {
         $reservation = Reservation::create(PerformanceId::generate(), TicketId::generate(), '山田太郎', 'yamada@example.com', 2, 3000, null);

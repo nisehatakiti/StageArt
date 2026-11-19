@@ -38,7 +38,7 @@ use StageArt\Domain\Production\ProductionStatus;
  * costs it covers are still open (§7), so no entry here is a 仕掛品
  * transfer yet.
  *
- * Visibility: the Organization Owner.
+ * Visibility: the Organization Owner or a delegate given the 会計 管理領域.
  */
 final class ListOrganizationProductionResultsUseCase
 {
@@ -81,9 +81,12 @@ final class ListOrganizationProductionResultsUseCase
             throw new OrganizationNotFoundException($query->organizationId);
         }
 
-        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::OWNER)) {
+        if (
+            ! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::OWNER)
+            && ! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::ACCOUNTING)
+        ) {
             throw new OrganizationAccountingAccessDeniedException(
-                'Only the Owner can view this Organization\'s accounting.'
+                'Only the Owner or an Accounting delegate can view this Organization\'s accounting.'
             );
         }
 

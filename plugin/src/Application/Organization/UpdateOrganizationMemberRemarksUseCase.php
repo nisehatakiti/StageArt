@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Role\RoleKey;
 
 /**
  * StageArt Organization管理UI/UX統一 "メンバー管理": the roster's 備考
@@ -33,7 +33,7 @@ final class UpdateOrganizationMemberRemarksUseCase
         $person = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
         $organizationId = OrganizationId::fromString($command->organizationId);
 
-        if (! $person || ! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $person || ! $this->authorization->hasDelegateArea($person, $organizationId, DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can update a member.');
         }
 

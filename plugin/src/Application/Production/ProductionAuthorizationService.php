@@ -109,6 +109,12 @@ final class ProductionAuthorizationService
         return $this->organizationAuthorization->hasRole($person, $organizationId, $allowedRoleKeys);
     }
 
+    /** Pass-through to `OrganizationAuthorizationService::hasDelegateArea()`, for the same reason as hasOrganizationRole() above. */
+    public function hasOrganizationDelegateArea(Person $person, OrganizationId $organizationId, string $area): bool
+    {
+        return $this->organizationAuthorization->hasDelegateArea($person, $organizationId, $area);
+    }
+
     public function isPrimaryManager(Person $person, Production $production): bool
     {
         return $production->primaryManagerPersonId()->equals($person->id());

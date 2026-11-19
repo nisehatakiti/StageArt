@@ -105,18 +105,9 @@ export function WebSidebarNav({ children }: PropsWithChildren) {
   );
 }
 
+// No disabled rendering: useNavMenu() leaves out items the Person may not use.
 function SidebarLink({ item }: { item: NavMenuItem }) {
   const router = useRouter();
-
-  if (item.disabled) {
-    return (
-      <View testID={`web-chrome-nav-${item.key}`} style={styles.navItem}>
-        <ThemedText type="default" themeColor="textSecondary">
-          {item.label}
-        </ThemedText>
-      </View>
-    );
-  }
 
   return (
     <TouchableOpacity testID={`web-chrome-nav-${item.key}`} onPress={() => router.push(item.href)} style={styles.navItem}>

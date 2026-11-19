@@ -7,6 +7,7 @@ namespace StageArt\Core\Adapter;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\OrganizationCapability;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
@@ -72,6 +73,10 @@ final class CoreAuthorizationAdapter implements AuthorizationContract
 
         if ($person === null) {
             return false;
+        }
+
+        if ($capability === OrganizationCapability::ACCOUNTING) {
+            return $this->productionAuthorization->hasOrganizationDelegateArea($person, $organizationId, DelegateArea::ACCOUNTING);
         }
 
         $allowedRoleKeys = $this->roleKeysGranting($capability);

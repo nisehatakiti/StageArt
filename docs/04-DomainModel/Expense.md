@@ -2,7 +2,7 @@
 
 # Domain Model : Expense
 
-Version : 1.2
+Version : 1.3
 
 ---
 
@@ -25,6 +25,8 @@ Expenseには証憑を関連付けることができる。
 証憑が存在しないことを、未払計上の阻害条件としない。
 
 証憑は後から追加できる構造とする。
+
+一般Memberによる小口立替Expenseの領収書画像は任意項目とし、保存・閲覧は`ExpenseApprovalWorkflow.md`の「Receipt Storage and Access」に従う（Version 1.3）。領収書を公開WordPressメディアや公開URLへ保存してはならず、公開画像向けの`10-Architecture/MediaPolicy.md`を領収書に流用しない。
 
 ---
 
@@ -252,6 +254,8 @@ POSTED済みJournal Entryは変更・削除しない。
 支払額が未払計上額と異なる場合でも、差額調整を含めて会計上正しい未払金残高を表現する。
 
 支払がまだ行われていない場合、未払金残高は残る。
+
+一般Memberの小口立替Expenseについては、承認金額の全額を1回で支払う支払処理（POSTED → SETTLED、表示：支払済み）を`ExpenseApprovalWorkflow.md`の「Settlement（支払済み）」で定める（Version 1.3。方針・未実装）。小口立替Expenseでは一部支払い・差額調整を行わない。本書の精算差額・Open Questionsの一部支払は、大口支出の未払計上を対象とする。
 
 ---
 

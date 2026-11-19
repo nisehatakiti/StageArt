@@ -1,9 +1,31 @@
 import { usePathname, type Href } from 'expo-router';
 
+import {
+  canEditOrganizationInfo,
+  canManageOrganizationAccounting,
+  canManageOrganizationMembers,
+  canManageOrganizationProductions,
+  canTransferOrganizationOwner,
+} from '@/features/organization/permissions';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { useMyParticipatingProductions } from '@/features/participant/useParticipant';
+import {
+  canEditProductionInfo,
+  canManageProductionCheckIn,
+  canManageProductionDelegates,
+  canManageProductionParticipants,
+  canManageProductionPerformances,
+  canManageProductionQuestionnaire,
+  canManageProductionSettlement,
+  canManageProductionTickets,
+  canOpenProductionSchedule,
+  canViewProductionAccounting,
+} from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
+import type { Organization, Production } from '@/types/api';
 
-export type NavMenuItem = { key: string; label: string; href: Href; disabled?: boolean; groupLabel?: string };
+/** A menu entry. There is no disabled state: an item the Person may not use is not listed at all. */
+export type NavMenuItem = { key: string; label: string; href: Href; groupLabel?: string };
 
 export type ContextAreaType = 'home' | 'organization' | 'production';
 
@@ -68,24 +90,48 @@ const HOME_CONTEXT_ITEMS: NavMenuItem[] = [
  * are handled from Member Management rather than as a separate Organization
  * menu item. Past-production registration uses the normal Production creation
  * flow, so it has no separate menu entry.
+ *
+ * Each item is listed only for those the backend lets use it
+ * (features/organization/permissions.ts, the same rules the screens use);
+ * nothing is shown disabled (docs/10-Architecture/ManagementNavigationPolicy.md:
+ * 権限のない管理機能はメニューから表示しない). A member or anyone outside the
+ * Organization therefore gets no management item; the API still refuses
+ * them on its own.
+ * A delegate (ORGANIZATION_MANAGER) gets the items of the 管理領域 the
+ * Owner gave them (current_person_management_areas), nothing more:
+ *   団体情報        Owner, every delegate (tied to the Role, not an area)
+ *   メンバー管理    Owner, delegate with メンバー管理 (MEMBERS)
+ *   代表者交代      Owner only
+ *   公演・活動一覧  Owner, delegate with 公演管理 (PRODUCTIONS)
+ *   会計管理        Owner, delegate with 会計管理 (ACCOUNTING); only when accounting is enabled
  */
 
-function buildOrganizationContextItems(id: string, isOwner: boolean, accountingEnabled: boolean): NavMenuItem[] {
-  const items: NavMenuItem[] = [
-    { key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href, disabled: !isOwner },
-    { key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href, groupLabel: 'メンバー管理' },
-    {
+function buildOrganizationContextItems(id: string, organization: Organization | undefined): NavMenuItem[] {
+  const items: NavMenuItem[] = [];
+
+  if (canEditOrganizationInfo(organization)) {
+    items.push({ key: 'organization-info', label: '団体情報', href: `/organizations/${id}/edit` as Href });
+  }
+
+  if (canManageOrganizationMembers(organization)) {
+    items.push({ key: 'organization-members', label: 'メンバー管理', href: `/organizations/${id}/members` as Href, groupLabel: 'メンバー管理' });
+  }
+
+  if (canTransferOrganizationOwner(organization)) {
+    items.push({
       key: 'organization-members-owner-transfer',
       label: '代表者交代',
       href: `/organizations/${id}/members/owner-transfer` as Href,
-    },
-  ];
+    });
+  }
 
-  items.push(
-    { key: 'organization-productions', label: '公演・活動一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演・活動管理' }
-  );
+  if (canManageOrganizationProductions(organization)) {
+    items.push(
+      { key: 'organization-productions', label: '公演・活動一覧', href: `/organizations/${id}/productions` as Href, groupLabel: '公演・活動管理' }
+    );
+  }
 
-  if (accountingEnabled) {
+  if (organization?.accounting_enabled && canManageOrganizationAccounting(organization)) {
     items.push({ key: 'organization-accounting', label: '会計管理', href: `/organizations/${id}/accounting` as Href });
   }
 
@@ -94,13 +140,11 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
 
 /**
  * Production Context basic structure per this Phase's explicit
- * instruction §4. チケット管理／小屋入り～本番／公演終了・精算処理 are
- * rendered as disabled placeholders: the menu shape is allowed to exist
- * ahead of the feature (instruction §4/§6 - "将来配置されることを前提に
- * するのは問題ない"), but nothing behind them is built this Phase, so
- * they must not be clickable dead ends.
+ * instruction §4. (History: チケット管理／小屋入り～本番／公演終了・精算処理
+ * were first disabled placeholders ahead of their features; the items
+ * without permission are now hidden instead - see the last paragraph.)
  *
- * Mirrors productions/[id]/index.tsx's own menuGrid gating exactly
+ * Gating history (the items below were "disabled", now hidden):
  * (公演情報: disabled for non-Primary-Manager; メンバー管理: disabled
  * unless Primary Manager or a PARTICIPANT_MANAGER Delegate; 稽古管理:
  * always available; 公演スケジュール管理 - added by Phase 2 Performance基盤 -
@@ -131,55 +175,61 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  * 「担当者」「アンケート」は今回の確定リストに明記されていないが、削除する
  * 仕様も見当たらないため既存のまま維持する（要確認）。
  *
+ * メニューの非表示統一: an item the signed-in Person may not use is left
+ * out entirely, as in the Organization Context - nothing is rendered
+ * disabled (docs/04-CommonNavigationDesign.md 「権限のない項目は表示しない」).
+ * Each condition comes from features/production/permissions.ts, the same
+ * rules the screens behind the items check. 予定管理 stays for everyone in
+ * the Production (participants use it). 公演終了／精算処理 follows
+ * Settlement.Manage on the server: PrimaryManager or ACCOUNTING_MANAGER.
+ *
  * 会計 (ManagementNavigationPolicy.md "Production Context": 公演 > 会計 >
  * 予算 / 実績 / 経費承認 / 決算): the Production's own accounting, grouped
  * under one 会計 heading - 予算 opens the Budget list, 実績 the Production
- * Accounting Summary (予算・実績・差異). Usable by the PrimaryManager or an
- * ACCOUNTING_MANAGER only (Accounting.Update), the same rule as the API.
+ * Accounting Summary (予算・実績・差異). Listed for the PrimaryManager or an
+ * ACCOUNTING_MANAGER only, the same rule as the 会計 tab and the API.
  * 経費承認 and 決算 have no menu entry yet.
  */
-function buildProductionContextItems(
-  id: string,
-  isPrimaryManager: boolean,
-  canManageParticipants: boolean,
-  canManagePerformances: boolean,
-  canManageTickets: boolean,
-  canManageCheckIn: boolean,
-  canManageQuestionnaire: boolean,
-  canViewAccounting: boolean
-): NavMenuItem[] {
-  return [
-    { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
-    { key: 'production-delegates', label: '担当者', href: `/productions/${id}/delegates` as Href, disabled: !isPrimaryManager },
-    { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
-    { key: 'production-rehearsal', label: '予定管理', href: `/production/${id}/schedule/attendance` as Href },
+function buildProductionContextItems(id: string, production: Production | undefined, isParticipant: boolean): NavMenuItem[] {
+  const schedule: NavMenuItem = { key: 'production-rehearsal', label: '予定管理', href: `/production/${id}/schedule/attendance` as Href };
+  // A plain participant cannot read GET /productions/{id} (403), so the
+  // Production is undefined for them: they get 予定管理 only - the
+  // participant-facing entry - and never a management item. Someone outside
+  // the Production gets nothing.
+  if (!production) return isParticipant ? [schedule] : [];
+  const items: (NavMenuItem & { visible: boolean })[] = [
+    { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, visible: canEditProductionInfo(production) },
+    { key: 'production-delegates', label: '担当者', href: `/productions/${id}/delegates` as Href, visible: canManageProductionDelegates(production) },
+    { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, visible: canManageProductionParticipants(production) },
+    { ...schedule, visible: canOpenProductionSchedule(production, isParticipant) },
     {
       key: 'production-performances',
       label: '公演スケジュール管理',
       href: `/productions/${id}/performances` as Href,
-      disabled: !canManagePerformances,
+      visible: canManageProductionPerformances(production),
     },
-    { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, disabled: !canManageTickets },
-    { key: 'production-ticket-quota', label: 'チケットノルマ', href: `/productions/${id}/quota` as Href, disabled: !canManageTickets },
+    { key: 'production-ticket', label: 'チケット管理', href: `/productions/${id}/tickets` as Href, visible: canManageProductionTickets(production) },
+    { key: 'production-ticket-quota', label: 'チケットノルマ', href: `/productions/${id}/quota` as Href, visible: canManageProductionTickets(production) },
     {
       key: 'production-timetable',
       label: 'タイムテーブル',
       href: `/production/${id}/schedule` as Href,
-      disabled: !canManageCheckIn,
       groupLabel: '小屋入り～本番',
+      visible: canManageProductionCheckIn(production),
     },
-    { key: 'production-reception', label: '受付', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
-    { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !isPrimaryManager },
-    { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, disabled: !canManageQuestionnaire },
+    { key: 'production-reception', label: '受付', href: `/productions/${id}/checkin` as Href, visible: canManageProductionCheckIn(production) },
+    { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, visible: canManageProductionSettlement(production) },
+    { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, visible: canManageProductionQuestionnaire(production) },
     {
       key: 'production-accounting-budget',
       label: '予算',
       href: `/productions/${id}/budgets` as Href,
-      disabled: !canViewAccounting,
       groupLabel: '会計',
+      visible: canViewProductionAccounting(production),
     },
-    { key: 'production-accounting', label: '実績', href: `/production/${id}/accounting` as Href, disabled: !canViewAccounting },
+    { key: 'production-accounting', label: '実績', href: `/production/${id}/accounting` as Href, visible: canViewProductionAccounting(production) },
   ];
+  return items.filter((item) => item.visible).map(({ visible: _visible, ...item }) => item);
 }
 
 /**
@@ -219,6 +269,16 @@ export function useNavMenu() {
   const context = useCurrentContext();
   const organizationsQuery = useOrganizations();
   const productionQuery = useProduction(context.productionId ?? undefined);
+  // Participation is asked for only when it decides something: inside a
+  // Production Context, once the Production fetch has settled without a
+  // Production (the server refuses it to anyone but the PrimaryManager /
+  // delegates, who get 予定管理 from the Production itself). Shares the cached
+  // ['my-participating-productions'] query with 参加している公演・活動.
+  const needsParticipation =
+    context.type === 'production' && !!context.productionId && !productionQuery.isLoading && !productionQuery.data;
+  const participatingQuery = useMyParticipatingProductions({ enabled: needsParticipation });
+  const isParticipant =
+    needsParticipation && (participatingQuery.data ?? []).some((row) => row.production_id === context.productionId);
 
   if (context.type === 'organization' && context.organizationId) {
     const organization = organizationsQuery.data?.find((org) => org.id === context.organizationId);
@@ -226,39 +286,18 @@ export function useNavMenu() {
       fixedItems: FIXED_ITEMS,
       contextType: 'organization' as const,
       contextLabel: organization?.name ?? '団体',
-      contextItems: buildOrganizationContextItems(
-        context.organizationId,
-        organization?.current_person_role === 'OWNER',
-        !!organization?.accounting_enabled
-      ),
+      contextItems: buildOrganizationContextItems(context.organizationId, organization),
       backTo: ORGANIZATION_BACK_TO,
     };
   }
 
   if (context.type === 'production' && context.productionId) {
     const production = productionQuery.data;
-    const isPrimaryManager = !!production?.is_primary_manager;
-    const delegateRoles = production?.delegate_roles ?? [];
-    const canManageParticipants = isPrimaryManager || delegateRoles.includes('PARTICIPANT_MANAGER');
-    const canManagePerformances = isPrimaryManager || delegateRoles.includes('PERFORMANCE_MANAGER');
-    const canManageTickets = isPrimaryManager || delegateRoles.includes('TICKET_MANAGER');
-    const canManageCheckIn = isPrimaryManager || delegateRoles.includes('CHECKIN_MANAGER');
-    const canManageQuestionnaire = isPrimaryManager || delegateRoles.includes('QUESTIONNAIRE_MANAGER');
-    const canViewAccounting = isPrimaryManager || delegateRoles.includes('ACCOUNTING_MANAGER');
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
       contextLabel: production?.name ?? '公演',
-      contextItems: buildProductionContextItems(
-        context.productionId,
-        isPrimaryManager,
-        canManageParticipants,
-        canManagePerformances,
-        canManageTickets,
-        canManageCheckIn,
-        canManageQuestionnaire,
-        canViewAccounting
-      ),
+      contextItems: buildProductionContextItems(context.productionId, production, isParticipant),
       // See ORGANIZATION_BACK_TO's own docblock for why this is not yet
       // implemented for Production Context.
       backTo: null,

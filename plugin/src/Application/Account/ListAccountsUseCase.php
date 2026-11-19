@@ -63,7 +63,10 @@ final class ListAccountsUseCase
             throw new OrganizationNotFoundException($query->organizationId);
         }
 
-        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::MEMBER)) {
+        if (
+            ! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::MEMBER)
+            && ! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::ACCOUNTING)
+        ) {
             throw new AccountAccessDeniedException('Only members of this Organization can view its Accounts.');
         }
 

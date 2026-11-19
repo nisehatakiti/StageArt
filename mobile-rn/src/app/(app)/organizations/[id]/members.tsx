@@ -6,12 +6,19 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import {
+  canManageOrganizationDelegates,
+  canManageOrganizationJoinKeys,
+  canManageOrganizationMembers,
+  isOrganizationOwner,
+} from '@/features/organization/permissions';
+import {
   useCreateOrganizationInvitation,
+  useOrganizationDelegateAreas,
   useOrganizationInvitations,
   useOrganizationMembers,
   useOrganizations,
 } from '@/features/organization/useOrganizations';
-import type { OrganizationMember } from '@/types/api';
+import type { DelegateArea, OrganizationMember } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 export default function OrganizationMembersScreen() {
@@ -19,16 +26,20 @@ export default function OrganizationMembersScreen() {
   const router = useRouter();
   const organizationsQuery = useOrganizations();
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
-  const role = organization?.current_person_role ?? null;
-  const isOwner = role === 'OWNER';
-  const canManage = isOwner || role === 'ORGANIZATION_MANAGER';
+  const isOwner = isOrganizationOwner(organization);
+  const canManage = canManageOrganizationMembers(organization);
+  // 代理人を設定 and each delegate's 管理領域 - Owner only (the API refuses anyone else).
+  const canDelegate = canManageOrganizationDelegates(organization);
 
   const { query: membersQuery, updateRemarks, assignDelegate, revokeDelegate } = useOrganizationMembers(canManage ? id : undefined);
   const { query: invitationsQuery, resend, cancel } = useOrganizationInvitations(canManage ? id : undefined);
   const createInvitation = useCreateOrganizationInvitation(id);
+  const { query: delegateAreasQuery, update: updateDelegateAreas } = useOrganizationDelegateAreas(canDelegate ? id : undefined);
 
   const pendingInvitations = (invitationsQuery.data ?? []).filter((invitation) => invitation.status === 'PENDING');
   const [remarksEdits, setRemarksEdits] = useState<Record<string, string>>({});
+  // Unsaved 管理領域 changes only; everything else shows the saved areas.
+  const [areaEdits, setAreaEdits] = useState<Record<string, DelegateArea[]>>({});
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRemarks, setNewMemberRemarks] = useState('');
@@ -51,6 +62,18 @@ export default function OrganizationMembersScreen() {
     }
   }, [membersQuery.data]);
 
+  const savedAreasByPerson = new Map((delegateAreasQuery.data ?? []).map((entry) => [entry.person_id, entry.areas]));
+
+  function shownAreas(personId: string): DelegateArea[] {
+    return areaEdits[personId] ?? savedAreasByPerson.get(personId) ?? [];
+  }
+
+  function toggleArea(personId: string, area: DelegateArea) {
+    const current = shownAreas(personId);
+    const next = current.includes(area) ? current.filter((candidate) => candidate !== area) : [...current, area];
+    setAreaEdits((edits) => ({ ...edits, [personId]: DELEGATE_AREAS.map((entry) => entry.area).filter((candidate) => next.includes(candidate)) }));
+  }
+
   async function handleSave() {
     setSaving(true);
     setErrorMessage(null);
@@ -61,6 +84,13 @@ export default function OrganizationMembersScreen() {
         if (edited !== (member.remarks ?? '')) {
           await updateRemarks.mutateAsync({ personId: member.person_id, remarks: edited.trim() ? edited.trim() : null });
         }
+      }
+      for (const [personId, areas] of Object.entries(areaEdits)) {
+        const saved = savedAreasByPerson.get(personId) ?? [];
+        if (areas.length !== saved.length || areas.some((area) => !saved.includes(area))) {
+          await updateDelegateAreas.mutateAsync({ personId, areas });
+        }
+        setAreaEdits(({ [personId]: _done, ...rest }) => rest);
       }
       setSavedMessage('メンバー情報を保存しました。');
     } catch (error) {
@@ -104,6 +134,8 @@ export default function OrganizationMembersScreen() {
     try {
       if (member.role_key === 'ORGANIZATION_MANAGER') {
         await revokeDelegate.mutateAsync(member.person_id);
+        // The server drops the areas with the Role; drop any unsaved ones too.
+        setAreaEdits(({ [member.person_id]: _dropped, ...rest }) => rest);
       } else {
         await assignDelegate.mutateAsync(member.person_id);
       }
@@ -120,14 +152,17 @@ export default function OrganizationMembersScreen() {
   }
 
   const memberTable = (
-    <View style={styles.memberTable} testID="organization-members-list">
+    <View style={[styles.memberTable, canDelegate && styles.memberTableWithAreas]} testID="organization-members-list">
       <View style={styles.memberTableHeader}>
         <ThemedText style={styles.nameHeader}>名前</ThemedText>
         <ThemedText style={styles.roleHeader}>役割</ThemedText>
         <ThemedText style={styles.remarksHeader}>備考</ThemedText>
         <ThemedText style={styles.emailHeader}>メールアドレス</ThemedText>
         <ThemedText style={styles.actionHeader}>操作</ThemedText>
-        {isOwner && <ThemedText style={styles.delegateHeader}>代理人</ThemedText>}
+        {canDelegate && <ThemedText style={styles.delegateHeader}>代理人</ThemedText>}
+        {canDelegate && DELEGATE_AREAS.map(({ area, label }) => (
+          <ThemedText key={area} style={styles.areaHeader}>{label}</ThemedText>
+        ))}
       </View>
 
       {(membersQuery.data ?? []).map((member) => (
@@ -147,7 +182,7 @@ export default function OrganizationMembersScreen() {
             {member.email ?? ''}
           </ThemedText>
           <View style={styles.actionCell} />
-          {isOwner && (
+          {canDelegate && (
             <TouchableOpacity
               testID={`organization-member-delegate-${member.person_id}`}
               accessibilityRole="checkbox"
@@ -159,6 +194,37 @@ export default function OrganizationMembersScreen() {
               <ThemedText style={styles.checkbox}>{member.role_key === 'ORGANIZATION_MANAGER' ? '☑' : '□'}</ThemedText>
             </TouchableOpacity>
           )}
+          {canDelegate && DELEGATE_AREAS.map(({ area, label }) => {
+            const testID = `organization-member-area-${area}-${member.person_id}`;
+            if (member.role_key === 'OWNER') {
+              // 代表者は全管理権限を持つ - fixed, not editable here.
+              return (
+                <View key={area} style={styles.areaCell} testID={testID} accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked: true, disabled: true }}>
+                  <ThemedText style={[styles.checkbox, styles.fixedCheckbox]}>☑</ThemedText>
+                </View>
+              );
+            }
+            if (member.role_key !== 'ORGANIZATION_MANAGER') {
+              // Only a delegate holds areas: make the person a delegate first.
+              return <View key={area} style={styles.areaCell} />;
+            }
+            const checked = shownAreas(member.person_id).includes(area);
+            const disabled = saving || delegateAreasQuery.isLoading || revokeDelegate.isPending;
+            return (
+              <TouchableOpacity
+                key={area}
+                testID={testID}
+                accessibilityRole="checkbox"
+                accessibilityLabel={label}
+                accessibilityState={{ checked, disabled }}
+                disabled={disabled}
+                onPress={() => toggleArea(member.person_id, area)}
+                style={styles.areaCell}
+              >
+                <ThemedText style={styles.checkbox}>{checked ? '☑' : '□'}</ThemedText>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ))}
 
@@ -198,7 +264,8 @@ export default function OrganizationMembersScreen() {
         >
           {createInvitation.isPending ? <ActivityIndicator color={BrandColors.warmAmber} /> : <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>}
         </TouchableOpacity>
-        {isOwner && <View style={styles.delegateCell} />}
+        {canDelegate && <View style={styles.delegateCell} />}
+        {canDelegate && DELEGATE_AREAS.map(({ area }) => <View key={area} style={styles.areaCell} />)}
       </View>
     </View>
   );
@@ -241,15 +308,22 @@ export default function OrganizationMembersScreen() {
             <ThemedText style={styles.secondaryButtonText}>代表者交代</ThemedText>
           </TouchableOpacity>
         )}
-        <TouchableOpacity testID="organization-members-invite" onPress={() => router.push(`/organizations/${id}/invite` as Href)} style={styles.secondaryButton}>
-          <ThemedText style={styles.secondaryButtonText}>参加コード</ThemedText>
-        </TouchableOpacity>
+        {canManageOrganizationJoinKeys(organization) && (
+          <TouchableOpacity testID="organization-members-invite" onPress={() => router.push(`/organizations/${id}/invite` as Href)} style={styles.secondaryButton}>
+            <ThemedText style={styles.secondaryButtonText}>参加コード</ThemedText>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>登録済みメンバー</ThemedText>
 
       {membersQuery.isLoading && <ActivityIndicator testID="organization-members-list-loading" />}
       {membersQuery.isError && <ThemedText testID="organization-members-list-error">{getErrorMessage(membersQuery.error)}</ThemedText>}
+      {delegateAreasQuery.isError && (
+        <ThemedText testID="organization-delegate-areas-error" style={styles.error}>
+          代理人の管理領域を読み込めませんでした: {getErrorMessage(delegateAreasQuery.error)}
+        </ThemedText>
+      )}
       {!membersQuery.isLoading && !membersQuery.isError && (
         Platform.OS === 'web' ? (
           <View style={styles.webTableScroll} testID="organization-members-table-scroll">{memberTable}</View>
@@ -279,6 +353,13 @@ export default function OrganizationMembersScreen() {
     </ScrollView>
   );
 }
+
+/** 代理人に委任できる管理領域 (docs/03-PublicPageURLAndPublicationSchedule.md「代理人設定」), in display order. */
+const DELEGATE_AREAS: { area: DelegateArea; label: string }[] = [
+  { area: 'MEMBERS', label: 'メンバー管理' },
+  { area: 'PRODUCTIONS', label: '公演管理' },
+  { area: 'ACCOUNTING', label: '会計管理' },
+];
 
 function roleLabel(roleKey: string | null): string {
   switch (roleKey) {
@@ -311,7 +392,11 @@ const styles = StyleSheet.create({
   actionCell: { width: 190 },
   delegateHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
   delegateCell: { width: 100, justifyContent: 'center', alignItems: 'center' },
+  memberTableWithAreas: { minWidth: 1220 + 3 * 110 },
+  areaHeader: { width: 110, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two, fontWeight: '600', textAlign: 'center' },
+  areaCell: { width: 110, justifyContent: 'center', alignItems: 'center' },
   checkbox: { fontSize: 22 },
+  fixedCheckbox: { opacity: 0.5 },
   addMemberTableRow: { flexDirection: 'row', alignItems: 'stretch', minHeight: 58, backgroundColor: '#fffaf0' },
   addNameInput: { width: 170, margin: Spacing.one, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, paddingHorizontal: Spacing.one, paddingVertical: 6 },
   addRoleCell: { width: 150, justifyContent: 'center', paddingHorizontal: Spacing.two },

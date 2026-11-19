@@ -7,10 +7,10 @@ namespace StageArt\Application\OrganizationInvitation;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationId;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /** Mirrors CancelParticipantInvitationUseCase's own shape - status ->
  * CANCELLED only, tokenHash left as-is (see OrganizationInvitation::isUsable()). */
@@ -50,7 +50,7 @@ final class CancelOrganizationInvitationUseCase
             throw new OrganizationNotFoundException($invitation->organizationId()->toString());
         }
 
-        if (! $this->authorization->hasRole($requester, $invitation->organizationId(), [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $this->authorization->hasDelegateArea($requester, $invitation->organizationId(), DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can cancel this invitation.');
         }
 

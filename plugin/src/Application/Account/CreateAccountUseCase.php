@@ -62,8 +62,8 @@ final class CreateAccountUseCase
             throw new OrganizationNotFoundException($command->organizationId);
         }
 
-        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::OWNER)) {
-            throw new AccountAccessDeniedException('Only the Organization Owner can create Accounts.');
+        if (! $this->authorization->canForOrganization($requesterId, $organizationId, OrganizationCapability::ACCOUNTING)) {
+            throw new AccountAccessDeniedException('Only the Organization Owner or a delegate with the ACCOUNTING area can create Accounts.');
         }
 
         $parentAccountId = null;

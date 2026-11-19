@@ -2,7 +2,7 @@
 
 # Media Policy
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -106,6 +106,16 @@ Bust-upが未登録の場合の代替表示はUI設計時に定義するが、Fu
 - Person Full-body
 
 将来追加されるWeb公開用画像については、固定スロットを追加するか、本Policyを拡張した上で扱う。
+
+---
+
+# Out of Scope : Expense Receipts
+
+Version 1.2：経費申請の領収書画像には本Policyを適用しない。
+
+本Policyは公開WebページおよびStageArt UIで表示する画像を対象とし、原本を保存しない・公開表示用に正規化する等を定める。領収書は会計上の証憑であり、非公開で保存し、権限を持つ者だけが取得できなければならないため、保存方式・認可・原本の扱いが異なる。
+
+領収書の保存・閲覧は`04-DomainModel/ExpenseApprovalWorkflow.md`の「Receipt Storage and Access」に従う。領収書をWordPressメディアや公開URLへ保存してはならない。
 
 ---
 

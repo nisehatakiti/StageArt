@@ -4,6 +4,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } fro
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
+import { canTransferOrganizationOwner } from '@/features/organization/permissions';
 import { useOrganizationMembers, useOrganizations, useTransferOrganizationOwner } from '@/features/organization/useOrganizations';
 import { getErrorMessage } from '@/utils/errorMessage';
 
@@ -22,7 +23,7 @@ export default function OrganizationMembersOwnerTransferScreen() {
   const router = useRouter();
   const organizationsQuery = useOrganizations();
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
-  const isOwner = organization?.current_person_role === 'OWNER';
+  const isOwner = canTransferOrganizationOwner(organization);
 
   const { query: membersQuery } = useOrganizationMembers(isOwner ? id : undefined);
   const transferOwner = useTransferOrganizationOwner(id);

@@ -2,8 +2,10 @@ import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
 import type {
   CreateOrganizationInvitationResult,
+  DelegateArea,
   MyFollow,
   Organization,
+  OrganizationDelegateAreas,
   OrganizationExternalLink,
   OrganizationFollowStatus,
   OrganizationInvitation,
@@ -106,6 +108,21 @@ export function assignOrganizationDelegate(client: ApiClient, organizationId: st
 /** DELETE /organizations/{id}/delegates/{personId} - owner-only revoke. */
 export function revokeOrganizationDelegate(client: ApiClient, organizationId: string, personId: string): Promise<void> {
   return client.delete<void>(`/organizations/${organizationId}/delegates/${personId}`);
+}
+
+/** GET /organizations/{id}/delegates - owner-only: every delegate's 管理領域. */
+export function fetchOrganizationDelegateAreas(client: ApiClient, organizationId: string): Promise<OrganizationDelegateAreas[]> {
+  return client.get<OrganizationDelegateAreas[]>(`/organizations/${organizationId}/delegates`);
+}
+
+/** PUT /organizations/{id}/delegates/{personId}/areas - owner-only: replaces one delegate's 管理領域. */
+export function updateOrganizationDelegateAreas(
+  client: ApiClient,
+  organizationId: string,
+  personId: string,
+  areas: DelegateArea[]
+): Promise<OrganizationDelegateAreas> {
+  return client.put<OrganizationDelegateAreas>(`/organizations/${organizationId}/delegates/${personId}/areas`, { areas });
 }
 
 // --- StageArt 団体管理UI整理 "メンバーを追加" ---

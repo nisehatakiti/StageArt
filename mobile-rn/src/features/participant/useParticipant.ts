@@ -21,14 +21,17 @@ export function useParticipants(productionId: string | undefined) {
   });
 }
 
-/** 「参加している公演・活動」の正式なデータソース - see fetchMyParticipatingProductions()'s own docblock. */
-export function useMyParticipatingProductions() {
+/**
+ * 「参加している公演・活動」の正式なデータソース - see fetchMyParticipatingProductions()'s own docblock.
+ * `enabled: false` skips the request (the Production Context menu asks only when it needs to).
+ */
+export function useMyParticipatingProductions(options?: { enabled?: boolean }) {
   const { apiClient, status } = useAuth();
 
   return useQuery({
     queryKey: ['my-participating-productions'],
     queryFn: () => fetchMyParticipatingProductions(apiClient),
-    enabled: status === 'authenticated',
+    enabled: status === 'authenticated' && (options?.enabled ?? true),
   });
 }
 

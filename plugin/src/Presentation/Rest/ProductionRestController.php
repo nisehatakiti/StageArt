@@ -35,6 +35,8 @@ use StageArt\Application\Production\SearchProductionsUseCase;
 use StageArt\Application\Production\UpdateProductionCommand;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\Project\ProjectNotFoundException;
+use StageArt\Application\PublicPage\GetPublicPageAppearanceUseCase;
+use StageArt\Domain\PublicPage\PublicPageSite;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -61,6 +63,7 @@ final class ProductionRestController
     private ArchiveProductionUseCase $archiveProduction;
     private CancelProductionUseCase $cancelProduction;
     private SearchProductionsUseCase $searchProductions;
+    private ?GetPublicPageAppearanceUseCase $publicPageAppearance;
 
     public function __construct(
         CreateProductionUseCase $createProduction,
@@ -74,8 +77,10 @@ final class ProductionRestController
         CompleteProductionUseCase $completeProduction,
         ArchiveProductionUseCase $archiveProduction,
         CancelProductionUseCase $cancelProduction,
-        SearchProductionsUseCase $searchProductions
+        SearchProductionsUseCase $searchProductions,
+        ?GetPublicPageAppearanceUseCase $publicPageAppearance = null
     ) {
+        $this->publicPageAppearance = $publicPageAppearance;
         $this->createProduction = $createProduction;
         $this->getProduction = $getProduction;
         $this->getProductionOverview = $getProductionOverview;
@@ -283,8 +288,21 @@ final class ProductionRestController
     {
         try {
             $query = new GetPublicProductionBySlugQuery((string) $request->get_param('slug'));
+            $data = $this->getPublicProductionBySlug->execute($query)->toArray();
 
-            return new WP_REST_Response($this->getPublicProductionBySlug->execute($query)->toArray(), 200);
+            // 公開ページ設定: this Production's own theme/hero, added only
+            // after the publication gate above has passed - and only when
+            // this Production has saved settings (its Organization's
+            // settings do not count; no public_page at all otherwise).
+            $appearance = $this->publicPageAppearance === null
+                ? null
+                : $this->publicPageAppearance->execute(PublicPageSite::production(), (string) $data['id']);
+
+            if ($appearance !== null) {
+                $data['public_page'] = $appearance->toArray();
+            }
+
+            return new WP_REST_Response($data, 200);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }

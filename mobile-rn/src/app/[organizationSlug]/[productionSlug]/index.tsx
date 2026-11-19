@@ -7,6 +7,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity } fr
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
 import { AppShell } from '@/components/app-shell';
+import { PublicPageHero } from '@/components/public-page-hero';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
@@ -15,6 +16,8 @@ import { useRequestProductionParticipation } from '@/features/participation/useP
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
 import { usePublicPerformances } from '@/features/performance/usePerformances';
 import { usePublicTickets } from '@/features/ticket/useTickets';
+import { PublicPageThemeProvider } from '@/features/publicPage/PublicPageTheme';
+import type { PublicPageThemeValues } from '@/features/publicPage/types';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -68,6 +71,13 @@ export default function PublicProductionScreen() {
   const { add: addFavorite, remove: removeFavorite } = useToggleFavorite();
   const isFavorited = !!query.data && !!myFavoritesQuery.data?.some((f) => f.target_type === 'PRODUCTION' && f.target_id === query.data!.id);
 
+  // 公開ページ設定: this Production's own theme and hero - independent of
+  // its Organization's (absent from older API responses - the page then
+  // looks as before).
+  const pageTheme = query.data?.public_page?.theme ?? null;
+  const hero = query.data?.public_page?.hero ?? null;
+  const themed = pageTheme ? themedStyles(pageTheme) : null;
+
   return (
     <AppShell scroll>
       {query.data && (
@@ -76,7 +86,8 @@ export default function PublicProductionScreen() {
           <meta name="description" content={`${query.data.organization.name}「${query.data.name}」のStageArt公式ページ`} />
         </Head>
       )}
-      <ScrollView contentContainerStyle={styles.container}>
+      <PublicPageThemeProvider theme={pageTheme}>
+      <ScrollView style={themed?.page} contentContainerStyle={styles.container} testID="public-production-page">
         {query.isLoading && <ActivityIndicator testID="public-production-loading" />}
 
         {query.isError && (
@@ -89,6 +100,15 @@ export default function PublicProductionScreen() {
 
         {query.data && (
           <ThemedView testID="public-production-content" style={styles.content}>
+            {hero && (
+              <PublicPageHero
+                testID="public-production-hero"
+                hero={hero}
+                fallbackTitle={query.data.name}
+                fallbackDescription={query.data.description}
+              />
+            )}
+
             {query.data.flyer_url && (
               <Image
                 testID="public-production-flyer"
@@ -161,14 +181,14 @@ export default function PublicProductionScreen() {
                       <TouchableOpacity
                         testID="public-production-type-cast"
                         onPress={() => setParticipantType('CAST')}
-                        style={[styles.typeOption, participantType === 'CAST' && styles.typeOptionSelected]}
+                        style={[styles.typeOption, themed?.border, participantType === 'CAST' && [styles.typeOptionSelected, themed?.selected]]}
                       >
                         <ThemedText>出演者として</ThemedText>
                       </TouchableOpacity>
                       <TouchableOpacity
                         testID="public-production-type-staff"
                         onPress={() => setParticipantType('STAFF')}
-                        style={[styles.typeOption, participantType === 'STAFF' && styles.typeOptionSelected]}
+                        style={[styles.typeOption, themed?.border, participantType === 'STAFF' && [styles.typeOptionSelected, themed?.selected]]}
                       >
                         <ThemedText>スタッフとして</ThemedText>
                       </TouchableOpacity>
@@ -177,9 +197,9 @@ export default function PublicProductionScreen() {
                       testID="public-production-request-participation"
                       onPress={() => requestParticipation.mutate({ productionId: query.data!.id, participantType })}
                       disabled={requestParticipation.isPending}
-                      style={styles.secondaryButton}
+                      style={[styles.secondaryButton, themed?.outlineButton]}
                     >
-                      <ThemedText style={styles.secondaryButtonText}>この公演・活動に参加を申請する</ThemedText>
+                      <ThemedText style={[styles.secondaryButtonText, themed?.outlineButtonText]}>この公演・活動に参加を申請する</ThemedText>
                     </TouchableOpacity>
                   </>
                 ) : (
@@ -197,7 +217,7 @@ export default function PublicProductionScreen() {
               <ThemedView style={styles.ticketSection} testID="public-production-tickets">
                 <ThemedText type="subtitle">チケット</ThemedText>
                 {ticketsQuery.data!.tickets.map((ticket) => (
-                  <ThemedView key={ticket.id} style={styles.ticketRow} testID={`public-ticket-${ticket.id}`}>
+                  <ThemedView key={ticket.id} style={[styles.ticketRow, themed?.rowBorder]} testID={`public-ticket-${ticket.id}`}>
                     <ThemedText type="smallBold">{ticket.name}</ThemedText>
                     <ThemedText themeColor="textSecondary">{ticket.price}円</ThemedText>
                     {ticket.remarks && (
@@ -214,7 +234,7 @@ export default function PublicProductionScreen() {
               <ThemedView style={styles.performanceSection} testID="public-production-performances">
                 <ThemedText type="subtitle">公演スケジュール</ThemedText>
                 {performancesQuery.data!.map((performance) => (
-                  <ThemedView key={performance.id} style={styles.performanceRow} testID={`public-performance-${performance.id}`}>
+                  <ThemedView key={performance.id} style={[styles.performanceRow, themed?.rowBorder]} testID={`public-performance-${performance.id}`}>
                     <ThemedText>
                       {performance.performance_date} {performance.start_time.slice(0, 5)}
                       {performance.end_time ? `〜${performance.end_time.slice(0, 5)}` : ''}
@@ -223,9 +243,9 @@ export default function PublicProductionScreen() {
                       <TouchableOpacity
                         testID={`public-performance-reserve-${performance.id}`}
                         onPress={() => router.push(`/reserve/${performance.id}?productionId=${query.data!.id}` as Href)}
-                        style={styles.reserveButton}
+                        style={[styles.reserveButton, themed?.filledButton]}
                       >
-                        <ThemedText style={styles.reserveButtonText}>予約する</ThemedText>
+                        <ThemedText style={[styles.reserveButtonText, themed?.filledButtonText]}>予約する</ThemedText>
                       </TouchableOpacity>
                     )}
                   </ThemedView>
@@ -239,8 +259,23 @@ export default function PublicProductionScreen() {
           </ThemedView>
         )}
       </ScrollView>
+      </PublicPageThemeProvider>
     </AppShell>
   );
+}
+
+/** StageArtCore ThemeRenderer: page background, borders, buttons in the main color (`.stageart-button`). */
+function themedStyles(theme: PublicPageThemeValues) {
+  return {
+    page: { backgroundColor: theme.bg },
+    border: { borderColor: theme.border },
+    rowBorder: { borderBottomColor: theme.border },
+    selected: { borderColor: theme.primary, backgroundColor: theme.surface },
+    filledButton: { backgroundColor: theme.primary },
+    filledButtonText: { color: theme.surface },
+    outlineButton: { borderColor: theme.primary },
+    outlineButtonText: { color: theme.primary },
+  };
 }
 
 const styles = StyleSheet.create({

@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Ticket Revenue / Accounting
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -35,6 +35,8 @@ Ticket Revenue認識
 Journal Entry
 
 したがって、予約済みで未来場のTicketは、Revenueとして認識せず、未収金として扱う。
+
+ただし、受付でNO_SHOWとして確定したReservationは、本Ruleの確定済み例外としてTicket Revenueを認識する（後述「No-Show」）。
 
 ---
 
@@ -126,11 +128,25 @@ Ticket Revenue 3,000 / 未収金 3,000
 
 # No-Show
 
-Reservationが成立していてもCheck Inされなかった場合、原則としてTicket Revenueは認識しない。
+以下を確定仕様とする（Version 1.2で旧「No-ShowではTicket Revenueを認識しない」を置き換え）。
 
-No-ShowとなったReservationについて、未収金をどう処理するかは、キャンセル規則・返金規則・免除規則等に従ってAccounting上で処理する。
+- NO_SHOWはTicket Revenue（売上実績）に含める。
+- NO_SHOWは販売実績に含める。
+- NO_SHOWはTicket Backの計算対象に含める。
+- NO_SHOWはノルマ実績に含める。
+- NO_SHOWは実来場者数に含めない。
+- NO_SHOWのReservationはCapacityを消費し続ける。
+- NO_SHOW後の通常の予約取消は行えない。
+- 通常の予約取消によってNO_SHOWの売上Journal Entryを自動的に取り消さない。
+- 確定済みJournal Entryの訂正が必要な別のケースでは、後述「Reversal and Adjustment」に従う。
 
-Revenue Recognitionは、原則としてCheck Inという来場Factに基づく。
+NO_SHOWの確定は、受付でReservationをNO_SHOWとして記録した時点とする。Accountingが有効な場合、その時点でReservation単位のTicket Revenue Journal Entryを生成し確定する。NO_SHOWは来場Factではないため、Check In実績は生成しない。
+
+売上認識と実来場者数は別の概念として扱う。売上計上済みであることを理由に、NO_SHOWを実来場者数へ加算してはならない。
+
+Check Inされず、NO_SHOWとしても記録されていないReservationについては、原則どおりTicket Revenueを認識しない。
+
+Revenue Recognitionは、原則としてCheck Inという来場Factに基づき、NO_SHOWの確定をその例外とする。
 
 ---
 
@@ -180,6 +196,8 @@ Budgetは計画値であり、ActualはJournal Entryから算出される実績�
 
 Accounting Processingは、Eventの一意識別情報等を利用してIdempotentに実行できる構造とする。
 
+NO_SHOWによるTicket Revenueも同様に、Reservation単位で高々一件とし、同一ReservationのNO_SHOW確定を再処理しても二重計上してはならない。
+
 ---
 
 # Reversal and Adjustment
@@ -196,7 +214,7 @@ Revenue認識後にCheck Inが無効化された場合も、元のRevenue Journa
 
 Ticket Revenueの認識タイミングは以下を正式仕様とする。
 
-> **Reservation成立時点では未収金。Check In時点でTicket Revenue成立・認識。**
+> **Reservation成立時点では未収金。Check In時点でTicket Revenue成立・認識。NO_SHOWの確定時点でもTicket Revenueを認識する（実来場者数には含めない）。**
 
 これにより、予約と売上を明確に分離する。
 

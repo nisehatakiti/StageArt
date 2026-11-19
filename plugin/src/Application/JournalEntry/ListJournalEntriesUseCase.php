@@ -61,7 +61,7 @@ final class ListJournalEntriesUseCase
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
             throw new JournalEntryAccessDeniedException(
-                'Only the PrimaryManager can view this Production\'s Journal Entries.'
+                'Only the PrimaryManager or an Accounting Manager can view this Production\'s Journal Entries.'
             );
         }
 

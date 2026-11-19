@@ -24,6 +24,11 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * QR code display is explicitly deferred this phase - see this
  * screen's Organization counterpart's docblock and this Phase's
  * completion report for the reasoning.
+ *
+ * Listing / issuing / disabling a Production Join Key is PrimaryManager-
+ * only on the server (List/IssueProductionJoinKeyUseCase,
+ * DisableJoinKeyUseCase); when the list is refused, its error is shown
+ * and no issue button is offered.
  */
 export default function ProductionInviteScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
@@ -48,7 +53,11 @@ export default function ProductionInviteScreen() {
 
           {joinKeysQuery.isLoading && <ActivityIndicator testID="production-join-key-loading" />}
 
-          {activeKey ? (
+          {joinKeysQuery.isError ? (
+            <ThemedText testID="production-join-key-error" style={styles.error}>
+              {getErrorMessage(joinKeysQuery.error)}
+            </ThemedText>
+          ) : activeKey ? (
             <ThemedView style={styles.keyCard} testID="production-join-key-active">
               <ThemedText type="title" style={styles.keyCode}>
                 {activeKey.code}
@@ -92,7 +101,13 @@ export default function ProductionInviteScreen() {
 
           {pendingQuery.isLoading && <ActivityIndicator testID="pending-participation-loading" />}
 
-          {!pendingQuery.isLoading && (pendingQuery.data?.length ?? 0) === 0 && (
+          {pendingQuery.isError && (
+            <ThemedText testID="pending-participation-error" style={styles.error}>
+              {getErrorMessage(pendingQuery.error)}
+            </ThemedText>
+          )}
+
+          {!pendingQuery.isLoading && !pendingQuery.isError && (pendingQuery.data?.length ?? 0) === 0 && (
             <ThemedText testID="pending-participation-empty" themeColor="textSecondary">
               現在、参加申請はありません。
             </ThemedText>

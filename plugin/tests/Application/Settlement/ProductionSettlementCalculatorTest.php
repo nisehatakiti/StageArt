@@ -144,6 +144,30 @@ final class ProductionSettlementCalculatorTest extends TestCase
         $this->assertSame(2, $this->calculator->productionWideSoldCount($production->id()));
     }
 
+    /**
+     * ノルマ実績 (Production-wide sold count, QuotaCalculator's input):
+     * NO_SHOW counts like CHECKED_IN; RESERVED and CANCELLED do not.
+     */
+    public function test_production_wide_sold_count_includes_no_show(): void
+    {
+        $production = $this->givenProduction();
+        $performance = Performance::create($production->id(), new DateTimeImmutable('-1 day'), '18:00', null, 100, null, null);
+        $this->performances->save($performance);
+        $ticket = Ticket::create($production->id(), 'A席', 1000, null);
+        $this->tickets->save($ticket);
+
+        $this->reservations->save($this->checkedIn($performance, $ticket->id(), 1000, null));
+        $noShow = Reservation::create($performance->id(), $ticket->id(), 'B', 'b@example.com', 1, 1000, null);
+        $noShow->markNoShow(null);
+        $this->reservations->save($noShow);
+        $this->reservations->save(Reservation::create($performance->id(), $ticket->id(), 'C', 'c@example.com', 1, 1000, null));
+        $cancelled = Reservation::create($performance->id(), $ticket->id(), 'D', 'd@example.com', 1, 1000, null);
+        $cancelled->cancel(null);
+        $this->reservations->save($cancelled);
+
+        $this->assertSame(2, $this->calculator->productionWideSoldCount($production->id()));
+    }
+
     private function checkedIn(Performance $performance, \StageArt\Domain\Ticket\TicketId $ticketId, int $price, ?PersonId $attributedTo): Reservation
     {
         $reservation = Reservation::create($performance->id(), $ticketId, 'Booker', 'booker@example.com', 1, $price, null, $attributedTo);

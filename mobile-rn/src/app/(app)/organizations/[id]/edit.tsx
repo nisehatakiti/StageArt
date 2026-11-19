@@ -1,17 +1,22 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
 import { getPublicWebBaseUrl } from '@/api/config';
 import { useAuth } from '@/auth/AuthContext';
 import { ManagementCard } from '@/components/management-card';
+import { ManagementTabs } from '@/components/management-tabs';
+import { OrganizationLogo } from '@/components/organization-logo';
+import { PublicPageContentPanel } from '@/components/public-page-content-panel';
+import { PublicPageSettingsPanel } from '@/components/public-page-settings-panel';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateOrganization } from '@/features/organization/api';
+import { canEditOrganizationInfo } from '@/features/organization/permissions';
 import { useOrganizationExternalLinks, useOrganizationSns } from '@/features/organization/useOrganizationProfile';
 import { useOrganizationLogo, useOrganizations } from '@/features/organization/useOrganizations';
 import type { OrganizationExternalLink, OrganizationSNS } from '@/types/api';
@@ -24,23 +29,42 @@ const SNS_SERVICES: { value: string; label: string }[] = [
   { value: 'FACEBOOK', label: 'Facebook' },
 ];
 
+type OrganizationEditTab = 'basic' | 'public-page' | 'content';
+const TABS: { key: OrganizationEditTab; label: string }[] = [
+  { key: 'basic', label: '基本情報' },
+  { key: 'public-page', label: '公開ページ設定' },
+  { key: 'content', label: 'コンテンツ' },
+];
+const LEADS: Record<OrganizationEditTab, string> = {
+  basic: '団体の基本情報を管理します。',
+  'public-page': '団体の公開ページの見た目（テーマ・Hero）を設定します。',
+  content: '団体の公開ページに表示するコンテンツと、その配置を設定します。',
+};
+
 /**
  * StageArt Organization管理UI/UX統一: 団体情報は団体の設定・公開情報を管理す
  * るダッシュボードとして、1つの長いフォームではなく基本情報/団体ロゴ/公開ペー
  * ジ/SNS/外部リンクの各 ManagementCard に分ける。OWNER/ORGANIZATION_MANAGER
  * のみ編集可能 - UpdateOrganizationUseCase/SNS/外部リンク/ロゴの各UseCase
  * と同じAuthorization。
+ *
+ * 公開ページ設定: those cards form the 基本情報 tab; the 公開ページ設定 tab
+ * holds the public page's theme + hero (PublicPageSettingsPanel), as
+ * StageArtCore's OrganizationAdmin splits them into tabs, and the コンテンツ
+ * tab its contents and their placement (PublicPageContentPanel, Core's
+ * homepage コンテンツブロック). The active tab is kept in the URL
+ * (`?tab=public-page` / `?tab=content`).
  */
 export default function OrganizationEditScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const [activeTab, setActiveTab] = useState<OrganizationEditTab>(tab === 'public-page' || tab === 'content' ? tab : 'basic');
   const { apiClient } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
   const organizationsQuery = useOrganizations();
 
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
-  const role = organization?.current_person_role ?? null;
-  const canEdit = role === 'OWNER' || role === 'ORGANIZATION_MANAGER';
+  const canEdit = canEditOrganizationInfo(organization);
 
   const logo = useOrganizationLogo(organization?.id);
 
@@ -130,9 +154,32 @@ export default function OrganizationEditScreen() {
         団体情報
       </ThemedText>
       <ThemedText type="small" themeColor="textSecondary" style={styles.pageLead}>
-        団体の基本情報を管理します。
+        {LEADS[activeTab]}
       </ThemedText>
 
+      <ManagementTabs
+        testID="organization-edit-tabs"
+        tabs={TABS}
+        active={activeTab}
+        onChange={(next) => {
+          setActiveTab(next);
+          router.setParams?.({ tab: next === 'basic' ? undefined : next });
+        }}
+      />
+
+      {activeTab === 'public-page' ? (
+        <PublicPageSettingsPanel
+          site="organization"
+          ownerId={organization.id}
+          publicPageUrl={organization.published_at !== null && organization.slug ? `${getPublicWebBaseUrl()}/${organization.slug}/` : null}
+        />
+      ) : activeTab === 'content' ? (
+        <PublicPageContentPanel
+          organizationId={organization.id}
+          publicPageUrl={organization.published_at !== null && organization.slug ? `${getPublicWebBaseUrl()}/${organization.slug}/` : null}
+        />
+      ) : (
+      <>
       <ManagementCard title="基本情報">
         <ThemedText type="small" themeColor="textSecondary">
           団体名
@@ -216,6 +263,8 @@ export default function OrganizationEditScreen() {
 
       <OrganizationSnsSection organizationId={organization.id} />
       <OrganizationExternalLinksSection organizationId={organization.id} />
+      </>
+      )}
     </ScrollView>
   );
 }
@@ -275,11 +324,17 @@ function OrganizationLogoCard({
     <ManagementCard title="団体ロゴ">
       <View style={styles.logoRow}>
         {logoUrl ? (
-          // contain, never cover: the whole logo is shown at its own aspect
-          // ratio inside the square frame (empty margins are fine).
-          <View style={styles.logoPreview}>
-            <Image testID="organization-edit-logo-preview" source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
-          </View>
+          // The whole logo at its own aspect ratio (contain, never cover),
+          // sized like on the public page - see OrganizationLogo.
+          <OrganizationLogo
+            testID="organization-edit-logo-preview"
+            frameTestID="organization-edit-logo-frame"
+            uri={logoUrl}
+            maxWidth={240}
+            maxHeight={96}
+            maxHeightNarrow={80}
+            style={styles.logoPreview}
+          />
         ) : (
           <View style={styles.logoPlaceholder} testID="organization-edit-logo-empty">
             <ThemedText type="small" themeColor="textSecondary">
@@ -672,8 +727,7 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.one },
   logoRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.three },
-  logoPreview: { width: 96, height: 96, borderRadius: Radius.medium, backgroundColor: '#f0eee9', padding: Spacing.one },
-  logoImage: { width: '100%', height: '100%' },
+  logoPreview: { backgroundColor: '#f0eee9' },
   logoPlaceholder: {
     width: 96,
     height: 96,

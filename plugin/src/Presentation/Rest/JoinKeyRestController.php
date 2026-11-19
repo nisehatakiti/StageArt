@@ -13,14 +13,16 @@ use StageArt\Application\JoinKey\IssueProductionJoinKeyUseCase;
 use StageArt\Application\JoinKey\JoinKeyAccessDeniedException;
 use StageArt\Application\JoinKey\JoinKeyNotFoundException;
 use StageArt\Application\JoinKey\JoinKeyResult;
+use StageArt\Application\JoinKey\ListOrganizationJoinKeysQuery;
+use StageArt\Application\JoinKey\ListOrganizationJoinKeysUseCase;
+use StageArt\Application\JoinKey\ListProductionJoinKeysQuery;
+use StageArt\Application\JoinKey\ListProductionJoinKeysUseCase;
 use StageArt\Application\JoinKey\ResolveJoinKeyQuery;
 use StageArt\Application\JoinKey\ResolveJoinKeyUseCase;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Production\ProductionAccessDeniedException;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Domain\JoinKey\JoinKey;
-use StageArt\Domain\JoinKey\JoinKeyRepositoryInterface;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -32,7 +34,9 @@ use WP_REST_Response;
  * and disable are top-level (`/join-keys/...`) since a raw code carries
  * no target context until resolved, and disabling only needs the
  * JoinKey's own id (DisableJoinKeyUseCase branches authorization on the
- * key's own targetType).
+ * key's own targetType). Listing a target's keys is authorized exactly
+ * like issuing one (ListOrganizationJoinKeysUseCase /
+ * ListProductionJoinKeysUseCase), since a listed code works for joining.
  */
 final class JoinKeyRestController
 {
@@ -42,20 +46,23 @@ final class JoinKeyRestController
     private IssueProductionJoinKeyUseCase $issueProductionJoinKey;
     private ResolveJoinKeyUseCase $resolveJoinKey;
     private DisableJoinKeyUseCase $disableJoinKey;
-    private JoinKeyRepositoryInterface $joinKeys;
+    private ListOrganizationJoinKeysUseCase $listOrganizationJoinKeys;
+    private ListProductionJoinKeysUseCase $listProductionJoinKeys;
 
     public function __construct(
         IssueOrganizationJoinKeyUseCase $issueOrganizationJoinKey,
         IssueProductionJoinKeyUseCase $issueProductionJoinKey,
         ResolveJoinKeyUseCase $resolveJoinKey,
         DisableJoinKeyUseCase $disableJoinKey,
-        JoinKeyRepositoryInterface $joinKeys
+        ListOrganizationJoinKeysUseCase $listOrganizationJoinKeys,
+        ListProductionJoinKeysUseCase $listProductionJoinKeys
     ) {
         $this->issueOrganizationJoinKey = $issueOrganizationJoinKey;
         $this->issueProductionJoinKey = $issueProductionJoinKey;
         $this->resolveJoinKey = $resolveJoinKey;
         $this->disableJoinKey = $disableJoinKey;
-        $this->joinKeys = $joinKeys;
+        $this->listOrganizationJoinKeys = $listOrganizationJoinKeys;
+        $this->listProductionJoinKeys = $listProductionJoinKeys;
     }
 
     public function register_routes(): void
@@ -125,19 +132,22 @@ final class JoinKeyRestController
     }
 
     /**
-     * @return WP_REST_Response
+     * @return WP_REST_Response|WP_Error
      */
     public function listForOrganization(WP_REST_Request $request)
     {
-        $joinKeys = $this->joinKeys->findByTarget(JoinKey::TARGET_TYPE_ORGANIZATION, (string) $request->get_param('id'));
+        try {
+            $query = new ListOrganizationJoinKeysQuery(get_current_user_id(), (string) $request->get_param('id'));
 
-        return new WP_REST_Response(
-            array_map(
-                static fn (JoinKey $joinKey) => JoinKeyResult::fromDomain($joinKey)->toArray(),
-                $joinKeys
-            ),
-            200
-        );
+            return new WP_REST_Response(
+                array_map(static fn (JoinKeyResult $result) => $result->toArray(), $this->listOrganizationJoinKeys->execute($query)),
+                200
+            );
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
     }
 
     /**
@@ -157,19 +167,22 @@ final class JoinKeyRestController
     }
 
     /**
-     * @return WP_REST_Response
+     * @return WP_REST_Response|WP_Error
      */
     public function listForProduction(WP_REST_Request $request)
     {
-        $joinKeys = $this->joinKeys->findByTarget(JoinKey::TARGET_TYPE_PRODUCTION, (string) $request->get_param('id'));
+        try {
+            $query = new ListProductionJoinKeysQuery(get_current_user_id(), (string) $request->get_param('id'));
 
-        return new WP_REST_Response(
-            array_map(
-                static fn (JoinKey $joinKey) => JoinKeyResult::fromDomain($joinKey)->toArray(),
-                $joinKeys
-            ),
-            200
-        );
+            return new WP_REST_Response(
+                array_map(static fn (JoinKeyResult $result) => $result->toArray(), $this->listProductionJoinKeys->execute($query)),
+                200
+            );
+        } catch (ProductionAccessDeniedException $exception) {
+            return new WP_Error('stageart_production_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        }
     }
 
     /**

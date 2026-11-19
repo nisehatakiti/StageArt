@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import type { Organization } from '@/types/api';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -19,7 +20,9 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * from the Organization Context left sidebar, but deliberately renders
  * no business logic, input fields, or API calls of its own; only the
  * Organization existence/membership check every other
- * `organizations/[id]/*` screen already performs.
+ * `organizations/[id]/*` screen already performs - plus, when given,
+ * `canAccess` (a features/organization/permissions.ts rule), so a screen
+ * reached by URL without the right 管理領域 is refused like its menu item.
  */
 export function OrganizationPlaceholderScreen({
   id,
@@ -27,6 +30,8 @@ export function OrganizationPlaceholderScreen({
   title,
   description,
   children,
+  canAccess,
+  unavailableMessage,
 }: {
   id: string | undefined;
   testIdPrefix: string;
@@ -34,6 +39,8 @@ export function OrganizationPlaceholderScreen({
   description: string;
   /** Content that is already available; the description then stays as a note below it. */
   children?: ReactNode;
+  canAccess?: (organization: Organization) => boolean;
+  unavailableMessage?: string;
 }) {
   const organizationsQuery = useOrganizations();
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === id) ?? null;
@@ -58,6 +65,16 @@ export function OrganizationPlaceholderScreen({
     return (
       <>
         <ThemedText testID={`${testIdPrefix}-not-found`}>この団体が見つからないか、参加していません。</ThemedText>
+      </>
+    );
+  }
+
+  if (canAccess && !canAccess(organization)) {
+    return (
+      <>
+        <ThemedText testID={`${testIdPrefix}-unavailable`} themeColor="textSecondary">
+          {unavailableMessage ?? 'この画面を利用する権限がありません。'}
+        </ThemedText>
       </>
     );
   }

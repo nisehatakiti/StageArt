@@ -26,12 +26,14 @@ use StageArt\Presentation\Rest\ProductionAccountingRestController;
 use StageArt\Tests\Support\FakeAuthorizationContract;
 use StageArt\Tests\Support\FakeIdentityContract;
 use StageArt\Tests\Support\FakeMembershipContract;
+use StageArt\Tests\Support\FakeProductionCapabilityDirectoryContract;
 use StageArt\Tests\Support\FakeProductionContextContract;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryExpenseRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryTransactionManager;
+use StageArt\Tests\Support\RecordingNotificationContract;
 
 /**
  * StageArt Core/Module Architecture Phase 3 (continued): the Accounting
@@ -143,7 +145,9 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
             $identity,
             $authorization,
             $membership,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new RecordingNotificationContract(),
+            new FakeProductionCapabilityDirectoryContract()
         );
     }
 
@@ -182,7 +186,9 @@ final class AccountingModuleBootstrapIsolationTest extends TestCase
             $identity,
             $authorization,
             $membership,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            new RecordingNotificationContract(),
+            new FakeProductionCapabilityDirectoryContract()
         );
     }
 }

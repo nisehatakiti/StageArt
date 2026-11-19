@@ -5,6 +5,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useOrganizationJoinKeys } from '@/features/joinKey/useJoinKey';
+import { canManageOrganizationJoinKeys } from '@/features/organization/permissions';
+import { useOrganizations } from '@/features/organization/useOrganizations';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -17,13 +19,36 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * explicitly deferred (see the completion report) - only the underlying
  * Join Key code, which is the actual participation mechanism, is
  * implemented here.
+ *
+ * Listing / issuing / disabling a Join Key is for the Owner and a
+ * delegate holding メンバー管理 on the server (List/IssueOrganizationJoinKey
+ * UseCase / DisableJoinKeyUseCase), so anyone else reaching this URL is
+ * told so instead of being shown the controls. If the server still
+ * refuses the list (e.g. the area was removed meanwhile), its error is
+ * shown and no issue button is offered.
  */
 export default function OrganizationInviteScreen() {
   const { id: organizationId } = useLocalSearchParams<{ id: string }>();
 
-  const { query: joinKeysQuery, issue, disable } = useOrganizationJoinKeys(organizationId);
+  const organizationsQuery = useOrganizations();
+  const organization = organizationsQuery.data?.find((candidate) => candidate.id === organizationId) ?? null;
+  const allowed = canManageOrganizationJoinKeys(organization);
+
+  const { query: joinKeysQuery, issue, disable } = useOrganizationJoinKeys(allowed ? organizationId : undefined);
 
   const activeKey = joinKeysQuery.data?.find((key) => key.status === 'ACTIVE');
+
+  if (organizationsQuery.isLoading) {
+    return <ActivityIndicator testID="organization-invite-loading" />;
+  }
+
+  if (!allowed) {
+    return (
+      <ThemedText testID="organization-invite-unavailable" themeColor="textSecondary">
+        参加コードの発行・管理は、オーナーと、メンバー管理を任された代理人のみ行えます。
+      </ThemedText>
+    );
+  }
 
   return (
     <>
@@ -39,7 +64,11 @@ export default function OrganizationInviteScreen() {
 
           {joinKeysQuery.isLoading && <ActivityIndicator testID="join-key-loading" />}
 
-          {activeKey ? (
+          {joinKeysQuery.isError ? (
+            <ThemedText testID="organization-join-key-error" style={styles.error}>
+              {getErrorMessage(joinKeysQuery.error)}
+            </ThemedText>
+          ) : activeKey ? (
             <ThemedView style={styles.keyCard} testID="organization-join-key-active">
               <ThemedText type="title" style={styles.keyCode}>
                 {activeKey.code}

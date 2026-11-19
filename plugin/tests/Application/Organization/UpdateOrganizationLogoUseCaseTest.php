@@ -117,6 +117,68 @@ final class UpdateOrganizationLogoUseCaseTest extends TestCase
         $this->useCase->execute(new UpdateOrganizationLogoCommand($orphanOrganizationId->toString(), 1, 'https://example.com/logo.png'));
     }
 
+    public function test_authorize_lets_the_owner_and_a_delegate_through_without_changing_anything(): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $this->useCase->execute(new UpdateOrganizationLogoCommand($organization->id()->toString(), 1, 'https://example.com/current.png'));
+        $delegate = Person::create(2);
+        $this->people->save($delegate);
+        $this->memberships->save(Membership::create($organization->id(), $delegate->id(), RoleKey::organizationManager()));
+
+        $this->useCase->authorize($organization->id()->toString(), 1);
+        $this->useCase->authorize($organization->id()->toString(), 2);
+
+        $this->assertSame('https://example.com/current.png', $this->organizations->findById($organization->id())->logoUrl());
+    }
+
+    /**
+     * @return array<string, array{0: string|null}>
+     */
+    public static function refusedRequesters(): array
+    {
+        return [
+            'plain member' => ['member'],
+            'unrelated person' => ['unrelated'],
+            'no linked person' => [null],
+        ];
+    }
+
+    /**
+     * @dataProvider refusedRequesters
+     */
+    public function test_authorize_refuses_everyone_else_before_any_upload(?string $who): void
+    {
+        $organization = $this->givenOrganizationWithOwner(1);
+        $this->useCase->execute(new UpdateOrganizationLogoCommand($organization->id()->toString(), 1, 'https://example.com/current.png'));
+
+        $requester = Person::create(3);
+        if ($who !== null) {
+            $this->people->save($requester);
+        }
+        if ($who === 'member') {
+            $this->memberships->save(Membership::create($organization->id(), $requester->id(), RoleKey::member()));
+        }
+
+        try {
+            $this->useCase->authorize($organization->id()->toString(), 3);
+            $this->fail('authorize() should refuse this requester.');
+        } catch (OrganizationAccessDeniedException $exception) {
+            $this->assertSame('https://example.com/current.png', $this->organizations->findById($organization->id())->logoUrl());
+        }
+    }
+
+    public function test_authorize_reports_an_unknown_organization_only_to_someone_with_a_role_there(): void
+    {
+        $owner = Person::create(1);
+        $this->people->save($owner);
+        $orphanOrganizationId = OrganizationId::generate();
+        $this->memberships->save(Membership::createOwnerMembership($orphanOrganizationId, $owner->id()));
+
+        $this->expectException(OrganizationNotFoundException::class);
+
+        $this->useCase->authorize($orphanOrganizationId->toString(), 1);
+    }
+
     public function test_unknown_organization_is_access_denied_when_the_requester_has_no_role_there(): void
     {
         $owner = Person::create(1);

@@ -51,6 +51,11 @@ final class GetOrganizationUseCase
             throw new OrganizationNotFoundException($query->organizationId);
         }
 
-        return OrganizationResult::fromDomain($organization, $role, $this->follows->countActiveByOrganizationId($organizationId));
+        return OrganizationResult::fromDomain(
+            $organization,
+            $role,
+            $this->follows->countActiveByOrganizationId($organizationId),
+            $this->authorization->managementAreasFor($person, $organizationId)
+        );
     }
 }

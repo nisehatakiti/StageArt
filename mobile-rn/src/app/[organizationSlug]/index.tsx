@@ -1,15 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import Head from 'expo-router/head';
-import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthContext';
 import { AppShell } from '@/components/app-shell';
+import { OrganizationLogo } from '@/components/organization-logo';
+import { PublicContentLayout } from '@/components/public-content-layout';
+import { PublicPageHero } from '@/components/public-page-hero';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchPublicOrganizationBySlug } from '@/features/organization/api';
+import { PublicPageThemeProvider } from '@/features/publicPage/PublicPageTheme';
+import type { PublicPageThemeValues } from '@/features/publicPage/types';
 import { useFollowOrganization, useMyFollows } from '@/features/organization/useFollow';
 import { useMyMemberships, useRequestOrganizationMembership } from '@/features/membership/useMembership';
 import { useMyFavorites, useToggleFavorite } from '@/features/favorite/useFavorite';
@@ -73,6 +78,56 @@ export default function PublicOrganizationScreen() {
   const upcomingOrCurrent = query.data?.productions.filter((p) => p.status !== 'ARCHIVED' && p.status !== 'COMPLETED') ?? [];
   const past = query.data?.productions.filter((p) => p.status === 'ARCHIVED' || p.status === 'COMPLETED') ?? [];
 
+  // 公開ページ設定: this Organization's own theme and hero (absent from
+  // older API responses - the page then looks as before).
+  const pageTheme = query.data?.public_page?.theme ?? null;
+  const hero = query.data?.public_page?.hero ?? null;
+  const themed = pageTheme ? themedStyles(pageTheme) : null;
+
+  // The fixed page's 公演 lists; with a saved コンテンツ配置 they are shown
+  // only where its 公演一覧 is placed.
+  const productionLists = query.data ? (
+    <>
+      {/* docs/04-DomainModel/PublicPageUrlPolicy.md's "Next Production"
+          section, simplified to a list (no dedicated Hero layout this
+          round): upcoming/current productions first, then past ones -
+          using Production.status as an honest proxy for "past" since
+          Production has no start/end date fields yet (see
+          docs/CurrentStateAudit.md). */}
+      {upcomingOrCurrent.length > 0 && (
+        <ThemedView style={styles.productionsSection}>
+          <ThemedText type="smallBold">開催予定・公開中の公演</ThemedText>
+          {upcomingOrCurrent.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              testID={`public-organization-production-${p.slug}`}
+              onPress={() => router.push(`/${query.data!.slug}/${p.slug}` as Href)}
+              style={styles.productionRow}
+            >
+              <ThemedText type="link">{p.name}</ThemedText>
+            </TouchableOpacity>
+          ))}
+        </ThemedView>
+      )}
+
+      {past.length > 0 && (
+        <ThemedView style={styles.productionsSection}>
+          <ThemedText type="smallBold">過去の公演</ThemedText>
+          {past.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              testID={`public-organization-production-${p.slug}`}
+              onPress={() => router.push(`/${query.data!.slug}/${p.slug}` as Href)}
+              style={styles.productionRow}
+            >
+              <ThemedText type="link">{p.name}</ThemedText>
+            </TouchableOpacity>
+          ))}
+        </ThemedView>
+      )}
+    </>
+  ) : null;
+
   return (
     <AppShell scroll>
       {query.data && (
@@ -81,7 +136,8 @@ export default function PublicOrganizationScreen() {
           <meta name="description" content={query.data.description ?? `${query.data.name}のStageArt公式ページ`} />
         </Head>
       )}
-      <ScrollView contentContainerStyle={styles.container}>
+      <PublicPageThemeProvider theme={pageTheme}>
+      <ScrollView style={themed?.page} contentContainerStyle={styles.container} testID="public-organization-page">
         {query.isLoading && <ActivityIndicator testID="public-organization-loading" />}
 
         {query.isError && (
@@ -94,12 +150,19 @@ export default function PublicOrganizationScreen() {
 
         {query.data && (
           <ThemedView testID="public-organization-content" style={styles.content}>
+            {hero && (
+              <PublicPageHero
+                testID="public-organization-hero"
+                hero={hero}
+                fallbackTitle={query.data.name}
+                fallbackDescription={query.data.description}
+              />
+            )}
+
             {query.data.logo_url && (
-              // contain, never cover: the whole logo is shown at its own
-              // aspect ratio inside the square frame (empty margins are fine).
-              <View style={styles.logo}>
-                <Image testID="public-organization-logo" source={{ uri: query.data.logo_url }} style={styles.logoImage} resizeMode="contain" />
-              </View>
+              // The whole logo at its own aspect ratio (contain, never
+              // cover), sized to fit a box - see OrganizationLogo.
+              <OrganizationLogo testID="public-organization-logo" frameTestID="public-organization-logo-frame" uri={query.data.logo_url} style={styles.logo} />
             )}
 
             <ThemedText type="title" testID="public-organization-name">
@@ -156,9 +219,18 @@ export default function PublicOrganizationScreen() {
                 testID={isFollowing ? 'public-organization-unfollow' : 'public-organization-follow'}
                 disabled={followPending}
                 onPress={() => (isFollowing ? unfollow.mutate(query.data!.id) : follow.mutate(query.data!.id))}
-                style={[styles.followButton, isFollowing ? styles.followingButton : styles.followButtonActive]}
+                style={[
+                  styles.followButton,
+                  isFollowing ? styles.followingButton : styles.followButtonActive,
+                  themed && (isFollowing ? themed.outlineButton : themed.filledButton),
+                ]}
               >
-                <ThemedText style={isFollowing ? styles.followingButtonText : styles.followButtonText}>
+                <ThemedText
+                  style={[
+                    isFollowing ? styles.followingButtonText : styles.followButtonText,
+                    themed && (isFollowing ? themed.outlineButtonText : themed.filledButtonText),
+                  ]}
+                >
                   {isFollowing ? 'フォロー中' : 'フォローする'}
                 </ThemedText>
               </TouchableOpacity>
@@ -204,9 +276,9 @@ export default function PublicOrganizationScreen() {
                     testID="public-organization-request-membership"
                     onPress={() => requestMembership.mutate({ organizationId: query.data!.id })}
                     disabled={requestMembership.isPending}
-                    style={styles.secondaryButton}
+                    style={[styles.secondaryButton, themed?.outlineButton]}
                   >
-                    <ThemedText style={styles.secondaryButtonText}>この団体に所属を申請する</ThemedText>
+                    <ThemedText style={[styles.secondaryButtonText, themed?.outlineButtonText]}>この団体に所属を申請する</ThemedText>
                   </TouchableOpacity>
                 )}
                 {requestMembership.isSuccess && (
@@ -220,56 +292,50 @@ export default function PublicOrganizationScreen() {
               </ThemedView>
             )}
 
-            {/* docs/04-DomainModel/PublicPageUrlPolicy.md's "Next Production"
-                section, simplified to a list (no dedicated Hero layout this
-                round): upcoming/current productions first, then past ones -
-                using Production.status as an honest proxy for "past" since
-                Production has no start/end date fields yet (see
-                docs/CurrentStateAudit.md). */}
-            {upcomingOrCurrent.length > 0 && (
-              <ThemedView style={styles.productionsSection}>
-                <ThemedText type="smallBold">開催予定・公開中の公演</ThemedText>
-                {upcomingOrCurrent.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    testID={`public-organization-production-${p.slug}`}
-                    onPress={() => router.push(`/${query.data!.slug}/${p.slug}` as Href)}
-                    style={styles.productionRow}
-                  >
-                    <ThemedText type="link">{p.name}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ThemedView>
-            )}
-
-            {past.length > 0 && (
-              <ThemedView style={styles.productionsSection}>
-                <ThemedText type="smallBold">過去の公演</ThemedText>
-                {past.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    testID={`public-organization-production-${p.slug}`}
-                    onPress={() => router.push(`/${query.data!.slug}/${p.slug}` as Href)}
-                    style={styles.productionRow}
-                  >
-                    <ThemedText type="link">{p.name}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ThemedView>
+            {query.data.content_layout ? (
+              // コンテンツ配置 saved in the コンテンツ tab: only what is placed,
+              // in that order (StageArtCore's homepage sections).
+              <PublicContentLayout
+                blocks={query.data.content_layout}
+                system={{
+                  productions: productionLists,
+                  about: query.data.description ? (
+                    <ThemedText testID="public-organization-about" style={styles.about}>
+                      {query.data.description}
+                    </ThemedText>
+                  ) : null,
+                }}
+                onOpenProduction={(productionSlug) => router.push(`/${query.data!.slug}/${productionSlug}` as Href)}
+                colors={pageTheme ? { primary: pageTheme.primary, surface: pageTheme.surface, border: pageTheme.border } : null}
+              />
+            ) : (
+              productionLists
             )}
           </ThemedView>
         )}
       </ScrollView>
+      </PublicPageThemeProvider>
     </AppShell>
   );
+}
+
+/** StageArtCore ThemeRenderer: page background, buttons in the main color (`.stageart-button`). */
+function themedStyles(theme: PublicPageThemeValues) {
+  return {
+    page: { backgroundColor: theme.bg },
+    filledButton: { backgroundColor: theme.primary },
+    filledButtonText: { color: theme.surface },
+    outlineButton: { borderColor: theme.primary },
+    outlineButtonText: { color: theme.primary },
+  };
 }
 
 const styles = StyleSheet.create({
   container: { padding: Spacing.four },
   content: { gap: Spacing.two },
-  logo: { width: 96, height: 96, borderRadius: Radius.medium, marginBottom: Spacing.two, padding: Spacing.one },
-  logoImage: { width: '100%', height: '100%' },
+  logo: { marginBottom: Spacing.two },
   description: { marginTop: Spacing.two },
+  about: { lineHeight: 26 },
   snsSection: { marginTop: Spacing.three, gap: Spacing.one },
   snsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.half },
   snsService: { fontWeight: '700', minWidth: 72 },

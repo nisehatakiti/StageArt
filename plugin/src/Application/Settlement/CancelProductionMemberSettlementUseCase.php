@@ -60,7 +60,7 @@ final class CancelProductionMemberSettlementUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, SettlementCapability::MANAGE)) {
-            throw new SettlementAccessDeniedException('Only the PrimaryManager can cancel this Production\'s settlements.');
+            throw new SettlementAccessDeniedException('Only the PrimaryManager or an Accounting Manager can cancel this Production\'s settlements.');
         }
 
         $personId = PersonId::fromString($command->personId);

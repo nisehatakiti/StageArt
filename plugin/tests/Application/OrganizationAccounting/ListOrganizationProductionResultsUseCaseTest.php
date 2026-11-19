@@ -22,6 +22,7 @@ use StageArt\Domain\Account\AccountType;
 use StageArt\Domain\JournalEntry\DebitCredit;
 use StageArt\Domain\JournalEntry\JournalEntry;
 use StageArt\Domain\JournalEntry\JournalEntryLine;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationId;
@@ -44,7 +45,7 @@ use StageArt\Tests\Support\InMemoryProjectRepository;
 
 /**
  * 団体会計の公演別実績 (OrganizationAccountingAndProductionCostPolicy.md §2).
- * WordPress users: 1 Owner, 3 plain member.
+ * WordPress users: 1 Owner, 2 delegate, 3 plain member.
  */
 final class ListOrganizationProductionResultsUseCaseTest extends TestCase
 {
@@ -185,6 +186,17 @@ final class ListOrganizationProductionResultsUseCaseTest extends TestCase
             [[$open->id()->toString(), false], [$closed->id()->toString(), true]],
             array_map(static fn (array $p): array => [$p['production_id'], $p['closing_confirmed']], $result['productions'])
         );
+    }
+
+    public function test_an_accounting_delegate_can_view_the_results(): void
+    {
+        $delegate = Person::create(2);
+        $this->people->save($delegate);
+        $membership = Membership::create($this->organization->id(), $delegate->id(), RoleKey::organizationManager());
+        $membership->replaceDelegateAreas([DelegateArea::ACCOUNTING]);
+        $this->memberships->save($membership);
+
+        $this->assertSame($this->organization->id()->toString(), $this->listResults->execute($this->query(2))->organizationId);
     }
 
     public function test_a_plain_member_cannot_view_the_results(): void

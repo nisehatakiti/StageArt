@@ -56,7 +56,7 @@ final class ListBudgetsUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new BudgetAccessDeniedException('Only the PrimaryManager can view this Production\'s Budgets.');
+            throw new BudgetAccessDeniedException('Only the PrimaryManager or an Accounting Manager can view this Production\'s Budgets.');
         }
 
         $budgets = $this->budgets->findByProductionId($productionId);

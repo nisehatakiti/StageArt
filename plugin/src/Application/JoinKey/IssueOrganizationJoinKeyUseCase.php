@@ -9,12 +9,12 @@ use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Domain\JoinKey\JoinKey;
 use StageArt\Domain\JoinKey\JoinKeyRepositoryInterface;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
-/** JoinKey.md's "Issuer": only an Organization Owner may issue an
- * Organization Join Key. */
+/** JoinKey.md's "Issuer": the Organization Owner, or a delegate holding
+ * メンバー管理 (DelegateArea::MEMBERS), may issue an Organization Join Key. */
 final class IssueOrganizationJoinKeyUseCase
 {
     private OrganizationRepositoryInterface $organizations;
@@ -41,8 +41,8 @@ final class IssueOrganizationJoinKeyUseCase
 
         $organizationId = OrganizationId::fromString($command->organizationId);
 
-        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new OrganizationAccessDeniedException('Only an Organization Owner can issue a Join Key.');
+        if (! $this->authorization->hasDelegateArea($person, $organizationId, DelegateArea::MEMBERS)) {
+            throw new OrganizationAccessDeniedException('Only the Organization Owner or a delegate with member management can issue a Join Key.');
         }
 
         if (! $this->organizations->findById($organizationId)) {

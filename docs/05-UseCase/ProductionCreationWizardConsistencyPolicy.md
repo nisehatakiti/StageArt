@@ -2,7 +2,7 @@
 
 # Use Case Consistency Policy : Production Creation Wizard
 
-Version : 1.1
+Version : 1.2
 
 ---
 
@@ -172,8 +172,10 @@ Budget Nameを設定し、A4一枚の帳票タイトルに利用できるよう�
 - 外注費（スタッフ＋キャスト）
 - 広告宣伝費用
 - 通信費
-- 車両交通費
+- 旅費交通費
 - その他雑費
+
+旧「車両交通費」「車両・交通費」は、Version 1.2で「旅費交通費」に統一した。既存の車両交通費Account、過去のJournal Entry、Budgetデータは削除・改名・書き換えしない（AccountConsistencyPolicy.md）。「その他雑費（大道具・小道具・消耗品等）」の運用は変更しない。
 
 初期表示する収入カテゴリ：
 

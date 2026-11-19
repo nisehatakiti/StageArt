@@ -13,6 +13,8 @@ final class MyNotificationResult
     public string $message;
     public ?string $productionId;
     public ?string $rehearsalId;
+    public ?string $targetType;
+    public ?string $targetId;
     public bool $isRead;
     public string $createdAt;
 
@@ -23,13 +25,17 @@ final class MyNotificationResult
         ?string $productionId,
         ?string $rehearsalId,
         bool $isRead,
-        string $createdAt
+        string $createdAt,
+        ?string $targetType,
+        ?string $targetId
     ) {
         $this->id = $id;
         $this->type = $type;
         $this->message = $message;
         $this->productionId = $productionId;
         $this->rehearsalId = $rehearsalId;
+        $this->targetType = $targetType;
+        $this->targetId = $targetId;
         $this->isRead = $isRead;
         $this->createdAt = $createdAt;
     }
@@ -43,7 +49,9 @@ final class MyNotificationResult
             $notification->productionId()?->toString(),
             $notification->rehearsalId(),
             $notification->isRead(),
-            $notification->createdAt()->format(DATE_ATOM)
+            $notification->createdAt()->format(DATE_ATOM),
+            $notification->targetType(),
+            $notification->targetId()
         );
     }
 
@@ -58,6 +66,8 @@ final class MyNotificationResult
             'message' => $this->message,
             'production_id' => $this->productionId,
             'rehearsal_id' => $this->rehearsalId,
+            'target_type' => $this->targetType,
+            'target_id' => $this->targetId,
             'is_read' => $this->isRead,
             'created_at' => $this->createdAt,
         ];

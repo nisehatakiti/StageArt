@@ -214,6 +214,15 @@ final class Reservation
             throw new InvalidArgumentException('A CHECKED_IN Reservation cannot be cancelled.');
         }
 
+        // Confirmed NO_SHOW rule: a NO_SHOW Reservation stays a sale (売上・
+        // 販売実績・Ticket Back・ノルマ実績) and keeps its seat, so the normal
+        // cancellation cannot undo it - and therefore never reverses its
+        // ReservationNoShow revenue JournalEntry either. A correction that
+        // is really needed goes through Reversal / Adjustment instead.
+        if ($this->status->equals(ReservationStatus::fromString(ReservationStatus::NO_SHOW))) {
+            throw new InvalidArgumentException('A NO_SHOW Reservation cannot be cancelled.');
+        }
+
         $this->status = ReservationStatus::fromString(ReservationStatus::CANCELLED);
         $this->touch($updatedBy);
     }
@@ -233,8 +242,9 @@ final class Reservation
     }
 
     /**
-     * §13: kept for a later Phase - not wired to any UseCase or REST
-     * route this Phase.
+     * RESERVED -> NO_SHOW, called by MarkNoShowUseCase (reception's
+     * CheckInProcessor::processNoShow). NO_SHOW is final for the normal
+     * flow: cancel() refuses it (see there).
      */
     public function markNoShow(?PersonId $updatedBy): void
     {

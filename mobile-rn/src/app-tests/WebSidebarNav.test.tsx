@@ -61,7 +61,7 @@ describe('WebSidebarNav', () => {
     expect(screen.queryByTestId('web-chrome-context-label')).toBeNull();
   });
 
-  it('shows a disabled 公演情報 item inside Production Context for a non-manager', async () => {
+  it('does not render 公演情報 or other management items inside Production Context for a non-manager', async () => {
     mockPathname = `/productions/${productionOne.id}`;
     mockFetchRoutes([
       { test: (url) => url.endsWith('/organizations'), status: 200, body: [orgOne] },
@@ -73,9 +73,12 @@ describe('WebSidebarNav', () => {
     renderHarness();
 
     await waitFor(() => expect(screen.getByTestId('web-chrome-context-label')).toHaveTextContent(productionOne.name));
-    // Disabled items render as plain View (not TouchableOpacity), still discoverable by testID.
-    expect(screen.getByTestId('web-chrome-nav-production-info')).toBeVisible();
-    expect(screen.getByTestId('web-chrome-nav-production-ticket')).toBeVisible();
+    // Items without permission are not rendered at all (no greyed-out leftovers);
+    // 予定管理, which every Production member uses, stays.
+    expect(screen.getByTestId('web-chrome-nav-production-rehearsal')).toBeVisible();
+    expect(screen.queryByTestId('web-chrome-nav-production-info')).toBeNull();
+    expect(screen.queryByTestId('web-chrome-nav-production-ticket')).toBeNull();
+    expect(screen.queryByTestId('web-chrome-nav-production-settlement')).toBeNull();
   });
 
   /**

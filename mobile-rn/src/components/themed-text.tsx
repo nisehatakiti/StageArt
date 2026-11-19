@@ -1,6 +1,7 @@
 import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
 
 import { Fonts, ThemeColor } from '@/constants/theme';
+import { themeFontFamily, usePublicPageTheme } from '@/features/publicPage/PublicPageTheme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type ThemedTextProps = TextProps & {
@@ -10,11 +11,17 @@ export type ThemedTextProps = TextProps & {
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  const publicPageTheme = usePublicPageTheme();
+  const isHeading = type === 'title' || type === 'subtitle';
 
   return (
     <Text
       style={[
         { color: theme[themeColor ?? 'text'] },
+        // 公開ページ設定 (StageArtCore ThemeRenderer): body font on all
+        // text, heading font + main color on headings, main color on links.
+        publicPageTheme && { fontFamily: themeFontFamily(isHeading ? publicPageTheme.heading_font : publicPageTheme.body_font) },
+        publicPageTheme && isHeading && !themeColor && { color: publicPageTheme.primary },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
         type === 'small' && styles.small,
@@ -23,6 +30,7 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
         type === 'link' && styles.link,
         type === 'linkPrimary' && styles.linkPrimary,
         type === 'code' && styles.code,
+        publicPageTheme && (type === 'link' || type === 'linkPrimary') && { color: publicPageTheme.primary },
         style,
       ]}
       {...rest}

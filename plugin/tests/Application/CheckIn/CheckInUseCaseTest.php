@@ -31,6 +31,10 @@ use StageArt\Application\CheckIn\SearchReservationsForCheckInUseCase;
 use StageArt\Application\CheckIn\StandardAccountResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
+use StageArt\Application\Reservation\CancelReservationCommand;
+use StageArt\Application\Reservation\CancelReservationUseCase;
+use StageArt\Application\Reservation\ReservationAccessDeniedException;
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
 use StageArt\Application\Ticket\CreateTicketCommand;
 use StageArt\Application\Ticket\CreateTicketUseCase;
 use StageArt\Application\Ticket\UpdateTicketSalesSettingsCommand;
@@ -52,6 +56,7 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Reservation\Reservation;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Domain\Ticket\TicketBackMode;
 use StageArt\Domain\Ticket\TicketId;
 use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryCheckInRepository;
@@ -739,5 +744,83 @@ final class CheckInUseCaseTest extends TestCase
         $result = $this->changeAttribution->execute(new ChangeReservationAttributionCommand($reservation->id()->toString(), $member->id()->toString(), 1));
 
         $this->assertSame($member->id()->toString(), $result->attributedPersonId);
+    }
+
+    /**
+     * Confirmed NO_SHOW rule: the normal (public self-service) cancellation
+     * is refused for a NO_SHOW Reservation, before the performance starts
+     * too, and the refusal changes nothing - status, seat, the POSTED
+     * Ticket Revenue JournalEntry (no reversal is created), Ticket
+     * Back and the Production-wide sold count used for ノルマ実績.
+     */
+    public function test_public_cancel_is_refused_after_no_show_and_changes_nothing(): void
+    {
+        [$production, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $production->updateTicketBack(
+            TicketBackMode::PROGRESSIVE,
+            json_encode([['priority' => 1, 'threshold' => 1, 'comparator' => 'GTE', 'rate_percent' => 10]])
+        );
+        $this->productions->save($production);
+        $member = $production->primaryManagerPersonId();
+        $reservation = Reservation::create($performance->id(), TicketId::fromString($ticketId), 'Booker', 'booker@example.com', 2, 3000, null, $member);
+        $this->reservations->save($reservation);
+
+        $this->markNoShow->execute(new MarkNoShowCommand($performance->id()->toString(), $reservation->id()->toString(), 1, true));
+
+        $calculator = new ProductionSettlementCalculator($this->performances, $this->reservations, $this->tickets);
+        $soldBefore = $calculator->productionWideSoldCount($production->id());
+        $ticketBackBefore = $calculator->confirmedTicketBackAmountsByMember($production, $production->id());
+        $entriesBefore = $this->journalEntries->all();
+        $this->assertSame(1, $soldBefore);
+        $this->assertSame([$member->toString() => 300], $ticketBackBefore);
+        $this->assertCount(1, $entriesBefore);
+
+        $cancel = new CancelReservationUseCase($this->reservations, $this->performances);
+
+        try {
+            $cancel->execute(new CancelReservationCommand($reservation->reservationNumber()->toString(), 'booker@example.com'));
+            $this->fail('Expected the cancellation of a NO_SHOW Reservation to be refused.');
+        } catch (ReservationAccessDeniedException $exception) {
+            $this->assertStringContainsString('NO_SHOW', $exception->getMessage());
+        }
+
+        $refetched = $this->reservations->findById($reservation->id());
+        $this->assertSame('NO_SHOW', $refetched->status()->toString());
+        $this->assertTrue($refetched->occupiesCapacity());
+        $this->assertSame(2, $refetched->guestCount());
+
+        $entriesAfter = $this->journalEntries->all();
+        $this->assertCount(1, $entriesAfter, 'no reversal / adjustment entry is created by a refused cancellation');
+        $this->assertTrue($entriesAfter[0]->isPosted());
+        $this->assertSame(CheckInProcessor::TICKET_PAYMENT_SOURCE, $entriesAfter[0]->sourceEventType());
+        $this->assertSame($entriesBefore[0]->id()->toString(), $entriesAfter[0]->id()->toString());
+
+        $this->assertSame($soldBefore, $calculator->productionWideSoldCount($production->id()));
+        $this->assertSame($ticketBackBefore, $calculator->confirmedTicketBackAmountsByMember($production, $production->id()));
+    }
+
+    public function test_public_cancel_of_a_reserved_reservation_still_works_and_releases_the_seat(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+
+        $result = (new CancelReservationUseCase($this->reservations, $this->performances))
+            ->execute(new CancelReservationCommand($reservation->reservationNumber()->toString(), 'booker@example.com'));
+
+        $this->assertSame('CANCELLED', $result->status);
+        $this->assertFalse($this->reservations->findById($reservation->id())->occupiesCapacity());
+        $this->assertCount(0, $this->journalEntries->all());
+    }
+
+    public function test_public_cancel_is_still_refused_for_a_checked_in_reservation(): void
+    {
+        [, $performance, $ticketId] = $this->givenProductionWithPerformanceAndTicket(true);
+        $reservation = $this->givenReservedReservation($performance, $ticketId);
+        $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 1));
+
+        $this->expectException(ReservationAccessDeniedException::class);
+
+        (new CancelReservationUseCase($this->reservations, $this->performances))
+            ->execute(new CancelReservationCommand($reservation->reservationNumber()->toString(), 'booker@example.com'));
     }
 }

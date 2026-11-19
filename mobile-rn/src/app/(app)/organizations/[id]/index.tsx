@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { ThemedText } from '@/components/themed-text';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useOrganizationContext } from '@/features/organization/OrganizationContext';
+import { canManageOrganizationProductions, isOrganizationOwner } from '@/features/organization/permissions';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useOrganizationProductions } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -45,7 +46,9 @@ export default function OrganizationManagementScreen() {
   const productionsQuery = useOrganizationProductions(id ?? null);
 
   const organization = organizationsQuery.data?.find((org) => org.id === id) ?? null;
-  const isOwner = organization?.current_person_role === 'OWNER';
+  const isOwner = isOrganizationOwner(organization);
+  // 「公演を作成する」 is the 公演管理 area (CreateProductionUseCase).
+  const canCreateProduction = canManageOrganizationProductions(organization);
 
   // Keep OrganizationContext's own "current Organization" in sync with
   // whichever Organization's management screen is actually open - the
@@ -103,7 +106,7 @@ export default function OrganizationManagementScreen() {
             {organization.name}
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary" testID="organization-management-role">
-            {isOwner ? 'オーナー' : 'メンバー'}
+            {isOwner ? 'オーナー' : organization.current_person_role === 'ORGANIZATION_MANAGER' ? '代理人' : 'メンバー'}
           </ThemedText>
         </View>
         {organization.published_at && organization.slug && (
@@ -126,16 +129,20 @@ export default function OrganizationManagementScreen() {
       {hasNoProductions && (
         <View style={styles.nextStepBanner} testID="organization-management-no-productions">
           <ThemedText type="smallBold">まだ公演・活動がありません</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            「公演を作成する」から最初の公演・活動を登録してください。
-          </ThemedText>
-          <TouchableOpacity
-            testID="organization-management-create-production"
-            onPress={() => router.push(`/organizations/${id}/productions/create` as Href)}
-            style={styles.primaryButton}
-          >
-            <ThemedText style={styles.primaryButtonText}>＋ 公演を作成する</ThemedText>
-          </TouchableOpacity>
+          {canCreateProduction && (
+            <>
+              <ThemedText type="small" themeColor="textSecondary">
+                「公演を作成する」から最初の公演・活動を登録してください。
+              </ThemedText>
+              <TouchableOpacity
+                testID="organization-management-create-production"
+                onPress={() => router.push(`/organizations/${id}/productions/create` as Href)}
+                style={styles.primaryButton}
+              >
+                <ThemedText style={styles.primaryButtonText}>＋ 公演を作成する</ThemedText>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 

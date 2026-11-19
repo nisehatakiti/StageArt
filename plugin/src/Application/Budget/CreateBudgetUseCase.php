@@ -68,7 +68,7 @@ final class CreateBudgetUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new BudgetAccessDeniedException('Only the PrimaryManager can create a Budget for this Production.');
+            throw new BudgetAccessDeniedException('Only the PrimaryManager or an Accounting Manager can create a Budget for this Production.');
         }
 
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);

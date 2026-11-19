@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Journal Entry
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -48,7 +48,7 @@ Reservation成立後、Check In前は未収金として扱う。
 
 未収金の具体的な会計処理は決済手段・Accounting Domainのルールに従うが、Ticket Revenue自体はCheckInCompleted前には認識しない。
 
-No-Show等でCheckInCompletedが発生しない場合、通常のTicket Revenue Recognitionを生成しない。
+CheckInCompletedが発生しない場合、通常のTicket Revenue Recognitionを生成しない。ただし、NO_SHOWとして確定したReservationは例外としてTicket Revenue Journal EntryをReservation単位で高々一件生成する（Version 1.1、Ticket Revenue Consistency Policy「No-Show」）。NO_SHOW後の通常の予約取消は行えず、そのJournal Entryを通常取消で自動的に取り消さない。
 
 ---
 

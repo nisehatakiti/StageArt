@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace StageArt\Application\Membership;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\MembershipId;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Person\PersonRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
+/** Same gate as ApproveMembershipRequestUseCase: the Owner or a
+ * メンバー管理 delegate of the request's own Organization. */
 final class RejectMembershipRequestUseCase
 {
     private MembershipRepositoryInterface $memberships;
@@ -36,8 +38,8 @@ final class RejectMembershipRequestUseCase
 
         $approver = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
 
-        if (! $approver || ! $this->authorization->hasRole($approver, $membership->organizationId(), [RoleKey::OWNER])) {
-            throw new MembershipAccessDeniedException('Only an Organization Owner can reject this Membership request.');
+        if (! $approver || ! $this->authorization->hasDelegateArea($approver, $membership->organizationId(), DelegateArea::MEMBERS)) {
+            throw new MembershipAccessDeniedException('Only the Organization Owner or a delegate with member management can reject this Membership request.');
         }
 
         $membership->reject();

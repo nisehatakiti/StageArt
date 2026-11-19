@@ -22,6 +22,7 @@ use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
 use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
 use StageArt\Infrastructure\WordPress\Notification\WordPressEmailNotificationAdapter;
@@ -47,6 +48,8 @@ use StageArt\Application\Follow\UnfollowOrganizationUseCase;
 use StageArt\Application\JoinKey\DisableJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueOrganizationJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueProductionJoinKeyUseCase;
+use StageArt\Application\JoinKey\ListOrganizationJoinKeysUseCase;
+use StageArt\Application\JoinKey\ListProductionJoinKeysUseCase;
 use StageArt\Application\JoinKey\ResolveJoinKeyUseCase;
 use StageArt\Application\Membership\ApproveMembershipRequestUseCase;
 use StageArt\Application\Membership\ListMyMembershipsUseCase;
@@ -54,6 +57,8 @@ use StageArt\Application\Membership\ListPendingMembershipRequestsUseCase;
 use StageArt\Application\Membership\RejectMembershipRequestUseCase;
 use StageArt\Application\Membership\RequestOrganizationMembershipUseCase;
 use StageArt\Application\Organization\AssignOrganizationDelegateUseCase;
+use StageArt\Application\Organization\ListOrganizationDelegateAreasUseCase;
+use StageArt\Application\Organization\UpdateOrganizationDelegateAreasUseCase;
 use StageArt\Application\Organization\CreateOrganizationExternalLinkUseCase;
 use StageArt\Application\Organization\CreateOrganizationSNSUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
@@ -105,6 +110,18 @@ use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\Production\UpdateProductionUseCase;
+use StageArt\Application\PublicPage\DeletePublicPageContentUseCase;
+use StageArt\Application\PublicPage\GetPublicContentLayoutUseCase;
+use StageArt\Application\PublicPage\GetPublicPageAppearanceUseCase;
+use StageArt\Application\PublicPage\GetPublicPageContentUseCase;
+use StageArt\Application\PublicPage\OrganizationProductionsLookup;
+use StageArt\Application\PublicPage\OrganizationPublicMembersLookup;
+use StageArt\Application\PublicPage\SavePublicPageContentUseCase;
+use StageArt\Application\PublicPage\UpdatePublicPageContentLayoutUseCase;
+use StageArt\Application\PublicPage\GetPublicPageSettingsUseCase;
+use StageArt\Application\PublicPage\PublicPageAuthorization;
+use StageArt\Application\PublicPage\UpdatePublicPageHeroImageUseCase;
+use StageArt\Application\PublicPage\UpdatePublicPageSettingsUseCase;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
@@ -157,6 +174,8 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationInvitatio
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationSNSRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPasswordResetTokenRepository;
+use StageArt\Infrastructure\WordPress\Media\WordPressHeroImageUploader;
+use StageArt\Infrastructure\WordPress\Media\WordPressHeroPresetCatalog;
 use StageArt\Infrastructure\WordPress\Media\WordPressOrganizationLogoUploader;
 use StageArt\Infrastructure\WordPress\OrganizationInvitation\WordPressOrganizationInvitationMailer;
 use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressParticipantInvitationMailer;
@@ -179,6 +198,9 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressContentLayoutRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressPublicPageContentRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressPublicPageSettingsRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionRepository;
@@ -223,6 +245,9 @@ use StageArt\Presentation\Rest\ParticipantRestController;
 use StageArt\Presentation\Rest\ParticipationRequestRestController;
 use StageArt\Presentation\Rest\ProductionDelegateRestController;
 use StageArt\Presentation\Rest\ProductionRestController;
+use StageArt\Presentation\Rest\PublicPageContentRestController;
+use StageArt\Presentation\Rest\PublicPageSettingsRestController;
+use StageArt\Presentation\Rest\PublicResponseCachePolicy;
 use StageArt\Presentation\Rest\ProjectRestController;
 use StageArt\Presentation\Rest\PushPreferenceRestController;
 use StageArt\Presentation\Rest\NotificationEmailRestController;
@@ -513,6 +538,8 @@ final class Plugin
         // RoleKey::ORGANIZATION_MANAGER - no separate Delegate table).
         $listOrganizationMembers = new ListOrganizationMembersUseCase($memberships, $people, $authorization, $personEmailResolver);
         $assignOrganizationDelegate = new AssignOrganizationDelegateUseCase($memberships, $authorization);
+        $listOrganizationDelegateAreas = new ListOrganizationDelegateAreasUseCase($memberships, $authorization);
+        $updateOrganizationDelegateAreas = new UpdateOrganizationDelegateAreasUseCase($memberships, $authorization);
         $revokeOrganizationDelegate = new RevokeOrganizationDelegateUseCase($memberships, $authorization);
 
         // StageArt Organization管理UI/UX統一 "団体ロゴ": a dedicated, narrow
@@ -521,6 +548,33 @@ final class Plugin
         $updateOrganizationLogo = new UpdateOrganizationLogoUseCase($organizations, $authorization);
         $organizationLogoUploader = new WordPressOrganizationLogoUploader();
         $updateOrganizationMemberRemarks = new UpdateOrganizationMemberRemarksUseCase($memberships, $authorization);
+
+        // 公開ページ設定 (theme + hero of the Organization / Production
+        // public pages, following StageArtCore's Theme / *HeroAdmin).
+        $publicPageSettings = new WordPressPublicPageSettingsRepository($wpdb);
+        $heroPresetCatalog = new WordPressHeroPresetCatalog(STAGEART_PLUGIN_DIR, STAGEART_PLUGIN_URL);
+        $publicPageAuthorization = new PublicPageAuthorization($organizations, $productions, $authorization, $productionAuthorization);
+        $getPublicPageSettings = new GetPublicPageSettingsUseCase($publicPageSettings, $heroPresetCatalog, $publicPageAuthorization);
+        $updatePublicPageSettings = new UpdatePublicPageSettingsUseCase($publicPageSettings, $heroPresetCatalog, $publicPageAuthorization);
+        $updatePublicPageHeroImage = new UpdatePublicPageHeroImageUseCase(
+            $publicPageSettings,
+            $heroPresetCatalog,
+            $publicPageAuthorization,
+            new WordPressHeroImageUploader()
+        );
+        $getPublicPageAppearance = new GetPublicPageAppearanceUseCase($publicPageSettings, $heroPresetCatalog);
+
+        // 公開ページのコンテンツ配置 (コンテンツ tab, following StageArtCore's
+        // homepage コンテンツブロック and 自由コンテンツ).
+        $contentLayouts = new WordPressContentLayoutRepository($wpdb);
+        $publicPageContents = new WordPressPublicPageContentRepository($wpdb);
+        $organizationProductionsLookup = new OrganizationProductionsLookup($projects, $productions);
+        $organizationPublicMembersLookup = new OrganizationPublicMembersLookup($memberships, $people);
+        $getPublicPageContent = new GetPublicPageContentUseCase($contentLayouts, $publicPageContents, $organizationProductionsLookup, $organizationPublicMembersLookup, $publicPageAuthorization);
+        $updatePublicPageContentLayout = new UpdatePublicPageContentLayoutUseCase($contentLayouts, $publicPageContents, $organizationProductionsLookup, $organizationPublicMembersLookup, $publicPageAuthorization);
+        $savePublicPageContent = new SavePublicPageContentUseCase($publicPageContents, $publicPageAuthorization);
+        $deletePublicPageContent = new DeletePublicPageContentUseCase($publicPageContents, $publicPageAuthorization);
+        $getPublicContentLayout = new GetPublicContentLayoutUseCase($contentLayouts, $publicPageContents, $organizationPublicMembersLookup);
 
         // StageArt 団体管理UI整理 "団体情報": SNS (docs/04-DomainModel/
         // OrganizationSNS.md) and external-link CRUD, both OWNER/
@@ -817,7 +871,9 @@ final class Plugin
             $identityContract,
             $authorizationContract,
             $membershipContract,
-            $transactions
+            $transactions,
+            $notificationContract,
+            new CoreProductionCapabilityDirectoryAdapter($productionAuthorization, $productions, $productionDelegates, $people)
         );
 
         // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
@@ -890,7 +946,24 @@ final class Plugin
             $revokeOrganizationDelegate,
             $updateOrganizationLogo,
             $organizationLogoUploader,
-            $updateOrganizationMemberRemarks
+            $updateOrganizationMemberRemarks,
+            $getPublicPageAppearance,
+            $getPublicContentLayout,
+            $listOrganizationDelegateAreas,
+            $updateOrganizationDelegateAreas
+        );
+
+        $publicPageSettingsRestController = new PublicPageSettingsRestController(
+            $getPublicPageSettings,
+            $updatePublicPageSettings,
+            $updatePublicPageHeroImage
+        );
+
+        $publicPageContentRestController = new PublicPageContentRestController(
+            $getPublicPageContent,
+            $updatePublicPageContentLayout,
+            $savePublicPageContent,
+            $deletePublicPageContent
         );
 
         $organizationSnsRestController = new OrganizationSNSRestController(
@@ -953,7 +1026,8 @@ final class Plugin
             $completeProduction,
             $archiveProduction,
             $cancelProduction,
-            $searchProductions
+            $searchProductions,
+            $getPublicPageAppearance
         );
 
         $productionDelegateRestController = new ProductionDelegateRestController(
@@ -1015,7 +1089,8 @@ final class Plugin
             $issueProductionJoinKey,
             $resolveJoinKey,
             $disableJoinKey,
-            $joinKeys
+            new ListOrganizationJoinKeysUseCase($organizations, $joinKeys, $authorization),
+            new ListProductionJoinKeysUseCase($productions, $joinKeys, $productionAuthorization)
         );
 
         $membershipRestController = new MembershipRestController(
@@ -1028,6 +1103,9 @@ final class Plugin
 
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
 
+        // Public reads that depend on what is published now: never kept by the server's page cache.
+        (new PublicResponseCachePolicy())->register();
+
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
         add_action('rest_api_init', [$organizationSnsRestController, 'register_routes']);
         add_action('rest_api_init', [$organizationExternalLinkRestController, 'register_routes']);
@@ -1036,6 +1114,8 @@ final class Plugin
         add_action('rest_api_init', [$userAccountRestController, 'register_routes']);
         add_action('rest_api_init', [$authenticationRestController, 'register_routes']);
         add_action('rest_api_init', [$productionRestController, 'register_routes']);
+        add_action('rest_api_init', [$publicPageSettingsRestController, 'register_routes']);
+        add_action('rest_api_init', [$publicPageContentRestController, 'register_routes']);
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);
         add_action('rest_api_init', [$participantInvitationRestController, 'register_routes']);

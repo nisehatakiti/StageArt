@@ -7,10 +7,10 @@ namespace StageArt\Application\OrganizationInvitation;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationNotFoundException;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /**
  * Mirrors ListParticipantInvitationsUseCase's own shape - needed so
@@ -51,7 +51,7 @@ final class ListOrganizationInvitationsUseCase
             throw new OrganizationAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        if (! $this->authorization->hasRole($requester, $organizationId, [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $this->authorization->hasDelegateArea($requester, $organizationId, DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can view invitations.');
         }
 

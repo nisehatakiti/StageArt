@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { fetchProjects } from '@/features/organization/api';
+import { canManageOrganizationProductions } from '@/features/organization/permissions';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { createProduction, updateProduction } from '@/features/production/api';
@@ -210,6 +211,23 @@ export default function CreateProductionScreen() {
             </ThemedText>
           </TouchableOpacity>
         </ScrollView>
+      </>
+    );
+  }
+
+  if (organizationsQuery.isLoading) {
+    return (
+      <>
+        <ActivityIndicator testID="organization-productions-create-loading" />
+      </>
+    );
+  }
+
+  // Creating a Production is the 公演管理 area (CreateProductionUseCase).
+  if (!canManageOrganizationProductions(organization)) {
+    return (
+      <>
+        <ThemedText testID="organization-productions-create-unavailable" themeColor="textSecondary">公演・活動の管理は、オーナーまたは公演管理を任された代理人のみ行えます。</ThemedText>
       </>
     );
   }

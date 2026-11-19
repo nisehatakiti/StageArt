@@ -8,6 +8,8 @@ import { getPublicWebBaseUrl } from '@/api/config';
 import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { FormInput } from '@/components/form-input';
+import { ManagementTabs } from '@/components/management-tabs';
+import { PublicPageSettingsPanel } from '@/components/public-page-settings-panel';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
 import { useCreatePerformance, usePerformances } from '@/features/performance/usePerformances';
@@ -16,6 +18,12 @@ import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { isValidSlug } from '@/utils/slug';
+
+type ProductionEditTab = 'information' | 'public-page';
+const TABS: { key: ProductionEditTab; label: string }[] = [
+  { key: 'information', label: '公演情報' },
+  { key: 'public-page', label: '公開ページ設定' },
+];
 
 /**
  * StageArt Web版 公演管理 Phase: 公演情報編集. Reuses the real
@@ -36,9 +44,16 @@ import { isValidSlug } from '@/utils/slug';
  * see that service's own docblock) - `is_primary_manager` (already on
  * every Production fetch) is read here only to skip straight to that
  * same message locally, not as this screen's own access decision.
+ *
+ * 公開ページ設定: the form below is the 公演情報 tab (unchanged); the
+ * 公開ページ設定 tab holds this Production's own public page theme + hero
+ * (PublicPageSettingsPanel, StageArtCore's Theme::presets('production') /
+ * ProductionHeroAdmin), saved separately from - and never touching - the
+ * fields of this form. The active tab is kept in the URL (`?tab=public-page`).
  */
 export default function ProductionEditScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const [activeTab, setActiveTab] = useState<ProductionEditTab>(tab === 'public-page' ? 'public-page' : 'information');
   const { apiClient } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -308,6 +323,27 @@ export default function ProductionEditScreen() {
         公演情報編集
       </ThemedText>
 
+      <ManagementTabs
+        testID="production-edit-tabs"
+        tabs={TABS}
+        active={activeTab}
+        onChange={(next) => {
+          setActiveTab(next);
+          router.setParams?.({ tab: next === 'information' ? undefined : next });
+        }}
+      />
+
+      {activeTab === 'public-page' ? (
+        <PublicPageSettingsPanel
+          site="production"
+          ownerId={production.id}
+          publicPageUrl={
+            production.published_at !== null && production.slug && organization?.slug
+              ? `${getPublicWebBaseUrl()}/${organization.slug}/${production.slug}/`
+              : null
+          }
+        />
+      ) : (
       <View style={styles.form}>
         <ThemedText type="small" themeColor="textSecondary">
           公演冠（任意）
@@ -737,6 +773,7 @@ export default function ProductionEditScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      )}
       </ScrollView>
     </>
   );

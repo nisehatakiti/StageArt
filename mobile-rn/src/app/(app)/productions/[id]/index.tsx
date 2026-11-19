@@ -12,6 +12,13 @@ import {
   useCompleteProduction,
   useProduction,
 } from '@/features/production/useProductions';
+import {
+  canManageProductionParticipants,
+  canPublishProduction,
+  canViewProductionAccounting,
+  canViewProductionMemberPerformanceSummary,
+  isProductionPrimaryManager,
+} from '@/features/production/permissions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { usePerformances } from '@/features/performance/usePerformances';
@@ -81,8 +88,8 @@ export default function ProductionManagementScreen() {
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
 
-  const isPrimaryManager = !!production?.is_primary_manager;
-  const canReviewParticipationRequests = isPrimaryManager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
+  const isPrimaryManager = isProductionPrimaryManager(production);
+  const canReviewParticipationRequests = canManageProductionParticipants(production);
   const pendingParticipationRequestsQuery = usePendingParticipationRequests(canReviewParticipationRequests ? id : undefined);
   const performancesQuery = usePerformances(id);
 
@@ -310,27 +317,33 @@ export default function ProductionManagementScreen() {
         その他
       </ThemedText>
 
+      {/* A card the signed-in Person may not use is not rendered at all
+          (メニューの非表示統一); the conditions are features/production/permissions.ts. */}
       <View style={styles.menuGrid} testID="production-management-menu">
-        <MenuCard
-          testID="production-management-menu-publish"
-          label="公開設定"
-          description={published ? '公開中' : '未公開'}
-          onPress={() => router.push(`/productions/${id}/publish` as Href)}
-          disabled={!isPrimaryManager}
-        />
-        <MenuCard
-          testID="production-management-menu-member-performance-summary"
-          label="メンバー実績サマリー"
-          description="稽古出欠・チケット販売実績"
-          onPress={() => router.push(`/productions/${id}/member-performance-summary` as Href)}
-          disabled={!isPrimaryManager}
-        />
-        <MenuCard
-          testID="production-management-menu-accounting"
-          label="会計"
-          description="予算・実績"
-          onPress={() => router.push(`/production/${id}/accounting` as Href)}
-        />
+        {canPublishProduction(production) && (
+          <MenuCard
+            testID="production-management-menu-publish"
+            label="公開設定"
+            description={published ? '公開中' : '未公開'}
+            onPress={() => router.push(`/productions/${id}/publish` as Href)}
+          />
+        )}
+        {canViewProductionMemberPerformanceSummary(production) && (
+          <MenuCard
+            testID="production-management-menu-member-performance-summary"
+            label="メンバー実績サマリー"
+            description="稽古出欠・チケット販売実績"
+            onPress={() => router.push(`/productions/${id}/member-performance-summary` as Href)}
+          />
+        )}
+        {canViewProductionAccounting(production) && (
+          <MenuCard
+            testID="production-management-menu-accounting"
+            label="会計"
+            description="予算・実績"
+            onPress={() => router.push(`/production/${id}/accounting` as Href)}
+          />
+        )}
         <MenuCard
           testID="production-management-menu-notifications"
           label="通知"
@@ -357,16 +370,14 @@ function MenuCard({
   label,
   description,
   onPress,
-  disabled,
 }: {
   testID: string;
   label: string;
   description: string;
   onPress: () => void;
-  disabled?: boolean;
 }) {
   return (
-    <TouchableOpacity testID={testID} onPress={onPress} disabled={disabled} style={[styles.menuCard, disabled && styles.menuCardDisabled]}>
+    <TouchableOpacity testID={testID} onPress={onPress} style={styles.menuCard}>
       <ThemedView>
         <ThemedText type="smallBold">{label}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">

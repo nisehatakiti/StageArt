@@ -15,6 +15,7 @@ use StageArt\Application\Organization\OrganizationAccessDeniedException;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\RevokeOrganizationDelegateCommand;
 use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\Person;
@@ -184,14 +185,35 @@ final class OrganizationDelegateUseCaseTest extends TestCase
         $this->listMembers->execute(new ListOrganizationMembersQuery($this->organizationId->toString(), 2));
     }
 
-    public function test_delegate_can_list_members(): void
+    public function test_delegate_with_the_members_area_can_list_members(): void
     {
         $this->givenOwner(1);
         $member = $this->givenPlainMember(2);
         $this->assign->execute(new AssignOrganizationDelegateCommand($this->organizationId->toString(), 1, $member->id()->toString()));
+        $this->grantAreas($member, [DelegateArea::MEMBERS]);
 
         $results = $this->listMembers->execute(new ListOrganizationMembersQuery($this->organizationId->toString(), 2));
 
         $this->assertCount(2, $results);
+    }
+
+    public function test_delegate_without_the_members_area_cannot_list_members(): void
+    {
+        $this->givenOwner(1);
+        $member = $this->givenPlainMember(2);
+        $this->assign->execute(new AssignOrganizationDelegateCommand($this->organizationId->toString(), 1, $member->id()->toString()));
+        $this->grantAreas($member, [DelegateArea::PRODUCTIONS, DelegateArea::ACCOUNTING]);
+
+        $this->expectException(OrganizationAccessDeniedException::class);
+
+        $this->listMembers->execute(new ListOrganizationMembersQuery($this->organizationId->toString(), 2));
+    }
+
+    /** @param string[] $areas */
+    private function grantAreas(Person $delegate, array $areas): void
+    {
+        $membership = $this->memberships->findByOrganizationAndPerson($this->organizationId, $delegate->id());
+        $membership->replaceDelegateAreas($areas);
+        $this->memberships->save($membership);
     }
 }

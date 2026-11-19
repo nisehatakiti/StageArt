@@ -9,13 +9,15 @@ use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Domain\JoinKey\JoinKey;
 use StageArt\Domain\JoinKey\JoinKeyId;
 use StageArt\Domain\JoinKey\JoinKeyRepositoryInterface;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /** Authorization branches on the JoinKey's own `targetType` - the same
- * Owner/PrimaryManager gate as issuance (see IssueOrganizationJoinKeyUseCase/
+ * gate as issuance: the Owner or a メンバー管理 delegate of the key's own
+ * Organization, or the PrimaryManager of the key's own Production (see
+ * IssueOrganizationJoinKeyUseCase/
  * IssueProductionJoinKeyUseCase). Disabling never retroactively removes
  * any Membership/Participant already created through this key (JoinKey.md's
  * "Join Keyの無効化は既存のMembership/Participantを遡及的に削除しない"). */
@@ -62,8 +64,8 @@ final class DisableJoinKeyUseCase
     {
         $person = $this->organizationAuthorization->resolveCurrentPerson($wordPressUserId);
 
-        if (! $person || ! $this->organizationAuthorization->hasRole($person, OrganizationId::fromString($organizationId), [RoleKey::OWNER])) {
-            throw new JoinKeyAccessDeniedException('Only an Organization Owner can disable this Join Key.');
+        if (! $person || ! $this->organizationAuthorization->hasDelegateArea($person, OrganizationId::fromString($organizationId), DelegateArea::MEMBERS)) {
+            throw new JoinKeyAccessDeniedException('Only the Organization Owner or a delegate with member management can disable this Join Key.');
         }
     }
 

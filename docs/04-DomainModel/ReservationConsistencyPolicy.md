@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Reservation
 
-Version : 1.3
+Version : 1.4
 
 ---
 
@@ -190,6 +190,8 @@ CANCELLEDはキャンセルされた予約Factを保持する状態。
 NO_SHOWは予約が存在したが来場が確認されなかった状態。
 
 Check In後のReservationは、予約者向け変更・キャンセルフォームから変更・キャンセルできない。
+
+NO_SHOWのReservationも、予約者向けキャンセルフォームを含む通常の予約取消を行えない。NO_SHOWは売上・販売実績・Ticket Back・ノルマ実績に含まれ、Capacityを消費し続ける（Ticket Revenue Consistency Policy「No-Show」）。
 
 ---
 

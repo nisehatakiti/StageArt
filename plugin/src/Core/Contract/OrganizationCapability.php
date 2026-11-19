@@ -28,6 +28,15 @@ final class OrganizationCapability
      */
     public const MEMBER = 'Organization.Member';
 
+    /**
+     * 代理人の管理領域「会計管理」: the Owner, or a delegate the Owner
+     * delegated 会計管理 to (Domain\Membership\DelegateArea::ACCOUNTING).
+     * Organization-level accounting (an Account, a JournalEntry with no
+     * Production) only - Production-Scope accounting keeps its own
+     * AccountingCapability rules.
+     */
+    public const ACCOUNTING = 'Organization.Accounting';
+
     private function __construct()
     {
     }

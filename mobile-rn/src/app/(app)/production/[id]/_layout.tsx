@@ -4,11 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { canOpenProductionInvite, canViewProductionAccounting } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 
 /**
  * Production Context / Shell (§11, §15): no Role-based Navigation
- * branching anywhere in this file. Organization/Production themselves
+ * branching in this file, except the entries whose content is itself
+ * restricted (招待管理, and 会計 - Production-wide Budget / Actual are not
+ * shown to a general member, ExpenseApprovalWorkflow.md "Accounting
+ * Visibility"). Organization/Production themselves
  * intentionally do not get their own bottom-nav tab
  * (FrontendArchitecture.md - "「公演」「団体」は下部ナビゲーションに置か
  * ない"); Home (outside this layout entirely) is the cross-Production
@@ -73,8 +77,10 @@ export default function ProductionShellLayout() {
             dedicated native Tab (adding one would change the existing,
             already-tested 4-tab native layout - see this file's own
             docblock on why native behavior stays untouched this phase),
-            so this entry point is Web-only. */}
-        {Platform.OS === 'web' && (
+            so this entry point is Web-only. It is listed only for those
+            who may use the screen (PrimaryManager: 参加コード;
+            PARTICIPANT_MANAGER: 参加申請) - features/production/permissions.ts. */}
+        {Platform.OS === 'web' && canOpenProductionInvite(production) && (
           <TouchableOpacity onPress={() => router.push(`/production-invite/${id}` as Href)} testID="production-invite-link">
             <ThemedText type="link">招待管理</ThemedText>
           </TouchableOpacity>
@@ -84,7 +90,14 @@ export default function ProductionShellLayout() {
       <Tabs screenOptions={{ headerShown: false }}>
         <Tabs.Screen name="schedule" options={{ title: '予定' }} />
         <Tabs.Screen name="notifications" options={{ title: 'お知らせ' }} />
-        <Tabs.Screen name="accounting" options={{ title: '会計' }} />
+        {/* 会計 is listed only for the PrimaryManager or an ACCOUNTING_MANAGER
+            (features/production/permissions.ts); while the Production is still
+            loading or could not be read, it stays hidden. The screen checks
+            again on its own and the API refuses everyone else (403). */}
+        <Tabs.Screen
+          name="accounting"
+          options={{ title: '会計', href: canViewProductionAccounting(production) ? undefined : null }}
+        />
         <Tabs.Screen name="mypage" options={{ title: 'マイページ' }} />
         <Tabs.Screen name="overview" options={{ title: '概要' }} />
       </Tabs>

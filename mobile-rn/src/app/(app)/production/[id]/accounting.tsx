@@ -8,6 +8,8 @@ import { Spacing } from '@/constants/theme';
 import { ProductionAccountingDetailSection } from '@/features/accounting/ProductionAccountingDetailSection';
 import { useProductionAccounting } from '@/features/accounting/useProductionAccounting';
 import { buildAccountingViewModel } from '@/features/accounting/viewModel';
+import { canViewProductionAccounting } from '@/features/production/permissions';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -20,8 +22,30 @@ import { getErrorMessage } from '@/utils/errorMessage';
 export default function AccountingScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const accountingQuery = useProductionAccounting(productionId);
-  const viewModel = accountingQuery.data ? buildAccountingViewModel(accountingQuery.data) : null;
+  // Opened by direct URL or a deep link as well as from the tab: the
+  // Production-wide figures are requested only once the Production confirms
+  // the PrimaryManager or an ACCOUNTING_MANAGER (features/production/permissions.ts).
+  // Until then nothing is fetched; if the Production cannot be read (a plain
+  // participant gets 403, or the request failed) the screen stays refused.
+  // The API still refuses everyone else on its own (403).
+  const productionQuery = useProduction(productionId);
+  const allowed = canViewProductionAccounting(productionQuery.data);
+  const accountingQuery = useProductionAccounting(productionId, allowed);
+  const viewModel = allowed && accountingQuery.data ? buildAccountingViewModel(accountingQuery.data) : null;
+
+  if (!allowed) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ThemedView style={styles.centered}>
+          {productionQuery.isLoading ? (
+            <ActivityIndicator testID="accounting-loading" />
+          ) : (
+            <ThemedText testID="accounting-forbidden">この情報を表示する権限がありません。</ThemedText>
+          )}
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -82,6 +106,16 @@ export default function AccountingScreen() {
             accessibilityRole="button"
           >
             <ThemedText type="link">予算を入力・確認する</ThemedText>
+          </TouchableOpacity>
+
+          {/* 修正8: the manager-menu entry to pending Expense applications
+              (ExpenseApprovalWorkflow.md "Approval Entry / Manager Review"). */}
+          <TouchableOpacity
+            onPress={() => router.push(`/productions/${productionId}/expenses` as Href)}
+            testID="accounting-expenses-link"
+            accessibilityRole="button"
+          >
+            <ThemedText type="link">経費申請（承認待ち）を確認する</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       )}

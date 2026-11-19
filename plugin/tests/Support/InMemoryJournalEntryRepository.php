@@ -15,10 +15,43 @@ final class InMemoryJournalEntryRepository implements JournalEntryRepositoryInte
 {
     /** @var array<string, JournalEntry> */
     private array $entries = [];
+    private bool $failNextSave = false;
 
     public function save(JournalEntry $entry): void
     {
+        if ($this->failNextSave) {
+            $this->failNextSave = false;
+
+            throw new \RuntimeException('Simulated JournalEntry save failure.');
+        }
+
         $this->entries[$entry->id()->toString()] = $entry;
+    }
+
+    /**
+     * Test-only: the next save() throws, as WordPressJournalEntryRepository
+     * does when a database write fails.
+     */
+    public function failNextSave(): void
+    {
+        $this->failNextSave = true;
+    }
+
+    /**
+     * Test-only, for RollbackingTransactionManager.
+     * @return array<string, JournalEntry>
+     */
+    public function snapshot(): array
+    {
+        return $this->entries;
+    }
+
+    /**
+     * @param array<string, JournalEntry> $snapshot
+     */
+    public function restore(array $snapshot): void
+    {
+        $this->entries = $snapshot;
     }
 
     public function findById(JournalEntryId $id): ?JournalEntry

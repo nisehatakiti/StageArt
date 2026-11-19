@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace StageArt\Application\Organization;
 
 use StageArt\Application\Notification\PersonEmailResolver;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /**
  * StageArt 団体管理UI整理: the "メンバー管理" roster, needed by that screen
@@ -45,7 +45,7 @@ final class ListOrganizationMembersUseCase
         $person = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
         $organizationId = OrganizationId::fromString($query->organizationId);
 
-        if (! $person || ! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $person || ! $this->authorization->hasDelegateArea($person, $organizationId, DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can view the member list.');
         }
 

@@ -98,17 +98,8 @@ export function NativeDrawerMenu({ visible, onClose }: { visible: boolean; onClo
   );
 }
 
+// No disabled rendering: useNavMenu() leaves out items the Person may not use.
 function DrawerLink({ item, onPress }: { item: NavMenuItem; onPress: () => void }) {
-  if (item.disabled) {
-    return (
-      <View testID={`native-drawer-${item.key}`} style={styles.linkRow}>
-        <ThemedText type="default" themeColor="textSecondary">
-          {item.label}
-        </ThemedText>
-      </View>
-    );
-  }
-
   return (
     <TouchableOpacity testID={`native-drawer-${item.key}`} onPress={onPress} style={styles.linkRow}>
       <ThemedText type="default">{item.label}</ThemedText>

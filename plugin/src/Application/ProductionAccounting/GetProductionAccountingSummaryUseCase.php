@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ProductionAccounting;
 
+use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
-use StageArt\Core\Contract\MembershipContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Account\Account;
 use StageArt\Domain\Account\AccountId;
@@ -30,12 +31,14 @@ use StageArt\Domain\Production\ProductionId;
  * ASSET/LIABILITY/EQUITY Lines are deliberately excluded from this P&L
  * figure.
  *
- * Visibility: any Production Member (not PrimaryManager-only) may read
- * this aggregate Summary - a disclosed judgment call distinct from
- * Budget/JournalEntry raw detail (PrimaryManager-only, see
- * GetBudgetUseCase/ListJournalEntriesUseCase), reasoned from
- * FrontendArchitecture.md §4-3's shared, non-Role-gated "会計概要" entry
- * point design intent. See the Phase 6.0 report's Authorization section.
+ * Visibility: the PrimaryManager or an ACTIVE ACCOUNTING_MANAGER Delegate
+ * only (`Accounting.Update`, the same check as Budget/JournalEntry) -
+ * ExpenseApprovalWorkflow.md "Accounting Visibility" withholds Budget /
+ * Actual from a general Member, and the confirmed J3 decision limits a
+ * Delegate's accounting access to an explicit ACCOUNTING_MANAGER grant.
+ * Being a Production Member (participant, or a Delegate with another
+ * Role) is not enough. This replaces the earlier "any Production Member"
+ * judgment call.
  *
  * Variance sign convention: Budget.md's worked example ("Budget 500,000 /
  * Actual 430,000 / Variance -70,000") and this Use Case both compute
@@ -62,7 +65,7 @@ final class GetProductionAccountingSummaryUseCase
     private JournalEntryRepositoryInterface $journalEntries;
     private AccountRepositoryInterface $accounts;
     private ProductionContextContract $productionContext;
-    private MembershipContract $membership;
+    private AuthorizationContract $authorization;
     private IdentityContract $identity;
 
     public function __construct(
@@ -70,14 +73,14 @@ final class GetProductionAccountingSummaryUseCase
         JournalEntryRepositoryInterface $journalEntries,
         AccountRepositoryInterface $accounts,
         ProductionContextContract $productionContext,
-        MembershipContract $membership,
+        AuthorizationContract $authorization,
         IdentityContract $identity
     ) {
         $this->budgets = $budgets;
         $this->journalEntries = $journalEntries;
         $this->accounts = $accounts;
         $this->productionContext = $productionContext;
-        $this->membership = $membership;
+        $this->authorization = $authorization;
         $this->identity = $identity;
     }
 
@@ -96,9 +99,9 @@ final class GetProductionAccountingSummaryUseCase
             throw new ProductionNotFoundException($query->productionId);
         }
 
-        if (! $this->membership->isProductionMember($requesterId, $productionId)) {
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
             throw new ProductionAccountingAccessDeniedException(
-                'Only members of this Production can view its Accounting Summary.'
+                'Only the PrimaryManager or an Accounting Manager can view this Production\'s Accounting Summary.'
             );
         }
 

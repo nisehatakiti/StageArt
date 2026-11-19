@@ -14,12 +14,14 @@ import {
 import { useMyDashboard } from '@/features/dashboard/useDashboard';
 import { useMyFavorites } from '@/features/favorite/useFavorite';
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { canReviewOrganizationMembershipRequests } from '@/features/organization/permissions';
 import { fetchProjects } from '@/features/organization/api';
 import { fetchProductions } from '@/features/production/api';
 import { approveMembershipRequest, fetchPendingMembershipRequests, rejectMembershipRequest } from '@/features/membership/api';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
+import { resolveNotificationRoute } from '@/features/notifications/notificationRoute';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
@@ -191,9 +193,10 @@ export default function HomeScreen() {
 function HomeMembershipApprovalSection({ organizations }: { organizations: import('@/types/api').Organization[] }) {
   const { apiClient } = useAuth();
   const queryClient = useQueryClient();
-  const ownerOrganizations = organizations.filter((organization) => organization.current_person_role === 'OWNER');
+  // The Owner and a delegate holding メンバー管理 review requests (same rule as the API).
+  const reviewableOrganizations = organizations.filter(canReviewOrganizationMembershipRequests);
   const pendingQueries = useQueries({
-    queries: ownerOrganizations.map((organization) => ({
+    queries: reviewableOrganizations.map((organization) => ({
       queryKey: ['pending-membership-requests', organization.id],
       queryFn: () => fetchPendingMembershipRequests(apiClient, organization.id),
       enabled: !!organization.id,
@@ -231,7 +234,7 @@ function HomeMembershipApprovalSection({ organizations }: { organizations: impor
   const requests = pendingQueries.flatMap((query, index) =>
     (query.data ?? []).map((request) => ({
       request,
-      organization: ownerOrganizations[index],
+      organization: reviewableOrganizations[index],
     }))
   );
 
@@ -443,8 +446,10 @@ function PersonalOverviewSection({
  * refetch-driven - same Source-of-Truth pattern as every other
  * mark-read flow in this codebase) and, once that succeeds, (2)
  * navigates - to the target Rehearsal's own detail screen when this
- * notification carries both `rehearsal_id` and `production_id` (never
- * by parsing `message`), or to `/my-notifications` otherwise (every
+ * notification carries both `rehearsal_id` and `production_id`, to the
+ * Expense's detail screen for an Expense approval notification (修正8,
+ * features/notifications/notificationRoute.ts - never by parsing
+ * `message`), or to `/my-notifications` otherwise (every
  * other notification type's own existing history destination). Read
  * state is set before navigation ever starts, so even if navigation
  * itself were interrupted, the "read" fact is already persisted
@@ -457,11 +462,7 @@ function HomeNotificationRow({ notification }: { notification: MyNotification })
   function handlePress() {
     markRead.mutate(notification.id, {
       onSuccess: () => {
-        if (notification.rehearsal_id && notification.production_id) {
-          router.push(`/production/${notification.production_id}/schedule/attendance/${notification.rehearsal_id}`);
-        } else {
-          router.push('/my-notifications');
-        }
+        router.push(resolveNotificationRoute(notification) ?? '/my-notifications');
       },
     });
   }

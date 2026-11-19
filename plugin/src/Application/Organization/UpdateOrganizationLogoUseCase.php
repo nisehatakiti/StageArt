@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Organization\OrganizationRepositoryInterface;
+use StageArt\Domain\Person\Person;
 use StageArt\Domain\Role\RoleKey;
 
 /**
@@ -13,6 +15,10 @@ use StageArt\Domain\Role\RoleKey;
  * (or clearing) only the logo never needs the caller to resend every
  * other Organization field - mirrors the same OWNER/ORGANIZATION_MANAGER
  * Authorization check.
+ *
+ * authorize() is the same check on its own, so an upload is refused
+ * before any file is accepted, scaled or stored (the REST upload calls
+ * it first); execute() still checks again when it saves the URL.
  */
 final class UpdateOrganizationLogoUseCase
 {
@@ -27,15 +33,38 @@ final class UpdateOrganizationLogoUseCase
         $this->authorization = $authorization;
     }
 
+    /**
+     * @throws OrganizationAccessDeniedException
+     * @throws OrganizationNotFoundException
+     * @throws \InvalidArgumentException for a malformed id
+     */
+    public function authorize(string $organizationId, int $requestedByWordPressUserId): void
+    {
+        $this->authorized($organizationId, $requestedByWordPressUserId);
+    }
+
     public function execute(UpdateOrganizationLogoCommand $command): OrganizationResult
     {
-        $person = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
+        [$organization, $role, $managementAreas] = $this->authorized($command->organizationId, $command->requestedByWordPressUserId);
 
-        if (! $person) {
+        $organization->changeLogoUrl($command->logoUrl);
+        $this->organizations->save($organization);
+
+        return OrganizationResult::fromDomain($organization, $role, null, $managementAreas);
+    }
+
+    /**
+     * @return array{0: Organization, 1: RoleKey, 2: string[]}
+     */
+    private function authorized(string $organizationIdValue, int $wordPressUserId): array
+    {
+        $person = $this->authorization->resolveCurrentPerson($wordPressUserId);
+
+        if (! $person instanceof Person) {
             throw new OrganizationAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $organizationId = OrganizationId::fromString($command->organizationId);
+        $organizationId = OrganizationId::fromString($organizationIdValue);
         $role = $this->authorization->roleFor($person, $organizationId);
 
         if ($role === null || ! in_array($role->toString(), [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER], true)) {
@@ -45,12 +74,9 @@ final class UpdateOrganizationLogoUseCase
         $organization = $this->organizations->findById($organizationId);
 
         if (! $organization) {
-            throw new OrganizationNotFoundException($command->organizationId);
+            throw new OrganizationNotFoundException($organizationIdValue);
         }
 
-        $organization->changeLogoUrl($command->logoUrl);
-        $this->organizations->save($organization);
-
-        return OrganizationResult::fromDomain($organization, $role);
+        return [$organization, $role, $this->authorization->managementAreasFor($person, $organizationId)];
     }
 }

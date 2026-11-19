@@ -7,7 +7,7 @@ namespace StageArt\Application\Production;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Project\ProjectNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
-use StageArt\Domain\Role\RoleKey;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionName;
@@ -83,8 +83,8 @@ final class CreateProductionUseCase
             throw new ProjectNotFoundException($command->projectId);
         }
 
-        if (! $this->authorization->hasRole($requester, $project->organizationId(), [RoleKey::OWNER])) {
-            throw new ProductionAccessDeniedException('Only an Organization Owner can create a Production in this Project.');
+        if (! $this->authorization->hasDelegateArea($requester, $project->organizationId(), DelegateArea::PRODUCTIONS)) {
+            throw new ProductionAccessDeniedException('Only the Organization Owner or a delegate with the PRODUCTIONS area can create a Production in this Project.');
         }
 
         $primaryManagerPersonId = PersonId::fromString($command->primaryManagerPersonId);

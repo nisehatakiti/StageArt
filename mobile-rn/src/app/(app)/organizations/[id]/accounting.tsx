@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 
 import { OrganizationPlaceholderScreen } from '@/components/organization-placeholder-screen';
 import { OrganizationProductionResultsSection } from '@/features/accounting/OrganizationProductionResultsSection';
+import { canManageOrganizationAccounting } from '@/features/organization/permissions';
 
 /**
  * StageArt Organization Context Menu仕様整合: 会計管理
@@ -24,6 +25,8 @@ export default function OrganizationAccountingScreen() {
       testIdPrefix="organization-accounting"
       title="会計管理"
       description="貸借対照表・損益計算書・決算は準備中です。"
+      canAccess={canManageOrganizationAccounting}
+      unavailableMessage="会計管理は、オーナーまたは会計管理を任された代理人のみ利用できます。"
     >
       {id ? <OrganizationProductionResultsSection organizationId={id} /> : null}
     </OrganizationPlaceholderScreen>

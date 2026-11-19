@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace StageArt\Application\Membership;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\MembershipId;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Person\PersonRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
-/** Membership.md's "Approval": only an Organization Owner may approve a
- * REQUESTED Membership into ACTIVE. */
+/** Membership.md's "Approval": the Organization Owner, or a delegate
+ * holding メンバー管理 (DelegateArea::MEMBERS), may approve a REQUESTED
+ * Membership into ACTIVE. Authorized against the request's own
+ * Organization, so another Organization's request id never passes. */
 final class ApproveMembershipRequestUseCase
 {
     private MembershipRepositoryInterface $memberships;
@@ -38,8 +40,8 @@ final class ApproveMembershipRequestUseCase
 
         $approver = $this->authorization->resolveCurrentPerson($command->requestedByWordPressUserId);
 
-        if (! $approver || ! $this->authorization->hasRole($approver, $membership->organizationId(), [RoleKey::OWNER])) {
-            throw new MembershipAccessDeniedException('Only an Organization Owner can approve this Membership request.');
+        if (! $approver || ! $this->authorization->hasDelegateArea($approver, $membership->organizationId(), DelegateArea::MEMBERS)) {
+            throw new MembershipAccessDeniedException('Only the Organization Owner or a delegate with member management can approve this Membership request.');
         }
 
         $membership->approve();

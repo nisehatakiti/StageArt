@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Organization;
 
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Organization\Organization;
 use StageArt\Domain\Role\RoleKey;
 
@@ -22,6 +23,15 @@ final class OrganizationResult
     public string $updatedAt;
     public string $currentPersonRole;
     public ?int $followerCount;
+    /**
+     * 代理人の管理領域 the requesting Person holds here (DelegateArea
+     * values): every area for the Owner, the delegated ones for a
+     * delegate, none for a plain member. Lets the client show only the
+     * management menus the server will actually allow.
+     *
+     * @var string[]
+     */
+    public array $currentPersonManagementAreas = [];
 
     private function __construct(
         string $id,
@@ -60,9 +70,18 @@ final class OrganizationResult
      * extra count query just to populate a field their own screens don't
      * show.
      */
-    public static function fromDomain(Organization $organization, RoleKey $currentPersonRole, ?int $followerCount = null): self
-    {
-        return new self(
+    /**
+     * @param string[]|null $currentPersonManagementAreas null = derived from
+     *        the Role alone (all areas for OWNER, none otherwise); a
+     *        delegate's caller passes the areas stored on their Membership.
+     */
+    public static function fromDomain(
+        Organization $organization,
+        RoleKey $currentPersonRole,
+        ?int $followerCount = null,
+        ?array $currentPersonManagementAreas = null
+    ): self {
+        $result = new self(
             $organization->id()->toString(),
             $organization->name()->toString(),
             $organization->slug()?->toString(),
@@ -77,6 +96,10 @@ final class OrganizationResult
             $currentPersonRole->toString(),
             $followerCount
         );
+        $result->currentPersonManagementAreas = $currentPersonManagementAreas
+            ?? ($currentPersonRole->toString() === RoleKey::OWNER ? DelegateArea::all() : []);
+
+        return $result;
     }
 
     /**
@@ -97,6 +120,7 @@ final class OrganizationResult
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
             'current_person_role' => $this->currentPersonRole,
+            'current_person_management_areas' => $this->currentPersonManagementAreas,
             'follower_count' => $this->followerCount,
         ];
     }

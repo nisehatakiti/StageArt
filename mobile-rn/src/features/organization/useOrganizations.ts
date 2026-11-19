@@ -1,19 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
-import type { Organization } from '@/types/api';
+import type { DelegateArea, Organization, OrganizationDelegateAreas } from '@/types/api';
 
 import {
   assignOrganizationDelegate,
   cancelOrganizationInvitation,
   createOrganizationInvitation,
   deleteOrganizationLogo,
+  fetchOrganizationDelegateAreas,
   fetchOrganizationInvitations,
   fetchOrganizationMembers,
   fetchOrganizations,
   resendOrganizationInvitation,
   revokeOrganizationDelegate,
   transferOrganizationOwner,
+  updateOrganizationDelegateAreas,
   updateOrganizationMemberRemarks,
   uploadOrganizationLogo,
 } from './api';
@@ -42,6 +44,8 @@ export function useOrganizationMembers(organizationId: string | undefined) {
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['organization-members', organizationId] });
+    // Becoming / ceasing to be a delegate changes who has areas at all.
+    queryClient.invalidateQueries({ queryKey: ['organization-delegate-areas', organizationId] });
   }
 
   const assignDelegate = useMutation({
@@ -61,6 +65,37 @@ export function useOrganizationMembers(organizationId: string | undefined) {
   });
 
   return { query, assignDelegate, revokeDelegate, updateRemarks };
+}
+
+/**
+ * 代理人の管理領域 (Owner only): every delegate's areas, and saving one
+ * delegate's areas. A save refreshes the Organization list too, since
+ * each Organization carries the signed-in Person's own areas and the
+ * menus are built from them.
+ */
+export function useOrganizationDelegateAreas(organizationId: string | undefined) {
+  const { apiClient, status } = useAuth();
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['organization-delegate-areas', organizationId],
+    queryFn: () => fetchOrganizationDelegateAreas(apiClient, organizationId as string),
+    enabled: status === 'authenticated' && !!organizationId,
+  });
+
+  const update = useMutation({
+    mutationFn: ({ personId, areas }: { personId: string; areas: DelegateArea[] }) =>
+      updateOrganizationDelegateAreas(apiClient, organizationId as string, personId, areas),
+    onSuccess: (saved) => {
+      queryClient.setQueryData<OrganizationDelegateAreas[]>(['organization-delegate-areas', organizationId], (list) =>
+        list?.map((entry) => (entry.person_id === saved.person_id ? saved : entry))
+      );
+      queryClient.invalidateQueries({ queryKey: ['organization-delegate-areas', organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+    },
+  });
+
+  return { query, update };
 }
 
 /** StageArt Organization管理UI/UX統一 "メンバー管理": 招待中のメンバー,

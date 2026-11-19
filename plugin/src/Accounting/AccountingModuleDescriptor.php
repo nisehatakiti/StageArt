@@ -7,17 +7,19 @@ namespace StageArt\Accounting;
 use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\MembershipContract;
+use StageArt\Core\Contract\NotificationContract;
 use StageArt\Core\Contract\OrganizationContextContract;
+use StageArt\Core\Contract\ProductionCapabilityDirectoryContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Core\Module\ModuleDescriptor;
 
 /**
  * StageArt Core/Module Architecture Phase 3 (continued): the Accounting
  * Module's own declared identity and Core-facing boundary, mirroring
- * `RehearsalModuleDescriptor` exactly. `requiredContracts()` omits
- * `NotificationContract` - unlike Rehearsal, no Accounting UseCase
- * currently calls it (disclosed, not a gap this class needs to paper
- * over). Includes `OrganizationContextContract` - `CreateAccountUseCase`/
+ * `RehearsalModuleDescriptor` exactly. `NotificationContract` and
+ * `ProductionCapabilityDirectoryContract` are required since 修正8: the
+ * Expense approval workflow notifies the approvers of a submitted Expense
+ * and the applicant of the outcome. Includes `OrganizationContextContract` - `CreateAccountUseCase`/
  * `ListAccountsUseCase` need `organizationExists()` (Phase 3's own
  * migration added this dependency to `AccountingModuleBootstrap`'s
  * constructor; this Descriptor had drifted out of sync with it until
@@ -49,6 +51,8 @@ final class AccountingModuleDescriptor implements ModuleDescriptor
             IdentityContract::class,
             AuthorizationContract::class,
             MembershipContract::class,
+            NotificationContract::class,
+            ProductionCapabilityDirectoryContract::class,
         ];
     }
 
@@ -62,6 +66,7 @@ final class AccountingModuleDescriptor implements ModuleDescriptor
             'stageart_journal_entry_lines',
             'stageart_expenses',
             'stageart_expense_lines',
+            'stageart_expense_reviews',
         ];
     }
 }

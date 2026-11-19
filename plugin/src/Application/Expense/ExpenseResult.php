@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Application\Expense;
 
 use StageArt\Domain\Expense\Expense;
+use StageArt\Domain\Expense\ExpenseReview;
 
 final class ExpenseResult
 {
@@ -21,6 +22,20 @@ final class ExpenseResult
     public string $updatedAt;
     public ?string $confirmedBy;
     public ?string $confirmedAt;
+    /** 修正8 approval workflow fields (see Domain\Expense\Expense). */
+    public int $revision = 0;
+    public ?string $submittedBy = null;
+    public ?string $submittedAt = null;
+    public ?int $requestedAmount = null;
+    public ?int $approvedAmount = null;
+    public ?string $approvedBy = null;
+    public ?string $approvedAt = null;
+    public ?string $rejectedBy = null;
+    public ?string $rejectedAt = null;
+    public ?string $rejectionReason = null;
+    public ?string $postedJournalEntryId = null;
+    /** @var array<int, array<string, mixed>> oldest first */
+    public array $reviews = [];
 
     /**
      * @param ExpenseLineResult[] $lines
@@ -55,7 +70,7 @@ final class ExpenseResult
 
     public static function fromDomain(Expense $expense): self
     {
-        return new self(
+        $result = new self(
             $expense->id()->toString(),
             $expense->productionId()->toString(),
             $expense->payerPersonId() !== null ? $expense->payerPersonId()->toString() : null,
@@ -69,6 +84,33 @@ final class ExpenseResult
             $expense->confirmedBy() !== null ? $expense->confirmedBy()->toString() : null,
             $expense->confirmedAt() !== null ? $expense->confirmedAt()->format(DATE_ATOM) : null
         );
+
+        $result->revision = $expense->revision();
+        $result->submittedBy = $expense->submittedBy() !== null ? $expense->submittedBy()->toString() : null;
+        $result->submittedAt = $expense->submittedAt() !== null ? $expense->submittedAt()->format(DATE_ATOM) : null;
+        $result->requestedAmount = $expense->requestedAmount();
+        $result->approvedAmount = $expense->approvedAmount();
+        $result->approvedBy = $expense->approvedBy() !== null ? $expense->approvedBy()->toString() : null;
+        $result->approvedAt = $expense->approvedAt() !== null ? $expense->approvedAt()->format(DATE_ATOM) : null;
+        $result->rejectedBy = $expense->rejectedBy() !== null ? $expense->rejectedBy()->toString() : null;
+        $result->rejectedAt = $expense->rejectedAt() !== null ? $expense->rejectedAt()->format(DATE_ATOM) : null;
+        $result->rejectionReason = $expense->rejectionReason();
+        $result->postedJournalEntryId = $expense->postedJournalEntryId() !== null ? $expense->postedJournalEntryId()->toString() : null;
+        $result->reviews = array_map(
+            static fn (ExpenseReview $review): array => [
+                'revision' => $review->revision(),
+                'action' => $review->action(),
+                'requested_amount' => $review->requestedAmount(),
+                'approved_amount' => $review->approvedAmount(),
+                'lines' => $review->linesSnapshot(),
+                'reason' => $review->reason(),
+                'actor_person_id' => $review->actor()->toString(),
+                'acted_at' => $review->actedAt()->format(DATE_ATOM),
+            ],
+            $expense->reviews()
+        );
+
+        return $result;
     }
 
     /**
@@ -89,6 +131,18 @@ final class ExpenseResult
             'updated_at' => $this->updatedAt,
             'confirmed_by' => $this->confirmedBy,
             'confirmed_at' => $this->confirmedAt,
+            'revision' => $this->revision,
+            'submitted_by' => $this->submittedBy,
+            'submitted_at' => $this->submittedAt,
+            'requested_amount' => $this->requestedAmount,
+            'approved_amount' => $this->approvedAmount,
+            'approved_by' => $this->approvedBy,
+            'approved_at' => $this->approvedAt,
+            'rejected_by' => $this->rejectedBy,
+            'rejected_at' => $this->rejectedAt,
+            'rejection_reason' => $this->rejectionReason,
+            'posted_journal_entry_id' => $this->postedJournalEntryId,
+            'reviews' => $this->reviews,
         ];
     }
 }

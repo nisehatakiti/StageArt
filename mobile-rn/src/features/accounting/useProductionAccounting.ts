@@ -10,12 +10,12 @@ import { fetchProductionAccounting } from './api';
  * (e.g. a Budget editor) can invalidate this one Query without guessing
  * its shape.
  */
-export function useProductionAccounting(productionId: string | undefined) {
+export function useProductionAccounting(productionId: string | undefined, allowed = true) {
   const { apiClient, status } = useAuth();
 
   return useQuery({
     queryKey: ['production-accounting', productionId],
     queryFn: () => fetchProductionAccounting(apiClient, productionId as string),
-    enabled: status === 'authenticated' && !!productionId,
+    enabled: status === 'authenticated' && !!productionId && allowed,
   });
 }

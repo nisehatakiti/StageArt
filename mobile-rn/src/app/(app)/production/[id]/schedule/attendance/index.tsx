@@ -7,6 +7,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { formatDayHeader, formatTime } from '@/features/schedule/groupByDay';
 import { useRehearsals } from '@/features/attendance/useRehearsals';
+import { canManageProductionRehearsals } from '@/features/production/permissions';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 
@@ -41,6 +43,7 @@ export default function RehearsalListScreen() {
   const { id: productionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const rehearsalsQuery = useRehearsals(productionId);
+  const productionQuery = useProduction(productionId);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -48,16 +51,20 @@ export default function RehearsalListScreen() {
         予定
       </ThemedText>
 
-      {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」 - 権限
-          チェックはClient側で複製しない (§24/§25と同じ既存方針)。管理権限
-          のないPersonが押した場合は、作成APIが返す403をそのまま表示する。 */}
-      <TouchableOpacity
-        testID="rehearsal-create-link"
-        onPress={() => router.push(`/production/${productionId}/schedule/attendance/create`)}
-        style={styles.createLink}
-      >
-        <ThemedText type="link">＋ 予定を作成する</ThemedText>
-      </TouchableOpacity>
+      {/* docs/04-HomeRoleBasedMenu.md §07の稽古管理「日程作成・調整」. The
+          button is offered only to those CreateRehearsalUseCase accepts
+          (PrimaryManager or REHEARSAL_MANAGER - features/production/permissions.ts);
+          a plain participant, who cannot read the Production, never sees it.
+          The API still refuses anyone else on its own (403). */}
+      {canManageProductionRehearsals(productionQuery.data) && (
+        <TouchableOpacity
+          testID="rehearsal-create-link"
+          onPress={() => router.push(`/production/${productionId}/schedule/attendance/create`)}
+          style={styles.createLink}
+        >
+          <ThemedText type="link">＋ 予定を作成する</ThemedText>
+        </TouchableOpacity>
+      )}
 
       {rehearsalsQuery.isLoading && (
         <ThemedView style={styles.centered}>

@@ -2,7 +2,7 @@
 
 # Domain Consistency Policy : Accounting
 
-Version : 1.0
+Version : 1.1
 
 ---
 
@@ -139,9 +139,13 @@ Credit
 
 # No Show
 
-No-ShowはCheck Inが完了していないため、原則としてTicket Revenueを認識しない。
+NO_SHOWとして確定したReservationは、Check Inが完了していなくてもTicket Revenue（売上実績）・販売実績・Ticket Back・ノルマ実績に含める（Version 1.1で旧「原則としてTicket Revenueを認識しない」を置き換え。詳細はTicket Revenue Consistency Policy「No-Show」）。
 
-未収金が存在する場合、その後のキャンセル・免除・その他の調整によって処理する。
+NO_SHOWは実来場者数に含めない。NO_SHOWのReservationはCapacityを消費し続ける。
+
+NO_SHOW後の通常の予約取消は行えない。通常の予約取消によってNO_SHOWの売上Journal Entryを自動的に取り消さない。
+
+確定済みJournal Entryの訂正が必要な別のケースでは、Reversal / Adjustmentとして記録する。
 
 No-Showを理由に過去のJournal Entryを直接削除・変更してはならない。
 

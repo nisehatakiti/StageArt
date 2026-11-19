@@ -57,7 +57,7 @@ final class ActivateBudgetUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $budget->productionId(), AccountingCapability::MANAGE)) {
-            throw new BudgetAccessDeniedException('Only the PrimaryManager can activate a Budget.');
+            throw new BudgetAccessDeniedException('Only the PrimaryManager or an Accounting Manager can activate a Budget.');
         }
 
         $this->transactions->run(function () use ($budget, $requesterId): void {

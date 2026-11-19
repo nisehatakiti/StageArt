@@ -43,11 +43,17 @@ pattern:
 | `Budget\CreateBudgetUseCase`, `UpdateBudgetUseCase` | `ProductionContextContract` (incl. `getProductionOrganizationId()`), `IdentityContract`, `AuthorizationContract` |
 | `Budget\GetBudgetUseCase`, `ActivateBudgetUseCase` | `IdentityContract`, `AuthorizationContract` (the Budget's own `productionId()` is enough - no Production lookup needed) |
 | `Budget\ListBudgetsUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
-| `Expense\CreateExpenseUseCase`, `ListExpensesUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
-| `Expense\GetExpenseUseCase` | `IdentityContract`, `MembershipContract` |
-| `Expense\UpdateExpenseUseCase`, `ConfirmExpenseUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| `Expense\CreateExpenseUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
+| `Expense\ListExpensesUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract`, `AuthorizationContract` (all Expenses with `Accounting.Update`, otherwise only the requester's own) |
+| `Expense\GetExpenseUseCase` | `IdentityContract`, `MembershipContract`, `AuthorizationContract` |
+| `Expense\UpdateExpenseUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
+| `Expense\ConfirmExpenseUseCase` (retired: refuses every request, 410) | `IdentityContract`, `AuthorizationContract` |
+| `Expense\ApplicantExpenseTransitionUseCase` (submit / withdraw / resubmit) | `IdentityContract`, `MembershipContract`, plus `ExpenseWorkflowNotifier` |
+| `Expense\ApproveExpenseUseCase` | `ProductionContextContract`, `OrganizationContextContract` (`isAccountingEnabled()`), `IdentityContract`, `AuthorizationContract`, plus `ExpenseWorkflowNotifier` |
+| `Expense\RejectExpenseUseCase` | `IdentityContract`, `AuthorizationContract`, plus `ExpenseWorkflowNotifier` |
+| `Expense\ExpenseWorkflowNotifier` | `NotificationContract`, `ProductionCapabilityDirectoryContract`, `ProductionContextContract` |
 | `JournalEntry\ListJournalEntriesUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` |
-| `ProductionAccounting\GetProductionAccountingSummaryUseCase` | `ProductionContextContract`, `MembershipContract`, `IdentityContract` |
+| `ProductionAccounting\GetProductionAccountingSummaryUseCase` | `ProductionContextContract`, `IdentityContract`, `AuthorizationContract` (`Accounting.Update`) |
 | `Account\CreateAccountUseCase` | `OrganizationContextContract`, `IdentityContract`, `AuthorizationContract` (`OrganizationCapability::OWNER`) |
 | `Account\ListAccountsUseCase` | `OrganizationContextContract`, `IdentityContract`, `AuthorizationContract` (`OrganizationCapability::MEMBER` - any ACTIVE Membership, broader than Create's Owner-only) |
 
@@ -110,7 +116,10 @@ Verified two ways:
 
 `stageart_accounts`, `stageart_budgets`, `stageart_budget_lines`,
 `stageart_journal_entries`, `stageart_journal_entry_lines`,
-`stageart_expenses`, `stageart_expense_lines` - owned and migrated by
+`stageart_expenses`, `stageart_expense_lines`, `stageart_expense_reviews`
+(schema 1.44.0: the append-only 申請・承認履歴, plus the approval
+workflow columns on `stageart_expenses` and the one-time carry-over of
+safely classifiable CONFIRMED Expenses, `LegacyExpenseMigration`) - owned and migrated by
 `AccountingInstaller` (`plugin/src/Accounting/`), extracted verbatim
 (byte-identical SQL) from Core's previously-monolithic installer, called
 from Core's `Installer::install()` exactly as `RehearsalInstaller` is.

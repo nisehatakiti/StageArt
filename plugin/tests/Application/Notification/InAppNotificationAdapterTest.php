@@ -6,6 +6,7 @@ namespace StageArt\Tests\Application\Notification;
 
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Notification\InAppNotificationAdapter;
+use StageArt\Application\Notification\MyNotificationResult;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Tests\Support\InMemoryNotificationRepository;
@@ -92,5 +93,46 @@ final class InAppNotificationAdapterTest extends TestCase
 
         $rows = $notifications->findByPersonId($personId);
         $this->assertNull($rows[0]->rehearsalId());
+    }
+
+    /**
+     * 修正8: a Module's generic deep-link target (an Expense awaiting
+     * approval) is stored and returned as-is, so the app opens it
+     * directly.
+     */
+    public function test_persists_a_generic_target_and_returns_it(): void
+    {
+        $notifications = new InMemoryNotificationRepository();
+        $adapter = new InAppNotificationAdapter($notifications);
+        $personId = PersonId::generate();
+
+        $adapter->deliver($personId, 'expense_submitted', [
+            'message' => '経費申請が提出されました。',
+            'production_id' => ProductionId::generate()->toString(),
+            'target_type' => 'expense',
+            'target_id' => 'expense-123',
+        ]);
+
+        $row = $notifications->findByPersonId($personId)[0];
+        $this->assertSame('expense', $row->targetType());
+        $this->assertSame('expense-123', $row->targetId());
+
+        $result = MyNotificationResult::fromDomain($row)->toArray();
+        $this->assertSame('expense', $result['target_type']);
+        $this->assertSame('expense-123', $result['target_id']);
+        $this->assertNull($result['rehearsal_id']);
+    }
+
+    public function test_a_half_given_target_is_dropped(): void
+    {
+        $notifications = new InMemoryNotificationRepository();
+        $adapter = new InAppNotificationAdapter($notifications);
+        $personId = PersonId::generate();
+
+        $adapter->deliver($personId, 'expense_submitted', ['message' => 'msg', 'target_type' => 'expense']);
+
+        $row = $notifications->findByPersonId($personId)[0];
+        $this->assertNull($row->targetType());
+        $this->assertNull($row->targetId());
     }
 }

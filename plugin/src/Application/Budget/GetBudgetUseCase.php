@@ -54,7 +54,7 @@ final class GetBudgetUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $budget->productionId(), AccountingCapability::MANAGE)) {
-            throw new BudgetAccessDeniedException('Only the PrimaryManager can view this Budget.');
+            throw new BudgetAccessDeniedException('Only the PrimaryManager or an Accounting Manager can view this Budget.');
         }
 
         return BudgetResult::fromDomain($budget);

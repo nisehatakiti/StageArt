@@ -70,7 +70,7 @@ final class GetProductionSettlementSummaryUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, SettlementCapability::MANAGE)) {
-            throw new SettlementAccessDeniedException('Only the PrimaryManager can view this Production\'s Settlement.');
+            throw new SettlementAccessDeniedException('Only the PrimaryManager or an Accounting Manager can view this Production\'s Settlement.');
         }
 
         $confirmedAmounts = $this->calculator->confirmedTicketBackAmountsByMember($production, $productionId);

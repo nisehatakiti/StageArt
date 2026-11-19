@@ -60,8 +60,10 @@ final class ListOrganizationsUseCase
         );
 
         $roleByOrganizationId = [];
+        $areasByOrganizationId = [];
         foreach ($activeMemberships as $membership) {
             $roleByOrganizationId[$membership->organizationId()->toString()] = $membership->roleKey();
+            $areasByOrganizationId[$membership->organizationId()->toString()] = OrganizationAuthorizationService::managementAreasOf($membership);
         }
 
         $organizations = array_values(array_filter(
@@ -74,7 +76,9 @@ final class ListOrganizationsUseCase
         return array_map(
             static fn (Organization $organization): OrganizationResult => OrganizationResult::fromDomain(
                 $organization,
-                $roleByOrganizationId[$organization->id()->toString()]
+                $roleByOrganizationId[$organization->id()->toString()],
+                null,
+                $areasByOrganizationId[$organization->id()->toString()]
             ),
             $organizations
         );

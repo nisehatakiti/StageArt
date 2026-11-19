@@ -1,3 +1,6 @@
+import type { PublicContentBlock } from '@/features/publicPage/contentTypes';
+import type { PublicPageAppearance } from '@/features/publicPage/types';
+
 /**
  * Mirrors Backend Result DTOs exactly (field names, snake_case) - see
  * Phase 5.0's Backend API Mapping. These are the wire types; UI code
@@ -104,7 +107,19 @@ export type Organization = {
   created_at: string;
   updated_at: string;
   current_person_role: string;
+  /** 代理人の管理領域 the signed-in Person holds here: all three for the
+   * Owner, the delegated ones for a delegate, none for a plain member. */
+  current_person_management_areas?: DelegateArea[];
   follower_count: number | null;
+};
+
+/** 代理人の管理領域 (docs/03-PublicPageURLAndPublicationSchedule.md「代理人設定」). */
+export type DelegateArea = 'MEMBERS' | 'PRODUCTIONS' | 'ACCOUNTING';
+
+/** GET /organizations/{id}/delegates, PUT /organizations/{id}/delegates/{personId}/areas (Owner only). */
+export type OrganizationDelegateAreas = {
+  person_id: string;
+  areas: DelegateArea[];
 };
 
 /** StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationSNS.md):
@@ -214,6 +229,10 @@ export type PublicOrganization = {
   /** Already filtered to visibility=true and ordered by display_order by the Backend. */
   sns: OrganizationSNS[];
   external_links: OrganizationExternalLink[];
+  /** 公開ページ設定 (theme + hero) - absent from API builds older than this feature. */
+  public_page?: PublicPageAppearance;
+  /** コンテンツ配置 - only once the Organization has saved one; absent otherwise (fixed order). */
+  content_layout?: PublicContentBlock[];
 };
 
 /**
@@ -505,6 +524,8 @@ export type PublicProduction = {
     name: string;
     slug: string;
   };
+  /** 公開ページ設定 (theme + hero) of this Production itself - absent from API builds older than this feature. */
+  public_page?: PublicPageAppearance;
 };
 
 export type Participant = {
@@ -694,6 +715,11 @@ export type MyNotification = {
    * is never enough. `null` for any notification not about one
    * particular Rehearsal (e.g. `timetable_version_published`). */
   rehearsal_id: string | null;
+  /** 修正8: a Module's generic deep-link target, e.g. `'expense'` with
+   * the Expense id for an Expense approval notification. Both null when
+   * the notification has no such target. */
+  target_type?: string | null;
+  target_id?: string | null;
   is_read: boolean;
   created_at: string;
 };

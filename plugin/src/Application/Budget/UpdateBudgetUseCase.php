@@ -68,7 +68,7 @@ final class UpdateBudgetUseCase
         $productionId = $budget->productionId();
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
-            throw new BudgetAccessDeniedException('Only the PrimaryManager can update this Budget.');
+            throw new BudgetAccessDeniedException('Only the PrimaryManager or an Accounting Manager can update this Budget.');
         }
 
         $organizationId = $this->productionContext->getProductionOrganizationId($productionId);

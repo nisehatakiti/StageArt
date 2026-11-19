@@ -81,8 +81,8 @@ final class PostJournalEntryUseCase
             if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::MANAGE)) {
                 throw new JournalEntryAccessDeniedException('Only the PrimaryManager can post this JournalEntry.');
             }
-        } elseif (! $this->authorization->canForOrganization($requesterId, $entry->organizationId(), OrganizationCapability::OWNER)) {
-            throw new JournalEntryAccessDeniedException('Only the Organization Owner can post this JournalEntry.');
+        } elseif (! $this->authorization->canForOrganization($requesterId, $entry->organizationId(), OrganizationCapability::ACCOUNTING)) {
+            throw new JournalEntryAccessDeniedException('Only the Organization Owner or a delegate with the ACCOUNTING area can post this JournalEntry.');
         }
 
         $this->transactions->run(function () use ($entry, $requesterId): void {

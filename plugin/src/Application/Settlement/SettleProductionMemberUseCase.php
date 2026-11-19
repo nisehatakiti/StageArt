@@ -64,7 +64,7 @@ final class SettleProductionMemberUseCase
         }
 
         if (! $this->authorization->canForProduction($requesterId, $productionId, SettlementCapability::MANAGE)) {
-            throw new SettlementAccessDeniedException('Only the PrimaryManager can settle this Production\'s members.');
+            throw new SettlementAccessDeniedException('Only the PrimaryManager or an Accounting Manager can settle this Production\'s members.');
         }
 
         $personId = PersonId::fromString($command->personId);

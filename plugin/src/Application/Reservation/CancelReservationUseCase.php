@@ -47,6 +47,13 @@ final class CancelReservationUseCase
             return PublicReservationResult::fromDomain($reservation);
         }
 
+        // Confirmed NO_SHOW rule: refused before anything else is looked at,
+        // so nothing (status, seat, revenue JournalEntry, Ticket Back,
+        // ノルマ実績) changes. The Domain refuses it as well.
+        if ($reservation->status()->equals(ReservationStatus::fromString(ReservationStatus::NO_SHOW))) {
+            throw new ReservationAccessDeniedException('A NO_SHOW Reservation cannot be cancelled.');
+        }
+
         $performance = $this->performances->findById($reservation->performanceId());
 
         if (! $performance) {
@@ -60,8 +67,8 @@ final class CancelReservationUseCase
         try {
             $reservation->cancel(null);
         } catch (InvalidArgumentException $exception) {
-            // A CHECKED_IN Reservation cannot be cancelled - surface this
-            // distinctly rather than as a generic 422.
+            // A CHECKED_IN (or NO_SHOW) Reservation cannot be cancelled -
+            // surface this distinctly rather than as a generic 422.
             throw new ReservationAccessDeniedException($exception->getMessage());
         }
 

@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace StageArt\Application\Membership;
 
 use StageArt\Application\Organization\OrganizationAuthorizationService;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
-use StageArt\Domain\Role\RoleKey;
 
 /** docs/04-HomeRoleBasedMenu.md's "Organization参加申請（3件）" - the
- * Organization Owner's approval queue. */
+ * approval queue of the Organization Owner and of a delegate holding
+ * メンバー管理 (DelegateArea::MEMBERS). */
 final class ListPendingMembershipRequestsUseCase
 {
     private MembershipRepositoryInterface $memberships;
@@ -37,8 +38,8 @@ final class ListPendingMembershipRequestsUseCase
         $person = $this->authorization->resolveCurrentPerson($query->requestedByWordPressUserId);
         $organizationId = OrganizationId::fromString($query->organizationId);
 
-        if (! $person || ! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new MembershipAccessDeniedException('Only an Organization Owner can view pending Membership requests.');
+        if (! $person || ! $this->authorization->hasDelegateArea($person, $organizationId, DelegateArea::MEMBERS)) {
+            throw new MembershipAccessDeniedException('Only the Organization Owner or a delegate with member management can view pending Membership requests.');
         }
 
         $pending = array_filter(

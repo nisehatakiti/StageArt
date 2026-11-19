@@ -36,7 +36,16 @@ final class Membership
      * the OrganizationInvitation/直接追加 that created this Membership) and
      * editable afterward via UpdateOrganizationMemberRemarksUseCase. */
     private ?string $remarks;
+    /**
+     * 代理人の管理領域 (DelegateArea values, display order). Only ever
+     * non-empty on an ORGANIZATION_MANAGER Membership - see
+     * replaceDelegateAreas()/changeRole().
+     *
+     * @var string[]
+     */
+    private array $delegateAreas;
 
+    /** @param string[] $delegateAreas */
     private function __construct(
         MembershipId $id,
         OrganizationId $organizationId,
@@ -45,7 +54,8 @@ final class Membership
         string $status,
         DateTimeImmutable $createdAt,
         ?DateTimeImmutable $joinedAt = null,
-        ?string $remarks = null
+        ?string $remarks = null,
+        array $delegateAreas = []
     ) {
         $this->id = $id;
         $this->organizationId = $organizationId;
@@ -55,6 +65,7 @@ final class Membership
         $this->createdAt = $createdAt;
         $this->joinedAt = $joinedAt;
         $this->remarks = $remarks;
+        $this->delegateAreas = $roleKey->toString() === RoleKey::ORGANIZATION_MANAGER ? DelegateArea::normalize($delegateAreas) : [];
     }
 
     public static function create(OrganizationId $organizationId, PersonId $personId, RoleKey $roleKey, ?string $remarks = null): self
@@ -107,6 +118,7 @@ final class Membership
         return self::create($organizationId, $personId, RoleKey::owner());
     }
 
+    /** @param string[] $delegateAreas */
     public static function reconstitute(
         MembershipId $id,
         OrganizationId $organizationId,
@@ -115,9 +127,10 @@ final class Membership
         string $status,
         DateTimeImmutable $createdAt,
         ?DateTimeImmutable $joinedAt = null,
-        ?string $remarks = null
+        ?string $remarks = null,
+        array $delegateAreas = []
     ): self {
-        return new self($id, $organizationId, $personId, $roleKey, $status, $createdAt, $joinedAt, $remarks);
+        return new self($id, $organizationId, $personId, $roleKey, $status, $createdAt, $joinedAt, $remarks, $delegateAreas);
     }
 
     public function id(): MembershipId
@@ -203,6 +216,40 @@ final class Membership
     public function changeRole(RoleKey $roleKey): void
     {
         $this->roleKey = $roleKey;
+
+        // Areas belong to the delegate Role: leaving it (代理人解除, or
+        // becoming the Owner via 代表者交代) drops them, so they never
+        // come back by themselves if the Person is made a delegate again.
+        if ($roleKey->toString() !== RoleKey::ORGANIZATION_MANAGER) {
+            $this->delegateAreas = [];
+        }
+    }
+
+    /** @return string[] DelegateArea values, display order */
+    public function delegateAreas(): array
+    {
+        return $this->delegateAreas;
+    }
+
+    public function hasDelegateArea(string $area): bool
+    {
+        return in_array($area, $this->delegateAreas, true);
+    }
+
+    /**
+     * Sets the full set of delegated areas (an empty array clears them).
+     * Only an ACTIVE ORGANIZATION_MANAGER can hold areas; unknown or
+     * repeated areas are refused (see DelegateArea::normalize()).
+     *
+     * @param mixed[] $areas
+     */
+    public function replaceDelegateAreas(array $areas): void
+    {
+        if (! $this->isActive() || $this->roleKey->toString() !== RoleKey::ORGANIZATION_MANAGER) {
+            throw new InvalidArgumentException('Delegate areas can only be set on an ACTIVE Organization delegate (ORGANIZATION_MANAGER).');
+        }
+
+        $this->delegateAreas = DelegateArea::normalize($areas);
     }
 
     public function createdAt(): DateTimeImmutable

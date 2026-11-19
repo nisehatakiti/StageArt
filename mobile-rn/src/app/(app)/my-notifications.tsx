@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { resolveNotificationRoute } from '@/features/notifications/notificationRoute';
 import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
 import { getErrorMessage } from '@/utils/errorMessage';
 import type { MyNotification } from '@/types/api';
@@ -34,8 +35,10 @@ export default function MyNotificationsScreen() {
 
   function handlePress(item: MyNotification) {
     function navigateIfTargeted() {
-      if (item.rehearsal_id && item.production_id) {
-        router.push(`/production/${item.production_id}/schedule/attendance/${item.rehearsal_id}`);
+      const route = resolveNotificationRoute(item);
+
+      if (route) {
+        router.push(route);
       }
     }
 

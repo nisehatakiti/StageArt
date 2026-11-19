@@ -92,7 +92,7 @@ final class UpdateOrganizationUseCase
 
         $this->organizations->save($organization);
 
-        return OrganizationResult::fromDomain($organization, $role);
+        return OrganizationResult::fromDomain($organization, $role, null, $this->authorization->managementAreasFor($person, $organizationId));
     }
 
     private function parseOptionalDateTime(?string $value): ?DateTimeImmutable

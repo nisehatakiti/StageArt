@@ -61,6 +61,7 @@ final class Installer
         $organizations = $wpdb->prefix . 'stageart_organizations';
         $people = $wpdb->prefix . 'stageart_people';
         $memberships = $wpdb->prefix . 'stageart_memberships';
+        $membershipDelegateAreas = $wpdb->prefix . 'stageart_membership_delegate_areas';
         $projects = $wpdb->prefix . 'stageart_projects';
         $userAccounts = $wpdb->prefix . 'stageart_user_accounts';
         $emailCredentials = $wpdb->prefix . 'stageart_email_credentials';
@@ -83,6 +84,9 @@ final class Installer
         $organizationSns = $wpdb->prefix . 'stageart_organization_sns';
         $organizationExternalLinks = $wpdb->prefix . 'stageart_organization_external_links';
         $organizationInvitations = $wpdb->prefix . 'stageart_organization_invitations';
+        $publicPageSettings = $wpdb->prefix . 'stageart_public_page_settings';
+        $publicPageLayouts = $wpdb->prefix . 'stageart_public_page_layouts';
+        $publicPageContents = $wpdb->prefix . 'stageart_public_page_contents';
 
         dbDelta("CREATE TABLE {$organizations} (
             id CHAR(36) NOT NULL,
@@ -169,6 +173,55 @@ final class Installer
             KEY email (email)
         ) {$charsetCollate};");
 
+        /*
+         * 公開ページ設定 (theme + hero of the Organization / Production
+         * public pages, StageArtCore's Theme / *HeroAdmin): one row per
+         * page, kept apart from the Organization / Production rows so
+         * saving the display settings never touches their content.
+         * theme/hero hold the validated settings as JSON.
+         */
+        dbDelta("CREATE TABLE {$publicPageSettings} (
+            site VARCHAR(20) NOT NULL,
+            owner_id CHAR(36) NOT NULL,
+            theme TEXT NOT NULL,
+            hero TEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (site,owner_id)
+        ) {$charsetCollate};");
+
+        /*
+         * 公開ページのコンテンツ配置 (StageArtCore's homepage コンテンツブロック,
+         * SiteStructure::homepageContentBlocks()): one row per page, the
+         * blocks / sections / slots as validated JSON (ContentLayout).
+         */
+        dbDelta("CREATE TABLE {$publicPageLayouts} (
+            site VARCHAR(20) NOT NULL,
+            owner_id CHAR(36) NOT NULL,
+            blocks LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (site,owner_id)
+        ) {$charsetCollate};");
+
+        /*
+         * 自由コンテンツ of a public page (StageArtCore's stageart_free_content
+         * post type): title, plain-text body, status publish/draft, owned
+         * by one page (site + owner_id).
+         */
+        dbDelta("CREATE TABLE {$publicPageContents} (
+            id CHAR(36) NOT NULL,
+            site VARCHAR(20) NOT NULL,
+            owner_id CHAR(36) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            body LONGTEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'draft',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            KEY site_owner (site,owner_id)
+        ) {$charsetCollate};");
+
         dbDelta("CREATE TABLE {$people} (
             id CHAR(36) NOT NULL,
             wp_user_id BIGINT UNSIGNED NULL,
@@ -192,6 +245,27 @@ final class Installer
             KEY organization_id (organization_id),
             KEY person_id (person_id)
         ) {$charsetCollate};");
+
+        /*
+         * 代理人の管理領域 (schema 1.43.0, Domain\Membership\DelegateArea):
+         * one row per area an Organization delegate (ORGANIZATION_MANAGER
+         * Membership) holds. The primary key rules out granting the same
+         * area twice; organization_id is kept for lookups by Organization.
+         */
+        $delegateAreasTableExisted = self::tableExists($wpdb, $membershipDelegateAreas);
+
+        dbDelta("CREATE TABLE {$membershipDelegateAreas} (
+            membership_id CHAR(36) NOT NULL,
+            organization_id CHAR(36) NOT NULL,
+            area VARCHAR(30) NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (membership_id,area),
+            KEY organization_id (organization_id)
+        ) {$charsetCollate};");
+
+        if (! $delegateAreasTableExisted) {
+            self::migrateExistingDelegatesToAreas($wpdb, $memberships, $membershipDelegateAreas);
+        }
 
         dbDelta("CREATE TABLE {$projects} (
             id CHAR(36) NOT NULL,
@@ -508,6 +582,8 @@ final class Installer
             message TEXT NOT NULL,
             production_id CHAR(36) NULL,
             rehearsal_id CHAR(36) NULL,
+            target_type VARCHAR(30) NULL,
+            target_id CHAR(36) NULL,
             read_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -652,6 +728,31 @@ final class Installer
     private static function applyColumnNullabilityFixups($wpdb, string $organizationSns): void
     {
         $wpdb->query("ALTER TABLE {$organizationSns} MODIFY profile_url VARCHAR(500) NULL");
+    }
+
+    private static function tableExists($wpdb, string $table): bool
+    {
+        return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) === $table;
+    }
+
+    /**
+     * Runs once, only when the delegate-areas table is first created.
+     * Before 1.43.0 an ORGANIZATION_MANAGER could do exactly the
+     * メンバー管理 operations (member list, 備考, invitations) plus
+     * 団体情報, which stays tied to the Role itself - so each existing ACTIVE delegate
+     * gets MEMBERS and nothing else. No delegate gains 公演管理 or 会計管理
+     * through this migration; the Owner grants those explicitly.
+     */
+    private static function migrateExistingDelegatesToAreas($wpdb, string $memberships, string $membershipDelegateAreas): void
+    {
+        $wpdb->query($wpdb->prepare(
+            "INSERT IGNORE INTO {$membershipDelegateAreas} (membership_id, organization_id, area, created_at)
+            SELECT id, organization_id, %s, UTC_TIMESTAMP() FROM {$memberships}
+            WHERE role_key = %s AND status = %s",
+            'MEMBERS',
+            'ORGANIZATION_MANAGER',
+            'ACTIVE'
+        ));
     }
 
     private static function installAdminConsoleRole(): void

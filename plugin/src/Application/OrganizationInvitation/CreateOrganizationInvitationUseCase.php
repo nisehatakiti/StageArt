@@ -13,6 +13,7 @@ use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Organization\OrganizationMemberResult;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
+use StageArt\Domain\Membership\DelegateArea;
 use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Membership\MembershipRepositoryInterface;
 use StageArt\Domain\Organization\OrganizationId;
@@ -84,7 +85,7 @@ final class CreateOrganizationInvitationUseCase
             throw new OrganizationNotFoundException($command->organizationId);
         }
 
-        if (! $this->authorization->hasRole($requester, $organizationId, [RoleKey::OWNER, RoleKey::ORGANIZATION_MANAGER])) {
+        if (! $this->authorization->hasDelegateArea($requester, $organizationId, DelegateArea::MEMBERS)) {
             throw new OrganizationAccessDeniedException('Only an Organization Owner or delegate can add a member.');
         }
 

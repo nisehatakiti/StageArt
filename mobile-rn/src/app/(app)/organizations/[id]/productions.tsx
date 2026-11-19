@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } fro
 
 import { ThemedText } from '@/components/themed-text';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
+import { canManageOrganizationProductions } from '@/features/organization/permissions';
 import { useOrganizations } from '@/features/organization/useOrganizations';
 import { useOrganizationProductions } from '@/features/production/useProductions';
 import type { Production } from '@/types/api';
@@ -65,6 +66,14 @@ export default function OrganizationProductionsScreen() {
     return (
       <>
         <ThemedText testID="organization-productions-not-found">この団体が見つからないか、参加していません。</ThemedText>
+      </>
+    );
+  }
+
+  if (!canManageOrganizationProductions(organization)) {
+    return (
+      <>
+        <ThemedText testID="organization-productions-unavailable" themeColor="textSecondary">公演・活動の管理は、オーナーまたは公演管理を任された代理人のみ行えます。</ThemedText>
       </>
     );
   }

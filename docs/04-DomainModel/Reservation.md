@@ -2,7 +2,7 @@
 
 # Domain Model : Reservation
 
-Version : 6.0
+Version : 6.1
 
 ---
 
@@ -391,6 +391,12 @@ CHECKED_INとなったReservationは、
 
 CANCELLEDとなったReservationは、
 Check Inできない。
+
+NO_SHOWとなったReservationは、
+通常の予約取消（CANCELLEDへの遷移）を行えない。
+NO_SHOWは売上・販売実績・Ticket Back・ノルマ実績に含まれ、
+Capacityを消費し続ける（実来場者数には含めない）。
+通常の予約取消によってNO_SHOWの売上Journal Entryを取り消さない。
 
 ---
 
@@ -905,6 +911,8 @@ Production権限に従う。
 - CANCELLEDのReservationは物理削除しない。
 - CANCELLEDのReservationはCheck Inできない。
 - NO_SHOWは公演終了時点で来場が確認できなかった状態を表す。
+- NO_SHOWのReservationは通常の予約取消を行えない。
+- NO_SHOWのReservationはCapacityを消費し続ける。
 - Check InはReservation単位で行う。
 - GuestCountが複数でもReservation全体をCheck Inする。
 - Version 1.0では同行者を個別にCheck Inしない。
