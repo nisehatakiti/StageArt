@@ -49,4 +49,36 @@ function resolveApiBaseUrl(env) {
   throw new Error(`Unsupported StageArt environment: ${env}`);
 }
 
-module.exports = { DEV_API_BASE_URL, PROD_API_BASE_URL, VERIFICATION_API_BASE_URL, API_BASE_URLS, resolveApiBaseUrl };
+// The public Web origin (public organization / production pages) of each
+// environment. development / production are the values
+// src/api/config.ts has always used (dummy.stageart.top / stageart.top);
+// verification has its own, verify.stageart.top. Resolved here at config
+// time (app.config.ts -> extra.publicWebBaseUrl) so that only the chosen
+// environment's origin is embedded in a build.
+const DEV_PUBLIC_WEB_BASE_URL = 'https://dummy.stageart.top';
+const PROD_PUBLIC_WEB_BASE_URL = 'https://stageart.top';
+const VERIFICATION_PUBLIC_WEB_BASE_URL = 'https://verify.stageart.top';
+
+const PUBLIC_WEB_BASE_URLS = Object.freeze({
+  development: DEV_PUBLIC_WEB_BASE_URL,
+  production: PROD_PUBLIC_WEB_BASE_URL,
+  verification: VERIFICATION_PUBLIC_WEB_BASE_URL,
+});
+
+function resolvePublicWebBaseUrl(env) {
+  if (env === 'development') return DEV_PUBLIC_WEB_BASE_URL;
+  if (env === 'production') return PROD_PUBLIC_WEB_BASE_URL;
+  if (env === 'verification') return VERIFICATION_PUBLIC_WEB_BASE_URL;
+  throw new Error(`Unsupported StageArt environment: ${env}`);
+}
+
+module.exports = {
+  DEV_API_BASE_URL,
+  PROD_API_BASE_URL,
+  VERIFICATION_API_BASE_URL,
+  API_BASE_URLS,
+  resolveApiBaseUrl,
+  VERIFICATION_PUBLIC_WEB_BASE_URL,
+  PUBLIC_WEB_BASE_URLS,
+  resolvePublicWebBaseUrl,
+};

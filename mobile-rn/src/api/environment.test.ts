@@ -1,4 +1,14 @@
-import { API_BASE_URLS, DEV_API_BASE_URL, PROD_API_BASE_URL, VERIFICATION_API_BASE_URL, resolveApiBaseUrl } from './environment';
+import {
+  API_BASE_URLS,
+  DEV_API_BASE_URL,
+  PROD_API_BASE_URL,
+  PUBLIC_WEB_BASE_URLS,
+  VERIFICATION_API_BASE_URL,
+  VERIFICATION_PUBLIC_WEB_BASE_URL,
+  resolveApiBaseUrl,
+  resolvePublicWebBaseUrl,
+} from './environment';
+import { DEV_PUBLIC_WEB_BASE_URL, PROD_PUBLIC_WEB_BASE_URL } from './config';
 
 /**
  * StageArt Development/Production API separation: the one thing this
@@ -41,4 +51,28 @@ describe('resolveApiBaseUrl', () => {
       expect(() => resolveApiBaseUrl(env)).toThrow(`Unsupported StageArt environment: ${env}`);
     }
   );
+});
+
+describe('resolvePublicWebBaseUrl', () => {
+  it('keeps the existing Development and Production public origins', () => {
+    expect(resolvePublicWebBaseUrl('development')).toBe('https://dummy.stageart.top');
+    expect(resolvePublicWebBaseUrl('production')).toBe('https://stageart.top');
+    expect(resolvePublicWebBaseUrl('development')).toBe(DEV_PUBLIC_WEB_BASE_URL);
+    expect(resolvePublicWebBaseUrl('production')).toBe(PROD_PUBLIC_WEB_BASE_URL);
+  });
+
+  it('resolves "verification" to verify.stageart.top', () => {
+    expect(resolvePublicWebBaseUrl('verification')).toBe('https://verify.stageart.top');
+    expect(VERIFICATION_PUBLIC_WEB_BASE_URL).toBe('https://verify.stageart.top');
+    expect(PUBLIC_WEB_BASE_URLS).toEqual({
+      development: 'https://dummy.stageart.top',
+      production: 'https://stageart.top',
+      verification: 'https://verify.stageart.top',
+    });
+    expect(Object.isFrozen(PUBLIC_WEB_BASE_URLS)).toBe(true);
+  });
+
+  it.each(['unknown', 'staging', '', 'preview', 'Verification', 'verify'])('throws for the unrecognized environment value %p', (env) => {
+    expect(() => resolvePublicWebBaseUrl(env)).toThrow(`Unsupported StageArt environment: ${env}`);
+  });
 });

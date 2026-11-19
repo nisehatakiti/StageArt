@@ -16,12 +16,16 @@
 //                 verification are checked against each other, so the
 //                 verification URL can never ship in a Dev or Production
 //                 build). verification is accepted for --site app only.
+//                 The public Web origin (extra.publicWebBaseUrl) of that
+//                 environment must be in a bundle, and the verification
+//                 origin (verify.stageart.top) must appear in no bundle or
+//                 HTML of a Dev or Production build.
 //
 // Read-only: never modifies the export. Exit code 1 on any failure.
 const fs = require('fs');
 const path = require('path');
 
-const { API_BASE_URLS } = require('../src/api/environment');
+const { API_BASE_URLS, PUBLIC_WEB_BASE_URLS, VERIFICATION_PUBLIC_WEB_BASE_URL } = require('../src/api/environment');
 
 /** Public pages that legitimately contain inputs (reservation lookup), plus
  * the email confirmation pages left unchanged until the host emails link
@@ -105,6 +109,15 @@ function verify({ dir, site, api }) {
   for (const [otherEnv, other] of Object.entries(API_BASE_URLS)) {
     if (otherEnv === api) continue;
     if (bundles.some((js) => js.includes(other))) fail(`a bundle references the ${otherEnv} API (${other})`);
+  }
+
+  const expectedPublic = PUBLIC_WEB_BASE_URLS[api];
+  if (!bundles.some((js) => js.includes(expectedPublic))) fail(`no bundle references the ${api} public Web URL (${expectedPublic})`);
+  if (api !== 'verification') {
+    if (bundles.some((js) => js.includes(VERIFICATION_PUBLIC_WEB_BASE_URL))) fail(`a bundle references the verification public Web URL (${VERIFICATION_PUBLIC_WEB_BASE_URL})`);
+    for (const file of htmlFiles) {
+      if (read(file).includes(VERIFICATION_PUBLIC_WEB_BASE_URL)) fail(`${file} references the verification public Web URL (${VERIFICATION_PUBLIC_WEB_BASE_URL})`);
+    }
   }
 
   return errors;

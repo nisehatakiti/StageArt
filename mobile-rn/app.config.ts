@@ -1,6 +1,6 @@
 import type { ExpoConfig } from 'expo/config';
 
-import { resolveApiBaseUrl } from './src/api/environment';
+import { resolveApiBaseUrl, resolvePublicWebBaseUrl } from './src/api/environment';
 import { resolveSiteBuild } from './src/config/site-build-env';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
@@ -23,6 +23,6 @@ const config: ExpoConfig = {
   web: { output: 'static', favicon: './assets/images/stageart-icon-favicon.png' },
   plugins: ['expo-router', ['expo-splash-screen', { backgroundColor: '#050505', image: './assets/images/icon.png', imageWidth: 76 }], 'expo-secure-store', 'expo-sharing', ...(GOOGLE_IOS_URL_SCHEME ? [googleSignInPlugin] : [])],
   experiments: { typedRoutes: true, reactCompiler: true, ...(WEB_EXPORT_BASE_URL ? { baseUrl: WEB_EXPORT_BASE_URL } : {}) },
-  extra: { apiEnv, stageartSite, apiBaseUrl: resolveApiBaseUrl(apiEnv), googleWebClientId: GOOGLE_WEB_CLIENT_ID, eas: { projectId: 'a3c6b296-a4d9-4f6e-84ee-3852f1025f9b' } },
+  extra: { apiEnv, stageartSite, apiBaseUrl: resolveApiBaseUrl(apiEnv), publicWebBaseUrl: resolvePublicWebBaseUrl(apiEnv), googleWebClientId: GOOGLE_WEB_CLIENT_ID, eas: { projectId: 'a3c6b296-a4d9-4f6e-84ee-3852f1025f9b' } },
 };
 export default config;

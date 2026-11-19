@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 
 import { ApiClient } from './client';
 import { DEV_PUBLIC_WEB_BASE_URL, PROD_PUBLIC_WEB_BASE_URL, getApiBaseUrl, getPublicWebBaseUrl } from './config';
-import { DEV_API_BASE_URL, PROD_API_BASE_URL } from './environment';
+import { DEV_API_BASE_URL, PROD_API_BASE_URL, VERIFICATION_API_BASE_URL, VERIFICATION_PUBLIC_WEB_BASE_URL, resolvePublicWebBaseUrl } from './environment';
 import { publicGet } from './publicClient';
 
 /**
@@ -40,6 +40,23 @@ describe('getApiBaseUrl() and every API Client built on it', () => {
     setConfiguredApiBaseUrl(PROD_API_BASE_URL);
     (Constants as any).expoConfig.extra.apiEnv = 'production';
     expect(getPublicWebBaseUrl()).toBe(PROD_PUBLIC_WEB_BASE_URL);
+  });
+
+  it('getPublicWebBaseUrl() returns the origin resolved by app.config.ts (extra.publicWebBaseUrl) - the verification one for a verification build', () => {
+    setConfiguredApiBaseUrl(VERIFICATION_API_BASE_URL);
+    (Constants as any).expoConfig.extra.apiEnv = 'verification';
+    (Constants as any).expoConfig.extra.publicWebBaseUrl = VERIFICATION_PUBLIC_WEB_BASE_URL;
+    expect(getPublicWebBaseUrl()).toBe('https://verify.stageart.top');
+  });
+
+  it.each([
+    ['development', DEV_PUBLIC_WEB_BASE_URL],
+    ['production', PROD_PUBLIC_WEB_BASE_URL],
+  ])('getPublicWebBaseUrl() is unchanged for a %s build configured by app.config.ts', (env, expected) => {
+    setConfiguredApiBaseUrl(DEV_API_BASE_URL);
+    (Constants as any).expoConfig.extra.apiEnv = env;
+    (Constants as any).expoConfig.extra.publicWebBaseUrl = resolvePublicWebBaseUrl(env);
+    expect(getPublicWebBaseUrl()).toBe(expected);
   });
 
   it('getApiBaseUrl() returns the Production API Base URL when so configured', () => {

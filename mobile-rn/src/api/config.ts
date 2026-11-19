@@ -38,6 +38,20 @@ export function getGoogleWebClientId(): string {
 export const DEV_PUBLIC_WEB_BASE_URL = 'https://dummy.stageart.top';
 export const PROD_PUBLIC_WEB_BASE_URL = 'https://stageart.top';
 
+/**
+ * The public origin resolved by app.config.ts (`extra.publicWebBaseUrl`,
+ * src/api/environment.js resolvePublicWebBaseUrl() - the verification
+ * environment's origin exists only there, so it is embedded only in a
+ * verification build). Without it (a config that predates the field, or a
+ * test that sets only apiEnv), the previous rule applies unchanged:
+ * production -> stageart.top, anything else -> dummy.stageart.top.
+ */
 export function getPublicWebBaseUrl(): string {
+  const publicWebBaseUrl = Constants.expoConfig?.extra?.publicWebBaseUrl;
+
+  if (typeof publicWebBaseUrl === 'string' && publicWebBaseUrl.length > 0) {
+    return publicWebBaseUrl;
+  }
+
   return getApiEnv() === 'production' ? PROD_PUBLIC_WEB_BASE_URL : DEV_PUBLIC_WEB_BASE_URL;
 }
