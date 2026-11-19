@@ -3,6 +3,8 @@
 
 Version : 1.0
 
+> PR #7 R14-B（2026-11-19追記）：本書は概念上のDomain Eventの定義である。R14-Bの実装では、ParticipantUpdatedは発行せず、参加者の変更を監査ログ（`DEACTIVATED`・`TYPE_CHANGED`・`CONSENT_RECORDED`）として記録する。INACTIVEからACTIVEへの直接の変更はできない。`README.md`「Participantの監査ログ（PR #7 R14-B）」を参照。
+
 ---
 
 # Purpose

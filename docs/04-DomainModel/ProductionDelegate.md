@@ -2,7 +2,9 @@
 
 # Domain Model : ProductionDelegate
 
-Version : 2.1
+Version : 2.2
+
+- 2.2（2026-11-19）：PR #7 R14-B の担当者の有効性の条件を「担当者の有効性（PR #7 R14-B）」に追記した。Status・Relationship with Participant の記述のうち、権限の有効・無効の判定は、その節を正とする。
 
 ---
 
@@ -570,6 +572,49 @@ Participantであることによって、
 
 ProductionDelegateであることによって、
 自動的にParticipantになることもない。
+
+> R14-B以降、ProductionDelegateの権限が有効であるためには、その人物が同意を記録済みのACTIVEなParticipantでなければならない。次の「担当者の有効性（PR #7 R14-B）」を参照。
+
+---
+
+# 担当者の有効性（PR #7 R14-B）
+
+設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.6・§7.1（設計書ブランチ、第9版 `9b42eb5`）。APIは `docs/08-API/ProductionAPI.md`「ProductionDelegateの有効性（PR #7 R14-B）」。
+
+## 有効の条件
+
+ProductionDelegateがRoleのPermissionを与えるのは、次の両方を満たす場合だけ。
+
+1. ProductionDelegateのStatusが ACTIVE。
+2. そのPersonが、このProductionの **ACTIVEなPERSONのParticipantで、本人の同意が記録されている**（`consented_at` がある）。
+
+- 2を満たさないACTIVEなProductionDelegateは、行を変えずに残すが、権限を与えない（無効）。無効の理由は `INACTIVE`・`NOT_ACTIVE_PARTICIPANT`（ACTIVEな参加者でない）・`CONSENT_UNCONFIRMED`（同意の記録がない）。
+- PrimaryManagerの権限は、ProductionDelegate・Participantの状態に依存しない。PrimaryManagerは、担当者の権限の有無にかかわらず、すべての操作と復旧ができる。
+- R14-Bより前からあるParticipantは同意が記録されていないため、その人物のProductionDelegateは、本人が「同意の確認を依頼」の招待を承諾するまで無効になる。承諾すると、再任命なしに有効になる。
+
+## 任命の条件
+
+- 任命と、INACTIVEからACTIVEへの変更・Roleの変更（新たな任命になる変更）は、対象のPersonが同意を記録済みのACTIVEなParticipantである場合だけ受け付ける。
+- 同じ Production・Person・Role のINACTIVEの行があれば、新しい行を作らずにACTIVEに戻す。
+
+## Participantの状態の変更による無効化
+
+次の場合、そのPersonのこのProductionのProductionDelegateを、同じトランザクションでINACTIVEにする（監査ログ `DELEGATE_DEACTIVATED`）。
+
+| 契機 | 理由 |
+|---|---|
+| ParticipantがACTIVE → INACTIVE（管理者の変更） | `PARTICIPANT_DEACTIVATED` |
+| ParticipantがCANCELLED（管理者の取消） | `PARTICIPANT_REMOVED` |
+| ParticipantがWITHDRAWN（本人の取りやめ） | `PARTICIPANT_WITHDRAWN` |
+| 招待の承諾で新たにACTIVEなParticipantになった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
+| 管理者がProductionDelegateをINACTIVEにした | `MANAGER` |
+
+すでにACTIVEなParticipantが招待を承諾して同意だけを記録した場合は、ProductionDelegateを変えない。
+
+## Permissionと参加者情報
+
+- PARTICIPANT_MANAGERは、参加者の閲覧・管理・招待ができる（`Participant.Read`・`Create`・`Update`・`Delete`）。
+- REHEARSAL_MANAGERは、稽古の対象を選ぶために参加者を閲覧できる（`Participant.Read` だけ）。ただし、メールアドレス・同意の情報・終了した行は見えず、公演の終了後は氏名も見えない（`docs/08-API/ParticipantAPI.md`「参加者情報の開示（設計書 §7.3）」）。
 
 ---
 
