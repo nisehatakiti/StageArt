@@ -68,8 +68,9 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  *
  * WordPress user 1 is the PrimaryManager (an approver), 2 the applicant.
  *
- * Also PATCH /expenses/{id} (Version 1.11): only the applicant edits the
- * Expense - anyone else, the PrimaryManager included, gets 403 - and a
+ * Also PUT /expenses/{id} (ExpenseApprovalWorkflow.md Version 1.12): the
+ * applicant or an accounting holder (here the PrimaryManager) edits the
+ * Expense - anyone else gets 403 (see ExpenseWorkflowUseCaseTest) - and a
  * POSTED Expense is not edited even by the applicant (409).
  *
  * PR #6 review N5 / N6: an id that is not a UUID, and lines or a reason that
@@ -375,7 +376,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
         ];
     }
 
-    // --- edit: the applicant only (Version 1.11) ---------------------------
+    // --- edit: the applicant or an accounting holder (Version 1.12) -------
 
     /**
      * @return \WP_REST_Response|\WP_Error

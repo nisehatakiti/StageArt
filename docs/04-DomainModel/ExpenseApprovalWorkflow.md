@@ -28,7 +28,7 @@ Version 1.10では、2026-10-30の指示に従い、承認金額は申請金額�
 
 Version 1.10の補足（2026-10-30）：旧形式移行・移行取消の運用監査に、実行開始の記録（`STARTED`）を加えた。開始の記録を書けない実行は業務処理を始めない。開始の記録だけが残り終了の記録がない実行は「開始後、終了を確認できない実行」として扱い、成功・失敗と推定しない。あわせて、差し戻しの通知の文言を「却下」から「差し戻し」に改めた（Version 1.4の表示方針への適合。業務上の操作の仕様は変更しない）。
 
-Version 1.11では、2026-10-30の指示に従い、Expenseを編集できる者を申請者本人に限った。判定はロール権限ではなく、Expenseの申請者（作成者）のPerson IDと操作者のPerson IDの一致で行う。Primary Manager・会計管理者・代理人等、`Accounting.Update`その他の管理権限を持つ者も、DRAFTを含め他人のExpenseを編集できない（Version 1.3の「DRAFTについては会計権限保持者も編集できる」を置き換える）。承認・差し戻しの権限は変更しない。
+（旧仕様。Version 1.12で置き換えた。現行の編集権限は「Submission」の「Expenseの編集（現行ルール、Version 1.12）」を参照）Version 1.11では、2026-10-30の指示に従い、Expenseを編集できる者を申請者本人に限った。判定はロール権限ではなく、Expenseの申請者（作成者）のPerson IDと操作者のPerson IDの一致で行う。Primary Manager・会計管理者・代理人等、`Accounting.Update`その他の管理権限を持つ者も、DRAFTを含め他人のExpenseを編集できない（Version 1.3の「DRAFTについては会計権限保持者も編集できる」を置き換える）。承認・差し戻しの権限は変更しない。
 
 Version 1.11の補足（2026-11-09、PR #6レビューN1・N2/F5・N5・N6/F6）：業務上の操作の仕様は変更せず、次を明記した。経費承認で作成する仕訳のJournal DateはExpenseの承認日時と同じ時点とし、仕訳日は日本時間（JST）の暦日とする（JournalEntry.md「Journal Date」Version 1.1）。確定後の通知の失敗は確定した操作を失敗にしない。ExpenseのIDがUUIDでない要求、および形式が不正な明細・差し戻し理由は入力エラー（422）とし、金額は整数に切り捨てない。
 
@@ -169,18 +169,28 @@ Version 1.3（修正8で確定）：
 
 - 新規登録したExpenseはDRAFT（申請前の下書き）とし、自動でSUBMITTEDにしない。申請者が明示的に申請した時点でSUBMITTEDとなる。
 - 申請・取り下げ・再申請は申請者本人（Expenseの作成者で、Productionのメンバーであり続けている者）のみが行える。
-- 申請者は承認前のSUBMITTEDのExpenseを編集・取り下げ（DRAFTへ戻す）できる。承認前の編集は新しい申請回（revision）として扱い、申請金額を更新する。
-- （Version 1.12で廃止）SUBMITTED / REJECTEDのExpenseを編集できるのは申請者本人のみとし、会計権限保持者が他人の申請内容を承認前に書き換えることはできない。~~DRAFTについては従来どおり会計権限保持者も編集できる。~~（Version 1.11で廃止。下記）
+- 申請者は承認前のSUBMITTEDのExpenseを取り下げ（DRAFTへ戻す）できる。
+- Expenseの編集は、次の「Expenseの編集（現行ルール、Version 1.12）」に従う。
 
-Version 1.11（2026-10-30確定。Version 1.12で改めた）：Expenseの編集（明細・金額の変更）は、状態にかかわらず申請者本人だけが行える。
+## Expenseの編集（現行ルール、Version 1.12、2026-11-24確定）
 
-Version 1.12（2026-11-24確定）：Expenseの編集は、申請者本人と、当該Productionの会計権限（`Accounting.Update`）を持つPrimary Manager・代理人・会計管理者が行える。編集できる状態（DRAFT・SUBMITTED・REJECTED）は変わらない。それ以外の者による編集は権限エラー（403）とする。
+Expenseの編集は申請者本人、または当該ProductionのAccounting.Update権限を持つPrimary Manager・Production Delegate・Accounting Managerが実行できる。それ以外の者による編集は403とする。
 
-- 判定は、Expenseの申請者（作成者、`created_by`）のPerson IDと、操作者のPerson IDが一致するかどうかで行う。ロール権限による例外は設けない。Primary Manager、会計管理者（ACCOUNTING_MANAGER）、代理人、その他`Accounting.Update`等の管理権限を持つ者であっても、他人のExpenseは編集できない。（Version 1.12で廃止。当該Productionの`Accounting.Update`を持つPrimary Manager・代理人・会計管理者は、他人のExpenseを編集できる。それ以外の者による編集は権限エラー（403）とする。）
-- 編集できる状態はDRAFT・SUBMITTED（承認前）・REJECTED（再申請前）とする。SUBMITTEDの編集は従来どおり新しい申請回（revision）として扱い、申請金額を更新する。
-- POSTEDは申請者本人であっても編集できない（状態の競合、409）。旧形式のCONFIRMEDも編集できない。
-- 申請者本人以外による編集は、状態にかかわらず権限エラー（403）とし、Expense・履歴を変更しない。判定はBackend（`UpdateExpenseUseCase`）で行い、画面は申請者本人以外に編集の操作を表示しない。
-- 承認・差し戻しの権限（`Expense.Approve`）と本人による承認・差し戻しの禁止は変更しない。
+- ここでいうProduction Delegateは公演代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つ有効なProduction Delegate）、Accounting Managerは会計担当（有効なACCOUNTING_MANAGERのProduction Delegate）を指す。
+- 申請者本人の判定は、Expenseの作成者（`created_by`）のPerson IDと操作者のPerson IDの一致で行う。
+- 編集できる状態はDRAFT・SUBMITTED（承認前）・REJECTED（再申請前）とする。SUBMITTEDの編集は新しい申請回（revision）として扱い、申請金額を更新する。
+- POSTEDは、申請者本人・会計権限保持者のいずれであっても編集できない（状態の競合、409）。旧形式のCONFIRMEDも編集できない。
+- 権限のない者による編集は、状態にかかわらず権限エラー（403）とし、Expense・履歴を変更しない。判定はBackend（`UpdateExpenseUseCase`）で行う。画面は、編集できない者に編集の操作を表示しない。
+- 申請者と編集者は区別して記録する。`created_by`（作成者・申請者）と`submitted_by`（申請回の申請者）は、会計権限保持者が他人のExpenseを編集しても編集者のPerson IDで上書きしない。`updated_by`は最終編集者、`expense_reviews.actor_person_id`は申請履歴上の操作の実行者（SUBMITTEDの編集では編集者）を記録する。
+- 申請回の内容を編集した者は、その同じ申請回について承認・差し戻しを実行できない（本人による承認・差し戻しの禁止の対象に含める）。
+- 承認・差し戻しの権限（`Expense.Approve`）と、申請者・作成者・立替払いを受ける者による承認・差し戻しの禁止は変更しない。
+
+## 編集権限の変更履歴（旧仕様。現在は適用しない）
+
+以下は過去の版の編集権限であり、Version 1.12で置き換えた。現行ルールとして扱わない。
+
+- Version 1.3（旧仕様）：SUBMITTED / REJECTEDのExpenseは申請者本人だけが編集でき、DRAFTは会計権限保持者も編集できるとしていた。
+- Version 1.11（旧仕様、2026-10-30）：Expenseの編集は状態にかかわらず申請者本人だけが行えるとし、Primary Manager・会計管理者・代理人等の会計権限保持者にも他人のExpenseの編集を認めていなかった。
 
 ---
 

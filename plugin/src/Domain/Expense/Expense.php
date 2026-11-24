@@ -27,16 +27,22 @@ use StageArt\Domain\Production\ProductionId;
  * - DRAFT is an unsubmitted 下書き. Creating an Expense never submits it.
  * - The Lines change only while DRAFT, SUBMITTED (before approval; each
  *   such edit is a new submission revision with its own requested amount)
- *   or REJECTED (before 再申請), and only by the applicant - whatever Role
- *   anyone else holds (Version 1.11; UpdateExpenseUseCase compares the
- *   Person IDs).
+ *   or REJECTED (before 再申請); POSTED and the legacy CONFIRMED are never
+ *   edited (replaceLines() enforces the status). Who may edit is decided
+ *   by UpdateExpenseUseCase (ExpenseApprovalWorkflow.md Version 1.12): the
+ *   applicant (`created_by`), or a holder of `Accounting.Update` on the
+ *   Expense's Production - the PrimaryManager, a 公演代理人 or a 会計担当.
+ * - An edit by someone else never changes who applied: `created_by` and
+ *   `submitted_by` keep the applicant, `updated_by` records the last
+ *   editor, and the editor is the actor of the new revision's SUBMITTED
+ *   ExpenseReview (the revision's author, currentRevisionAuthor()).
  * - Approval approves the application as submitted (ExpenseApprovalWorkflow.md
  *   Version 1.10): the approved amount always equals the requested amount,
  *   which must still be the Lines' total. No approver raises or lowers it,
  *   on one Line or several, and approving changes no Line; an Expense in
  *   doubt is returned for correction (差し戻し) instead.
- * - The approver or rejecter must not be the submitter, the creator, or
- *   the payer.
+ * - The approver or rejecter must not be the submitter, the creator, the
+ *   payer, or the author of the current revision (isOwnExpense()).
  * - CONFIRMED (the old Confirm step's status) loads, but every
  *   transition out of it is refused.
  *
