@@ -97,6 +97,26 @@ Production Join Keyの発行には、Production Scopeにおける適切なPermis
 
 Join Keyの発行権限は、Join Key自体を知っているPersonへ自動的に付与されない。
 
+## Join Key管理の権限
+
+Join Keyの管理（発行済みコードの一覧確認・発行・無効化）は、対象ごとに同じ権限で判定する。
+一覧確認だけ、または発行だけを別の権限にしない。
+
+| 対象 | 管理できるPerson |
+|---|---|
+| Organization Join Key | 対象OrganizationのOwner（ACTIVEのMembershipでRoleがOwner）のみ |
+| Production Join Key | 対象ProductionのPrimaryManager、または対象Productionの公演代理人のみ |
+
+- Production Join Keyの管理は公演管理者権限に属する。
+- 公演代理人は、Participant ManagerとRehearsal Managerの両方をACTIVEで適用されたProductionDelegateである（ProductionDelegate.md「担当区分」）。
+- 稽古担当・会計担当、およびParticipant Managerのみを適用されたProductionDelegateは、Production Join Keyを管理できない。
+- 他のProductionのPrimaryManager・公演代理人は、そのProductionのJoin Keyを管理できない。
+- INACTIVEにされた、または削除されたProductionDelegateは、次のリクエストからJoin Keyを管理できない。
+- OrganizationのOwnerであっても、対象ProductionのPrimaryManagerまたは公演代理人でなければ、Production Join Keyを管理できない。
+- Production Scopeの担当区分（PrimaryManager・公演代理人・稽古担当・会計担当）は、Organization Join Keyの管理権限を与えない。
+- 一覧確認では、指定したOrganizationまたはProductionのJoin Keyだけを返す。有効・無効化済み・期限切れ・使用上限到達の各状態を、保存された状態のまま返す。
+- 管理権限のないPersonには、Join Keyの情報を返さない。
+
 ---
 
 # Issuance UI
@@ -319,3 +339,6 @@ Production管理UIには「公演・活動への参加」メニューを設け�
 - Join Keyは無効化できる。
 - Join Keyの無効化は既存のMembership / Participantを遡及的に削除しない。
 - OrganizationおよびProductionの管理画面には、それぞれ参加コード発行メニューを設ける。
+- Join Keyの一覧確認・発行・無効化は同じ権限で判定する。
+- Organization Join KeyはOrganizationのOwnerのみが管理する。
+- Production Join KeyはPrimaryManagerまたは対象Productionの公演代理人のみが管理する。

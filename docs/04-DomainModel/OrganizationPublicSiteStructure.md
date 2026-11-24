@@ -198,6 +198,16 @@ Production Public Siteの終了表示は、Production Public Site側で生成時
 
 ---
 
+# Authorization
+
+Organization Public Siteの権限は、Production Public Pageの権限とは別に定める。
+
+- 本番系列（7ba332f）では、団体情報・公開状態の変更（`PUT /organizations/{id}`、UpdateOrganizationUseCase）はOrganization Ownerのみが行える。
+- 団体代理人（ORGANIZATION_MANAGER）は、本番系列には存在しない。
+- PrimaryManager・公演代理人・稽古担当・会計担当など、Production Scopeの担当区分は、Organization Public Siteの編集・公開の権限を与えない。
+
+---
+
 # Business Rules
 
 - Organization Public SiteはStageArt Coreから生成・公開する。

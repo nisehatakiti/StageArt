@@ -127,11 +127,21 @@ final class ProductionAuthorizationService
         return null;
     }
 
+    /**
+     * Checks every ACTIVE delegate row of this Person on this Production
+     * (activeDelegatesFor()), not only the first one: a Person may hold
+     * several Roles on one Production and the rows come back in no
+     * guaranteed order, so a first-match check would depend on row order.
+     */
     public function hasActiveDelegateRole(Person $person, Production $production, RoleKey $role): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if ($delegate->role()->equals($role)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && $delegate->role()->equals($role);
+        return false;
     }
 
     /**
@@ -146,12 +156,22 @@ final class ProductionAuthorizationService
      * this Permission would be recognized here without editing this
      * class again, matching Role.md's "同じRole Definitionを...共通して
      * 利用できる" intent.
+     *
+     * Takes the union over every ACTIVE delegate Role the Person holds on
+     * this Production (activeDelegatesFor()), so the result no longer
+     * depends on which delegate row the repository returns first - a
+     * 公演代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER) gets both Roles'
+     * Permissions whatever the row order.
      */
     private function hasProductionPermission(Person $person, Production $production, Permission $permission): bool
     {
-        $delegate = $this->activeDelegateFor($person, $production);
+        foreach ($this->activeDelegatesFor($person, $production) as $delegate) {
+            if (RolePermissions::hasPermission($delegate->role(), $permission)) {
+                return true;
+            }
+        }
 
-        return $delegate !== null && RolePermissions::hasPermission($delegate->role(), $permission);
+        return false;
     }
 
     /**
@@ -197,6 +217,79 @@ final class ProductionAuthorizationService
     {
         return $this->isPrimaryManager($person, $production)
             || $this->hasProductionPermission($person, $production, Permission::fromString('Participant.Update'));
+    }
+
+    /**
+     * Production Join Key management belongs to Production management
+     * authority (list, issue and disable share this one gate): the
+     * PrimaryManager, or the Production's 公演代理人 (isProxyManager()).
+     * A delegate holding only REHEARSAL_MANAGER (稽古担当) or only
+     * PARTICIPANT_MANAGER is NOT a 公演代理人 and is refused - being an
+     * ACTIVE delegate is not enough by itself. Delegate rows are read on
+     * every call, so deactivating or removing either Role of the bundle
+     * takes effect on the next request. Organization Roles grant nothing
+     * here (no Organization fallback, as above).
+     */
+    public function canManageJoinKeys(Person $person, Production $production): bool
+    {
+        return $this->canActAsProductionManager($person, $production);
+    }
+
+    /**
+     * Day-to-day Production management delegated to the 公演代理人: the
+     * PrimaryManager or this Production's 公演代理人 (isProxyManager()).
+     * Used for Join Key management and for editing the Production's
+     * information / public page (name, title heading, slug, publish /
+     * unpublish - UpdateProductionUseCase). 稽古担当, 会計担当 and other
+     * single-Role delegates are refused.
+     *
+     * Deliberately NOT used for the operations that stay with the
+     * PrimaryManager as final owner: Lifecycle changes and confirmations
+     * (canManageProduction()), ProductionDelegate assignment
+     * (canManageProductionDelegates()), Budget / settlement confirmation
+     * (Accounting capability) and Production Document distribution.
+     */
+    public function canActAsProductionManager(Person $person, Production $production): bool
+    {
+        return $this->isPrimaryManager($person, $production)
+            || $this->isProxyManager($person, $production);
+    }
+
+    /**
+     * Every ACTIVE ProductionDelegate row this Person holds on this
+     * Production. A Person can hold several Roles on one Production
+     * (Production+Person+Role is the unique key of
+     * stageart_production_delegates), while activeDelegateFor() above
+     * returns only the first match; Role-bundle checks must see all rows.
+     * Same definition as the Dev line's activeDelegatesFor().
+     *
+     * @return ProductionDelegate[]
+     */
+    public function activeDelegatesFor(Person $person, Production $production): array
+    {
+        return array_values(array_filter(
+            $this->delegates->findByProductionId($production->id()),
+            static fn (ProductionDelegate $delegate): bool =>
+                $delegate->personId()->equals($person->id()) && $delegate->isActive()
+        ));
+    }
+
+    /**
+     * 公演代理人: an ACTIVE delegate of this Production holding BOTH
+     * PARTICIPANT_MANAGER and REHEARSAL_MANAGER at once - the existing
+     * 担当区分 definition used by the Dev line (its isProxyManager() and the
+     * メンバー管理 screen's 代理人 checkbox, which bundles exactly these two
+     * RoleKeys). Not a new RoleKey and not a new Permission.
+     */
+    public function isProxyManager(Person $person, Production $production): bool
+    {
+        $roles = array_map(
+            static fn (ProductionDelegate $delegate): string => $delegate->role()->toString(),
+            $this->activeDelegatesFor($person, $production)
+        );
+
+        return in_array(RoleKey::PARTICIPANT_MANAGER, $roles, true)
+            && in_array(RoleKey::REHEARSAL_MANAGER, $roles, true);
     }
 
     public function isActivePersonParticipant(Person $person, Production $production): bool

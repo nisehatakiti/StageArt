@@ -103,7 +103,8 @@ final class ChangePrimaryManagerUseCase
         return ProductionResult::fromDomain(
             $production,
             $requester->id()->equals($newPrimaryManagerPersonId),
-            $this->authorization->activeDelegateFor($requester, $production)
+            $this->authorization->activeDelegateFor($requester, $production),
+            $this->authorization->activeDelegatesFor($requester, $production)
         );
     }
 }

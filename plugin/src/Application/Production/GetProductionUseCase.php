@@ -41,7 +41,8 @@ final class GetProductionUseCase
         return ProductionResult::fromDomain(
             $production,
             $this->authorization->isPrimaryManager($person, $production),
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production)
         );
     }
 }

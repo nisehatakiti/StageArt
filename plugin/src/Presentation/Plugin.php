@@ -27,6 +27,8 @@ use StageArt\Application\Follow\UnfollowOrganizationUseCase;
 use StageArt\Application\JoinKey\DisableJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueOrganizationJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueProductionJoinKeyUseCase;
+use StageArt\Application\JoinKey\ListOrganizationJoinKeysUseCase;
+use StageArt\Application\JoinKey\ListProductionJoinKeysUseCase;
 use StageArt\Application\JoinKey\ResolveJoinKeyUseCase;
 use StageArt\Application\Membership\ApproveMembershipRequestUseCase;
 use StageArt\Application\Membership\ListMyMembershipsUseCase;
@@ -201,6 +203,8 @@ final class Plugin
         $issueProductionJoinKey = new IssueProductionJoinKeyUseCase($productions, $joinKeys, $productionAuthorization);
         $resolveJoinKey = new ResolveJoinKeyUseCase($joinKeys, $organizations, $productions);
         $disableJoinKey = new DisableJoinKeyUseCase($joinKeys, $productions, $authorization, $productionAuthorization);
+        $listOrganizationJoinKeys = new ListOrganizationJoinKeysUseCase($organizations, $joinKeys, $authorization);
+        $listProductionJoinKeys = new ListProductionJoinKeysUseCase($productions, $joinKeys, $productionAuthorization);
         $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
         $membershipContract = new CoreMembershipAdapter($participants, $productions, $people, $productionAuthorization);
@@ -564,7 +568,8 @@ final class Plugin
             $issueProductionJoinKey,
             $resolveJoinKey,
             $disableJoinKey,
-            $joinKeys
+            $listOrganizationJoinKeys,
+            $listProductionJoinKeys
         );
 
         $membershipRestController = new MembershipRestController(

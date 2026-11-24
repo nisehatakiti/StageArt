@@ -7,6 +7,7 @@ import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useCancelParticipant, useParticipants } from '@/features/participant/useParticipant';
 import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
+import { canManageParticipants } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import type { Participant } from '@/types/api';
@@ -54,7 +55,8 @@ export default function ProductionParticipantsScreen() {
 
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
-  const canManage = !!production?.is_primary_manager || production?.delegate_role === 'PARTICIPANT_MANAGER';
+  // PrimaryManager or any ACTIVE PARTICIPANT_MANAGER Role (公演代理人 included).
+  const canManage = canManageParticipants(production);
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
   const breadcrumbs = [

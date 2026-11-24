@@ -4,6 +4,13 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
+import {
+  canManageJoinKeys,
+  canManageParticipants as canManageParticipantsOf,
+  canManageProductionOperations,
+  PRODUCTION_RESPONSIBILITY_LABEL,
+  productionResponsibilities,
+} from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -33,11 +40,14 @@ const STATUS_LABEL: Record<string, string> = {
  * useOrganizationProductions() already does (Production has no direct
  * organization_id - see src/types/api.ts's Project docblock): fetch
  * this Production's own Project, then that Project's organization_id.
- * `is_primary_manager`/`delegate_role` (already on every Production
- * fetch - see ProductionAuthorizationService.php's canManageProduction()/
- * canManageParticipants()) drive which management cards this screen
- * offers; the server remains the actual authority on every action
- * behind them.
+ * The 担当区分 helpers in features/production/permissions.ts (reading
+ * `is_primary_manager`, `delegate_roles`, `is_proxy_manager` and
+ * `can_manage_production_operations` - see ProductionAuthorizationService
+ * .php's canActAsProductionManager()/canManageParticipants()) drive which
+ * management cards this screen offers: 公演情報・公開設定・参加コード for
+ * the PrimaryManager and the 公演代理人, 出演者・参加者 for anyone holding
+ * PARTICIPANT_MANAGER. The server remains the actual authority on every
+ * action behind them.
  */
 export default function ProductionManagementScreen() {
   const { id, saved } = useLocalSearchParams<{ id: string; saved?: string }>();
@@ -46,8 +56,10 @@ export default function ProductionManagementScreen() {
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
 
-  const isPrimaryManager = !!production?.is_primary_manager;
-  const canManageParticipants = isPrimaryManager || production?.delegate_role === 'PARTICIPANT_MANAGER';
+  const canManageOperations = canManageProductionOperations(production);
+  const canManageParticipants = canManageParticipantsOf(production);
+  const canManageKeys = canManageJoinKeys(production);
+  const responsibilities = productionResponsibilities(production);
 
   const breadcrumbs = [
     { label: 'StageArt', href: '/dashboard' as Href },
@@ -123,6 +135,11 @@ export default function ProductionManagementScreen() {
               </ThemedText>
             )}
           </View>
+          {responsibilities.length > 0 && (
+            <ThemedText type="small" themeColor="textSecondary" testID="production-management-responsibility">
+              あなたの担当: {responsibilities.map((key) => PRODUCTION_RESPONSIBILITY_LABEL[key]).join('・')}
+            </ThemedText>
+          )}
         </View>
         {publicPath && (
           <TouchableOpacity testID="production-management-view-public" onPress={() => router.push(publicPath as Href)} style={styles.secondaryButton}>
@@ -141,7 +158,7 @@ export default function ProductionManagementScreen() {
           label="公演情報"
           description="名前・肩書・Slugを編集"
           onPress={() => router.push(`/productions/${id}/edit` as Href)}
-          disabled={!isPrimaryManager}
+          disabled={!canManageOperations}
         />
         <MenuCard
           testID="production-management-menu-participants"
@@ -155,8 +172,16 @@ export default function ProductionManagementScreen() {
           label="公開設定"
           description={published ? '公開中' : '下書き（未公開）'}
           onPress={() => router.push(`/productions/${id}/publish` as Href)}
-          disabled={!isPrimaryManager}
+          disabled={!canManageOperations}
         />
+        {canManageKeys && (
+          <MenuCard
+            testID="production-management-menu-invite"
+            label="招待管理"
+            description="参加コードの発行・確認・無効化"
+            onPress={() => router.push(`/production-invite/${id}` as Href)}
+          />
+        )}
       </View>
 
       <ThemedText type="subtitle" style={styles.sectionTitle}>

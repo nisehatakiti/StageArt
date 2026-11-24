@@ -174,7 +174,14 @@ export type Production = {
   created_at: string;
   updated_at: string;
   is_primary_manager: boolean;
+  /** Legacy: one ACTIVE delegate Role only (the first found). Prefer `delegate_roles`. */
   delegate_role: string | null;
+  /** Every ACTIVE delegate Role the caller holds on this Production, sorted. */
+  delegate_roles?: string[];
+  /** 公演代理人: PARTICIPANT_MANAGER and REHEARSAL_MANAGER both ACTIVE. */
+  is_proxy_manager?: boolean;
+  /** PrimaryManager or 公演代理人 (information, public page, publication, Slug, Join Keys). */
+  can_manage_production_operations?: boolean;
 };
 
 /**

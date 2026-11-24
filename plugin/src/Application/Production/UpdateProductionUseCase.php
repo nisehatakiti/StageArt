@@ -13,9 +13,14 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionSlug;
 
 /**
- * Basic-info updates (Name only) are PrimaryManager-exclusive (see
- * ProductionAuthorizationService::canManageProduction) - no enumerated
- * ProductionDelegate Role grants Production.Update in this phase.
+ * Production information / public page updates (name, title heading,
+ * slug, publish / unpublish) are allowed to the PrimaryManager and this
+ * Production's 公演代理人 (ProductionAuthorizationService::
+ * canActAsProductionManager()); 稽古担当, 会計担当 and other single-Role
+ * delegates are refused. Only the fields of UpdateProductionCommand can
+ * change here - never Status (Lifecycle, see below) nor the
+ * PrimaryManager (ChangePrimaryManagerUseCase), which stay
+ * PrimaryManager-exclusive.
  *
  * Phase 6.1: no longer touches Status. See UpdateProductionCommand's
  * docblock - Status changes go through the dedicated Lifecycle Action
@@ -46,8 +51,8 @@ final class UpdateProductionUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
+        if (! $this->authorization->canActAsProductionManager($person, $production)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can update this Production.');
         }
 
         $production->rename(new ProductionName($command->name));
@@ -78,8 +83,9 @@ final class UpdateProductionUseCase
 
         return ProductionResult::fromDomain(
             $production,
-            true,
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->isPrimaryManager($person, $production),
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production)
         );
     }
 

@@ -12,8 +12,10 @@ use StageArt\Domain\JoinKey\JoinKeyRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
-/** JoinKey.md's "Issuer": only the Production's PrimaryManager may issue
- * a Production Join Key. */
+/** JoinKey.md's "Issuer": the Production's PrimaryManager or its 公演代理人
+ * may issue a Production Join Key (ProductionAuthorizationService::
+ * canManageJoinKeys(), the same gate as listing and disabling). 稽古担当 and
+ * other single-Role delegates may not. */
 final class IssueProductionJoinKeyUseCase
 {
     private ProductionRepositoryInterface $productions;
@@ -44,8 +46,8 @@ final class IssueProductionJoinKeyUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can issue a Join Key.');
+        if (! $this->authorization->canManageJoinKeys($person, $production)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can issue a Join Key.');
         }
 
         $joinKey = JoinKey::issueForProduction($production->id()->toString(), $person->id());

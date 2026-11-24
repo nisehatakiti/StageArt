@@ -473,6 +473,35 @@ Coming Soon表示はPublic Pageの生成・公開を妨げず、未登録・未�
 
 ---
 
+# Authorization
+
+Production Public Pageに関する操作は、内容の編集と、一般公開・公開状態の切替を別の操作として扱う。
+
+| 操作 | PrimaryManager | 公演代理人 | 稽古担当 | 会計担当 | 団体Owner（公演の管理権限なし） |
+|---|---|---|---|---|---|
+| 公開ページに表示する公演情報の編集（公演名・肩書等） | 可 | 可 | 不可 | 不可 | 不可 |
+| Slugの変更（公開URLの変更） | 可 | 可 | 不可 | 不可 | 不可 |
+| Publicity / Public Visibility / 公開日時の変更（一般公開・非公開の切替） | 可 | 可 | 不可 | 不可 | 不可 |
+
+- 公演代理人は、担当公演についてPrimaryManagerと同等の実務上の公演管理権限を持つ。代表者がIT操作に不慣れで、実務を代理人に委任する運用を想定する。
+- 公演代理人は、担当公演の公開ページの内容を編集できる。
+- 公演代理人は、Slugを変更できる。
+- 公演代理人は、一般公開・非公開を切り替えられる。「Production管理者による明示的なGO」（Publicity Transition）には、PrimaryManagerに加えて対象Productionの公演代理人を含む。
+- 内容の編集と一般公開・非公開の切替は、設計上は別の操作である。権限の範囲（PrimaryManagerと公演代理人）は同じとする。
+- 稽古担当・会計担当には、公開ページの編集・公開の権限を与えない。
+- Organization Public Pageの権限は、Production Public Pageの権限とは別に定める。公演代理人であることを理由に、Organization Public Pageの編集権限を与えない。
+- Production Document（台本・稽古資料等）の公開・配布は、Production Public Pageの操作ではない（DocumentConsistencyPolicy.md「Public Access」、ProductionDelegatePolicy.md）。
+
+実装状況（本番系列 7ba332f＋hotfix、2026-11-24）：
+
+- 公演情報の編集（名称・肩書・Slug）と公開・非公開の切替（公開日時の設定・解除）は、同じAPI（`PUT /productions/{id}`、UpdateProductionUseCase）で処理する。
+- このAPIの認可はPrimaryManagerまたは対象Productionの公演代理人とする（ProductionAuthorizationService::canActAsProductionManager）。
+- このAPIで変更できる項目は、名称・肩書・Slug・公開状態（公開日時）だけである。Lifecycle Status（422で拒否）とPrimaryManagerは変更できない。
+- 紹介文・画像・レイアウト等の公開ページ編集機能は、本番系列には存在しない。
+- 改訂注記（2026-11-24）：当初「公演代理人の編集は方針、公開切替は未確定」としていた。その後の方針確定により、編集・Slug変更・公開切替を公演代理人に許可するよう改めた。
+
+---
+
 # Business Rules
 
 - Production Public PageはCore機能として自動生成する。

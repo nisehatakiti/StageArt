@@ -336,6 +336,55 @@ Permission
 ProductionDelegateは、
 PrimaryManagerと同等の権限を自動的には持たない。
 
+この原則は、単一のRoleを適用されたProductionDelegateについてのものである。
+公演代理人は、次の「担当区分」で定めるRoleの組合せによって、
+公演管理者と同等の管理者権限を明示的に委任された担当区分として扱う。
+
+---
+
+# 担当区分
+
+ProductionDelegateの権限は、ProductionDelegateであること自体ではなく、
+割り当てられた担当区分によって決まる。
+
+担当区分は既存のRoleの組合せによって表す。
+担当区分のために新しいRole Definitionや新しいPermissionを作成しない。
+
+| 担当区分 | 適用するRole（同一Production・同一Personに対し、いずれもACTIVE） | 権限 |
+|---|---|---|
+| PrimaryManager | Roleではない（Productionが参照する） | 公演管理者権限 |
+| 公演代理人 | Participant Manager と Rehearsal Manager の両方 | 公演管理者と同等の管理者権限 |
+| 稽古担当 | Rehearsal Manager のみ | 稽古管理に関する権限のみ |
+| 会計担当 | Accounting Manager | 会計管理に関する権限のみ |
+
+- 公演代理人は、Participant ManagerとRehearsal Managerの両方がACTIVEで適用されている場合に限り成立する。
+- どちらか一方のRoleがINACTIVEになるか削除された時点で、そのPersonは公演代理人ではなくなる。
+- 稽古担当・会計担当には、公演管理者権限を付与しない。
+- 稽古担当は稽古管理に関する権限のみ、会計担当は会計管理に関する権限のみを持つ。
+- 担当区分を変更・統合・拡張しない。
+- 担当区分の権限は、適用されたProductionに対してのみ有効である。他のProductionには及ばない。
+- 担当区分は、Organization ScopeのRole（Owner等）を変更せず、Organization Scopeの権限を与えない。
+- 参加コード（Production Join Key）の管理（一覧確認・発行・無効化）は公演管理者権限に属する。PrimaryManagerまたは対象Productionの公演代理人のみが行える（JoinKey.md「Issuer」）。
+
+公演代理人に対する、ProductionDelegatePolicy.mdの「ProductionDelegate Restrictions」および「Lifecycle Relationship」でPrimaryManagerのみと定めた操作の扱いは、本改訂では変更していない。
+
+公演代理人は公演管理者と同等の公演運営管理権限を持つが、次の操作はPrimaryManagerのみが行う既存方針を維持する。
+
+| 操作 | 内容 |
+|---|---|
+| Production Lifecycleの変更 | 企画開始・本番開始・完了・Archive・中止等の段階遷移 |
+| Budgetの確定・決算完了の確定 | Budgetの確定（有効化）、決算完了の確定 |
+| Documentの公開・配布 | Production Document（台本・稽古資料等。Google Drive上の正本を参照するDocument Alias）のProduction Memberへの公開・配布。Production Public Pageの編集・公開ではない |
+| ProductionDelegateの管理 | Roleの付与・変更・解除（担当区分の割当） |
+| Role / Permissionそのものの変更 | Role Definition・Permission Setの変更 |
+
+公演公開ページについては、ProductionDelegatePolicy.md「公演公開ページの権限」に従う。
+
+- 公演代理人は、担当公演についてPrimaryManagerと同等の実務上の公演管理権限を持つ。代表者がIT操作に不慣れで、実務を代理人に委任する運用を想定する。
+- 公演代理人は、担当公演の公開ページの内容の編集・Slugの変更・一般公開・非公開の切替を行える。
+- 公演代理人が行える操作の一覧は、ProductionDelegatePolicy.md「公演代理人の権限範囲」に従う。
+- 公演代理人の判定は、同一Productionに対するACTIVEなRoleをすべて取得して行う。データの取得順に依存しない。
+
 ---
 
 # Authorization
@@ -720,6 +769,12 @@ Productionに対するRoleの適用関係を表す。
 - PrimaryManagerはProductionに関する全権限を持つ。
 - ProductionDelegateはPrimaryManagerと同等の権限を自動的には持たない。
 - ProductionDelegateは適用されたRoleに含まれるPermissionのみ持つ。
+- ProductionDelegateの権限は担当区分（公演代理人・稽古担当・会計担当）によって決まる。
+- 公演代理人はParticipant ManagerとRehearsal Managerの両方をACTIVEで適用された状態であり、公演管理者と同等の管理者権限を持つ。
+- 稽古担当（Rehearsal Managerのみ）は稽古管理に関する権限のみを持つ。
+- 会計担当（Accounting Manager）は会計管理に関する権限のみを持つ。
+- 稽古担当・会計担当に公演管理者権限を付与しない。
+- Production Join Keyの管理はPrimaryManagerまたは対象Productionの公演代理人のみが行う。
 - ACTIVEのProductionDelegateのみRoleのPermissionを有効とする。
 - INACTIVEのProductionDelegateはRoleのPermissionを持たない。
 - ParticipantとProductionDelegateは異なる概念である。
