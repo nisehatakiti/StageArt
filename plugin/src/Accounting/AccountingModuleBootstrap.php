@@ -138,7 +138,8 @@ final class AccountingModuleBootstrap
             $productionContext,
             $identity,
             $expenseLineFactory,
-            $transactions
+            $transactions,
+            $authorization
         );
         $confirmExpense = new ConfirmExpenseUseCase($expenses, $identity, $authorization);
         $expenseNotifier = new ExpenseWorkflowNotifier($notifications, $capabilityDirectory, $productionContext);

@@ -6,6 +6,8 @@ import { ThemedView } from '@/components/themed-view';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { useProductionJoinKeys } from '@/features/joinKey/useJoinKey';
 import { useParticipationRequestDecision, usePendingParticipationRequests } from '@/features/participation/useParticipation';
+import { canManageJoinKeys } from '@/features/production/permissions';
+import { useProduction } from '@/features/production/useProductions';
 import { getErrorMessage } from '@/utils/errorMessage';
 
 /**
@@ -32,7 +34,22 @@ export default function ProductionInviteScreen() {
   const pendingQuery = usePendingParticipationRequests(productionId);
   const { approve, reject } = useParticipationRequestDecision(productionId);
 
+  const productionQuery = useProduction(productionId);
+
   const activeKey = joinKeysQuery.data?.find((key) => key.status === 'ACTIVE');
+
+  // Join Keys belong to the PrimaryManager and the 公演代理人 only; the API
+  // refuses everyone else (403), this only says so instead of showing an
+  // empty screen.
+  if (productionQuery.data && !canManageJoinKeys(productionQuery.data)) {
+    return (
+      <>
+        <ThemedText testID="production-invite-forbidden">
+          招待管理（参加コードの発行・確認・無効化）はPrimaryManagerまたは公演代理人のみ利用できます。
+        </ThemedText>
+      </>
+    );
+  }
 
   return (
     <>

@@ -2,7 +2,7 @@
 
 # Management Navigation Policy
 
-Version : 1.3
+Version : 1.4
 
 ---
 
@@ -272,6 +272,16 @@ Primary Manager
 ├─ 通知
 └─ 設定
 
+公演代理人
+├─ 団体
+├─ 公演
+│   ├─ 公演情報・公開設定
+│   ├─ メンバー・招待
+│   ├─ 会計
+│   └─ 稽古・予定
+├─ 通知
+└─ 設定
+
 稽古管理者
 ├─ 団体
 ├─ 公演
@@ -296,9 +306,13 @@ Primary Manager
 
 Primary Managerは全管理機能を利用できる。
 
+公演代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つProduction Delegate）は、担当公演について、公演の完了・Primary Managerの変更・公演資料の配布を除く公演運営と会計の管理機能を利用できる（Version 1.4、2026-11-24。`ProductionDelegatePolicy.md`「担当区分と権限一覧」）。
+
 稽古管理者は稽古・予定の管理機能を利用できる。
 
-会計管理者はProduction会計およびOrganization横断会計の管理機能を利用できる。
+会計管理者はProduction会計およびOrganization横断会計の管理機能を利用できる。会計管理者には公演運営（公演情報・メンバー・稽古）のメニューを表示しない。
+
+公演の完了の操作は、Primary Managerにだけ表示する。
 
 一般Memberには管理者向けの稽古管理・会計管理メニューを表示しない。
 

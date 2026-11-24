@@ -257,8 +257,20 @@ export type Production = {
   created_at: string;
   updated_at: string;
   is_primary_manager: boolean;
+  /** Legacy: one ACTIVE delegate Role only (the first found). Prefer `delegate_roles`. */
   delegate_role: string | null;
+  /** Every ACTIVE delegate Role the caller holds on this Production. */
   delegate_roles: string[];
+  /** PrimaryManager only, and only while ACTIVE (公演の完了). */
+  can_complete?: boolean;
+  /** 公演代理人: PARTICIPANT_MANAGER and REHEARSAL_MANAGER both ACTIVE. */
+  is_proxy_manager?: boolean;
+  /** PrimaryManager or 公演代理人 (公演情報・公開ページ・公開切替・Slug・定員・上演時間・参加コード). */
+  can_manage_production_operations?: boolean;
+  /** PrimaryManager, 公演代理人 or 会計担当 (予算・経費・実績・精算). */
+  can_manage_accounting?: boolean;
+  /** PrimaryManager or 公演代理人 (担当の任命・変更). */
+  can_manage_production_delegates?: boolean;
   description: string | null;
   description_published_at: string | null;
   flyer_url: string | null;

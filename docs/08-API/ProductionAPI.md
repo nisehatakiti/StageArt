@@ -124,10 +124,22 @@ GET /api/v1/productions/{productionId}
 Productionのレスポンス（取得・一覧・各状態変更の結果）は、要求者について `can_complete`（boolean）を含む（Version 4.1、2026-10-29）。
 
 - 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。
-- 公演完了の権限を持つのは、Primary Manager、会計管理者（ACCOUNTING_MANAGER）、代理人（有効なPARTICIPANT_MANAGERとREHEARSAL_MANAGERを同時に持つProduction Delegate）である（ExpenseApprovalWorkflow「決算確定」）。判定は公演完了APIと同じ認可処理による。
+- 公演完了の権限を持つのはPrimary Managerのみである（2026-11-24確定、PR #8 統合。それまでは会計管理者・代理人も含めていた）。判定は公演完了APIと同じ認可処理による。
 - 精算が完了していない等、公演完了時の制約は `can_complete` では判定しない。trueでも、公演完了APIはそれらの制約により拒否しうる。
 - 公演開始・アーカイブ・中止等、他の状態変更の権限は `can_complete` に含まれず、従来どおりPrimary Managerのみである。
 - 画面は、公演完了の操作の表示を `can_complete` で判定する。
+
+Productionのレスポンスは、要求者について次の値も含む（2026-11-24、PR #8 統合）。いずれも画面の表示制御のためのもので、各APIは操作ごとに同じ規則で認可する。
+
+| 項目 | 意味 |
+|---|---|
+| `delegate_roles` | 要求者が当該Productionで持つACTIVEな担当Roleのすべて |
+| `is_proxy_manager` | 公演代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを同時にACTIVEで持つ） |
+| `can_manage_production_operations` | Primary Managerまたは公演代理人（公演情報・公開ページ・公開切替・Slug・定員・公演回の共通設定・上演時間・参加コード） |
+| `can_manage_accounting` | Primary Manager、公演代理人または会計担当（予算・経費・実績・精算） |
+| `can_manage_production_delegates` | Primary Managerまたは公演代理人（公演代理人・会計担当・受付担当の任命・変更） |
+
+Productionの更新（`PUT /productions/{id}`）は、Primary Managerまたは公演代理人が実行できる（2026-11-24、PR #8 統合。それまではPrimary Managerのみ）。
 
 Production APIは関連Resourceを集約して返却する。
 

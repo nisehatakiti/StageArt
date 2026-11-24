@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { canManageJoinKeys } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 
 /**
@@ -73,8 +74,10 @@ export default function ProductionShellLayout() {
             dedicated native Tab (adding one would change the existing,
             already-tested 4-tab native layout - see this file's own
             docblock on why native behavior stays untouched this phase),
-            so this entry point is Web-only. */}
-        {Platform.OS === 'web' && (
+            so this entry point is Web-only. Shown only to whoever may
+            manage this Production's Join Keys (PrimaryManager or 公演代理人 -
+            the API enforces the same rule). */}
+        {Platform.OS === 'web' && canManageJoinKeys(production) && (
           <TouchableOpacity onPress={() => router.push(`/production-invite/${id}` as Href)} testID="production-invite-link">
             <ThemedText type="link">招待管理</ThemedText>
           </TouchableOpacity>

@@ -143,9 +143,18 @@ final class ExpenseWorkflowNotifier
         $this->send($this->applicant($expense), self::TYPE_REJECTED, $expense, $message);
     }
 
+    /**
+     * The applicant is the Expense's creator (`created_by`). Since
+     * ExpenseApprovalWorkflow.md Version 1.12 (PR #8 統合) an accounting
+     * holder may edit someone else's SUBMITTED Expense, which records the
+     * editor as the new revision's submitter (`submitted_by`) - the result
+     * of the review still goes to the applicant, not to that editor. Before
+     * Version 1.12 only the applicant could submit or edit, so the two were
+     * always the same Person.
+     */
     private function applicant(Expense $expense): PersonId
     {
-        return $expense->submittedBy() ?? $expense->createdBy();
+        return $expense->createdBy();
     }
 
     private function send(PersonId $recipient, string $type, Expense $expense, string $message): void

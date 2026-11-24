@@ -15,11 +15,14 @@ use StageArt\Domain\Reservation\ReservationStatus;
 use StageArt\Domain\Settlement\SettlementRepositoryInterface;
 
 /**
- * ACTIVE -> COMPLETED ("精算" -> "決算完了"). Allowed to the holders of
- * `ProductionCapability::COMPLETE` - PrimaryManager, 会計管理者 and 代理人
- * (StageArt 統合・会計仕様の確定事項 2026-10-28 §2, superseding
- * ProductionDelegatePolicy.md's earlier "PrimaryManagerのみ"); the
- * settlement guard below applies to all of them.
+ * ACTIVE -> COMPLETED (公演の完了). Allowed to the PrimaryManager only
+ * (`ProductionAuthorizationService::canCompleteProduction()`, PR #8 統合
+ * 2026-11-24, superseding 統合・会計仕様の確定事項 2026-10-28 §2 which had
+ * let 会計管理者 and 代理人 complete too). 会計担当 and 公演代理人 finish the
+ * accounting - 予算実績の確定 and 決算・精算の最終確定 - beforehand; the
+ * settlement guard below still refuses a completion whose settlement is
+ * incomplete or overpaid. Only the permission check changed: the lock, the
+ * guard, the transaction and the RESERVED cleanup are as before.
  *
  * Phase 4 (Check-in/精算/会計連携) fills in the real Guard Production::complete()'s own docblock always pointed to
  * ("a real computed Guard should replace this once Production Settlement
@@ -82,7 +85,7 @@ final class CompleteProductionUseCase
         }
 
         if (! $this->authorization->canCompleteProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can complete this Production.');
+            throw new ProductionAccessDeniedException('Only the PrimaryManager can complete this Production.');
         }
 
         // PR #7 review (R4): everything below runs under the exclusive

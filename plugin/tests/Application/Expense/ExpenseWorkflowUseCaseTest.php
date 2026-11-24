@@ -27,9 +27,11 @@ use StageArt\Application\Expense\UpdateExpenseCommand;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionCapability;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Application\Settlement\SettlementCapability;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
@@ -169,7 +171,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
 
         $this->createAccount = new CreateAccountUseCase($this->accounts, $organizationContext, $identity, $authorization);
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membership, $identity, $lineFactory, $this->transactions);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $this->transactions);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $this->transactions, $authorization);
         $this->applicantTransitions = new ApplicantExpenseTransitionUseCase($this->expenses, $identity, $membership, $this->transactions, $notifier);
         $this->approveWith = fn (TransactionManagerInterface $transactions): ApproveExpenseUseCase => new ApproveExpenseUseCase(
             $this->expenses,
@@ -469,9 +471,14 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     }
 
     /**
-     * @dataProvider othersThanTheApplicant
+     * Version 1.12 (PR #8 統合): besides the applicant, only an accounting
+     * holder edits a submitted Expense - another member, a ticket manager,
+     * an outsider, a PARTICIPANT_MANAGER-only delegate and a former 代理人
+     * whose REHEARSAL_MANAGER Role was deactivated are refused.
+     *
+     * @dataProvider othersWithoutAccountingRights
      */
-    public function test_nobody_else_can_edit_a_submitted_expense(int $wordPressUserId): void
+    public function test_nobody_without_accounting_rights_can_edit_a_submitted_expense(int $wordPressUserId): void
     {
         $id = $this->submittedBy(2, [5000]);
 
@@ -479,13 +486,13 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
                 ['account_id' => $this->expenseAccountId, 'amount' => 1],
             ]));
-            $this->fail('Only the applicant may edit a submitted Expense.');
+            $this->fail('Only the applicant or an accounting holder may edit a submitted Expense.');
         } catch (ExpenseAccessDeniedException $exception) {
             $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($id))->requestedAmount());
         }
     }
 
-    // --- edit: the applicant only (Version 1.11) ---------------------------
+    // --- edit: the applicant and the accounting holders (Version 1.12) -----
 
     /**
      * An Expense of WordPress user 2 in the given status: DRAFT, SUBMITTED
@@ -571,23 +578,36 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     }
 
     /**
-     * Everybody but the applicant, Role or not: the PrimaryManager and the
-     * 会計管理者 (both hold `Accounting.Update`), a 代理人, other Delegates,
-     * another member and an outsider.
+     * Version 1.12 (PR #8 統合): the holders of `Accounting.Update` other than
+     * the applicant - the PrimaryManager, both 会計管理者 and the 代理人.
      *
      * @return array<string, array{int}>
      */
-    public static function everybodyButTheApplicant(): array
+    public static function accountingHoldersOtherThanTheApplicant(): array
     {
         return [
             'primary manager (Accounting.Update)' => [1],
-            'another member' => [3],
             'accounting manager (Accounting.Update)' => [4],
-            'ticket manager' => [5],
-            'outsider' => [6],
             'another accounting manager (Accounting.Update)' => [7],
             'proxy manager (代理人)' => [8],
+        ];
+    }
+
+    /**
+     * Everybody else but the applicant: another member, a ticket manager,
+     * an outsider, a PARTICIPANT_MANAGER-only delegate and a former 代理人
+     * whose REHEARSAL_MANAGER Role is no longer ACTIVE.
+     *
+     * @return array<string, array{int}>
+     */
+    public static function othersWithoutAccountingRights(): array
+    {
+        return [
+            'another member' => [3],
+            'ticket manager' => [5],
+            'outsider' => [6],
             'participant manager only' => [9],
+            'former proxy manager (REHEARSAL_MANAGER inactive)' => [10],
         ];
     }
 
@@ -599,7 +619,7 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $cases = [];
 
         foreach (self::editableStatuses() as $statusLabel => [$status]) {
-            foreach (self::everybodyButTheApplicant() as $personLabel => [$wordPressUserId]) {
+            foreach (self::othersWithoutAccountingRights() as $personLabel => [$wordPressUserId]) {
                 $cases["{$statusLabel} by {$personLabel}"] = [$status, $wordPressUserId];
             }
         }
@@ -608,14 +628,29 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     }
 
     /**
-     * Version 1.11: the requester's Person ID must be the applicant's. No
-     * Role - `Accounting.Update`, PrimaryManager, 会計管理者, 代理人 - lets
-     * anyone else edit, in any editable status; the refusal is access
-     * denied (403) and changes nothing.
+     * @return array<string, array{string, int}>
+     */
+    public static function accountingHoldersInEachEditableStatus(): array
+    {
+        $cases = [];
+
+        foreach (self::editableStatuses() as $statusLabel => [$status]) {
+            foreach (self::accountingHoldersOtherThanTheApplicant() as $personLabel => [$wordPressUserId]) {
+                $cases["{$statusLabel} by {$personLabel}"] = [$status, $wordPressUserId];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Version 1.12: anyone who is neither the applicant nor an accounting
+     * holder of the Production is refused in every editable status; the
+     * refusal is access denied (403) and changes nothing.
      *
      * @dataProvider othersInEachEditableStatus
      */
-    public function test_nobody_but_the_applicant_edits_an_expense(string $status, int $wordPressUserId): void
+    public function test_nobody_without_accounting_rights_edits_someone_elses_expense(string $status, int $wordPressUserId): void
     {
         $id = $this->expenseOfTheApplicantIn($status);
         $before = $this->editableState($id);
@@ -624,40 +659,130 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
             $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
                 ['account_id' => $this->expenseAccountId, 'amount' => 1],
             ]));
-            $this->fail('Only the applicant may edit the Expense.');
+            $this->fail('Only the applicant or an accounting holder may edit the Expense.');
         } catch (ExpenseAccessDeniedException $exception) {
             $this->assertSame($before, $this->editableState($id));
         }
     }
 
     /**
-     * POSTED is never edited, not even by the applicant (a state conflict,
-     * 409); anyone else is refused as access denied first.
+     * Version 1.12 (PR #8 統合): the PrimaryManager, a 会計管理者 and the 代理人
+     * edit someone else's Expense in each editable status, exactly as the
+     * applicant does - a SUBMITTED edit opens a new submission revision,
+     * recorded under the editor; the applicant stays the creator.
+     *
+     * @dataProvider accountingHoldersInEachEditableStatus
+     */
+    public function test_an_accounting_holder_edits_someone_elses_expense(string $status, int $wordPressUserId): void
+    {
+        $id = $this->expenseOfTheApplicantIn($status);
+        $before = $this->editableState($id);
+
+        $result = $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+        ]));
+
+        $this->assertSame($status, $result->status);
+        $this->assertSame(4800, $result->totalAmount);
+        $this->assertSame($this->person[2]->id()->toString(), $result->createdBy);
+        $this->assertSame($this->person[$wordPressUserId]->id()->toString(), $this->editableState($id)['updated_by']);
+
+        if ($status === ExpenseStatus::SUBMITTED) {
+            $this->assertSame($before['revision'] + 1, $result->revision);
+            $this->assertSame(4800, $result->requestedAmount);
+            // The applicant stays the submitter; the editor is the actor of
+            // the new revision's SUBMITTED history entry.
+            $this->assertSame($this->person[2]->id()->toString(), $result->submittedBy);
+            $last = $result->reviews[count($result->reviews) - 1];
+            $this->assertSame([ExpenseReview::SUBMITTED, $result->revision, $this->person[$wordPressUserId]->id()->toString()], [$last['action'], $last['revision'], $last['actor_person_id']]);
+        } else {
+            $this->assertSame($before['revision'], $result->revision);
+            $this->assertSame($before['requested'], $result->requestedAmount);
+        }
+    }
+
+    /**
+     * POSTED is never edited - not by the applicant, not by an accounting
+     * holder (a state conflict, 409); anyone else is refused as access
+     * denied first.
      */
     public function test_a_posted_expense_is_not_edited_even_by_the_applicant(): void
     {
         $id = $this->expenseOfTheApplicantIn(ExpenseStatus::POSTED);
         $before = $this->editableState($id);
 
-        try {
-            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
-                ['account_id' => $this->expenseAccountId, 'amount' => 4800],
-            ]));
-            $this->fail('A POSTED Expense must not be edited.');
-        } catch (ExpenseStateConflictException $exception) {
-            $this->assertSame($before, $this->editableState($id));
-        }
-
-        foreach (self::everybodyButTheApplicant() as [$wordPressUserId]) {
+        foreach (array_merge([[2]], array_values(self::accountingHoldersOtherThanTheApplicant())) as [$wordPressUserId]) {
             try {
                 $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
                     ['account_id' => $this->expenseAccountId, 'amount' => 4800],
                 ]));
-                $this->fail('Only the applicant gets past the identity check.');
+                $this->fail("A POSTED Expense must not be edited (user {$wordPressUserId}).");
+            } catch (ExpenseStateConflictException $exception) {
+                $this->assertSame($before, $this->editableState($id));
+            }
+        }
+
+        foreach (self::othersWithoutAccountingRights() as [$wordPressUserId]) {
+            try {
+                $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                    ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+                ]));
+                $this->fail('Only the applicant or an accounting holder gets past the permission check.');
             } catch (ExpenseAccessDeniedException $exception) {
                 $this->assertSame($before, $this->editableState($id));
             }
         }
+    }
+
+    /**
+     * Separation of duties still holds after someone else's edit: the
+     * applicant stays the submitter, the editor is recorded as the author
+     * of the revision they produced and may neither approve nor reject it,
+     * and the review result still goes to the applicant.
+     */
+    public function test_the_editor_of_someone_elses_submitted_expense_cannot_approve_or_reject_that_revision(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+        $edited = $this->updateExpense->execute(new UpdateExpenseCommand($id, 4, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+        ]));
+        $this->assertSame($this->person[2]->id()->toString(), $edited->submittedBy);
+
+        try {
+            $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, $edited->revision));
+            $this->fail('The editor must not approve the revision they wrote.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertStringContainsString('submitted or created it', $exception->getMessage());
+            $this->assertSame([], $this->approvalEntries());
+        }
+
+        try {
+            $this->rejectExpense->execute(new RejectExpenseCommand($id, 4, '不備あり'));
+            $this->fail('The editor must not reject the revision they wrote.');
+        } catch (ExpenseAccessDeniedException $exception) {
+            $this->assertSame(ExpenseStatus::SUBMITTED, $this->status($id));
+        }
+
+        $before = count($this->notified());
+        $this->approveExpense->execute(new ApproveExpenseCommand($id, 7, $edited->revision));
+        $this->assertSame(['2:expense_approved'], array_slice($this->notified(), $before));
+    }
+
+    /**
+     * The bar is per revision: once the applicant edits again (a new
+     * revision written by the applicant), the earlier editor may approve.
+     */
+    public function test_a_later_revision_by_the_applicant_lets_the_earlier_editor_approve(): void
+    {
+        $id = $this->submittedBy(2, [5000]);
+        $this->updateExpense->execute(new UpdateExpenseCommand($id, 4, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+        ]));
+        $again = $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 4700],
+        ]));
+
+        $this->assertSame(4700, $this->approveExpense->execute(new ApproveExpenseCommand($id, 4, $again->revision))->approvedAmount);
     }
 
     // --- approve ---------------------------------------------------------
@@ -868,20 +993,25 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
     }
 
     /**
-     * Approval rights add nothing else: a 代理人 can approve, but cannot edit
-     * someone else's Expense - nobody but the applicant can (Version 1.11).
+     * Version 1.12 (PR #8 統合): a 代理人 holds the whole accounting flow -
+     * it edits someone else's Expense as well as approving it. A former
+     * 代理人 whose REHEARSAL_MANAGER Role is no longer ACTIVE does not.
      */
-    public function test_a_proxy_manager_cannot_edit_someone_elses_expense(): void
+    public function test_a_proxy_manager_edits_someone_elses_expense_but_a_former_one_does_not(): void
     {
         $id = $this->draftBy(2);
 
+        $this->assertSame(9000, $this->updateExpense->execute(new UpdateExpenseCommand($id, 8, [
+            ['account_id' => $this->expenseAccountId, 'amount' => 9000],
+        ]))->totalAmount);
+
         try {
-            $this->updateExpense->execute(new UpdateExpenseCommand($id, 8, [
-                ['account_id' => $this->expenseAccountId, 'amount' => 9000],
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 10, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 1],
             ]));
-            $this->fail('A proxy manager must not edit another member\'s Expense.');
+            $this->fail('A former proxy manager must not edit another member\'s Expense.');
         } catch (ExpenseAccessDeniedException $exception) {
-            $this->assertSame(5000, $this->expenses->findById(ExpenseId::fromString($id))->totalAmount());
+            $this->assertSame(9000, $this->expenses->findById(ExpenseId::fromString($id))->totalAmount());
         }
     }
 
@@ -1734,7 +1864,17 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $directory = new CoreProductionCapabilityDirectoryAdapter($prodAuth, $this->productions, $this->delegates, $this->people);
         $authorization = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
 
-        foreach ([AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8], AccountingCapability::MANAGE => [1, 4, 7]] as $capability => $expected) {
+        // PR #8 統合: the PrimaryManager, both 会計管理者 and the 代理人 hold every
+        // accounting Capability; the former 代理人 (10) holds none.
+        $capabilities = [
+            AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8],
+            AccountingCapability::MANAGE => [1, 4, 7, 8],
+            AccountingCapability::ACTIVATE_BUDGET => [1, 4, 7, 8],
+            SettlementCapability::MANAGE => [1, 4, 7, 8],
+            ProductionCapability::COMPLETE => [1],
+        ];
+
+        foreach ($capabilities as $capability => $expected) {
             $listed = array_map(
                 static fn (PersonId $id): string => $id->toString(),
                 $directory->personIdsWithProductionCapability($this->production->id(), $capability)

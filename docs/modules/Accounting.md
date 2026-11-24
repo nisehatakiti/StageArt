@@ -229,12 +229,15 @@ $production, ...)` (Entity-based), where `AccountingCapability::MANAGE
 `plugin/src/Application/Accounting/AccountingCapability.php`, not by
 Core.
 
-**Behavior is unchanged**: no Role's Permission Set currently grants
-`Accounting.Update` (no `ACCOUNTING_MANAGER` `RoleKey` entry exists in
-`RolePermissions::MAP`), so this capability still evaluates to
-PrimaryManager-only. Extending it to a real `ACCOUNTING_MANAGER` Role
-(per `ProductionDelegatePolicy.md`'s "会計データ入力...はProductionDelegateに
-許可する") is real Accounting Domain design work, still out of scope.
+(Historical note, superseded.) At the time of this refactor no Role's
+Permission Set granted `Accounting.Update`, so it evaluated to
+PrimaryManager-only. Current rule (PR #8 統合, 2026-11-24): every
+accounting Capability - `Accounting.Update`, `Budget.Activate`,
+`Expense.Approve` and `Settlement.Manage` - is held by the
+PrimaryManager, an ACTIVE ACCOUNTING_MANAGER (`RolePermissions::MAP`)
+and a 公演代理人 (`ProductionAuthorizationService::
+PROXY_MANAGER_CAPABILITIES`). Completing the Production stays
+PrimaryManager-only (`ProductionDelegatePolicy.md` 「担当区分と権限一覧」).
 
 ## Open items
 

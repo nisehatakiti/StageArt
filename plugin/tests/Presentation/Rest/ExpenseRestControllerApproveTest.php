@@ -120,7 +120,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
 
         $this->controller = new ExpenseRestController(
             $createExpense,
-            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions),
+            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions, $authorization),
             new ConfirmExpenseUseCase($this->expenses, $identity, $authorization),
             new GetExpenseUseCase($this->expenses, $identity, $membership, $authorization),
             new ListExpensesUseCase($this->expenses, $productionContext, $membership, $identity, $authorization),
@@ -390,17 +390,25 @@ final class ExpenseRestControllerApproveTest extends TestCase
         ]));
     }
 
-    public function test_the_primary_manager_cannot_edit_the_applicants_expense(): void
+    /**
+     * ExpenseApprovalWorkflow.md Version 1.12 (PR #8 統合): the PrimaryManager
+     * (an accounting holder) edits the applicant's SUBMITTED Expense through
+     * the API - a new revision, as the applicant's own edit. A requester with
+     * no accounting right is still refused (403); see
+     * ExpenseWorkflowUseCaseTest.
+     */
+    public function test_the_primary_manager_edits_the_applicants_expense_as_a_new_revision(): void
     {
         $before = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
         $revision = $before->revision();
 
         $response = $this->update(1, 4800);
 
-        $this->assertInstanceOf(\WP_Error::class, $response);
-        $this->assertSame(['status' => 403], $response->get_error_data(), $response->get_error_message());
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $this->assertSame(200, $response->get_status());
         $after = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
-        $this->assertSame([ExpenseStatus::SUBMITTED, $revision, 5000], [$after->status()->toString(), $after->revision(), $after->totalAmount()]);
+        $this->assertSame([ExpenseStatus::SUBMITTED, $revision + 1, 4800], [$after->status()->toString(), $after->revision(), $after->totalAmount()]);
+        $this->assertTrue($after->createdBy()->equals($before->createdBy()), 'The applicant stays the creator.');
     }
 
     public function test_the_applicant_edits_their_submitted_expense_as_a_new_revision(): void

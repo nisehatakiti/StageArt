@@ -96,6 +96,8 @@ Production StatusはLifecycle上の大分類を表し、ACTIVE内部の活動段
 
 Productionは、決算完了のGOを管理者が行った時点でCOMPLETEDとなる。
 
+決算完了のGO（公演の完了、ACTIVE → COMPLETED）を行えるのはPrimaryManagerのみとする（2026-11-24確定、PR #8 統合）。それまでの会計業務（予算・経費・予算実績の確定・決算・精算の最終確定）は、PrimaryManager・公演代理人・会計担当が行える（ProductionDelegatePolicy.md「担当区分と権限一覧」）。
+
 通常の会計利用時は、以下の流れを基本とする。
 
 公演終了

@@ -2,7 +2,7 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.4
+Version : 1.5
 
 Version 1.4（2026-10-30）：立替経費の承認で承認金額を修正する手順を削除した。承認金額は申請金額と一致しなければならない（`ExpenseApprovalWorkflow.md` Version 1.10）。
 
@@ -174,13 +174,17 @@ Production決算の確定は、チケットバック未払い金を個人ごと�
 
 # Production Closing Authority
 
-Productionの決算確定を実行できる権限は以下とする。
+Productionの決算確定（公演の完了、ACTIVE → COMPLETED）を実行できるのは、Primary Managerのみとする（Version 1.5、2026-11-24確定、PR #8 統合）。
+
+決算確定に至るまでの会計業務 ― 予算策定・編集、予算の確定、経費入力・編集、経費承認、予算実績の確定、メンバー精算等の決算・精算の最終確定 ― は、次の者が実行できる。
 
 - Primary Manager
 - 会計管理者（ACCOUNTING_MANAGERを持つ有効なProduction Delegate）
 - 代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つ有効なProduction Delegate）
 
-上記以外のProduction Delegateは、Production決算を確定できない（Version 1.3、2026-10-28確定）。
+上記以外のProduction Delegateは、これらを実行できない。
+
+Version 1.3（2026-10-28確定）では、会計管理者と代理人もProduction決算を確定できるとしていた。Version 1.5でPrimary Managerのみに改めた。決算・精算の最終確定とProductionの完了は別の権限とし、独立した「会計完了」の状態は設けない（メンバー精算の完了後に、Primary ManagerがProductionを完了する）。
 
 ---
 
@@ -293,7 +297,7 @@ POSTED済みJournal Entryを直接編集・削除せず、訂正時には赤黒�
 - 総勘定元帳はJournal Entryから生成し、直接編集できない。
 - Production決算は未収金・未払金がすべて解消され、仮売上・公演仕掛金の決算処理を行ったうえで確定可能とする。
 - 会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。Check In時点では仮売上への振替を行わない。
-- Production決算の確定権限はPrimary Manager、会計管理者、代理人とする。
+- Production決算の確定（公演の完了）はPrimary Managerのみとする。それまでの会計業務・決算・精算の最終確定はPrimary Manager、会計管理者、代理人が行える（Version 1.5）。
 - Production決算確定後は公演会計を完全ロックする。
 - 決算後の修正はProduction決算を開き直さず、Organization Accounting側の調整仕訳で行う。
 - BSをA4一枚程度、資産と負債/純資産の左右2列で出力する。

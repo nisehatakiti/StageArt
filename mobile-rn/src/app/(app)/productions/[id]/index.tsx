@@ -12,6 +12,14 @@ import {
   useCompleteProduction,
   useProduction,
 } from '@/features/production/useProductions';
+import {
+  canManageAccounting,
+  canManageParticipants,
+  canManageProductionOperations,
+  isPrimaryManagerOf,
+  PRODUCTION_RESPONSIBILITY_LABEL,
+  productionResponsibilities,
+} from '@/features/production/permissions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { usePendingParticipationRequests } from '@/features/participation/useParticipation';
 import { usePerformances } from '@/features/performance/usePerformances';
@@ -81,8 +89,14 @@ export default function ProductionManagementScreen() {
   const production = productionQuery.data;
   const { organization } = useProductionOrganization(production);
 
-  const isPrimaryManager = !!production?.is_primary_manager;
-  const canReviewParticipationRequests = isPrimaryManager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
+  // 担当区分 (PR #8 統合): Lifecycle actions (公演の完了 included) are the
+  // PrimaryManager's alone; 公開設定 is the PrimaryManager's or the 公演代理人's;
+  // 会計 is open to those two and 会計担当. The API checks the same things.
+  const isPrimaryManager = isPrimaryManagerOf(production);
+  const canReviewParticipationRequests = canManageParticipants(production);
+  const canPublish = canManageProductionOperations(production);
+  const canOpenAccounting = canManageAccounting(production);
+  const responsibilityLabels = productionResponsibilities(production).map((r) => PRODUCTION_RESPONSIBILITY_LABEL[r]);
   const pendingParticipationRequestsQuery = usePendingParticipationRequests(canReviewParticipationRequests ? id : undefined);
   const performancesQuery = usePerformances(id);
 
@@ -175,6 +189,11 @@ export default function ProductionManagementScreen() {
               </ThemedText>
             )}
           </View>
+          {responsibilityLabels.length > 0 && (
+            <ThemedText type="small" themeColor="textSecondary" testID="production-management-responsibility">
+              {`あなたの担当：${responsibilityLabels.join('・')}`}
+            </ThemedText>
+          )}
         </View>
         {publicPath && (
           <TouchableOpacity testID="production-management-view-public" onPress={() => router.push(publicPath as Href)} style={styles.secondaryButton}>
@@ -308,7 +327,7 @@ export default function ProductionManagementScreen() {
           label="公開設定"
           description={published ? '公開中' : '未公開'}
           onPress={() => router.push(`/productions/${id}/publish` as Href)}
-          disabled={!isPrimaryManager}
+          disabled={!canPublish}
         />
         <MenuCard
           testID="production-management-menu-member-performance-summary"
@@ -322,6 +341,7 @@ export default function ProductionManagementScreen() {
           label="会計"
           description="予算・実績"
           onPress={() => router.push(`/production/${id}/accounting` as Href)}
+          disabled={!canOpenAccounting}
         />
         <MenuCard
           testID="production-management-menu-notifications"

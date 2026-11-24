@@ -681,6 +681,12 @@ Project BudgetとOrganization Budgetを別々の予算機能として作成し�
 Budgetの作成・変更・ACTIVE化は、
 会計管理権限を持つPersonが行う。
 
+Production ScopeのBudgetについては、
+PrimaryManager・公演代理人・会計担当が
+作成・変更・ACTIVE化（予算の確定）を行える
+（2026-11-24確定、PR #8 統合。
+それまでACTIVE化はPrimaryManagerのみとしていた）。
+
 Organization Administratorは、
 自身のOrganizationについて
 全権限を持つ。

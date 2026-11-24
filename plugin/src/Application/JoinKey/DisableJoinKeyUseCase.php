@@ -15,9 +15,12 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Role\RoleKey;
 
 /** Authorization branches on the JoinKey's own `targetType` - the same
- * Owner/PrimaryManager gate as issuance (see IssueOrganizationJoinKeyUseCase/
- * IssueProductionJoinKeyUseCase). Disabling never retroactively removes
- * any Membership/Participant already created through this key (JoinKey.md's
+ * gate as issuance and listing: Organization Owner for an Organization key,
+ * ProductionAuthorizationService::canManageJoinKeys() (PrimaryManager or the
+ * Production's 公演代理人) for a Production key (see
+ * IssueOrganizationJoinKeyUseCase/IssueProductionJoinKeyUseCase). Disabling
+ * never retroactively removes any Membership/Participant already created
+ * through this key (JoinKey.md's
  * "Join Keyの無効化は既存のMembership/Participantを遡及的に削除しない"). */
 final class DisableJoinKeyUseCase
 {
@@ -72,8 +75,8 @@ final class DisableJoinKeyUseCase
         $person = $this->productionAuthorization->resolveCurrentPerson($wordPressUserId);
         $production = $person ? $this->productions->findById(ProductionId::fromString($productionId)) : null;
 
-        if (! $person || ! $production || ! $this->productionAuthorization->canManageProduction($person, $production)) {
-            throw new JoinKeyAccessDeniedException('Only the PrimaryManager can disable this Join Key.');
+        if (! $person || ! $production || ! $this->productionAuthorization->canManageJoinKeys($person, $production)) {
+            throw new JoinKeyAccessDeniedException('Only the PrimaryManager or the Production proxy manager can disable this Join Key.');
         }
     }
 }

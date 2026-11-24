@@ -106,7 +106,7 @@ final class ExpenseUseCaseTest extends TestCase
         $this->createExpense = new CreateExpenseUseCase($this->expenses, $productionContext, $membershipContract, $identity, $lineFactory, $transactions);
         $this->getExpense = new GetExpenseUseCase($this->expenses, $identity, $membershipContract, $authorizationContract);
         $this->listExpenses = new ListExpensesUseCase($this->expenses, $productionContext, $membershipContract, $identity, $authorizationContract);
-        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions);
+        $this->updateExpense = new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions, $authorizationContract);
         $this->confirmExpense = new ConfirmExpenseUseCase($this->expenses, $identity, $authorizationContract);
     }
 

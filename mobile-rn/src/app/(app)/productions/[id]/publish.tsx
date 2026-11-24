@@ -9,6 +9,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { ThemedText } from '@/components/themed-text';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
+import { canManageProductionOperations } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 import { useProductionOrganization } from '@/features/production/useProductionOrganization';
 import { getErrorMessage } from '@/utils/errorMessage';
@@ -61,7 +62,8 @@ export default function ProductionPublishScreen() {
 
   const production = productionQuery.data;
   const { organization, isLoading: organizationLoading } = useProductionOrganization(production);
-  const isPrimaryManager = !!production?.is_primary_manager;
+  // PrimaryManager or 公演代理人 (the API checks the same thing).
+  const canPublish = canManageProductionOperations(production);
   const published = !!production?.published_at;
   // Canonical root-level public URL - see
   // [organizationSlug]/[productionSlug].tsx's own docblock (`/o/{slug}/{slug}`
@@ -86,7 +88,7 @@ export default function ProductionPublishScreen() {
       await queryClient.invalidateQueries({ queryKey: ['productions'] });
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 403) {
-        setErrorMessage('この公演を公開する権限がありません（PrimaryManagerのみ操作できます）。');
+        setErrorMessage('この公演を公開する権限がありません（PrimaryManagerまたは公演代理人のみ操作できます）。');
       } else {
         setErrorMessage(getErrorMessage(error));
       }
@@ -111,10 +113,10 @@ export default function ProductionPublishScreen() {
     );
   }
 
-  if (!isPrimaryManager) {
+  if (!canPublish) {
     return (
       <>
-        <ThemedText testID="production-publish-forbidden">公開設定はPrimaryManagerのみ操作できます。</ThemedText>
+        <ThemedText testID="production-publish-forbidden">公開設定はPrimaryManagerまたは公演代理人のみ操作できます。</ThemedText>
       </>
     );
   }

@@ -15,6 +15,7 @@ import {
   useResendParticipantInvitation,
 } from '@/features/participantInvitation/useParticipantInvitation';
 import { updateProduction } from '@/features/production/api';
+import { canManageParticipants, canManageProductionDelegates } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -92,20 +93,18 @@ export default function ProductionParticipantsScreen() {
   const participantsQuery = useParticipants(id);
   const updateParticipant = useUpdateParticipant(id);
   const production = productionQuery.data;
-  const isPrimaryManager = !!production?.is_primary_manager;
   /**
    * 代理人 (PROXY manager): a member holding BOTH PARTICIPANT_MANAGER and
    * REHEARSAL_MANAGER simultaneously - mirrors
-   * ProductionAuthorizationService::isProxyManager() Backend-side. This is
+   * ProductionAuthorizationService::isProxyManager() Backend-side
+   * (features/production/permissions.ts). The PrimaryManager or the 代理人
+   * assigns 代理人/会計担当/受付担当; 会計担当 never does. This is
    * deliberately a DIFFERENT (broader) check than `canManage` below: opening
    * this screen only requires PARTICIPANT_MANAGER alone, while setting
    * delegate roles (canManageDelegateRoles) requires the full 代理人 bundle -
    * per the instruction's explicit "別のAuthorization" framing.
    */
-  const isProxyManager =
-    !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER') &&
-    !!production?.delegate_roles?.includes('REHEARSAL_MANAGER');
-  const canManageDelegateRoles = isPrimaryManager || isProxyManager;
+  const canManageDelegateRoles = canManageProductionDelegates(production);
   const delegatesQuery = useQuery({
     queryKey: ['production-delegates', id],
     queryFn: () => fetchProductionDelegates(apiClient, id as string),
@@ -121,7 +120,7 @@ export default function ProductionParticipantsScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
   });
 
-  const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
+  const canManage = canManageParticipants(production);
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
   const invitationsQuery = useParticipantInvitations(id, canManage);

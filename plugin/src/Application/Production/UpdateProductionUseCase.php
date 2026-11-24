@@ -22,9 +22,16 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionSlug;
 
 /**
- * Basic-info updates (Name only) are PrimaryManager-exclusive (see
- * ProductionAuthorizationService::canManageProduction) - no enumerated
- * ProductionDelegate Role grants Production.Update in this phase.
+ * PR #8 統合 (2026-11-24): the PrimaryManager or the Production's 公演代理人
+ * (ProductionAuthorizationService::canActAsProductionManager()) - 会計担当,
+ * 稽古担当, 参加者担当 and 受付担当 alone are refused (403). What this Use
+ * Case can change is exactly what the 公演代理人 is allowed to change:
+ * 公演名・肩書, Slug, 公開状態 (公開日時), the public-page items (紹介文,
+ * フライヤー, 会場, 日程, 作・演出, それぞれの公開日時, メンバー情報の公開日時),
+ * 定員 (cascaded to the Performances), 公演回の共通設定 (備考) and 上演時間.
+ * Lifecycle Status (refused with 422 by the controller) and the
+ * PrimaryManager (ChangePrimaryManagerUseCase, PrimaryManager-only) are not
+ * reachable here. Formerly PrimaryManager-exclusive (canManageProduction()).
  *
  * Phase 6.1: no longer touches Status. See UpdateProductionCommand's
  * docblock - Status changes go through the dedicated Lifecycle Action
@@ -90,8 +97,8 @@ final class UpdateProductionUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
+        if (! $this->authorization->canActAsProductionManager($person, $production)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can update this Production.');
         }
 
         // PR #7 review (R5): the form is applied to the Production as re-read
@@ -111,8 +118,8 @@ final class UpdateProductionUseCase
                 throw new ProductionNotFoundException($command->productionId);
             }
 
-            if (! $this->authorization->canManageProduction($person, $production)) {
-                throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
+            if (! $this->authorization->canActAsProductionManager($person, $production)) {
+                throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can update this Production.');
             }
 
             // PR #7 R14-A (N1): a field the request did not send keeps its
@@ -245,7 +252,7 @@ final class UpdateProductionUseCase
 
         return ProductionResult::fromDomain(
             $production,
-            true,
+            $this->authorization->isPrimaryManager($person, $production),
             $this->authorization->activeDelegateFor($person, $production),
             $this->authorization->activeDelegatesFor($person, $production),
             $this->authorization->canCompleteProduction($person, $production)

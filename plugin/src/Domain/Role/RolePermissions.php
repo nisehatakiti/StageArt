@@ -132,10 +132,14 @@ final class RolePermissions
         RoleKey::ACCOUNTING_MANAGER => [
             'Accounting.Update',
             'Settlement.Manage',
-            // 経費承認・決算確定 (統合・会計仕様の確定事項 2026-10-28 §2) -
-            // also held by a 代理人, see ProductionAuthorizationService.
+            // 経費承認・予算実績の確定 - also held by a 代理人, see
+            // ProductionAuthorizationService::PROXY_MANAGER_CAPABILITIES.
             'Expense.Approve',
-            'Production.Complete',
+            // 予算の確定 (PR #8 統合, 2026-11-24) - formerly PrimaryManager-only.
+            'Budget.Activate',
+            // 'Production.Complete' (公演の完了) is deliberately absent:
+            // completion is PrimaryManager-only (PR #8 統合, 2026-11-24,
+            // superseding 統合・会計仕様の確定事項 2026-10-28 §2).
         ],
     ];
 

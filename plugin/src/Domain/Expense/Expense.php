@@ -239,6 +239,14 @@ final class Expense
      * new submission revision, so an approval always refers to the
      * content and requested amount current at approval time.
      *
+     * ExpenseApprovalWorkflow.md Version 1.12 (PR #8 統合): the editor may be
+     * an accounting holder other than the applicant. An edit never changes
+     * who applied: `submitted_by` keeps the revision's submitter (the
+     * applicant), and the editor is recorded as the actor of the new
+     * revision's SUBMITTED history entry (and as `updated_by`). That actor
+     * is also barred from approving or rejecting the revision
+     * (isOwnExpense()).
+     *
      * @param ExpenseLine[] $lines
      */
     public function replaceLines(array $lines, PersonId $updatedBy): void
@@ -253,7 +261,7 @@ final class Expense
         $this->touch($updatedBy);
 
         if ($this->status->is(ExpenseStatus::SUBMITTED)) {
-            $this->startSubmissionRevision($updatedBy);
+            $this->startSubmissionRevision($this->submittedBy ?? $this->createdBy, $updatedBy);
         }
     }
 
@@ -390,13 +398,39 @@ final class Expense
 
     /**
      * True when `$person` submitted, created, or is to be reimbursed for
-     * this Expense - the people who may neither approve nor reject it.
+     * this Expense - the people who may neither approve nor reject it -
+     * or wrote the content of the current submission revision (Version
+     * 1.12: an accounting holder who edited someone else's SUBMITTED
+     * Expense may not then decide on that revision). Before Version 1.12
+     * the revision's author was always the submitter, so this adds no one
+     * in the applicant-only flow.
      */
     public function isOwnExpense(PersonId $person): bool
     {
+        $author = $this->currentRevisionAuthor();
+
         return $this->createdBy->equals($person)
             || ($this->submittedBy !== null && $this->submittedBy->equals($person))
-            || ($this->payerPersonId !== null && $this->payerPersonId->equals($person));
+            || ($this->payerPersonId !== null && $this->payerPersonId->equals($person))
+            || ($author !== null && $author->equals($person));
+    }
+
+    /**
+     * The actor of the current revision's SUBMITTED history entry - the
+     * submitter, or whoever edited a SUBMITTED Expense into this revision.
+     * Null when the Expense was never submitted.
+     */
+    public function currentRevisionAuthor(): ?PersonId
+    {
+        $author = null;
+
+        foreach ($this->reviews as $review) {
+            if ($review->revision() === $this->revision && $review->action() === ExpenseReview::SUBMITTED) {
+                $author = $review->actor();
+            }
+        }
+
+        return $author;
     }
 
     /**
@@ -413,8 +447,14 @@ final class Expense
         }
     }
 
-    private function startSubmissionRevision(PersonId $submittedBy): void
+    /**
+     * `$actor` is who produced this revision - the submitter themselves,
+     * or (Version 1.12) an accounting holder editing a SUBMITTED Expense
+     * on the submitter's behalf. Defaults to the submitter.
+     */
+    private function startSubmissionRevision(PersonId $submittedBy, ?PersonId $actor = null): void
     {
+        $actor = $actor ?? $submittedBy;
         $this->revision++;
         $this->submittedBy = $submittedBy;
         $this->submittedAt = new DateTimeImmutable();
@@ -422,8 +462,8 @@ final class Expense
         $this->rejectedBy = null;
         $this->rejectedAt = null;
         $this->rejectionReason = null;
-        $this->record(ExpenseReview::SUBMITTED, $this->requestedAmount, null, null, $submittedBy);
-        $this->touch($submittedBy);
+        $this->record(ExpenseReview::SUBMITTED, $this->requestedAmount, null, null, $actor);
+        $this->touch($actor);
     }
 
     private function record(string $action, ?int $requestedAmount, ?int $approvedAmount, ?string $reason, PersonId $actor): void

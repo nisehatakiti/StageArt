@@ -306,48 +306,65 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     }
 
     /**
-     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 決算確定 is open to a
-     * 代理人 and a 会計管理者 as well, under the same settlement guard;
-     * other delegates are still refused.
+     * PR #8 統合 (2026-11-24), superseding 統合・会計仕様の確定事項
+     * 2026-10-28 §2: 公演の完了 is the PrimaryManager's alone. A 公演代理人, a
+     * 会計担当, one holding both and a 受付担当 are all refused (403) and the
+     * Production stays ACTIVE; the PrimaryManager then completes it.
      */
-    public function test_a_proxy_manager_or_accounting_manager_can_complete_but_other_delegates_cannot(): void
+    public function test_only_the_primary_manager_completes_the_production(): void
     {
         [$production] = $this->givenProduction(1);
-        $this->activate->execute(new ActivateProductionCommand($production->id()->toString(), 1));
+        $id = $production->id()->toString();
+        $this->activate->execute(new ActivateProductionCommand($id, 1));
 
         $this->givenDelegate($production, 7, [RoleKey::checkInManager()]);
         $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegate($production, 9, [RoleKey::accountingManager()]);
+        $this->givenDelegate($production, 10, [RoleKey::participantManager(), RoleKey::rehearsalManager(), RoleKey::accountingManager()]);
 
-        try {
-            $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 7));
-            $this->fail('A CHECKIN_MANAGER must not complete the Production.');
-        } catch (ProductionAccessDeniedException $exception) {
-            $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+        foreach ([7 => '受付担当', 8 => '公演代理人', 9 => '会計担当', 10 => '公演代理人＋会計担当'] as $user => $label) {
+            try {
+                $this->complete->execute(new CompleteProductionCommand($id, $user));
+                $this->fail("{$label} must not complete the Production.");
+            } catch (ProductionAccessDeniedException $exception) {
+                $this->assertSame('Only the PrimaryManager can complete this Production.', $exception->getMessage());
+                $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString(), $label);
+            }
         }
 
-        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8))->status);
-
-        [$other] = $this->givenProduction(11);
-        $this->activate->execute(new ActivateProductionCommand($other->id()->toString(), 11));
-        $this->givenDelegate($other, 12, [RoleKey::accountingManager()]);
-
-        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($other->id()->toString(), 12))->status);
+        $this->assertSame('COMPLETED', $this->complete->execute(new CompleteProductionCommand($id, 1))->status);
     }
 
-    public function test_the_settlement_guard_also_applies_to_a_proxy_manager(): void
+    /**
+     * A 公演代理人 or 会計担当 is refused before the settlement guard is even
+     * reached (403, not a settlement error); the guard still stops the
+     * PrimaryManager while a Ticket Back is unsettled
+     * (test_complete_is_blocked_while_a_member_has_an_unsettled_ticket_back_amount).
+     */
+    public function test_a_proxy_or_accounting_manager_is_refused_before_the_settlement_guard(): void
     {
         $production = $this->givenActiveProductionWithUnsettledTicketBack();
         $this->givenDelegate($production, 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
+        $this->givenDelegate($production, 9, [RoleKey::accountingManager()]);
+
+        foreach ([8, 9] as $user) {
+            try {
+                $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), $user));
+                $this->fail("User {$user} must not complete the Production.");
+            } catch (ProductionAccessDeniedException $exception) {
+                $this->assertSame('ACTIVE', $this->productions->findById($production->id())->status()->toString());
+            }
+        }
 
         $this->expectException(ProductionSettlementIncompleteException::class);
-        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 8));
+        $this->complete->execute(new CompleteProductionCommand($production->id()->toString(), 1));
     }
 
     /**
      * can_complete in the Production response follows the same right
-     * CompleteProductionUseCase checks - PrimaryManager, 会計管理者 and an
-     * active 代理人, nobody else - and is true only while the Production
-     * is ACTIVE. The other lifecycle actions stay PrimaryManager-only.
+     * CompleteProductionUseCase checks - the PrimaryManager only (PR #8
+     * 統合) - and is true only while the Production is ACTIVE. The other
+     * lifecycle actions stay PrimaryManager-only.
      */
     public function test_can_complete_follows_the_completion_right_and_the_active_status(): void
     {
@@ -362,7 +379,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
 
         $this->activate->execute(new ActivateProductionCommand($id, 1));
 
-        foreach ([1 => true, 8 => true, 9 => true, 7 => false, 10 => false] as $user => $expected) {
+        foreach ([1 => true, 8 => false, 9 => false, 7 => false, 10 => false] as $user => $expected) {
             $result = $this->get->execute(new GetProductionQuery($id, $user));
             $this->assertSame($expected, $result->canComplete, "can_complete for user {$user}");
             $this->assertSame($expected, $result->toArray()['can_complete']);
@@ -381,11 +398,12 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $this->delegates->save($proxyRoles[1]);
         $this->assertFalse($this->get->execute(new GetProductionQuery($id, 8))->canComplete, 'A proxy with a deactivated Role is no longer a proxy.');
 
-        $completed = $this->complete->execute(new CompleteProductionCommand($id, 9));
+        $completed = $this->complete->execute(new CompleteProductionCommand($id, 1));
         $this->assertSame('COMPLETED', $completed->status);
-        $this->assertFalse($completed->isPrimaryManager, 'The accounting manager who completed it is not the PrimaryManager.');
+        $this->assertTrue($completed->isPrimaryManager);
         $this->assertFalse($completed->canComplete);
         $this->assertFalse($this->get->execute(new GetProductionQuery($id, 1))->canComplete);
+        $this->assertFalse($this->get->execute(new GetProductionQuery($id, 9))->canComplete);
     }
 
     /**

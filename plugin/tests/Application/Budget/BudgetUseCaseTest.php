@@ -242,18 +242,56 @@ final class BudgetUseCaseTest extends TestCase
         $this->getBudget->execute(new GetBudgetQuery($budget->id, 3));
     }
 
-    // --- PR #7 review item 8: Budget確定 is the PrimaryManager's alone ------
+    // --- 予算の確定: PrimaryManager, 会計担当, 公演代理人 (PR #8 統合) ----------
 
     /**
-     * ProductionDelegatePolicy.md: a ProductionDelegate may enter accounting
-     * data, Budgets included, but "ProductionDelegateはBudget確定および決算完了の
-     * 確定権限を持たない".
+     * PR #8 統合 (2026-11-24): 予算の確定 (Budget.Activate) is open to the
+     * 会計担当 and the 公演代理人 as well as the PrimaryManager. (Until then
+     * it was the PrimaryManager's alone - PR #7 review item 8.)
+     *
+     * @dataProvider delegatesWhoMayActivate
+     *
+     * @param string[] $roles
+     */
+    public function test_an_accounting_holder_activates_a_budget(array $roles): void
+    {
+        [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
+        $accountId = $this->createExpenseAccount($organization);
+        $delegate = Person::create(7);
+        $this->people->save($delegate);
+        foreach ($roles as $role) {
+            $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $delegate->id(), RoleKey::fromString($role), $manager->id()));
+        }
+        $budget = $this->createBudget->execute(new CreateBudgetCommand(1, $production->id()->toString(), 'A案', [
+            ['account_id' => $accountId, 'amount' => 200000],
+        ]));
+
+        $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 7));
+
+        $this->assertSame('ACTIVE', $this->getBudget->execute(new GetBudgetQuery($budget->id, 1))->status);
+    }
+
+    /**
+     * @return array<string, array{string[]}>
+     */
+    public static function delegatesWhoMayActivate(): array
+    {
+        return [
+            '会計管理者 (ACCOUNTING_MANAGER)' => [['ACCOUNTING_MANAGER']],
+            '代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER)' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER']],
+            '代理人 and 会計管理者 together' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER', 'ACCOUNTING_MANAGER']],
+        ];
+    }
+
+    /**
+     * Every other 担当 is still refused - 稽古担当, 参加者担当 alone, 受付担当,
+     * チケット担当 - and the Budget stays DRAFT.
      *
      * @dataProvider delegatesWhoMayNotActivate
      *
      * @param string[] $roles
      */
-    public function test_a_delegate_cannot_activate_a_budget(array $roles): void
+    public function test_a_delegate_without_accounting_rights_cannot_activate_a_budget(array $roles): void
     {
         [$organization, $production, $manager] = $this->givenProductionWithPrimaryManagerAndMember();
         $accountId = $this->createExpenseAccount($organization);
@@ -268,7 +306,7 @@ final class BudgetUseCaseTest extends TestCase
 
         try {
             $this->activateBudget->execute(new ActivateBudgetCommand($budget->id, 7));
-            $this->fail('A ProductionDelegate activated a Budget');
+            $this->fail('A ProductionDelegate without accounting rights activated a Budget');
         } catch (BudgetAccessDeniedException $exception) {
             $this->assertSame('DRAFT', $this->getBudget->execute(new GetBudgetQuery($budget->id, 1))->status);
         }
@@ -280,9 +318,10 @@ final class BudgetUseCaseTest extends TestCase
     public static function delegatesWhoMayNotActivate(): array
     {
         return [
-            '会計管理者 (ACCOUNTING_MANAGER)' => [['ACCOUNTING_MANAGER']],
-            '代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER)' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER']],
-            '代理人 and 会計管理者 together' => [['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER', 'ACCOUNTING_MANAGER']],
+            '稽古担当 (REHEARSAL_MANAGER only)' => [['REHEARSAL_MANAGER']],
+            '参加者担当 (PARTICIPANT_MANAGER only)' => [['PARTICIPANT_MANAGER']],
+            '受付担当 (CHECKIN_MANAGER)' => [['CHECKIN_MANAGER']],
+            'チケット担当 (TICKET_MANAGER)' => [['TICKET_MANAGER']],
         ];
     }
 

@@ -8,12 +8,12 @@ namespace StageArt\Application\Production;
  * Production Lifecycle Capability requested through
  * `ProductionAuthorizationService::hasProductionCapability()`.
  *
- * `Production.Complete` (ACTIVE -> COMPLETED, 決算確定) is granted to the
- * PrimaryManager, a 会計管理者 (RoleKey::ACCOUNTING_MANAGER via
- * `RolePermissions::MAP`) and a 代理人 (PARTICIPANT_MANAGER +
- * REHEARSAL_MANAGER, see `ProductionAuthorizationService`) - the same
- * holders as `AccountingCapability::APPROVE_EXPENSE` (StageArt 統合・会計
- * 仕様の確定事項 2026-10-28 §2).
+ * `Production.Complete` (ACTIVE -> COMPLETED, 公演の完了) is granted to no
+ * Role and to no 代理人 rule (PR #8 統合, 2026-11-24): completion is
+ * PrimaryManager-only, and `ProductionAuthorizationService::
+ * canCompleteProduction()` checks the PrimaryManager directly. Until then
+ * 会計管理者 and 代理人 held it too (統合・会計仕様の確定事項 2026-10-28 §2).
+ * The constant stays as the Capability name for this transition.
  */
 final class ProductionCapability
 {
