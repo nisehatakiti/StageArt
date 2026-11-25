@@ -176,7 +176,7 @@ Production決算の確定は、チケットバック未払い金を個人ごと�
 
 Productionの決算確定（公演の完了、ACTIVE → COMPLETED）を実行できるのは、Primary Managerのみとする（Version 1.5、2026-11-24確定、PR #8 統合）。
 
-決算確定に至るまでの会計業務 ― 予算策定・編集、予算の確定、経費入力・編集、経費承認、予算実績の確定、メンバー精算等の決算・精算の最終確定 ― は、次の者が実行できる。
+決算確定に至るまでの会計業務 ― 予算策定・編集、予算の確定、経費入力・編集（自分が申請者の経費に限る。他人の経費は編集できない。ExpenseApprovalWorkflow.md）、経費承認、予算実績の確定、メンバー精算等の決算・精算の最終確定 ― は、次の者が実行できる。
 
 - Primary Manager
 - 会計管理者（ACCOUNTING_MANAGERを持つ有効なProduction Delegate）

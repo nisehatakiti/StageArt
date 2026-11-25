@@ -45,12 +45,12 @@ use StageArt\Domain\Role\RolePermissions;
  * with Organization Scope's Membership, replacing the Phase 1/2
  * ProductionDelegateRole placeholder). Production.Read is granted to any
  * ACTIVE delegate regardless of Role as a baseline (a delegate must be
- * able to see the Production they are delegated on); Production.Update/
- * Publish/Archive and ProductionDelegate management are PrimaryManager-
- * exclusive, since no enumerated Role's Permission Set includes them and
- * ProductionDelegate.md's own "Create" section says delegates are
- * "通常はPrimaryManagerが作成する". Both of these are disclosed
- * implementation judgments, not Blueprint-mandated splits.
+ * able to see the Production they are delegated on). Production.Update/
+ * Publish (公演情報・公開ページ・公開切替・Slug) and the assignment of
+ * 代理人 / 会計担当 / 受付担当 are open to the PrimaryManager and the 公演代理人
+ * (canActAsProductionManager(), canManageProductionDelegateRole() - PR #8
+ * 統合, see below); Lifecycle transitions, Archive, completion and the
+ * other Roles' assignment stay PrimaryManager-exclusive.
  *
  * Phase 2 adds isProductionMember(). Rehearsal Read and ScheduleComment
  * access are not PrimaryManager/Delegate-only - Rehearsal.md's
@@ -229,8 +229,9 @@ final class ProductionAuthorizationService
      * set 会計担当 (ACCOUNTING_MANAGER) holds through `RolePermissions::MAP`
      * (PR #8 統合, 2026-11-24):
      *
-     * - `Accounting.Update`: 予算策定・編集, 経費入力・編集 (others'
-     *   Expenses too), 実績・仕訳
+     * - `Accounting.Update`: 予算策定・編集, 実績・仕訳 (it does not let
+     *   anyone edit someone else's Expense - UpdateExpenseUseCase: the
+     *   applicant only)
      * - `Budget.Activate`: 予算の確定
      * - `Expense.Approve`: 経費承認 / 予算実績の確定
      * - `Settlement.Manage`: 決算・精算の最終確定

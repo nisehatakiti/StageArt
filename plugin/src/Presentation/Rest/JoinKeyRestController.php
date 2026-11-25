@@ -122,8 +122,14 @@ final class JoinKeyRestController
      */
     public function issueForOrganization(WP_REST_Request $request)
     {
+        $organizationId = (string) $request->get_param('id');
+
+        if (! Uuid::isValid($organizationId)) {
+            return $this->invalidTargetId();
+        }
+
         try {
-            $command = new IssueOrganizationJoinKeyCommand(get_current_user_id(), (string) $request->get_param('id'));
+            $command = new IssueOrganizationJoinKeyCommand(get_current_user_id(), $organizationId);
 
             return new WP_REST_Response($this->issueOrganizationJoinKey->execute($command)->toArray(), 201);
         } catch (OrganizationAccessDeniedException $exception) {
@@ -163,8 +169,14 @@ final class JoinKeyRestController
      */
     public function issueForProduction(WP_REST_Request $request)
     {
+        $productionId = (string) $request->get_param('id');
+
+        if (! Uuid::isValid($productionId)) {
+            return $this->invalidTargetId();
+        }
+
         try {
-            $command = new IssueProductionJoinKeyCommand(get_current_user_id(), (string) $request->get_param('id'));
+            $command = new IssueProductionJoinKeyCommand(get_current_user_id(), $productionId);
 
             return new WP_REST_Response($this->issueProductionJoinKey->execute($command)->toArray(), 201);
         } catch (ProductionAccessDeniedException $exception) {
@@ -199,11 +211,19 @@ final class JoinKeyRestController
         }
     }
 
-    /** The list routes' {id} must be a UUID; anything else is answered 422
-     * before any lookup, the same way other controllers map an invalid id. */
+    /** The list and issue routes' {id} (an Organization or Production) must
+     * be a UUID; anything else is answered 422 before any lookup, the same
+     * way other controllers map an invalid id. */
     private function invalidTargetId(): WP_Error
     {
         return new WP_Error('stageart_join_key_target_invalid', 'The target id is not a valid UUID.', ['status' => 422]);
+    }
+
+    /** The disable route's {id} (a Join Key) must be a UUID; anything else is
+     * answered 422 before any lookup. */
+    private function invalidJoinKeyId(): WP_Error
+    {
+        return new WP_Error('stageart_join_key_id_invalid', 'The Join Key id is not a valid UUID.', ['status' => 422]);
     }
 
     /**
@@ -225,8 +245,14 @@ final class JoinKeyRestController
      */
     public function disable(WP_REST_Request $request)
     {
+        $joinKeyId = (string) $request->get_param('id');
+
+        if (! Uuid::isValid($joinKeyId)) {
+            return $this->invalidJoinKeyId();
+        }
+
         try {
-            $command = new DisableJoinKeyCommand(get_current_user_id(), (string) $request->get_param('id'));
+            $command = new DisableJoinKeyCommand(get_current_user_id(), $joinKeyId);
 
             return new WP_REST_Response($this->disableJoinKey->execute($command)->toArray(), 200);
         } catch (JoinKeyAccessDeniedException $exception) {

@@ -15,7 +15,8 @@ namespace StageArt\Application\Accounting;
  * canForProduction()`.
  *
  * PR #8 統合 (2026-11-24): every Capability here - `Accounting.Update`
- * (予算策定・編集, 経費入力・編集 including others' Expenses, 実績・仕訳),
+ * (予算策定・編集, 実績・仕訳 - not editing someone else's Expense, which
+ * stays the applicant's alone: UpdateExpenseUseCase),
  * `Expense.Approve` (経費承認, 予算実績の確定) and `Budget.Activate` (予算の
  * 確定) - is held by the same three: the PrimaryManager
  * (`canForProduction()`'s own PrimaryManager-always-succeeds rule), a

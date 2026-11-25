@@ -68,9 +68,8 @@ use StageArt\Tests\Support\RollbackingTransactionManager;
  *
  * WordPress user 1 is the PrimaryManager (an approver), 2 the applicant.
  *
- * Also PUT /expenses/{id} (ExpenseApprovalWorkflow.md Version 1.12): the
- * applicant or an accounting holder (here the PrimaryManager) edits the
- * Expense - anyone else gets 403 (see ExpenseWorkflowUseCaseTest) - and a
+ * Also PATCH /expenses/{id} (Version 1.11): only the applicant edits the
+ * Expense - anyone else, the PrimaryManager included, gets 403 - and a
  * POSTED Expense is not edited even by the applicant (409).
  *
  * PR #6 review N5 / N6: an id that is not a UUID, and lines or a reason that
@@ -121,7 +120,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
 
         $this->controller = new ExpenseRestController(
             $createExpense,
-            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions, $authorization),
+            new UpdateExpenseUseCase($this->expenses, $productionContext, $identity, $lineFactory, $transactions),
             new ConfirmExpenseUseCase($this->expenses, $identity, $authorization),
             new GetExpenseUseCase($this->expenses, $identity, $membership, $authorization),
             new ListExpensesUseCase($this->expenses, $productionContext, $membership, $identity, $authorization),
@@ -376,7 +375,7 @@ final class ExpenseRestControllerApproveTest extends TestCase
         ];
     }
 
-    // --- edit: the applicant or an accounting holder (Version 1.12) -------
+    // --- edit: the applicant only (Version 1.11) ---------------------------
 
     /**
      * @return \WP_REST_Response|\WP_Error
@@ -391,25 +390,17 @@ final class ExpenseRestControllerApproveTest extends TestCase
         ]));
     }
 
-    /**
-     * ExpenseApprovalWorkflow.md Version 1.12 (PR #8 統合): the PrimaryManager
-     * (an accounting holder) edits the applicant's SUBMITTED Expense through
-     * the API - a new revision, as the applicant's own edit. A requester with
-     * no accounting right is still refused (403); see
-     * ExpenseWorkflowUseCaseTest.
-     */
-    public function test_the_primary_manager_edits_the_applicants_expense_as_a_new_revision(): void
+    public function test_the_primary_manager_cannot_edit_the_applicants_expense(): void
     {
         $before = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
         $revision = $before->revision();
 
         $response = $this->update(1, 4800);
 
-        $this->assertInstanceOf(\WP_REST_Response::class, $response);
-        $this->assertSame(200, $response->get_status());
+        $this->assertInstanceOf(\WP_Error::class, $response);
+        $this->assertSame(['status' => 403], $response->get_error_data(), $response->get_error_message());
         $after = $this->expenses->findById(ExpenseId::fromString($this->expenseId));
-        $this->assertSame([ExpenseStatus::SUBMITTED, $revision + 1, 4800], [$after->status()->toString(), $after->revision(), $after->totalAmount()]);
-        $this->assertTrue($after->createdBy()->equals($before->createdBy()), 'The applicant stays the creator.');
+        $this->assertSame([ExpenseStatus::SUBMITTED, $revision, 5000], [$after->status()->toString(), $after->revision(), $after->totalAmount()]);
     }
 
     public function test_the_applicant_edits_their_submitted_expense_as_a_new_revision(): void

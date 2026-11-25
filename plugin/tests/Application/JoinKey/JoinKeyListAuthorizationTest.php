@@ -227,11 +227,32 @@ final class JoinKeyListAuthorizationTest extends TestCase
         $this->listOrganization(1, $this->o2->id()->toString());
     }
 
-    public function test_unknown_organization_is_refused_without_revealing_it_does_not_exist(): void
+    /**
+     * Existence first, then the Role - the same order as for Production
+     * Join Keys: an unknown Organization is 404 (not found) for anyone, for
+     * listing and issuing alike; an existing one the caller does not own is
+     * 403.
+     */
+    public function test_unknown_organization_is_not_found_for_listing_and_issuing(): void
     {
-        $this->expectException(OrganizationAccessDeniedException::class);
+        foreach ([1, 2, 4, 30] as $user) {
+            try {
+                $this->listOrganization($user, OrganizationId::generate()->toString());
+                $this->fail("user {$user}: listing an unknown Organization must be not found");
+            } catch (OrganizationNotFoundException $exception) {
+                $this->addToAssertionCount(1);
+            }
 
-        $this->listOrganization(1, OrganizationId::generate()->toString());
+            try {
+                $this->issueOrganization($user, OrganizationId::generate()->toString());
+                $this->fail("user {$user}: issuing for an unknown Organization must be not found");
+            } catch (OrganizationNotFoundException $exception) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->expectException(OrganizationAccessDeniedException::class);
+        $this->issueOrganization(2, $this->o1->id()->toString());
     }
 
     public function test_unknown_organization_is_not_found_for_a_caller_holding_owner_on_that_id(): void

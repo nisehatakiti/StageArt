@@ -14,7 +14,9 @@ use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Role\RoleKey;
 
 /** JoinKey.md's "Issuer": only an Organization Owner may issue an
- * Organization Join Key. */
+ * Organization Join Key. An unknown Organization is answered 404 and an
+ * existing one the caller may not manage 403 (existence first, then the
+ * Role), the same order as for Production Join Keys. */
 final class IssueOrganizationJoinKeyUseCase
 {
     private OrganizationRepositoryInterface $organizations;
@@ -41,12 +43,12 @@ final class IssueOrganizationJoinKeyUseCase
 
         $organizationId = OrganizationId::fromString($command->organizationId);
 
-        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new OrganizationAccessDeniedException('Only an Organization Owner can issue a Join Key.');
-        }
-
         if (! $this->organizations->findById($organizationId)) {
             throw new OrganizationNotFoundException($command->organizationId);
+        }
+
+        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
+            throw new OrganizationAccessDeniedException('Only an Organization Owner can issue a Join Key.');
         }
 
         $joinKey = JoinKey::issueForOrganization($organizationId->toString(), $person->id());

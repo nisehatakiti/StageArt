@@ -65,9 +65,11 @@ namespace StageArt\Domain\Role;
  * instruction confirming a dedicated reception-staff Role) follows the
  * same generic path via `CheckInCapability::MANAGE` - reception staff
  * need Check-in/Reservation-search/walk-up capability but explicitly do
- * NOT need Settlement or Accounting-close authority, which stay
- * PrimaryManager/ACCOUNTING_MANAGER-only, so CHECKIN_MANAGER's own
- * Permission Set is scoped narrowly to `CheckIn.Manage` alone.
+ * NOT need Settlement or accounting authority, which belong to the
+ * PrimaryManager, ACCOUNTING_MANAGER and the 公演代理人 (PR #8 統合 - see
+ * ProductionAuthorizationService::PROXY_MANAGER_CAPABILITIES), so
+ * CHECKIN_MANAGER's own Permission Set is scoped narrowly to
+ * `CheckIn.Manage` alone.
  *
  * ACCOUNTING_MANAGER (担当者権限をメンバー管理へ統合・整理 instruction §会計担当
  * 仕様訂正): grants the Production's accounting処理全般 - Budget/Expense/

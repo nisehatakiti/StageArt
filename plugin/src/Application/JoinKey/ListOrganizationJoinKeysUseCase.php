@@ -15,9 +15,9 @@ use StageArt\Domain\Role\RoleKey;
 
 /** Listing an Organization's Join Keys reveals codes that work for
  * joining, so it needs the same gate as issuing/disabling one: an
- * Organization Owner (IssueOrganizationJoinKeyUseCase). The Role is
- * checked before the Organization's existence, as on issuance, so a
- * caller without the Role learns nothing about which ids exist. Only the
+ * Organization Owner (IssueOrganizationJoinKeyUseCase). As for Production
+ * Join Keys, an unknown Organization is answered 404 and an existing one
+ * the caller may not manage 403 (existence first, then the Role). Only the
  * authorized Organization's keys are read, every status included. */
 final class ListOrganizationJoinKeysUseCase
 {
@@ -48,12 +48,12 @@ final class ListOrganizationJoinKeysUseCase
 
         $organizationId = OrganizationId::fromString($query->organizationId);
 
-        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
-            throw new OrganizationAccessDeniedException('Only an Organization Owner can view Join Keys.');
-        }
-
         if (! $this->organizations->findById($organizationId)) {
             throw new OrganizationNotFoundException($query->organizationId);
+        }
+
+        if (! $this->authorization->hasRole($person, $organizationId, [RoleKey::OWNER])) {
+            throw new OrganizationAccessDeniedException('Only an Organization Owner can view Join Keys.');
         }
 
         return array_map(

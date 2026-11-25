@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Expense;
 
-use StageArt\Application\Accounting\AccountingCapability;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
-use StageArt\Core\Contract\AuthorizationContract;
 use StageArt\Core\Contract\IdentityContract;
 use StageArt\Core\Contract\ProductionContextContract;
 use StageArt\Domain\Expense\Expense;
@@ -16,12 +14,13 @@ use StageArt\Domain\Expense\ExpenseRepositoryInterface;
 use StageArt\Domain\Person\PersonId;
 
 /**
- * ExpenseApprovalWorkflow.md Version 1.12 (PR #8 統合, 2026-11-24): an
- * Expense is edited by its applicant - the Person who created it
- * (`created_by`) - or by a holder of `AccountingCapability::MANAGE` on the
- * Expense's own Production: the PrimaryManager, a 会計担当
- * (ACCOUNTING_MANAGER) or a 公演代理人. Anyone else is refused as access
- * denied (403). Version 1.11 had limited editing to the applicant alone.
+ * ExpenseApprovalWorkflow.md Version 1.11: an Expense is edited by its
+ * applicant only - the Person who created it (`created_by`) - whatever
+ * Role anyone else holds. The check compares the requester's Person ID
+ * with the Expense's; no Capability (`Accounting.Update`, the
+ * PrimaryManager, 会計管理者, 代理人 or any other) adds an exception, so
+ * this Use Case does not consult the AuthorizationContract at all. Anyone
+ * else is refused as access denied (403).
  *
  * Editable while DRAFT, SUBMITTED (before approval; each edit is a new
  * submission revision with its own requested amount) or REJECTED (before
@@ -41,22 +40,19 @@ final class UpdateExpenseUseCase
     private IdentityContract $identity;
     private ExpenseLineFactory $lineFactory;
     private TransactionManagerInterface $transactions;
-    private AuthorizationContract $authorization;
 
     public function __construct(
         ExpenseRepositoryInterface $expenses,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
         ExpenseLineFactory $lineFactory,
-        TransactionManagerInterface $transactions,
-        AuthorizationContract $authorization
+        TransactionManagerInterface $transactions
     ) {
         $this->expenses = $expenses;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->lineFactory = $lineFactory;
         $this->transactions = $transactions;
-        $this->authorization = $authorization;
     }
 
     public function execute(UpdateExpenseCommand $command): ExpenseResult
@@ -105,23 +101,14 @@ final class UpdateExpenseUseCase
     }
 
     /**
-     * The applicant, or an accounting holder (`Accounting.Update`) of the
-     * Expense's own Production (Version 1.12). Checked again under the row
-     * lock. The status rule (DRAFT / SUBMITTED / REJECTED only) is
-     * Expense::replaceLines()'s, the same for everyone.
+     * The applicant's Person ID against the requester's - in every status,
+     * with no Role exception (Version 1.11), so nobody can change an
+     * application they then approve or reject.
      */
     private function assertMayEdit(Expense $expense, PersonId $requesterId): void
     {
-        if ($expense->createdBy()->equals($requesterId)) {
-            return;
+        if (! $expense->createdBy()->equals($requesterId)) {
+            throw new ExpenseAccessDeniedException('Only the Expense\'s own applicant can update this Expense.');
         }
-
-        if ($this->authorization->canForProduction($requesterId, $expense->productionId(), AccountingCapability::MANAGE)) {
-            return;
-        }
-
-        throw new ExpenseAccessDeniedException(
-            'Only the Expense\'s own applicant, the PrimaryManager, an accounting manager or the Production proxy manager can update this Expense.'
-        );
     }
 }

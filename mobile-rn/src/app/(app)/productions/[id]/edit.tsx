@@ -32,11 +32,11 @@ import { isValidSlug } from '@/utils/slug';
  * bumps the publish timestamp.
  *
  * Ownership is enforced server-side (UpdateProductionUseCase via
- * ProductionAuthorizationService.canManageProduction(): PrimaryManager
- * only, no ProductionDelegate exception even for PARTICIPANT_MANAGER -
- * see that service's own docblock) - `is_primary_manager` (already on
- * every Production fetch) is read here only to skip straight to that
- * same message locally, not as this screen's own access decision.
+ * ProductionAuthorizationService.canActAsProductionManager(): the
+ * PrimaryManager or the 公演代理人 - not 稽古担当, 会計担当 or a
+ * PARTICIPANT_MANAGER-only delegate). canManageProductionOperations()
+ * (features/production/permissions.ts) is read here only to skip straight
+ * to that same message locally, not as this screen's own access decision.
  */
 export default function ProductionEditScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
