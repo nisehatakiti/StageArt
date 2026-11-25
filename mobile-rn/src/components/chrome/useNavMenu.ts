@@ -1,6 +1,7 @@
 import { usePathname, type Href } from 'expo-router';
 
 import { useOrganizations } from '@/features/organization/useOrganizations';
+import { canManageAccounting, canManageProductionOperations } from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 
 export type NavMenuItem = { key: string; label: string; href: Href; disabled?: boolean; groupLabel?: string };
@@ -134,8 +135,11 @@ function buildOrganizationContextItems(id: string, isOwner: boolean, accountingE
  * 会計 (ManagementNavigationPolicy.md "Production Context": 公演 > 会計 >
  * 予算 / 実績 / 経費承認 / 決算): the Production's own accounting, grouped
  * under one 会計 heading - 予算 opens the Budget list, 実績 the Production
- * Accounting Summary (予算・実績・差異). Usable by the PrimaryManager or an
- * ACCOUNTING_MANAGER only (Accounting.Update), the same rule as the API.
+ * Accounting Summary (予算・実績・差異). Usable by the PrimaryManager, the
+ * 公演代理人 or an ACCOUNTING_MANAGER (Accounting.Update), the same rule as
+ * the API (PR #8 統合, 2026-11-24). 公演情報 is for the PrimaryManager or the
+ * 公演代理人; 公演終了／精算処理 for the same three as 会計 (the 公演の完了
+ * button inside stays PrimaryManager-only).
  * 経費承認 and 決算 have no menu entry yet.
  */
 function buildProductionContextItems(
@@ -146,10 +150,11 @@ function buildProductionContextItems(
   canManageTickets: boolean,
   canManageCheckIn: boolean,
   canManageQuestionnaire: boolean,
-  canViewAccounting: boolean
+  canViewAccounting: boolean,
+  canManageProductionInfo: boolean
 ): NavMenuItem[] {
   return [
-    { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !isPrimaryManager },
+    { key: 'production-info', label: '公演情報', href: `/productions/${id}/edit` as Href, disabled: !canManageProductionInfo },
     { key: 'production-delegates', label: '担当者', href: `/productions/${id}/delegates` as Href, disabled: !isPrimaryManager },
     { key: 'production-members', label: 'メンバー管理', href: `/productions/${id}/participants` as Href, disabled: !canManageParticipants },
     { key: 'production-rehearsal', label: '予定管理', href: `/production/${id}/schedule/attendance` as Href },
@@ -169,7 +174,7 @@ function buildProductionContextItems(
       groupLabel: '小屋入り～本番',
     },
     { key: 'production-reception', label: '受付', href: `/productions/${id}/checkin` as Href, disabled: !canManageCheckIn },
-    { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !isPrimaryManager },
+    { key: 'production-settlement', label: '公演終了／精算処理', href: `/productions/${id}/settlement` as Href, disabled: !canViewAccounting },
     { key: 'production-questionnaire', label: 'アンケート', href: `/productions/${id}/questionnaire` as Href, disabled: !canManageQuestionnaire },
     {
       key: 'production-accounting-budget',
@@ -244,7 +249,8 @@ export function useNavMenu() {
     const canManageTickets = isPrimaryManager || delegateRoles.includes('TICKET_MANAGER');
     const canManageCheckIn = isPrimaryManager || delegateRoles.includes('CHECKIN_MANAGER');
     const canManageQuestionnaire = isPrimaryManager || delegateRoles.includes('QUESTIONNAIRE_MANAGER');
-    const canViewAccounting = isPrimaryManager || delegateRoles.includes('ACCOUNTING_MANAGER');
+    const canViewAccounting = canManageAccounting(production);
+    const canManageProductionInfo = canManageProductionOperations(production);
     return {
       fixedItems: FIXED_ITEMS,
       contextType: 'production' as const,
@@ -257,7 +263,8 @@ export function useNavMenu() {
         canManageTickets,
         canManageCheckIn,
         canManageQuestionnaire,
-        canViewAccounting
+        canViewAccounting,
+        canManageProductionInfo
       ),
       // See ORGANIZATION_BACK_TO's own docblock for why this is not yet
       // implemented for Production Context.

@@ -2,7 +2,7 @@
 
 # Domain Model : Expense Approval Workflow
 
-Version : 1.11
+Version : 1.12
 
 ---
 
@@ -31,6 +31,11 @@ Version 1.10の補足（2026-10-30）：旧形式移行・移行取消の運用�
 Version 1.11では、2026-10-30の指示に従い、Expenseを編集できる者を申請者本人に限った。判定はロール権限ではなく、Expenseの申請者（作成者）のPerson IDと操作者のPerson IDの一致で行う。Primary Manager・会計管理者・代理人等、`Accounting.Update`その他の管理権限を持つ者も、DRAFTを含め他人のExpenseを編集できない（Version 1.3の「DRAFTについては会計権限保持者も編集できる」を置き換える）。承認・差し戻しの権限は変更しない。
 
 Version 1.11の補足（2026-11-09、PR #6レビューN1・N2/F5・N5・N6/F6）：業務上の操作の仕様は変更せず、次を明記した。経費承認で作成する仕訳のJournal DateはExpenseの承認日時と同じ時点とし、仕訳日は日本時間（JST）の暦日とする（JournalEntry.md「Journal Date」Version 1.1）。確定後の通知の失敗は確定した操作を失敗にしない。ExpenseのIDがUUIDでない要求、および形式が不正な明細・差し戻し理由は入力エラー（422）とし、金額は整数に切り捨てない。
+
+Version 1.12では、2026-11-24確定事項（PR #8 統合）に従い、次のとおり改めた。Expenseの編集・申請・承認・差し戻しの規則（Version 1.11まで）は変更しない。
+
+- Production決算の確定（公演の完了、ACTIVE → COMPLETED）はPrimary Managerのみとした（Version 1.6の権限者を置き換える）。代理人・会計管理者は、経費承認と、メンバー精算等の決算・精算の最終確定までを行う。
+- 「Accounting Visibility」の表を、実装された会計権限（`Accounting.Update`・`Budget.Activate`・`Settlement.Manage`。Primary Manager・代理人・会計管理者が保持）に合わせて改めた。会計権限の保持は、他人のExpenseを編集する権限を含まない（編集は申請者本人のみ）。
 
 本Workflowは、一般Memberが日常的な小口支出を登録できるようにしつつ、承認前の申請を正式なAccounting Actualへ反映させないための最小限の業務フローを定義する。
 
@@ -69,16 +74,18 @@ Accountingの予算・実績は、一般Memberには公開しない。
 
 | 情報 | Primary Manager | Production Delegate | Member |
 |---|---:|---:|---:|
-| Budgetを見る | ○ | ○ | × |
-| Budgetを入力・変更 | ○ | ○ | × |
-| Actualを見る | ○ | ○ | × |
+| Budgetを見る（Version 1.12：`Accounting.Update`） | ○ | 代理人・ACCOUNTING_MANAGER | × |
+| Budgetを入力・変更・確定（Version 1.12：`Accounting.Update`・`Budget.Activate`） | ○ | 代理人・ACCOUNTING_MANAGER | × |
+| Actualを見る（Version 1.12：`Accounting.Update`） | ○ | 代理人・ACCOUNTING_MANAGER | × |
 | 小口立替Expenseを登録 | ○ | ○ | ○ |
 | Expense申請を承認・差し戻し（Version 1.6） | ○ | 代理人・ACCOUNTING_MANAGER | × |
-| 承認済みExpenseを支払済みにする（Version 1.4） | ○ | ACCOUNTING_MANAGERのみ | × |
-| Journal Entryを確定 | ○ | × | × |
-| Production決算を確定（Version 1.6） | ○ | 代理人・ACCOUNTING_MANAGER | × |
+| 承認済みExpenseを支払済みにする（Version 1.4。SETTLEDは未実装） | ○ | 代理人・ACCOUNTING_MANAGER（未実装。実装時の権限者。Version 1.12） | × |
+| Journal Entryを登録・確定（Version 1.12：`Accounting.Update`） | ○ | 代理人・ACCOUNTING_MANAGER | × |
+| 決算・精算の最終確定（メンバー精算。Version 1.12：`Settlement.Manage`） | ○ | 代理人・ACCOUNTING_MANAGER | × |
+| 公演の完了（Production決算の確定、ACTIVE → COMPLETED。Version 1.12） | ○ | × | × |
+| 他人のExpenseを編集 | × | × | × |
 
-Version 1.6（2026-10-28確定事項の反映）：Expense申請の承認・差し戻しとProduction決算の確定は、Primary Manager、代理人、会計管理者が実行できる。代理人はPARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持ち、その両方が有効（ACTIVE）なProduction Delegate、会計管理者は有効なACCOUNTING_MANAGERを持つProduction Delegateとする。それ以外のRoleのみを持つProduction Delegateは承認・差し戻し・決算確定できない。判定はBackendの権限 `Expense.Approve` / `Production.Complete` で行い、承認・差し戻しの通知先（承認可能者）にも同じ条件を用いる。承認・差し戻しを行う者は、当該Expenseの申請者・作成者・立替払いを受ける者のいずれでもあってはならない（本人による承認・差し戻しの禁止、「Approval」「Return for Correction」参照。差し戻しはVersion 1.7で追加）。この制約はPrimary Manager・代理人・会計管理者のいずれにも適用する。承認・差し戻しの権限は、承認のために当該ProductionのExpenseを閲覧することを含むが、Budgetの入力・変更、他者のExpenseの編集、支払済みにする操作等、他の会計権限を付与しない。
+Version 1.6（2026-10-28確定事項の反映。Production決算の確定（公演の完了）の権限者はVersion 1.12でPrimary Managerのみに改めた。下記の「Production決算の確定」は当時の規則）：Expense申請の承認・差し戻しとProduction決算の確定は、Primary Manager、代理人、会計管理者が実行できる。代理人はPARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持ち、その両方が有効（ACTIVE）なProduction Delegate、会計管理者は有効なACCOUNTING_MANAGERを持つProduction Delegateとする。それ以外のRoleのみを持つProduction Delegateは承認・差し戻し・決算確定できない。判定はBackendの権限 `Expense.Approve` / `Production.Complete` で行い、承認・差し戻しの通知先（承認可能者）にも同じ条件を用いる。承認・差し戻しを行う者は、当該Expenseの申請者・作成者・立替払いを受ける者のいずれでもあってはならない（本人による承認・差し戻しの禁止、「Approval」「Return for Correction」参照。差し戻しはVersion 1.7で追加）。この制約はPrimary Manager・代理人・会計管理者のいずれにも適用する。承認・差し戻しの権限は、承認のために当該ProductionのExpenseを閲覧することを含むが、Budgetの入力・変更、他者のExpenseの編集、支払済みにする操作等、他の会計権限を付与しない。
 
 「ACCOUNTING_MANAGERのみ」は、対象Productionで有効（ACTIVE）なACCOUNTING_MANAGERのRoleを持つProduction Delegateを指す。Production Delegateであることだけでは、Expenseの承認・差し戻し・支払の権限を持たない（Version 1.5）。
 
@@ -580,8 +587,8 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 
 - MemberはProductionのBudgetを閲覧できない。
 - MemberはProductionのActualを閲覧できない。
-- Primary ManagerとProduction DelegateはProductionのBudgetを閲覧できる。
-- Primary ManagerとProduction DelegateはProductionのBudgetを入力・変更できる。
+- Primary Manager、代理人、会計管理者はProductionのBudgetを閲覧できる（Version 1.12）。
+- Primary Manager、代理人、会計管理者はProductionのBudgetを入力・変更・確定できる（Version 1.12）。
 - Primary ManagerとProduction DelegateはProductionのActualを閲覧できる。
 - Memberは小口立替精算を目的としたExpenseを登録できる。
 - Production DelegateとPrimary Managerも対象範囲の小口立替Expenseを登録できる。
@@ -596,7 +603,7 @@ Member向けExpense登録機能は、会場費・外注費等の大口支出を�
 - 通知からExpenseの確認・承認・差し戻しへ進められる。
 - Primary Manager、代理人、または対象Productionで有効なACCOUNTING_MANAGERのProduction DelegateがExpense申請を承認・差し戻しできる。それ以外のProduction Delegateであることだけでは承認できない（Version 1.6）。
 - 申請者・作成者・受取人による承認・差し戻しは禁止する（差し戻しはVersion 1.7）。Primary Manager・代理人・会計管理者のいずれにも適用する。承認権限者が自分しかいない場合に自身が申請したExpenseは、別の承認権限者の任命が必要となる。
-- Production決算の確定権限はPrimary Manager、代理人、会計管理者とする。それ以外のProduction DelegateおよびMemberは確定できない（Version 1.6）。
+- 決算・精算の最終確定（メンバー精算等）はPrimary Manager、代理人、会計管理者が行える。公演の完了（Production決算の確定、ACTIVE → COMPLETED）はPrimary Managerのみとする（Version 1.12。Version 1.6では代理人・会計管理者も確定できるとしていた）。
 - 会計管理者のBudget閲覧・変更、Actual閲覧、Expense登録、Journal Entry確定に関する権限は本表では定義せず、各機能の権限仕様に従う。
 - 承認金額は申請金額と完全に一致しなければならない。承認者は増額・減額できない（単一明細・複数明細とも。Version 1.10）。
 - 金額や内容に疑義がある場合は承認せず差し戻し、申請者が修正して再申請する。

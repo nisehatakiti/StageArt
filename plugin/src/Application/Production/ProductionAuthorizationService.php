@@ -45,12 +45,12 @@ use StageArt\Domain\Role\RolePermissions;
  * with Organization Scope's Membership, replacing the Phase 1/2
  * ProductionDelegateRole placeholder). Production.Read is granted to any
  * ACTIVE delegate regardless of Role as a baseline (a delegate must be
- * able to see the Production they are delegated on); Production.Update/
- * Publish/Archive and ProductionDelegate management are PrimaryManager-
- * exclusive, since no enumerated Role's Permission Set includes them and
- * ProductionDelegate.md's own "Create" section says delegates are
- * "通常はPrimaryManagerが作成する". Both of these are disclosed
- * implementation judgments, not Blueprint-mandated splits.
+ * able to see the Production they are delegated on). Production.Update/
+ * Publish (公演情報・公開ページ・公開切替・Slug) and the assignment of
+ * 代理人 / 会計担当 / 受付担当 are open to the PrimaryManager and the 公演代理人
+ * (canActAsProductionManager(), canManageProductionDelegateRole() - PR #8
+ * 統合, see below); Lifecycle transitions, Archive, completion and the
+ * other Roles' assignment stay PrimaryManager-exclusive.
  *
  * Phase 2 adds isProductionMember(). Rehearsal Read and ScheduleComment
  * access are not PrimaryManager/Delegate-only - Rehearsal.md's
@@ -70,10 +70,23 @@ use StageArt\Domain\Role\RolePermissions;
  * ("PLANNING → ACTIVE" through "COMPLETED → ARCHIVED"), regardless of
  * any ProductionDelegate Role - the existing PrimaryManager-exclusive
  * canManageProduction() is reused as-is by every Lifecycle Action
- * UseCase rather than adding a redundant method. The one exception is
- * ACTIVE → COMPLETED (決算確定), which checks
- * `ProductionCapability::COMPLETE` instead (see
- * PROXY_MANAGER_CAPABILITIES).
+ * UseCase rather than adding a redundant method. ACTIVE → COMPLETED (公演の
+ * 完了) is PrimaryManager-only too, through canCompleteProduction() - see
+ * its docblock (PR #8 統合, 2026-11-24: 決算・精算の最終確定 and 公演の完了
+ * are separate permissions).
+ *
+ * PR #8 統合 (2026-11-24) - 担当区分 decide the authority on a Production:
+ *
+ * - 公演代理人 (isProxyManager(): PARTICIPANT_MANAGER and REHEARSAL_MANAGER
+ *   both ACTIVE) acts as the PrimaryManager for day-to-day operations
+ *   (canActAsProductionManager(): 公演情報・公開ページ・公開切替・Slug・定員・
+ *   公演回の共通設定・上演時間, 参加コード, 参加者, 稽古) and for the whole
+ *   accounting flow (PROXY_MANAGER_CAPABILITIES), and assigns 代理人/会計担当/
+ *   受付担当 (canManageProductionDelegateRole()).
+ * - 会計担当 (ACCOUNTING_MANAGER) holds the accounting flow only
+ *   (RolePermissions::MAP).
+ * - The PrimaryManager alone completes the Production, changes the
+ *   PrimaryManager and distributes Production Documents.
  */
 final class ProductionAuthorizationService
 {
@@ -212,29 +225,44 @@ final class ProductionAuthorizationService
 
     /**
      * Capabilities a 代理人 (isProxyManager()) holds on top of its two
-     * Roles' own Permission Sets: 経費承認 (`Expense.Approve`) and 決算確定
-     * (`Production.Complete`) - StageArt 統合・会計仕様の確定事項
-     * 2026-10-28 §2 ("Production Delegate（代理人）と会計管理者の両方が実施
-     * 可能"). 代理人 is a combination of Roles, so it cannot be expressed
-     * in the per-Role `RolePermissions::MAP`; 会計管理者 gets them there.
+     * Roles' own Permission Sets - the whole accounting flow, the same
+     * set 会計担当 (ACCOUNTING_MANAGER) holds through `RolePermissions::MAP`
+     * (PR #8 統合, 2026-11-24):
+     *
+     * - `Accounting.Update`: 予算策定・編集, 実績・仕訳 (it does not let
+     *   anyone edit someone else's Expense - UpdateExpenseUseCase: the
+     *   applicant only)
+     * - `Budget.Activate`: 予算の確定
+     * - `Expense.Approve`: 経費承認 / 予算実績の確定
+     * - `Settlement.Manage`: 決算・精算の最終確定
+     *
+     * 代理人 is a combination of Roles, so it cannot be expressed in the
+     * per-Role `RolePermissions::MAP`. `Production.Complete` (公演の完了) is
+     * deliberately not here: completion is PrimaryManager-only (see
+     * canCompleteProduction()), superseding 統合・会計仕様の確定事項
+     * 2026-10-28 §2.
      *
      * @var string[]
      */
     private const PROXY_MANAGER_CAPABILITIES = [
+        'Accounting.Update',
+        'Budget.Activate',
         'Expense.Approve',
-        'Production.Complete',
+        'Settlement.Manage',
     ];
 
     /**
-     * Whether this Person holds the right to complete the Production
-     * (ACTIVE -> COMPLETED): PrimaryManager, 会計管理者 or 代理人, exactly
-     * what `CompleteProductionUseCase` checks. It says nothing about the
-     * Production's status or its settlement, which the completion itself
-     * still guards.
+     * Whether this Person may complete the Production (ACTIVE -> COMPLETED,
+     * 公演の完了): the PrimaryManager only (PR #8 統合, 2026-11-24). 会計担当
+     * and 代理人 finish the accounting (予算実績の確定, 決算・精算の最終確定)
+     * through their accounting capabilities; closing the Production itself
+     * stays with the PrimaryManager. Exactly what `CompleteProductionUseCase`
+     * checks. It says nothing about the Production's status or its
+     * settlement, which the completion itself still guards.
      */
     public function canCompleteProduction(Person $person, Production $production): bool
     {
-        return $this->hasProductionCapability($person, $production, ProductionCapability::COMPLETE);
+        return $this->isPrimaryManager($person, $production);
     }
 
     public function canReadProduction(Person $person, Production $production): bool
@@ -246,6 +274,30 @@ final class ProductionAuthorizationService
     public function canManageProduction(Person $person, Production $production): bool
     {
         return $this->isPrimaryManager($person, $production);
+    }
+
+    /**
+     * PR #8 統合 (2026-11-24): day-to-day Production operations the
+     * 公演代理人 performs on the PrimaryManager's behalf - 公演情報・公開ページ
+     * の編集, 公開・非公開の切替, Slug, 定員, 公演回の共通設定, 上演時間
+     * (UpdateProductionUseCase) and the Production's 参加コード
+     * (canManageJoinKeys()). Lifecycle transitions, completion and
+     * PrimaryManager changes are not covered - they keep their own
+     * PrimaryManager-only checks.
+     */
+    public function canActAsProductionManager(Person $person, Production $production): bool
+    {
+        return $this->isPrimaryManager($person, $production) || $this->isProxyManager($person, $production);
+    }
+
+    /**
+     * Production 参加コード (Join Key) - listing, issuing and disabling:
+     * the PrimaryManager or the 公演代理人. 会計担当, 稽古担当, 参加者担当 and
+     * 受付担当 alone are refused (JoinKey.md「Join Key管理の権限」).
+     */
+    public function canManageJoinKeys(Person $person, Production $production): bool
+    {
+        return $this->canActAsProductionManager($person, $production);
     }
 
     /**
@@ -268,8 +320,10 @@ final class ProductionAuthorizationService
      * holding BOTH PARTICIPANT_MANAGER and REHEARSAL_MANAGER Roles at
      * once - not just one of the two, and not a new bundled RoleKey (the
      * instruction explicitly forbids collapsing them into one Role).
+     * Every ACTIVE row is read (activeDelegatesFor()), so the answer does
+     * not depend on the order the rows come back in.
      */
-    private function isProxyManager(Person $person, Production $production): bool
+    public function isProxyManager(Person $person, Production $production): bool
     {
         return $this->hasActiveDelegateRole($person, $production, RoleKey::participantManager())
             && $this->hasActiveDelegateRole($person, $production, RoleKey::rehearsalManager());

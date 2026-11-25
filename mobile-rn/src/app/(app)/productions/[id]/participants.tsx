@@ -15,6 +15,11 @@ import {
   useResendParticipantInvitation,
 } from '@/features/participantInvitation/useParticipantInvitation';
 import { updateProduction } from '@/features/production/api';
+import {
+  canManageParticipants,
+  canManageProductionDelegates,
+  canManageProductionOperations,
+} from '@/features/production/permissions';
 import { useProduction } from '@/features/production/useProductions';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -92,20 +97,18 @@ export default function ProductionParticipantsScreen() {
   const participantsQuery = useParticipants(id);
   const updateParticipant = useUpdateParticipant(id);
   const production = productionQuery.data;
-  const isPrimaryManager = !!production?.is_primary_manager;
   /**
    * 代理人 (PROXY manager): a member holding BOTH PARTICIPANT_MANAGER and
    * REHEARSAL_MANAGER simultaneously - mirrors
-   * ProductionAuthorizationService::isProxyManager() Backend-side. This is
+   * ProductionAuthorizationService::isProxyManager() Backend-side
+   * (features/production/permissions.ts). The PrimaryManager or the 代理人
+   * assigns 代理人/会計担当/受付担当; 会計担当 never does. This is
    * deliberately a DIFFERENT (broader) check than `canManage` below: opening
    * this screen only requires PARTICIPANT_MANAGER alone, while setting
    * delegate roles (canManageDelegateRoles) requires the full 代理人 bundle -
    * per the instruction's explicit "別のAuthorization" framing.
    */
-  const isProxyManager =
-    !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER') &&
-    !!production?.delegate_roles?.includes('REHEARSAL_MANAGER');
-  const canManageDelegateRoles = isPrimaryManager || isProxyManager;
+  const canManageDelegateRoles = canManageProductionDelegates(production);
   const delegatesQuery = useQuery({
     queryKey: ['production-delegates', id],
     queryFn: () => fetchProductionDelegates(apiClient, id as string),
@@ -121,7 +124,13 @@ export default function ProductionParticipantsScreen() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', id] }),
   });
 
-  const canManage = !!production?.is_primary_manager || !!production?.delegate_roles?.includes('PARTICIPANT_MANAGER');
+  const canManage = canManageParticipants(production);
+  // メンバー情報公開日時 is a Production field (PUT /productions/{id}), which
+  // only the PrimaryManager or the 公演代理人 may update. A PARTICIPANT_MANAGER-
+  // only delegate manages the members here but neither sees that field nor
+  // sends that request (PR #9 review No.4: it was refused with 403 after
+  // the member changes had already been saved).
+  const canEditMemberInfoPublication = canManageProductionOperations(production);
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
   const invitationsQuery = useParticipantInvitations(id, canManage);
@@ -249,11 +258,13 @@ export default function ProductionParticipantsScreen() {
         }
       }
 
-      await updateProduction(apiClient, production.id, {
-        name: production.name,
-        titleHeading: production.title_heading,
-        memberInfoPublishedAt: hasAnyMember ? memberInfoPublishedAt.trim() || production.member_info_published_at || now : null,
-      });
+      if (canEditMemberInfoPublication) {
+        await updateProduction(apiClient, production.id, {
+          name: production.name,
+          titleHeading: production.title_heading,
+          memberInfoPublishedAt: hasAnyMember ? memberInfoPublishedAt.trim() || production.member_info_published_at || now : null,
+        });
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['participants', id] });
       await queryClient.invalidateQueries({ queryKey: ['production', id] });
@@ -510,6 +521,8 @@ export default function ProductionParticipantsScreen() {
         </>
       )}
 
+      {canEditMemberInfoPublication && (
+      <>
       <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
         メンバー情報公開日時（任意）
       </ThemedText>
@@ -559,6 +572,8 @@ export default function ProductionParticipantsScreen() {
       <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
         ※設定日時になるまで、Production公開ページのメンバー情報は表示しません。
       </ThemedText>
+      </>
+      )}
 
       {errorMessage && (
         <ThemedText testID="production-participants-error" style={styles.error}>

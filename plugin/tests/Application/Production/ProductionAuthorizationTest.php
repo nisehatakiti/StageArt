@@ -467,12 +467,15 @@ final class ProductionAuthorizationTest extends TestCase
     }
 
     /**
-     * StageArt 統合・会計仕様の確定事項 2026-10-28 §2: 経費承認 and 決算確定
-     * are open to the PrimaryManager, a 会計管理者 (ACCOUNTING_MANAGER) and a
-     * 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER, both ACTIVE) - and to
-     * no other delegate.
+     * PR #8 統合 (2026-11-24): the whole accounting flow - 予算策定・編集 /
+     * 経費入力・編集 (Accounting.Update), 予算の確定 (Budget.Activate), 経費承認 /
+     * 予算実績の確定 (Expense.Approve) and 決算・精算の最終確定
+     * (Settlement.Manage) - is open to the PrimaryManager, a 会計管理者
+     * (ACCOUNTING_MANAGER) and a 代理人 (PARTICIPANT_MANAGER + REHEARSAL_MANAGER,
+     * both ACTIVE), and to no other delegate. 公演の完了 (Production.Complete /
+     * canCompleteProduction()) is the PrimaryManager's alone.
      */
-    public function test_expense_approval_and_completion_are_open_to_primary_manager_accounting_manager_and_proxy_manager(): void
+    public function test_the_accounting_flow_is_open_to_primary_manager_accounting_manager_and_proxy_manager_but_completion_is_not(): void
     {
         $production = $this->givenProduction(1);
         $primaryManager = $this->people->findById($production->primaryManagerPersonId());
@@ -481,20 +484,35 @@ final class ProductionAuthorizationTest extends TestCase
         $proxyManager = $this->givenDelegate($production, 3, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
         $participantManagerOnly = $this->givenDelegate($production, 4, [RoleKey::participantManager()]);
         $checkInManager = $this->givenDelegate($production, 5, [RoleKey::checkInManager()]);
+        $rehearsalManagerOnly = $this->givenDelegate($production, 6, [RoleKey::rehearsalManager()]);
 
-        foreach ([AccountingCapability::APPROVE_EXPENSE, ProductionCapability::COMPLETE] as $capability) {
+        $accountingCapabilities = [
+            AccountingCapability::MANAGE,
+            AccountingCapability::ACTIVATE_BUDGET,
+            AccountingCapability::APPROVE_EXPENSE,
+            SettlementCapability::MANAGE,
+        ];
+
+        foreach ($accountingCapabilities as $capability) {
             $this->assertTrue($this->authorization->hasProductionCapability($primaryManager, $production, $capability), $capability);
             $this->assertTrue($this->authorization->hasProductionCapability($accountingManager, $production, $capability), $capability);
             $this->assertTrue($this->authorization->hasProductionCapability($proxyManager, $production, $capability), $capability);
             $this->assertFalse($this->authorization->hasProductionCapability($participantManagerOnly, $production, $capability), $capability);
             $this->assertFalse($this->authorization->hasProductionCapability($checkInManager, $production, $capability), $capability);
+            $this->assertFalse($this->authorization->hasProductionCapability($rehearsalManagerOnly, $production, $capability), $capability);
         }
 
-        // Only these two: a 代理人 does not gain the rest of 会計担当's
-        // Permission Set, and other Lifecycle transitions stay
-        // PrimaryManager-only.
-        $this->assertFalse($this->authorization->hasProductionCapability($proxyManager, $production, AccountingCapability::MANAGE));
-        $this->assertFalse($this->authorization->hasProductionCapability($proxyManager, $production, SettlementCapability::MANAGE));
+        // 公演の完了: the PrimaryManager only - through the Capability and
+        // through canCompleteProduction() alike.
+        $this->assertTrue($this->authorization->canCompleteProduction($primaryManager, $production));
+        $this->assertTrue($this->authorization->hasProductionCapability($primaryManager, $production, ProductionCapability::COMPLETE));
+
+        foreach ([$accountingManager, $proxyManager, $participantManagerOnly, $checkInManager, $rehearsalManagerOnly] as $delegate) {
+            $this->assertFalse($this->authorization->canCompleteProduction($delegate, $production));
+            $this->assertFalse($this->authorization->hasProductionCapability($delegate, $production, ProductionCapability::COMPLETE));
+        }
+
+        // Other Lifecycle transitions stay PrimaryManager-only.
         $this->assertFalse($this->authorization->canManageProduction($proxyManager, $production));
         $this->assertFalse($this->authorization->canManageProduction($accountingManager, $production));
     }
@@ -513,6 +531,14 @@ final class ProductionAuthorizationTest extends TestCase
 
         $this->assertFalse($this->authorization->hasProductionCapability($person, $production, AccountingCapability::APPROVE_EXPENSE));
         $this->assertFalse($this->authorization->hasProductionCapability($person, $production, ProductionCapability::COMPLETE));
+
+        // PR #8 統合: no longer a 代理人, so none of the 代理人's extra rights.
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, AccountingCapability::MANAGE));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, AccountingCapability::ACTIVATE_BUDGET));
+        $this->assertFalse($this->authorization->hasProductionCapability($person, $production, SettlementCapability::MANAGE));
+        $this->assertFalse($this->authorization->isProxyManager($person, $production));
+        $this->assertFalse($this->authorization->canActAsProductionManager($person, $production));
+        $this->assertFalse($this->authorization->canManageJoinKeys($person, $production));
     }
 
     /**

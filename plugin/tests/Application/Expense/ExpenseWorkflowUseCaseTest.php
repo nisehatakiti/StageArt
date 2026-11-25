@@ -27,9 +27,11 @@ use StageArt\Application\Expense\UpdateExpenseCommand;
 use StageArt\Application\Expense\UpdateExpenseUseCase;
 use StageArt\Application\Organization\OrganizationAuthorizationService;
 use StageArt\Application\Production\ProductionAuthorizationService;
+use StageArt\Application\Production\ProductionCapability;
 use StageArt\Application\Production\ProductionOrganizationResolver;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryQuery;
 use StageArt\Application\ProductionAccounting\GetProductionAccountingSummaryUseCase;
+use StageArt\Application\Settlement\SettlementCapability;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
@@ -644,6 +646,57 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
                 ['account_id' => $this->expenseAccountId, 'amount' => 4800],
             ]));
             $this->fail('A POSTED Expense must not be edited.');
+        } catch (ExpenseStateConflictException $exception) {
+            $this->assertSame($before, $this->editableState($id));
+        }
+
+        foreach (self::everybodyButTheApplicant() as [$wordPressUserId]) {
+            try {
+                $this->updateExpense->execute(new UpdateExpenseCommand($id, $wordPressUserId, [
+                    ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+                ]));
+                $this->fail('Only the applicant gets past the identity check.');
+            } catch (ExpenseAccessDeniedException $exception) {
+                $this->assertSame($before, $this->editableState($id));
+            }
+        }
+    }
+
+    /**
+     * A legacy CONFIRMED Expense (the retired Confirm step's status) is not
+     * edited either: the applicant meets a state conflict (409), and
+     * everybody else - the PrimaryManager, 会計管理者 and 代理人 included - is
+     * refused as access denied first (403).
+     */
+    public function test_a_legacy_confirmed_expense_is_not_edited_by_anyone(): void
+    {
+        $draft = $this->expenses->findById(ExpenseId::fromString($this->draftBy(2, [5000])));
+        $confirmed = Expense::reconstitute(
+            $draft->id(),
+            $draft->productionId(),
+            $draft->payerPersonId(),
+            ExpenseStatus::fromString(ExpenseStatus::CONFIRMED),
+            $draft->lines(),
+            $draft->createdBy(),
+            $draft->createdAt(),
+            $draft->updatedBy(),
+            $draft->updatedAt(),
+            $draft->createdBy(),
+            new DateTimeImmutable()
+        );
+        // Store the row as a legacy CONFIRMED one, the way it is loaded from
+        // the database (reconstitute() already marks it persisted).
+        [$stored, $reviewKeys] = $this->expenses->snapshot();
+        $id = $confirmed->id()->toString();
+        $stored[$id] = $confirmed;
+        $this->expenses->restore([$stored, $reviewKeys]);
+        $before = $this->editableState($id);
+
+        try {
+            $this->updateExpense->execute(new UpdateExpenseCommand($id, 2, [
+                ['account_id' => $this->expenseAccountId, 'amount' => 4800],
+            ]));
+            $this->fail('A legacy CONFIRMED Expense must not be edited.');
         } catch (ExpenseStateConflictException $exception) {
             $this->assertSame($before, $this->editableState($id));
         }
@@ -1734,7 +1787,19 @@ final class ExpenseWorkflowUseCaseTest extends TestCase
         $directory = new CoreProductionCapabilityDirectoryAdapter($prodAuth, $this->productions, $this->delegates, $this->people);
         $authorization = new CoreAuthorizationAdapter($prodAuth, $this->productions, $this->people);
 
-        foreach ([AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8], AccountingCapability::MANAGE => [1, 4, 7]] as $capability => $expected) {
+        // PR #8 統合: the PrimaryManager, both 会計管理者 and the 代理人 hold every
+        // accounting Capability; the former 代理人 (10) holds none. Holding
+        // Accounting.Update does not let anyone edit someone else's Expense
+        // (UpdateExpenseUseCase: the applicant only).
+        $capabilities = [
+            AccountingCapability::APPROVE_EXPENSE => [1, 4, 7, 8],
+            AccountingCapability::MANAGE => [1, 4, 7, 8],
+            AccountingCapability::ACTIVATE_BUDGET => [1, 4, 7, 8],
+            SettlementCapability::MANAGE => [1, 4, 7, 8],
+            ProductionCapability::COMPLETE => [1],
+        ];
+
+        foreach ($capabilities as $capability => $expected) {
             $listed = array_map(
                 static fn (PersonId $id): string => $id->toString(),
                 $directory->personIdsWithProductionCapability($this->production->id(), $capability)

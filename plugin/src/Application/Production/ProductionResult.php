@@ -7,6 +7,7 @@ namespace StageArt\Application\Production;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
+use StageArt\Domain\Role\RoleKey;
 
 final class ProductionResult
 {
@@ -25,6 +26,27 @@ final class ProductionResult
     /** @var string[] */
     public array $delegateRoles;
     public bool $canComplete;
+
+    /**
+     * PR #8 統合 (2026-11-24): what the requesting Person may do on this
+     * Production, for the screens to show or hide their menus. Derived in
+     * fromDomain() from isPrimaryManager and delegateRoles (every ACTIVE
+     * Role), with the same rules as ProductionAuthorizationService - the
+     * API checks each operation itself, these only mirror it.
+     *
+     * - isProxyManager: 公演代理人 (PARTICIPANT_MANAGER and REHEARSAL_MANAGER
+     *   both ACTIVE)
+     * - canManageProductionOperations: 公演情報・公開ページ・公開切替・Slug・
+     *   定員・上演時間, 参加コード (PrimaryManager or 公演代理人)
+     * - canManageAccounting: 予算・経費・実績・精算 (PrimaryManager, 公演代理人
+     *   or 会計担当)
+     * - canManageProductionDelegates: 担当の任命・変更 (PrimaryManager or
+     *   公演代理人)
+     */
+    public bool $isProxyManager = false;
+    public bool $canManageProductionOperations = false;
+    public bool $canManageAccounting = false;
+    public bool $canManageProductionDelegates = false;
     public ?string $description;
     public ?string $descriptionPublishedAt;
     public ?string $flyerUrl;
@@ -125,7 +147,7 @@ final class ProductionResult
         array $activeDelegates = [],
         bool $mayComplete = false
     ): self {
-        return new self(
+        $result = new self(
             $production->id()->toString(),
             $production->projectId()->toString(),
             $production->name()->toString(),
@@ -160,6 +182,16 @@ final class ProductionResult
             $production->performanceCommonRemarks(),
             $production->performanceDurationMinutes()
         );
+
+        $roles = $result->delegateRoles;
+        $result->isProxyManager = in_array(RoleKey::PARTICIPANT_MANAGER, $roles, true)
+            && in_array(RoleKey::REHEARSAL_MANAGER, $roles, true);
+        $result->canManageProductionOperations = $isPrimaryManager || $result->isProxyManager;
+        $result->canManageAccounting = $result->canManageProductionOperations
+            || in_array(RoleKey::ACCOUNTING_MANAGER, $roles, true);
+        $result->canManageProductionDelegates = $result->canManageProductionOperations;
+
+        return $result;
     }
 
     /**
@@ -182,6 +214,10 @@ final class ProductionResult
             'delegate_role' => $this->delegateRole,
             'delegate_roles' => $this->delegateRoles,
             'can_complete' => $this->canComplete,
+            'is_proxy_manager' => $this->isProxyManager,
+            'can_manage_production_operations' => $this->canManageProductionOperations,
+            'can_manage_accounting' => $this->canManageAccounting,
+            'can_manage_production_delegates' => $this->canManageProductionDelegates,
             'description' => $this->description,
             'description_published_at' => $this->descriptionPublishedAt,
             'flyer_url' => $this->flyerUrl,

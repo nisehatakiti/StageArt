@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { FormInput } from '@/components/form-input';
 import { BrandColors, Radius, Spacing } from '@/constants/theme';
 import { updateProduction } from '@/features/production/api';
+import { canManageProductionOperations } from '@/features/production/permissions';
 import { useCreatePerformance, usePerformances } from '@/features/performance/usePerformances';
 import { useCreateTicket, useTicketSalesSettings, useTickets, useUpdateTicketSalesSettings } from '@/features/ticket/useTickets';
 import { useProduction } from '@/features/production/useProductions';
@@ -31,11 +32,11 @@ import { isValidSlug } from '@/utils/slug';
  * bumps the publish timestamp.
  *
  * Ownership is enforced server-side (UpdateProductionUseCase via
- * ProductionAuthorizationService.canManageProduction(): PrimaryManager
- * only, no ProductionDelegate exception even for PARTICIPANT_MANAGER -
- * see that service's own docblock) - `is_primary_manager` (already on
- * every Production fetch) is read here only to skip straight to that
- * same message locally, not as this screen's own access decision.
+ * ProductionAuthorizationService.canActAsProductionManager(): the
+ * PrimaryManager or the 公演代理人 - not 稽古担当, 会計担当 or a
+ * PARTICIPANT_MANAGER-only delegate). canManageProductionOperations()
+ * (features/production/permissions.ts) is read here only to skip straight
+ * to that same message locally, not as this screen's own access decision.
  */
 export default function ProductionEditScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -52,7 +53,8 @@ export default function ProductionEditScreen() {
   const createTicket = useCreateTicket(id);
   const ticketSalesSettingsQuery = useTicketSalesSettings(id);
   const updateTicketSalesSettings = useUpdateTicketSalesSettings(id);
-  const isPrimaryManager = !!production?.is_primary_manager;
+  // PrimaryManager or 公演代理人 (the API checks the same thing).
+  const canEdit = canManageProductionOperations(production);
 
   const [name, setName] = useState('');
   const [titleHeading, setTitleHeading] = useState('');
@@ -261,7 +263,7 @@ export default function ProductionEditScreen() {
       if (error instanceof ApiError && error.code === 'stageart_production_slug_taken') {
         setErrorMessage('このSlugは既に使用されています。別のSlugを入力してください。');
       } else if (error instanceof ApiError && error.statusCode === 403) {
-        setErrorMessage('この公演を編集する権限がありません（PrimaryManagerのみ編集できます）。');
+        setErrorMessage('この公演を編集する権限がありません（PrimaryManagerまたは公演代理人のみ編集できます）。');
       } else {
         setErrorMessage(getErrorMessage(error));
       }
@@ -286,10 +288,10 @@ export default function ProductionEditScreen() {
     );
   }
 
-  if (!isPrimaryManager) {
+  if (!canEdit) {
     return (
       <>
-        <ThemedText testID="production-edit-forbidden">この公演を編集する権限がありません（PrimaryManagerのみ編集できます）。</ThemedText>
+        <ThemedText testID="production-edit-forbidden">この公演を編集する権限がありません（PrimaryManagerまたは公演代理人のみ編集できます）。</ThemedText>
       </>
     );
   }

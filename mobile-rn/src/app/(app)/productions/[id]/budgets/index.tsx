@@ -11,8 +11,8 @@ import { getErrorMessage } from '@/utils/errorMessage';
  * 予算の一覧 (第1スプリント 予算策定): the Production's Budgets
  * (Budget.md "Multiple Budgets" - e.g. A会場案 / B会場案), newest first,
  * each opening its own input screen. Opened from the 会計 tab. Only the
- * PrimaryManager or an Accounting Manager is answered by the API (403
- * otherwise, shown as the refusal message).
+ * PrimaryManager, the 公演代理人 or an Accounting Manager is answered by the
+ * API (Accounting.Update; 403 otherwise, shown as the refusal message).
  */
 export default function ProductionBudgetsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
