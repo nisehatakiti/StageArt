@@ -35,6 +35,9 @@ describe('deriveMyParticipantTypes', () => {
       person_family_name: null,
       person_given_name: null,
       email: null,
+      enrollment_source: null,
+      consent_status: null,
+      consented_at: null,
     },
     {
       id: 'p2',
@@ -50,6 +53,9 @@ describe('deriveMyParticipantTypes', () => {
       person_family_name: null,
       person_given_name: null,
       email: null,
+      enrollment_source: null,
+      consent_status: null,
+      consented_at: null,
     },
     {
       id: 'p3',
@@ -65,6 +71,9 @@ describe('deriveMyParticipantTypes', () => {
       person_family_name: null,
       person_given_name: null,
       email: null,
+      enrollment_source: null,
+      consent_status: null,
+      consented_at: null,
     },
   ];
 

@@ -16,6 +16,6 @@ use RuntimeException;
  * enforce either - only that the target Person exists at all. See the
  * Phase 1 report for this as a disclosed scope decision.
  */
-final class ProductionDelegateTargetNotEligibleException extends RuntimeException
+class ProductionDelegateTargetNotEligibleException extends RuntimeException
 {
 }

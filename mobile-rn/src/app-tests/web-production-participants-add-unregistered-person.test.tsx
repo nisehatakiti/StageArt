@@ -13,8 +13,13 @@ jest.mock('expo-secure-store', () => ({
 /**
  * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §2-B/§19:
  * submitting 氏名＋メールアドレス for an email with no existing StageArt
- * Person creates a ParticipantInvitation carrying the entered name and
- * sends registration guidance - never a NAME_ONLY Participant.
+ * Person creates a ParticipantInvitation carrying the entered name -
+ * never a NAME_ONLY Participant.
+ *
+ * PR #7 R14-B (§10; expectation updated for the spec change): the answer is
+ * INVITATION_SENT and the result text is 「招待メールを送信しました。本人が
+ * 承諾するとメンバーに追加されます。」 (the person is no longer added
+ * automatically when they register).
  */
 describe('Web メンバー管理: 未登録メールアドレスへの登録案内送信', () => {
   it('sends a registration-guidance invitation when the email has no existing Person', async () => {
@@ -39,8 +44,7 @@ describe('Web メンバー管理: 未登録メールアドレスへの登録案�
       status: 201,
       text: async () =>
         JSON.stringify({
-          outcome: 'INVITATION_CREATED',
-          participant: null,
+          outcome: 'INVITATION_SENT',
           invitation: {
             id: 'invitation-1',
             production_id: 'prod-1',
@@ -72,7 +76,7 @@ describe('Web メンバー管理: 未登録メールアドレスへの登録案�
     });
 
     await waitFor(() =>
-      expect(screen.getByText('登録案内メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。')).toBeVisible()
+      expect(screen.getByText('招待メールを送信しました。本人が承諾するとメンバーに追加されます。')).toBeVisible()
     );
   });
 });

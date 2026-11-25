@@ -1,17 +1,20 @@
 import type { ApiClient } from '@/api/client';
-import { publicGet } from '@/api/publicClient';
-import type { CreateParticipantInvitationResult, ParticipantInvitation, ParticipantInvitationPreview } from '@/types/api';
+import type {
+  AcceptParticipantInvitationResult,
+  CreateParticipantInvitationResult,
+  ManagedParticipantInvitation,
+  MyParticipantInvitation,
+  ParticipantInvitation,
+  RejectParticipantInvitationResult,
+} from '@/types/api';
 
 /**
- * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §1/§2:
- * the single, unified member-add action - an admin always submits
- * 氏名＋メールアドレス＋役割＋備考 together. One call handles all three
- * outcomes - an email that already belongs to an existing StageArt
- * Person is added directly as a Participant (the submitted name is not
- * used in that case), an unregistered email becomes a
- * ParticipantInvitation carrying the submitted name, or resends an
- * existing usable one - see CreateParticipantInvitationResult's own
- * `outcome` discriminator.
+ * PR #7 R14-B (design doc §7.1, stage 4): an admin invites someone by
+ * 氏名＋メールアドレス＋役割＋備考. It is always an invitation - the address
+ * is never looked up and nobody is added directly: `outcome` is
+ * INVITATION_SENT (a new invitation) or INVITATION_RESENT (a PENDING one to
+ * the same address and type was resent). The person becomes a member only
+ * when they accept it themselves.
  */
 export function createParticipantInvitation(
   client: ApiClient,
@@ -26,22 +29,32 @@ export function createParticipantInvitation(
   });
 }
 
-export function fetchParticipantInvitations(client: ApiClient, productionId: string): Promise<ParticipantInvitation[]> {
-  return client.get<ParticipantInvitation[]>(`/productions/${productionId}/participant-invitations`);
+/** R14B-4R (§7.1): every invitation of the Production with effective_status, send status and limits. */
+export function fetchParticipantInvitations(client: ApiClient, productionId: string): Promise<ManagedParticipantInvitation[]> {
+  return client.get<ManagedParticipantInvitation[]>(`/productions/${productionId}/participant-invitations`);
 }
 
 export function resendParticipantInvitation(client: ApiClient, invitationId: string): Promise<ParticipantInvitation> {
   return client.post<ParticipantInvitation>(`/participant-invitations/${invitationId}/resend`);
 }
 
+/** §7.1: 200 (also again for an invitation the managers already cancelled); 409 for another ended state. */
 export function cancelParticipantInvitation(client: ApiClient, invitationId: string): Promise<ParticipantInvitation> {
   return client.post<ParticipantInvitation>(`/participant-invitations/${invitationId}/cancel`);
 }
 
 /**
- * §19/§23: unauthenticated - called from register.tsx when arriving via
- * an invitation link, before the invitee has any StageArt session.
+ * R14-B §7.2: the invitations to the logged-in Person's verified addresses -
+ * the only way to look an invitation up (no token, no lookup by id).
  */
-export function fetchParticipantInvitationPreview(token: string): Promise<ParticipantInvitationPreview> {
-  return publicGet<ParticipantInvitationPreview>(`/participant-invitations/resolve?token=${encodeURIComponent(token)}`);
+export function fetchMyParticipantInvitations(client: ApiClient): Promise<MyParticipantInvitation[]> {
+  return client.get<MyParticipantInvitation[]>('/me/participant-invitations');
+}
+
+export function acceptParticipantInvitation(client: ApiClient, invitationId: string): Promise<AcceptParticipantInvitationResult> {
+  return client.post<AcceptParticipantInvitationResult>(`/participant-invitations/${invitationId}/accept`);
+}
+
+export function rejectParticipantInvitation(client: ApiClient, invitationId: string): Promise<RejectParticipantInvitationResult> {
+  return client.post<RejectParticipantInvitationResult>(`/participant-invitations/${invitationId}/reject`);
 }

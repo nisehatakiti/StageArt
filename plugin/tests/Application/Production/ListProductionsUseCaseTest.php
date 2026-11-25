@@ -23,6 +23,7 @@ use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -42,7 +43,7 @@ final class ListProductionsUseCaseTest extends TestCase
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $delegates,
-            new InMemoryParticipantRepository()
+            $participants = new InMemoryParticipantRepository()
         );
         $listProductions = new ListProductionsUseCase($productions, $delegates, $productionAuthorization);
 
@@ -83,6 +84,8 @@ final class ListProductionsUseCaseTest extends TestCase
         $people->save($otherManager);
         $productionC = Production::create($project->id(), new ProductionName('Show C'), $otherManager->id());
         $productions->save($productionC);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($participants, $productionC->id(), $person->id());
         $delegates->save(ProductionDelegate::create(
             $productionC->id(),
             $person->id(),

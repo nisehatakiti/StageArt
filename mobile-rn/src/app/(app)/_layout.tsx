@@ -1,9 +1,10 @@
-import { Redirect, Stack } from 'expo-router';
+import { Redirect, Stack, usePathname } from 'expo-router';
 import { ActivityIndicator } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
 import { AppChrome } from '@/components/chrome/AppChrome';
 import { ThemedView } from '@/components/themed-view';
+import { returnToForUnauthenticated } from '@/utils/returnTo';
 
 /**
  * StageArt Blueprint再構成 Phase 1: every authenticated screen lives
@@ -28,13 +29,18 @@ function Loading() {
 
 export default function AuthenticatedLayout() {
   const { status } = useAuth();
+  const pathname = usePathname();
 
   if (status === 'loading' || status === 'refreshing') {
     return <Loading />;
   }
 
   if (status === 'unauthenticated') {
-    return <Redirect href="/login" />;
+    // R14-B §10: from the invitations (the invitation mail's link) the
+    // person comes back there after logging in. Nothing of the invitation
+    // is shown before login.
+    const returnTo = returnToForUnauthenticated(pathname);
+    return <Redirect href={returnTo ? { pathname: '/login', params: { return_to: returnTo } } : '/login'} />;
   }
 
   return (

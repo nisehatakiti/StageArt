@@ -48,7 +48,9 @@ final class ParticipantRequestResult
             $person?->givenName(),
             $participant->participantType()->toString(),
             $participant->status()->toString(),
-            $participant->createdAt()->format(DATE_ATOM)
+            // R14-B: a re-request reuses the row, so the latest request time
+            // is requestedAt; a pre-R14-B request has none (its createdAt).
+            ($participant->requestedAt() ?? $participant->createdAt())->format(DATE_ATOM)
         );
     }
 

@@ -89,6 +89,38 @@ ReservationCancelled
 
 ---
 
+# Participantの監査ログ（PR #7 R14-B）
+
+2026-11-19追記。R14-Bの実装では、Participant・公演参加者の招待・ProductionDelegateの状態の変更を、上記のDomain Event（ParticipantAdded・ParticipantUpdated・ParticipantRemoved）としてではなく、**監査ログ**（`stageart_participant_events`）として記録する。ParticipantAdded・ParticipantUpdated・ParticipantRemovedを発行・購読する実装は、R14-B時点ではない。設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §6.3（設計書ブランチ、第9版 `9b42eb5`）。
+
+- 追記だけの記録で、アプリケーションは更新・削除しない（保存期間の2年を過ぎた行だけを、定期処理が削除する。`docs/handoffs/PR7-R14B-OperationsRunbook.md` §4）。
+- 状態の変更と同じトランザクションで記録する。記録に失敗すると、変更全体を取り消す。
+- 行はIDで識別する（公演・参加者・招待・担当者・操作した人物・対象の人物）。**メールアドレス・氏名・備考・トークン（ハッシュを含む）は記録しない**。`detail` には状態の遷移の事実（変更前の状態、閉じた理由、無効化の理由など）だけを入れる。
+- 状態が変わらない操作（すでに承諾済みの再承諾、すでにWITHDRAWNの取りやめ、すでにCANCELLEDの取消など）は記録しない。
+
+| 種類 | 記録する契機 |
+|---|---|
+| `INVITED` | 招待の作成（送信を受け付けた） |
+| `RESENT` | 招待の再送（作成で承諾待ちの招待に再送した場合を含む） |
+| `SEND_FAILED` | 招待メールの送信の失敗を記録した |
+| `INVITATION_CANCELLED` | 管理者が招待を取り消した |
+| `INVITATION_CLOSED` | 公演の終了・招待者の権限なしを検出して、システムが招待を閉じた |
+| `ACCEPTED` | 本人が招待を承諾した |
+| `REJECTED` | 本人が招待を辞退した |
+| `CONSENT_RECORDED` | すでにACTIVEな参加者が招待を承諾し、同意だけを記録した |
+| `JOIN_REQUESTED`・`JOIN_APPROVED`・`JOIN_REJECTED` | 本人の参加申請、その承認・却下 |
+| `WITHDRAWN` | 本人が参加をやめた |
+| `NAME_ONLY_ADDED` | 管理者がNAME_ONLYの参加者を記録した |
+| `REMOVED_BY_MANAGER` | 管理者が参加を取り消した（CANCELLED） |
+| `DEACTIVATED` | 管理者が参加者をACTIVE → INACTIVEにした |
+| `TYPE_CHANGED` | 管理者が参加者の役割（ParticipantType）を変えた |
+| `DELEGATE_APPOINTED`・`DELEGATE_REACTIVATED` | 担当者の任命、INACTIVEの担当者の再有効化 |
+| `DELEGATE_DEACTIVATED` | 担当者をINACTIVEにした（理由：`PARTICIPANT_DEACTIVATED`・`PARTICIPANT_REMOVED`・`PARTICIPANT_WITHDRAWN`・`DORMANT_ON_ENROLLMENT`・`MANAGER`） |
+
+ParticipantAdded・ParticipantUpdated・ParticipantRemovedとの対応（参考）：参加の開始は `ACCEPTED`・`JOIN_APPROVED`・`NAME_ONLY_ADDED`、変更は `DEACTIVATED`・`TYPE_CHANGED`・`CONSENT_RECORDED`、終了は `REMOVED_BY_MANAGER`・`WITHDRAWN` に当たる。History Domainなどへのイベントの連携は、R14-Bでは実装していない。
+
+---
+
 # Event Flow
 
 ## Organization Created

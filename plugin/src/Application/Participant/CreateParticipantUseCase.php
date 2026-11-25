@@ -4,47 +4,51 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
-use StageArt\Application\Notification\PersonEmailResolver;
+use DateTimeImmutable;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\Shared\TransactionManagerInterface;
-use StageArt\Domain\Organization\OrganizationId;
-use StageArt\Domain\Organization\OrganizationRepositoryInterface;
 use StageArt\Domain\Participant\Participant;
+use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantSubjectType;
 use StageArt\Domain\Participant\ParticipantType;
-use StageArt\Domain\Person\PersonId;
-use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
-use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 
+/**
+ * `POST /productions/{id}/participants` - NAME_ONLY members only.
+ *
+ * PR #7 R14-B stage 4 (design doc §4.4 / §5.2 / §7.1 / §7.4, D10):
+ * - A PERSON or an ORGANIZATION can no longer be added directly: 422
+ *   `stageart_participant_requires_invitation`. A Person becomes a
+ *   participant only by accepting an invitation or by an approved join
+ *   request (ParticipantEnrollmentService); no Person or Organization is
+ *   looked up here.
+ * - NAME_ONLY (a manager's record of someone without a StageArt account)
+ *   is kept: enrollment_source MANAGER_RECORD, no consent; one
+ *   transaction, Production locked first (§5.4), NAME_ONLY_ADDED audited.
+ * - Authorization (canManageParticipants) is unchanged and decided first.
+ */
 final class CreateParticipantUseCase
 {
     private ProductionRepositoryInterface $productions;
     private ParticipantRepositoryInterface $participants;
-    private PersonRepositoryInterface $people;
-    private OrganizationRepositoryInterface $organizations;
     private ProductionAuthorizationService $authorization;
     private TransactionManagerInterface $transactions;
-    private PersonEmailResolver $personEmailResolver;
+    private ParticipantEventRecorder $events;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
         ParticipantRepositoryInterface $participants,
-        PersonRepositoryInterface $people,
-        OrganizationRepositoryInterface $organizations,
         ProductionAuthorizationService $authorization,
         TransactionManagerInterface $transactions,
-        PersonEmailResolver $personEmailResolver
+        ParticipantEventRecorder $events
     ) {
         $this->productions = $productions;
         $this->participants = $participants;
-        $this->people = $people;
-        $this->organizations = $organizations;
         $this->authorization = $authorization;
         $this->transactions = $transactions;
-        $this->personEmailResolver = $personEmailResolver;
+        $this->events = $events;
     }
 
     public function execute(CreateParticipantCommand $command): ParticipantResult
@@ -68,86 +72,33 @@ final class CreateParticipantUseCase
         }
 
         $subjectType = ParticipantSubjectType::fromString($command->subjectType);
+
+        if (! $subjectType->equals(ParticipantSubjectType::nameOnly())) {
+            throw new ParticipantRequiresInvitationException(
+                'A person or an organization cannot be added directly; invite them instead.'
+            );
+        }
+
         $participantType = ParticipantType::fromString($command->participantType);
 
-        if ($subjectType->equals(ParticipantSubjectType::nameOnly())) {
-            if ($command->displayName === null || trim($command->displayName) === '') {
-                throw new ParticipantSubjectNotEligibleException('displayName is required for a NAME_ONLY Participant.');
-            }
-
-            $participant = $this->transactions->run(
-                function () use ($production, $command, $participantType): Participant {
-                    $participant = Participant::createNameOnly($production->id(), $command->displayName, $participantType, $command->remarks);
-                    $this->participants->save($participant);
-
-                    return $participant;
-                }
-            );
-
-            return ParticipantResult::fromDomain($participant);
+        if ($command->displayName === null || trim($command->displayName) === '') {
+            throw new ParticipantSubjectNotEligibleException('displayName is required for a NAME_ONLY Participant.');
         }
 
-        if ($command->subjectId === null || $command->subjectId === '') {
-            throw new ParticipantSubjectNotEligibleException('subjectId is required for a PERSON/ORGANIZATION Participant.');
-        }
-
-        $this->assertSubjectExists($subjectType, $command->subjectId);
-
-        if ($this->participants->findByProductionAndSubject(
-            $production->id(),
-            $subjectType,
-            $command->subjectId,
-            $participantType
-        )) {
-            throw new ParticipantAlreadyExistsException(
-                'A Participant with this ParticipantType already exists for this Subject on this Production.'
-            );
-        }
-
-        // StageArt Production側氏名の権威付けラウンド (§0/§2): `displayName`
-        // is this Production's own record of the member's name, entirely
-        // independent of `subjectType` - a PERSON Participant is free to
-        // carry a Production-specific name (e.g. a troupe-qualified
-        // "佐藤一郎（劇団いるか）") distinct from that Person's own
-        // familyName/givenName. This Use Case never substitutes the
-        // Person's own name here or anywhere else in this flow - see
-        // ParticipantResult::fromDomain(), which returns both
-        // independently rather than resolving one from the other.
         $participant = $this->transactions->run(
-            function () use ($production, $subjectType, $command, $participantType): Participant {
-                $participant = Participant::create(
-                    $production->id(),
-                    $subjectType,
-                    $command->subjectId,
-                    $participantType,
-                    $command->remarks,
-                    $command->displayName
-                );
+            function () use ($production, $command, $participantType, $requester): Participant {
+                if ($this->productions->findByIdForUpdate($production->id()) === null) {
+                    throw new ProductionNotFoundException($production->id()->toString());
+                }
+
+                $participant = Participant::createNameOnly($production->id(), $command->displayName, $participantType, $command->remarks);
                 $this->participants->save($participant);
+                $this->events->nameOnlyAdded($participant, $requester->id(), new DateTimeImmutable());
 
                 return $participant;
             }
         );
 
-        $isPersonSubject = $subjectType->equals(ParticipantSubjectType::person());
-        $person = $isPersonSubject ? $this->people->findById(PersonId::fromString($command->subjectId)) : null;
-        $email = $isPersonSubject ? $this->personEmailResolver->resolve(PersonId::fromString($command->subjectId)) : null;
-
-        return ParticipantResult::fromDomain($participant, $person, $email);
-    }
-
-    private function assertSubjectExists(ParticipantSubjectType $subjectType, string $subjectId): void
-    {
-        if ($subjectType->equals(ParticipantSubjectType::person())) {
-            if (! $this->people->findById(PersonId::fromString($subjectId))) {
-                throw new ParticipantSubjectNotEligibleException('The Subject Person does not exist.');
-            }
-
-            return;
-        }
-
-        if (! $this->organizations->findById(OrganizationId::fromString($subjectId))) {
-            throw new ParticipantSubjectNotEligibleException('The Subject Organization does not exist.');
-        }
+        return ParticipantResult::fromDomain($participant);
     }
 }

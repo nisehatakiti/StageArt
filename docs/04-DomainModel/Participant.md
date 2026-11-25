@@ -2,7 +2,9 @@
 
 # Domain Model : Participant
 
-Version : 2.1
+Version : 2.2
+
+- 2.2（2026-11-19）：PR #7 R14-B（本人の同意に基づく公演参加者登録）の実装を「本人の同意と状態の遷移（PR #7 R14-B）」に追記した。StatusとLifecycleの記述のうち、R14-Bで変わった点（PENDING・REJECTED・WITHDRAWNの状態、INACTIVEからACTIVEへの直接の復帰の禁止、同意の記録）は、その節を正とする。
 
 ---
 
@@ -595,6 +597,83 @@ CANCELLED
 
 ParticipantのStatus変更によって、
 過去の参加Factを削除しない。
+
+> 上記のStatusとLifecycleは、R14-Bより前の基本形である。R14-Bの実装では状態を7つとし、INACTIVEからACTIVEへの直接の復帰を認めない。次の「本人の同意と状態の遷移（PR #7 R14-B）」を正とする。
+
+---
+
+# 本人の同意と状態の遷移（PR #7 R14-B）
+
+設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.5・§4.6・§5.2・§6.3・§7.3（設計書ブランチ `docs/r14b-participant-invitation-design`、第9版 `9b42eb5`）。APIは `docs/08-API/ParticipantAPI.md`「実装済みエンドポイント（PR #7 R14-B）」。
+
+## 原則
+
+- PERSONのParticipantがACTIVEになるのは、本人の同意があるときだけ：招待の承諾、または本人の参加申請の承認。管理者は人物を直接追加できない。
+- 管理者が直接記録できるのは、NAME_ONLY（氏名だけで、Personに紐付かないParticipant。同意の対象外）だけ。
+- Participantの行は物理削除しない。終了した状態（CANCELLED・WITHDRAWN・REJECTED）でも行は残り、出欠・精算・会計の記録もそのまま残る。
+
+## Status（7つ）
+
+| Status | 意味 |
+|---|---|
+| DRAFT | 参加が確定していない、管理者による仮の行（現在のコードは新しく作らない。既存データにだけありうる） |
+| PENDING | 本人の参加申請（Join Key・検索）が承認待ち |
+| ACTIVE | 参加している |
+| INACTIVE | 管理者が一時的に参加の対象から外した |
+| CANCELLED | 管理者が参加を取り消した |
+| REJECTED | 本人の参加申請が却下された |
+| WITHDRAWN | 本人が参加をやめた |
+
+## 状態の遷移と、それを行う操作
+
+| 遷移 | 操作 |
+|---|---|
+| （新規）→ ACTIVE | 招待の承諾（PERSON）、NAME_ONLYの記録 |
+| （新規）→ PENDING | 本人の参加申請 |
+| PENDING → ACTIVE / REJECTED | 参加申請の承認 / 却下 |
+| CANCELLED・WITHDRAWN・REJECTED・INACTIVE・PENDING → ACTIVE | 招待の承諾（同じ行を再利用する） |
+| CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING | 本人の参加申請（同じ行を再利用する） |
+| ACTIVE → INACTIVE | 管理者の変更（`PUT /participants/{id}`） |
+| ACTIVE・INACTIVE → CANCELLED | 管理者の取消（`DELETE /participants/{id}`） |
+| ACTIVE → WITHDRAWN | 本人の取りやめ（`POST /participants/{id}/withdraw`。PrimaryManagerはできない） |
+
+- **INACTIVE → ACTIVE の直接の復帰は認めない**（管理者の変更では422）。復帰は、本人の招待の承諾または参加申請の承認による。
+- 管理者の変更（`PUT`）で受け付ける状態の変更は ACTIVE → INACTIVE だけ。
+- 同じ Production・Subject・ParticipantType の行は1つだけで、再び参加するときは同じ行（同じParticipant ID）を再利用する。そのため、出欠・精算の記録は引き継がれる。
+- 同じ役割の DRAFT の行がある場合、招待の承諾は拒否する（409。管理者に連絡する）。DRAFTの行を参加申請に変えることもしない。
+- 公演が終了した後（COMPLETED・ARCHIVED・CANCELLED）も、行と同意の情報は削除しない。見せ方は「参加者情報の開示」による。
+
+## 追加の属性
+
+| 属性 | 内容 |
+|---|---|
+| `enrollment_source` | 行が最初に作られた経路：`INVITATION`・`JOIN_REQUEST`・`MANAGER_RECORD`（NAME_ONLY）。作成時に一度だけ記録し、行の再利用では変えない。R14-Bより前の行は `NULL` |
+| `consent_source` | 最新の同意の経路：`INVITATION`・`JOIN_REQUEST` |
+| `consented_at` | 最新の同意の日時。`NULL` は同意の記録がないことを表し、同意済みとはみなさない（R14-Bより前の行はすべて `NULL`） |
+
+- 同意を記録できるのは、ACTIVEなPERSONのParticipantだけ。新しい同意が古い同意を上書きし、過去の同意は監査ログにだけ残る。
+- 招待の承諾では承諾の時点を、参加申請の承認では申請の日時を、同意の日時として記録する（申請の日時が記録されていない古い申請の承認では、同意を記録しない）。
+- すでにACTIVEなParticipantが招待（「同意の確認を依頼」）を承諾すると、行はそのままで、同意だけを記録する。
+- APIの表示用の `consent_status`：`CONFIRMED`（`consented_at` あり）・`UNCONFIRMED`（PERSONで `consented_at` なし）・`NOT_APPLICABLE`（NAME_ONLY・ORGANIZATION）。
+
+## ProductionDelegateとの関係
+
+- 担当者（ProductionDelegate）の権限が有効なのは、その人物が**同意を記録済みのACTIVEなPERSONのParticipant**である場合だけ（`ProductionDelegate.md`「担当者の有効性（PR #7 R14-B）」）。
+- 次の場合、同じトランザクションで、その人物のこの公演の担当者の行を INACTIVE にする。
+  - ACTIVE → INACTIVE
+  - ACTIVE・INACTIVE → CANCELLED
+  - ACTIVE → WITHDRAWN
+  - 招待の承諾で新たに ACTIVE になった場合（改めて任命する）
+
+## 参加者情報の開示
+
+Participantの行を保持することと、見せることは別に扱う。誰が何を見られるか（PrimaryManager・PARTICIPANT_MANAGER・REHEARSAL_MANAGER、公演の状態、本人の行、終了した行）は、`docs/08-API/ParticipantAPI.md`「参加者情報の開示（設計書 §7.3）」を正とする。
+
+- REHEARSAL_MANAGERには、メールアドレスと同意の情報を見せず、終了した行も見せない。公演の終了後は氏名も見せない。
+
+## 監査ログ
+
+Participant・招待・担当者の状態の変更は、変更と同じトランザクションで監査ログ（`stageart_participant_events`）に記録する（`docs/07-DomainEvents/README.md`「Participantの監査ログ（PR #7 R14-B）」）。
 
 ---
 

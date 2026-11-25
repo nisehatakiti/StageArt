@@ -3,6 +3,8 @@
 
 Version : 1.0
 
+> PR #7 R14-B（2026-11-19追記）：本書は概念上のDomain Eventの定義である。R14-Bの実装では、ParticipantRemovedは発行せず、参加の終了を監査ログ（管理者の取消は `REMOVED_BY_MANAGER`、本人の取りやめは `WITHDRAWN`）として記録する。参加者の行は物理削除しない（CANCELLED・WITHDRAWN）。`README.md`「Participantの監査ログ（PR #7 R14-B）」を参照。
+
 ---
 
 # Purpose

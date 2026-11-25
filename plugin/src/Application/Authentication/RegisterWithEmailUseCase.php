@@ -8,8 +8,6 @@ use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
-use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
-use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use StageArt\Domain\Authentication\EmailVerificationToken;
@@ -17,7 +15,6 @@ use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
 use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
-use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
@@ -57,36 +54,28 @@ use Throwable;
  * shared abstraction here would be inconsistent with the existing
  * design, not a fix for genuine duplication.
  *
- * StageArt メール招待によるProductionParticipant追加機能: after a
- * successful registration, resolves any outstanding
- * ParticipantInvitation for this email via ResolveParticipantInvitationUseCase
- * - a single delegated call, not inline Participant business logic (see
- * that Use Case's own docblock for how it re-authorizes Participant
- * creation through the invitation's own inviter, never bypassing
- * CreateParticipantUseCase's Authorization check). Wrapped in its own
- * try/catch so an invitation-resolution failure can never turn a
- * successful registration into a failed response - this method's
- * existing return contract (AuthenticationResult) is unchanged.
- * PR #7 R14-A (F6): only for a registration through an invitation link
- * (`invitationToken`); a self-registration's invitations are resolved
- * when its address is verified (VerifyEmailUseCase).
+ * StageArt 招待登録のメール確認省略ラウンド (OrganizationInvitation only since
+ * R14-B): when `$command->invitationToken` is the token of a usable
+ * OrganizationInvitation, that invitation's own `email()` is used for
+ * everything below - the duplicate-email check, WordPress user
+ * provisioning and the EmailCredential itself, which is marked verified
+ * (the link proves the address is reachable) with no confirmation mail -
+ * and the invitation is resolved after the registration
+ * (ResolveOrganizationInvitationUseCase, failures logged with ids only).
+ * The organization invitation handling is unchanged by R14-B (D1).
  *
- * StageArt 招待登録のメール確認省略ラウンド: when `$command->invitationToken`
- * resolves to a usable ParticipantInvitation, that invitation's own
- * `email()` is used for EVERYTHING below - the duplicate-email check,
- * WordPress user provisioning, and the EmailCredential itself - never
- * `$command->email` (the client-submitted value is not trusted for this
- * path; see §7 of this round's instruction: "招待に記録されている
- * メールアドレスを登録メールアドレスとして使用する"). An invalid, expired,
- * cancelled, or already-consumed token fails the whole registration via
- * ParticipantInvitationNotFoundException (reusing the exact exception/
- * "not usable" semantics GetParticipantInvitationByTokenUseCase already
- * established) - it never silently falls back to ordinary registration.
- * The freshly-created EmailCredential is marked verified immediately
- * (the invitation link itself already proves this address is
- * reachable), and no EmailVerificationToken/confirmation mail is ever
- * created for this path. Ordinary self-registration (`invitationToken`
- * null) is completely unchanged.
+ * PR #7 R14-B stage 4 (design doc §7.1, §9.2, U5 C案): a Production
+ * (participant) invitation is never looked up by token and never resolved
+ * here - registering, verifying an address or signing in with Google does
+ * not make anyone a participant; the invitee accepts explicitly from
+ * `GET /me/participant-invitations`. A token that is not a usable
+ * OrganizationInvitation's (an old participant-invitation link, an
+ * expired or unknown token) is ignored: the registration is an ordinary
+ * one, with exactly the result and response of a registration without a
+ * token (the address is not marked verified and the usual confirmation
+ * mail is sent) - nothing about any invitation is revealed. Before R14-B
+ * such a token failed the registration; the organization invitation's
+ * own valid-token path is the same as before.
  */
 final class RegisterWithEmailUseCase
 {
@@ -103,8 +92,6 @@ final class RegisterWithEmailUseCase
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
     private AuthMailerInterface $mailer;
-    private ResolveParticipantInvitationUseCase $resolveParticipantInvitation;
-    private ParticipantInvitationRepositoryInterface $participantInvitations;
     private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
     private OrganizationInvitationRepositoryInterface $organizationInvitations;
 
@@ -118,8 +105,6 @@ final class RegisterWithEmailUseCase
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
         AuthMailerInterface $mailer,
-        ResolveParticipantInvitationUseCase $resolveParticipantInvitation,
-        ParticipantInvitationRepositoryInterface $participantInvitations,
         ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation,
         OrganizationInvitationRepositoryInterface $organizationInvitations
     ) {
@@ -132,8 +117,6 @@ final class RegisterWithEmailUseCase
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
         $this->mailer = $mailer;
-        $this->resolveParticipantInvitation = $resolveParticipantInvitation;
-        $this->participantInvitations = $participantInvitations;
         $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
         $this->organizationInvitations = $organizationInvitations;
     }
@@ -146,33 +129,22 @@ final class RegisterWithEmailUseCase
             );
         }
 
-        $invitation = null;
         $organizationInvitation = null;
 
         if ($command->invitationToken !== null) {
-            $tokenHash = hash('sha256', $command->invitationToken);
-            $invitation = $this->participantInvitations->findByTokenHash($tokenHash);
+            // R14-B stage 4: only an OrganizationInvitation token is looked up
+            // (a participant invitation is never found by token, U5 C案). A
+            // token that is not a usable OrganizationInvitation's is ignored
+            // - the registration is an ordinary one (see the class docblock).
+            $candidate = $this->organizationInvitations->findByTokenHash(hash('sha256', $command->invitationToken));
 
-            // A single `invitationToken` field serves both invitation
-            // kinds (the registration screen has no way to know in
-            // advance which one a link carries) - if it isn't a usable
-            // ParticipantInvitation, check OrganizationInvitation before
-            // giving up. Both are 32-byte random hex values, so a
-            // collision across the two tables is not a realistic
-            // concern.
-            if ($invitation === null || ! $invitation->isUsable()) {
-                $invitation = null;
-                $organizationInvitation = $this->organizationInvitations->findByTokenHash($tokenHash);
-
-                if ($organizationInvitation === null || ! $organizationInvitation->isUsable()) {
-                    throw new ParticipantInvitationNotFoundException('No usable invitation found for this token.');
-                }
+            if ($candidate !== null && $candidate->isUsable()) {
+                $organizationInvitation = $candidate;
             }
         }
 
-        $invitationEmail = $invitation?->email() ?? $organizationInvitation?->email();
-        $registrationEmail = $invitationEmail ?? $command->email;
-        $hasTrustedInvitation = $invitation !== null || $organizationInvitation !== null;
+        $registrationEmail = $organizationInvitation !== null ? $organizationInvitation->email() : $command->email;
+        $hasTrustedInvitation = $organizationInvitation !== null;
 
         // Captured by reference from inside the transaction closure below
         // so the mailer can be called AFTER the transaction commits, not
@@ -242,25 +214,14 @@ final class RegisterWithEmailUseCase
             $this->mailer->sendEmailVerificationEmail($registrationEmail, $emailVerificationTokenValue);
         }
 
-        // PR #7 R14-A (F6): invitations are resolved here only when the
-        // registration came through an invitation link - the token proves
-        // the registrant received the mail sent to that address, and the
-        // credential was registered under the invitation's own address and
-        // marked verified above. A self-registration has proven nothing
-        // about the address yet: its invitations are resolved when the
-        // address is verified (VerifyEmailUseCase), never before.
+        // PR #7 R14-A (F6): organization invitations are resolved here only
+        // when the registration came through an organization invitation link
+        // - the token proves the registrant received the mail sent to that
+        // address. A self-registration's organization invitations are
+        // resolved when the address is verified (VerifyEmailUseCase).
+        // Participant invitations are never resolved (R14-B stage 4).
         if (! $hasTrustedInvitation) {
             return $result;
-        }
-
-        try {
-            $this->resolveParticipantInvitation->execute(PersonId::fromString($result->personId), $registrationEmail);
-        } catch (Throwable $exception) {
-            error_log(sprintf(
-                '[StageArt ParticipantInvitation] resolution failed after email registration for person=%s: %s',
-                $result->personId,
-                $exception->getMessage()
-            ));
         }
 
         try {

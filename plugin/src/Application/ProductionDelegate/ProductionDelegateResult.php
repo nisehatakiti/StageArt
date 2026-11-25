@@ -20,6 +20,12 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegate;
  * feature's own Result, not a new endpoint and not a Person search
  * capability (see this feature's final report for the fuller context:
  * no such search capability exists anywhere in StageArt today).
+ *
+ * R14-B §4.6 / §7.1 (stage 4): `effective` / `ineffective_reason`
+ * (INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED) - whether the
+ * row actually grants its Role now (ProductionAuthorizationService). An
+ * ACTIVE row of a Person who is not a consented ACTIVE member is shown, but
+ * as not effective.
  */
 final class ProductionDelegateResult
 {
@@ -34,6 +40,8 @@ final class ProductionDelegateResult
     public string $createdAt;
     public string $updatedBy;
     public string $updatedAt;
+    public bool $effective;
+    public ?string $ineffectiveReason;
 
     private function __construct(
         string $id,
@@ -46,8 +54,11 @@ final class ProductionDelegateResult
         string $createdBy,
         string $createdAt,
         string $updatedBy,
-        string $updatedAt
+        string $updatedAt,
+        ?string $ineffectiveReason
     ) {
+        $this->ineffectiveReason = $ineffectiveReason;
+        $this->effective = $ineffectiveReason === null;
         $this->id = $id;
         $this->productionId = $productionId;
         $this->personId = $personId;
@@ -61,8 +72,17 @@ final class ProductionDelegateResult
         $this->updatedAt = $updatedAt;
     }
 
-    public static function fromDomain(ProductionDelegate $delegate, ?Person $person = null): self
+    /**
+     * `$ineffectiveReason` comes from
+     * ProductionAuthorizationService::delegateIneffectiveReason() (null =
+     * effective); an INACTIVE row is always INACTIVE.
+     */
+    public static function fromDomain(ProductionDelegate $delegate, ?Person $person, ?string $ineffectiveReason): self
     {
+        if (! $delegate->isActive()) {
+            $ineffectiveReason = 'INACTIVE';
+        }
+
         return new self(
             $delegate->id()->toString(),
             $delegate->productionId()->toString(),
@@ -74,7 +94,8 @@ final class ProductionDelegateResult
             $delegate->createdBy()->toString(),
             $delegate->createdAt()->format(DATE_ATOM),
             $delegate->updatedBy()->toString(),
-            $delegate->updatedAt()->format(DATE_ATOM)
+            $delegate->updatedAt()->format(DATE_ATOM),
+            $ineffectiveReason
         );
     }
 
@@ -95,6 +116,8 @@ final class ProductionDelegateResult
             'created_at' => $this->createdAt,
             'updated_by' => $this->updatedBy,
             'updated_at' => $this->updatedAt,
+            'effective' => $this->effective,
+            'ineffective_reason' => $this->ineffectiveReason,
         ];
     }
 }

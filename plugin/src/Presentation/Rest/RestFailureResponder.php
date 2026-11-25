@@ -6,8 +6,10 @@ namespace StageArt\Presentation\Rest;
 
 use StageArt\Application\Performance\CapacityBelowReservationsException;
 use StageArt\Application\Production\ProductionClosedException;
+use StageArt\Application\RateLimit\RateLimitedException;
 use StageArt\Application\Reservation\PerformanceNotAcceptingException;
 use StageArt\Application\Shared\DatabaseBusyException;
+use StageArt\Application\Shared\PersistenceException;
 use Throwable;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -29,6 +31,13 @@ use WP_REST_Response;
  *   nothing was saved and the same request may be sent again. `data`
  *   carries `retryable: true`. Clients do not resend it on their own: the
  *   user is told nothing was saved and decides to try again.
+ * - 500 `stageart_persistence_failed` (PR #7 R14-B stage 4, design doc
+ *   §7.4 / N2): a checked write or read of an R14-B Repository failed
+ *   (PersistenceException - a UNIQUE violation a controller did not turn
+ *   into its own 409 included). The transaction was rolled back; no
+ *   success is answered and the response carries no database text, SQL or
+ *   address (the exception message holds the operation, table and errno
+ *   only, and goes to the PHP error log).
  * - 500 `stageart_internal_error`: any other failure (a database error, a
  *   failed COMMIT, a bug). Its outcome is not known to the client, so it
  *   is not marked retryable; the details go to the PHP error log only,
@@ -106,6 +115,16 @@ final class RestFailureResponder
             return self::error('stageart_capacity_below_reservations', $exception->getMessage(), 409, ['capacity' => $exception->capacity(), 'reserved_seats' => $exception->occupied()]);
         }
 
+        // PR #7 R14-B stage 8 (design doc §9.2): a rate limit was reached (or
+        // its counter was unavailable): nothing was done. `retry_after` is
+        // the seconds until the window ends, also sent as Retry-After.
+        if ($exception instanceof RateLimitedException) {
+            $response = self::error('stageart_rate_limited', 'Too many requests. Please try again later.', 429, ['retry_after' => $exception->retryAfter()]);
+            $response->header('Retry-After', (string) $exception->retryAfter());
+
+            return $response;
+        }
+
         if ($exception instanceof DatabaseBusyException) {
             $response = self::error(
                 'stageart_database_busy',
@@ -119,6 +138,10 @@ final class RestFailureResponder
         }
 
         error_log('StageArt REST: ' . get_class($exception) . ': ' . $exception->getMessage() . ' in ' . $exception->getFile() . ':' . $exception->getLine());
+
+        if ($exception instanceof PersistenceException) {
+            return self::error('stageart_persistence_failed', 'The data could not be saved, and nothing was changed.', 500);
+        }
 
         return self::error('stageart_internal_error', 'The operation failed on the server.', 500);
     }

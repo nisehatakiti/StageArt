@@ -37,6 +37,7 @@ use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -56,6 +57,7 @@ final class GetProductionAccountingDetailUseCaseTest extends TestCase
     private InMemoryBudgetRepository $budgets;
     private InMemoryJournalEntryRepository $journalEntries;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
     private GetProductionAccountingDetailUseCase $getDetail;
 
     private Organization $organization;
@@ -81,7 +83,7 @@ final class GetProductionAccountingDetailUseCaseTest extends TestCase
         $prodAuth = new ProductionAuthorizationService(
             new OrganizationAuthorizationService($this->people, $this->memberships),
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants = new InMemoryParticipantRepository()
         );
 
         $this->getDetail = new GetProductionAccountingDetailUseCase(
@@ -226,6 +228,7 @@ final class GetProductionAccountingDetailUseCaseTest extends TestCase
     {
         $delegate = Person::create(50);
         $this->people->save($delegate);
+        ConsentedParticipant::seed($this->participants, $this->production->id(), $delegate->id());
         $this->delegates->save(ProductionDelegate::create($this->production->id(), $delegate->id(), RoleKey::accountingManager(), $this->manager->id()));
 
         $this->assertSame($this->production->id()->toString(), $this->getDetail->execute($this->query(50))->productionId);

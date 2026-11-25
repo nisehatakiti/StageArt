@@ -1,5 +1,5 @@
 import type { ApiClient } from '@/api/client';
-import type { ProductionDelegate } from '@/types/api';
+import type { MyProductionDelegateRole, ProductionDelegate } from '@/types/api';
 
 /**
  * ProductionDelegate実用化 Phase: the Backend (ProductionDelegateRestController.php)
@@ -36,4 +36,13 @@ export function updateProductionDelegate(
 
 export function deleteProductionDelegate(client: ApiClient, delegateId: string): Promise<void> {
   return client.delete<void>(`/production-delegates/${delegateId}`);
+}
+
+/**
+ * PR #7 R14-B stage 9 (design doc §10, §4.6): the logged-in Person's own
+ * delegate rows in a Production with effective / ineffective_reason (any
+ * logged-in Person; own rows only, empty when none).
+ */
+export function fetchMyProductionDelegateRoles(client: ApiClient, productionId: string): Promise<MyProductionDelegateRole[]> {
+  return client.get<MyProductionDelegateRole[]>(`/productions/${productionId}/delegates/me`);
 }

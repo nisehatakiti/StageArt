@@ -23,6 +23,17 @@ const pendingInvitation = {
   expires_at: '2099-01-01T00:00:00+00:00',
   consumed_at: null,
   is_expired: false,
+  // R14B-4R (§7.1): the managers' list fields.
+  effective_status: 'PENDING',
+  responded_at: null,
+  close_reason: null,
+  closed_at: null,
+  resend_count: 0,
+  resend_remaining: 5,
+  send_status: 'SENT',
+  last_sent_at: '2026-11-18T01:00:00+00:00',
+  send_limit: { sent_in_30_days: 1, remaining_in_30_days: 5, available_at: null },
+  reinvite_available_at: null,
 };
 
 /**
@@ -44,6 +55,8 @@ describe('Web メンバー管理: 招待一覧・再送・取消', () => {
     await waitFor(() => expect(screen.getByTestId('participant-invitation-row-invitation-1')).toBeVisible());
     expect(screen.getByText('invitee@example.com')).toBeVisible();
     expect(screen.getByText('山田 花子')).toBeVisible();
+    // R14-B §10: the Backend's effective_status as the state.
+    expect(screen.getByTestId('participant-invitation-status-invitation-1')).toHaveTextContent('承諾待ち');
 
     (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
       ok: true,

@@ -209,3 +209,4 @@ Google Driveを利用する場合も、対象DriveはPrimaryManager等の公演�
 - Production Lifecycleの変更はPrimaryManagerに限定する。
 - Production ArchiveはPrimaryManagerに限定する。
 - ProductionDelegateはOrganization自体の管理やRole / Permissionの変更を行わない。
+- （PR #7 R14-B、2026-11-19追記）ProductionDelegateの権限は、その人物が同意を記録済みのACTIVEなParticipantである間だけ有効とする。参加者でなくなった場合（INACTIVE・CANCELLED・WITHDRAWN）は、ProductionDelegateをINACTIVEにする。PrimaryManagerは参加をやめられない（先に管理者を引き継ぐ）。詳細は `04-DomainModel/ProductionDelegate.md`「担当者の有効性（PR #7 R14-B）」。

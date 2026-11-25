@@ -37,6 +37,7 @@ use StageArt\Tests\Support\InMemoryAccountRepository;
 use StageArt\Tests\Support\InMemoryBudgetRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -62,6 +63,7 @@ final class BudgetUseCaseTest extends TestCase
     private ActivateBudgetUseCase $activateBudget;
 
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
 
     protected function setUp(): void
     {
@@ -78,7 +80,7 @@ final class BudgetUseCaseTest extends TestCase
         $this->prodAuth = new ProductionAuthorizationService(
             $orgAuth,
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants = new InMemoryParticipantRepository()
         );
         $resolver = new ProductionOrganizationResolver($this->projects);
         $transactions = new InMemoryTransactionManager();
@@ -297,6 +299,7 @@ final class BudgetUseCaseTest extends TestCase
         $accountId = $this->createExpenseAccount($organization);
         $delegate = Person::create(7);
         $this->people->save($delegate);
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegate->id());
         foreach ($roles as $role) {
             $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $delegate->id(), RoleKey::fromString($role), $manager->id()));
         }
@@ -331,6 +334,7 @@ final class BudgetUseCaseTest extends TestCase
         $accountId = $this->createExpenseAccount($organization);
         $accountingManager = Person::create(7);
         $this->people->save($accountingManager);
+        ConsentedParticipant::seed($this->participants, $production->id(), $accountingManager->id());
         $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $accountingManager->id(), RoleKey::accountingManager(), $manager->id()));
 
         $budget = $this->createBudget->execute(new CreateBudgetCommand(7, $production->id()->toString(), 'A案', [

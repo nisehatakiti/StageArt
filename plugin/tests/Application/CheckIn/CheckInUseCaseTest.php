@@ -59,6 +59,7 @@ use StageArt\Tests\Support\InMemoryIssuedTicketRepository;
 use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -390,6 +391,7 @@ final class CheckInUseCaseTest extends TestCase
 
         $staff = Person::create(2);
         $this->people->save($staff);
+        ConsentedParticipant::seed($this->participants, $production->id(), $staff->id());
         $this->delegates->save(ProductionDelegate::create($production->id(), $staff->id(), RoleKey::checkInManager(), $production->primaryManagerPersonId()));
 
         $result = $this->checkInReservation->execute(new CheckInCommand($performance->id()->toString(), $reservation->id()->toString(), 2));

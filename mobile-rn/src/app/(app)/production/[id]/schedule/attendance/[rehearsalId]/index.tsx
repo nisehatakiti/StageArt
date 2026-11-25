@@ -40,9 +40,10 @@ import {
 } from '@/features/schedule/useScheduleComments';
 import { confirmAlert } from '@/utils/confirmAlert';
 import { getErrorMessage } from '@/utils/errorMessage';
-import type { Participant, RehearsalAttendance, ScheduleComment } from '@/types/api';
+import type { RehearsalAttendance, ScheduleComment } from '@/types/api';
 import { rehearsalActivityTypeLabel } from '@/features/attendance/activityType';
 import { isOverdueScheduled, OVERDUE_SCHEDULED_MESSAGE } from '@/features/attendance/overdue';
+import { isActivePersonParticipant, type ActivePersonParticipant } from '@/features/participant/participantGuards';
 
 /** Rehearsal detail status labels. */
 const REHEARSAL_STATUS_LABELS: Record<string, string> = {
@@ -233,7 +234,7 @@ export default function RehearsalAttendanceScreen() {
   const participantNameByPersonId = useMemo(() => {
     const map = new Map<string, string>();
     for (const participant of participantsQuery.data ?? []) {
-      if (participant.subject_type !== 'PERSON' || participant.status !== 'ACTIVE') continue;
+      if (!isActivePersonParticipant(participant)) continue;
       const fullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
       const name = participant.display_name?.trim() || fullName;
       if (name) map.set(participant.subject_id, name);
@@ -282,8 +283,8 @@ export default function RehearsalAttendanceScreen() {
   const unselectedMembers = useMemo(() => {
     const currentTargetPersonIds = new Set((attendancesQuery.data ?? []).map((a) => a.person_id));
     return (participantsQuery.data ?? []).filter(
-      (participant): participant is Participant =>
-        participant.subject_type === 'PERSON' && participant.status === 'ACTIVE' && !currentTargetPersonIds.has(participant.subject_id)
+      (participant): participant is ActivePersonParticipant =>
+        isActivePersonParticipant(participant) && !currentTargetPersonIds.has(participant.subject_id)
     );
   }, [participantsQuery.data, attendancesQuery.data]);
 

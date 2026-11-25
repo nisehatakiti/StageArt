@@ -104,3 +104,35 @@ namespace StageArt\Infrastructure\WordPress\Persistence {
         }
     }
 }
+
+// PR #7 R14-B stage 8: the rate limiter and the retention job read the
+// error number the same way (1213 = deadlock), with FakeMysqli::$errno.
+namespace StageArt\Infrastructure\WordPress\RateLimit {
+    if (! function_exists(__NAMESPACE__ . '\\mysqli_errno')) {
+        function mysqli_errno($mysql): int
+        {
+            $errno = \StageArt\Tests\Support\FakeMysqli::$errno;
+
+            if ($errno instanceof \Throwable) {
+                throw $errno;
+            }
+
+            return (int) $errno;
+        }
+    }
+}
+
+namespace StageArt\Infrastructure\WordPress\Retention {
+    if (! function_exists(__NAMESPACE__ . '\\mysqli_errno')) {
+        function mysqli_errno($mysql): int
+        {
+            $errno = \StageArt\Tests\Support\FakeMysqli::$errno;
+
+            if ($errno instanceof \Throwable) {
+                throw $errno;
+            }
+
+            return (int) $errno;
+        }
+    }
+}
