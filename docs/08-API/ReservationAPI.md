@@ -442,6 +442,7 @@ ReservationCancelledを発行する。
 | `.../checkin/reservations/{reservation_id}/reverse`（Check-in取消。`payment_refunded` の有無を問わない） | **可** | 409 |
 
 - 判定はトランザクション内でProduction行をロックして読んだStatusで行う。リクエストがロック待ちの間に決算完了・中止が確定した場合も409になる。
+- 2026-11-25（D-1 設計確定、未実装）：上表の「COMPLETED / ARCHIVED」列の拒否を、決算確定済みのProduction（ACTIVE・CANCELLEDで決算確定したものを含む）にも適用する。CANCELLEDで「可」の操作（セルフサービス取消・Check-in取消）も、決算確定後は409とする（`ProductionLifecycle.md`「決算確定後のロック」）。
 - ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md`「公演状態・ロック・DB障害の共通エラー」）。
 - 予約・当日券のpriceSnapshotは、ロック取得後に読み直したTicketの価格で記録する。Ticketの価格変更後も、確定済みReservationのpriceSnapshotは変わらない。
 - 状態ごとの業務ルールは `04-DomainModel/ProductionLifecycle.md`「公演活動の制限」を正とする。

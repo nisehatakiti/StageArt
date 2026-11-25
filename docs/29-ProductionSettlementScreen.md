@@ -1,8 +1,10 @@
 # StageArt Blueprint
 # Chapter 29 : Production Settlement Screen Specification
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed business specification
+
+Version 1.1 (2026-11-25, D-1 design confirmed, **not implemented**): adds §8 決算確定 and 公演の完了 on this screen. The button label 「公演を終了する（決算完了）」 is retired. See `docs/04-DomainModel/ProductionLifecycle.md` Version 1.3.
 
 ---
 
@@ -167,13 +169,36 @@ The Production-wide Quota (ノルマ) uses its own sales-performance count, whic
 ### 7.2 Over-payment after a refund (2026-11-10, PR #7 R7)
 
 - A Check-in reversed (refunded) after the member was settled lowers the confirmed amount, while the settled amount stays. The difference is shown on the member's row as **払い過ぎ: N円**.
-- Production Completion (決算完了) is refused while any member is over-paid, as it is while any member is under-settled (`docs/04-DomainModel/ProductionLifecycle.md` 「決算完了の精算条件」).
+- Production Completion is refused while any member is over-paid, as it is while any member is under-settled (`docs/04-DomainModel/ProductionLifecycle.md` 「決算確定と公演完了の精算条件」). From Version 1.1 the same condition is also a precondition of 決算確定 (§8).
 - With today's operations, the manager resolves it before completion by cancelling the member's last settlement and settling again at the confirmed amount.
 - Open issue: cancelling undoes only the last settlement, once. A member settled in several steps who then becomes over-paid by more than the last step cannot be brought back to the confirmed amount, so the Production cannot be completed. A settlement adjustment (reduction / refund record) is needed; not decided.
 
 ---
 
-## 8. Scope
+## 8. 決算確定 and 公演の完了 (Version 1.1, 2026-11-25, not implemented)
+
+公演終了 (the performances are over), 決算確定 (the Production's accounting is closed and locked) and 公演の完了 (ACTIVE → COMPLETED) are three different things (`ProductionLifecycle.md` 「公演終了・決算確定・公演完了の区別」).
+
+The screen offers two separate operations, in this order:
+
+```text
+精算（メンバーごと）
+↓
+［決算を確定する］   … PrimaryManager / 公演代理人 / 会計担当
+↓  （以後、会計・精算・予約・受付・公演回の変更はできない）
+［公演を完了する］   … PrimaryManager only, after 決算確定
+↓
+COMPLETED
+```
+
+- **［決算を確定する］** is shown to the PrimaryManager, the 公演代理人 and the 会計担当 while the Production is ACTIVE or CANCELLED and not yet closed (`can_close_accounting`). It opens one confirmation dialog stating what is closed and that it cannot be undone from the screen. A refusal (unsettled / over-paid members, pending expenses, other preconditions) is shown with its reason and nothing changes.
+- After 決算確定 the screen shows 「決算確定済み（日時・実行者）」. The settle / cancel-settlement buttons are no longer offered.
+- **［公演を完了する］** replaces the retired 「公演を終了する（決算完了）」. It is shown to the PrimaryManager only, and is enabled only after 決算確定 (`can_complete`). The confirmation dialog says the Production will be completed; it no longer says 「公演を終了」 or 「決算完了」.
+- A Production completed before Version 1.1 has no 決算確定 record; the screen shows it as 決算確定済み without a date / executor.
+- The status line no longer shows 「終了（決算完了）」 for COMPLETED; it shows 「完了」.
+- The same label change applies to the Production management screen's completion entry (`productions/[id]/index`).
+
+## 9. Scope
 
 The following are not fixed by this specification unless separately confirmed:
 

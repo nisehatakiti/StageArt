@@ -1,7 +1,9 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 4.1
+Version : 4.2
+
+Version 4.2（2026-11-25、D-1 設計確定。**未実装**）：決算確定のAPI・応答項目を追加し、公演完了を決算確定後に限った（「決算確定（Version 4.2）」）。`04-DomainModel/ProductionLifecycle.md` Version 1.3を正とする。
 
 ---
 
@@ -123,7 +125,7 @@ GET /api/v1/productions/{productionId}
 
 Productionのレスポンス（取得・一覧・各状態変更の結果）は、要求者について `can_complete`（boolean）を含む（Version 4.1、2026-10-29）。
 
-- 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。
+- 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。Version 4.2で「かつ決算確定済み」を条件に加える（未実装）。
 - 公演完了の権限を持つのはPrimary Managerのみである（2026-11-24確定、PR #8 統合。それまでは会計管理者・代理人も含めていた）。判定は公演完了APIと同じ認可処理による。
 - 精算が完了していない等、公演完了時の制約は `can_complete` では判定しない。trueでも、公演完了APIはそれらの制約により拒否しうる。
 - 公演開始・アーカイブ・中止等、他の状態変更の権限は `can_complete` に含まれず、従来どおりPrimary Managerのみである。
@@ -138,6 +140,15 @@ Productionのレスポンスは、要求者について次の値も含む（2026
 | `can_manage_production_operations` | Primary Managerまたは公演代理人（公演情報・公開ページ・公開切替・Slug・定員・公演回の共通設定・上演時間・参加コード） |
 | `can_manage_accounting` | Primary Manager、公演代理人または会計担当（予算・経費・実績・精算） |
 | `can_manage_production_delegates` | Primary Managerまたは公演代理人（公演代理人・会計担当・受付担当の任命・変更） |
+
+Version 4.2（2026-11-25、未実装）で、Productionのレスポンスに次の項目を加える。項目名は実装時の案。
+
+| 項目（案） | 意味 |
+|---|---|
+| `accounting_closed_at` | 決算確定日時（未確定、またはVersion 4.2以前に完了した公演はnull） |
+| `accounting_closed_by_person_id` | 決算確定実行者（同上はnull） |
+| `is_accounting_closed` | 決算確定済み（`accounting_closed_at` がある、またはStatusがCOMPLETED・ARCHIVED） |
+| `can_close_accounting` | 要求者が決算確定の権限（Primary Manager・公演代理人・会計担当）を持ち、ProductionがACTIVEまたはCANCELLEDで、決算確定済みでないときtrue。前提条件（精算・未処理経費等）は判定しない。trueでも決算確定APIは前提条件により拒否しうる |
 
 Productionの更新（`PUT /productions/{id}`）は、Primary Managerまたは公演代理人が実行できる（2026-11-24、PR #8 統合。それまではPrimary Managerのみ）。
 
@@ -724,6 +735,49 @@ Reservation Domainが発行する。
 
 - 判定はProduction行の排他ロック下で読んだStatusで行う。決算完了と精算取消が同時に要求された場合、先に確定した方の結果を後の処理が読む（決算完了が先なら精算取消は409、精算取消が先なら決算完了は未精算額を検出して拒否）。
 - 決算完了後の訂正には、公演を明示的に再開する管理フローが必要（未実装）。
+- Version 4.2（未実装）：上表の「COMPLETED / ARCHIVED」列の拒否は、「決算確定済み」（ACTIVE・CANCELLEDで決算確定したものを含む）に広げる。下記「決算確定（Version 4.2）」。
+
+## 決算確定（Version 4.2、2026-11-25設計確定、未実装）
+
+### 決算確定API（案）
+
+`PATCH /productions/{id}/close-accounting`（パスは実装時の案）
+
+- 実行者：Primary Manager・公演代理人・会計担当（それ以外は403 `stageart_production_access_denied`）。
+- 対象：ACTIVEまたはCANCELLEDで、決算確定済みでないProduction。PLANNINGの扱いは未確定。COMPLETED・ARCHIVEDは決算確定済みとして扱い、409 `stageart_production_closed`。
+- Production行の排他ロックの下で前提条件を判定し、満たせば決算確定日時・実行者を記録する。Production Statusは変えない。
+- 前提条件（`04-DomainModel/ProductionLifecycle.md`「決算確定」）を満たさない場合は422で拒否し、何も変更しない。応答コードは実装時に決める（案）。
+
+| 条件を満たさない理由 | HTTP | code（案） |
+|---|---|---|
+| チケットバックの未精算 | 422 | `stageart_production_settlement_incomplete`（既存のコードを流用） |
+| チケットバックの払い過ぎ | 422 | `stageart_production_settlement_overpaid`（既存のコードと応答形式を流用） |
+| 下書き・申請中・差し戻しの経費が残っている | 422 | `stageart_production_expenses_pending` |
+| 未収金・未払金が残っている | 422 | `stageart_production_balances_outstanding`（判定の扱いは未確定） |
+| 未計上（DRAFT）の仕訳が残っている | 422 | `stageart_production_journal_entries_pending` |
+
+成功時は200で、更新後のProduction（`accounting_closed_at` 等を含む）を返す。
+
+### 公演完了（`PATCH /productions/{id}/complete`）の変更
+
+- 決算確定済みでないACTIVEのProductionは完了できない。応答は422（code案：`stageart_production_accounting_not_closed`）。
+- この確認を追加する以外、既存の処理（排他ロック、精算ガード、払い過ぎの判定、トランザクション、RESERVEDの予約の取消）と応答は変更しない。
+
+### 決算確定後に409 `stageart_production_closed` を返すエンドポイント
+
+決算確定済み（記録あり、またはCOMPLETED・ARCHIVED）のProductionについて、次を拒否し、何も変更しない。
+
+| 区分 | エンドポイント |
+|---|---|
+| 予算 | `POST /productions/{id}/budgets`、`PUT /budgets/{id}`、`PATCH /budgets/{id}/activate` |
+| 経費 | `POST /productions/{id}/expenses`、`PUT /expenses/{id}`、`PATCH /expenses/{id}/{submit,withdraw,resubmit,approve,reject}` |
+| 仕訳 | `POST /journal-entries/{id}/post`（公演に紐付く仕訳） |
+| 精算 | `POST /productions/{id}/settlement/members/{person_id}/{settle,cancel-settlement}` |
+| チケットバック | `/productions/{id}/quota-ticket-back-settings`（変更） |
+| 予約・受付 | 予約・当日券・Check-in・NO_SHOW・人数変更・attribution変更・セルフサービスの変更・取消・Check-in取消（`ReservationAPI.md`「公演状態による受付可否」） |
+| 公演回 | 公演回の追加・編集・中止（`PerformanceAPI.md`） |
+
+チケット価格・販売設定・基本情報の変更の扱いは未確定（`ProductionLifecycle.md`「決算確定後のロック」）。会計に影響しない公演情報の編集は拒否しない。
 
 ## 決算完了と精算の一致（R7）
 
@@ -750,7 +804,7 @@ Reservation Domainが発行する。
 }
 ```
 
-`GET /productions/{id}/settlement` の各メンバーには `overpaid_amount`（整数、払い過ぎがなければ0）を追加した。詳細は `04-DomainModel/ProductionLifecycle.md`「決算完了の精算条件」。
+`GET /productions/{id}/settlement` の各メンバーには `overpaid_amount`（整数、払い過ぎがなければ0）を追加した。詳細は `04-DomainModel/ProductionLifecycle.md`「決算確定と公演完了の精算条件」。Version 4.2では、同じ精算条件を決算確定の前提条件にも用いる（未実装）。
 
 ## 共通
 

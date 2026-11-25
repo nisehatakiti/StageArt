@@ -239,6 +239,34 @@ and a 公演代理人 (`ProductionAuthorizationService::
 PROXY_MANAGER_CAPABILITIES`). Completing the Production stays
 PrimaryManager-only (`ProductionDelegatePolicy.md` 「担当区分と権限一覧」).
 
+## Accounting close lock (D-1, design confirmed 2026-11-25, not implemented)
+
+`ProductionLifecycle.md` Version 1.3 separates 決算確定 (closing a
+Production's accounting: PrimaryManager / 公演代理人 / 会計担当, recording
+the closed-at time and the executor on the Production) from 公演の完了
+(ACTIVE -> COMPLETED, PrimaryManager only, only after 決算確定).
+
+Today none of this Module's write UseCases (`Budget\Create/Update/
+ActivateBudgetUseCase`, `Expense\Create/UpdateExpenseUseCase`,
+`ApplicantExpenseTransitionUseCase`, `Approve/RejectExpenseUseCase`,
+`JournalEntry\PostJournalEntryUseCase`) checks the Production's state,
+so a COMPLETED Production's accounting can still change (Dev check
+2026-11-25, roadmap D-1). The confirmed design:
+
+- every one of them refuses a 決算確定済み Production (closed record, or
+  status COMPLETED / ARCHIVED) with 409 `stageart_production_closed`;
+- the check is made under a shared lock on the Production row, taken
+  through the existing Core `ProductionActivityLockContract` (not wired
+  into this Module yet) before the Budget / Expense row lock, so a
+  concurrent 決算確定 (exclusive lock) and an accounting write never
+  interleave (lock order Production -> Budget / Expense -> Journal
+  Entry);
+- the 決算確定 operation itself checks, under the exclusive lock, that no
+  Expense of the Production is DRAFT / SUBMITTED / REJECTED and no
+  Journal Entry of it is still DRAFT (plus the other preconditions in
+  `ProductionLifecycle.md` 「決算確定」, some of which are not implementable
+  yet: 未収金・未払金, 仮売上・仕掛金 transfers).
+
 ## Open items
 
 - `ACCOUNTING_MANAGER` Role/Permission Set definition remains

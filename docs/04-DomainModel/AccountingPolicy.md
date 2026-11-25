@@ -2,7 +2,9 @@
 
 # Domain Model : Accounting Policy
 
-Version : 1.5
+Version : 1.6
+
+Version 1.6（2026-11-25、D-1 設計確定）：Productionの決算確定を公演完了（COMPLETED）から独立した会計上の操作とした（`ProductionLifecycle.md` Version 1.3）。「決算完了・COMPLETED」を前提とした記述を「決算確定」に改めた。
 
 ---
 
@@ -113,7 +115,7 @@ Production Accountingは、Production固有の別Journal帳簿ではない。
 
 Productionの精算では、Productionに関連する未収金・未払金を確認し、必要な入金・支払・キャンセル・免除・差額調整等を行う。
 
-最終的に未処理の未収金・未払金が残っていないことを確認できる状態を、Productionの決算完了条件の基本とする。ここでいう未収金に、チケット管理上の未収金（関係者予約の「代済み」）は含めない（TicketConsistencyPolicy「関係者予約・代済み・無料招待券」、2026-10-29確定）。
+最終的に未処理の未収金・未払金が残っていないことを確認できる状態を、Productionの決算確定の条件の基本とする（決算確定の前提条件の一覧と実装状況は `ProductionLifecycle.md`「決算確定」）。ここでいう未収金に、チケット管理上の未収金（関係者予約の「代済み」）は含めない（TicketConsistencyPolicy「関係者予約・代済み・無料招待券」、2026-10-29確定）。
 
 未収金を免除等によって消す場合も、単純な残高削除ではなく、調整として履歴を残す。
 
@@ -121,9 +123,11 @@ Productionの精算では、Productionに関連する未収金・未払金を確
 
 # Production Completion
 
-Productionの「決算完了」は、Productionに属する会計上の必要な精算・調整が完了したことを意味する。
+Productionの「決算確定」は、Productionに属する会計上の必要な精算・調整が完了したことを確認し、公演の会計を確定してロックする操作である（PrimaryManager・公演代理人・会計担当が行い、決算確定日時・実行者を記録する）。
 
-Productionの決算完了は、Organizationの会計期間Closeとは別概念である。
+決算確定は公演完了（Production Status COMPLETED）とは別の操作である。公演完了は、決算確定の後にPrimaryManagerが行う（`ProductionLifecycle.md` Version 1.3）。本書の他の箇所の「決算完了」は、この決算確定を指す。
+
+Productionの決算確定は、Organizationの会計期間Closeとは別概念である。
 
 Productionが会計期間をまたいだ場合でも、Journal Dateに従って各会計期間のOrganization Accountingへ反映する。
 
@@ -199,21 +203,21 @@ Production終了時に費目ごとの合計額をOrganization Accountingへ新�
 |---|---|
 | 仕掛品計上の基準時点 | Organizationの会計期間の期末。期末時点で未完成の公演に対応する対象原価を、仕掛品残高として把握する |
 | 公演決算確定日 | `AccountingUIAndReportingPolicy.md`「Production Closing」に従いProduction決算を確定した時点。当該公演の仕掛品を振り替え、売上・原価を確定する |
-| 公演別実績への反映 | 公演決算確定により、団体会計の公演別実績で当該公演が確定済みとして扱われる時点。金額は各Journal EntryのJournal Dateに基づく集計であり、反映のための新たな転記は行わない |
+| 公演別実績への反映 | 公演決算確定により、団体会計の公演別実績で当該公演が確定済みとして扱われる時点。「確定済み」は決算確定済み（決算確定日時の記録がある、またはStatusがCOMPLETED・ARCHIVED。`ProductionLifecycle.md`「既存データの扱い」）をいい、公演完了（COMPLETED）を待たない。金額は各Journal EntryのJournal Dateに基づく集計であり、反映のための新たな転記は行わない |
 
 ---
 
 # Post-Closing Adjustment
 
-Productionが決算完了しCOMPLETEDとなった後に、計上漏れ・金額誤り等が発覚した場合でも、Productionの過去Journal Entryを直接書き換えない。
+Productionの決算確定後（公演完了の前後を問わない）に、計上漏れ・金額誤り等が発覚した場合でも、Productionの過去Journal Entryを直接書き換えない。
 
-決算後修正は、新たなAdjustment Journal Entryとして記録する。
+決算後修正は、新たなAdjustment Journal Entryとして記録する方向とする。決算確定後の訂正・取消・再確定の具体的な方法は未確定であり、別途仕様決定する（`ProductionLifecycle.md`「決算確定後の訂正（設計課題）」。未実装）。
 
-基本Flow：
+基本Flow（方向。未実装）：
 
-Production決算完了
+Production決算確定
     ↓
-COMPLETED
+（公演完了 → COMPLETED）
     ↓
 計上漏れ・誤り発覚
     ↓
@@ -225,7 +229,7 @@ Organization Accountingへ反映
 
 決算後修正は、Organization Accountingにも通常の会計取引として反映される。
 
-決算完了時点の状態と、決算後修正後の現在状態を追跡できることを基本とする。
+決算確定時点の状態と、決算後修正後の現在状態を追跡できることを基本とする。
 
 ---
 
@@ -456,11 +460,13 @@ Mobile / Web UIでAccountingを表示する場合も、OrganizationのAccounting
 - 当日Check In時に実際にチケット代金を受領した場合は、Payment Factに基づき入金とTicket Revenueを同時に計上する。
 - 取引条件により未収金・未払金が正当に計上されている場合は、実際の入出金時に消し込む。
 - 未収金・未払金の差額は新しいJournal Entryとして調整する。
-- Productionの決算完了はOrganizationの会計期間Closeとは別概念とする。
+- Productionの決算確定はOrganizationの会計期間Closeとは別概念とする。
+- Productionの決算確定は公演完了（COMPLETED）とは別の操作とし、決算確定後にのみ公演完了できる。
+- 決算確定後は、予算・経費・仕訳・精算等、会計結果・金額に影響する操作を拒否する（`ProductionLifecycle.md`「決算確定後のロック」）。
 - Productionが会計期間をまたぐ場合、Journal Dateに従って各会計期間へ反映する。
 - 団体会計の公演別実績は、公演に紐付くJournal Entryの集計として表示し、公演決算確定時に新たな転記を行わない。
 - 期末の仕掛品計上・公演決算確定時の仕掛品振替は `OrganizationAccountingAndProductionCostPolicy.md` に従い、仕訳科目・Journal Date・対象原価の範囲が確定するまで実装しない。
-- COMPLETED後の修正は新たなAdjustment Journal Entryとして記録する。
+- 決算確定後の修正は新たなAdjustment Journal Entryとして記録する方向とする（具体的な訂正方法は未確定・未実装）。
 - ActualはJournal Entryから集計し、別の正本データとして二重管理しない。
 - Organization AccountingとProduction Accountingは同一Journal Entryを異なるScopeで集計する。
 - AccountingはOrganization単位のOption機能である。

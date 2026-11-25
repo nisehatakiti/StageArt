@@ -2,7 +2,9 @@
 
 # Domain Consistency Policy : Accounting
 
-Version : 1.2
+Version : 1.3
+
+Version 1.3（2026-11-25、D-1 設計確定）：「Settlement and Closing」を、決算確定と公演完了（COMPLETED）を分けた定義に改めた（`ProductionLifecycle.md` Version 1.3）。
 
 ---
 
@@ -217,13 +219,13 @@ Productionが複数会計年度にまたがる場合でも、Production全体を
 
 # Settlement and Closing
 
-Productionの決算完了は、Productionに必要な未収金・未払金・返金・調整等の処理が完了した状態を意味する。
+Productionの決算確定（本節の「決算完了」）は、Productionに必要な未収金・未払金・返金・調整等の処理が完了したことを確認し、公演の会計を確定・ロックする操作である。決算確定は公演完了（Production Status COMPLETED）とは別の操作であり、公演完了は決算確定後にPrimary Managerが行う（`ProductionLifecycle.md` Version 1.3、2026-11-25。未実装）。
 
 ここでいう未収金は会計上計上された未収金である。チケット管理上の未収金（関係者予約の「代済み」）は会計上の未収金と連動させないため、決算確定条件に含めない（TicketConsistencyPolicy「関係者予約・代済み・無料招待券」、2026-10-29確定）。
 
 Productionの決算完了とOrganizationのAccounting Period Closeは別概念である。
 
-ProductionがCOMPLETEDになった後に計上漏れ等が判明した場合も、過去仕訳を書き換えずAdjustment Journal Entryを追加する。
+Productionの決算確定後（公演完了の前後を問わない）に計上漏れ等が判明した場合も、過去仕訳を書き換えずAdjustment Journal Entryを追加する方向とする。決算確定後の訂正・取消・再確定の具体的な方法は未確定であり、別途仕様決定する（未実装）。
 
 ---
 

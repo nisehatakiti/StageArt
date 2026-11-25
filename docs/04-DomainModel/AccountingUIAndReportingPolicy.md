@@ -2,7 +2,9 @@
 
 # Accounting UI and Reporting Policy
 
-Version : 1.5
+Version : 1.6
+
+Version 1.6（2026-11-25、D-1 設計確定）：Production決算確定を公演の完了（ACTIVE → COMPLETED）から分離した。決算確定はPrimary Manager・会計管理者・代理人が行い、決算確定日時・実行者を記録する。公演の完了は決算確定後にPrimary Managerのみが行う。Version 1.5の「Productionの決算確定（公演の完了、ACTIVE → COMPLETED）はPrimary Managerのみ」を置き換える（`ProductionLifecycle.md` Version 1.3）。未実装。
 
 Version 1.4（2026-10-30）：立替経費の承認で承認金額を修正する手順を削除した。承認金額は申請金額と一致しなければならない（`ExpenseApprovalWorkflow.md` Version 1.10）。
 
@@ -155,10 +157,16 @@ BS / PL確認
     ↓
 YES
     ↓
-Production決算確定
+Production決算確定（決算確定日時・実行者を記録。以後、公演会計をロック）
+    ↓
+Primary Managerが「公演を完了する」
+    ↓
+公演の完了（ACTIVE → COMPLETED）
 ```
 
-公演終了そのものを決算確定条件とはしない。未収金・未払金が残っている場合は決算確定できない。
+公演終了そのものを決算確定条件とはしない。未収金・未払金が残っている場合は決算確定できない。決算確定の前提条件の一覧と各条件の実装状況は `ProductionLifecycle.md`「決算確定」を正本とする（2026-11-25時点で、未収金・未払金の判定、仮売上・公演仕掛金の振替、公演単位のBS / PLは未実装。未払金を消し込む支払処理も未実装）。
+
+決算確定と公演の完了は別の操作である。決算確定だけではProductionはCOMPLETEDにならない。決算確定前に公演の完了はできない。
 
 Productionの決算確定はOrganization全体の会計期間Closeとは別概念とする。
 
@@ -174,9 +182,7 @@ Production決算の確定は、チケットバック未払い金を個人ごと�
 
 # Production Closing Authority
 
-Productionの決算確定（公演の完了、ACTIVE → COMPLETED）を実行できるのは、Primary Managerのみとする（Version 1.5、2026-11-24確定、PR #8 統合）。
-
-決算確定に至るまでの会計業務 ― 予算策定・編集、予算の確定、経費入力・編集（自分が申請者の経費に限る。他人の経費は編集できない。ExpenseApprovalWorkflow.md）、経費承認、予算実績の確定、メンバー精算等の決算・精算の最終確定 ― は、次の者が実行できる。
+Productionの決算確定と、決算確定に至るまでの会計業務 ― 予算策定・編集、予算の確定、経費入力・編集（自分が申請者の経費に限る。他人の経費は編集できない。ExpenseApprovalWorkflow.md）、経費承認、予算実績の確定、メンバー精算等の決算・精算の最終確定、**Production決算確定** ― は、次の者が実行できる（Version 1.6）。
 
 - Primary Manager
 - 会計管理者（ACCOUNTING_MANAGERを持つ有効なProduction Delegate）
@@ -184,17 +190,21 @@ Productionの決算確定（公演の完了、ACTIVE → COMPLETED）を実行�
 
 上記以外のProduction Delegateは、これらを実行できない。
 
-Version 1.3（2026-10-28確定）では、会計管理者と代理人もProduction決算を確定できるとしていた。Version 1.5でPrimary Managerのみに改めた。決算・精算の最終確定とProductionの完了は別の権限とし、独立した「会計完了」の状態は設けない（メンバー精算の完了後に、Primary ManagerがProductionを完了する）。
+公演の完了（ACTIVE → COMPLETED）を実行できるのは、Primary Managerのみとする（2026-11-24確定、PR #8 統合）。公演の完了は、Production決算確定の後にのみ実行できる（Version 1.6）。
+
+経緯：Version 1.3（2026-10-28確定）では、会計管理者と代理人もProduction決算を確定できるとし、決算確定と公演の完了を同一の操作としていた。Version 1.5では、その同一の操作をPrimary Managerのみに改めた。Version 1.6で、決算確定（会計上の操作。Primary Manager・会計管理者・代理人）と公演の完了（Lifecycleの操作。Primary Managerのみ）を別の操作に分けた。決算確定の記録（日時・実行者）を公演に持たせるが、Production Statusは追加しない。
 
 ---
 
 # Production Closing Lock
 
-Productionの決算確定後、そのProductionに属する公演会計は完全ロックする。
+Productionの決算確定後、そのProductionに属する公演会計は完全ロックする。ロックは決算確定の時点から適用し、公演の完了（COMPLETED）を待たない。
 
-決算確定後は、通常の会計入力・明細修正・Journal Entryの変更・削除・公演決算内容の再編集を行わない。
+決算確定後は、通常の会計入力・明細修正・Journal Entryの変更・削除・公演決算内容の再編集を行わない。対象操作の一覧（予算・経費・仕訳・精算・チケットバック設定・予約・受付・公演回）は `ProductionLifecycle.md`「決算確定後のロック」を正本とする。
 
-決算確定後に計上漏れ・金額誤り等が発覚した場合は、Productionの決算を開き直して修正するのではなく、Organization Accounting側で調整仕訳を行う。
+既存のCOMPLETED・ARCHIVEDのProductionは決算確定済みとして扱い、同じくロックする（決算確定の記録は補完しない）。
+
+決算確定後に計上漏れ・金額誤り等が発覚した場合は、Productionの決算を開き直して修正するのではなく、Organization Accounting側で調整仕訳を行う方向とする。決算確定後の訂正・取消・再確定の具体的な方法は未確定であり、別途仕様決定する（未実装）。
 
 調整仕訳は通常のJournal Entryとして記録し、元のProduction決算の会計履歴を変更しない。
 
@@ -297,8 +307,9 @@ POSTED済みJournal Entryを直接編集・削除せず、訂正時には赤黒�
 - 総勘定元帳はJournal Entryから生成し、直接編集できない。
 - Production決算は未収金・未払金がすべて解消され、仮売上・公演仕掛金の決算処理を行ったうえで確定可能とする。
 - 会計期間末に決算未確定Productionの売上残高を仮売上へ振り替え、Production決算確定時に正式な売上へ振り替える。Check In時点では仮売上への振替を行わない。
-- Production決算の確定（公演の完了）はPrimary Managerのみとする。それまでの会計業務・決算・精算の最終確定はPrimary Manager、会計管理者、代理人が行える（Version 1.5）。
-- Production決算確定後は公演会計を完全ロックする。
+- Production決算確定は、Primary Manager、会計管理者、代理人が行える。それまでの会計業務・決算・精算の最終確定も同じ（Version 1.6）。
+- 公演の完了（ACTIVE → COMPLETED）はPrimary Managerのみとし、Production決算確定後にのみ行える（Version 1.6）。
+- Production決算確定後は公演会計を完全ロックする。既存のCOMPLETED・ARCHIVEDも決算確定済みとしてロックする。
 - 決算後の修正はProduction決算を開き直さず、Organization Accounting側の調整仕訳で行う。
 - BSをA4一枚程度、資産と負債/純資産の左右2列で出力する。
 - PLをA4一枚程度、収益と費用の左右2列で出力する。

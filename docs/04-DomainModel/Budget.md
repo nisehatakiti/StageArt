@@ -729,6 +729,8 @@ ARCHIVEDとして保持する。
 
 # Business Rules
 
+- Productionの決算確定後は、Budgetの作成・変更・確定（有効化）を行わない（2026-11-25、D-1 設計確定、未実装。`ProductionLifecycle.md`「決算確定後のロック」）。
+
 - Budgetは計画を表す。
 - Budgetは実績ではない。
 - Version 1.0ではBudgetをProjectまたはProductionに関連付けられる。

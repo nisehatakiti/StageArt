@@ -811,6 +811,8 @@ Organization内部の権限を持つPersonのみが
 
 # Business Rules
 
+- Productionの決算確定後は、そのProductionに紐付くJournal Entryの作成・変更・計上（POSTED化）・取消（Reversal）を行わない（2026-11-25、D-1 設計確定、未実装。`ProductionLifecycle.md`「決算確定後のロック」）。決算確定時点でDRAFTのJournal Entryが残っている場合は決算確定できない。決算確定後の訂正方法は未確定。
+
 - Journal Entryは会計上の取引を表すFactである。
 - Journal EntryはOrganizationに所属する。
 - Journal Entryは必要に応じてProject / Productionに関連付ける。

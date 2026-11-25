@@ -401,6 +401,7 @@ Reservation Domainが以下を発行する。
 - 定員を引き下げて予約済み席数（CANCELLED以外のReservationの人数の合計）を下回る場合は409 `stageart_capacity_below_reservations`（`data.capacity`、`data.reserved_seats`）。定員も予約も変更しない。定員を変えない・引き上げる編集は拒否しない（`23-CapacityPolicy.md`）。
 - 編集時のCOMPLETED / ARCHIVED判定（既存どおり422 `Performances cannot be edited while their Production is COMPLETED or ARCHIVED.`）は、ロック下で読んだStatusでも再確認する。ロック待ちの間に決算完了が確定した場合も同じ422になる。
 - 中止は、Production行の共有ロック → Performance行の排他ロックの順に取得し、ロック下で読み直したPerformanceを中止する（同時に確定した編集を元に戻さない）。**R6から、ProductionがCOMPLETED / ARCHIVEDなら409 `stageart_production_closed`**（それまでは公演状態を問わず実行できた）。CANCELLEDのProductionでは実行できる。
+- 2026-11-25（D-1 設計確定、未実装）：公演回の追加・編集・中止は、決算確定済みのProduction（ACTIVE・CANCELLEDで決算確定したものを含む）でも拒否する（売上・精算額に影響するため。`ProductionLifecycle.md`「決算確定後のロック」）。応答コードは既存の区別（編集は422、中止・追加は409）を引き継ぐか、409に揃えるかを実装時に決める。
 - Production更新による定員・公演時間の一括反映（Production行の排他ロック）とは、互いに待ち合わせる。
 - ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。
 
