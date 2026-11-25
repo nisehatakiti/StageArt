@@ -261,6 +261,7 @@ final class BudgetUseCaseTest extends TestCase
         $accountId = $this->createExpenseAccount($organization);
         $delegate = Person::create(7);
         $this->people->save($delegate);
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegate->id());
         foreach ($roles as $role) {
             $this->delegates->save(\StageArt\Domain\ProductionDelegate\ProductionDelegate::create($production->id(), $delegate->id(), RoleKey::fromString($role), $manager->id()));
         }

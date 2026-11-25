@@ -22,6 +22,7 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegateId;
 use StageArt\Domain\ProductionDelegate\ProductionDelegateRepositoryInterface;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -38,6 +39,7 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
 {
     private InMemoryPersonRepository $people;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
     private Production $production;
     private Production $otherProduction;
 
@@ -48,6 +50,7 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
     {
         $this->people = new InMemoryPersonRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
 
         $organization = Organization::create(new OrganizationName('Theatre Co'));
         $project = Project::create($organization->id(), 'Season');
@@ -66,8 +69,17 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
         $this->givenRoles('proxyAccounting', 7, [RoleKey::accountingManager(), RoleKey::participantManager(), RoleKey::rehearsalManager()]);
         $this->givenRoles('formerProxy', 8, [RoleKey::participantManager(), RoleKey::rehearsalManager()]);
         $this->deactivate('formerProxy', RoleKey::rehearsalManager());
+        // R14-B §4.6 x PR #8 統合: ACTIVE 代理人＋会計担当 rows of a Person who
+        // is not a consented ACTIVE Participant grant nothing.
+        $this->person['unconsentedProxyAccounting'] = $this->givenPerson(10);
+        foreach ([RoleKey::accountingManager(), RoleKey::participantManager(), RoleKey::rehearsalManager()] as $role) {
+            $this->delegates->save(ProductionDelegate::create($this->production->id(), $this->person['unconsentedProxyAccounting']->id(), $role, $this->production->primaryManagerPersonId()));
+        }
         // A 公演代理人 of the OTHER Production only.
         $this->person['otherProxy'] = $this->givenPerson(9);
+        // R14-B §4.6: delegate rows count only for a consented ACTIVE
+        // Participant (here: of the other Production only).
+        ConsentedParticipant::seed($this->participants, $this->otherProduction->id(), $this->person['otherProxy']->id());
         foreach ([RoleKey::participantManager(), RoleKey::rehearsalManager()] as $role) {
             $this->delegates->save(ProductionDelegate::create($this->otherProduction->id(), $this->person['otherProxy']->id(), $role, $this->otherProduction->primaryManagerPersonId()));
         }
@@ -101,6 +113,7 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
             '受付担当' => ['checkin', $none],
             '元公演代理人（REHEARSAL_MANAGERがINACTIVE）' => ['formerProxy', array_merge($none, ['participants' => true])],
             '他の公演の公演代理人' => ['otherProxy', $none],
+            '同意のない公演代理人＋会計担当（R14-B）' => ['unconsentedProxyAccounting', $none],
         ];
     }
 
@@ -157,7 +170,7 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
         return new ProductionAuthorizationService(
             new OrganizationAuthorizationService($this->people, new InMemoryMembershipRepository()),
             $delegates,
-            new InMemoryParticipantRepository()
+            $this->participants
         );
     }
 
@@ -174,7 +187,12 @@ final class ResponsibilityMatrixAuthorizationTest extends TestCase
      */
     private function givenRoles(string $who, int $wordPressUserId, array $roles): void
     {
-        $this->person[$who] = $this->person[$who] ?? $this->givenPerson($wordPressUserId);
+        if (! isset($this->person[$who])) {
+            $this->person[$who] = $this->givenPerson($wordPressUserId);
+            // R14-B §4.6: the rights below are those of a consented ACTIVE
+            // Participant of this Production (the expectations are unchanged).
+            ConsentedParticipant::seed($this->participants, $this->production->id(), $this->person[$who]->id());
+        }
 
         foreach ($roles as $role) {
             $this->delegates->save(ProductionDelegate::create($this->production->id(), $this->person[$who]->id(), $role, $this->production->primaryManagerPersonId()));
@@ -224,6 +242,11 @@ final class ReversedProductionDelegateRepository implements ProductionDelegateRe
     public function findByProductionAndPersonAndRole(ProductionId $productionId, PersonId $personId, RoleKey $role): ?ProductionDelegate
     {
         return $this->inner->findByProductionAndPersonAndRole($productionId, $personId, $role);
+    }
+
+    public function findByProductionAndPersonForUpdate(ProductionId $productionId, PersonId $personId): array
+    {
+        return array_reverse($this->inner->findByProductionAndPersonForUpdate($productionId, $personId));
     }
 
     public function delete(ProductionDelegateId $id): void

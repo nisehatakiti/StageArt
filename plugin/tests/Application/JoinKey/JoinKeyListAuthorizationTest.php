@@ -41,6 +41,7 @@ use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryJoinKeyRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
@@ -619,6 +620,13 @@ final class JoinKeyListAuthorizationTest extends TestCase
 
     private function givenDelegate(int $wordPressUserId, Production $production, RoleKey $role): ProductionDelegate
     {
+        // R14-B §4.6: a delegate row counts only for a consented ACTIVE
+        // Participant of the Production (the expectations are unchanged).
+        $personId = $this->personByUser[$wordPressUserId]->id();
+        if (! $this->participants->existsConsentedActivePersonParticipant($production->id(), $personId->toString())) {
+            ConsentedParticipant::seed($this->participants, $production->id(), $personId);
+        }
+
         $delegate = ProductionDelegate::create(
             $production->id(),
             $this->personByUser[$wordPressUserId]->id(),

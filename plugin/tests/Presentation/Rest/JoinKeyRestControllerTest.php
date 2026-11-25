@@ -27,6 +27,7 @@ use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\RestFailureResponder;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryJoinKeyRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
@@ -67,7 +68,8 @@ final class JoinKeyRestControllerTest extends TestCase
         $productions = new InMemoryProductionRepository();
         $delegates = new InMemoryProductionDelegateRepository();
         $organizationAuthorization = new OrganizationAuthorizationService($people, $memberships);
-        $productionAuthorization = new ProductionAuthorizationService($organizationAuthorization, $delegates, new InMemoryParticipantRepository());
+        $participants = new InMemoryParticipantRepository();
+        $productionAuthorization = new ProductionAuthorizationService($organizationAuthorization, $delegates, $participants);
 
         $person = [];
         foreach ([1, 2, 10, 20, 21, 30] as $user) {
@@ -86,6 +88,10 @@ final class JoinKeyRestControllerTest extends TestCase
         $production = Production::create(Project::create($organization->id(), 'Season')->id(), new ProductionName('Show'), $person[10]->id());
         $productions->save($production);
         $this->productionId = $production->id()->toString();
+        // R14-B §4.6: delegate rows count only for consented ACTIVE Participants.
+        foreach ([20, 21] as $user) {
+            ConsentedParticipant::seed($participants, $production->id(), $person[$user]->id());
+        }
         foreach ([[20, RoleKey::participantManager()], [20, RoleKey::rehearsalManager()], [21, RoleKey::accountingManager()]] as [$user, $role]) {
             $delegates->save(ProductionDelegate::create($production->id(), $person[$user]->id(), $role, $person[10]->id()));
         }
