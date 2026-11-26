@@ -20,7 +20,7 @@ describe('Application host (dev): /', () => {
     renderRouter('src/app', { initialUrl: '/' });
 
     await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
-    expect(screen.getByTestId('login-submit')).toBeVisible();
+    expect(screen.getByTestId('login-next')).toBeVisible();
     expect(screen.queryByTestId('stageart-landing-headline')).toBeNull();
   });
 });

@@ -15,7 +15,8 @@ describe('navigation (Expo Router)', () => {
     renderRouter('src/app', { initialUrl: '/' });
 
     await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
-    expect(screen.getByTestId('login-password')).toBeVisible();
-    expect(screen.getByTestId('login-submit')).toBeVisible();
+    expect(screen.getByTestId('login-next')).toBeVisible();
+    // Step 1 is the address only (login step 2 comes after POST /auth/account/check).
+    expect(screen.queryByTestId('login-password')).toBeNull();
   });
 });

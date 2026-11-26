@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
+import { clearEmailHandoff, peekEmailHandoff } from '@/auth/loginEmailHandoff';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
@@ -41,12 +42,20 @@ function RegisterScreen() {
   const router = useRouter();
   const { token: invitationToken } = useLocalSearchParams<{ token?: string }>();
 
-  const [email, setEmail] = useState('');
+  // Pre-filled with the address the login screen handed over (「新規登録へ」,
+  // memory only - auth/loginEmailHandoff.ts); empty otherwise. Still
+  // editable. An invitation preview below replaces it as before.
+  const [email, setEmail] = useState(() => peekEmailHandoff('register') ?? '');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [invitationProductionName, setInvitationProductionName] = useState<string | null>(null);
+
+  // Read once: a later visit to the registration screen starts empty again.
+  useEffect(() => {
+    clearEmailHandoff('register');
+  }, []);
 
   /**
    * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §3/§23:

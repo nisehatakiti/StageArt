@@ -4,6 +4,9 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, TouchableOpacity, type 
 
 import { isGoogleSignInAvailable, signInWithGoogleDiagnostic, type GoogleSignInDiagnosticStep } from '@/auth/googleSignIn';
 import { useAuth } from '@/auth/AuthContext';
+import { ApiError } from '@/api/errors';
+import { clearLoginEmailHandoff, peekLoginEmailHandoff, setEmailHandoff } from '@/auth/loginEmailHandoff';
+import { checkAccount, type AccountCheckResult, type AccountCheckStatus } from '@/features/auth/api';
 import { appOnlyRoute } from '@/components/app-only-route';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
@@ -130,18 +133,116 @@ function useGoogleSigninButtonComponent(): GoogleSigninButtonComponent | null {
   return Button;
 }
 
+/**
+ * Login in two steps: the address first (「次へ」 asks POST
+ * /auth/account/check which sign-in path it leads to), then the matching
+ * form. `fallback` is the ordinary password + Google form, used when the
+ * check itself could not be made (rate limit, network, server) so that the
+ * check can never lock anyone out of signing in.
+ */
+type LoginStep = { kind: 'email' } | { kind: 'checked'; check: AccountCheckResult } | { kind: 'fallback' };
+
+const PASSWORD_STATUSES: AccountCheckStatus[] = ['PASSWORD_LOGIN', 'MULTIPLE_AUTH_METHODS', 'EMAIL_VERIFICATION_REQUIRED'];
+
+function accountNotice(check: AccountCheckResult, googleAvailable: boolean): string | null {
+  const google = check.methods.includes('google');
+
+  switch (check.status) {
+    case 'MULTIPLE_AUTH_METHODS':
+      return googleAvailable ? 'パスワード、またはGoogleでログインできます。' : null;
+    case 'EMAIL_VERIFICATION_REQUIRED':
+      return `このメールアドレスの確認がまだ済んでいません。届いた確認メールのリンクを開いてください。確認メールを再送するには、パスワードを入力して「ログイン」を押してください。${google && googleAvailable ? 'Googleでもログインできます。' : ''}`;
+    case 'GOOGLE_LOGIN':
+      return googleAvailable
+        ? 'このメールアドレスはGoogleアカウントで登録されています。「Googleで続ける」からログインしてください。'
+        : 'このメールアドレスはGoogleアカウントで登録されています。この画面ではGoogleログインを利用できないため、Googleログインに対応したStageArtの画面からログインしてください。';
+    case 'NOT_FOUND':
+      return 'このメールアドレスはまだ登録されていません。新規登録を行ってください。';
+    case 'DISABLED':
+      return 'このアカウントは現在ご利用いただけません。お心当たりのない場合は、StageArtの運営にお問い合わせください。';
+    default:
+      return null;
+  }
+}
+
 function LoginScreen() {
   const { loginWithEmail, loginWithGoogle } = useAuth();
   const router = useRouter();
   const GoogleIcon = useGoogleSigninButtonComponent();
 
-  const [email, setEmail] = useState('');
+  // Pre-filled with the address just verified on the confirmation screen
+  // (auth/loginEmailHandoff.ts, memory only); empty otherwise. Still editable.
+  const [email, setEmail] = useState(() => peekLoginEmailHandoff() ?? '');
   const [password, setPassword] = useState('');
+  const [step, setStep] = useState<LoginStep>({ kind: 'email' });
+  const [checking, setChecking] = useState(false);
   const [submittingEmail, setSubmittingEmail] = useState(false);
   const [submittingGoogle, setSubmittingGoogle] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const submitting = submittingEmail || submittingGoogle;
+  // Read once: a later visit to the login screen starts empty again.
+  useEffect(() => {
+    clearLoginEmailHandoff();
+  }, []);
+
+  const submitting = submittingEmail || submittingGoogle || checking;
+  const googleAvailable = isGoogleSignInAvailable();
+  const showPassword = step.kind === 'fallback' || (step.kind === 'checked' && PASSWORD_STATUSES.includes(step.check.status));
+  const showGoogle = googleAvailable && (step.kind === 'fallback' || (step.kind === 'checked' && step.check.methods.includes('google')));
+  const notice = step.kind === 'checked' ? accountNotice(step.check, googleAvailable) : null;
+
+  /** Back to step 1, keeping the address (the password is dropped). */
+  function backToEmailStep() {
+    setStep({ kind: 'email' });
+    setPassword('');
+    setErrorMessage(null);
+  }
+
+  /** The address stays editable on every step; changing it after a check asks again. */
+  function handleEmailChange(next: string) {
+    setEmail(next);
+    if (step.kind !== 'email') {
+      backToEmailStep();
+    }
+  }
+
+  async function handleNext() {
+    if (checking) {
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    setErrorMessage(null);
+
+    if (trimmedEmail === '') {
+      setErrorMessage('メールアドレスを入力してください。');
+      return;
+    }
+
+    setChecking(true);
+    try {
+      const check = await checkAccount(trimmedEmail);
+      setStep({ kind: 'checked', check });
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'stageart_account_check_invalid_email') {
+        setErrorMessage('メールアドレスの形式が正しくありません。');
+      } else if (error instanceof ApiError && error.statusCode === 429) {
+        setErrorMessage('確認の回数が多いため、アカウントを確認できませんでした。しばらく待ってからもう一度お試しいただくか、このままログインしてください。');
+        setStep({ kind: 'fallback' });
+      } else {
+        setErrorMessage('アカウントを確認できませんでした。もう一度お試しいただくか、このままログインしてください。');
+        setStep({ kind: 'fallback' });
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  /** 「新規登録へ」 / the auxiliary register link: the address goes along (memory only), still editable there. */
+  function goToRegister() {
+    setEmailHandoff('register', email);
+    router.push('/register');
+  }
 
   async function handleEmailSubmit() {
     setSubmittingEmail(true);
@@ -246,6 +347,75 @@ function LoginScreen() {
 
   return (
     <AuthLayout logoTestID="login-brand-logo">
+      {/* Step 1: the address only. It stays editable on every step. */}
+      <ThemedTextInput
+        testID="login-email"
+        placeholder="メールアドレス"
+        value={email}
+        onChangeText={handleEmailChange}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="email-address"
+        textContentType="emailAddress"
+        autoComplete="email"
+        placeholderTextColor={STAGE.placeholder}
+        style={authStyles.input}
+      />
+
+      {notice && (
+        <ThemedText testID="login-account-notice" type="small" style={authStyles.description}>
+          {notice}
+        </ThemedText>
+      )}
+
+      {step.kind === 'email' && (
+        <TouchableOpacity
+          testID="login-next"
+          onPress={handleNext}
+          disabled={submitting}
+          accessibilityState={{ disabled: submitting, busy: checking }}
+          style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+        >
+          {checking ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>次へ</ThemedText>}
+        </TouchableOpacity>
+      )}
+
+      {showPassword && (
+        <>
+          <ThemedTextInput
+            testID="login-password"
+            placeholder="パスワード"
+            value={password}
+            onChangeText={setPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            textContentType="password"
+            autoComplete="current-password"
+            placeholderTextColor={STAGE.placeholder}
+            style={authStyles.input}
+          />
+          <TouchableOpacity
+            testID="login-submit"
+            onPress={handleEmailSubmit}
+            disabled={submitting}
+            style={[authStyles.button, submitting && authStyles.buttonDisabled]}
+          >
+            {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>ログイン</ThemedText>}
+          </TouchableOpacity>
+        </>
+      )}
+
+      {showPassword && showGoogle && (
+        <ThemedView style={styles.dividerRow}>
+          <ThemedView style={styles.dividerLine} />
+          <ThemedText type="small" style={styles.dividerText}>
+            または
+          </ThemedText>
+          <ThemedView style={styles.dividerLine} />
+        </ThemedView>
+      )}
+
       {/*
        * StageArt Google Web Sign-In (2026-09-04): isGoogleSignInAvailable()
        * now returns true on Web once a Web Client ID is configured
@@ -256,7 +426,7 @@ function LoginScreen() {
        * for why a differently-styled proxy button cannot trigger
        * it). Native's button below is unchanged.
        */}
-      {isGoogleSignInAvailable() &&
+      {showGoogle &&
         (Platform.OS === 'web' ? (
           <GoogleSignInButtonWeb onIdToken={handleGoogleWebIdToken} disabled={submitting} />
         ) : (
@@ -312,40 +482,11 @@ function LoginScreen() {
           </TouchableOpacity>
         ))}
 
-      {isGoogleSignInAvailable() && (
-        <ThemedView style={styles.dividerRow}>
-          <ThemedView style={styles.dividerLine} />
-          <ThemedText type="small" style={styles.dividerText}>
-            または
-          </ThemedText>
-          <ThemedView style={styles.dividerLine} />
-        </ThemedView>
+      {step.kind === 'checked' && step.check.status === 'NOT_FOUND' && (
+        <TouchableOpacity testID="login-go-register" onPress={goToRegister} disabled={submitting} style={authStyles.button}>
+          <ThemedText style={authStyles.buttonText}>新規登録へ</ThemedText>
+        </TouchableOpacity>
       )}
-
-      <ThemedTextInput
-        testID="login-email"
-        placeholder="メールアドレス"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        placeholderTextColor={STAGE.placeholder}
-        style={authStyles.input}
-      />
-      <ThemedTextInput
-        testID="login-password"
-        placeholder="パスワード"
-        value={password}
-        onChangeText={setPassword}
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry
-        textContentType="password"
-        autoComplete="current-password"
-        placeholderTextColor={STAGE.placeholder}
-        style={authStyles.input}
-      />
 
       {errorMessage && (
         <ThemedText testID="login-error" style={authStyles.error}>
@@ -353,26 +494,38 @@ function LoginScreen() {
         </ThemedText>
       )}
 
-      <TouchableOpacity
-        testID="login-submit"
-        onPress={handleEmailSubmit}
-        disabled={submitting}
-        style={[authStyles.button, submitting && authStyles.buttonDisabled]}
-      >
-        {submittingEmail ? <ActivityIndicator color="#fff" /> : <ThemedText style={authStyles.buttonText}>ログイン</ThemedText>}
-      </TouchableOpacity>
+      {step.kind === 'fallback' && (
+        <TouchableOpacity testID="login-retry-check" onPress={handleNext} disabled={submitting}>
+          <ThemedText type="link" style={authStyles.linkCentered}>
+            アカウントをもう一度確認する
+          </ThemedText>
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity testID="login-register-link" onPress={() => router.push('/register')} disabled={submitting}>
-        <ThemedText type="linkPrimary" style={authStyles.linkCentered}>
-          アカウントを新規登録
-        </ThemedText>
-      </TouchableOpacity>
+      {step.kind !== 'email' && (
+        <TouchableOpacity testID="login-back" onPress={backToEmailStep} disabled={submitting}>
+          <ThemedText type="link" style={authStyles.linkCentered}>
+            メールアドレスを入力し直す
+          </ThemedText>
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
-        <ThemedText type="link" style={authStyles.linkCentered}>
-          パスワードを忘れた
-        </ThemedText>
-      </TouchableOpacity>
+      {/* Auxiliary - the main path is 「次へ」. */}
+      {!(step.kind === 'checked' && step.check.status === 'NOT_FOUND') && (
+        <TouchableOpacity testID="login-register-link" onPress={goToRegister} disabled={submitting}>
+          <ThemedText type="linkPrimary" style={authStyles.linkCentered}>
+            アカウントを新規登録
+          </ThemedText>
+        </TouchableOpacity>
+      )}
+
+      {showPassword && (
+        <TouchableOpacity testID="login-forgot-password-link" onPress={() => router.push('/forgot-password')} disabled={submitting}>
+          <ThemedText type="link" style={authStyles.linkCentered}>
+            パスワードを忘れた
+          </ThemedText>
+        </TouchableOpacity>
+      )}
     </AuthLayout>
   );
 }

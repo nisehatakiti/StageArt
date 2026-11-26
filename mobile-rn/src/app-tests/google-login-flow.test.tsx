@@ -1,6 +1,9 @@
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+import { AuthProvider } from '@/auth/AuthContext';
 
 import { mockFetchRoutes } from './__fixtures__/homeFixtures';
+import LoginScreen from '../app/login';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
@@ -38,11 +41,20 @@ jest.mock('@/auth/googleSignIn', () => ({
   })),
 }));
 
-/** Kept in its own file - see login-flow.test.tsx's docblock for why
- * every renderRouter() call needs a dedicated file in this codebase. */
+const mockRouter = { push: jest.fn(), replace: jest.fn(), setParams: jest.fn(), back: jest.fn() };
+
+jest.mock('expo-router', () => ({
+  ...jest.requireActual('expo-router'),
+  useRouter: () => mockRouter,
+}));
+
+/** Address -> 次へ reports a Google account -> 「Googleで続ける」 -> /home.
+ * Rendered on its own with a mocked router (see login-flow.test.tsx). */
 describe('login flow: Google', () => {
   it('pressing "Googleで続ける" exchanges the Google ID Token for a StageArt session and navigates to /home', async () => {
     mockFetchRoutes([
+      { test: (u) => u.endsWith('/auth/account/check'), status: 200, body: { status: 'GOOGLE_LOGIN', methods: ['google'] } },
+      { test: (u) => u.endsWith('/me'), status: 200, body: { email_verified: true, family_name: '山田', given_name: '花子' } },
       {
         test: (u) => u.endsWith('/auth/google'),
         status: 200,
@@ -60,9 +72,20 @@ describe('login flow: Google', () => {
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: { upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] } },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/login' });
+    render(
+      <AuthProvider>
+        <LoginScreen />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
+    expect(screen.queryByTestId('login-google-button')).toBeNull();
+    fireEvent.changeText(screen.getByTestId('login-email'), 'gmail-user@gmail.com');
+    await waitFor(() => expect(screen.getByTestId('login-email').props.value).toBe('gmail-user@gmail.com'));
+    fireEvent.press(screen.getByTestId('login-next'));
 
     await waitFor(() => expect(screen.getByTestId('login-google-button')).toBeVisible());
+    expect(screen.queryByTestId('login-password')).toBeNull();
 
     fireEvent.press(screen.getByTestId('login-google-button'));
 
@@ -71,7 +94,7 @@ describe('login flow: Google', () => {
     // is the unconditional "we've reached Home" marker instead.
     // R7: the 「団体を作る」 quick action this test waited for was removed from
     // Home (2513c52); Home's root testID is the "Home has been reached" marker.
-    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/home'));
 
     const googleCall = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).endsWith('/auth/google'));
     expect(googleCall).toBeDefined();

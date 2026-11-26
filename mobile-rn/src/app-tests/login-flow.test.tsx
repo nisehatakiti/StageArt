@@ -1,6 +1,9 @@
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+import { AuthProvider } from '@/auth/AuthContext';
 
 import { mockFetchRoutes } from './__fixtures__/homeFixtures';
+import LoginScreen from '../app/login';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
@@ -8,22 +11,26 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+const mockRouter = { push: jest.fn(), replace: jest.fn(), setParams: jest.fn(), back: jest.fn() };
+
+jest.mock('expo-router', () => ({
+  ...jest.requireActual('expo-router'),
+  useRouter: () => mockRouter,
+}));
+
 /**
- * Kept in its own file (Jest gives every test file a fresh module
- * registry): expo-router/testing-library's renderRouter() leaves
- * module-level navigation state behind that persists across multiple
- * renderRouter() calls within a single file even after RNTL's
- * cleanup(), which made this test unreliable when co-located with
- * src/app/navigation.test.tsx's own renderRouter() call - and, per this
- * same established codebase convention, unreliable when co-located with
- * a second renderRouter() call in this very file (see
- * login-flow-error.test.tsx, split out for the same reason). A real
- * separate file sidesteps that Expo Router testing-library limitation
- * entirely rather than working around it.
+ * The e-mail login end to end on the login screen: address -> 次へ (POST
+ * /auth/account/check) -> password -> ログイン (POST /auth/email/login) ->
+ * /home. Rendered on its own with a mocked router: with the two-step
+ * screen the steps are state changes, and renderRouter() does not deliver
+ * text input or re-render this screen's state in this setup (the earlier
+ * renderRouter() version of this test passed without the typed values
+ * ever reaching the screen).
  */
 describe('login flow', () => {
-  it('a successful Email+Password login navigates from /login to /home', async () => {
+  it('a successful Email+Password login sends the typed credentials and navigates to /home', async () => {
     mockFetchRoutes([
+      { test: (u) => u.endsWith('/auth/account/check'), status: 200, body: { status: 'PASSWORD_LOGIN', methods: ['password'] } },
       {
         test: (u) => u.endsWith('/auth/email/login'),
         status: 200,
@@ -37,20 +44,31 @@ describe('login flow', () => {
           is_new_user: false,
         },
       },
-      { test: (u) => u.endsWith('/organizations'), status: 200, body: [] },
-      { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: { upcoming_rehearsals: [], notifications: [], followed_organizations_feed: [] } },
+      { test: (u) => u.endsWith('/me'), status: 200, body: { email_verified: true, family_name: '山田', given_name: '花子' } },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/login' });
+    render(
+      <AuthProvider>
+        <LoginScreen />
+      </AuthProvider>
+    );
 
     await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('login-email'), 'person@example.com');
+    await waitFor(() => expect(screen.getByTestId('login-email').props.value).toBe('person@example.com'));
+    fireEvent.press(screen.getByTestId('login-next'));
 
-    await fireEvent.changeText(screen.getByTestId('login-email'), 'person@example.com');
-    await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
-    await fireEvent.press(screen.getByTestId('login-submit'));
+    await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
+    await waitFor(() => expect(screen.getByTestId('login-password').props.value).toBe('password123'));
+    fireEvent.press(screen.getByTestId('login-submit'));
 
-    // R7: the 「団体を作る」 quick action this test waited for was removed from
-    // Home (2513c52); Home's root testID is the "Home has been reached" marker.
-    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeVisible());
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/home'));
+
+    const calls = (global.fetch as jest.Mock).mock.calls as [unknown, RequestInit & { body?: string }][];
+    const check = calls.find(([url]) => String(url).endsWith('/auth/account/check'));
+    const login = calls.find(([url]) => String(url).endsWith('/auth/email/login'));
+    expect(JSON.parse(check![1].body as string)).toEqual({ email: 'person@example.com' });
+    expect(JSON.parse(login![1].body as string)).toEqual({ email: 'person@example.com', password: 'password123' });
   });
 });

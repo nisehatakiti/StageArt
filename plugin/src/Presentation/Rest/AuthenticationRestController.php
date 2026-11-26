@@ -272,15 +272,30 @@ final class AuthenticationRestController
     }
 
     /**
+     * `{ success: true, email?: string }` - `email` is the login address that
+     * was just verified, so the confirmation page can pre-fill the login
+     * screen with it (absent when the account has no EmailCredential).
+     *
      * @return WP_REST_Response|WP_Error
      */
     public function verifyEmail(WP_REST_Request $request)
     {
         try {
             $command = new VerifyEmailCommand((string) $request->get_param('token'));
-            $this->verifyEmail->execute($command);
+            $verifiedEmail = $this->verifyEmail->execute($command);
 
-            return new WP_REST_Response(['success' => true], 200);
+            $body = ['success' => true];
+
+            if ($verifiedEmail !== null) {
+                $body['email'] = $verifiedEmail;
+            }
+
+            $response = new WP_REST_Response($body, 200);
+            // The body now carries a personal address: never let a shared
+            // cache keep it (it is a POST, but say so explicitly).
+            $response->header('Cache-Control', 'no-store');
+
+            return $response;
         } catch (InvalidEmailVerificationTokenException $exception) {
             return new WP_Error('stageart_invalid_email_verification_token', $exception->getMessage(), ['status' => 401]);
         }
