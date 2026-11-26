@@ -523,11 +523,25 @@ export type PublicProduction = {
   };
 };
 
+/**
+ * PR #7 R14-B (design doc §7.3, stage 6): what a row carries depends on the
+ * viewer and the Production's status (Backend ParticipantDisclosurePolicy).
+ * A withheld field is null - never an empty string:
+ * - `subject_id` and `remarks` are null on an ended row
+ *   (CANCELLED / WITHDRAWN / REJECTED) shown to a manager;
+ * - the Person's names only on ACTIVE / INACTIVE rows (and not to a
+ *   REHEARSAL_MANAGER after the Production ends); the email only to
+ *   managers on ACTIVE / INACTIVE rows (only to the PrimaryManager after
+ *   the Production ends);
+ * - `enrollment_source` / `consent_status` / `consented_at` only to
+ *   managers (null for a REHEARSAL_MANAGER);
+ * - the viewer's own row is always complete.
+ */
 export type Participant = {
   id: string;
   production_id: string;
   subject_type: string;
-  subject_id: string;
+  subject_id: string | null;
   participant_type: string;
   status: string;
   created_at: string;
@@ -542,6 +556,18 @@ export type Participant = {
    * Null for a NAME_ONLY/ORGANIZATION subject, or a PERSON subject with
    * no deliverable address found in any trusted source. */
   email: string | null;
+  /** R14-B §4.5: INVITATION / JOIN_REQUEST / MANAGER_RECORD, null for rows made before R14-B (or withheld). */
+  enrollment_source: string | null;
+  /** R14-B §4.5: CONFIRMED / UNCONFIRMED (PERSON without consent) / NOT_APPLICABLE (NAME_ONLY etc.); null when withheld. */
+  consent_status: 'CONFIRMED' | 'UNCONFIRMED' | 'NOT_APPLICABLE' | null;
+  consented_at: string | null;
+};
+
+/** R14-B §7.2: POST /participants/{id}/withdraw (idempotent). */
+export type WithdrawParticipationResult = {
+  participant_id: string;
+  production_id: string;
+  status: 'WITHDRAWN';
 };
 
 /**
@@ -558,19 +584,6 @@ export type ParticipatingProduction = {
   production_name: string;
   production_slug: string | null;
   participant_type: string;
-};
-
-/**
- * StageArt メンバー管理: Person ID検索 (担当者権限をメンバー管理へ統合・整理
- * §1/§2-A instruction) - the minimal GET /people/{id} response, just
- * enough to confirm "is this the right person?" before adding them as a
- * Participant. Never carries word_press_user_id/email - see
- * PersonSummaryResult.php's own docblock for why.
- */
-export type PersonSummary = {
-  id: string;
-  family_name: string | null;
-  given_name: string | null;
 };
 
 /**
@@ -596,6 +609,21 @@ export type ProductionDelegate = {
   created_at: string;
   updated_by: string;
   updated_at: string;
+  /** R14-B §4.6: whether this row grants its role now. */
+  effective: boolean;
+  ineffective_reason: DelegateIneffectiveReason | null;
+};
+
+export type DelegateIneffectiveReason = 'INACTIVE' | 'NOT_ACTIVE_PARTICIPANT' | 'CONSENT_UNCONFIRMED';
+
+/** R14-B stage 9: GET /productions/{id}/delegates/me - the caller's own delegate rows. */
+export type MyProductionDelegateRole = {
+  id: string;
+  production_id: string;
+  role: string;
+  status: string;
+  effective: boolean;
+  ineffective_reason: DelegateIneffectiveReason | null;
 };
 
 /**
@@ -612,7 +640,7 @@ export type ParticipantInvitation = {
   invited_by_person_id: string;
   participant_type: string;
   remarks: string | null;
-  status: 'PENDING' | 'CONSUMED' | 'CANCELLED';
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'CONSUMED';
   created_at: string;
   expires_at: string;
   consumed_at: string | null;
@@ -620,26 +648,82 @@ export type ParticipantInvitation = {
 };
 
 /**
- * The result of POST /productions/{id}/participant-invitations - the
- * same call can end in one of three ways depending on whether the email
- * already belongs to an existing Person (see
- * CreateParticipantInvitationResult.php's own docblock).
+ * R14-B §5.1: the state the Backend derives for display (stored status plus
+ * expiry / Production closed / inviter revoked). Shown as is - the client
+ * never derives it again.
  */
-export type CreateParticipantInvitationResult = {
-  outcome: 'PARTICIPANT_ADDED' | 'INVITATION_CREATED' | 'INVITATION_RESENT';
-  participant: Participant | null;
-  invitation: ParticipantInvitation | null;
+export type ParticipantInvitationEffectiveStatus =
+  | 'PENDING'
+  | 'EXPIRED'
+  | 'PRODUCTION_CLOSED'
+  | 'INVITER_REVOKED'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'CONSUMED';
+
+/** R14B-4R (§7.1): the 30-day per-address send count; null when a key version in the window is not configured. */
+export type InvitationSendLimit = {
+  sent_in_30_days: number;
+  remaining_in_30_days: number;
+  available_at: string | null;
 };
 
-/** GET /participant-invitations/resolve?token=... - the unauthenticated,
- * token-based preview shown on the registration screen. Never includes
- * the token itself. */
-export type ParticipantInvitationPreview = {
+/** GET /productions/{id}/participant-invitations (managers): one invitation with the §7.1 fields. */
+export type ManagedParticipantInvitation = ParticipantInvitation & {
+  effective_status: ParticipantInvitationEffectiveStatus;
+  responded_at: string | null;
+  close_reason: 'MANAGER' | 'PRODUCTION_CLOSED' | 'INVITER_REVOKED' | null;
+  closed_at: string | null;
+  resend_count: number;
+  resend_remaining: number;
+  send_status: 'PENDING' | 'SENT' | 'FAILED' | 'UNKNOWN' | null;
+  last_sent_at: string | null;
+  send_limit: InvitationSendLimit | null;
+  reinvite_available_at: string | null;
+};
+
+/**
+ * R14-B §7.1 (stage 4): POST /productions/{id}/participant-invitations always
+ * invites (no Person lookup, no direct add): a new invitation, or a resend
+ * of a PENDING one to the same address and type.
+ */
+export type CreateParticipantInvitationResult = {
+  outcome: 'INVITATION_SENT' | 'INVITATION_RESENT';
+  invitation: ParticipantInvitation;
+};
+
+/**
+ * R14-B §7.2 (D7): GET /me/participant-invitations - invitations to the
+ * caller's verified addresses only. No address, invited name or remarks.
+ */
+export type MyParticipantInvitation = {
+  id: string;
+  production_id: string;
   production_name: string;
-  email: string;
-  name: string;
+  organization_name: string | null;
   participant_type: string;
-  status: string;
+  invited_by_display_name: string;
+  expires_at: string;
+  effective_status: ParticipantInvitationEffectiveStatus;
+  already_participant: boolean;
+  can_accept: boolean;
+  can_reject: boolean;
+  unavailable_reason: 'PRODUCTION_CLOSED' | 'INVITER_REVOKED' | null;
+};
+
+/** R14-B §7.2: POST /participant-invitations/{id}/accept. */
+export type AcceptParticipantInvitationResult = {
+  participant_id: string;
+  production_id: string;
+  status: 'ACTIVE';
+};
+
+/** R14-B §7.2: POST /participant-invitations/{id}/reject. */
+export type RejectParticipantInvitationResult = {
+  id: string;
+  status: 'REJECTED';
+  close_reason: string | null;
 };
 
 export type TimetableItem = {

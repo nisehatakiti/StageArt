@@ -31,6 +31,7 @@ use StageArt\Domain\Project\Project;
 use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -53,6 +54,7 @@ final class ProductionAuthorizationTest extends TestCase
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
     private ProductionAuthorizationService $authorization;
     private GetProductionUseCase $getProduction;
     private UpdateProductionUseCase $updateProduction;
@@ -64,12 +66,13 @@ final class ProductionAuthorizationTest extends TestCase
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->authorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants
         );
 
         $this->getProduction = new GetProductionUseCase($this->productions, $this->authorization);
@@ -225,6 +228,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $delegatePerson = Person::create(2);
         $this->people->save($delegatePerson);
+        ConsentedParticipant::seed($this->participants, $production->id(), $delegatePerson->id());
         $delegate = ProductionDelegate::create(
             $production->id(),
             $delegatePerson->id(),
@@ -300,6 +304,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(2);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $person->id(),
@@ -342,6 +347,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(2);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $person->id(),
@@ -372,6 +378,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(3);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $productionA->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $productionA->id(),
             $person->id(),
@@ -393,6 +400,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(2);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $rehearsal = ProductionDelegate::create(
             $production->id(),
             $person->id(),
@@ -430,6 +438,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(2);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $person->id(),
@@ -455,6 +464,7 @@ final class ProductionAuthorizationTest extends TestCase
 
         $person = Person::create(2);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $person->id(),
@@ -548,6 +558,7 @@ final class ProductionAuthorizationTest extends TestCase
     {
         $person = Person::create($wordPressUserId);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
 
         foreach ($roles as $role) {
             $this->delegates->save(ProductionDelegate::create(

@@ -248,10 +248,11 @@ final class GetMyDashboardUseCase
             $ids[$production->id()->toString()] = $production->id();
         }
 
-        foreach ($this->delegates->findByPersonId($personId) as $delegate) {
-            if ($delegate->isActive()) {
-                $ids[$delegate->productionId()->toString()] = $delegate->productionId();
-            }
+        // R14-B §4.6 (stage 4): effective delegate rows only, decided by
+        // ProductionAuthorizationService (ACTIVE row + consented ACTIVE
+        // PERSON Participant) - an ACTIVE row alone no longer counts.
+        foreach ($this->authorization->effectiveDelegateProductionIds($personId) as $productionId) {
+            $ids[$productionId->toString()] = $productionId;
         }
 
         $activeStatus = ParticipantStatus::active();

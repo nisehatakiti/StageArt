@@ -1,5 +1,5 @@
 import type { ApiClient } from '@/api/client';
-import type { Participant, ParticipatingProduction } from '@/types/api';
+import type { Participant, ParticipatingProduction, WithdrawParticipationResult } from '@/types/api';
 
 /**
  * StageArt Web版 公演管理 Phase: no `features/participant/` layer
@@ -49,32 +49,29 @@ export function createNameOnlyParticipant(
 }
 
 /**
- * StageArt メンバー管理: 既存Personをメンバーに追加 (担当者権限をメンバー管理
- * へ統合・整理 §2-A instruction) - subject_type: PERSON, already fully
- * supported server-side (CreateParticipantUseCase.php's assertSubjectExists()
- * validates the Person exists) but never wired up in mobile-rn before.
+ * PR #7 R14-B (design doc §5.2 / §10, N6-N8): the role and remarks only.
+ * `status` is never sent (the state is changed by its own operations:
+ * invitation / withdrawal / deletion); `remarks: null` clears the remarks.
+ * A PERSON or ORGANIZATION cannot be added directly any more (D10) - only
+ * through an invitation the person accepts.
  */
-export function createPersonParticipant(
+export function updateParticipant(
   client: ApiClient,
-  productionId: string,
-  fields: { personId: string; participantType: string; remarks?: string | null }
+  participantId: string,
+  fields: { participantType: string; remarks: string | null }
 ): Promise<Participant> {
-  return client.post<Participant>(`/productions/${productionId}/participants`, {
-    subject_type: 'PERSON',
-    subject_id: fields.personId,
+  return client.put<Participant>(`/participants/${participantId}`, {
     participant_type: fields.participantType,
     remarks: fields.remarks,
   });
 }
 
-export function updateParticipant(
-  client: ApiClient,
-  participantId: string,
-  fields: { participantType: string; status: string; remarks?: string | null }
-): Promise<Participant> {
-  return client.put<Participant>(`/participants/${participantId}`, {
-    participant_type: fields.participantType,
-    status: fields.status,
-    remarks: fields.remarks,
-  });
+/**
+ * R14-B §7.2: the logged-in Person leaves the Production themselves (own
+ * ACTIVE PERSON row only). Idempotent: already WITHDRAWN answers the same.
+ * 409 withdraw_primary_manager / withdraw_not_allowed, 403 for someone
+ * else's row. Their delegate roles in the Production end with it.
+ */
+export function withdrawParticipation(client: ApiClient, participantId: string): Promise<WithdrawParticipationResult> {
+  return client.post<WithdrawParticipationResult>(`/participants/${participantId}/withdraw`);
 }

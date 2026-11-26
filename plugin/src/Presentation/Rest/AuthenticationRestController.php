@@ -27,7 +27,6 @@ use StageArt\Application\Authentication\ResetPasswordUseCase;
 use StageArt\Application\Authentication\UserAccountBlockedException;
 use StageArt\Application\Authentication\VerifyEmailCommand;
 use StageArt\Application\Authentication\VerifyEmailUseCase;
-use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use WP_Error;
 use WP_REST_Request;
@@ -187,8 +186,6 @@ final class AuthenticationRestController
             return new WP_REST_Response($this->registerWithEmail->execute($command)->toArray(), 201);
         } catch (EmailAlreadyInUseException $exception) {
             return new WP_Error('stageart_email_already_in_use', $exception->getMessage(), ['status' => 409]);
-        } catch (ParticipantInvitationNotFoundException $exception) {
-            return new WP_Error('stageart_participant_invitation_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_registration_invalid', $exception->getMessage(), ['status' => 422]);
         }

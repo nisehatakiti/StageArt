@@ -7,8 +7,20 @@ namespace StageArt\Infrastructure\WordPress\OrganizationInvitation;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationMailerInterface;
 use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
 
-/** Mirrors WordPressParticipantInvitationMailer's own shape exactly - see
- * that class's docblock for the established conventions this follows. */
+/**
+ * Mirrors WordPressParticipantInvitationMailer's own shape - see that
+ * class's docblock for the established conventions this follows.
+ *
+ * PR #7 R14-B stage 10 (D-1, approved): the link is the plain registration
+ * screen `{base}/register`, without the invitation token. The app never
+ * used an organization invitation token from the link, and since R14-B an
+ * old `/register?token=...` link is sent to login / the Production
+ * invitation list. The invitee registers with the invited address and the
+ * Membership is created when that address is verified (or on Google
+ * sign-in with it) - ResolveOrganizationInvitationUseCase, unchanged. The
+ * `$token` argument is still received (the interface and the invitation
+ * itself are unchanged) but is not put in the mail.
+ */
 final class WordPressOrganizationInvitationMailer implements OrganizationInvitationMailerInterface
 {
     private string $registrationBaseUrl;
@@ -18,9 +30,15 @@ final class WordPressOrganizationInvitationMailer implements OrganizationInvitat
         $this->registrationBaseUrl = rtrim($registrationBaseUrl, '/');
     }
 
+    /** The registration screen the invitation mail links to (no token). */
+    public function registrationUrl(): string
+    {
+        return $this->registrationBaseUrl . '/register';
+    }
+
     public function sendInvitationEmail(string $toEmail, string $organizationName, string $token): void
     {
-        $registrationUrl = esc_url($this->registrationBaseUrl . '/register?token=' . rawurlencode($token));
+        $registrationUrl = esc_url($this->registrationUrl());
 
         $body = sprintf(
             '<div style="font-family: sans-serif; font-size: 15px; line-height: 1.7; color: #2A2320;">'

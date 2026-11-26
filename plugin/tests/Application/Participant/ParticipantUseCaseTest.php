@@ -17,6 +17,12 @@ use StageArt\Application\Participant\ListParticipantsQuery;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
+use StageArt\Application\Participant\ParticipantEventRecorder;
+use StageArt\Application\Participant\ParticipantRequiresInvitationException;
+use StageArt\Application\Participant\ParticipantResult;
+use StageArt\Domain\Production\ProductionId;
+use StageArt\Tests\Support\InMemoryParticipantEventRepository;
 use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
 use StageArt\Application\Participant\UpdateParticipantCommand;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
@@ -43,6 +49,7 @@ use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -62,6 +69,8 @@ final class ParticipantUseCaseTest extends TestCase
     private InMemoryEmailCredentialRepository $emailCredentials;
     private InMemoryNotificationEmailRepository $notificationEmails;
     private CreateParticipantUseCase $createParticipant;
+    private InMemoryParticipantEventRepository $events;
+    private PersonEmailResolver $personEmailResolver;
     private GetParticipantUseCase $getParticipant;
     private ListParticipantsUseCase $listParticipants;
     private UpdateParticipantUseCase $updateParticipant;
@@ -93,19 +102,43 @@ final class ParticipantUseCaseTest extends TestCase
             $this->notificationEmails
         );
 
+        $this->events = new InMemoryParticipantEventRepository();
+        $this->personEmailResolver = $personEmailResolver;
         $this->createParticipant = new CreateParticipantUseCase(
             $this->productions,
             $this->participants,
-            $this->people,
-            $this->organizations,
             $productionAuthorization,
             new InMemoryTransactionManager(),
-            $personEmailResolver
+            new ParticipantEventRecorder($this->events)
         );
         $this->getParticipant = new GetParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
         $this->listParticipants = new ListParticipantsUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
-        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver);
-        $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization);
+        $releaser = new ParticipantDelegateRoleReleaser($this->delegates, new ParticipantEventRecorder($this->events));
+        $this->updateParticipant = new UpdateParticipantUseCase($this->participants, $this->productions, $this->people, $productionAuthorization, $personEmailResolver, $releaser, new ParticipantEventRecorder($this->events), new InMemoryTransactionManager());
+        $this->cancelParticipant = new CancelParticipantUseCase($this->participants, $this->productions, $productionAuthorization, $releaser, new ParticipantEventRecorder($this->events), new InMemoryTransactionManager());
+    }
+
+    /**
+     * R14-B stage 4 (D10): a PERSON can no longer be added through
+     * POST /participants. Tests of other behaviour (get / list / update /
+     * cancel, name and e-mail resolution) start from a PERSON row stored
+     * directly - like a row added before R14-B - and get it back as the
+     * create API used to return it.
+     */
+    private function seedPersonParticipant(CreateParticipantCommand $command): ParticipantResult
+    {
+        $participant = Participant::create(
+            ProductionId::fromString($command->productionId),
+            ParticipantSubjectType::person(),
+            (string) $command->subjectId,
+            ParticipantType::fromString($command->participantType),
+            $command->remarks,
+            $command->displayName
+        );
+        $this->participants->save($participant);
+        $personId = PersonId::fromString((string) $command->subjectId);
+
+        return ParticipantResult::fromDomain($participant, $this->people->findById($personId), $this->personEmailResolver->resolve($personId));
     }
 
     private function givenPersonWithVerifiedEmailCredential(int $wordPressUserId, string $email): Person
@@ -140,168 +173,105 @@ final class ParticipantUseCaseTest extends TestCase
         return $production;
     }
 
-    public function test_primary_manager_can_register_a_participant(): void
+    // --- R14-B stage 4 (§7.1, D10): direct addition --------------------
+
+    /**
+     * @return array<string, array{0: int}>
+     */
+    public static function managers(): array
     {
-        $production = $this->givenProductionWithPrimaryManager(1);
-
-        $castPerson = Person::create(2);
-        $this->people->save($castPerson);
-
-        $result = $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
-
-        $this->assertSame('ACTIVE', $result->status);
-        $this->assertSame('CAST', $result->participantType);
+        return ['PrimaryManager' => [1], 'PARTICIPANT_MANAGER delegate' => [2]];
     }
 
-    public function test_delegate_with_participant_manager_role_can_register_a_participant(): void
+    private function givenParticipantManager(Production $production): void
+    {
+        $manager = Person::create(2);
+        $this->people->save($manager);
+        ConsentedParticipant::seed($this->participants, $production->id(), $manager->id());
+        $this->delegates->save(ProductionDelegate::create($production->id(), $manager->id(), RoleKey::participantManager(), $production->primaryManagerPersonId()));
+    }
+
+    /**
+     * @dataProvider managers
+     */
+    public function test_a_person_or_organization_cannot_be_added_directly(int $managerWordPressUserId): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-
-        $delegatePerson = Person::create(2);
-        $this->people->save($delegatePerson);
-        $this->delegates->save(ProductionDelegate::create(
-            $production->id(),
-            $delegatePerson->id(),
-            RoleKey::participantManager(),
-            $production->primaryManagerPersonId()
-        ));
-
+        $this->givenParticipantManager($production);
         $castPerson = Person::create(3);
         $this->people->save($castPerson);
+        $before = $this->participants->findByProductionId($production->id());
 
-        $result = $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            2,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
+        foreach (['PERSON' => $castPerson->id()->toString(), 'ORGANIZATION' => Organization::create(new OrganizationName('Other'))->id()->toString()] as $type => $subjectId) {
+            try {
+                $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), $managerWordPressUserId, $type, $subjectId, 'CAST', '名前'));
+                $this->fail("422 requires_invitation expected for {$type}.");
+            } catch (ParticipantRequiresInvitationException $e) {
+                $this->addToAssertionCount(1);
+            }
+        }
 
-        $this->assertSame('CAST', $result->participantType);
+        $this->assertEquals($before, $this->participants->findByProductionId($production->id()), 'Nothing added');
+        $this->assertSame([], $this->events->types());
     }
 
-    public function test_inactive_delegate_cannot_register_a_participant(): void
+    /** A refused PERSON is refused the same way whether or not the Person exists (no lookup). */
+    public function test_a_person_is_refused_without_being_looked_up(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
 
+        $this->expectException(ParticipantRequiresInvitationException::class);
+        $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), 1, 'PERSON', PersonId::generate()->toString(), 'CAST'));
+    }
+
+    /**
+     * @dataProvider managers
+     */
+    public function test_a_name_only_member_is_added_as_a_manager_record(int $managerWordPressUserId): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
+        $this->givenParticipantManager($production);
+
+        $cast = $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), $managerWordPressUserId, 'NAME_ONLY', null, 'CAST', '名前だけ 花子', 'a remark'));
+        $staff = $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), $managerWordPressUserId, 'NAME_ONLY', null, 'STAFF', '名前だけ 花子'));
+
+        $stored = $this->participants->findById(\StageArt\Domain\Participant\ParticipantId::fromString($cast->id));
+        $this->assertSame('ACTIVE', $cast->status);
+        $this->assertSame('STAFF', $staff->participantType, 'Both types can be recorded');
+        $this->assertSame('MANAGER_RECORD', $stored->enrollmentSource()->toString());
+        $this->assertNull($stored->consentedAt(), 'No consent for a manager record');
+        $this->assertSame('a remark', $stored->remarks());
+        $this->assertSame(['NAME_ONLY_ADDED', 'NAME_ONLY_ADDED'], $this->events->types());
+    }
+
+    public function test_inactive_delegate_cannot_add_a_member(): void
+    {
+        $production = $this->givenProductionWithPrimaryManager(1);
         $delegatePerson = Person::create(2);
         $this->people->save($delegatePerson);
-        $delegate = ProductionDelegate::create(
-            $production->id(),
-            $delegatePerson->id(),
-            RoleKey::participantManager(),
-            $production->primaryManagerPersonId()
-        );
+        $delegate = ProductionDelegate::create($production->id(), $delegatePerson->id(), RoleKey::participantManager(), $production->primaryManagerPersonId());
         $delegate->deactivate($production->primaryManagerPersonId());
         $this->delegates->save($delegate);
 
-        $castPerson = Person::create(3);
-        $this->people->save($castPerson);
-
         $this->expectException(ParticipantAccessDeniedException::class);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            2,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
+        $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), 2, 'NAME_ONLY', null, 'CAST', '名前'));
     }
 
-    public function test_unrelated_person_cannot_register_a_participant(): void
+    /** Authorization is decided first: an outsider gets 403 even for PERSON. */
+    public function test_unrelated_person_cannot_add_a_member(): void
     {
         $production = $this->givenProductionWithPrimaryManager(1);
-
         $outsider = Person::create(2);
         $this->people->save($outsider);
 
-        $castPerson = Person::create(3);
-        $this->people->save($castPerson);
-
-        $this->expectException(ParticipantAccessDeniedException::class);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            2,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
-    }
-
-    public function test_subject_person_must_exist(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-
-        $this->expectException(ParticipantSubjectNotEligibleException::class);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            PersonId::generate()->toString(),
-            'CAST'
-        ));
-    }
-
-    public function test_duplicate_subject_and_type_registration_is_rejected(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-
-        $castPerson = Person::create(2);
-        $this->people->save($castPerson);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
-
-        $this->expectException(ParticipantAlreadyExistsException::class);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
-        ));
-    }
-
-    public function test_same_subject_with_a_different_participant_type_is_allowed(): void
-    {
-        $production = $this->givenProductionWithPrimaryManager(1);
-
-        $person = Person::create(2);
-        $this->people->save($person);
-
-        $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $person->id()->toString(),
-            'CAST'
-        ));
-
-        $second = $this->createParticipant->execute(new CreateParticipantCommand(
-            $production->id()->toString(),
-            1,
-            'PERSON',
-            $person->id()->toString(),
-            'STAFF'
-        ));
-
-        $this->assertSame('STAFF', $second->participantType);
-        $this->assertCount(2, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 1)));
+        foreach (['NAME_ONLY', 'PERSON'] as $type) {
+            try {
+                $this->createParticipant->execute(new CreateParticipantCommand($production->id()->toString(), 2, $type, $type === 'PERSON' ? PersonId::generate()->toString() : null, 'CAST', '名前'));
+                $this->fail('403 expected.');
+            } catch (ParticipantAccessDeniedException $e) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     public function test_get_list_update_and_cancel(): void
@@ -311,7 +281,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person = Person::create(2);
         $this->people->save($person);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -349,7 +319,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person->setName('山田', '太郎');
         $this->people->save($person);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -383,7 +353,7 @@ final class ParticipantUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $person = $this->givenPersonWithVerifiedEmailCredential(2, 'cast-member@example.com');
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -419,7 +389,7 @@ final class ParticipantUseCaseTest extends TestCase
             NotificationEmail::SOURCE_GOOGLE
         ));
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -446,7 +416,7 @@ final class ParticipantUseCaseTest extends TestCase
             NotificationEmail::SOURCE_GOOGLE
         ));
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -467,7 +437,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person = Person::create(2);
         $this->people->save($person);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -508,7 +478,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person->setName('佐藤', '一郎');
         $this->people->save($person);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -545,7 +515,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person->setName('佐藤', '一郎');
         $this->people->save($person);
 
-        $inA = $this->createParticipant->execute(new CreateParticipantCommand(
+        $inA = $this->seedPersonParticipant(new CreateParticipantCommand(
             $productionA->id()->toString(),
             1,
             'PERSON',
@@ -554,7 +524,7 @@ final class ParticipantUseCaseTest extends TestCase
             '佐藤一郎（劇団いるか）'
         ));
 
-        $inB = $this->createParticipant->execute(new CreateParticipantCommand(
+        $inB = $this->seedPersonParticipant(new CreateParticipantCommand(
             $productionB->id()->toString(),
             2,
             'PERSON',
@@ -598,7 +568,7 @@ final class ParticipantUseCaseTest extends TestCase
         $person = Person::create(3);
         $this->people->save($person);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $productionA->id()->toString(),
             1,
             'PERSON',
@@ -653,7 +623,7 @@ final class ParticipantUseCaseTest extends TestCase
         $castPerson = Person::create(2);
         $this->people->save($castPerson);
 
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -690,7 +660,7 @@ final class ParticipantUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $castPerson = Person::create(2);
         $this->people->save($castPerson);
-        $this->createParticipant->execute(new CreateParticipantCommand(
+        $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -700,6 +670,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $rehearsalManagerPerson = Person::create(3);
         $this->people->save($rehearsalManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $rehearsalManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $rehearsalManagerPerson->id(),
@@ -709,7 +681,9 @@ final class ParticipantUseCaseTest extends TestCase
 
         $listed = $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 3));
 
-        $this->assertCount(1, $listed);
+        // R14-B stage 4: the REHEARSAL_MANAGER is itself a (consented) member now, so it is listed too.
+        $this->assertCount(2, $listed);
+        $this->assertContains($castPerson->id()->toString(), array_map(static fn ($p) => $p->subjectId, $listed));
     }
 
     /**
@@ -723,7 +697,7 @@ final class ParticipantUseCaseTest extends TestCase
         $production = $this->givenProductionWithPrimaryManager(1);
         $castPerson = Person::create(2);
         $this->people->save($castPerson);
-        $created = $this->createParticipant->execute(new CreateParticipantCommand(
+        $created = $this->seedPersonParticipant(new CreateParticipantCommand(
             $production->id()->toString(),
             1,
             'PERSON',
@@ -733,6 +707,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $rehearsalManagerPerson = Person::create(3);
         $this->people->save($rehearsalManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $rehearsalManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $rehearsalManagerPerson->id(),
@@ -783,6 +759,8 @@ final class ParticipantUseCaseTest extends TestCase
 
         $participantManagerPerson = Person::create(2);
         $this->people->save($participantManagerPerson);
+        // R14-B stage 4: an effective delegate is a consented ACTIVE PERSON Participant (§4.6).
+        ConsentedParticipant::seed($this->participants, $production->id(), $participantManagerPerson->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $participantManagerPerson->id(),
@@ -793,16 +771,19 @@ final class ParticipantUseCaseTest extends TestCase
         $castPerson = Person::create(3);
         $this->people->save($castPerson);
 
+        // R14-B stage 4 (D10): the delegate adds a NAME_ONLY member (PERSON needs an invitation).
         $created = $this->createParticipant->execute(new CreateParticipantCommand(
             $production->id()->toString(),
             2,
-            'PERSON',
-            $castPerson->id()->toString(),
-            'CAST'
+            'NAME_ONLY',
+            null,
+            'CAST',
+            '出演 太郎'
         ));
         $this->assertSame('ACTIVE', $created->status);
 
-        $this->assertCount(1, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2)));
+        // R14-B stage 4: the PARTICIPANT_MANAGER is itself a (consented) member now, so the list has 2 rows.
+        $this->assertCount(2, $this->listParticipants->execute(new ListParticipantsQuery($production->id()->toString(), 2)));
 
         $updated = $this->updateParticipant->execute(new UpdateParticipantCommand($created->id, 2, 'STAFF', 'ACTIVE'));
         $this->assertSame('STAFF', $updated->participantType);

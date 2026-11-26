@@ -1,6 +1,6 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
 import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
@@ -8,7 +8,6 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
-import { fetchParticipantInvitationPreview } from '@/features/participantInvitation/api';
 
 /**
  * Email+Password new StageArt Account registration (Backend Phase 2's
@@ -21,108 +20,40 @@ import { fetchParticipantInvitationPreview } from '@/features/participantInvitat
  * account (see its own docblock) - status stays 'unauthenticated', and
  * this screen navigates to registration-pending.tsx, never /home.
  *
- * StageArt 招待登録のメール確認省略ラウンド: this no longer holds for a
- * registration reached via a valid Production invitation link
- * (register.tsx?token=...) - the invitation link itself already proves
- * the address is reachable, so the Backend marks that EmailCredential
- * verified immediately and never sends a confirmation mail for it (see
- * RegisterWithEmailUseCase's own docblock). `handleSubmit()` below
- * forwards `invitationToken` only once the preview fetch has confirmed
- * it resolves to a real, usable invitation, and AuthContext's
- * registerWithEmail() establishes a real session right away for that
- * case (its own `probePersonGate()` call reflects the Backend's actual
- * verified status now, not a hardcoded assumption) - this screen routes
- * straight to /home or /set-name instead of registration-pending.tsx
- * when that happens. Ordinary self-registration (no token, or a token
- * that failed to preview) is completely unaffected.
+ * PR #7 R14-B (design doc §9.2 / §10, U5 C案): registration has nothing to
+ * do with Production invitations any more. The address is typed by the
+ * person (no initial value from an invitation), no invitation token is sent
+ * (the Backend ignores one), the address is confirmed by the ordinary mail,
+ * and nobody becomes a member by registering - after the confirmation the
+ * person opens their invitations (/participant-invitations, also from
+ * Home) and accepts one themselves.
+ *
+ * An old link `/register?token=...` is still handled (design doc §9.2,
+ * confirmed by the user): the token is never read, sent or shown, and the
+ * person is moved at once to the general route without it - the login
+ * screen when logged out, the invitation list when logged in. Nothing of
+ * the registration form is shown for such a link. The login screen gets
+ * the fixed return_to=/participant-invitations (never anything from the
+ * link), so after login - and after setting a name when needed - the
+ * person reaches the invitation list.
  */
 function RegisterScreen() {
-  const { registerWithEmail } = useAuth();
+  const { registerWithEmail, status } = useAuth();
   const router = useRouter();
-  const { token: invitationToken } = useLocalSearchParams<{ token?: string }>();
+  const params = useLocalSearchParams<{ token?: string }>();
+  const hasTokenInUrl = params.token !== undefined;
 
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [invitationProductionName, setInvitationProductionName] = useState<string | null>(null);
 
-  /**
-   * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §3/§23:
-   * arriving via an invitation link (register.tsx?token=...) pre-fills
-   * the invited email AND name as a courtesy.
-   *
-   * StageArt 招待登録のメール確認省略ラウンド §7: this fetch succeeding is
-   * also what this screen treats as "this token is confirmed usable" -
-   * `invitationProductionName` being set gates both forwarding
-   * `invitationToken` to registerWithEmail() on submit (see
-   * handleSubmit() below) and fixing the email field so it cannot be
-   * changed to something other than the invited address (the Backend
-   * now uses the invitation's own recorded email unconditionally for
-   * this path regardless, but the field is fixed here too so the UI
-   * never implies an edit that would silently be ignored). `name` stays
-   * editable (§3: "本人が登録時に氏名を変更できることを妨げない") - it is
-   * unrelated to which email ends up registered. If this fetch fails
-   * (invalid/expired/cancelled/unknown token, or no token at all), this
-   * silently falls back to an ordinary, fully-editable self-registration
-   * - never a half-invited submission with a token the Backend would
-   * reject anyway.
-   *
-   * IMPORTANT (disclosed limitation, not silently decided - unchanged by
-   * this round): `name` here is still UI-only. POST /auth/email/register
-   * (RegisterWithEmailUseCase) has no name parameter - Person.familyName/
-   * givenName are only ever set later via the existing, separate
-   * UpdatePersonNameUseCase (set-name.tsx). Wiring this pre-filled name
-   * through to the real Person would mean extending either
-   * RegisterWithEmailUseCase or set-name.tsx, both outside this round's
-   * authorized change scope - see this round's final report for this
-   * open item.
-   */
-  useEffect(() => {
-    if (!invitationToken) {
-      return;
-    }
-
-    let cancelled = false;
-
-    fetchParticipantInvitationPreview(invitationToken)
-      .then((preview) => {
-        if (cancelled) return;
-        setEmail(preview.email);
-        setName(preview.name);
-        setInvitationProductionName(preview.production_name);
-      })
-      .catch(() => {
-        // An invalid/expired/consumed token must never block normal
-        // registration - silently fall back to the blank, editable
-        // email/name fields a direct /register visit already has.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [invitationToken]);
-
-  /**
-   * StageArt 招待登録のメール確認省略ラウンド: `invitationToken` is only
-   * ever forwarded once `invitationProductionName` is set - i.e. once
-   * the preview fetch above has actually confirmed this token resolves
-   * to a usable ParticipantInvitation. If that preview failed (expired/
-   * cancelled/unknown token, or no token at all), this degrades to an
-   * ordinary self-registration exactly as before - never a half-invited
-   * submission with a token the Backend would reject anyway.
-   */
   async function handleSubmit() {
     setSubmitting(true);
     setErrorMessage(null);
 
     const trimmedEmail = email.trim();
-    const result = await registerWithEmail(
-      trimmedEmail,
-      password,
-      invitationProductionName ? invitationToken : undefined
-    );
+    const result = await registerWithEmail(trimmedEmail, password);
 
     setSubmitting(false);
     if (!result.ok) {
@@ -135,11 +66,19 @@ function RegisterScreen() {
       return;
     }
 
-    // The invitation link itself already proved this address is
-    // reachable - registerWithEmail() has already established a real
-    // session (see its own docblock), so there is no "確認メールを
-    // お送りしました" step to show here at all.
     router.replace(result.hasName ? '/home' : '/set-name');
+  }
+
+  // Only whether a token is present is looked at - its value is never used.
+  if (hasTokenInUrl) {
+    if (status === 'loading' || status === 'refreshing') {
+      return null;
+    }
+    return (
+      <Redirect
+        href={status === 'authenticated' ? '/participant-invitations' : { pathname: '/login', params: { return_to: '/participant-invitations' } }}
+      />
+    );
   }
 
   return (
@@ -151,22 +90,6 @@ function RegisterScreen() {
         StageArtをはじめるためのアカウントを作成します。メールアドレスとパスワード（8文字以上）を入力してください。
       </ThemedText>
 
-      {invitationProductionName && (
-        <ThemedText testID="register-invitation-notice" type="small" style={authStyles.description}>
-          「{invitationProductionName}」への招待です。このメールアドレスで登録すると、確認メールなしで自動的にメンバーへ追加されます。
-        </ThemedText>
-      )}
-
-      {invitationProductionName && (
-        <ThemedTextInput
-          testID="register-invitation-name"
-          placeholder="氏名"
-          value={name}
-          onChangeText={setName}
-          style={authStyles.input}
-        />
-      )}
-
       <ThemedTextInput
         testID="register-email"
         placeholder="メールアドレス"
@@ -175,8 +98,7 @@ function RegisterScreen() {
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="email-address"
-        editable={!invitationProductionName}
-        style={[authStyles.input, invitationProductionName ? styles.fixedInput : null]}
+        style={authStyles.input}
       />
           {/*
            * textContentType="oneTimeCode" is deliberate, not an oversight
@@ -230,10 +152,6 @@ function RegisterScreen() {
     </AuthLayout>
   );
 }
-
-const styles = StyleSheet.create({
-  fixedInput: { opacity: 0.6 },
-});
 
 /** Never shown on the public site - see app-only-route.tsx. */
 export default appOnlyRoute(RegisterScreen);

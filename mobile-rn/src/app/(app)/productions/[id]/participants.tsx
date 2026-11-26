@@ -23,8 +23,9 @@ import {
 import { useProduction } from '@/features/production/useProductions';
 import { useAuth } from '@/auth/AuthContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Participant, ProductionDelegate } from '@/types/api';
-import { getErrorMessage } from '@/utils/errorMessage';
+import type { ManagedParticipantInvitation, Participant, ProductionDelegate } from '@/types/api';
+import { formatServerDateTime, getErrorMessage } from '@/utils/errorMessage';
+import { isActivePersonParticipant } from '@/features/participant/participantGuards';
 import {
   createProductionDelegate,
   fetchProductionDelegates,
@@ -53,6 +54,54 @@ const DELEGATE_CHECKBOXES = [
 ] as const;
 
 type RowEdit = { participantType: string; remarks: string; delete: boolean };
+
+/**
+ * PR #7 R14-B (design doc §5.1 / §10): the Backend's effective_status as
+ * shown in 「招待中のメンバー」 - never derived here. ACCEPTED / CONSUMED
+ * invitations are not listed (the person is a member).
+ */
+const INVITATION_STATUS_LABEL: Record<string, string> = {
+  PENDING: '承諾待ち',
+  EXPIRED: '期限切れ',
+  PRODUCTION_CLOSED: '無効（公演終了）',
+  INVITER_REVOKED: '無効（招待者の権限なし）',
+  REJECTED: '辞退',
+  CANCELLED: '取消',
+};
+
+/** §10 送信の状態の表示 (verbatim). */
+const SEND_STATUS_LABEL: Record<string, string> = {
+  PENDING: '送信中',
+  SENT: '送信しました（相手に届いたかどうかは確認できません）',
+  FAILED: '送信に失敗しました。再送してください（再送も送信回数に数えます）',
+  UNKNOWN: '送信の結果を確認できませんでした。メールが届いていない場合は再送してください',
+};
+
+function isListedInvitation(invitation: ManagedParticipantInvitation): boolean {
+  return invitation.effective_status !== 'ACCEPTED' && invitation.effective_status !== 'CONSUMED';
+}
+
+/** §10: why sending to this invitation's address is blocked now, or null. */
+function sendBlockedMessage(invitation: ManagedParticipantInvitation): string | null {
+  if (invitation.send_limit && invitation.send_limit.remaining_in_30_days <= 0) {
+    const availableAt = formatServerDateTime(invitation.send_limit.available_at);
+    return `このメールアドレスへの送信は30日間で6回までです。${availableAt ? `${availableAt}以降に送信できます。` : ''}`;
+  }
+  return null;
+}
+
+function resendBlockedMessage(invitation: ManagedParticipantInvitation): string | null {
+  return sendBlockedMessage(invitation) ??
+    (invitation.resend_remaining <= 0 ? 'この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません。' : null);
+}
+
+/** §4.5: 「同意未確認（旧方式）」 for a PERSON without recorded consent (旧方式 when it predates R14-B). */
+function consentLabel(participant: Participant): string | null {
+  if (participant.consent_status !== 'UNCONFIRMED') {
+    return null;
+  }
+  return participant.enrollment_source === null ? '同意未確認（旧方式）' : '同意未確認';
+}
 
 function localDatePart(value: string): string {
   if (!value) return '';
@@ -134,7 +183,7 @@ export default function ProductionParticipantsScreen() {
   const activeParticipants = (participantsQuery.data ?? []).filter((participant) => participant.status === 'ACTIVE');
 
   const invitationsQuery = useParticipantInvitations(id, canManage);
-  const pendingInvitations = (invitationsQuery.data ?? []).filter((invitation) => invitation.status === 'PENDING');
+  const listedInvitations = (invitationsQuery.data ?? []).filter(isListedInvitation);
   const createInvitation = useCreateParticipantInvitation(id);
   const resendInvitation = useResendParticipantInvitation(id);
   const cancelInvitation = useCancelParticipantInvitation(id);
@@ -146,20 +195,25 @@ export default function ProductionParticipantsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   /**
-   * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §1/§2:
-   * the one, unified "メンバーを追加" form - 氏名＋メールアドレス＋役割＋備考
-   * submitted together via POST /productions/{id}/participant-invitations,
-   * which itself decides (by email) whether this becomes an existing-
-   * Person Participant, a new invitation, or a resend - see
-   * CreateParticipantInvitationUseCase's own docblock. No Person ID
-   * input, no standalone "search by email" step, and no NAME_ONLY-only
-   * add path remain in this UI (§0/§1/§11/§12).
+   * The one 「メンバーを招待」 form - 氏名＋メールアドレス＋役割＋備考 submitted
+   * together via POST /productions/{id}/participant-invitations. PR #7
+   * R14-B (D10, §10): this always sends an invitation (or resends a PENDING
+   * one to the same address and type); nobody is added until they accept.
+   * No Person ID input and no search by email.
    */
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberType, setNewMemberType] = useState<string>('CAST');
   const [newMemberRemarks, setNewMemberRemarks] = useState('');
   const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
+  /** §10: the 30-day limit of the typed address, when an invitation to it is listed. */
+  const typedAddress = newMemberEmail.trim().toLowerCase();
+  const createBlockedMessage = typedAddress
+    ? (invitationsQuery.data ?? [])
+        .filter((invitation) => invitation.email.trim().toLowerCase() === typedAddress)
+        .map(sendBlockedMessage)
+        .find((message): message is string => message !== null) ?? null
+    : null;
 
   // PR #7 review (R7): merged during render whenever a new Participant
   // list arrives (the effect re-ran on every new participantsQuery.data) -
@@ -193,9 +247,8 @@ export default function ProductionParticipantsScreen() {
 
 
   /**
-   * §2: one action, 氏名＋メールアドレス＋役割＋備考 submitted together.
-   * The Backend decides (by email) which of the three outcomes applies -
-   * this handler only needs to surface which one happened.
+   * One action, 氏名＋メールアドレス＋役割＋備考 submitted together; the
+   * result is INVITATION_SENT or INVITATION_RESENT (R14-B §10).
    */
   async function handleAddMember() {
     const name = newMemberName.trim();
@@ -212,16 +265,53 @@ export default function ProductionParticipantsScreen() {
         participantType: newMemberType,
         remarks: newMemberRemarks.trim() || null,
       });
+      // R14-B §10: exactly two results - nobody is added by this action.
       setAddMemberMessage(
-        result.outcome === 'PARTICIPANT_ADDED'
-          ? 'メンバーを追加しました。'
-          : result.outcome === 'INVITATION_RESENT'
-            ? '既に招待済みのため、登録案内メールを再送しました。'
-            : '登録案内メールを送信しました。本人の登録が完了すると自動的にメンバーへ追加されます。'
+        result.outcome === 'INVITATION_RESENT'
+          ? '承諾待ちの招待に再送しました。'
+          : '招待メールを送信しました。本人が承諾するとメンバーに追加されます。'
       );
       setNewMemberName('');
       setNewMemberEmail('');
       setNewMemberRemarks('');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  /**
+   * R14-B §4.5: 「同意の確認を依頼」 - an ordinary invitation to the member's
+   * address. When they accept it, their consent is recorded (the row stays
+   * as it is); declining changes nothing.
+   */
+  async function handleRequestConsent(participant: Participant) {
+    if (!participant.email) {
+      return;
+    }
+    const personFullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
+    setErrorMessage(null);
+    setAddMemberMessage(null);
+    try {
+      await createInvitation.mutateAsync({
+        name: participant.display_name?.trim() || personFullName || participant.email,
+        email: participant.email,
+        participantType: participant.participant_type,
+        remarks: null,
+      });
+      setAddMemberMessage('同意の確認を依頼する招待メールを送信しました。本人が承諾すると同意が記録されます。');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }
+
+  async function handleInvitationAction(action: 'resend' | 'cancel', invitationId: string) {
+    setErrorMessage(null);
+    try {
+      if (action === 'resend') {
+        await resendInvitation.mutateAsync(invitationId);
+      } else {
+        await cancelInvitation.mutateAsync(invitationId);
+      }
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -254,7 +344,8 @@ export default function ProductionParticipantsScreen() {
         }
 
         if (edit.participantType !== participant.participant_type || edit.remarks !== (participant.remarks ?? '')) {
-          await updateParticipant.mutateAsync({ id: participant.id, participantType: edit.participantType, status: 'ACTIVE', remarks: edit.remarks || null });
+          // R14-B (N6 / N8): status is never sent; empty remarks clear them.
+          await updateParticipant.mutateAsync({ id: participant.id, participantType: edit.participantType, remarks: edit.remarks || null });
         }
       }
 
@@ -327,6 +418,8 @@ export default function ProductionParticipantsScreen() {
           delegateRoles={delegatesQuery.data ?? []}
           canManageDelegateRoles={canManageDelegateRoles}
           delegateBusy={createDelegate.isPending || updateDelegate.isPending}
+          requestConsentBusy={createInvitation.isPending}
+          onRequestConsent={() => handleRequestConsent(participant)}
           onToggleDelegateCheckbox={async (personId, roles, checked) => {
             const delegates = delegatesQuery.data ?? [];
             setErrorMessage(null);
@@ -393,13 +486,13 @@ export default function ProductionParticipantsScreen() {
         <TouchableOpacity
           testID="production-participants-add-member"
           onPress={handleAddMember}
-          disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending}
-          style={styles.addMemberAction}
+          disabled={!newMemberName.trim() || !newMemberEmail.trim() || createInvitation.isPending || createBlockedMessage !== null}
+          style={[styles.addMemberAction, createBlockedMessage !== null && styles.buttonDisabled]}
         >
           {createInvitation.isPending ? (
             <ActivityIndicator color={BrandColors.warmAmber} />
           ) : (
-            <ThemedText style={styles.addButtonText}>＋ メンバーを追加</ThemedText>
+            <ThemedText style={styles.addButtonText}>＋ メンバーを招待</ThemedText>
           )}
         </TouchableOpacity>
         {canManageDelegateRoles &&
@@ -410,6 +503,13 @@ export default function ProductionParticipantsScreen() {
     </View>
   );
 
+  /**
+   * R14-B §10: every invitation except accepted ones, with the Backend's
+   * effective_status, the latest send's status, the resends left on this
+   * invitation and the sends left to this address in 30 days. Resend /
+   * cancel are offered while the stored status is PENDING (the Backend
+   * answers anything else); resend is disabled at a send limit.
+   */
   const invitationTable = (
     <View style={styles.invitationTable} testID="production-participant-invitations-list">
       <View style={styles.memberTableHeader}>
@@ -417,38 +517,82 @@ export default function ProductionParticipantsScreen() {
         <ThemedText style={styles.invitationEmailHeader}>メールアドレス</ThemedText>
         <ThemedText style={styles.invitationTypeHeader}>役割</ThemedText>
         <ThemedText style={styles.invitationStatusHeader}>状態</ThemedText>
+        <ThemedText style={styles.invitationSendHeader}>送信の状態</ThemedText>
+        <ThemedText style={styles.invitationRemainingHeader}>残りの送信回数</ThemedText>
         <ThemedText style={styles.invitationExpiresHeader}>有効期限</ThemedText>
         <View style={styles.invitationActionsHeader} />
       </View>
-      {pendingInvitations.map((invitation) => (
-        <View key={invitation.id} style={styles.memberTableRow} testID={`participant-invitation-row-${invitation.id}`}>
-          <ThemedText style={styles.invitationNameCell}>{invitation.name}</ThemedText>
-          <ThemedText style={styles.invitationEmailCell}>{invitation.email}</ThemedText>
-          <ThemedText style={styles.invitationTypeCell}>{PARTICIPANT_TYPE_LABEL[invitation.participant_type] ?? invitation.participant_type}</ThemedText>
-          <ThemedText style={styles.invitationStatusCell}>{invitation.is_expired ? '期限切れ' : '招待中'}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.invitationExpiresCell}>
-            {new Date(invitation.expires_at).toLocaleString('ja-JP')}
-          </ThemedText>
-          <View style={styles.invitationActionsCell}>
-            <TouchableOpacity
-              testID={`participant-invitation-resend-${invitation.id}`}
-              onPress={() => resendInvitation.mutate(invitation.id)}
-              disabled={resendInvitation.isPending || cancelInvitation.isPending}
-              style={styles.invitationActionButton}
-            >
-              <ThemedText type="small">再送</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`participant-invitation-cancel-${invitation.id}`}
-              onPress={() => cancelInvitation.mutate(invitation.id)}
-              disabled={resendInvitation.isPending || cancelInvitation.isPending}
-              style={styles.invitationActionButton}
-            >
-              <ThemedText type="small">取消</ThemedText>
-            </TouchableOpacity>
+      {listedInvitations.map((invitation) => {
+        const reinviteAt = invitation.effective_status === 'REJECTED' ? formatServerDateTime(invitation.reinvite_available_at) : null;
+        const lastSentAt = formatServerDateTime(invitation.last_sent_at);
+        const actionable = invitation.status === 'PENDING';
+        const resendBlocked = resendBlockedMessage(invitation);
+        const busy = resendInvitation.isPending || cancelInvitation.isPending;
+        return (
+          <View key={invitation.id} testID={`participant-invitation-row-${invitation.id}`}>
+            <View style={styles.memberTableRow}>
+              <ThemedText style={styles.invitationNameCell}>{invitation.name}</ThemedText>
+              <ThemedText style={styles.invitationEmailCell}>{invitation.email}</ThemedText>
+              <ThemedText style={styles.invitationTypeCell}>{PARTICIPANT_TYPE_LABEL[invitation.participant_type] ?? invitation.participant_type}</ThemedText>
+              <View style={styles.invitationStatusCell}>
+                <ThemedText testID={`participant-invitation-status-${invitation.id}`}>
+                  {INVITATION_STATUS_LABEL[invitation.effective_status] ?? invitation.effective_status}
+                </ThemedText>
+                {reinviteAt && (
+                  <ThemedText type="small" themeColor="textSecondary" testID={`participant-invitation-reinvite-${invitation.id}`}>
+                    {reinviteAt}以降に再び招待できます
+                  </ThemedText>
+                )}
+              </View>
+              <View style={styles.invitationSendCell}>
+                <ThemedText type="small" testID={`participant-invitation-send-status-${invitation.id}`}>
+                  {invitation.send_status ? SEND_STATUS_LABEL[invitation.send_status] ?? invitation.send_status : '—'}
+                </ThemedText>
+                {lastSentAt && (
+                  <ThemedText type="small" themeColor="textSecondary">最終送信: {lastSentAt}</ThemedText>
+                )}
+              </View>
+              <View style={styles.invitationRemainingCell} testID={`participant-invitation-remaining-${invitation.id}`}>
+                <ThemedText type="small">この招待の再送: あと{invitation.resend_remaining}回</ThemedText>
+                <ThemedText type="small">
+                  30日間の送信: {invitation.send_limit ? `あと${invitation.send_limit.remaining_in_30_days}回` : '確認できません'}
+                </ThemedText>
+              </View>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.invitationExpiresCell}>
+                {new Date(invitation.expires_at).toLocaleString('ja-JP')}
+              </ThemedText>
+              <View style={styles.invitationActionsCell}>
+                {actionable && (
+                  <>
+                    <TouchableOpacity
+                      testID={`participant-invitation-resend-${invitation.id}`}
+                      onPress={() => handleInvitationAction('resend', invitation.id)}
+                      disabled={busy || resendBlocked !== null}
+                      accessibilityState={{ disabled: busy || resendBlocked !== null }}
+                      style={[styles.invitationActionButton, resendBlocked !== null && styles.buttonDisabled]}
+                    >
+                      <ThemedText type="small">再送</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID={`participant-invitation-cancel-${invitation.id}`}
+                      onPress={() => handleInvitationAction('cancel', invitation.id)}
+                      disabled={busy}
+                      style={styles.invitationActionButton}
+                    >
+                      <ThemedText type="small">取消</ThemedText>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+            {actionable && resendBlocked && (
+              <ThemedText type="small" style={styles.invitationLimitMessage} testID={`participant-invitation-limit-${invitation.id}`}>
+                {resendBlocked}
+              </ThemedText>
+            )}
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 
@@ -498,13 +642,19 @@ export default function ProductionParticipantsScreen() {
         </ScrollView>
       )}
 
+      {createBlockedMessage && (
+        <ThemedText testID="production-participants-add-member-blocked" style={styles.error}>
+          {createBlockedMessage}
+        </ThemedText>
+      )}
+
       {addMemberMessage && (
         <ThemedText testID="production-participants-add-member-message" style={styles.invitationMessage}>
           {addMemberMessage}
         </ThemedText>
       )}
 
-      {pendingInvitations.length > 0 && (
+      {listedInvitations.length > 0 && (
         <>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             招待中のメンバー
@@ -596,6 +746,7 @@ export default function ProductionParticipantsScreen() {
 
 function ParticipantEditRow({
   participant, isSelf, edit, onChange, delegateRoles, canManageDelegateRoles, delegateBusy, onToggleDelegateCheckbox,
+  requestConsentBusy, onRequestConsent,
 }: {
   participant: Participant;
   isSelf: boolean;
@@ -605,7 +756,12 @@ function ParticipantEditRow({
   canManageDelegateRoles: boolean;
   delegateBusy: boolean;
   onToggleDelegateCheckbox: (personId: string, roles: string[], checked: boolean) => Promise<void>;
+  requestConsentBusy: boolean;
+  onRequestConsent: () => void;
 }) {
+  // R14-B §7.3: the Person id can be withheld (null); only a known one keys delegate rows.
+  const personId = isActivePersonParticipant(participant) ? participant.subject_id : null;
+  const consent = consentLabel(participant);
   /**
    * StageArt Production側氏名の権威付けラウンド §0/§11: `display_name` is
    * this Production's own record of the member's name (entered on the
@@ -620,8 +776,8 @@ function ParticipantEditRow({
     participant.subject_type === 'NAME_ONLY' ? participant.display_name ?? '（氏名未設定）' :
     participant.subject_type === 'PERSON' ? (isSelf ? 'あなた' : participant.display_name || personFullName || '（氏名未設定）') :
     `Organization ID: ${participant.subject_id}`;
-  const personDelegates = participant.subject_type === 'PERSON'
-    ? delegateRoles.filter((delegate) => delegate.person_id === participant.subject_id)
+  const personDelegates = personId !== null
+    ? delegateRoles.filter((delegate) => delegate.person_id === personId)
     : [];
 
   return (
@@ -636,7 +792,14 @@ function ParticipantEditRow({
           <ThemedText style={styles.tableCheckbox}>{edit.delete ? '☑' : '□'}</ThemedText>
         </TouchableOpacity>
       </View>
-      <ThemedText style={[styles.memberNameCell, edit.delete && styles.strikethrough]}>{displayLabel}</ThemedText>
+      <View style={styles.memberNameCell}>
+        <ThemedText style={[styles.memberNameText, edit.delete && styles.strikethrough]}>{displayLabel}</ThemedText>
+        {consent && (
+          <ThemedText type="small" themeColor="textSecondary" testID={`participant-consent-${participant.id}`}>
+            {consent}
+          </ThemedText>
+        )}
+      </View>
       <View style={styles.memberRoleCell}>
         {PARTICIPANT_TYPES.map((type) => (
           <TouchableOpacity
@@ -663,19 +826,34 @@ function ParticipantEditRow({
       <ThemedText testID={`participant-email-${participant.id}`} type="small" themeColor="textSecondary" style={styles.memberEmailCell}>
         {participant.email ?? ''}
       </ThemedText>
-      <View style={styles.memberAddActionCell} />
+      <View style={styles.memberAddActionCell}>
+        {consent && (
+          <TouchableOpacity
+            testID={`participant-request-consent-${participant.id}`}
+            onPress={onRequestConsent}
+            disabled={!participant.email || requestConsentBusy}
+            accessibilityState={{ disabled: !participant.email || requestConsentBusy }}
+            style={[styles.invitationActionButton, !participant.email && styles.buttonDisabled]}
+          >
+            <ThemedText type="small">同意の確認を依頼</ThemedText>
+          </TouchableOpacity>
+        )}
+        {consent && !participant.email && (
+          <ThemedText type="small" themeColor="textSecondary">メールアドレスが不明です</ThemedText>
+        )}
+      </View>
       {canManageDelegateRoles &&
         DELEGATE_CHECKBOXES.map((checkbox) => {
           const checked = checkbox.roles.every((role) =>
             personDelegates.some((delegate) => delegate.role === role && delegate.status === 'ACTIVE')
           );
-          const editable = participant.subject_type === 'PERSON' && !delegateBusy;
+          const editable = personId !== null && !delegateBusy;
           return (
             <TouchableOpacity
               key={checkbox.key}
               testID={`participant-delegate-${checkbox.key}-${participant.id}`}
               disabled={!editable}
-              onPress={() => onToggleDelegateCheckbox(participant.subject_id, [...checkbox.roles], !checked)}
+              onPress={() => personId !== null && onToggleDelegateCheckbox(personId, [...checkbox.roles], !checked)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked, disabled: !editable }}
               style={[styles.permissionCell, !editable && styles.permissionCellDisabled]}
@@ -730,7 +908,8 @@ const styles = StyleSheet.create({
   memberDeleteHeader: { width: 42 },
   memberDeleteCell: { width: 42, justifyContent: 'center', alignItems: 'center' },
   memberNameHeader: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  memberNameCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600', textAlignVertical: 'center' },
+  memberNameCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, justifyContent: 'center' },
+  memberNameText: { fontWeight: '600' },
   memberRoleHeader: { width: 150, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   memberRoleCell: { width: 150, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.one },
   memberRemarksHeader: { width: 300, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
@@ -816,7 +995,7 @@ const styles = StyleSheet.create({
   error: { color: '#a6483a', marginTop: Spacing.two },
   invitationMessage: { color: BrandColors.warmAmber, marginTop: Spacing.one, marginBottom: Spacing.one },
   invitationTable: {
-    minWidth: 1060,
+    minWidth: 1640,
     borderWidth: 1,
     borderColor: '#ddd',
     backgroundColor: '#fff',
@@ -827,8 +1006,13 @@ const styles = StyleSheet.create({
   invitationEmailCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   invitationTypeHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   invitationTypeCell: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
-  invitationStatusHeader: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
-  invitationStatusCell: { width: 100, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
+  invitationStatusHeader: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationStatusCell: { width: 180, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, justifyContent: 'center' },
+  invitationSendHeader: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationSendCell: { width: 260, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, justifyContent: 'center' },
+  invitationRemainingHeader: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
+  invitationRemainingCell: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, justifyContent: 'center' },
+  invitationLimitMessage: { color: '#a6483a', paddingHorizontal: Spacing.two, paddingBottom: Spacing.one },
   invitationExpiresHeader: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, fontWeight: '600' },
   invitationExpiresCell: { width: 200, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two, textAlignVertical: 'center' },
   invitationActionsHeader: { width: 140 },

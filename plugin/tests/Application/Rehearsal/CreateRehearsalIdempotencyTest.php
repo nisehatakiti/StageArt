@@ -39,6 +39,7 @@ use StageArt\Domain\Role\RoleKey;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryNotificationDispatcher;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -133,6 +134,7 @@ final class CreateRehearsalIdempotencyTest extends TestCase
     {
         $person = Person::create($wordPressUserId);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
         $this->delegates->save(ProductionDelegate::create($production->id(), $person->id(), RoleKey::rehearsalManager(), $production->primaryManagerPersonId()));
 
         return $person;

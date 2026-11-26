@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/auth/AuthContext';
 
-import { createProductionDelegate, deleteProductionDelegate, fetchProductionDelegates, updateProductionDelegate } from './api';
+import {
+  createProductionDelegate,
+  deleteProductionDelegate,
+  fetchMyProductionDelegateRoles,
+  fetchProductionDelegates,
+  updateProductionDelegate,
+} from './api';
 
 export function useProductionDelegates(productionId: string | undefined) {
   const { apiClient, status } = useAuth();
@@ -41,5 +47,16 @@ export function useDeleteProductionDelegate(productionId: string | undefined) {
   return useMutation({
     mutationFn: (delegateId: string) => deleteProductionDelegate(apiClient, delegateId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['production-delegates', productionId] }),
+  });
+}
+
+/** R14-B stage 9: the caller's own delegate rows in the Production (GET /productions/{id}/delegates/me). */
+export function useMyProductionDelegateRoles(productionId: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['my-delegate-roles', productionId],
+    queryFn: () => fetchMyProductionDelegateRoles(apiClient, productionId as string),
+    enabled: status === 'authenticated' && !!productionId,
   });
 }

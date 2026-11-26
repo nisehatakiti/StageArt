@@ -62,10 +62,19 @@ final class GetParticipantUseCase
             );
         }
 
-        $isPersonSubject = $participant->subjectType()->equals(ParticipantSubjectType::person());
-        $person = $isPersonSubject ? $this->people->findById(PersonId::fromString($participant->subjectId())) : null;
-        $email = $isPersonSubject ? $this->personEmailResolver->resolve(PersonId::fromString($participant->subjectId())) : null;
+        // R14-B stage 6 (§7.3): the same disclosure as the list gives this
+        // manager - e.g. an ended row is display_name and status only.
+        $disclosure = ParticipantDisclosurePolicy::disclosureFor(
+            $participant,
+            $production,
+            (string) ParticipantDisclosurePolicy::viewerOf($this->authorization, $requester, $production),
+            $requester
+        ) ?? ParticipantDisclosure::statusOnly();
 
-        return ParticipantResult::fromDomain($participant, $person, $email);
+        $isPersonSubject = $participant->subjectType()->equals(ParticipantSubjectType::person());
+        $person = $isPersonSubject && $disclosure->names ? $this->people->findById(PersonId::fromString($participant->subjectId())) : null;
+        $email = $isPersonSubject && $disclosure->email ? $this->personEmailResolver->resolve(PersonId::fromString($participant->subjectId())) : null;
+
+        return ParticipantResult::disclosed($participant, $disclosure, $person, $email);
     }
 }

@@ -55,7 +55,8 @@ final class ListProductionDelegatesUseCase
         return array_map(
             fn (ProductionDelegate $delegate): ProductionDelegateResult => ProductionDelegateResult::fromDomain(
                 $delegate,
-                $this->people->findById($delegate->personId())
+                $this->people->findById($delegate->personId()),
+                $this->authorization->delegateIneffectiveReason($delegate)
             ),
             $this->delegates->findByProductionId($production->id())
         );

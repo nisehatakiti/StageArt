@@ -30,6 +30,10 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Application\Participant\ParticipantEventRecorder;
+use StageArt\Application\ProductionDelegate\DelegateAppointmentGuard;
+use StageArt\Tests\Support\ConsentedParticipant;
+use StageArt\Tests\Support\InMemoryParticipantEventRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
@@ -43,6 +47,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
     private InMemoryMembershipRepository $memberships;
     private InMemoryProductionRepository $productions;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
     private CreateProductionDelegateUseCase $createDelegate;
     private ListProductionDelegatesUseCase $listDelegates;
     private UpdateProductionDelegateUseCase $updateDelegate;
@@ -56,12 +61,15 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $this->memberships = new InMemoryMembershipRepository();
         $this->productions = new InMemoryProductionRepository();
         $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->participants = new InMemoryParticipantRepository();
+        $events = new ParticipantEventRecorder(new InMemoryParticipantEventRepository());
+        $guard = new DelegateAppointmentGuard($this->participants);
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants
         );
 
         $this->createDelegate = new CreateProductionDelegateUseCase(
@@ -69,10 +77,12 @@ final class ProductionDelegateUseCaseTest extends TestCase
             $this->delegates,
             $this->people,
             $productionAuthorization,
-            new InMemoryTransactionManager()
+            new InMemoryTransactionManager(),
+            $guard,
+            $events
         );
         $this->listDelegates = new ListProductionDelegatesUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
-        $this->updateDelegate = new UpdateProductionDelegateUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization);
+        $this->updateDelegate = new UpdateProductionDelegateUseCase($this->delegates, $this->productions, $this->people, $productionAuthorization, new InMemoryTransactionManager(), $guard, $events);
         $this->deleteDelegate = new DeleteProductionDelegateUseCase($this->delegates, $this->productions, $productionAuthorization);
         $this->getProduction = new GetProductionUseCase($this->productions, $productionAuthorization);
     }
@@ -100,6 +110,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $result = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -118,6 +129,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $notThePrimaryManager = Person::create(3);
         $this->people->save($notThePrimaryManager);
@@ -138,6 +150,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -162,6 +175,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
             1,
@@ -185,6 +199,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
         $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
             1,
@@ -208,6 +223,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
         $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
             1,
@@ -233,6 +249,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $target = Person::create(2);
         $target->setName('山田', '太郎');
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -256,6 +273,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -277,6 +295,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $target = Person::create(2);
         $target->setName('鈴木', '花子');
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -310,6 +329,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(2);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -347,6 +367,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
     {
         $proxy = Person::create($proxyWordPressUserId);
         $this->people->save($proxy);
+        ConsentedParticipant::seed($this->participants, $production->id(), $proxy->id());
         $this->delegates->save(ProductionDelegate::create(
             $production->id(),
             $proxy->id(),
@@ -370,6 +391,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         foreach (['PARTICIPANT_MANAGER', 'REHEARSAL_MANAGER', 'ACCOUNTING_MANAGER', 'CHECKIN_MANAGER'] as $role) {
             $result = $this->createDelegate->execute(new CreateProductionDelegateCommand(
@@ -389,6 +411,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         foreach (['TICKET_MANAGER', 'PERFORMANCE_MANAGER', 'RESERVATION_MANAGER', 'QUESTIONNAIRE_MANAGER'] as $role) {
             try {
@@ -412,6 +435,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $created = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
@@ -459,6 +483,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $this->expectException(ProductionDelegateAccessDeniedException::class);
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
@@ -482,6 +507,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
         $this->people->save($ordinaryMember);
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
 
         $this->expectException(ProductionDelegateAccessDeniedException::class);
         $this->createDelegate->execute(new CreateProductionDelegateCommand(
@@ -505,6 +531,7 @@ final class ProductionDelegateUseCaseTest extends TestCase
 
         $target = Person::create(3);
         $this->people->save($target);
+        ConsentedParticipant::seed($this->participants, $production->id(), $target->id());
         $ticketDelegate = $this->createDelegate->execute(new CreateProductionDelegateCommand(
             $production->id()->toString(),
             1,

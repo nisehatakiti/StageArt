@@ -758,6 +758,65 @@ Reservation Domainが発行する。
 
 ---
 
+# ProductionDelegateの有効性（PR #7 R14-B）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）の担当者（ProductionDelegate）について。設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.6・§7.1（設計書ブランチ、第9版 `9b42eb5`）。
+
+## 有効な担当者の条件
+
+担当者の行がRoleのPermissionを与えるのは、次の両方を満たす場合だけ。
+
+1. 担当者の行の `status` が ACTIVE。
+2. その人物が、この公演の **ACTIVEなPERSONの参加者で、本人の同意が記録されている**（`consented_at` がある）。
+
+- 条件を満たさないACTIVEな行は、変更せずに残るが、権限を与えない（「無効」）。
+- PrimaryManagerの権限は、担当者の行・参加者の状態に依存しない。
+- R14-Bより前からある参加者の行は同意が記録されていないため、その人物の担当者の行は、本人が「同意の確認を依頼」の招待を承諾するまで無効になる（承諾すると、再任命なしに有効になる）。
+
+## エンドポイント
+
+| メソッド・パス | 内容 |
+|---|---|
+| `GET /productions/{id}/delegates` | 担当者の一覧（`effective`・`ineffective_reason` 付き） |
+| `GET /productions/{id}/delegates/me` | ログインしている人物の、この公演での担当者の行だけ（第9段階でユーザーの承認を得て追加。設計書 §10「公演の画面（担当者本人）」） |
+| `POST /productions/{id}/delegates` | 任命（本文：`person_id`、`role`） |
+| `PUT /production-delegates/{id}` | 役割・状態の変更（本文：`role`、`status`） |
+| `DELETE /production-delegates/{id}` | 担当者の行の削除 |
+
+一覧の各行：`id`・`production_id`・`person_id`・`person_family_name`・`person_given_name`・`role`・`status`・`created_by`・`created_at`・`updated_by`・`updated_at`・`effective`・`ineffective_reason`。
+
+`GET /productions/{id}/delegates/me` の各行：`id`・`production_id`・`role`・`status`・`effective`・`ineffective_reason`。ログインしていれば誰でも呼べ、本人の行だけを返す（なければ空の配列）。他の人物の情報・氏名・メールアドレスは返さない。公演がなければ404 `stageart_production_not_found`。
+
+`ineffective_reason`（`effective` が `true` なら `null`）：
+
+| 値 | 意味 |
+|---|---|
+| `INACTIVE` | 担当者の行が INACTIVE |
+| `NOT_ACTIVE_PARTICIPANT` | その人物がACTIVEなPERSONの参加者でない |
+| `CONSENT_UNCONFIRMED` | ACTIVEな参加者だが、同意が記録されていない |
+
+## 任命・変更の条件
+
+- 任命（`POST`）と、`PUT` で行が新たに有効な任命になる場合（INACTIVE → ACTIVE、または役割の変更）は、対象の人物が同意を確認済みのACTIVEな参加者でなければならない。参加者でなければ422 `stageart_production_delegate_target_not_participant`、同意が記録されていなければ422 `stageart_production_delegate_target_not_consented`。
+- 同じ公演・人物・役割の INACTIVE の行がある場合、`POST` は新しい行を作らず、その行を ACTIVE に戻す（監査ログ `DELEGATE_REACTIVATED`。新しい行は `DELEGATE_APPOINTED`）。すでにACTIVEな行は409 `stageart_production_delegate_already_exists`。
+- ACTIVEな行を同じ役割のまま保つ変更は、任命ではないため、条件を確認し直さない（無効なまま残る）。
+
+## 参加者の状態の変更による担当者の無効化
+
+次の操作で、その人物のこの公演の担当者の行を同じトランザクションで INACTIVE にし、監査ログ `DELEGATE_DEACTIVATED` に理由を記録する。
+
+| 操作 | 理由 |
+|---|---|
+| `PUT /participants/{id}` で ACTIVE → INACTIVE | `PARTICIPANT_DEACTIVATED` |
+| `DELETE /participants/{id}`（ACTIVE・INACTIVE → CANCELLED） | `PARTICIPANT_REMOVED` |
+| `POST /participants/{id}/withdraw`（本人の取りやめ） | `PARTICIPANT_WITHDRAWN` |
+| 招待の承諾で新たに ACTIVE になった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
+| `PUT /production-delegates/{id}` で INACTIVE にした | `MANAGER` |
+
+担当者のAPIの応答には `Cache-Control: no-store` を付ける（`README.md`「個人宛てのAPIのキャッシュ」）。
+
+---
+
 # Error Response
 
 代表例

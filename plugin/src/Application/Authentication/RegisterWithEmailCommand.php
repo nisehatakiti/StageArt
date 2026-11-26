@@ -6,13 +6,12 @@ namespace StageArt\Application\Authentication;
 
 /**
  * StageArt 招待登録のメール確認省略ラウンド: `invitationToken` is the raw
- * ParticipantInvitation token from an invitation link's own
- * `/register?token=...` query param - optional, null for ordinary
- * self-registration. When present, RegisterWithEmailUseCase treats the
- * invitation's own recorded email as authoritative (never the `email`
- * field here - see that Use Case's own docblock) and skips the normal
- * email-confirmation step, since the invitation link itself already
- * proves the address is reachable.
+ * token from an OrganizationInvitation link's own `/register?token=...`
+ * query param - optional, null for ordinary self-registration. When it is a
+ * usable OrganizationInvitation's, RegisterWithEmailUseCase treats that
+ * invitation's own recorded email as authoritative and skips the normal
+ * email-confirmation step. PR #7 R14-B stage 4: a Production (participant)
+ * invitation token is ignored - see RegisterWithEmailUseCase.
  */
 final class RegisterWithEmailCommand
 {

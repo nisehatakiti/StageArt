@@ -13,7 +13,7 @@ import { useParticipants } from '@/features/participant/useParticipant';
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { getErrorMessage, isRehearsalIdempotencyConflict } from '@/utils/errorMessage';
 import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
-import type { Participant } from '@/types/api';
+import { isActivePersonParticipant } from '@/features/participant/participantGuards';
 
 /** Same label map as productions/[id]/participants.tsx - Participant
  * type is CAST/STAFF only (ParticipantType.php), not extended here. */
@@ -58,7 +58,7 @@ export default function CreateRehearsalScreen() {
    * 自身のRoleやOrganization MembershipのRoleとは無関係。
    */
   const eligibleMembers = (participantsQuery.data ?? []).filter(
-    (participant): participant is Participant => participant.subject_type === 'PERSON' && participant.status === 'ACTIVE'
+    isActivePersonParticipant
   );
   const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set());
   // Tracks which fetch of participantsQuery.data the current selection was

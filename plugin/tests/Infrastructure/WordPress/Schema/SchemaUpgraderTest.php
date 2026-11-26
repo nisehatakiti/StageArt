@@ -188,6 +188,52 @@ final class SchemaUpgraderTest extends TestCase
         $this->assertSame(SchemaUpgrader::CURRENT_VERSION, $this->storedVersion());
     }
 
+    /**
+     * PR #7 R14-B (schema 1.49.0): a 1.48.0 install whose new column or new
+     * table was not applied stays at 1.48.0, and the next request, once the
+     * database takes it, reaches 1.49.0.
+     *
+     * @dataProvider r14bSchemaParts
+     */
+    public function test_an_unapplied_1_49_0_part_keeps_1_48_0_and_is_retried(string $table, ?string $column): void
+    {
+        update_option('stageart_db_schema_version', '1.48.0');
+
+        if ($column === null) {
+            $this->absentTables = [$table];
+        } else {
+            $this->absentColumns = [$table => $column];
+        }
+
+        $this->assertFalse(SchemaUpgrader::maybeUpgrade());
+        $this->assertSame('1.48.0', $this->storedVersion());
+
+        $this->absentTables = [];
+        $this->absentColumns = [];
+        $GLOBALS['stageart_test_wp']['dbdelta'] = [];
+
+        $this->assertTrue(SchemaUpgrader::maybeUpgrade(), 'The next request runs the upgrade again');
+        $this->assertSame('1.49.0', $this->storedVersion());
+    }
+
+    /**
+     * @return array<string, array{string, ?string}>
+     */
+    public static function r14bSchemaParts(): array
+    {
+        return [
+            'participants.consent_source' => ['wp_stageart_participants', 'consent_source'],
+            'participants.requested_at' => ['wp_stageart_participants', 'requested_at'],
+            'invitations.close_reason' => ['wp_stageart_participant_invitations', 'close_reason'],
+            'invitations.resend_count' => ['wp_stageart_participant_invitations', 'resend_count'],
+            'invitations.updated_at' => ['wp_stageart_participant_invitations', 'updated_at'],
+            'invitation sends table' => ['wp_stageart_participant_invitation_sends', null],
+            'participant events table' => ['wp_stageart_participant_events', null],
+            'rate limit buckets table' => ['wp_stageart_rate_limit_buckets', null],
+            'rate limit buckets.expires_at' => ['wp_stageart_rate_limit_buckets', 'expires_at'],
+        ];
+    }
+
     public function test_a_current_schema_runs_nothing(): void
     {
         update_option('stageart_db_schema_version', SchemaUpgrader::CURRENT_VERSION);

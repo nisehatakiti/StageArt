@@ -37,6 +37,7 @@ use StageArt\Domain\Ticket\TicketBackMode;
 use StageArt\Domain\Ticket\TicketId;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\ConsentedParticipant;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
 use StageArt\Tests\Support\InMemoryPerformanceRepository;
 use StageArt\Tests\Support\InMemoryPersonRepository;
@@ -72,6 +73,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     private InMemoryTicketRepository $tickets;
     private InMemorySettlementRepository $settlements;
     private InMemoryProductionDelegateRepository $delegates;
+    private InMemoryParticipantRepository $participants;
 
     private ActivateProductionUseCase $activate;
     private CompleteProductionUseCase $complete;
@@ -96,7 +98,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
         $productionAuthorization = new ProductionAuthorizationService(
             $organizationAuthorization,
             $this->delegates,
-            new InMemoryParticipantRepository()
+            $this->participants = new InMemoryParticipantRepository()
         );
         $this->productionAuthorization = $productionAuthorization;
 
@@ -414,6 +416,7 @@ final class ProductionLifecycleUseCaseTest extends TestCase
     {
         $person = Person::create($wordPressUserId);
         $this->people->save($person);
+        ConsentedParticipant::seed($this->participants, $production->id(), $person->id());
 
         $delegates = [];
         foreach ($roles as $role) {

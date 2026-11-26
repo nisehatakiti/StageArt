@@ -3,6 +3,8 @@
 
 Version : 1.0
 
+> PR #7 R14-B（2026-11-19追記）：本書は概念上のDomain Eventの定義である。R14-Bの実装では、ParticipantAddedは発行せず、参加の開始を監査ログ（`ACCEPTED`・`JOIN_APPROVED`・`NAME_ONLY_ADDED`）として記録する。人物（PERSON）の参加は、本人の招待の承諾または参加申請の承認だけで始まる。`README.md`「Participantの監査ログ（PR #7 R14-B）」を参照。
+
 ---
 
 # Purpose

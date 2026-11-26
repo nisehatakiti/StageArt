@@ -8,11 +8,24 @@ use StageArt\Application\ParticipantInvitation\ParticipantInvitationMailerInterf
 
 final class FakeParticipantInvitationMailer implements ParticipantInvitationMailerInterface
 {
-    /** @var array<int, array{to: string, productionName: string, token: string}> */
+    /** @var array<int, array{to: string, productionName: string}> */
     public array $invitationEmails = [];
 
-    public function sendInvitationEmail(string $toEmail, string $productionName, string $token): void
+    /** R14-B stage 4: what the next sends answer (true = accepted by the mail server); throwNext makes the next one throw. */
+    public bool $accepts = true;
+    public ?\Throwable $throwNext = null;
+
+    public function sendInvitationEmail(string $toEmail, string $productionName): bool
     {
-        $this->invitationEmails[] = ['to' => $toEmail, 'productionName' => $productionName, 'token' => $token];
+        if ($this->throwNext !== null) {
+            $failure = $this->throwNext;
+            $this->throwNext = null;
+
+            throw $failure;
+        }
+
+        $this->invitationEmails[] = ['to' => $toEmail, 'productionName' => $productionName];
+
+        return $this->accepts;
     }
 }

@@ -22,10 +22,16 @@ use InvalidArgumentException;
 final class ParticipantInvitationStatus
 {
     public const PENDING = 'PENDING';
+    /** Pre-R14-B auto-resolution only: kept as a terminal legacy state
+     * (shown as "参加済み（旧方式）"); never created by R14-B. */
     public const CONSUMED = 'CONSUMED';
     public const CANCELLED = 'CANCELLED';
+    /** R14-B (design doc §5.1): the invitee themselves accepted. Terminal. */
+    public const ACCEPTED = 'ACCEPTED';
+    /** R14-B (design doc §5.1): the invitee themselves declined. Terminal. */
+    public const REJECTED = 'REJECTED';
 
-    private const VALID = [self::PENDING, self::CONSUMED, self::CANCELLED];
+    private const VALID = [self::PENDING, self::CONSUMED, self::CANCELLED, self::ACCEPTED, self::REJECTED];
 
     private string $value;
 

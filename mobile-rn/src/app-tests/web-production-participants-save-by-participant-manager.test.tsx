@@ -42,6 +42,10 @@ const member: Participant = {
   person_family_name: null,
   person_given_name: null,
   email: null,
+  // R14-B: a member who accepted an invitation.
+  enrollment_source: 'INVITATION',
+  consent_status: 'CONFIRMED',
+  consented_at: '2026-01-01T00:00:00+09:00',
 };
 
 type Call = { method: string; url: string; body: unknown };
@@ -141,7 +145,9 @@ describe('メンバー管理: 参加者担当のみのユーザーの保存', ()
       FIRST_RENDER
     );
     const participantUpdate = calls.find((c) => c.method === 'PUT' && c.url.endsWith(`/participants/${member.id}`));
-    expect(participantUpdate?.body).toMatchObject({ participant_type: 'STAFF', status: 'ACTIVE' });
+    // R14-B (design doc §5.2 / §10, N6): the role and remarks only - `status`
+    // is never sent by this save.
+    expect(participantUpdate?.body).toEqual({ participant_type: 'STAFF', remarks: null });
 
     // The member list is fetched again after the save, and shows the saved type.
     await waitFor(

@@ -7,81 +7,80 @@ namespace StageArt\Application\ParticipantInvitation;
 use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
-use StageArt\Application\Participant\CreateParticipantCommand;
-use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
-use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
-use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Application\RateLimit\InvitationRateLimit;
+use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSend;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 /**
- * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド: the
- * single entry point behind `POST /productions/{id}/participant-
- * invitations`, now the ONLY member-add path this round's confirmed
- * spec allows (§0/§1 - no separate Person ID input, no standalone
- * "search by email" step, no NAME_ONLY-only add). An admin always
- * submits 氏名＋メールアドレス＋役割＋備考 in one call; this Use Case decides
- * internally, by email, whether that becomes:
+ * `POST /productions/{id}/participant-invitations`: an admin invites
+ * someone by 氏名＋メールアドレス＋役割＋備考.
  *
- * - an existing Person added directly as a Participant (§2-A), via the
- *   existing, unchanged CreateParticipantUseCase (§17: "既存
- *   CreateParticipantUseCaseを利用できる場合は必ず利用してください") -
- *   Authorization for that path is exactly CreateParticipantUseCase's
- *   own, untouched; this Use Case adds no second gate around it.
- *   StageArt Production側氏名の権威付けラウンド (§0/§5): the submitted
- *   `name` IS stored as this Participant's own `displayName` - Person
- *   ID resolution here is for identity matching only, never for
- *   overwriting what the admin typed with the Person's own
- *   familyName/givenName (see ParticipantResult's independent
- *   displayName vs. person_family_name/person_given_name fields);
- * - a resend of an existing usable PENDING ParticipantInvitation for the
- *   same (production, email, participantType) tuple (§9/§11's
- *   duplicate-invitation rule), delegated to
- *   ResendParticipantInvitationUseCase so "rotate token, send mail"
- *   lives in exactly one place. §9's open question - whether a resend
- *   should also overwrite the stored invitedName/remarks with this
- *   call's newly-submitted values - is deliberately NOT resolved here;
- *   ResendParticipantInvitationUseCase's own signature is unchanged
- *   (no name/remarks parameters), so a resend always keeps the
- *   ORIGINAL invitedName/remarks from when the invitation was first
- *   created. See this round's final report for why this was flagged
- *   rather than decided;
- * - a brand-new ParticipantInvitation (§2-B), carrying the submitted
- *   `name` as `invitedName` (§3) for the eventual registration screen's
- *   initial value.
+ * PR #7 R14-B stage 4 (design doc §4.1 / §5.3 / §7.1 / §9.2 / §11.3):
+ * - Always an invitation, whoever the address belongs to: no Person is
+ *   looked up by the address (FindPersonByEmailUseCase is not used), no
+ *   Participant is added directly, and no in-app notification is created.
+ *   The response is the same for a registered and an unregistered address:
+ *   `outcome` INVITATION_SENT (a new invitation) or INVITATION_RESENT (a
+ *   PENDING, unexpired invitation to the same address and type existed and
+ *   was resent), and the invitation as the admin entered it - never a
+ *   Person id, a Person's name or whether an account exists.
+ * - One transaction, locked Production -> same-address invitations (FOR
+ *   UPDATE) -> send record (§5.4), so two requests never create two
+ *   PENDING invitations.
+ * - Refused, writing nothing: Production COMPLETED / ARCHIVED / CANCELLED
+ *   (409 production_closed); for a new invitation, a rejection of an
+ *   invitation of this Production to the same address (any type) less than
+ *   30 days ago (409 recently_rejected, available_at); the 30-day
+ *   per-address send limit (429 send_limit, available_at); for a resend,
+ *   also inviter_revoked / resend_limit (ResendParticipantInvitationUseCase).
+ *   Addresses are compared after trim + lower-case (§6.4).
+ * - A new invitation is valid for 7 days. Its token_hash column (NOT NULL,
+ *   UNIQUE) gets the hash of 32 random bytes that are thrown away: no token
+ *   is mailed, shown, logged or ever looked up (U5 C案).
+ * - The e-mail is sent after the commit (InvitationSendService); a failed
+ *   send does not undo the invitation or the counted send.
  */
 final class CreateParticipantInvitationUseCase
 {
+    /** D6: no new invitation to the same Production + address for 30 days after a rejection (also the list's reinvite_available_at). */
+    public const REJECTION_BLOCK = 'P30D';
+
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
-    private FindPersonByEmailUseCase $findPersonByEmail;
-    private CreateParticipantUseCase $createParticipant;
     private ParticipantInvitationRepositoryInterface $invitations;
-    private ResendParticipantInvitationUseCase $resendParticipantInvitation;
-    private ParticipantInvitationMailerInterface $mailer;
+    private ResendParticipantInvitationUseCase $resend;
+    private ParticipantInvitationConditions $conditions;
+    private InvitationSendService $sendService;
+    private TransactionManagerInterface $transactions;
+    /** R14-B stage 8 (§9.2); null only where a test leaves the limits out. */
+    private ?InvitationRateLimit $rateLimit;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
         ProductionAuthorizationService $authorization,
-        FindPersonByEmailUseCase $findPersonByEmail,
-        CreateParticipantUseCase $createParticipant,
         ParticipantInvitationRepositoryInterface $invitations,
-        ResendParticipantInvitationUseCase $resendParticipantInvitation,
-        ParticipantInvitationMailerInterface $mailer
+        ResendParticipantInvitationUseCase $resend,
+        ParticipantInvitationConditions $conditions,
+        InvitationSendService $sendService,
+        TransactionManagerInterface $transactions,
+        ?InvitationRateLimit $rateLimit = null
     ) {
+        $this->rateLimit = $rateLimit;
         $this->productions = $productions;
         $this->authorization = $authorization;
-        $this->findPersonByEmail = $findPersonByEmail;
-        $this->createParticipant = $createParticipant;
         $this->invitations = $invitations;
-        $this->resendParticipantInvitation = $resendParticipantInvitation;
-        $this->mailer = $mailer;
+        $this->resend = $resend;
+        $this->conditions = $conditions;
+        $this->sendService = $sendService;
+        $this->transactions = $transactions;
     }
 
     public function execute(CreateParticipantInvitationCommand $command): CreateParticipantInvitationResult
@@ -104,10 +103,17 @@ final class CreateParticipantInvitationUseCase
             );
         }
 
+        // R14-B stage 8 (§9.2): counted once permission is confirmed, before
+        // the input is checked and outside (before) the transaction; 429 when
+        // over. A create that turns into a resend is still one attempt.
+        if ($this->rateLimit !== null) {
+            $this->rateLimit->assertSendAllowed($requester->id(), $production->id());
+        }
+
         $email = trim($command->email);
 
         if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            throw new InvalidArgumentException("Invalid email address: {$command->email}");
+            throw new InvalidArgumentException('Invalid email address.');
         }
 
         $name = trim($command->name);
@@ -118,51 +124,66 @@ final class CreateParticipantInvitationUseCase
 
         $participantType = ParticipantType::fromString($command->participantType);
 
-        $existingPerson = $this->findPersonByEmail->execute($email);
+        [$outcome, $invitation, $pending] = $this->transactions->run(
+            function () use ($production, $requester, $email, $name, $participantType, $command): array {
+                $now = new DateTimeImmutable();
+                $locked = $this->productions->findByIdForUpdate($production->id());
 
-        if ($existingPerson !== null) {
-            $participantResult = $this->createParticipant->execute(new CreateParticipantCommand(
-                $command->productionId,
-                $command->requestedByWordPressUserId,
-                ParticipantSubjectType::PERSON,
-                $existingPerson->id,
-                $command->participantType,
-                $name,
-                $command->remarks
-            ));
+                if ($locked === null) {
+                    throw new ProductionNotFoundException($production->id()->toString());
+                }
 
-            return CreateParticipantInvitationResult::forExistingPerson($participantResult);
-        }
+                if ($this->conditions->isProductionClosed($locked)) {
+                    throw new ParticipantInvitationProductionClosedException('The production is closed; invitations cannot be sent.');
+                }
 
-        foreach ($this->invitations->findByProductionEmailAndType($production->id(), $email, $participantType) as $candidate) {
-            if ($candidate->isUsable()) {
-                $resent = $this->resendParticipantInvitation->execute(new ResendParticipantInvitationCommand(
-                    $candidate->id()->toString(),
-                    $command->requestedByWordPressUserId
-                ));
+                foreach ($this->invitations->findByProductionEmailAndTypeForUpdate($locked->id(), $email, $participantType) as $candidate) {
+                    if ($candidate->isUsable()) {
+                        return [
+                            CreateParticipantInvitationResult::OUTCOME_INVITATION_RESENT,
+                            $candidate,
+                            $this->resend->resendLocked($candidate, $locked, $requester, $now),
+                        ];
+                    }
+                }
 
-                return CreateParticipantInvitationResult::forResentInvitation($resent);
+                $rejectedAt = $this->invitations->latestRejectionAt($locked->id(), $email);
+
+                if ($rejectedAt !== null) {
+                    $availableAt = $rejectedAt->add(new DateInterval(self::REJECTION_BLOCK));
+
+                    if ($availableAt > $now) {
+                        throw new ParticipantInvitationRecentlyRejectedException($availableAt);
+                    }
+                }
+
+                $invitation = ParticipantInvitation::create(
+                    $locked->id(),
+                    $email,
+                    $name,
+                    $requester->id(),
+                    $participantType,
+                    $command->remarks,
+                    hash('sha256', random_bytes(32)),
+                    ParticipantInvitation::expiresAtFrom($now)
+                );
+
+                return [
+                    CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT,
+                    $invitation,
+                    $this->sendService->accept(
+                        $invitation,
+                        ParticipantInvitationSend::KIND_INITIAL,
+                        $requester->id(),
+                        $locked->name()->toString(),
+                        $now
+                    ),
+                ];
             }
-        }
-
-        $tokenValue = bin2hex(random_bytes(32));
-        $tokenHash = hash('sha256', $tokenValue);
-        $expiresAt = (new DateTimeImmutable())->add(new DateInterval(ParticipantInvitation::TOKEN_LIFETIME_SPEC));
-
-        $invitation = ParticipantInvitation::create(
-            $production->id(),
-            $email,
-            $name,
-            $requester->id(),
-            $participantType,
-            $command->remarks,
-            $tokenHash,
-            $expiresAt
         );
-        $this->invitations->save($invitation);
 
-        $this->mailer->sendInvitationEmail($email, $production->name()->toString(), $tokenValue);
+        $this->sendService->deliver($pending);
 
-        return CreateParticipantInvitationResult::forNewInvitation(ParticipantInvitationResult::fromDomain($invitation));
+        return CreateParticipantInvitationResult::of($outcome, ParticipantInvitationResult::fromDomain($invitation));
     }
 }

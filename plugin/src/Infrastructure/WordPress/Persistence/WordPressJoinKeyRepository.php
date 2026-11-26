@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use RuntimeException;
 use StageArt\Domain\JoinKey\JoinKey;
 use StageArt\Domain\JoinKey\JoinKeyId;
@@ -59,6 +60,33 @@ final class WordPressJoinKeyRepository implements JoinKeyRepositoryInterface
         if ($result === false) {
             throw new RuntimeException("Failed to insert into {$this->table}: " . $this->wpdb->last_error);
         }
+    }
+
+    /**
+     * R14-B (design doc §7.1, U13 C案): the use is counted by one
+     * conditional UPDATE, so two requests can never both take the last use
+     * and a request that is rolled back never leaves a use behind. The
+     * status assignment comes first and reads the pre-increment use_count
+     * (MySQL evaluates single-table SET assignments left to right), keeping
+     * JoinKey::recordUse()'s EXHAUSTED-on-the-last-use rule. expires_at is
+     * compared with the current UTC time, the form save() stores (PHP's
+     * default time zone is UTC under WordPress).
+     */
+    public function recordUseIfUsable(JoinKeyId $id, DateTimeImmutable $now): bool
+    {
+        $changed = WordPressCheckedWrites::query($this->wpdb, 'update', $this->table, $this->wpdb->prepare(
+            "UPDATE {$this->table} "
+            . "SET status = CASE WHEN max_uses IS NOT NULL AND use_count + 1 >= max_uses THEN %s ELSE status END, "
+            . "use_count = use_count + 1 "
+            . "WHERE id = %s AND status = %s AND (max_uses IS NULL OR use_count < max_uses) "
+            . "AND (expires_at IS NULL OR expires_at > %s)",
+            JoinKey::STATUS_EXHAUSTED,
+            $id->toString(),
+            JoinKey::STATUS_ACTIVE,
+            $now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s')
+        ));
+
+        return $changed === 1;
     }
 
     public function findById(JoinKeyId $id): ?JoinKey

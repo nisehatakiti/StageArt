@@ -11,14 +11,15 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 /**
- * StageArt Productionメンバー追加(氏名＋メールアドレス統一)ラウンド §2-A/§19:
- * submitting 氏名＋メールアドレス for an email that already belongs to an
- * existing StageArt Person adds them directly as a Participant via the
- * single POST /productions/{id}/participant-invitations call - no
- * separate search step, no Invitation created for this outcome.
+ * PR #7 R14-B (design doc §7.1 D10, §10, §14.2; rewritten for the spec
+ * change - previously this checked that an address of an existing account
+ * added the Person directly): an address that already belongs to a StageArt
+ * account is invited like any other - the same single POST, answered
+ * INVITATION_SENT, and the screen says the person becomes a member when
+ * they accept. 「メンバーを追加しました」 is never shown.
  */
-describe('Web メンバー管理: 既存メンバーをメールアドレスで直接追加', () => {
-  it('adds an existing Person directly when the email already belongs to one', async () => {
+describe('Web メンバー管理: 既存アカウントのメールアドレスも招待になる', () => {
+  it('invites an address that belongs to an existing account, without adding anyone', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/productions/prod-1'), status: 200, body: productionOne },
       { test: (u) => u.endsWith('/productions/prod-1/participants'), status: 200, body: [] },
@@ -40,22 +41,21 @@ describe('Web メンバー管理: 既存メンバーをメールアドレスで�
       status: 201,
       text: async () =>
         JSON.stringify({
-          outcome: 'PARTICIPANT_ADDED',
-          participant: {
-            id: 'participant-2',
+          outcome: 'INVITATION_SENT',
+          invitation: {
+            id: 'invitation-1',
             production_id: 'prod-1',
-            subject_type: 'PERSON',
-            subject_id: 'person-9',
+            email: 'already-registered@example.com',
+            name: '山田 太郎',
+            invited_by_person_id: 'person-1',
             participant_type: 'CAST',
-            status: 'ACTIVE',
-            created_at: '',
-            updated_at: '',
             remarks: null,
-            display_name: '山田 太郎',
-            person_family_name: '鈴木',
-            person_given_name: '花子',
+            status: 'PENDING',
+            created_at: '',
+            expires_at: '2099-01-01T00:00:00+00:00',
+            consumed_at: null,
+            is_expired: false,
           },
-          invitation: null,
         }),
       json: async () => ({}),
     }));
@@ -73,6 +73,8 @@ describe('Web メンバー管理: 既存メンバーをメールアドレスで�
       expect(body.participant_type).toBe('CAST');
     });
 
-    await waitFor(() => expect(screen.getByText('メンバーを追加しました。')).toBeVisible());
+    await waitFor(() => expect(screen.getByText('招待メールを送信しました。本人が承諾するとメンバーに追加されます。')).toBeVisible());
+    expect(screen.queryByText('メンバーを追加しました。')).toBeNull();
+    expect(screen.getByText('＋ メンバーを招待')).toBeVisible();
   });
 });

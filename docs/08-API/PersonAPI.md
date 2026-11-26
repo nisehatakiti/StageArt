@@ -421,6 +421,21 @@ Audience Historyの対象となる。
 
 ---
 
+# 他の人物の情報を返すAPIの削除（PR #7 R14-B）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）のうち、他の人物の情報を返していた次の2つを、R14-B（第5段階、`9a50ee8`）で削除した。StageArtのAPIはアプリ専用のため、残さない（設計書 `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §7.1・§13、U6）。
+
+| 削除したAPI | 削除後 |
+|---|---|
+| `GET /people?email=`（メールアドレスによる人物の検索） | WordPressの404 `rest_no_route` |
+| `GET /people/{id}`（人物IDによる人物の取得） | WordPressの404 `rest_no_route` |
+
+- 公演の参加者は、人物を検索して追加するのではなく、招待（`ParticipantAPI.md`「実装済みエンドポイント（PR #7 R14-B）」）で登録する。
+- メールアドレスから人物を求める内部の処理（`FindPersonByEmailUseCase`）は、APIとしては公開せず、団体招待の作成と、公演の招待の宛先が本人のアドレスであることの確認（`InvitationRecipientVerifier`）だけが内部で使う。
+- 上記のBlueprint（`/api/v1/persons`）は概念上のResourceの定義であり、R14-B時点で、これに対応する人物の一覧・検索・取得のAPIは実装されていない。
+
+---
+
 # Error Response
 
 代表例
