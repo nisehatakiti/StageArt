@@ -40,6 +40,30 @@ final class ParticipantDataRetentionScheduleTest extends TestCase
         $this->assertGreaterThan(time(), $scheduled[0][0]);
     }
 
+    /** The follow-up purge of the rate-limit buckets: one single event within the hour, never two pending. */
+    public function test_a_rate_limit_follow_up_is_scheduled_once_within_the_hour(): void
+    {
+        $GLOBALS['r14b8_cron'] = ['single' => [], 'next_single' => false];
+        eval('function wp_next_scheduled($hook) { return $hook === "stageart_rate_limit_buckets_purge" ? $GLOBALS["r14b8_cron"]["next_single"] : false; }'
+            . ' function wp_schedule_single_event($timestamp, $hook) { $GLOBALS["r14b8_cron"]["single"][] = [$timestamp, $hook]; $GLOBALS["r14b8_cron"]["next_single"] = $timestamp; return true; }');
+
+        ParticipantDataRetentionSchedule::scheduleRateLimitFollowUp();
+        ParticipantDataRetentionSchedule::scheduleRateLimitFollowUp();
+
+        $single = $GLOBALS['r14b8_cron']['single'];
+        $this->assertCount(1, $single, 'Not scheduled again while one is pending');
+        $this->assertSame('stageart_rate_limit_buckets_purge', $single[0][1]);
+        $this->assertGreaterThan(time(), $single[0][0]);
+        $this->assertLessThanOrEqual(time() + 3600, $single[0][0], 'Within the hour');
+    }
+
+    public function test_the_follow_up_hook_runs_the_bucket_purge_only(): void
+    {
+        $source = (string) file_get_contents(__DIR__ . '/../../../../src/Infrastructure/WordPress/Retention/ParticipantDataRetentionSchedule.php');
+
+        $this->assertMatchesRegularExpression('#add_action\(self::FOLLOW_UP_HOOK, static function \(\) use \(\$retention\): void \{\s*\$retention->runRateLimitBuckets\(\);\s*\}\);#', $source);
+    }
+
     public function test_deactivation_removes_the_event(): void
     {
         self::stubCron();
@@ -47,7 +71,7 @@ final class ParticipantDataRetentionScheduleTest extends TestCase
 
         ParticipantDataRetentionSchedule::unschedule();
 
-        $this->assertSame(['stageart_participant_data_retention'], $GLOBALS['r14b8_cron']['cleared']);
+        $this->assertSame(['stageart_participant_data_retention', 'stageart_rate_limit_buckets_purge'], $GLOBALS['r14b8_cron']['cleared'], 'The daily job and a pending follow-up purge');
         $this->assertFalse(wp_next_scheduled('stageart_participant_data_retention'));
     }
 
