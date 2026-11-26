@@ -68,7 +68,7 @@ describe('Attendance detail: 回答 (respond)', () => {
 
     fireEvent.press(screen.getByTestId('attendance-respond-AVAILABLE'));
 
-    await waitFor(() => expect(respondBody).toEqual({ status: 'AVAILABLE' }));
+    await waitFor(() => expect(respondBody).toEqual({ status: 'AVAILABLE', remarks: null }));
     await waitFor(() => expect(screen.getByTestId('attendance-my-status')).toHaveTextContent('参加可能'));
   });
 });

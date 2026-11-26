@@ -2,7 +2,7 @@
 
 # Management Navigation Policy
 
-Version : 1.2
+Version : 1.4
 
 ---
 
@@ -221,6 +221,8 @@ Accountingは二つのContextから利用する。
 
 Production AccountingをOrganization Accountingの単なる別名として扱わない。
 
+Organization Contextの会計では、配下の公演ごとの売上・原価・収支・決算状態と合計を確認する。費目別の原価・取引明細はProduction Contextの会計で確認し、Organization Contextの公演別実績から対象公演の会計へ遷移できる構造とする（`OrganizationAccountingAndProductionCostPolicy.md`）。
+
 Organization-level BS / PLは、Organization全体の会計状況を財務諸表として確認するための機能とする。
 
 BS / PLはManagement Client上で表示できるだけでなく、出力できる構造を前提とする。
@@ -270,6 +272,16 @@ Primary Manager
 ├─ 通知
 └─ 設定
 
+公演代理人
+├─ 団体
+├─ 公演
+│   ├─ 公演情報・公開設定
+│   ├─ メンバー・招待
+│   ├─ 会計
+│   └─ 稽古・予定
+├─ 通知
+└─ 設定
+
 稽古管理者
 ├─ 団体
 ├─ 公演
@@ -294,9 +306,13 @@ Primary Manager
 
 Primary Managerは全管理機能を利用できる。
 
+公演代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを併せ持つProduction Delegate）は、担当公演について、公演の完了・Primary Managerの変更・公演資料の配布を除く公演運営と会計の管理機能を利用できる（Version 1.4、2026-11-24。`ProductionDelegatePolicy.md`「担当区分と権限一覧」）。
+
 稽古管理者は稽古・予定の管理機能を利用できる。
 
-会計管理者はProduction会計およびOrganization横断会計の管理機能を利用できる。
+会計管理者はProduction会計およびOrganization横断会計の管理機能を利用できる。会計管理者には公演運営（公演情報・メンバー・稽古）のメニューを表示しない。
+
+公演の完了の操作は、Primary Managerにだけ表示する。
 
 一般Memberには管理者向けの稽古管理・会計管理メニューを表示しない。
 

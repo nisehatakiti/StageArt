@@ -1,4 +1,4 @@
-import { ACTUAL_STATUS_OPTIONS, responseOptionsForPhase, statusLabel } from './viewModel';
+import { ACTUAL_STATUS_OPTIONS, attendanceSummary, responseOptionsForPhase, statusLabel } from './viewModel';
 
 describe('statusLabel', () => {
   it('maps every known RehearsalAttendanceStatus value to a Japanese label', () => {
@@ -24,7 +24,39 @@ describe('responseOptionsForPhase', () => {
 });
 
 describe('ACTUAL_STATUS_OPTIONS', () => {
-  it('is exactly ATTENDED/LATE/ABSENT', () => {
-    expect(ACTUAL_STATUS_OPTIONS).toEqual(['ATTENDED', 'LATE', 'ABSENT']);
+  it('is exactly ATTENDED/LATE/EARLY_LEFT/ABSENT', () => {
+    expect(ACTUAL_STATUS_OPTIONS).toEqual(['ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT']);
+  });
+});
+
+describe('attendanceSummary', () => {
+  it('counts ATTENDED as 出席', () => {
+    expect(attendanceSummary(['ATTENDED'])).toEqual({ attending: 1, notAttending: 0, unanswered: 0 });
+  });
+
+  it('counts LATE (遅刻) as 出席 - actually attended, must not be counted as 欠席', () => {
+    expect(attendanceSummary(['LATE'])).toEqual({ attending: 1, notAttending: 0, unanswered: 0 });
+  });
+
+  it('counts ABSENT as 欠席', () => {
+    expect(attendanceSummary(['ABSENT'])).toEqual({ attending: 0, notAttending: 1, unanswered: 0 });
+  });
+
+  it('counts UNANSWERED as 未回答', () => {
+    expect(attendanceSummary(['UNANSWERED'])).toEqual({ attending: 0, notAttending: 0, unanswered: 1 });
+  });
+
+  it('counts EARLY_LEFT (早退) as 出席 - actually attended, must not be counted as 欠席', () => {
+    expect(attendanceSummary(['EARLY_LEFT'])).toEqual({ attending: 1, notAttending: 0, unanswered: 0 });
+  });
+
+  it('tallies a mixed roster correctly, including EARLY_LEFT', () => {
+    expect(
+      attendanceSummary(['ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT', 'UNANSWERED', 'ATTENDING', 'NOT_ATTENDING'])
+    ).toEqual({
+      attending: 4,
+      notAttending: 2,
+      unanswered: 1,
+    });
   });
 });

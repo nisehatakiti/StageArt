@@ -24,6 +24,7 @@ use StageArt\Application\Authentication\RequestPasswordResetCommand;
 use StageArt\Application\Authentication\RequestPasswordResetUseCase;
 use StageArt\Application\Authentication\ResetPasswordCommand;
 use StageArt\Application\Authentication\ResetPasswordUseCase;
+use StageArt\Application\Authentication\UserAccountBlockedException;
 use StageArt\Application\Authentication\VerifyEmailCommand;
 use StageArt\Application\Authentication\VerifyEmailUseCase;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
@@ -158,6 +159,8 @@ final class AuthenticationRestController
             return new WP_REST_Response($this->authenticateWithGoogle->execute($command)->toArray(), 200);
         } catch (InvalidGoogleIdTokenException $exception) {
             return new WP_Error('stageart_invalid_google_id_token', $exception->getMessage(), ['status' => 401]);
+        } catch (UserAccountBlockedException $exception) {
+            return new WP_Error('stageart_account_blocked', $exception->getMessage(), ['status' => 401]);
         } catch (InvalidArgumentException $exception) {
             return new WP_Error('stageart_authentication_invalid', $exception->getMessage(), ['status' => 422]);
         }
@@ -169,9 +172,15 @@ final class AuthenticationRestController
     public function registerWithEmail(WP_REST_Request $request)
     {
         try {
+            $invitationTokenParam = $request->get_param('invitation_token');
+            $invitationToken = ($invitationTokenParam === null || $invitationTokenParam === '')
+                ? null
+                : (string) $invitationTokenParam;
+
             $command = new RegisterWithEmailCommand(
                 (string) $request->get_param('email'),
-                (string) $request->get_param('password')
+                (string) $request->get_param('password'),
+                $invitationToken
             );
 
             return new WP_REST_Response($this->registerWithEmail->execute($command)->toArray(), 201);
@@ -196,6 +205,8 @@ final class AuthenticationRestController
             return new WP_REST_Response($this->authenticateWithEmail->execute($command)->toArray(), 200);
         } catch (InvalidCredentialsException $exception) {
             return new WP_Error('stageart_invalid_credentials', $exception->getMessage(), ['status' => 401]);
+        } catch (UserAccountBlockedException $exception) {
+            return new WP_Error('stageart_account_blocked', $exception->getMessage(), ['status' => 401]);
         }
     }
 
@@ -210,6 +221,8 @@ final class AuthenticationRestController
             return new WP_REST_Response($this->refreshAccessToken->execute($command)->toArray(), 200);
         } catch (InvalidRefreshTokenException $exception) {
             return new WP_Error('stageart_invalid_refresh_token', $exception->getMessage(), ['status' => 401]);
+        } catch (UserAccountBlockedException $exception) {
+            return new WP_Error('stageart_account_blocked', $exception->getMessage(), ['status' => 401]);
         }
     }
 

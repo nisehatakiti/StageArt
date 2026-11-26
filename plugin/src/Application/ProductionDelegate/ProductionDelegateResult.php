@@ -4,34 +4,66 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ProductionDelegate;
 
+use StageArt\Domain\Person\Person;
 use StageArt\Domain\ProductionDelegate\ProductionDelegate;
 
+/**
+ * ProductionDelegate実用化 instruction §2: the Backend REST shape was
+ * previously personId-only, which a real "誰にこの仕事を任せているか" UI
+ * cannot render. `personFamilyName`/`personGivenName` are resolved here
+ * the same way `ParticipantRequestResult::fromDomain()` already resolves
+ * a Participant request's target Person - both nullable, matching
+ * `Person::familyName()`/`givenName()`'s own nullability (a Person who
+ * has not yet completed the set-name.tsx screen). This is the one
+ * Backend change this instruction's own §2 anticipates ("不足している場合
+ * のみ、不足箇所を報告する") - a minimal, additive enrichment of this
+ * feature's own Result, not a new endpoint and not a Person search
+ * capability (see this feature's final report for the fuller context:
+ * no such search capability exists anywhere in StageArt today).
+ *
+ * R14-B §4.6 / §7.1 (stage 4): `effective` / `ineffective_reason`
+ * (INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED) - whether the
+ * row actually grants its Role now (ProductionAuthorizationService). An
+ * ACTIVE row of a Person who is not a consented ACTIVE member is shown, but
+ * as not effective.
+ */
 final class ProductionDelegateResult
 {
     public string $id;
     public string $productionId;
     public string $personId;
+    public ?string $personFamilyName;
+    public ?string $personGivenName;
     public string $role;
     public string $status;
     public string $createdBy;
     public string $createdAt;
     public string $updatedBy;
     public string $updatedAt;
+    public bool $effective;
+    public ?string $ineffectiveReason;
 
     private function __construct(
         string $id,
         string $productionId,
         string $personId,
+        ?string $personFamilyName,
+        ?string $personGivenName,
         string $role,
         string $status,
         string $createdBy,
         string $createdAt,
         string $updatedBy,
-        string $updatedAt
+        string $updatedAt,
+        ?string $ineffectiveReason
     ) {
+        $this->ineffectiveReason = $ineffectiveReason;
+        $this->effective = $ineffectiveReason === null;
         $this->id = $id;
         $this->productionId = $productionId;
         $this->personId = $personId;
+        $this->personFamilyName = $personFamilyName;
+        $this->personGivenName = $personGivenName;
         $this->role = $role;
         $this->status = $status;
         $this->createdBy = $createdBy;
@@ -40,18 +72,30 @@ final class ProductionDelegateResult
         $this->updatedAt = $updatedAt;
     }
 
-    public static function fromDomain(ProductionDelegate $delegate): self
+    /**
+     * `$ineffectiveReason` comes from
+     * ProductionAuthorizationService::delegateIneffectiveReason() (null =
+     * effective); an INACTIVE row is always INACTIVE.
+     */
+    public static function fromDomain(ProductionDelegate $delegate, ?Person $person, ?string $ineffectiveReason): self
     {
+        if (! $delegate->isActive()) {
+            $ineffectiveReason = 'INACTIVE';
+        }
+
         return new self(
             $delegate->id()->toString(),
             $delegate->productionId()->toString(),
             $delegate->personId()->toString(),
+            $person?->familyName(),
+            $person?->givenName(),
             $delegate->role()->toString(),
             $delegate->status(),
             $delegate->createdBy()->toString(),
             $delegate->createdAt()->format(DATE_ATOM),
             $delegate->updatedBy()->toString(),
-            $delegate->updatedAt()->format(DATE_ATOM)
+            $delegate->updatedAt()->format(DATE_ATOM),
+            $ineffectiveReason
         );
     }
 
@@ -64,12 +108,16 @@ final class ProductionDelegateResult
             'id' => $this->id,
             'production_id' => $this->productionId,
             'person_id' => $this->personId,
+            'person_family_name' => $this->personFamilyName,
+            'person_given_name' => $this->personGivenName,
             'role' => $this->role,
             'status' => $this->status,
             'created_by' => $this->createdBy,
             'created_at' => $this->createdAt,
             'updated_by' => $this->updatedBy,
             'updated_at' => $this->updatedAt,
+            'effective' => $this->effective,
+            'ineffective_reason' => $this->ineffectiveReason,
         ];
     }
 }

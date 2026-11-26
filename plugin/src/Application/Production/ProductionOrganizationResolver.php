@@ -7,6 +7,8 @@ namespace StageArt\Application\Production;
 use StageArt\Application\Project\ProjectNotFoundException;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Production\Production;
+use StageArt\Domain\Project\Project;
+use StageArt\Domain\Project\ProjectId;
 use StageArt\Domain\Project\ProjectRepositoryInterface;
 
 /**
@@ -38,5 +40,13 @@ final class ProductionOrganizationResolver
         }
 
         return $project->organizationId();
+    }
+
+    /**
+     * @return ProjectId[] every Project of the Organization
+     */
+    public function projectIdsOf(OrganizationId $organizationId): array
+    {
+        return array_map(static fn (Project $project): ProjectId => $project->id(), $this->projects->findByOrganizationIds([$organizationId]));
     }
 }

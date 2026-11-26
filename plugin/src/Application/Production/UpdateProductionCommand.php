@@ -9,9 +9,20 @@ namespace StageArt\Application\Production;
  * confirmed Action-based model ("Production Statusは、単純な設定値の直接
  * 書き換えによって任意に変更することを基本としない") means basic-info Update
  * and Lifecycle progression are different operations - see the dedicated
- * StartProductionPlanningUseCase/ActivateProductionUseCase/
- * CompleteProductionUseCase/ArchiveProductionUseCase/CancelProductionUseCase
- * for Status changes instead.
+ * ActivateProductionUseCase/CompleteProductionUseCase/
+ * ArchiveProductionUseCase/CancelProductionUseCase for Status changes
+ * instead.
+ *
+ * StageArt Phase 1 (docs/12-FunctionalStructure.md §20): every Production
+ * Information field is optional/trailing here - `null` means "leave the
+ * field's own value unchanged" would be the Organization-style
+ * convention, but per §20.9 ("すべての変更をひとつの[保存]ボタンでまとめて
+ * 保存する"), the Production Information screen submits its entire form
+ * every time, so these fields instead follow `titleHeading`'s own
+ * existing convention: whatever is sent replaces the current value,
+ * including clearing it back to null. Each section's own `*PublishedAt`
+ * (ISO 8601) travels together with its value for the same reason
+ * Organization's `publishedAt` travels with `published`.
  */
 final class UpdateProductionCommand
 {
@@ -22,17 +33,50 @@ final class UpdateProductionCommand
     public ?string $slug;
     public ?bool $published;
     public ?string $publishedAt;
+    public ?string $description;
+    public ?string $descriptionPublishedAt;
+    public ?string $flyerUrl;
+    public ?string $flyerPublishedAt;
+    public ?string $venueName;
+    public ?string $venuePublishedAt;
+    public ?string $scheduleStartDate;
+    public ?string $scheduleEndDate;
+    public ?string $schedulePublishedAt;
+    public ?string $scriptCredit;
+    public ?string $directionCredit;
+    public ?string $scriptDirectionPublishedAt;
+    public ?string $memberInfoPublishedAt;
+    /**
+     * Phase 2 Performance基盤 §9/§11: internal-only management data. Null
+     * means "leave capacity unchanged" would be Organization-style, but
+     * per this same screen's own §20.9 "whole form every time" convention
+     * every other field here already follows, whatever is sent replaces
+     * the current value - a client that wants to keep the existing
+     * capacity must send it back explicitly, exactly like `titleHeading`.
+     */
+    public ?int $capacity;
+    public ?string $performanceCommonRemarks;
+    public ?int $performanceDurationMinutes;
 
     /**
-     * StageArt Web First Phase 2 / Publication State Model: `slug`/
-     * `published`/`publishedAt` are optional trailing parameters, same
-     * rationale as UpdateOrganizationCommand's matching addition -
-     * `null` means "leave unchanged", every pre-existing caller keeps
-     * working unmodified. `publishedAt` (ISO 8601) only applies when
-     * `published === true`; if given it schedules publication for that
-     * moment (may be in the future - see Production::publish()), else
-     * publication takes effect immediately.
+     * PR #7 R14-A (N1): the request fields that were actually sent, by
+     * their API names (`description`, `venue_published_at`, `capacity`, …).
+     * A field that was not sent keeps its current value; one sent as null
+     * is cleared. Before R14-A every field not sent was cleared, so a screen
+     * that sent only `published` wiped the description, venue, schedule,
+     * credits, capacity and duration (and cascaded the duration to the
+     * Performances). null means "every field was sent" (a complete form).
+     *
+     * @var string[]|null
      */
+    public ?array $providedFields;
+
+    /** Whether the request sent this field (see $providedFields). */
+    public function isProvided(string $field): bool
+    {
+        return $this->providedFields === null || in_array($field, $this->providedFields, true);
+    }
+
     public function __construct(
         string $productionId,
         int $requestedByWordPressUserId,
@@ -40,8 +84,26 @@ final class UpdateProductionCommand
         ?string $titleHeading = null,
         ?string $slug = null,
         ?bool $published = null,
-        ?string $publishedAt = null
+        ?string $publishedAt = null,
+        ?string $description = null,
+        ?string $descriptionPublishedAt = null,
+        ?string $flyerUrl = null,
+        ?string $flyerPublishedAt = null,
+        ?string $venueName = null,
+        ?string $venuePublishedAt = null,
+        ?string $scheduleStartDate = null,
+        ?string $scheduleEndDate = null,
+        ?string $schedulePublishedAt = null,
+        ?string $scriptCredit = null,
+        ?string $directionCredit = null,
+        ?string $scriptDirectionPublishedAt = null,
+        ?string $memberInfoPublishedAt = null,
+        ?int $capacity = null,
+        ?string $performanceCommonRemarks = null,
+        ?int $performanceDurationMinutes = null,
+        ?array $providedFields = null
     ) {
+        $this->providedFields = $providedFields;
         $this->productionId = $productionId;
         $this->requestedByWordPressUserId = $requestedByWordPressUserId;
         $this->name = $name;
@@ -49,5 +111,21 @@ final class UpdateProductionCommand
         $this->slug = $slug;
         $this->published = $published;
         $this->publishedAt = $publishedAt;
+        $this->description = $description;
+        $this->descriptionPublishedAt = $descriptionPublishedAt;
+        $this->flyerUrl = $flyerUrl;
+        $this->flyerPublishedAt = $flyerPublishedAt;
+        $this->venueName = $venueName;
+        $this->venuePublishedAt = $venuePublishedAt;
+        $this->scheduleStartDate = $scheduleStartDate;
+        $this->scheduleEndDate = $scheduleEndDate;
+        $this->schedulePublishedAt = $schedulePublishedAt;
+        $this->scriptCredit = $scriptCredit;
+        $this->directionCredit = $directionCredit;
+        $this->scriptDirectionPublishedAt = $scriptDirectionPublishedAt;
+        $this->memberInfoPublishedAt = $memberInfoPublishedAt;
+        $this->capacity = $capacity;
+        $this->performanceCommonRemarks = $performanceCommonRemarks;
+        $this->performanceDurationMinutes = $performanceDurationMinutes;
     }
 }

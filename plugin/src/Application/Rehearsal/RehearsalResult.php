@@ -17,6 +17,11 @@ final class RehearsalResult
     public ?string $timezone;
     public ?string $location;
     public string $status;
+    /** StageArt 予定・活動一般化調査: one of RehearsalActivityType's
+     * values, always present (never null - every Rehearsal has a
+     * species, defaulting to REHEARSAL). */
+    public string $activityType;
+    public ?string $responseDeadline;
     public string $createdAt;
     public string $updatedAt;
 
@@ -30,6 +35,8 @@ final class RehearsalResult
         ?string $timezone,
         ?string $location,
         string $status,
+        string $activityType,
+        ?string $responseDeadline,
         string $createdAt,
         string $updatedAt
     ) {
@@ -42,6 +49,8 @@ final class RehearsalResult
         $this->timezone = $timezone;
         $this->location = $location;
         $this->status = $status;
+        $this->activityType = $activityType;
+        $this->responseDeadline = $responseDeadline;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -58,6 +67,8 @@ final class RehearsalResult
             $rehearsal->timezone(),
             $rehearsal->location(),
             $rehearsal->status()->toString(),
+            $rehearsal->activityType()->toString(),
+            $rehearsal->responseDeadline() !== null ? $rehearsal->responseDeadline()->format(DATE_ATOM) : null,
             $rehearsal->createdAt()->format(DATE_ATOM),
             $rehearsal->updatedAt()->format(DATE_ATOM)
         );
@@ -78,6 +89,8 @@ final class RehearsalResult
             'timezone' => $this->timezone,
             'location' => $this->location,
             'status' => $this->status,
+            'activity_type' => $this->activityType,
+            'response_deadline' => $this->responseDeadline,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
         ];

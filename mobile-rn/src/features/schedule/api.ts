@@ -1,4 +1,5 @@
 import type { ApiClient } from '@/api/client';
+import { ApiError } from '@/api/errors';
 import type { Participant, ScheduleComment, TimetableItem } from '@/types/api';
 
 /** GET /rehearsals/{id}/timetable-items - every item on this Rehearsal's
@@ -29,6 +30,89 @@ export function createTimetableItem(
  * POST /timetable-versions/{id}/publish. */
 export function fetchDraftTimetableVersionId(client: ApiClient, rehearsalId: string): Promise<string> {
   return client.get<{ id: string }>(`/rehearsals/${rehearsalId}/timetable/draft`).then((result) => result.id);
+}
+
+/** GET /rehearsals/{id}/timetable-items - the items of this 予定's latest
+ * PUBLISHED Timetable Version ([] when none is published). */
+export function fetchPublishedRehearsalTimetableItems(client: ApiClient, rehearsalId: string): Promise<TimetableItem[]> {
+  return client.get<TimetableItem[]>(`/rehearsals/${rehearsalId}/timetable-items`);
+}
+
+/** POST /rehearsals/{id}/timetable-versions - starts a DRAFT Version,
+ * copying the current PUBLISHED items when there are any
+ * (CreateNewTimetableVersionUseCase). 409 when a DRAFT already exists. */
+export function createTimetableVersion(client: ApiClient, rehearsalId: string): Promise<{ id: string }> {
+  return client.post<{ id: string }>(`/rehearsals/${rehearsalId}/timetable-versions`);
+}
+
+/** DELETE /timetable-items/{id} - only items of a DRAFT Version. */
+export function deleteTimetableItem(client: ApiClient, timetableItemId: string): Promise<void> {
+  return client.delete<void>(`/timetable-items/${timetableItemId}`);
+}
+
+/** The current DRAFT Version id, or null when this 予定 has no DRAFT
+ * (GET /rehearsals/{id}/timetable/draft answers 404). */
+export async function findDraftTimetableVersionId(client: ApiClient, rehearsalId: string): Promise<string | null> {
+  try {
+    return await fetchDraftTimetableVersionId(client, rehearsalId);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export type TimetableItemInput = {
+  title: string;
+  startDateTime: string;
+  endDateTime: string | null;
+  venue: string | null;
+  notes: string | null;
+  displayOrder: number;
+};
+
+/**
+ * PR #7 R8 (2-5): 「保存」 on the independent timetable screen. Saves the
+ * edited items into this 予定's DRAFT Version and then publishes it
+ * (DRAFT -> PUBLISHED) - there is no separate 「内容を公開する」 step.
+ *
+ * 1. Use the existing DRAFT, or start one (copying the PUBLISHED items).
+ * 2. Replace the DRAFT's items with the edited list (delete, then create
+ *    in display order). Only DRAFT items are touched; the PUBLISHED
+ *    Version and comments on its items are left as they are.
+ * 3. Publish the DRAFT.
+ * A failure part-way leaves an unpublished DRAFT; saving again resumes
+ * from step 1 with that DRAFT, so nothing is published half-done.
+ */
+export async function saveAndPublishTimetable(
+  client: ApiClient,
+  rehearsalId: string,
+  items: TimetableItemInput[]
+): Promise<void> {
+  let draftId = await findDraftTimetableVersionId(client, rehearsalId);
+
+  if (draftId === null) {
+    await createTimetableVersion(client, rehearsalId);
+    draftId = await fetchDraftTimetableVersionId(client, rehearsalId);
+  }
+
+  for (const existing of await fetchRehearsalTimetableItems(client, rehearsalId)) {
+    await deleteTimetableItem(client, existing.id);
+  }
+
+  for (const item of items) {
+    await client.post<TimetableItem>(`/rehearsals/${rehearsalId}/timetable-items`, {
+      title: item.title,
+      start_date_time: item.startDateTime,
+      end_date_time: item.endDateTime,
+      venue: item.venue,
+      notes: item.notes,
+      display_order: item.displayOrder,
+    });
+  }
+
+  await publishTimetableVersion(client, draftId);
 }
 
 /** POST /timetable-versions/{id}/publish - "稽古情報の確定" alongside

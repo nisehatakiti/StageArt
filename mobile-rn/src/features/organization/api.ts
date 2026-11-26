@@ -1,6 +1,18 @@
 import type { ApiClient } from '@/api/client';
 import { publicGet } from '@/api/publicClient';
-import type { MyFollow, Organization, OrganizationFollowStatus, Project, PublicOrganization } from '@/types/api';
+import type {
+  CreateOrganizationInvitationResult,
+  MyFollow,
+  Organization,
+  OrganizationExternalLink,
+  OrganizationFollowStatus,
+  OrganizationInvitation,
+  OrganizationInvitationPreview,
+  OrganizationMember,
+  OrganizationSNS,
+  Project,
+  PublicOrganization,
+} from '@/types/api';
 
 /** Public, unauthenticated search (団体検索) - published Organizations
  * whose name contains `query`. */
@@ -20,23 +32,200 @@ export function fetchOrganizations(client: ApiClient): Promise<Organization[]> {
  * updateOrganization's slug, which is optional (only sent when the user
  * is actually changing it).
  */
-export function createOrganization(client: ApiClient, name: string, slug: string): Promise<Organization> {
-  return client.post<Organization>('/organizations', { name, slug });
+/**
+ * StageArt Phase 1 (OrganizationSetupPolicy.md "Step 2/3"): `accounting`
+ * is optional/trailing - omitting it entirely (every pre-existing call
+ * site) leaves Accounting OFF, exactly as before. When
+ * `accounting.enabled` is true, `openingCashBalance`/`openingBankBalance`
+ * are each optional Yen amounts (Step 3 - "現在の流動資産を入力する", not
+ * required to be non-zero); the backend creates 現金/預金/元入金 Accounts
+ * regardless once Accounting is enabled and additionally posts one
+ * opening-balance JournalEntry only when at least one amount is > 0.
+ */
+export function createOrganization(
+  client: ApiClient,
+  name: string,
+  slug: string,
+  accounting?: { enabled: boolean; openingCashBalance?: number; openingBankBalance?: number }
+): Promise<Organization> {
+  return client.post<Organization>('/organizations', {
+    name,
+    slug,
+    accounting_enabled: accounting?.enabled ?? false,
+    opening_cash_balance: accounting?.openingCashBalance ?? null,
+    opening_bank_balance: accounting?.openingBankBalance ?? null,
+  });
 }
 
 /**
- * A full PUT per the existing Backend Update endpoint (`name`/`status`
+ * A full PUT per the existing Backend Update endpoint. `name`/`status`
  * are always required by UpdateOrganizationUseCase, even when only
- * publishing - see its own docblock); callers must pass the
- * Organization's current name/status back, not just the fields they
- * mean to change.
+ * publishing - see its own docblock. `type`/`description` are likewise
+ * applied unconditionally (UpdateOrganizationUseCase always calls
+ * changeType()/changeDescription() with whatever came in, defaulting to
+ * null when the key is missing from the request body entirely) - every
+ * caller must therefore pass the Organization's current type/description
+ * back too, not just the fields it means to change, exactly like
+ * name/status already had to. `slug`/`published` remain the only fields
+ * the Backend treats as "only touch this when explicitly provided".
  */
 export function updateOrganization(
   client: ApiClient,
   id: string,
-  fields: { name: string; status: string; slug?: string; published?: boolean }
+  fields: {
+    name: string;
+    type: string | null;
+    description: string | null;
+    status: string;
+    slug?: string;
+    published?: boolean;
+    published_at?: string | null;
+    logo_url?: string | null;
+  }
 ): Promise<Organization> {
   return client.put<Organization>(`/organizations/${id}`, fields);
+}
+
+/** POST /organizations/{id}/owner-transfer - owner-only 代表者交代. */
+export function transferOrganizationOwner(client: ApiClient, organizationId: string, newOwnerPersonId: string): Promise<void> {
+  return client.post<void>(`/organizations/${organizationId}/owner-transfer`, { new_owner_person_id: newOwnerPersonId });
+}
+
+// --- StageArt 団体管理UI整理 "メンバー管理" ---
+
+/** GET /organizations/{id}/members - OWNER/ORGANIZATION_MANAGER only. */
+export function fetchOrganizationMembers(client: ApiClient, organizationId: string): Promise<OrganizationMember[]> {
+  return client.get<OrganizationMember[]>(`/organizations/${organizationId}/members`);
+}
+
+/** POST /organizations/{id}/delegates - owner-only "代理人を設定". */
+export function assignOrganizationDelegate(client: ApiClient, organizationId: string, personId: string): Promise<void> {
+  return client.post<void>(`/organizations/${organizationId}/delegates`, { person_id: personId });
+}
+
+/** DELETE /organizations/{id}/delegates/{personId} - owner-only revoke. */
+export function revokeOrganizationDelegate(client: ApiClient, organizationId: string, personId: string): Promise<void> {
+  return client.delete<void>(`/organizations/${organizationId}/delegates/${personId}`);
+}
+
+// --- StageArt 団体管理UI整理 "メンバーを追加" ---
+
+/** POST /organizations/{id}/invitations - 氏名＋メールアドレス single
+ * entry point (existing Person -> immediate Membership, unregistered
+ * email -> invitation email). */
+export function createOrganizationInvitation(
+  client: ApiClient,
+  organizationId: string,
+  name: string,
+  email: string,
+  remarks?: string
+): Promise<CreateOrganizationInvitationResult> {
+  return client.post<CreateOrganizationInvitationResult>(`/organizations/${organizationId}/invitations`, {
+    name,
+    email,
+    remarks: remarks ?? null,
+  });
+}
+
+/** GET /organization-invitations/by-token/{token} - public, unauthenticated registration preview. */
+export function fetchOrganizationInvitationByToken(token: string): Promise<OrganizationInvitationPreview> {
+  return publicGet<OrganizationInvitationPreview>(`/organization-invitations/by-token/${encodeURIComponent(token)}`);
+}
+
+/** GET /organizations/{id}/invitations - 招待中のメンバー, mirroring
+ * Production's メンバー管理 own pending-invitations table. */
+export function fetchOrganizationInvitations(client: ApiClient, organizationId: string): Promise<OrganizationInvitation[]> {
+  return client.get<OrganizationInvitation[]>(`/organizations/${organizationId}/invitations`);
+}
+
+/** POST /organization-invitations/{id}/resend. */
+export function resendOrganizationInvitation(client: ApiClient, invitationId: string): Promise<OrganizationInvitation> {
+  return client.post<OrganizationInvitation>(`/organization-invitations/${invitationId}/resend`);
+}
+
+/** POST /organization-invitations/{id}/cancel. */
+export function cancelOrganizationInvitation(client: ApiClient, invitationId: string): Promise<OrganizationInvitation> {
+  return client.post<OrganizationInvitation>(`/organization-invitations/${invitationId}/cancel`);
+}
+
+/** PATCH /organizations/{id}/members/{personId} - the roster's 備考
+ * column, the only field editable directly from メンバー管理's table
+ * (Role changes stay behind 代理人を設定/代表者交代 - see
+ * UpdateOrganizationMemberRemarksUseCase's own docblock). */
+export function updateOrganizationMemberRemarks(
+  client: ApiClient,
+  organizationId: string,
+  personId: string,
+  remarks: string | null
+): Promise<OrganizationMember> {
+  return client.patch<OrganizationMember>(`/organizations/${organizationId}/members/${personId}`, { remarks });
+}
+
+/**
+ * POST /organizations/{id}/logo (multipart) - uploads via WordPress's
+ * own wp_handle_upload() Infrastructure-side (see
+ * WordPressOrganizationLogoUploader's own docblock); never a base64
+ * blob into the Organization row.
+ */
+export function uploadOrganizationLogo(client: ApiClient, organizationId: string, file: Blob, fileName: string): Promise<Organization> {
+  return client.postFile<Organization>(`/organizations/${organizationId}/logo`, 'file', file, fileName);
+}
+
+/** DELETE /organizations/{id}/logo - clears logo_url back to null. */
+export function deleteOrganizationLogo(client: ApiClient, organizationId: string): Promise<Organization> {
+  return client.delete<Organization>(`/organizations/${organizationId}/logo`);
+}
+
+// --- StageArt 団体管理UI整理 "団体情報": SNS ---
+
+export function fetchOrganizationSns(client: ApiClient, organizationId: string): Promise<OrganizationSNS[]> {
+  return client.get<OrganizationSNS[]>(`/organizations/${organizationId}/sns`);
+}
+
+export function createOrganizationSns(
+  client: ApiClient,
+  organizationId: string,
+  fields: { service: string; account_identifier: string; profile_url?: string | null; display_name?: string | null; display_order?: number; visibility?: boolean }
+): Promise<OrganizationSNS> {
+  return client.post<OrganizationSNS>(`/organizations/${organizationId}/sns`, fields);
+}
+
+export function updateOrganizationSns(
+  client: ApiClient,
+  id: string,
+  fields: { service: string; account_identifier: string; profile_url?: string | null; display_name?: string | null; display_order?: number; visibility?: boolean }
+): Promise<OrganizationSNS> {
+  return client.put<OrganizationSNS>(`/organization-sns/${id}`, fields);
+}
+
+export function deleteOrganizationSns(client: ApiClient, id: string): Promise<void> {
+  return client.delete<void>(`/organization-sns/${id}`);
+}
+
+// --- StageArt 団体管理UI整理 "団体情報": 外部リンク ---
+
+export function fetchOrganizationExternalLinks(client: ApiClient, organizationId: string): Promise<OrganizationExternalLink[]> {
+  return client.get<OrganizationExternalLink[]>(`/organizations/${organizationId}/external-links`);
+}
+
+export function createOrganizationExternalLink(
+  client: ApiClient,
+  organizationId: string,
+  fields: { label: string; url: string; display_order?: number; visibility?: boolean }
+): Promise<OrganizationExternalLink> {
+  return client.post<OrganizationExternalLink>(`/organizations/${organizationId}/external-links`, fields);
+}
+
+export function updateOrganizationExternalLink(
+  client: ApiClient,
+  id: string,
+  fields: { label: string; url: string; display_order?: number; visibility?: boolean }
+): Promise<OrganizationExternalLink> {
+  return client.put<OrganizationExternalLink>(`/organization-external-links/${id}`, fields);
+}
+
+export function deleteOrganizationExternalLink(client: ApiClient, id: string): Promise<void> {
+  return client.delete<void>(`/organization-external-links/${id}`);
 }
 
 /** GET /organizations/by-slug/{slug} - public, unauthenticated (see

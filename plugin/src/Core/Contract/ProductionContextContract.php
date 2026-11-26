@@ -21,6 +21,19 @@ interface ProductionContextContract
     public function getProduction(ProductionId $productionId): ?ProductionSummary;
 
     /**
+     * Bulk form of `getProduction()` - the §29 N+1-avoidance convention
+     * this codebase already follows on Repository `findByIds()` methods
+     * (see e.g. `ProductionRepositoryInterface::findByIds()`), extended
+     * to the Contract layer for a Module/Provider resolving many
+     * Productions at once (e.g. a Dashboard-style aggregate spanning
+     * several Productions a Person is involved in).
+     *
+     * @param ProductionId[] $productionIds
+     * @return array<string, ProductionSummary> keyed by ProductionId::toString()
+     */
+    public function getProductions(array $productionIds): array;
+
+    /**
      * Resolves the Organization a Production belongs to (Production ->
      * Project -> Organization internally - Project is a Core-internal
      * bridge no Module needs to know exists, per
@@ -31,4 +44,29 @@ interface ProductionContextContract
      * to call it at all.
      */
     public function getProductionOrganizationId(ProductionId $productionId): ?OrganizationId;
+
+    /**
+     * Every Production of an Organization (through all of its Projects) -
+     * the list 団体会計の公演別実績 is built from.
+     *
+     * @return ProductionSummary[]
+     */
+    public function getOrganizationProductions(OrganizationId $organizationId): array;
+
+    /**
+     * Phase 3 Ticket/Reservation基盤: the Ticket Module's own read
+     * access to Production's ticket-sales/quota/ticket-back settings -
+     * see `ProductionTicketSettings`'s own docblock for why this is a
+     * separate method rather than growing `ProductionSummary`.
+     */
+    public function getProductionTicketSettings(ProductionId $productionId): ?ProductionTicketSettings;
+
+    /**
+     * アンケート実装指示書 §5/§49: resolves the (organizationSlug,
+     * productionSlug) pair for building a public Questionnaire URL. Null
+     * if the Production, its parent Organization, or either slug does not
+     * exist yet - a Production/Organization is not required to have a
+     * slug assigned (see ProductionSlug/OrganizationSlug's own nullability).
+     */
+    public function getProductionPublicSlugs(ProductionId $productionId): ?ProductionPublicSlugs;
 }

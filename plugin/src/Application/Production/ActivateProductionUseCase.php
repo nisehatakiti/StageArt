@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Production;
 
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
@@ -15,11 +17,16 @@ final class ActivateProductionUseCase
 {
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
+    private TransactionManagerInterface $transactions;
 
-    public function __construct(ProductionRepositoryInterface $productions, ProductionAuthorizationService $authorization)
-    {
+    public function __construct(
+        ProductionRepositoryInterface $productions,
+        ProductionAuthorizationService $authorization,
+        TransactionManagerInterface $transactions
+    ) {
         $this->productions = $productions;
         $this->authorization = $authorization;
+        $this->transactions = $transactions;
     }
 
     public function execute(ActivateProductionCommand $command): ProductionResult
@@ -30,24 +37,35 @@ final class ActivateProductionUseCase
             throw new ProductionAccessDeniedException('No StageArt Person is linked to this WordPress user.');
         }
 
-        $production = $this->productions->findById(ProductionId::fromString($command->productionId));
+        // PR #7 review (R5): the transition is decided on the Production as
+        // read under the exclusive lock and saved in the same transaction.
+        // ProductionRepository::save() writes every column, so saving a
+        // copy read before the lock could put back a status or a setting
+        // another request committed meanwhile (e.g. reopen a Production
+        // that Production Completion had just closed).
+        $production = $this->transactions->run(function () use ($command, $person): Production {
+            $locked = $this->productions->findByIdForUpdate(ProductionId::fromString($command->productionId));
 
-        if (! $production) {
-            throw new ProductionNotFoundException($command->productionId);
-        }
+            if (! $locked) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can advance this Production\'s Lifecycle.');
-        }
+            if (! $this->authorization->canManageProduction($person, $locked)) {
+                throw new ProductionAccessDeniedException('Only the PrimaryManager can advance this Production\'s Lifecycle.');
+            }
 
-        $production->activate();
+            $locked->activate();
+            $this->productions->save($locked);
 
-        $this->productions->save($production);
+            return $locked;
+        });
 
         return ProductionResult::fromDomain(
             $production,
             true,
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
     }
 }

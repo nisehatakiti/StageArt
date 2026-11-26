@@ -13,6 +13,7 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionSlug;
 use StageArt\Domain\Production\ProductionStatus;
 use StageArt\Domain\Project\ProjectId;
+use RuntimeException;
 use wpdb;
 
 final class WordPressProductionRepository implements ProductionRepositoryInterface
@@ -36,6 +37,32 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             'status' => $production->status()->toString(),
             'published_at' => $production->publishedAt()?->format('Y-m-d H:i:s'),
             'primary_manager_person_id' => $production->primaryManagerPersonId()->toString(),
+            'description' => $production->description(),
+            'description_published_at' => $production->descriptionPublishedAt()?->format('Y-m-d H:i:s'),
+            'flyer_url' => $production->flyerUrl(),
+            'flyer_published_at' => $production->flyerPublishedAt()?->format('Y-m-d H:i:s'),
+            'venue_name' => $production->venueName(),
+            'venue_published_at' => $production->venuePublishedAt()?->format('Y-m-d H:i:s'),
+            'schedule_start_date' => $production->scheduleStartDate()?->format('Y-m-d'),
+            'schedule_end_date' => $production->scheduleEndDate()?->format('Y-m-d'),
+            'schedule_published_at' => $production->schedulePublishedAt()?->format('Y-m-d H:i:s'),
+            'script_credit' => $production->scriptCredit(),
+            'direction_credit' => $production->directionCredit(),
+            'script_direction_published_at' => $production->scriptDirectionPublishedAt()?->format('Y-m-d H:i:s'),
+            'member_info_published_at' => $production->memberInfoPublishedAt()?->format('Y-m-d H:i:s'),
+            'capacity' => $production->capacity(),
+            'performance_common_remarks' => $production->performanceCommonRemarks(),
+            'performance_duration_minutes' => $production->performanceDurationMinutes(),
+            'ticket_publication_at' => $production->ticketPublicationAt()?->format('Y-m-d H:i:s'),
+            'ticket_sales_start_at' => $production->ticketSalesStartAt()?->format('Y-m-d H:i:s'),
+            'ticket_sales_end_rule' => $production->ticketSalesEndRule(),
+            'ticket_sales_end_parameter' => $production->ticketSalesEndParameter(),
+            'quota_enabled' => $production->quotaEnabled() ? 1 : 0,
+            'quota_count' => $production->quotaCount(),
+            'quota_buyback_enabled' => $production->quotaBuybackEnabled() ? 1 : 0,
+            'quota_shortfall_unit_price' => $production->quotaShortfallUnitPrice(),
+            'ticket_back_mode' => $production->ticketBackMode(),
+            'ticket_back_rules' => $production->ticketBackRules(),
             'updated_at' => $production->updatedAt()->format('Y-m-d H:i:s'),
         ];
 
@@ -43,15 +70,26 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             $this->wpdb->prepare("SELECT id FROM {$this->table} WHERE id = %s", $production->id()->toString())
         );
 
+        // PR #7 review (R4): a failed write - or a failed existence check,
+        // which would otherwise be taken for "new row" - must not pass for
+        // a saved Production: Production Completion saves COMPLETED in the
+        // same transaction that cancels the RESERVED Reservations.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Production before saving it.');
+
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $production->id()->toString()]);
+            if ($this->wpdb->update($this->table, $row, ['id' => $production->id()->toString()]) === false) {
+                throw new RuntimeException('Failed to update Production. ' . $this->wpdb->last_error);
+            }
+
             return;
         }
 
         $row['id'] = $production->id()->toString();
         $row['created_at'] = $production->createdAt()->format('Y-m-d H:i:s');
 
-        $this->wpdb->insert($this->table, $row);
+        if ($this->wpdb->insert($this->table, $row) === false) {
+            throw new RuntimeException('Failed to insert Production. ' . $this->wpdb->last_error);
+        }
     }
 
     public function findById(ProductionId $id): ?Production
@@ -60,6 +98,34 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s", $id->toString()),
             ARRAY_A
         );
+
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Production.');
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForUpdate(ProductionId $id): ?Production
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s FOR UPDATE", $id->toString()),
+            ARRAY_A
+        );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to lock the Production.');
+
+        return $row ? $this->hydrate($row) : null;
+    }
+
+    public function findByIdForShare(ProductionId $id): ?Production
+    {
+        // LOCK IN SHARE MODE: accepted by MySQL 5.7 and 8.0 (where FOR
+        // SHARE is the newer spelling) and by MariaDB.
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$this->table} WHERE id = %s LOCK IN SHARE MODE", $id->toString()),
+            ARRAY_A
+        );
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to lock the Production.');
 
         return $row ? $this->hydrate($row) : null;
     }
@@ -156,7 +222,35 @@ final class WordPressProductionRepository implements ProductionRepositoryInterfa
             new DateTimeImmutable($row['created_at']),
             new DateTimeImmutable($row['updated_at']),
             $row['slug'] !== null && $row['slug'] !== '' ? new ProductionSlug($row['slug']) : null,
-            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null
+            $row['published_at'] !== null ? new DateTimeImmutable($row['published_at']) : null,
+            $row['description'] ?? null,
+            ! empty($row['description_published_at']) ? new DateTimeImmutable($row['description_published_at']) : null,
+            $row['flyer_url'] ?? null,
+            ! empty($row['flyer_published_at']) ? new DateTimeImmutable($row['flyer_published_at']) : null,
+            $row['venue_name'] ?? null,
+            ! empty($row['venue_published_at']) ? new DateTimeImmutable($row['venue_published_at']) : null,
+            ! empty($row['schedule_start_date']) ? new DateTimeImmutable($row['schedule_start_date']) : null,
+            ! empty($row['schedule_end_date']) ? new DateTimeImmutable($row['schedule_end_date']) : null,
+            ! empty($row['schedule_published_at']) ? new DateTimeImmutable($row['schedule_published_at']) : null,
+            $row['script_credit'] ?? null,
+            $row['direction_credit'] ?? null,
+            ! empty($row['script_direction_published_at']) ? new DateTimeImmutable($row['script_direction_published_at']) : null,
+            ! empty($row['member_info_published_at']) ? new DateTimeImmutable($row['member_info_published_at']) : null,
+            isset($row['capacity']) && $row['capacity'] !== null && $row['capacity'] !== '' ? (int) $row['capacity'] : null,
+            $row['performance_common_remarks'] ?? null,
+            ! empty($row['ticket_publication_at']) ? new DateTimeImmutable($row['ticket_publication_at']) : null,
+            ! empty($row['ticket_sales_start_at']) ? new DateTimeImmutable($row['ticket_sales_start_at']) : null,
+            $row['ticket_sales_end_rule'] ?? null,
+            $row['ticket_sales_end_parameter'] ?? null,
+            ! empty($row['quota_enabled']),
+            isset($row['quota_count']) && $row['quota_count'] !== null && $row['quota_count'] !== '' ? (int) $row['quota_count'] : null,
+            ! empty($row['quota_buyback_enabled']),
+            isset($row['quota_shortfall_unit_price']) && $row['quota_shortfall_unit_price'] !== null && $row['quota_shortfall_unit_price'] !== ''
+                ? (int) $row['quota_shortfall_unit_price']
+                : null,
+            $row['ticket_back_mode'] ?? null,
+            $row['ticket_back_rules'] ?? null,
+            isset($row['performance_duration_minutes']) && $row['performance_duration_minutes'] !== null && $row['performance_duration_minutes'] !== '' ? (int) $row['performance_duration_minutes'] : null,
         );
     }
 }

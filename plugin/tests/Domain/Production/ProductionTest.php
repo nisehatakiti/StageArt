@@ -16,7 +16,7 @@ use StageArt\Domain\Project\ProjectId;
 
 final class ProductionTest extends TestCase
 {
-    public function test_create_starts_in_draft_with_the_given_primary_manager(): void
+    public function test_create_starts_in_planning_with_the_given_primary_manager(): void
     {
         $projectId = ProjectId::generate();
         $primaryManagerId = PersonId::generate();
@@ -25,8 +25,26 @@ final class ProductionTest extends TestCase
 
         $this->assertTrue($production->projectId()->equals($projectId));
         $this->assertSame('Autumn Play', $production->name()->toString());
-        $this->assertSame(ProductionStatus::DRAFT, $production->status()->toString());
+        $this->assertSame(ProductionStatus::PLANNING, $production->status()->toString());
         $this->assertTrue($production->primaryManagerPersonId()->equals($primaryManagerId));
+    }
+
+    /**
+     * StageArt Production Lifecycle整理 instruction: "「公演を作る」を押した
+     * 直後はPLANNING" and "PLANNINGが非公開" - a newly created Production is
+     * never published, regardless of slug.
+     */
+    public function test_a_newly_created_production_is_not_published(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('fresh-show')
+        );
+
+        $this->assertFalse($production->isPublished());
     }
 
     public function test_rename_updates_the_name(): void
@@ -90,11 +108,23 @@ final class ProductionTest extends TestCase
         $this->assertNull($production->titleHeading());
     }
 
+    /**
+     * StageArt Production Lifecycle整理 instruction: the confirmed chain
+     * this round is PLANNING -> ACTIVE -> COMPLETED. A Production already
+     * starts at PLANNING (create() no longer produces DRAFT), so
+     * activate() is the very next Action - no separate "start planning"
+     * step exists anymore. ARCHIVED is kept reachable exactly as before
+     * (its retention was not decided this round).
+     */
     public function test_status_can_progress_through_the_basic_lifecycle_via_named_actions(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('lifecycle-show')
+        );
         $this->assertSame(ProductionStatus::PLANNING, $production->status()->toString());
 
         $production->activate();
@@ -107,38 +137,64 @@ final class ProductionTest extends TestCase
         $this->assertSame(ProductionStatus::ARCHIVED, $production->status()->toString());
     }
 
-    public function test_cancel_is_allowed_from_draft_planning_and_active(): void
+    /**
+     * "この処理（公演を確定する）によって、公開状態になります" - activate()
+     * (PLANNING -> ACTIVE) also publishes the Production.
+     */
+    public function test_activating_publishes_the_production(): void
     {
-        $draft = Production::create(ProjectId::generate(), new ProductionName('Show A'), PersonId::generate());
-        $draft->cancel();
-        $this->assertSame(ProductionStatus::CANCELLED, $draft->status()->toString());
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('activate-publishes')
+        );
+        $this->assertFalse($production->isPublished());
 
-        $planning = Production::create(ProjectId::generate(), new ProductionName('Show B'), PersonId::generate());
-        $planning->startPlanning();
+        $production->activate();
+
+        $this->assertTrue($production->isPublished());
+        $this->assertNotNull($production->publishedAt());
+    }
+
+    public function test_cancel_is_allowed_from_planning_and_active(): void
+    {
+        $planning = Production::create(ProjectId::generate(), new ProductionName('Show A'), PersonId::generate());
         $planning->cancel();
         $this->assertSame(ProductionStatus::CANCELLED, $planning->status()->toString());
 
-        $active = Production::create(ProjectId::generate(), new ProductionName('Show C'), PersonId::generate());
-        $active->startPlanning();
+        $active = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show B'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('cancel-from-active')
+        );
         $active->activate();
         $active->cancel();
         $this->assertSame(ProductionStatus::CANCELLED, $active->status()->toString());
     }
 
-    public function test_skipping_a_lifecycle_stage_is_rejected(): void
+    public function test_activating_an_already_active_production_is_rejected(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('already-active')
+        );
+        $production->activate();
 
         $this->expectException(InvalidArgumentException::class);
 
-        // DRAFT -> ACTIVE directly (skipping PLANNING) is not an allowed transition.
         $production->activate();
     }
 
     public function test_completing_before_active_is_rejected(): void
     {
         $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
 
         $this->expectException(InvalidArgumentException::class);
 
@@ -147,8 +203,13 @@ final class ProductionTest extends TestCase
 
     public function test_cancelling_a_completed_production_is_rejected(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('cancel-completed')
+        );
         $production->activate();
         $production->complete();
 
@@ -159,8 +220,13 @@ final class ProductionTest extends TestCase
 
     public function test_archived_production_accepts_no_further_transitions(): void
     {
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('archived-no-further')
+        );
         $production->activate();
         $production->complete();
         $production->archive();
@@ -172,13 +238,13 @@ final class ProductionTest extends TestCase
 
     public function test_completed_to_archived_transition_is_allowed(): void
     {
-        // Phase 6.1: re-reading ProductionLifecycle.md's Completion Rule
-        // confirmed the Accounting-settlement gate belongs on ACTIVE ->
-        // COMPLETED (complete()), not COMPLETED -> ARCHIVED - see
-        // Production::archive()'s docblock for the full reasoning behind
-        // this Phase's discovered mismatch and its resolution.
-        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
-        $production->startPlanning();
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('completed-to-archived')
+        );
         $production->activate();
         $production->complete();
 
@@ -215,6 +281,15 @@ final class ProductionTest extends TestCase
         $production->publish();
     }
 
+    /**
+     * StageArt Production Lifecycle整理 instruction (this round): a
+     * still-PLANNING Production can no longer be published directly -
+     * activate() first (PLANNING -> ACTIVE, "公演を確定する") so publish()'s
+     * own PLANNING Guard (see its docblock) does not reject the call.
+     * activate() itself already publishes once; the tests below still
+     * exercise publish()/unpublish()'s own standalone mechanics by
+     * calling them again afterward, which is allowed once ACTIVE.
+     */
     public function test_publish_sets_published_at_when_a_slug_is_present(): void
     {
         $production = Production::create(
@@ -224,6 +299,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('ready-to-publish')
         );
+        $production->activate();
 
         $production->publish();
 
@@ -240,6 +316,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('ready-to-publish')
         );
+        $production->activate();
         $production->publish();
 
         $production->unpublish();
@@ -262,6 +339,7 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('scheduled-show')
         );
+        $production->activate();
 
         $production->publish(new DateTimeImmutable('+1 day'));
 
@@ -278,10 +356,32 @@ final class ProductionTest extends TestCase
             null,
             new ProductionSlug('past-scheduled-show')
         );
+        $production->activate();
 
         $production->publish(new DateTimeImmutable('-1 day'));
 
         $this->assertTrue($production->isPublished());
+    }
+
+    /**
+     * This round's confirmed instruction: "PLANNING中に...公開できないよう
+     * にし...「公演を確定する」ことが公開開始の明確な処理になるようにしてくだ
+     * さい" - publishing a still-PLANNING Production directly (bypassing
+     * activate()) is rejected, even when a slug is present.
+     */
+    public function test_publishing_a_planning_production_directly_is_rejected(): void
+    {
+        $production = Production::create(
+            ProjectId::generate(),
+            new ProductionName('Show'),
+            PersonId::generate(),
+            null,
+            new ProductionSlug('still-planning')
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $production->publish();
     }
 
     public function test_change_slug_updates_the_slug(): void
@@ -297,5 +397,204 @@ final class ProductionTest extends TestCase
         $production->changeSlug(new ProductionSlug('new-slug'));
 
         $this->assertSame('new-slug', $production->slug()?->toString());
+    }
+
+    public function test_a_new_production_has_no_information_section_content_or_publication_dates(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->description());
+        $this->assertNull($production->descriptionPublishedAt());
+        $this->assertNull($production->flyerUrl());
+        $this->assertNull($production->venueName());
+        $this->assertNull($production->scheduleStartDate());
+        $this->assertNull($production->scheduleEndDate());
+        $this->assertNull($production->scriptCredit());
+        $this->assertNull($production->directionCredit());
+    }
+
+    public function test_update_description_sets_value_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateDescription('あらすじ本文', $publishedAt);
+
+        $this->assertSame('あらすじ本文', $production->description());
+        $this->assertEquals($publishedAt, $production->descriptionPublishedAt());
+    }
+
+    public function test_update_description_normalizes_blank_string_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updateDescription('   ', null);
+
+        $this->assertNull($production->description());
+    }
+
+    public function test_update_venue_sets_value_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateVenue('○○ホール', $publishedAt);
+
+        $this->assertSame('○○ホール', $production->venueName());
+        $this->assertEquals($publishedAt, $production->venuePublishedAt());
+    }
+
+    public function test_update_schedule_sets_start_end_and_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $start = new DateTimeImmutable('2026-10-10');
+        $end = new DateTimeImmutable('2026-10-12');
+        $publishedAt = new DateTimeImmutable('2026-09-01 00:00:00');
+
+        $production->updateSchedule($start, $end, $publishedAt);
+
+        $this->assertEquals($start, $production->scheduleStartDate());
+        $this->assertEquals($end, $production->scheduleEndDate());
+        $this->assertEquals($publishedAt, $production->schedulePublishedAt());
+    }
+
+    public function test_update_schedule_rejects_an_end_date_before_the_start_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $production->updateSchedule(new DateTimeImmutable('2026-10-12'), new DateTimeImmutable('2026-10-10'), null);
+    }
+
+    public function test_update_flyer_sets_url_and_its_own_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateFlyer('https://example.com/flyer.jpg', $publishedAt);
+
+        $this->assertSame('https://example.com/flyer.jpg', $production->flyerUrl());
+        $this->assertEquals($publishedAt, $production->flyerPublishedAt());
+    }
+
+    public function test_update_script_direction_sets_both_credits_and_one_shared_publication_date(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+
+        $production->updateScriptDirection('山田太郎', '鈴木花子', $publishedAt);
+
+        $this->assertSame('山田太郎', $production->scriptCredit());
+        $this->assertSame('鈴木花子', $production->directionCredit());
+        $this->assertEquals($publishedAt, $production->scriptDirectionPublishedAt());
+    }
+
+    public function test_update_member_info_published_at_sets_the_one_shared_date_for_the_whole_roster(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $this->assertNull($production->memberInfoPublishedAt());
+
+        $publishedAt = new DateTimeImmutable('2026-10-01 00:00:00');
+        $production->updateMemberInfoPublishedAt($publishedAt);
+
+        $this->assertEquals($publishedAt, $production->memberInfoPublishedAt());
+    }
+
+    public function test_capacity_is_null_by_default(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->capacity());
+    }
+
+    public function test_performance_duration_is_null_by_default(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->assertNull($production->performanceDurationMinutes());
+    }
+
+    public function test_performance_duration_accepts_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updatePerformanceDurationMinutes(120);
+
+        $this->assertSame(120, $production->performanceDurationMinutes());
+    }
+
+    public function test_performance_duration_rejects_non_five_minute_values(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->updatePerformanceDurationMinutes(121);
+    }
+
+    public function test_ticket_publication_and_sales_start_require_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->updateTicketPublicationAt(new DateTimeImmutable('2026-10-01 12:03:00'));
+    }
+
+    public function test_ticket_publication_and_sales_start_accept_five_minute_increments(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $at = new DateTimeImmutable('2026-10-01 12:05:00');
+
+        $production->updateTicketPublicationAt($at);
+        $production->updateTicketSalesStartAt($at);
+
+        $this->assertEquals($at, $production->ticketPublicationAt());
+        $this->assertEquals($at, $production->ticketSalesStartAt());
+    }
+
+    public function test_change_capacity_sets_the_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->changeCapacity(100);
+
+        $this->assertSame(100, $production->capacity());
+    }
+
+    public function test_change_capacity_rejects_non_positive_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $this->expectException(InvalidArgumentException::class);
+        $production->changeCapacity(0);
+    }
+
+    public function test_change_capacity_allows_clearing_back_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production->changeCapacity(100);
+
+        $production->changeCapacity(null);
+
+        $this->assertNull($production->capacity());
+    }
+
+    public function test_update_performance_common_remarks_sets_and_trims_the_value(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+
+        $production->updatePerformanceCommonRemarks('  開場は開演30分前です  ');
+
+        $this->assertSame('開場は開演30分前です', $production->performanceCommonRemarks());
+    }
+
+    public function test_update_performance_common_remarks_normalizes_empty_string_to_null(): void
+    {
+        $production = Production::create(ProjectId::generate(), new ProductionName('Show'), PersonId::generate());
+        $production->updatePerformanceCommonRemarks('some notes');
+
+        $production->updatePerformanceCommonRemarks('');
+
+        $this->assertNull($production->performanceCommonRemarks());
     }
 }

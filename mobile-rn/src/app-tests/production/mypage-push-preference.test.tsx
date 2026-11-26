@@ -1,6 +1,6 @@
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
-import { currentPerson, productionOne, pushPreferenceOff, pushPreferenceOn } from './__fixtures__/productionShellFixtures';
+import { currentPerson, pushPreferenceOff, pushPreferenceOn } from './__fixtures__/productionShellFixtures';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) =>
@@ -10,7 +10,12 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
-describe('My Page: Push Preference', () => {
+/**
+ * StageArt Blueprint再構成 Phase 1d: Push Preference now lives on
+ * `/account` (features/account/AccountContent.tsx), not the Production
+ * Shell's マイページ tab - see that Phase's report.
+ */
+describe('Account: Push Preference', () => {
   it('shows the current ON state and turns it OFF via PUT /me/push-preference', async () => {
     let currentPreference = pushPreferenceOn;
     let putCalls = 0;
@@ -26,9 +31,6 @@ describe('My Page: Push Preference', () => {
         } as Response;
       }
 
-      if (url.endsWith('/productions/prod-1')) {
-        return { ok: true, status: 200, text: async () => JSON.stringify(productionOne), json: async () => productionOne } as Response;
-      }
       if (url.endsWith('/me')) {
         return { ok: true, status: 200, text: async () => JSON.stringify(currentPerson), json: async () => currentPerson } as Response;
       }
@@ -55,14 +57,14 @@ describe('My Page: Push Preference', () => {
       throw new Error(`Unmocked fetch: ${url}`);
     });
 
-    renderRouter('src/app', { initialUrl: '/production/prod-1/mypage' });
+    renderRouter('src/app', { initialUrl: '/account' });
 
-    await waitFor(() => expect(screen.getByTestId('push-preference-switch')).toBeVisible());
-    expect(screen.getByTestId('push-preference-switch').props.value).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('account-push-switch')).toBeVisible());
+    expect(screen.getByTestId('account-push-switch').props.value).toBe(true);
 
-    fireEvent(screen.getByTestId('push-preference-switch'), 'valueChange', false);
+    fireEvent(screen.getByTestId('account-push-switch'), 'valueChange', false);
 
-    await waitFor(() => expect(screen.getByTestId('push-preference-switch').props.value).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('account-push-switch').props.value).toBe(false));
     expect(putCalls).toBe(1);
   });
 });

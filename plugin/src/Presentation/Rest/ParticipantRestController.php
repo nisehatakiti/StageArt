@@ -15,10 +15,19 @@ use StageArt\Application\Participant\ListParticipantsQuery;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Participant\ParticipantCancelNotAllowedException;
 use StageArt\Application\Participant\ParticipantNotFoundException;
+use StageArt\Application\Participant\ParticipantStatusChangeNotAllowedException;
+use StageArt\Application\Participant\ParticipantStatusRequiresConsentException;
+use StageArt\Application\Participant\ParticipantTypeConflictException;
+use StageArt\Application\Participant\ParticipantRequiresInvitationException;
 use StageArt\Application\Participant\ParticipantSubjectNotEligibleException;
 use StageArt\Application\Participant\UpdateParticipantCommand;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
+use StageArt\Application\Participant\ParticipantWithdrawNotAllowedException;
+use StageArt\Application\Participant\ParticipantWithdrawPrimaryManagerException;
+use StageArt\Application\Participant\WithdrawParticipationCommand;
+use StageArt\Application\Participant\WithdrawParticipationUseCase;
 use StageArt\Application\Production\ProductionNotFoundException;
 use WP_Error;
 use WP_REST_Request;
@@ -33,19 +42,22 @@ final class ParticipantRestController
     private ListParticipantsUseCase $listParticipants;
     private UpdateParticipantUseCase $updateParticipant;
     private CancelParticipantUseCase $cancelParticipant;
+    private ?WithdrawParticipationUseCase $withdrawParticipation;
 
     public function __construct(
         CreateParticipantUseCase $createParticipant,
         GetParticipantUseCase $getParticipant,
         ListParticipantsUseCase $listParticipants,
         UpdateParticipantUseCase $updateParticipant,
-        CancelParticipantUseCase $cancelParticipant
+        CancelParticipantUseCase $cancelParticipant,
+        ?WithdrawParticipationUseCase $withdrawParticipation = null
     ) {
         $this->createParticipant = $createParticipant;
         $this->getParticipant = $getParticipant;
         $this->listParticipants = $listParticipants;
         $this->updateParticipant = $updateParticipant;
         $this->cancelParticipant = $cancelParticipant;
+        $this->withdrawParticipation = $withdrawParticipation;
     }
 
     public function register_routes(): void
@@ -77,6 +89,15 @@ final class ParticipantRestController
             [
                 'methods' => 'DELETE',
                 'callback' => [$this, 'delete'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        // PR #7 R14-B stage 7 (§7.2): the Person's own withdrawal.
+        register_rest_route(self::API_NAMESPACE, '/participants/(?P<id>[^/]+)/withdraw', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'withdraw'],
                 'permission_callback' => [$this, 'require_login'],
             ],
         ]);
@@ -118,8 +139,10 @@ final class ParticipantRestController
                 (string) $request->get_param('id'),
                 get_current_user_id(),
                 (string) $request->get_param('subject_type'),
-                (string) $request->get_param('subject_id'),
-                (string) $request->get_param('participant_type')
+                $this->stringOrNull($request->get_param('subject_id')),
+                (string) $request->get_param('participant_type'),
+                $this->stringOrNull($request->get_param('display_name')),
+                $this->stringOrNull($request->get_param('remarks'))
             );
 
             return new WP_REST_Response($this->createParticipant->execute($command)->toArray(), 201);
@@ -127,6 +150,8 @@ final class ParticipantRestController
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (ParticipantRequiresInvitationException $exception) {
+            return new WP_Error('stageart_participant_requires_invitation', $exception->getMessage(), ['status' => 422]);
         } catch (ParticipantSubjectNotEligibleException $exception) {
             return new WP_Error('stageart_participant_subject_not_eligible', $exception->getMessage(), ['status' => 422]);
         } catch (ParticipantAlreadyExistsException $exception) {
@@ -162,14 +187,24 @@ final class ParticipantRestController
     public function update(WP_REST_Request $request)
     {
         try {
+            // R14-B stage 4 (N6 / N8): a field that was not sent is NOT_SENT
+            // (status unchanged, remarks kept); a sent value is passed as it
+            // arrived, so a number / boolean / array is refused with 422.
             $command = new UpdateParticipantCommand(
                 (string) $request->get_param('id'),
                 get_current_user_id(),
-                (string) $request->get_param('participant_type'),
-                (string) $request->get_param('status')
+                $request->get_param('participant_type'),
+                $request->has_param('status') ? $request->get_param('status') : UpdateParticipantCommand::NOT_SENT,
+                $request->has_param('remarks') ? $request->get_param('remarks') : UpdateParticipantCommand::NOT_SENT
             );
 
             return new WP_REST_Response($this->updateParticipant->execute($command)->toArray(), 200);
+        } catch (ParticipantStatusRequiresConsentException $exception) {
+            return new WP_Error('stageart_participant_status_requires_consent', $exception->getMessage(), ['status' => 422]);
+        } catch (ParticipantStatusChangeNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_status_change_not_allowed', $exception->getMessage(), ['status' => 422]);
+        } catch (ParticipantTypeConflictException $exception) {
+            return new WP_Error('stageart_participant_type_conflict', $exception->getMessage(), ['status' => 409]);
         } catch (ParticipantAccessDeniedException $exception) {
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ParticipantNotFoundException $exception) {
@@ -191,6 +226,8 @@ final class ParticipantRestController
             $this->cancelParticipant->execute($command);
 
             return new WP_REST_Response(null, 204);
+        } catch (ParticipantCancelNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_cancel_not_allowed', $exception->getMessage(), ['status' => 409]);
         } catch (ParticipantAccessDeniedException $exception) {
             return new WP_Error('stageart_participant_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ParticipantNotFoundException $exception) {
@@ -198,5 +235,44 @@ final class ParticipantRestController
         } catch (ProductionNotFoundException $exception) {
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         }
+    }
+
+    /**
+     * PR #7 R14-B stage 7, `POST /participants/{id}/withdraw` (design doc
+     * §7.2, §4.6 D9): 200 {participant_id, production_id, status=WITHDRAWN},
+     * also when already WITHDRAWN (idempotent). Someone else's row - or a
+     * NAME_ONLY / ORGANIZATION one - is 403; the PrimaryManager is 409
+     * withdraw_primary_manager; a row that is not ACTIVE is 409
+     * withdraw_not_allowed. A failed write is rethrown to
+     * RestFailureResponder (500 persistence_failed / 503). The response
+     * carries Cache-Control: no-store (PersonalResponseCachePolicy).
+     *
+     * @return WP_REST_Response|WP_Error
+     */
+    public function withdraw(WP_REST_Request $request)
+    {
+        try {
+            $command = new WithdrawParticipationCommand(get_current_user_id(), (string) $request->get_param('id'));
+
+            return new WP_REST_Response($this->withdrawParticipation->execute($command)->toArray(), 200);
+        } catch (ParticipantWithdrawPrimaryManagerException $exception) {
+            return new WP_Error('stageart_participant_withdraw_primary_manager', 'The production manager cannot withdraw; hand the role over first.', ['status' => 409]);
+        } catch (ParticipantWithdrawNotAllowedException $exception) {
+            return new WP_Error('stageart_participant_withdraw_not_allowed', 'Only an active member can withdraw.', ['status' => 409]);
+        } catch (ParticipantAccessDeniedException $exception) {
+            return new WP_Error('stageart_participant_access_denied', 'Only the member themselves can withdraw.', ['status' => 403]);
+        } catch (ParticipantNotFoundException $exception) {
+            return new WP_Error('stageart_participant_not_found', 'The participant was not found.', ['status' => 404]);
+        } catch (ProductionNotFoundException $exception) {
+            return new WP_Error('stageart_production_not_found', 'The production was not found.', ['status' => 404]);
+        }
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function stringOrNull($value): ?string
+    {
+        return $value === null || $value === '' ? null : (string) $value;
     }
 }

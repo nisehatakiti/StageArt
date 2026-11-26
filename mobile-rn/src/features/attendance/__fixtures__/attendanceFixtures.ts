@@ -17,8 +17,8 @@ export const currentPerson = {
   id: 'person-1',
   word_press_user_id: 1,
   email_verified: true,
-  family_name: '秦',
-  given_name: '良輔',
+  family_name: '舞台',
+  given_name: '芸術',
 };
 
 export const rehearsalScheduleAdjustment: Rehearsal = {
@@ -31,6 +31,8 @@ export const rehearsalScheduleAdjustment: Rehearsal = {
   timezone: 'Asia/Tokyo',
   location: '稽古場A',
   status: 'DRAFT',
+  activity_type: 'REHEARSAL',
+  response_deadline: null,
   created_at: '',
   updated_at: '',
 };
@@ -40,6 +42,20 @@ export const rehearsalConfirmed: Rehearsal = {
   id: 'rehearsal-2',
   title: '第2回稽古（出欠確定）',
   status: 'CONFIRMED',
+};
+
+export const rehearsalActive: Rehearsal = {
+  ...rehearsalScheduleAdjustment,
+  id: 'rehearsal-3',
+  title: '第3回稽古（実施中）',
+  status: 'ACTIVE',
+};
+
+export const rehearsalCompleted: Rehearsal = {
+  ...rehearsalScheduleAdjustment,
+  id: 'rehearsal-4',
+  title: '第4回稽古（実施済み）',
+  status: 'COMPLETED',
 };
 
 export const rehearsals: Rehearsal[] = [rehearsalScheduleAdjustment, rehearsalConfirmed];
@@ -53,6 +69,7 @@ export const scheduleAdjustmentRoster: RehearsalAttendance[] = [
     status: 'UNANSWERED',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
   {
     id: 'attendance-2',
@@ -62,6 +79,7 @@ export const scheduleAdjustmentRoster: RehearsalAttendance[] = [
     status: 'AVAILABLE',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
 ];
 
@@ -74,6 +92,7 @@ export const attendanceConfirmationRoster: RehearsalAttendance[] = [
     status: 'ATTENDING',
     created_at: '',
     updated_at: '',
+    remarks: null,
   },
 ];
 
@@ -97,7 +116,7 @@ const DEFAULT_ROUTES: { test: (url: string) => boolean; status: number; body: un
   {
     test: (url) => url.endsWith('/me'),
     status: 200,
-    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '秦', given_name: '良輔' },
+    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' },
   },
 ];
 

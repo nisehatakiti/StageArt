@@ -1,7 +1,7 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 4.0
+Version : 4.1
 
 ---
 
@@ -121,6 +121,26 @@ GET /api/v1/productions/{productionId}
 - ProductionDelegates
 - DelegateRole
 
+Productionのレスポンス（取得・一覧・各状態変更の結果）は、要求者について `can_complete`（boolean）を含む（Version 4.1、2026-10-29）。
+
+- 要求者が公演完了（ACTIVE → COMPLETED）の権限を持ち、かつProductionがACTIVEのときtrueとする。
+- 公演完了の権限を持つのはPrimary Managerのみである（2026-11-24確定、PR #8 統合。それまでは会計管理者・代理人も含めていた）。判定は公演完了APIと同じ認可処理による。
+- 精算が完了していない等、公演完了時の制約は `can_complete` では判定しない。trueでも、公演完了APIはそれらの制約により拒否しうる。
+- 公演開始・アーカイブ・中止等、他の状態変更の権限は `can_complete` に含まれず、従来どおりPrimary Managerのみである。
+- 画面は、公演完了の操作の表示を `can_complete` で判定する。
+
+Productionのレスポンスは、要求者について次の値も含む（2026-11-24、PR #8 統合）。いずれも画面の表示制御のためのもので、各APIは操作ごとに同じ規則で認可する。
+
+| 項目 | 意味 |
+|---|---|
+| `delegate_roles` | 要求者が当該Productionで持つACTIVEな担当Roleのすべて |
+| `is_proxy_manager` | 公演代理人（PARTICIPANT_MANAGERとREHEARSAL_MANAGERを同時にACTIVEで持つ） |
+| `can_manage_production_operations` | Primary Managerまたは公演代理人（公演情報・公開ページ・公開切替・Slug・定員・公演回の共通設定・上演時間・参加コード） |
+| `can_manage_accounting` | Primary Manager、公演代理人または会計担当（予算・経費・実績・精算） |
+| `can_manage_production_delegates` | Primary Managerまたは公演代理人（公演代理人・会計担当・受付担当の任命・変更） |
+
+Productionの更新（`PUT /productions/{id}`）は、Primary Managerまたは公演代理人が実行できる（2026-11-24、PR #8 統合。それまではPrimary Managerのみ）。
+
 Production APIは関連Resourceを集約して返却する。
 
 ---
@@ -142,6 +162,13 @@ PUT /api/v1/productions/{productionId}
 - Tags
 
 ProductionIdは変更できない。
+
+送信項目と未送信項目（PR #7 R14-A、2026-11-14）：
+
+- リクエストに含まれない項目は変更しない（現在の値を保持する）。
+- 値に null を指定した項目は削除（空）にする。
+- 公開切り替え・メンバー管理・作成画面の「公開する」など、一部の項目だけを送る画面があるため。R14-A以前は未送信項目もnullで上書きしており、説明・会場・日程・クレジット・定員・上演時間が消え、上演時間の変更が公演回の終演時刻にも及んでいた。
+- 定員・上演時間を送ったときだけ、各Performanceへの反映（定員の上書き・終演時刻の再計算）を行う。
 
 Productionの更新には、
 Productionに対する更新権限が必要である。
@@ -667,6 +694,126 @@ Production APIでは発行しない。
 
 Reservationに関するDomain Eventは
 Reservation Domainが発行する。
+
+---
+
+# Production行のロックと公演状態（PR #7 レビュー R5）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）のうち、Production行を書き換える処理と、精算・チケット設定について。
+
+## Production行の排他ロック
+
+以下はトランザクションの最初にProduction行を排他ロック（`FOR UPDATE`）で読み直し、その行に変更を適用して保存する。保存は行全体の書き込みのため、ロック前に読んだコピーを保存して、同時に確定した決算完了・中止・設定変更を元に戻すことはない。
+
+- `PUT /productions/{id}`（基本情報・定員・公演時間。定員・公演時間の各Performanceへの反映も同じトランザクション。R6：定員の一括上書きで、CANCELLED以外のいずれかのPerformanceの定員が予約済み席数を下回る場合は409 `stageart_capacity_below_reservations` で全体を拒否し、何も変更しない）
+- `/productions/{id}/activate`、`/complete`、`/cancel`、`/archive`
+- `/productions/{id}/primary-manager`
+- `/productions/{id}/ticket-sales-settings`
+- `/productions/{id}/quota-ticket-back-settings`
+- `/tickets/{id}`（価格等の変更）、`/tickets/{id}/archive`：Production行の排他ロックの下でTicketを読み直して変更する
+
+予約・受付は同じ行の共有ロックを取るため、これらの処理とは互いに確定を待ち合わせる。
+
+## 精算と公演状態
+
+| エンドポイント | CANCELLED | COMPLETED / ARCHIVED |
+|------|------|------|
+| `POST /productions/{id}/settlement/members/{person_id}/settle` | 可 | 409 `stageart_production_closed` |
+| `POST /productions/{id}/settlement/members/{person_id}/cancel-settlement` | 可 | 409 `stageart_production_closed`（精算履歴は変更しない） |
+| `/productions/{id}/quota-ticket-back-settings`（変更） | 可 | 409 `stageart_production_closed` |
+
+- 判定はProduction行の排他ロック下で読んだStatusで行う。決算完了と精算取消が同時に要求された場合、先に確定した方の結果を後の処理が読む（決算完了が先なら精算取消は409、精算取消が先なら決算完了は未精算額を検出して拒否）。
+- 決算完了後の訂正には、公演を明示的に再開する管理フローが必要（未実装）。
+
+## 決算完了と精算の一致（R7）
+
+`PATCH /productions/{id}/complete` は、すべてのメンバーで「精算済み額 ＝ 確定チケットバック額」のときにだけ完了する。
+
+| 状態 | HTTP | code |
+|------|------|------|
+| 未精算あり（精算済み ＜ 確定） | 422 | `stageart_production_settlement_incomplete`（既存） |
+| 払い過ぎ（精算済み ＞ 確定。精算後のCheck-in取消・返金で起きる） | 422 | `stageart_production_settlement_overpaid` |
+
+払い過ぎの応答例：
+
+```json
+{
+  "code": "stageart_production_settlement_overpaid",
+  "message": "This Production cannot be completed: 1 member(s) were settled 300 more than their confirmed Ticket Back.",
+  "data": {
+    "status": 422,
+    "total_overpaid_amount": 300,
+    "members": [
+      { "person_id": "…", "confirmed_ticket_back_amount": 0, "settled_amount": 300, "overpaid_amount": 300 }
+    ]
+  }
+}
+```
+
+`GET /productions/{id}/settlement` の各メンバーには `overpaid_amount`（整数、払い過ぎがなければ0）を追加した。詳細は `04-DomainModel/ProductionLifecycle.md`「決算完了の精算条件」。
+
+## 共通
+
+ロック待ちタイムアウト・デッドロックは503 `stageart_database_busy`（何も保存されていない。再実行可能）、その他のDB障害は500 `stageart_internal_error`（`README.md` 参照）。公演状態ごとの業務ルールとロック順序は `04-DomainModel/ProductionLifecycle.md` を正とする。
+
+---
+
+# ProductionDelegateの有効性（PR #7 R14-B）
+
+実装済みエンドポイント（`/wp-json/stageart/v1/...`）の担当者（ProductionDelegate）について。設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.6・§7.1（設計書ブランチ、第9版 `9b42eb5`）。
+
+## 有効な担当者の条件
+
+担当者の行がRoleのPermissionを与えるのは、次の両方を満たす場合だけ。
+
+1. 担当者の行の `status` が ACTIVE。
+2. その人物が、この公演の **ACTIVEなPERSONの参加者で、本人の同意が記録されている**（`consented_at` がある）。
+
+- 条件を満たさないACTIVEな行は、変更せずに残るが、権限を与えない（「無効」）。
+- PrimaryManagerの権限は、担当者の行・参加者の状態に依存しない。
+- R14-Bより前からある参加者の行は同意が記録されていないため、その人物の担当者の行は、本人が「同意の確認を依頼」の招待を承諾するまで無効になる（承諾すると、再任命なしに有効になる）。
+
+## エンドポイント
+
+| メソッド・パス | 内容 |
+|---|---|
+| `GET /productions/{id}/delegates` | 担当者の一覧（`effective`・`ineffective_reason` 付き） |
+| `GET /productions/{id}/delegates/me` | ログインしている人物の、この公演での担当者の行だけ（第9段階でユーザーの承認を得て追加。設計書 §10「公演の画面（担当者本人）」） |
+| `POST /productions/{id}/delegates` | 任命（本文：`person_id`、`role`） |
+| `PUT /production-delegates/{id}` | 役割・状態の変更（本文：`role`、`status`） |
+| `DELETE /production-delegates/{id}` | 担当者の行の削除 |
+
+一覧の各行：`id`・`production_id`・`person_id`・`person_family_name`・`person_given_name`・`role`・`status`・`created_by`・`created_at`・`updated_by`・`updated_at`・`effective`・`ineffective_reason`。
+
+`GET /productions/{id}/delegates/me` の各行：`id`・`production_id`・`role`・`status`・`effective`・`ineffective_reason`。ログインしていれば誰でも呼べ、本人の行だけを返す（なければ空の配列）。他の人物の情報・氏名・メールアドレスは返さない。公演がなければ404 `stageart_production_not_found`。
+
+`ineffective_reason`（`effective` が `true` なら `null`）：
+
+| 値 | 意味 |
+|---|---|
+| `INACTIVE` | 担当者の行が INACTIVE |
+| `NOT_ACTIVE_PARTICIPANT` | その人物がACTIVEなPERSONの参加者でない |
+| `CONSENT_UNCONFIRMED` | ACTIVEな参加者だが、同意が記録されていない |
+
+## 任命・変更の条件
+
+- 任命（`POST`）と、`PUT` で行が新たに有効な任命になる場合（INACTIVE → ACTIVE、または役割の変更）は、対象の人物が同意を確認済みのACTIVEな参加者でなければならない。参加者でなければ422 `stageart_production_delegate_target_not_participant`、同意が記録されていなければ422 `stageart_production_delegate_target_not_consented`。
+- 同じ公演・人物・役割の INACTIVE の行がある場合、`POST` は新しい行を作らず、その行を ACTIVE に戻す（監査ログ `DELEGATE_REACTIVATED`。新しい行は `DELEGATE_APPOINTED`）。すでにACTIVEな行は409 `stageart_production_delegate_already_exists`。
+- ACTIVEな行を同じ役割のまま保つ変更は、任命ではないため、条件を確認し直さない（無効なまま残る）。
+
+## 参加者の状態の変更による担当者の無効化
+
+次の操作で、その人物のこの公演の担当者の行を同じトランザクションで INACTIVE にし、監査ログ `DELEGATE_DEACTIVATED` に理由を記録する。
+
+| 操作 | 理由 |
+|---|---|
+| `PUT /participants/{id}` で ACTIVE → INACTIVE | `PARTICIPANT_DEACTIVATED` |
+| `DELETE /participants/{id}`（ACTIVE・INACTIVE → CANCELLED） | `PARTICIPANT_REMOVED` |
+| `POST /participants/{id}/withdraw`（本人の取りやめ） | `PARTICIPANT_WITHDRAWN` |
+| 招待の承諾で新たに ACTIVE になった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
+| `PUT /production-delegates/{id}` で INACTIVE にした | `MANAGER` |
+
+担当者のAPIの応答には `Cache-Control: no-store` を付ける（`README.md`「個人宛てのAPIのキャッシュ」）。
 
 ---
 

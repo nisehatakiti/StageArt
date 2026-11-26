@@ -154,4 +154,70 @@ final class OrganizationTest extends TestCase
 
         $this->assertSame('new-slug', $organization->slug()?->toString());
     }
+
+    public function test_accounting_is_disabled_by_default(): void
+    {
+        $organization = Organization::create(new OrganizationName('Fresh Theatre'));
+
+        $this->assertFalse($organization->isAccountingEnabled());
+    }
+
+    public function test_a_newly_created_organization_can_start_with_accounting_already_enabled(): void
+    {
+        $organization = Organization::create(new OrganizationName('Accounting From Day One'), null, null, null, true);
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
+
+    public function test_enable_accounting_turns_the_flag_on(): void
+    {
+        $organization = Organization::create(new OrganizationName('Turning It On'));
+
+        $organization->enableAccounting();
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
+
+    public function test_enable_accounting_is_idempotent(): void
+    {
+        $organization = Organization::create(new OrganizationName('Idempotent'), null, null, null, true);
+
+        $organization->enableAccounting();
+
+        $this->assertTrue($organization->isAccountingEnabled());
+    }
+
+    // --- StageArt 団体管理UI整理: logoUrl ---
+
+    public function test_logo_url_defaults_to_null(): void
+    {
+        $organization = Organization::create(new OrganizationName('No Logo Yet'));
+
+        $this->assertNull($organization->logoUrl());
+    }
+
+    public function test_create_accepts_an_explicit_logo_url(): void
+    {
+        $organization = Organization::create(new OrganizationName('With Logo'), null, null, null, false, 'https://example.com/logo.png');
+
+        $this->assertSame('https://example.com/logo.png', $organization->logoUrl());
+    }
+
+    public function test_change_logo_url_updates_it(): void
+    {
+        $organization = Organization::create(new OrganizationName('Changing Logo'));
+
+        $organization->changeLogoUrl('https://example.com/new-logo.png');
+
+        $this->assertSame('https://example.com/new-logo.png', $organization->logoUrl());
+    }
+
+    public function test_change_logo_url_can_clear_it(): void
+    {
+        $organization = Organization::create(new OrganizationName('Clearing Logo'), null, null, null, false, 'https://example.com/logo.png');
+
+        $organization->changeLogoUrl(null);
+
+        $this->assertNull($organization->logoUrl());
+    }
 }

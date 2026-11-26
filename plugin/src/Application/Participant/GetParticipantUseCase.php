@@ -4,26 +4,36 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Participant;
 
+use StageArt\Application\Notification\PersonEmailResolver;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Domain\Participant\ParticipantId;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
+use StageArt\Domain\Participant\ParticipantSubjectType;
+use StageArt\Domain\Person\PersonId;
+use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
 final class GetParticipantUseCase
 {
     private ParticipantRepositoryInterface $participants;
     private ProductionRepositoryInterface $productions;
+    private PersonRepositoryInterface $people;
     private ProductionAuthorizationService $authorization;
+    private PersonEmailResolver $personEmailResolver;
 
     public function __construct(
         ParticipantRepositoryInterface $participants,
         ProductionRepositoryInterface $productions,
-        ProductionAuthorizationService $authorization
+        PersonRepositoryInterface $people,
+        ProductionAuthorizationService $authorization,
+        PersonEmailResolver $personEmailResolver
     ) {
         $this->participants = $participants;
         $this->productions = $productions;
+        $this->people = $people;
         $this->authorization = $authorization;
+        $this->personEmailResolver = $personEmailResolver;
     }
 
     public function execute(GetParticipantQuery $query): ParticipantResult
@@ -52,6 +62,19 @@ final class GetParticipantUseCase
             );
         }
 
-        return ParticipantResult::fromDomain($participant);
+        // R14-B stage 6 (§7.3): the same disclosure as the list gives this
+        // manager - e.g. an ended row is display_name and status only.
+        $disclosure = ParticipantDisclosurePolicy::disclosureFor(
+            $participant,
+            $production,
+            (string) ParticipantDisclosurePolicy::viewerOf($this->authorization, $requester, $production),
+            $requester
+        ) ?? ParticipantDisclosure::statusOnly();
+
+        $isPersonSubject = $participant->subjectType()->equals(ParticipantSubjectType::person());
+        $person = $isPersonSubject && $disclosure->names ? $this->people->findById(PersonId::fromString($participant->subjectId())) : null;
+        $email = $isPersonSubject && $disclosure->email ? $this->personEmailResolver->resolve(PersonId::fromString($participant->subjectId())) : null;
+
+        return ParticipantResult::disclosed($participant, $disclosure, $person, $email);
     }
 }

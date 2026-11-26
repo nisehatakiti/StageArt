@@ -95,10 +95,89 @@ export type Organization = {
   status: string;
   slug: string | null;
   published_at: string | null;
+  accounting_enabled: boolean;
+  /** StageArt 団体管理UI整理: mirrors Production.flyer_url's own
+   * convention - a plain URL the 団体情報 screen lets an Owner/delegate
+   * paste or edit directly (no file-upload infrastructure exists
+   * anywhere in this codebase to build a real upload widget on). */
+  logo_url: string | null;
   created_at: string;
   updated_at: string;
   current_person_role: string;
   follower_count: number | null;
+};
+
+/** StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationSNS.md):
+ * GET/POST /organizations/{id}/sns, PUT/DELETE /organization-sns/{id}. */
+export type OrganizationSNS = {
+  id: string;
+  organization_id: string;
+  service: string;
+  account_identifier: string;
+  profile_url: string | null;
+  display_name: string | null;
+  display_order: number;
+  visibility: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** StageArt 団体管理UI整理 (docs/04-DomainModel/OrganizationPublicSiteStructure.md
+ * "OTHER LINKS"): GET/POST /organizations/{id}/external-links,
+ * PUT/DELETE /organization-external-links/{id}. */
+export type OrganizationExternalLink = {
+  id: string;
+  organization_id: string;
+  label: string;
+  url: string;
+  display_order: number;
+  visibility: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** StageArt 団体管理UI整理 "メンバー管理": GET /organizations/{id}/members -
+ * every ACTIVE Membership with the Person's own display name. */
+export type OrganizationMember = {
+  membership_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  email: string | null;
+  role_key: string;
+  joined_at: string | null;
+  remarks: string | null;
+};
+
+/** StageArt 団体管理UI整理 "メンバーを追加": POST /organizations/{id}/invitations
+ * response shape (never carries the raw token). */
+export type OrganizationInvitation = {
+  id: string;
+  organization_id: string;
+  email: string;
+  name: string;
+  invited_by_person_id: string;
+  remarks: string | null;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  consumed_at: string | null;
+  is_expired: boolean;
+};
+
+export type CreateOrganizationInvitationResult = {
+  outcome: 'MEMBER_ADDED' | 'INVITATION_CREATED' | 'INVITATION_RESENT';
+  member: OrganizationMember | null;
+  invitation: OrganizationInvitation | null;
+};
+
+/** GET /organization-invitations/by-token/{token} - unauthenticated
+ * registration-screen preview. */
+export type OrganizationInvitationPreview = {
+  organization_name: string;
+  email: string;
+  name: string;
+  status: string;
 };
 
 /**
@@ -129,8 +208,12 @@ export type PublicOrganization = {
   name: string;
   slug: string;
   description: string | null;
+  logo_url: string | null;
   published_at: string;
   productions: PublicOrganizationProductionSummary[];
+  /** Already filtered to visibility=true and ordered by display_order by the Backend. */
+  sns: OrganizationSNS[];
+  external_links: OrganizationExternalLink[];
 };
 
 /**
@@ -174,7 +257,242 @@ export type Production = {
   created_at: string;
   updated_at: string;
   is_primary_manager: boolean;
+  /** Legacy: one ACTIVE delegate Role only (the first found). Prefer `delegate_roles`. */
   delegate_role: string | null;
+  /** Every ACTIVE delegate Role the caller holds on this Production. */
+  delegate_roles: string[];
+  /** PrimaryManager only, and only while ACTIVE (公演の完了). */
+  can_complete?: boolean;
+  /** 公演代理人: PARTICIPANT_MANAGER and REHEARSAL_MANAGER both ACTIVE. */
+  is_proxy_manager?: boolean;
+  /** PrimaryManager or 公演代理人 (公演情報・公開ページ・公開切替・Slug・定員・上演時間・参加コード). */
+  can_manage_production_operations?: boolean;
+  /** PrimaryManager, 公演代理人 or 会計担当 (予算・経費・実績・精算). */
+  can_manage_accounting?: boolean;
+  /** PrimaryManager or 公演代理人 (担当の任命・変更). */
+  can_manage_production_delegates?: boolean;
+  description: string | null;
+  description_published_at: string | null;
+  flyer_url: string | null;
+  flyer_published_at: string | null;
+  venue_name: string | null;
+  venue_published_at: string | null;
+  schedule_start_date: string | null;
+  schedule_end_date: string | null;
+  schedule_published_at: string | null;
+  script_credit: string | null;
+  direction_credit: string | null;
+  script_direction_published_at: string | null;
+  member_info_published_at: string | null;
+  /**
+   * Phase 2 Performance基盤 §9: internal management data only, never
+   * shown on the public page - the initial capacity value new
+   * Performances inherit (see `Performance.capacity` below).
+   */
+  capacity: number | null;
+  /** §14: one shared free-form field covering both 開場情報 and 全体備考,
+   * reused across every Performance under this Production. */
+  performance_common_remarks: string | null;
+  performance_duration_minutes: number | null;
+};
+
+/**
+ * Phase 3 Ticket/Reservation基盤: `GET`/`PUT /productions/{id}/ticket-
+ * sales-settings` response (Backend's `TicketSalesSettingsResult`) - a
+ * separate, narrower read than `Production` itself (that endpoint
+ * updates only Production's ticket-publication/sales-start/sales-end
+ * fields, not the whole Production record - see
+ * `UpdateTicketSalesSettingsUseCase`'s own docblock for why).
+ */
+export type TicketSalesSettings = {
+  production_id: string;
+  ticket_publication_at: string | null;
+  ticket_sales_start_at: string | null;
+  ticket_sales_end_rule: string | null;
+  ticket_sales_end_parameter: string | null;
+};
+
+/**
+ * Phase 3 Ticket/Reservation基盤: `GET`/`PUT /productions/{id}/quota-
+ * ticket-back-settings` response (Backend's
+ * `QuotaAndTicketBackSettingsResult`). Internal management data only -
+ * never sent to the Public Page (§34).
+ */
+export type TicketBackCondition = {
+  priority: number;
+  threshold: number;
+  comparator: 'GTE' | 'LTE' | 'LT';
+  rate_percent: number;
+};
+
+export type QuotaAndTicketBackSettings = {
+  production_id: string;
+  quota_enabled: boolean;
+  quota_count: number | null;
+  quota_buyback_enabled: boolean;
+  quota_shortfall_unit_price: number | null;
+  ticket_back_mode: 'PROGRESSIVE' | 'SEPARATED' | null;
+  ticket_back_conditions: TicketBackCondition[];
+};
+
+/**
+ * Phase 3 Ticket/Reservation基盤 (Ticket.md v2.0系列を否定し、Chapter 32の
+ * フラット構造を採用 - Ticket TypeをMatrixにしない、Ticket名+料金のみ):
+ * `Ticket`はProduction所属の販売条件。0円Ticketは扱わない
+ * (`price`は常に正の整数)。
+ */
+export type Ticket = {
+  id: string;
+  production_id: string;
+  name: string;
+  price: number;
+  remarks: string | null;
+  status: 'ACTIVE' | 'ARCHIVED';
+  created_at: string;
+  updated_at: string;
+};
+
+/** GET /productions/{id}/public-tickets - the Public Page's own Ticket
+ * listing (§9/§34): only name/price/remarks per Ticket (never internal
+ * Status), plus the Production's own sales-window settings so the
+ * client can compute per-Performance availability for display (the
+ * server remains the sole authority on whether a Reservation attempt
+ * actually succeeds). Empty `tickets` before `ticket_publication_at`. */
+export type PublicTicketList = {
+  tickets: { id: string; name: string; price: number; remarks: string | null }[];
+  sales_start_at: string | null;
+  sales_end_rule: 'DAY_BEFORE_AT_TIME' | 'HOURS_BEFORE_START' | null;
+  sales_end_parameter: string | null;
+};
+
+/** GET /productions/{id}/public-performances - the Public Page's own
+ * Performance listing (§33), deliberately excluding `capacity` (§34). */
+export type PublicPerformance = {
+  id: string;
+  performance_date: string;
+  start_time: string;
+  end_time: string | null;
+  symbol?: string | null;
+  symbol_description?: string | null;
+  status: string;
+};
+
+/**
+ * StageArt チケット管理 (Ticket全体像整備): `GET /productions/{id}/
+ * performance-ticket-availability` response (Backend's
+ * `PerformanceTicketAvailabilityResult`) - a read-only per-Performance
+ * view of "is a Ticket currently purchasable", recomputed from the same
+ * publication/sales-window rules CreateReservationUseCase itself
+ * enforces server-side at actual reservation time. Display only; the
+ * server remains the sole authority on whether a real Reservation
+ * attempt succeeds.
+ */
+export type PerformanceTicketAvailability = {
+  performance_id: string;
+  performance_date: string;
+  start_time: string;
+  performance_status: string;
+  is_ticket_published: boolean;
+  sales_start_at: string | null;
+  sales_end_at: string | null;
+  is_sales_open: boolean;
+};
+
+/**
+ * Reservation.md v6.0's AggregateRoot. `booker_name`/`booker_email` are
+ * plain scalars, not a StageArt account reference (§10 - general
+ * audience never needs one); `reservation_number` (not `id`) is what a
+ * booker actually uses for self-service lookup/change/cancel.
+ */
+export type Reservation = {
+  id: string;
+  reservation_number: string;
+  performance_id: string;
+  ticket_id: string;
+  booker_name: string;
+  booker_email: string;
+  guest_count: number;
+  price_snapshot: number;
+  status: 'RESERVED' | 'CHECKED_IN' | 'CANCELLED' | 'NO_SHOW';
+  /** Phase 4 Check-in/精算/会計連携: "誰扱い" - which Production Member
+   * this Reservation's sales performance counts toward (Ticket Back),
+   * distinct from `created_by`. Null for self-service/unattributed
+   * sales. */
+  attributed_person_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+/**
+ * Phase 4 Check-in/精算/会計連携: `POST /performances/{id}/checkin/...`
+ * response shape shared by every Check-in entry point (search/QR/number/
+ * walk-up). `already_processed` reflects CheckIn.md's idempotent
+ * "duplicate Check-in = 受付済み" handling - re-checking-in an already
+ * CHECKED_IN Reservation returns its existing Check-in rather than an
+ * error.
+ */
+export type CheckInResultDto = {
+  check_in_id: string;
+  reservation_id: string;
+  reservation_number: string;
+  performance_id: string;
+  status: 'COMPLETED' | 'REVERSED';
+  reservation_status: 'RESERVED' | 'CHECKED_IN' | 'CANCELLED' | 'NO_SHOW';
+  checked_in_by: string;
+  checked_in_at: string;
+  already_processed: boolean;
+};
+
+/**
+ * Phase 4: `GET /productions/{id}/settlement` (ProductionSettlementScreen.md
+ * Chapter 29). `quota_shortfall_*` is read-only context - Quota has no
+ * per-member settlement action defined by Blueprint (Quota buyback is
+ * Production-wide only), only Ticket Back does.
+ */
+export type ProductionMemberSettlementLine = {
+  person_id: string;
+  display_name: string | null;
+  confirmed_ticket_back_amount: number;
+  already_settled_amount: number;
+  outstanding_amount: number;
+  /** PR #7 review (R7): settled minus confirmed when positive (a Check-in
+   * refunded after the settlement), else 0. Optional: absent from servers
+   * older than R7. */
+  overpaid_amount?: number;
+  /** Phase 5 §7: >0 means the most recent settle action for this member
+   * can still be cancelled (checkbox shows CHECKED); 0 means nothing to
+   * cancel (never settled, or already cancelled). */
+  last_settled_amount: number;
+};
+
+export type ProductionSettlementSummary = {
+  members: ProductionMemberSettlementLine[];
+  quota_shortfall_count: number;
+  quota_shortfall_payable: number;
+};
+
+/**
+ * Phase 5 §9: Member Performance Summary - `ticket_sales_count` is
+ * Check-in-based sales performance (CHECKED_IN + NO_SHOW);
+ * `ticket_attendance_count` is actual attendance (CHECKED_IN only) - kept
+ * as two separate counts per the confirmed NO_SHOW distinction.
+ */
+export type MemberPerformanceSummaryLine = {
+  person_id: string;
+  display_name: string | null;
+  attended_count: number;
+  absent_count: number;
+  late_count: number;
+  early_left_count: number;
+  rehearsal_count: number;
+  ticket_sales_count: number;
+  ticket_attendance_count: number;
+};
+
+export type MemberPerformanceSummary = {
+  members: MemberPerformanceSummaryLine[];
 };
 
 /**
@@ -191,6 +509,13 @@ export type PublicProduction = {
   slug: string;
   title_heading: string | null;
   published_at: string;
+  description: string | null;
+  flyer_url: string | null;
+  venue_name: string | null;
+  schedule_start_date: string | null;
+  schedule_end_date: string | null;
+  script_credit: string | null;
+  direction_credit: string | null;
   organization: {
     id: string;
     name: string;
@@ -198,15 +523,207 @@ export type PublicProduction = {
   };
 };
 
+/**
+ * PR #7 R14-B (design doc §7.3, stage 6): what a row carries depends on the
+ * viewer and the Production's status (Backend ParticipantDisclosurePolicy).
+ * A withheld field is null - never an empty string:
+ * - `subject_id` and `remarks` are null on an ended row
+ *   (CANCELLED / WITHDRAWN / REJECTED) shown to a manager;
+ * - the Person's names only on ACTIVE / INACTIVE rows (and not to a
+ *   REHEARSAL_MANAGER after the Production ends); the email only to
+ *   managers on ACTIVE / INACTIVE rows (only to the PrimaryManager after
+ *   the Production ends);
+ * - `enrollment_source` / `consent_status` / `consented_at` only to
+ *   managers (null for a REHEARSAL_MANAGER);
+ * - the viewer's own row is always complete.
+ */
 export type Participant = {
   id: string;
   production_id: string;
   subject_type: string;
-  subject_id: string;
+  subject_id: string | null;
   participant_type: string;
   status: string;
   created_at: string;
   updated_at: string;
+  remarks: string | null;
+  display_name: string | null;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  /** StageArt メンバー一覧メールアドレス表示ラウンド: resolved server-side via
+   * the existing PersonEmailResolver (EmailCredential / verified
+   * NotificationEmail) - never a field stored on Participant itself.
+   * Null for a NAME_ONLY/ORGANIZATION subject, or a PERSON subject with
+   * no deliverable address found in any trusted source. */
+  email: string | null;
+  /** R14-B §4.5: INVITATION / JOIN_REQUEST / MANAGER_RECORD, null for rows made before R14-B (or withheld). */
+  enrollment_source: string | null;
+  /** R14-B §4.5: CONFIRMED / UNCONFIRMED (PERSON without consent) / NOT_APPLICABLE (NAME_ONLY etc.); null when withheld. */
+  consent_status: 'CONFIRMED' | 'UNCONFIRMED' | 'NOT_APPLICABLE' | null;
+  consented_at: string | null;
+};
+
+/** R14-B §7.2: POST /participants/{id}/withdraw (idempotent). */
+export type WithdrawParticipationResult = {
+  participant_id: string;
+  production_id: string;
+  status: 'WITHDRAWN';
+};
+
+/**
+ * GET /me/participating-productions: one row per the caller's own
+ * ACTIVE PERSON Participant, joined to its Production - the formal
+ * data source for 「参加している公演・活動」 (ListMyParticipatingProductionsUseCase.php),
+ * replacing the old upcoming_rehearsals-based proxy (MyDashboard's
+ * `upcoming_rehearsals` only reflects Rehearsal attendance, not
+ * Production membership - see participating-productions.tsx history).
+ */
+export type ParticipatingProduction = {
+  participant_id: string;
+  production_id: string;
+  production_name: string;
+  production_slug: string | null;
+  participant_type: string;
+};
+
+/**
+ * ProductionDelegate実用化 Phase: `person_family_name`/`person_given_name`
+ * are resolved Backend-side (see ProductionDelegateResult.php) - both
+ * null when that Person has not completed their own name setup yet, not
+ * an error state. `role` is one of the 7 Production-scope RoleKey values
+ * (PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER/
+ * TICKET_MANAGER/RESERVATION_MANAGER/CHECKIN_MANAGER/QUESTIONNAIRE_MANAGER) -
+ * the Backend's RoleKey enum also technically accepts OWNER/MEMBER
+ * (Organization-scope values), but those are never valid here and this
+ * app never offers them.
+ */
+export type ProductionDelegate = {
+  id: string;
+  production_id: string;
+  person_id: string;
+  person_family_name: string | null;
+  person_given_name: string | null;
+  role: string;
+  status: string;
+  created_by: string;
+  created_at: string;
+  updated_by: string;
+  updated_at: string;
+  /** R14-B §4.6: whether this row grants its role now. */
+  effective: boolean;
+  ineffective_reason: DelegateIneffectiveReason | null;
+};
+
+export type DelegateIneffectiveReason = 'INACTIVE' | 'NOT_ACTIVE_PARTICIPANT' | 'CONSENT_UNCONFIRMED';
+
+/** R14-B stage 9: GET /productions/{id}/delegates/me - the caller's own delegate rows. */
+export type MyProductionDelegateRole = {
+  id: string;
+  production_id: string;
+  role: string;
+  status: string;
+  effective: boolean;
+  ineffective_reason: DelegateIneffectiveReason | null;
+};
+
+/**
+ * StageArt メール招待によるProductionParticipant追加機能: never carries
+ * the raw token or its hash (ParticipantInvitationResult.php's own
+ * docblock) - only enough to render the 招待一覧 row (email/role/status/
+ * expiry) and drive resend/cancel.
+ */
+export type ParticipantInvitation = {
+  id: string;
+  production_id: string;
+  email: string;
+  name: string;
+  invited_by_person_id: string;
+  participant_type: string;
+  remarks: string | null;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'CONSUMED';
+  created_at: string;
+  expires_at: string;
+  consumed_at: string | null;
+  is_expired: boolean;
+};
+
+/**
+ * R14-B §5.1: the state the Backend derives for display (stored status plus
+ * expiry / Production closed / inviter revoked). Shown as is - the client
+ * never derives it again.
+ */
+export type ParticipantInvitationEffectiveStatus =
+  | 'PENDING'
+  | 'EXPIRED'
+  | 'PRODUCTION_CLOSED'
+  | 'INVITER_REVOKED'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'CONSUMED';
+
+/** R14B-4R (§7.1): the 30-day per-address send count; null when a key version in the window is not configured. */
+export type InvitationSendLimit = {
+  sent_in_30_days: number;
+  remaining_in_30_days: number;
+  available_at: string | null;
+};
+
+/** GET /productions/{id}/participant-invitations (managers): one invitation with the §7.1 fields. */
+export type ManagedParticipantInvitation = ParticipantInvitation & {
+  effective_status: ParticipantInvitationEffectiveStatus;
+  responded_at: string | null;
+  close_reason: 'MANAGER' | 'PRODUCTION_CLOSED' | 'INVITER_REVOKED' | null;
+  closed_at: string | null;
+  resend_count: number;
+  resend_remaining: number;
+  send_status: 'PENDING' | 'SENT' | 'FAILED' | 'UNKNOWN' | null;
+  last_sent_at: string | null;
+  send_limit: InvitationSendLimit | null;
+  reinvite_available_at: string | null;
+};
+
+/**
+ * R14-B §7.1 (stage 4): POST /productions/{id}/participant-invitations always
+ * invites (no Person lookup, no direct add): a new invitation, or a resend
+ * of a PENDING one to the same address and type.
+ */
+export type CreateParticipantInvitationResult = {
+  outcome: 'INVITATION_SENT' | 'INVITATION_RESENT';
+  invitation: ParticipantInvitation;
+};
+
+/**
+ * R14-B §7.2 (D7): GET /me/participant-invitations - invitations to the
+ * caller's verified addresses only. No address, invited name or remarks.
+ */
+export type MyParticipantInvitation = {
+  id: string;
+  production_id: string;
+  production_name: string;
+  organization_name: string | null;
+  participant_type: string;
+  invited_by_display_name: string;
+  expires_at: string;
+  effective_status: ParticipantInvitationEffectiveStatus;
+  already_participant: boolean;
+  can_accept: boolean;
+  can_reject: boolean;
+  unavailable_reason: 'PRODUCTION_CLOSED' | 'INVITER_REVOKED' | null;
+};
+
+/** R14-B §7.2: POST /participant-invitations/{id}/accept. */
+export type AcceptParticipantInvitationResult = {
+  participant_id: string;
+  production_id: string;
+  status: 'ACTIVE';
+};
+
+/** R14-B §7.2: POST /participant-invitations/{id}/reject. */
+export type RejectParticipantInvitationResult = {
+  id: string;
+  status: 'REJECTED';
+  close_reason: string | null;
 };
 
 export type TimetableItem = {
@@ -257,6 +774,30 @@ export type NotificationFact = {
   is_read: boolean;
 };
 
+/**
+ * Notification基盤実装 phase: the new personal, per-recipient Notification
+ * Fact (Rehearsal Cancel/Reminder today) - deliberately a different,
+ * simpler shape than `NotificationFact` (that one is Timetable-specific
+ * with no generic `message` field; this one already carries its own
+ * ready-to-display text server-side via RehearsalNotificationMessageBuilder,
+ * so no client-side title-by-type lookup is needed).
+ */
+export type MyNotification = {
+  id: string;
+  type: string;
+  message: string;
+  production_id: string | null;
+  /** StageArt ホームお知らせ・稽古出欠通知 instruction: the specific
+   * Rehearsal this notification is about (e.g. "出欠を回答してください"),
+   * so the client can navigate straight to it without parsing `message`
+   * - a Production can have several Rehearsals, so `production_id` alone
+   * is never enough. `null` for any notification not about one
+   * particular Rehearsal (e.g. `timetable_version_published`). */
+  rehearsal_id: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
 export type Rehearsal = {
   id: string;
   production_id: string;
@@ -266,6 +807,41 @@ export type Rehearsal = {
   end_date_time: string | null;
   timezone: string | null;
   location: string | null;
+  status: string;
+  /** StageArt 予定・活動一般化調査: REHEARSAL/PRACTICE/SELF_PRACTICE/
+   * WORKSHOP/MEETING/DISCUSSION/EVENT/OTHER - always present (defaults
+   * to REHEARSAL on the Backend for every existing/legacy row). */
+  activity_type: string;
+  /** Phase 7 (Rehearsal仕様整合): "回答期限" - governs SCHEDULE_ADJUSTMENT
+   * (予定) phase self-response specifically; null means no deadline. */
+  response_deadline: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Phase 2 Performance基盤 (StageArt Phase 2：Performance（公演回）基盤):
+ * one concrete date/time occurrence of a Production ("公演回"). No
+ * `venue`/`timezone` field of its own - venue is always the parent
+ * Production's own `venue_name` (§13), and `start_time`/`end_time` are
+ * plain "HH:mm:ss" wall-clock strings sharing `performance_date`, not
+ * full date-times (Backend's Performance Entity deliberately mirrors
+ * Production's own DATE-only `schedule_start_date` convention rather
+ * than Rehearsal's per-row timezone column - see
+ * `plugin/src/Domain/Performance/Performance.php`'s own docblock).
+ * `status` is one of PUBLISHED/SOLD_OUT/FINISHED/CANCELLED.
+ */
+export type Performance = {
+  id: string;
+  production_id: string;
+  performance_date: string;
+  start_time: string;
+  end_time: string | null;
+  capacity: number;
+  remarks: string | null;
+  symbol: string | null;
+  symbol_description?: string | null;
+  end_time_customized?: boolean;
   status: string;
   created_at: string;
   updated_at: string;
@@ -288,6 +864,15 @@ export type RehearsalAttendance = {
   person_id: string;
   phase: string;
   status: string;
+  /** Phase 5 §3: the member's own note on their response. Only ever set
+   * via their own respond call (respondScheduleAdjustment()/
+   * respondAttendanceConfirmation()) - a Manager's actual-status
+   * correction never touches it. */
+  remarks: string | null;
+  /** PR #7 R9: the Manager's recorded result (ATTENDED/LATE/EARLY_LEFT/
+   * ABSENT), kept apart from `status` (the member's own answer); null
+   * until recorded. Optional only because older responses lack it. */
+  actual_status?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -295,6 +880,25 @@ export type RehearsalAttendance = {
 export type PushPreference = {
   enabled: boolean;
   updated_at: string | null;
+};
+
+/**
+ * GET /me/notification-email (通知用Email確認・変更機能). `source`
+ * distinguishes a saved NotificationEmail from a resolver fallback so
+ * the client never implies a fallback (EmailCredential/WordPress user
+ * email) is a saved notification destination - see
+ * PersonEmailResolution.php's own docblock. `pending_email` is only
+ * ever set while a requested change is awaiting verification - the
+ * actual delivery destination stays `current_email` until then.
+ */
+export type NotificationEmailSettings = {
+  current_email: string | null;
+  source: 'NOTIFICATION_EMAIL' | 'EMAIL_CREDENTIAL' | 'WORDPRESS_USER' | 'NONE';
+  pending_email: string | null;
+};
+
+export type RequestNotificationEmailChangeResult = {
+  status: 'PENDING_VERIFICATION' | 'ALREADY_CURRENT';
 };
 
 /**
@@ -334,6 +938,8 @@ export type UpcomingRehearsal = {
   end_date_time: string | null;
   location: string | null;
   attendance_status: string;
+  /** StageArt 予定・活動一般化調査: see `Rehearsal.activity_type` above. */
+  activity_type: string;
 };
 
 /**
@@ -453,4 +1059,92 @@ export type MyFavorite = {
   target_slug: string | null;
   organization_slug: string | null;
   favorited_at: string;
+};
+
+/** アンケート機能: `type` is one of SINGLE_CHOICE/MULTIPLE_CHOICE/RATING_5/
+ * FREE_TEXT/YES_NO. `choices` only has entries for the two choice-based
+ * types. */
+export type QuestionChoice = {
+  id: string;
+  label: string;
+  display_order: number;
+};
+
+export type Question = {
+  id: string;
+  questionnaire_id: string;
+  text: string;
+  type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'RATING_5' | 'FREE_TEXT' | 'YES_NO';
+  required: boolean;
+  display_order: number;
+  choices: QuestionChoice[];
+  created_at: string;
+  updated_at: string;
+};
+
+/** GET/POST/PUT /productions/{id}/questionnaire - `status` is one of
+ * DRAFT/PUBLISHED/CLOSED. `public_url` is the single, anonymous, common
+ * URL every respondent uses (Email/QR/this screen all point to the exact
+ * same string - never a per-recipient link). */
+export type Questionnaire = {
+  id: string;
+  production_id: string;
+  title: string;
+  description: string | null;
+  status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  response_end_at: string | null;
+  created_at: string;
+  updated_at: string;
+  public_url: string;
+  questions: Question[];
+};
+
+/** GET /questionnaires/by-slug/{slug} - the public, unauthenticated
+ * shape. Deliberately carries nothing that could identify who is
+ * answering, and nothing about the Production beyond its display name. */
+export type PublicQuestionnaire = {
+  production_name: string;
+  title: string;
+  description: string | null;
+  status: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  accepting_responses: boolean;
+  questions: {
+    id: string;
+    text: string;
+    type: Question['type'];
+    required: boolean;
+    display_order: number;
+    choices: { id: string; label: string }[];
+  }[];
+};
+
+/** POST /questionnaires/by-slug/{slug}/responses body shape - `value`
+ * shape depends on the answered Question's type (see QuestionnaireResponseUseCase
+ * on the Backend): SINGLE_CHOICE -> choice id string; MULTIPLE_CHOICE ->
+ * string[] of choice ids; RATING_5 -> 1-5 integer; FREE_TEXT -> string;
+ * YES_NO -> 'YES'|'NO'. */
+export type QuestionnaireAnswerInput = {
+  question_id: string;
+  value: string | number | string[];
+};
+
+/** GET /productions/{id}/questionnaire/results - one anonymous tally per
+ * Question; only the fields relevant to that Question's own type are
+ * non-null. */
+export type QuestionAggregateResult = {
+  question_id: string;
+  text: string;
+  type: Question['type'];
+  choice_counts: { choice_id: string; label: string; count: number }[] | null;
+  rating_counts: Record<string, number> | null;
+  rating_average: number | null;
+  yes_count: number | null;
+  no_count: number | null;
+  free_text_answers: string[] | null;
+};
+
+export type QuestionnaireResults = {
+  questionnaire_id: string;
+  total_responses: number;
+  questions: QuestionAggregateResult[];
 };

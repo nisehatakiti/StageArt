@@ -105,35 +105,48 @@ final class ModuleBoundaryDependencyTest extends TestCase
     }
 
     /**
-     * Scoped to `src/Core/` specifically (Contract + Adapter + Module
-     * primitives) - the literal Core boundary layer Phase 1-3 built, not
-     * every file outside the Rehearsal/Accounting directories. Core's
-     * own cross-Module aggregation UseCases (`Application\Dashboard`,
-     * `Application\Notification`'s feed-listing UseCases) are a
-     * separate, disclosed, NOT-yet-fixed coupling - see
-     * `docs/architecture/WordPressPluginModuleBoundary.md`'s Known
-     * Remaining Coupling section for why this test does not (yet) cover
-     * them too.
+     * Scoped to `src/Core/` (Contract + Adapter + Module primitives -
+     * the literal Core boundary layer Phase 1-3 built) plus
+     * `Application/Dashboard` and `Application/Notification` - Core's
+     * own cross-Module aggregation UseCases
+     * (`GetMyDashboardUseCase`/`ListNotificationsForProductionUseCase`/
+     * `MarkNotificationReadUseCase`). The latter two directories were
+     * added in Phase 4 §1, which closed the one genuine violation found
+     * there (`GetMyDashboardUseCase`'s direct
+     * `RehearsalRepositoryInterface`/`RehearsalAttendanceRepositoryInterface`
+     * dependency, inverted via `UpcomingRehearsalProviderInterface` -
+     * see `docs/architecture/WordPressPluginModuleBoundary.md` §14/§15).
+     * Not scanning all of `src/Application/` - other Application
+     * namespaces are each owned by exactly one Module already and are
+     * covered by `test_rehearsal_module_never_imports_accounting()`/
+     * `test_accounting_module_never_imports_rehearsal()` instead; this
+     * method is specifically for Core's own cross-cutting UseCases.
      */
     public function test_core_never_imports_rehearsal_or_accounting_domain(): void
     {
         $srcRoot = dirname(__DIR__, 2) . '/src';
-        $coreDir = $srcRoot . '/Core';
+        $directories = [
+            $srcRoot . '/Core',
+            $srcRoot . '/Application/Dashboard',
+            $srcRoot . '/Application/Notification',
+        ];
         $violations = [];
 
         $forbidden = array_merge(self::REHEARSAL_NAMESPACE_PREFIXES, self::ACCOUNTING_NAMESPACE_PREFIXES);
 
-        foreach ($this->phpFilesRecursive($coreDir) as $file) {
-            $contents = file_get_contents($file);
+        foreach ($directories as $dir) {
+            foreach ($this->phpFilesRecursive($dir) as $file) {
+                $contents = file_get_contents($file);
 
-            if (! preg_match_all('/^use\s+([^\s;]+);/m', $contents, $matches)) {
-                continue;
-            }
+                if (! preg_match_all('/^use\s+([^\s;]+);/m', $contents, $matches)) {
+                    continue;
+                }
 
-            foreach ($matches[1] as $import) {
-                foreach ($forbidden as $prefix) {
-                    if (str_starts_with($import, $prefix)) {
-                        $violations[] = basename($file) . ' imports ' . $import;
+                foreach ($matches[1] as $import) {
+                    foreach ($forbidden as $prefix) {
+                        if (str_starts_with($import, $prefix)) {
+                            $violations[] = basename($file) . ' imports ' . $import;
+                        }
                     }
                 }
             }
@@ -142,7 +155,7 @@ final class ModuleBoundaryDependencyTest extends TestCase
         $this->assertSame(
             [],
             $violations,
-            "src/Core must not import Rehearsal/Accounting Domain classes:\n" . implode("\n", $violations)
+            "src/Core, Application/Dashboard, and Application/Notification must not import Rehearsal/Accounting Domain classes:\n" . implode("\n", $violations)
         );
     }
 

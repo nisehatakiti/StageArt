@@ -7,18 +7,22 @@ namespace StageArt\Application\Authentication;
 use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\UserAccount\EmailAlreadyInUseException;
 use StageArt\Domain\Authentication\EmailVerificationToken;
 use StageArt\Domain\Authentication\EmailVerificationTokenRepositoryInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
+use StageArt\Domain\OrganizationInvitation\OrganizationInvitationRepositoryInterface;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\UserAccount\EmailCredential;
 use StageArt\Domain\UserAccount\EmailCredentialRepositoryInterface;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
+use Throwable;
 
 /**
  * The Email+Password mirror of AuthenticateWithGoogleUseCase's new-user
@@ -49,6 +53,29 @@ use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
  * in 3 places, PasswordResetToken, EmailVerificationToken), so a new
  * shared abstraction here would be inconsistent with the existing
  * design, not a fix for genuine duplication.
+ *
+ * StageArt 招待登録のメール確認省略ラウンド (OrganizationInvitation only since
+ * R14-B): when `$command->invitationToken` is the token of a usable
+ * OrganizationInvitation, that invitation's own `email()` is used for
+ * everything below - the duplicate-email check, WordPress user
+ * provisioning and the EmailCredential itself, which is marked verified
+ * (the link proves the address is reachable) with no confirmation mail -
+ * and the invitation is resolved after the registration
+ * (ResolveOrganizationInvitationUseCase, failures logged with ids only).
+ * The organization invitation handling is unchanged by R14-B (D1).
+ *
+ * PR #7 R14-B stage 4 (design doc §7.1, §9.2, U5 C案): a Production
+ * (participant) invitation is never looked up by token and never resolved
+ * here - registering, verifying an address or signing in with Google does
+ * not make anyone a participant; the invitee accepts explicitly from
+ * `GET /me/participant-invitations`. A token that is not a usable
+ * OrganizationInvitation's (an old participant-invitation link, an
+ * expired or unknown token) is ignored: the registration is an ordinary
+ * one, with exactly the result and response of a registration without a
+ * token (the address is not marked verified and the usual confirmation
+ * mail is sent) - nothing about any invitation is revealed. Before R14-B
+ * such a token failed the registration; the organization invitation's
+ * own valid-token path is the same as before.
  */
 final class RegisterWithEmailUseCase
 {
@@ -65,6 +92,8 @@ final class RegisterWithEmailUseCase
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
     private AuthMailerInterface $mailer;
+    private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
+    private OrganizationInvitationRepositoryInterface $organizationInvitations;
 
     public function __construct(
         EmailCredentialRepositoryInterface $emailCredentials,
@@ -75,7 +104,9 @@ final class RegisterWithEmailUseCase
         AccessTokenIssuerInterface $accessTokenIssuer,
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
         TransactionManagerInterface $transactions,
-        AuthMailerInterface $mailer
+        AuthMailerInterface $mailer,
+        ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation,
+        OrganizationInvitationRepositoryInterface $organizationInvitations
     ) {
         $this->emailCredentials = $emailCredentials;
         $this->people = $people;
@@ -86,6 +117,8 @@ final class RegisterWithEmailUseCase
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
         $this->mailer = $mailer;
+        $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
+        $this->organizationInvitations = $organizationInvitations;
     }
 
     public function execute(RegisterWithEmailCommand $command): AuthenticationResult
@@ -96,19 +129,38 @@ final class RegisterWithEmailUseCase
             );
         }
 
+        $organizationInvitation = null;
+
+        if ($command->invitationToken !== null) {
+            // R14-B stage 4: only an OrganizationInvitation token is looked up
+            // (a participant invitation is never found by token, U5 C案). A
+            // token that is not a usable OrganizationInvitation's is ignored
+            // - the registration is an ordinary one (see the class docblock).
+            $candidate = $this->organizationInvitations->findByTokenHash(hash('sha256', $command->invitationToken));
+
+            if ($candidate !== null && $candidate->isUsable()) {
+                $organizationInvitation = $candidate;
+            }
+        }
+
+        $registrationEmail = $organizationInvitation !== null ? $organizationInvitation->email() : $command->email;
+        $hasTrustedInvitation = $organizationInvitation !== null;
+
         // Captured by reference from inside the transaction closure below
         // so the mailer can be called AFTER the transaction commits, not
         // from within it - sending mail is external I/O, and must not
         // run inside a DB transaction (nor fire at all if the
-        // transaction ultimately rolls back).
+        // transaction ultimately rolls back). Stays null for the
+        // invitation-sourced path, which never creates a verification
+        // token at all - see the guarded call below.
         $emailVerificationTokenValue = null;
 
-        $result = $this->transactions->run(function () use ($command, &$emailVerificationTokenValue): AuthenticationResult {
-            if ($this->emailCredentials->findByEmail($command->email)) {
+        $result = $this->transactions->run(function () use ($command, $hasTrustedInvitation, $registrationEmail, &$emailVerificationTokenValue): AuthenticationResult {
+            if ($this->emailCredentials->findByEmail($registrationEmail)) {
                 throw new EmailAlreadyInUseException('This email address is already registered.');
             }
 
-            $wordPressUserId = $this->wordPressUserProvisioner->provision($command->email);
+            $wordPressUserId = $this->wordPressUserProvisioner->provision($registrationEmail);
 
             $person = Person::create($wordPressUserId);
             $this->people->save($person);
@@ -117,7 +169,12 @@ final class RegisterWithEmailUseCase
             $this->userAccounts->save($userAccount);
 
             $passwordHash = password_hash($command->password, PASSWORD_DEFAULT);
-            $credential = EmailCredential::create($userAccount->id(), $command->email, $passwordHash);
+            $credential = EmailCredential::create($userAccount->id(), $registrationEmail, $passwordHash);
+
+            if ($hasTrustedInvitation) {
+                $credential->markEmailVerified();
+            }
+
             $this->emailCredentials->save($credential);
 
             $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());
@@ -131,15 +188,17 @@ final class RegisterWithEmailUseCase
             );
             $this->refreshTokens->save($refreshToken);
 
-            $emailVerificationTokenValue = bin2hex(random_bytes(32));
-            $emailVerificationTokenHash = hash('sha256', $emailVerificationTokenValue);
+            if (! $hasTrustedInvitation) {
+                $emailVerificationTokenValue = bin2hex(random_bytes(32));
+                $emailVerificationTokenHash = hash('sha256', $emailVerificationTokenValue);
 
-            $emailVerificationToken = EmailVerificationToken::create(
-                $userAccount->id(),
-                $emailVerificationTokenHash,
-                (new DateTimeImmutable())->add(new DateInterval(self::EMAIL_VERIFICATION_TOKEN_LIFETIME))
-            );
-            $this->emailVerificationTokens->save($emailVerificationToken);
+                $emailVerificationToken = EmailVerificationToken::create(
+                    $userAccount->id(),
+                    $emailVerificationTokenHash,
+                    (new DateTimeImmutable())->add(new DateInterval(self::EMAIL_VERIFICATION_TOKEN_LIFETIME))
+                );
+                $this->emailVerificationTokens->save($emailVerificationToken);
+            }
 
             return new AuthenticationResult(
                 $accessToken->token,
@@ -151,7 +210,29 @@ final class RegisterWithEmailUseCase
             );
         });
 
-        $this->mailer->sendEmailVerificationEmail($command->email, (string) $emailVerificationTokenValue);
+        if ($emailVerificationTokenValue !== null) {
+            $this->mailer->sendEmailVerificationEmail($registrationEmail, $emailVerificationTokenValue);
+        }
+
+        // PR #7 R14-A (F6): organization invitations are resolved here only
+        // when the registration came through an organization invitation link
+        // - the token proves the registrant received the mail sent to that
+        // address. A self-registration's organization invitations are
+        // resolved when the address is verified (VerifyEmailUseCase).
+        // Participant invitations are never resolved (R14-B stage 4).
+        if (! $hasTrustedInvitation) {
+            return $result;
+        }
+
+        try {
+            $this->resolveOrganizationInvitation->execute(PersonId::fromString($result->personId), $registrationEmail);
+        } catch (Throwable $exception) {
+            error_log(sprintf(
+                '[StageArt OrganizationInvitation] resolution failed after email registration for person=%s: %s',
+                $result->personId,
+                $exception->getMessage()
+            ));
+        }
 
         return $result;
     }

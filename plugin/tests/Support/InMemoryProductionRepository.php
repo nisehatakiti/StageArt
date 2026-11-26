@@ -25,6 +25,48 @@ final class InMemoryProductionRepository implements ProductionRepositoryInterfac
         return $this->productions[$id->toString()] ?? null;
     }
 
+    /** @var array<int, array{0: string, 1: string}> every Production lock taken: [mode, ProductionId] */
+    public array $locks = [];
+
+    /**
+     * Runs right before a lock is granted - the moment a waiting request
+     * proceeds after the other one committed - so a test can play that
+     * other request's committed change there. Receives the lock mode.
+     *
+     * @var (callable(string): void)|null
+     */
+    public $beforeLockGranted = null;
+
+    /** When set, every lock fails with it (a lock wait timeout, a deadlock). */
+    public ?\Throwable $lockFailure = null;
+
+    public function findByIdForUpdate(ProductionId $id): ?Production
+    {
+        return $this->lock('FOR UPDATE', $id);
+    }
+
+    public function findByIdForShare(ProductionId $id): ?Production
+    {
+        return $this->lock('SHARE', $id);
+    }
+
+    private function lock(string $mode, ProductionId $id): ?Production
+    {
+        if ($this->lockFailure !== null) {
+            throw $this->lockFailure;
+        }
+
+        if ($this->beforeLockGranted !== null) {
+            $hook = $this->beforeLockGranted;
+            $this->beforeLockGranted = null;
+            $hook($mode);
+        }
+
+        $this->locks[] = [$mode, $id->toString()];
+
+        return $this->findById($id);
+    }
+
     public function findByIds(array $ids): array
     {
         $result = [];

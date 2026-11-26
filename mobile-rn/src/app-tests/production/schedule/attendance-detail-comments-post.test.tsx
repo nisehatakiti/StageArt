@@ -37,8 +37,9 @@ describe('Attendance detail: Rehearsal-level comments form', () => {
 
     renderRouter('src/app', { initialUrl: '/production/prod-1/schedule/attendance/rehearsal-1' });
 
-    await waitFor(() => expect(screen.getByTestId('comments-empty')).toBeVisible());
-    expect(screen.getByTestId('rehearsal-comment-input')).toBeVisible();
+    // 51b144c: no comments yet shows no empty-state message, only the input.
+    await waitFor(() => expect(screen.getByTestId('rehearsal-comment-input')).toBeVisible());
+    expect(screen.queryByTestId('comment-list')).toBeNull();
     expect(screen.getByTestId('rehearsal-comment-submit').props.accessibilityState?.disabled).toBe(true);
   });
 });

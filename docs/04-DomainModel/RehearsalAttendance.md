@@ -475,10 +475,32 @@ Personが実際にRehearsalへ参加した。
 
 Personが遅刻して参加した。
 
+### EARLY_LEFT
+
+Personが早退した（実際には参加したが、途中で退出した）。
+
+早退は実際に参加した実績として扱う。
+
 ### ABSENT
 
 Personが参加予定だったが、
 実際には参加しなかった。
+
+## 回答と実績の分離（2026-11-11、PR #7 R9）
+
+確定後（ATTENDANCE_CONFIRMATION）のRehearsalAttendanceは、
+次の2つを別々に保持する。
+
+- 本人の回答：Status（UNANSWERED／ATTENDING／NOT_ATTENDING）
+- 管理者の実績：Actual Status（ATTENDED／LATE／EARLY_LEFT／ABSENT、未記録はnull）
+
+管理者が実績を記録・修正しても、本人の回答と出欠備考は変わらない。
+実績の集計（稽古回数・出席・遅刻・早退・欠席）はActual Statusだけを使い、
+本人の回答は使わない。実績が未記録の対象者は欠席として数える。
+
+保存先はstageart_rehearsal_attendances.actual_status（スキーマ1.46.0）。
+1.46.0より前は実績をStatusに上書きしていた。当時の実績はATTENDINGの回答からしか記録できなかったため、
+移行では既存の実績をactual_statusへ移し、StatusをATTENDINGへ戻す（情報は失われない）。
 
 ---
 
@@ -498,18 +520,137 @@ ATTENDING
 NOT_ATTENDING
     └──→ ATTENDING
 
-実施：
+実施（PR #7 R9で変更）：
 
-ATTENDING
-    ├──→ ATTENDED
-    ├──→ LATE
-    └──→ ABSENT
+本人の回答（UNANSWERED／ATTENDING／NOT_ATTENDING）がどれであっても、
+Managerは実績（Actual Status）を記録できる。
 
-必要に応じて、
-ManagerによるStatus修正を許可する。
+UNANSWERED／ATTENDING／NOT_ATTENDING（回答）
+    + Actual Status
+        ├──→ ATTENDED
+        ├──→ LATE
+        ├──→ EARLY_LEFT
+        └──→ ABSENT
+
+記録済みの実績は、Managerが別の実績へ修正できる。
+回答（Status）は実績の記録によって変わらない。
+
+R8までは「ATTENDINGの回答からだけ実績を記録できる」としていたが、
+欠席と回答したが実際は来た人等を記録できないため、R9のユーザー指示で廃止した。
 
 Status Transitionの詳細ルールは、
 Rehearsal Domainで定義する。
+
+---
+
+# Rehearsal Status × Attendance Operation Policy
+
+RehearsalAttendanceへの書き込み操作は、
+以下の3種類に分類する。
+
+- Target追加
+- Attendance回答（予定確認段階のStatus変更）
+- Actual Status記録・修正（実施段階のStatus変更）
+
+Attendance閲覧は、
+Rehearsal Statusにかかわらず、
+常に可能とする。
+
+上記3種類の書き込み操作について、
+RehearsalのStatusに応じた可否を
+以下のPolicyとして定義する。
+
+これは、
+既存のAttendance Phase guard
+（SCHEDULE_ADJUSTMENT / ATTENDANCE_CONFIRMATION、
+どちらのPhaseのAttendanceかによってどのStatus値へ
+変更できるかを制御する既存ルール）
+を変更するものではない。
+
+RehearsalのStatusによる可否判定は、
+既存のPhase guardに加えて適用される、
+もう一段階の制御である。
+
+```text
+Rehearsal Status → Target追加 → Attendance回答 → Actual Status記録・修正 → 閲覧
+DRAFT            → 可          → 可              → 不可                    → 可
+SCHEDULED        → 可          → 可              → 不可                    → 可
+CONFIRMED        → 現行仕様を維持 → 可              → 不可                    → 可
+ACTIVE           → 不可        → 不可            → 可                      → 可
+COMPLETED        → 不可        → 不可            → 可（事後修正可）          → 可
+CANCELLED        → 不可        → 不可            → 不可                    → 可
+```
+
+## DRAFT / SCHEDULED
+
+稽古実施前であるため、
+Target追加とAttendance回答（予定確認）を許可する。
+
+Actual Statusは実際の稽古実績であるため、
+稽古開始前には記録できない。
+
+## CONFIRMED
+
+Attendance回答は引き続き許可する。
+
+Target追加については、
+Rehearsal.confirm()によってPhase2
+（ATTENDANCE_CONFIRMATION）のAttendanceが
+生成される構造であるため、
+CONFIRMED以降に新規Targetを追加する場合、
+どのPhaseのAttendanceを生成するかというDomain仕様に関わる。
+
+この判断は今回のPolicyの対象外とし、
+既存実装・既存仕様を維持する。
+
+## ACTIVE
+
+ACTIVEになった時点で、
+「誰が対象者か」および「事前の参加予定回答」は
+確定した情報として扱う。
+
+そのため、Target追加とAttendance回答（予定確認）は不可とする。
+
+一方、実際の参加結果（Actual Status）は
+ACTIVEの時点から記録できる。
+
+## COMPLETED
+
+Target追加とAttendance回答（予定確認）は不可とする。
+
+Actual Statusは、
+稽古終了後の実績確認・訂正のため、
+COMPLETED後も記録・修正を許可する。
+
+例えば、
+
+```text
+ATTENDED  → LATE
+LATE      → ATTENDED
+EARLY_LEFT → ATTENDED
+ABSENT    → ATTENDED
+```
+
+のような修正を許可する。
+
+COMPLETEDは、
+RehearsalAttendance全体を
+ロックする状態ではない。
+
+COMPLETED後に変更可能なのは、
+Actual Statusのみである。
+
+## CANCELLED
+
+CANCELLEDは、
+そのRehearsalが実施されなかった状態として扱う。
+
+そのため、
+Target追加・Attendance回答・Actual Status記録・修正の
+すべてを不可とする。
+
+既存のRehearsalAttendanceレコードは削除せず、
+履歴として閲覧可能なまま保持する。
 
 ---
 
@@ -757,6 +898,7 @@ RehearsalAttendanceが管理するもの：
 - 不参加予定
 - 実参加
 - 遅刻
+- 早退
 - 欠席
 
 RehearsalAttendanceが管理しないもの：

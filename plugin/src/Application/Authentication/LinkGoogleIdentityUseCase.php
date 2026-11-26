@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StageArt\Application\Authentication;
 
+use StageArt\Application\Notification\NotificationEmailSeeder;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Application\UserAccount\UserAccountResult;
 use StageArt\Domain\Person\Person;
@@ -32,19 +33,22 @@ final class LinkGoogleIdentityUseCase
     private UserAccountRepositoryInterface $userAccounts;
     private ExternalIdentityRepositoryInterface $externalIdentities;
     private TransactionManagerInterface $transactions;
+    private NotificationEmailSeeder $notificationEmailSeeder;
 
     public function __construct(
         GoogleIdTokenVerifierInterface $googleVerifier,
         PersonRepositoryInterface $people,
         UserAccountRepositoryInterface $userAccounts,
         ExternalIdentityRepositoryInterface $externalIdentities,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        NotificationEmailSeeder $notificationEmailSeeder
     ) {
         $this->googleVerifier = $googleVerifier;
         $this->people = $people;
         $this->userAccounts = $userAccounts;
         $this->externalIdentities = $externalIdentities;
         $this->transactions = $transactions;
+        $this->notificationEmailSeeder = $notificationEmailSeeder;
     }
 
     public function execute(LinkGoogleIdentityCommand $command): UserAccountResult
@@ -76,11 +80,23 @@ final class LinkGoogleIdentityUseCase
                 }
 
                 // Already linked to the caller's own UserAccount - idempotent no-op.
+                // Still a successful "Google認証に成功した際" per this
+                // phase's instruction, so NotificationEmail is still
+                // seeded (if absent) below.
+                $this->notificationEmailSeeder->seedFromGoogle($person->id(), $claims->email, $claims->emailVerified);
+
                 return UserAccountResult::fromDomain($userAccount);
             }
 
             $identity = ExternalIdentity::create($userAccount->id(), 'google', $claims->sub);
             $this->externalIdentities->save($identity);
+
+            // Google認証ユーザーのEmail通知先対応 phase: seeds
+            // NotificationEmail only when absent (see
+            // NotificationEmailSeeder's own docblock) - applied here too
+            // since linking Google to an existing legacy account is
+            // still a successful Google authentication.
+            $this->notificationEmailSeeder->seedFromGoogle($person->id(), $claims->email, $claims->emailVerified);
 
             return UserAccountResult::fromDomain($userAccount);
         });

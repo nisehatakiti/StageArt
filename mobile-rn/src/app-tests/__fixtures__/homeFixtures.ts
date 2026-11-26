@@ -1,4 +1,4 @@
-import type { MyDashboard, Organization, Production, Project } from '@/types/api';
+import type { MyDashboard, Organization, ParticipatingProduction, Production, Project } from '@/types/api';
 
 export const orgOne: Organization = {
   id: 'org-1',
@@ -8,6 +8,8 @@ export const orgOne: Organization = {
   status: 'ACTIVE',
   slug: null,
   published_at: null,
+  accounting_enabled: false,
+  logo_url: null,
   created_at: '2026-01-01T00:00:00+09:00',
   updated_at: '2026-01-01T00:00:00+09:00',
   current_person_role: 'OWNER',
@@ -51,21 +53,43 @@ export const productionOne: Production = {
   updated_at: '',
   is_primary_manager: true,
   delegate_role: null,
+  delegate_roles: [],
+  description: null,
+  description_published_at: null,
+  flyer_url: null,
+  flyer_published_at: null,
+  venue_name: null,
+  venue_published_at: null,
+  schedule_start_date: null,
+  schedule_end_date: null,
+  schedule_published_at: null,
+  script_credit: null,
+  direction_credit: null,
+  script_direction_published_at: null,
+  member_info_published_at: null,
+  capacity: null,
+  performance_common_remarks: null,
+  performance_duration_minutes: null,
 };
 
 export const productionTwo: Production = {
+  ...productionOne,
   id: 'prod-2',
   project_id: 'proj-2',
   name: '△△公演',
-  title_heading: null,
   status: 'PLANNING',
-  slug: null,
-  published_at: null,
   primary_manager_person_id: 'person-2',
-  created_at: '',
-  updated_at: '',
   is_primary_manager: false,
   delegate_role: 'REHEARSAL_MANAGER',
+  delegate_roles: ['REHEARSAL_MANAGER'],
+};
+
+export const participatingProductionOne: ParticipatingProduction = {
+  participant_id: 'participant-1',
+  production_id: 'prod-1',
+  production_name: '踊れチュパカブラ',
+  production_slug: null,
+  participant_type: 'CAST',
 };
 
 export const myDashboardEmpty: MyDashboard = {
@@ -94,7 +118,20 @@ const DEFAULT_ROUTES: { test: (url: string) => boolean; status: number; body: un
   {
     test: (url) => url.endsWith('/me'),
     status: 200,
-    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '秦', given_name: '良輔' },
+    body: { id: 'person-1', word_press_user_id: 1, email_verified: true, family_name: '舞台', given_name: '芸術' },
+  },
+  // StageArt Home仕様追加 (2026-09-05): Home now unconditionally calls
+  // useMyFavorites() to decide whether to show its お気に入り tile at
+  // all - every renderRouter()-mounted test that reaches Home needs a
+  // working response for this, same reasoning as /auth/refresh and /me
+  // above. Empty by default (no favorites) so a test that doesn't care
+  // about this tile sees the same "nothing to show" behavior a real
+  // empty account would; a test specifically about the favorites tile
+  // overrides this with its own /me/favorites route.
+  {
+    test: (url) => url.endsWith('/me/favorites'),
+    status: 200,
+    body: [],
   },
 ];
 

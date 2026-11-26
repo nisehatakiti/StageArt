@@ -110,7 +110,7 @@ around Core's existing Application/Domain services).
 |---|---|---|
 | `IdentityContract` | `resolveCurrentPersonId(int $wordPressUserId): ?PersonId` | `CoreIdentityAdapter` |
 | `OrganizationContextContract` | `organizationExists(OrganizationId): bool` | `CoreOrganizationContextAdapter` |
-| `ProductionContextContract` | `getProduction(ProductionId): ?ProductionSummary`, `getProductionOrganizationId(ProductionId): ?OrganizationId` | `CoreProductionContextAdapter` |
+| `ProductionContextContract` | `getProduction(ProductionId): ?ProductionSummary`, `getProductions(ProductionId[]): array<string, ProductionSummary>` (Phase 4, bulk/N+1-avoidance form), `getProductionOrganizationId(ProductionId): ?OrganizationId` | `CoreProductionContextAdapter` |
 | `MembershipContract` | `activeProductionMemberPersonIds(ProductionId): PersonId[]`, `isProductionMember(PersonId, ProductionId): bool` | `CoreMembershipAdapter` |
 | `AuthorizationContract` | `resolveCurrentPersonId(int): ?PersonId`, `canForProduction(PersonId, ProductionId, string $capability): bool`, `canForOrganization(PersonId, OrganizationId, string $capability): bool` (Phase 3) | `CoreAuthorizationAdapter` |
 | `NotificationContract` | `notify(PersonId, string $type, array $payload): void` | `CoreNotificationAdapter` (new this phase - §14) |
@@ -126,6 +126,20 @@ Organization at all. Instead, `getProductionOrganizationId()` is a
 **separate** method, called only by the Accounting Module (which
 genuinely needs it, to validate an Account belongs to the Production's
 own Organization) - Rehearsal never calls it.
+
+**Phase 4 §1 adds a second, reverse-direction interface family**: not a
+`StageArt\Core\Contract\*` (Module depends on Core), but a Core-owned
+*Port* that a Module implements - `Application\Dashboard\
+UpcomingRehearsalProviderInterface` is the first and, so far, only one.
+Core defines it because Core is the consumer (its own
+`GetMyDashboardUseCase` needs "upcoming rehearsals" data it must not
+resolve via `RehearsalRepositoryInterface` directly); the Rehearsal
+Module supplies the one real implementation
+(`RehearsalUpcomingRehearsalProvider`), exposed through
+`RehearsalModuleBootstrap::upcomingRehearsalProvider()`. See
+`docs/architecture/WordPressPluginModuleBoundary.md` §15 for the full
+design rationale and what was deliberately not built (a multi-producer
+registry).
 
 `isProductionMember()` is broader than
 `activeProductionMemberPersonIds()`: true for the Production's

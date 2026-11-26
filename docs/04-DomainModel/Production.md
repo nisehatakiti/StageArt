@@ -463,17 +463,12 @@ Accounting Domainで定義する。
 Ticket Revenueは、
 Ticketの販売・利用に伴う収益を表す。
 
-CheckInCompletedを契機として、
-会計側へ収益情報を連携できる。
+通常の当日精算ではCheckInCompletedを会計連携の契機として利用できるが、売上仕訳は実際の代金受領を示すPayment Factに基づく。スタッフ預りTicketは受付担当者が現金を受領して支払済みを確定した時点で計上し、後続のCheckInCompletedで再計上しない。
 
 Production Domain自身が
 Journal Entryを直接生成することはしない。
 
-Production Domainでは、
-必要なBusiness Eventを発生させる。
-
-Accounting Domainが、
-そのEventを受けてJournal Entryを生成する。
+Production Domainでは、必要なBusiness Eventを発生させる。Ticket Revenueの入金・売上仕訳は、実際の代金受領を示すPayment Factに基づいてAccounting Domainが生成する。CheckInCompletedは通常の当日精算フローで関連付けられる来場受付Eventであり、単独では仕訳生成の根拠としない。
 
 ---
 
@@ -1034,8 +1029,7 @@ Participant Typeを自動的に変更しない。
 ProductionのTicketは、
 Ticket Domainで管理する。
 
-CheckInCompletedを契機として、
-Ticket RevenueをAccountingへ連携できる。
+通常の当日精算ではCheckInCompletedをTicket RevenueのAccounting連携に利用できるが、仕訳はPayment Factに基づいて生成する。スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで二重計上しない。
 
 Production Domain自身は、
 Journal Entryを直接生成しない。
@@ -1095,7 +1089,7 @@ RehearsalAttendanceを削除しない。
 - Production単位の予算はBudgetで管理する。
 - Production単位の実績はActualで管理する。
 - Organization全体の会計はAccountingで管理する。
-- CheckInCompletedをTicket Revenue連携のBusiness Eventとして扱う。
+- Payment FactをTicket Revenue計上の根拠とする。通常の当日精算ではCheckInCompletedを連携イベントとして利用できるが、スタッフ預りTicketは受付担当者による現金受領時に計上し、後続のCheckInCompletedで再計上しない。
 - Production DomainはJournal Entryを直接生成しない。
 - Accounting Domainが会計仕訳を生成する。
 - Rehearsalは稽古予定から実施完了までを一つのEntityとして管理する。

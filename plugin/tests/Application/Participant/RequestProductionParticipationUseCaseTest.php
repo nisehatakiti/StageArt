@@ -10,6 +10,9 @@ use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
 use StageArt\Application\Participant\ListPendingParticipantRequestsQuery;
 use StageArt\Application\Participant\ListPendingParticipantRequestsUseCase;
 use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
+use StageArt\Application\Participant\ParticipantEnrollmentService;
+use StageArt\Application\Participant\ParticipantEventRecorder;
 use StageArt\Application\Participant\RejectParticipantRequestCommand;
 use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationCommand;
@@ -31,7 +34,9 @@ use StageArt\Domain\Project\Project;
 use StageArt\Tests\Support\InMemoryJoinKeyRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
+use StageArt\Tests\Support\InMemoryParticipantEventRepository;
 use StageArt\Tests\Support\InMemoryParticipantRepository;
+use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryPersonRepository;
 use StageArt\Tests\Support\InMemoryProductionDelegateRepository;
 use StageArt\Tests\Support\InMemoryProductionRepository;
@@ -46,6 +51,8 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
     private ProductionAuthorizationService $authorization;
     private Production $production;
     private Person $primaryManager;
+    private InMemoryProductionDelegateRepository $delegates;
+    private ParticipantEventRecorder $events;
 
     protected function setUp(): void
     {
@@ -54,11 +61,13 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $this->joinKeys = new InMemoryJoinKeyRepository();
         $this->people = new InMemoryPersonRepository();
         $this->memberships = new InMemoryMembershipRepository();
+        $this->delegates = new InMemoryProductionDelegateRepository();
+        $this->events = new ParticipantEventRecorder(new InMemoryParticipantEventRepository());
 
         $organizationAuthorization = new OrganizationAuthorizationService($this->people, $this->memberships);
         $this->authorization = new ProductionAuthorizationService(
             $organizationAuthorization,
-            new InMemoryProductionDelegateRepository(),
+            $this->delegates,
             $this->participants
         );
 
@@ -78,6 +87,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
             null,
             new ProductionSlug('autumn-play')
         );
+        $this->production->activate();
         $this->production->publish();
         $this->productions->save($this->production);
     }
@@ -87,7 +97,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $requester = Person::create(2);
         $this->people->save($requester);
 
-        $useCase = new RequestProductionParticipationUseCase($this->productions, $this->participants, $this->joinKeys, $this->authorization);
+        $useCase = $this->requestUseCase();
 
         $result = $useCase->execute(new RequestProductionParticipationCommand(2, $this->production->id()->toString(), null, ParticipantType::CAST));
 
@@ -107,7 +117,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $requester = Person::create(2);
         $this->people->save($requester);
 
-        $useCase = new RequestProductionParticipationUseCase($this->productions, $this->participants, $this->joinKeys, $this->authorization);
+        $useCase = $this->requestUseCase();
 
         $this->expectException(ProductionNotFoundException::class);
 
@@ -119,7 +129,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $requester = Person::create(2);
         $this->people->save($requester);
 
-        $useCase = new RequestProductionParticipationUseCase($this->productions, $this->participants, $this->joinKeys, $this->authorization);
+        $useCase = $this->requestUseCase();
         $useCase->execute(new RequestProductionParticipationCommand(2, $this->production->id()->toString(), null, ParticipantType::CAST));
 
         $this->expectException(ParticipantAlreadyExistsException::class);
@@ -134,7 +144,7 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $rejectee = Person::create(3);
         $this->people->save($rejectee);
 
-        $requestUseCase = new RequestProductionParticipationUseCase($this->productions, $this->participants, $this->joinKeys, $this->authorization);
+        $requestUseCase = $this->requestUseCase();
         $toApprove = $requestUseCase->execute(new RequestProductionParticipationCommand(2, $this->production->id()->toString(), null, ParticipantType::CAST));
         $toReject = $requestUseCase->execute(new RequestProductionParticipationCommand(3, $this->production->id()->toString(), null, ParticipantType::STAFF));
 
@@ -142,11 +152,27 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $pending = $listUseCase->execute(new ListPendingParticipantRequestsQuery(1, $this->production->id()->toString()));
         $this->assertCount(2, $pending);
 
-        $approveUseCase = new ApproveParticipantRequestUseCase($this->participants, $this->productions, $this->people, $this->authorization);
+        $approveUseCase = new ApproveParticipantRequestUseCase(
+            $this->participants,
+            $this->productions,
+            $this->people,
+            $this->authorization,
+            new ParticipantEnrollmentService($this->participants),
+            new ParticipantDelegateRoleReleaser($this->delegates, $this->events),
+            $this->events,
+            new InMemoryTransactionManager()
+        );
         $approved = $approveUseCase->execute(new ApproveParticipantRequestCommand(1, $toApprove->id));
         $this->assertSame(ParticipantStatus::ACTIVE, $approved->status);
 
-        $rejectUseCase = new RejectParticipantRequestUseCase($this->participants, $this->productions, $this->people, $this->authorization);
+        $rejectUseCase = new RejectParticipantRequestUseCase(
+            $this->participants,
+            $this->productions,
+            $this->people,
+            $this->authorization,
+            $this->events,
+            new InMemoryTransactionManager()
+        );
         $rejected = $rejectUseCase->execute(new RejectParticipantRequestCommand(1, $toReject->id));
         $this->assertSame(ParticipantStatus::REJECTED, $rejected->status);
 
@@ -162,9 +188,26 @@ final class RequestProductionParticipationUseCaseTest extends TestCase
         $joinKey = JoinKey::issueForProduction($this->production->id()->toString(), $this->primaryManager->id());
         $this->joinKeys->save($joinKey);
 
-        $useCase = new RequestProductionParticipationUseCase($this->productions, $this->participants, $this->joinKeys, $this->authorization);
+        $useCase = $this->requestUseCase();
         $useCase->execute(new RequestProductionParticipationCommand(2, null, $joinKey->code(), ParticipantType::CAST));
 
         $this->assertSame(1, $this->joinKeys->findByCode($joinKey->code())->useCount());
+    }
+
+    /**
+     * R14-B stage 3: the UseCase now takes the enrollment service, the audit
+     * recorder and the transaction manager (constructor change only; the
+     * expectations of the tests above are unchanged).
+     */
+    private function requestUseCase(): RequestProductionParticipationUseCase
+    {
+        return new RequestProductionParticipationUseCase(
+            $this->productions,
+            $this->joinKeys,
+            $this->authorization,
+            new ParticipantEnrollmentService($this->participants),
+            $this->events,
+            new InMemoryTransactionManager()
+        );
     }
 }

@@ -27,9 +27,13 @@ const comments: ScheduleComment[] = [
 ];
 
 describe('ScheduleCommentList (§21-23, §22 no Role filtering)', () => {
-  it('shows an Empty State when there are no comments', async () => {
+  // 51b144c (2026-10-06, "hide empty rehearsal comment state"): an empty
+  // list renders nothing - no empty-state message, no list.
+  it('renders nothing when there are no comments', async () => {
     await render(<ScheduleCommentList isLoading={false} isError={false} error={null} comments={[]} />);
-    expect(screen.getByTestId('comments-empty')).toBeVisible();
+    expect(screen.queryByTestId('comments-empty')).toBeNull();
+    expect(screen.queryByTestId('comment-list')).toBeNull();
+    expect(screen.toJSON()).toBeNull();
   });
 
   it('shows an Error State distinct from Empty', async () => {
@@ -43,11 +47,23 @@ describe('ScheduleCommentList (§21-23, §22 no Role filtering)', () => {
     expect(screen.getByTestId('comments-error')).toHaveTextContent('サーバーへ接続できませんでした。通信環境を確認してください。');
   });
 
-  it('shows every comment unfiltered, with body and author', async () => {
-    await render(<ScheduleCommentList isLoading={false} isError={false} error={null} comments={comments} />);
+  // 0f4b3e0 (2026-10-06, "show comment author names instead of person
+  // ids"): the author is shown by name (authorNameByPersonId), never by
+  // Person id; an author without a known name is "名前未設定".
+  it('shows every comment unfiltered, with body and author name', async () => {
+    await render(
+      <ScheduleCommentList
+        isLoading={false}
+        isError={false}
+        error={null}
+        comments={comments}
+        authorNameByPersonId={new Map([['person-1', '山田 太郎']])}
+      />
+    );
 
-    expect(screen.getByTestId('comment-c1')).toHaveTextContent('少し遅れますperson-1 ・ 2026/08/18 09:00');
-    expect(screen.getByTestId('comment-c2')).toHaveTextContent('了解しましたperson-2 ・ 2026/08/18 09:05');
+    expect(screen.getByTestId('comment-c1')).toHaveTextContent('少し遅れます山田 太郎 ・ 2026/08/18 09:00');
+    expect(screen.getByTestId('comment-c2')).toHaveTextContent('了解しました名前未設定 ・ 2026/08/18 09:05');
+    expect(screen.getByTestId('comment-c2')).not.toHaveTextContent('person-2');
   });
 
   it('renders no Edit/Delete controls when onEdit/onDelete are omitted (existing TimetableItem usage unaffected)', async () => {

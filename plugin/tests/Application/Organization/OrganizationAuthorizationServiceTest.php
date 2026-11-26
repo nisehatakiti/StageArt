@@ -19,6 +19,8 @@ use StageArt\Domain\Membership\Membership;
 use StageArt\Domain\Organization\OrganizationId;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Role\RoleKey;
+use StageArt\Tests\Support\InMemoryAccountRepository;
+use StageArt\Tests\Support\InMemoryJournalEntryRepository;
 use StageArt\Tests\Support\InMemoryMembershipRepository;
 use StageArt\Tests\Support\InMemoryOrganizationFollowRepository;
 use StageArt\Tests\Support\InMemoryOrganizationRepository;
@@ -42,7 +44,14 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
         $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
 
         // WordPress user 1 creates and owns Organization A.
@@ -64,7 +73,14 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
 
         $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
@@ -89,7 +105,14 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
         $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
 
         $organizationA = $createOrganization->execute(new CreateOrganizationCommand(1, 'Organization A', 'organization-a'));
@@ -108,7 +131,14 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $memberships = new InMemoryMembershipRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
         $getOrganization = new GetOrganizationUseCase($organizations, new InMemoryOrganizationFollowRepository(), $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
 
@@ -145,7 +175,14 @@ final class OrganizationAuthorizationServiceTest extends TestCase
         $follows = new InMemoryOrganizationFollowRepository();
         $authorization = new OrganizationAuthorizationService($people, $memberships);
 
-        $createOrganization = new CreateOrganizationUseCase($organizations, $people, $memberships, new InMemoryTransactionManager());
+        $createOrganization = new CreateOrganizationUseCase(
+            $organizations,
+            $people,
+            $memberships,
+            new InMemoryAccountRepository(),
+            new InMemoryJournalEntryRepository(),
+            new InMemoryTransactionManager()
+        );
         $getOrganization = new GetOrganizationUseCase($organizations, $follows, $authorization);
 
         $organization = $createOrganization->execute(new CreateOrganizationCommand(1, 'Followed Org', 'followed-org'));

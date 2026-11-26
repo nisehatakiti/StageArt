@@ -555,9 +555,7 @@ Audience History
 QR Ticketを発行しただけでは、
 チケット売上を会計へ計上しない。
 
-実際にCheck Inされた場合に、
-CheckInCompletedを契機として
-Accounting Domainへ連携する。
+QR Ticketの発行だけでは売上を計上しない。通常の当日精算では、Check In時の代金受領を示すPayment FactとCheckInCompletedを関連付けてAccounting Domainへ連携する。スタッフ預りTicketは、受付担当者がスタッフから現金を受領して支払済みを確定した時点のPayment Factで入金と売上を計上し、後続のCheckInCompletedでは再計上しない。
 
 基本Flow：
 
@@ -703,7 +701,7 @@ QR Ticketには、
 - QR Ticket発行だけではHistoryを生成しない。
 - CheckInCompletedを契機としてHistory DomainがAudience Historyを生成する。
 - QR Ticket発行だけではTicket Revenueを会計計上しない。
-- CheckInCompletedを契機としてAccounting DomainへTicket Revenueを連携する。
+- Payment Factに基づいてAccounting DomainへTicket Revenueを連携する。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで二重計上しない。
 - Ticket Revenueの金額はReservationのPrice Snapshotを基礎とする。
 - QR Ticket DomainはJournal Entryを管理しない。
 - QR Ticketはスマートフォン表示を前提とする。
@@ -776,12 +774,7 @@ QR Check InとManual Check Inを
 Check Inが完了すると、
 CheckInCompletedが発生する。
 
-CheckInCompletedを契機として、
-
-- Audience History
-- Ticket Revenue
-
-をそれぞれのDomainへ連携する。
+CheckInCompletedを契機としてAudience HistoryをHistory Domainへ連携する。Ticket Revenueは実際の代金受領を示すPayment Factに基づいてAccounting Domainへ連携する。通常の当日精算ではPayment FactとCheckInCompletedを関連付けられるが、スタッフ預りTicketではPayment Factが先行し、後日のCheckInCompletedから再計上しない。
 
 QR Ticket Domainは、
 HistoryやJournal Entryを直接生成・更新しない。
@@ -834,7 +827,7 @@ QR Ticketは、
 - QR Ticket発行だけでは観劇履歴を生成しない。
 - CheckInCompletedからAudience Historyを生成する。
 - QR Ticket発行だけではTicket Revenueを会計計上しない。
-- CheckInCompletedからTicket RevenueをAccountingへ連携する。
+- Payment Factに基づいてTicket RevenueをAccountingへ連携する。通常の当日精算ではCheckInCompletedを関連イベントとして利用できるが、スタッフ預りTicketは現金受領時に計上し、後続のCheckInCompletedで二重計上しない。
 - Ticket RevenueはReservationのPrice Snapshotを基礎とする。
 - Guest CountとQR Ticketを1対1で対応させない。
 - CompanionをQR Ticket Domainへ導入しない。

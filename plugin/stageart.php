@@ -48,6 +48,9 @@ spl_autoload_register( static function ( string $class ): void {
 } );
 
 register_activation_hook( STAGEART_PLUGIN_FILE, [ StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader::class, 'maybeUpgrade' ] );
+// PR #7 R14-B stage 8 (§6.6): the daily retention job is scheduled on `init`
+// while the plugin is active, and removed when it is deactivated.
+register_deactivation_hook( STAGEART_PLUGIN_FILE, [ StageArt\Infrastructure\WordPress\Retention\ParticipantDataRetentionSchedule::class, 'unschedule' ] );
 
 add_action( 'plugins_loaded', static function (): void {
 	( new StageArt\Presentation\Plugin() )->boot();

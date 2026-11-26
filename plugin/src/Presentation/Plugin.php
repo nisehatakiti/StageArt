@@ -4,15 +4,42 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation;
 
+use StageArt\Application\Admin\CreateAdminConsoleAccountUseCase;
+use StageArt\Application\Notification\GetNotificationEmailSettingsUseCase;
+use StageArt\Application\Notification\InAppNotificationAdapter;
+use StageArt\Application\Notification\ListMyNotificationsUseCase;
+use StageArt\Application\Notification\MarkMyNotificationReadUseCase;
 use StageArt\Application\Notification\NotificationDispatcherInterface;
+use StageArt\Application\Notification\NotificationEmailSeeder;
+use StageArt\Application\Notification\PersonEmailResolver;
+use StageArt\Application\Notification\RequestNotificationEmailChangeUseCase;
+use StageArt\Application\Notification\VerifyNotificationEmailChangeUseCase;
+use StageArt\Application\UserAccount\BlockUserAccountsUseCase;
+use StageArt\Application\UserAccount\DeleteUserAccountsUseCase;
+use StageArt\Application\UserAccount\ListAllUserAccountsUseCase;
 use StageArt\Core\Adapter\CoreAuthorizationAdapter;
 use StageArt\Core\Adapter\CoreIdentityAdapter;
 use StageArt\Core\Adapter\CoreMembershipAdapter;
 use StageArt\Core\Adapter\CoreNotificationAdapter;
 use StageArt\Core\Adapter\CoreOrganizationContextAdapter;
+use StageArt\Core\Adapter\CorePerformanceOccupancyAdapter;
+use StageArt\Core\Adapter\CoreProductionActivityLockAdapter;
+use StageArt\Core\Adapter\CoreProductionCapabilityDirectoryAdapter;
 use StageArt\Core\Adapter\CoreProductionContextAdapter;
+use StageArt\Application\Rehearsal\SendRehearsalReminderCommand;
+use StageArt\Infrastructure\WordPress\Notification\WordPressEmailNotificationAdapter;
 use StageArt\Infrastructure\WordPress\Notification\WordPressNotificationDispatcher;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationRepository;
+use StageArt\Infrastructure\WordPress\Rehearsal\WordPressRehearsalReminderScheduler;
 use StageArt\Accounting\AccountingModuleBootstrap;
+use StageArt\Application\Settlement\ProductionSettlementCalculator;
+use StageArt\CheckIn\CheckInModuleBootstrap;
+use StageArt\Performance\PerformanceModuleBootstrap;
+use StageArt\Questionnaire\QuestionnaireModuleBootstrap;
+use StageArt\Reservation\ReservationModuleBootstrap;
+use StageArt\MemberPerformanceSummary\MemberPerformanceSummaryModuleBootstrap;
+use StageArt\Settlement\SettlementModuleBootstrap;
+use StageArt\Ticket\TicketModuleBootstrap;
 use StageArt\Rehearsal\RehearsalModuleBootstrap;
 use StageArt\Application\Favorite\AddFavoriteUseCase;
 use StageArt\Application\Favorite\ListMyFavoritesUseCase;
@@ -23,15 +50,39 @@ use StageArt\Application\Follow\UnfollowOrganizationUseCase;
 use StageArt\Application\JoinKey\DisableJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueOrganizationJoinKeyUseCase;
 use StageArt\Application\JoinKey\IssueProductionJoinKeyUseCase;
+use StageArt\Application\JoinKey\ListOrganizationJoinKeysUseCase;
+use StageArt\Application\JoinKey\ListProductionJoinKeysUseCase;
 use StageArt\Application\JoinKey\ResolveJoinKeyUseCase;
 use StageArt\Application\Membership\ApproveMembershipRequestUseCase;
 use StageArt\Application\Membership\ListMyMembershipsUseCase;
 use StageArt\Application\Membership\ListPendingMembershipRequestsUseCase;
 use StageArt\Application\Membership\RejectMembershipRequestUseCase;
 use StageArt\Application\Membership\RequestOrganizationMembershipUseCase;
+use StageArt\Application\Organization\AssignOrganizationDelegateUseCase;
+use StageArt\Application\Organization\CreateOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\CreateOrganizationSNSUseCase;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
+use StageArt\Application\Organization\DeleteOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\DeleteOrganizationSNSUseCase;
+use StageArt\Application\Organization\ListOrganizationExternalLinksUseCase;
+use StageArt\Application\Organization\ListOrganizationMembersUseCase;
+use StageArt\Application\Organization\ListOrganizationSNSUseCase;
+use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
+use StageArt\Application\Organization\UpdateOrganizationExternalLinkUseCase;
+use StageArt\Application\Organization\UpdateOrganizationLogoUseCase;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksUseCase;
+use StageArt\Application\Organization\UpdateOrganizationSNSUseCase;
+use StageArt\Application\OrganizationInvitation\CancelOrganizationInvitationUseCase;
+use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
+use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsUseCase;
+use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationUseCase;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Participant\ApproveParticipantRequestUseCase;
 use StageArt\Application\Participant\ListPendingParticipantRequestsUseCase;
+use StageArt\Application\Participant\ParticipantDelegateRoleReleaser;
+use StageArt\Application\Participant\ParticipantEnrollmentService;
+use StageArt\Application\Participant\ParticipantEventRecorder;
 use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationUseCase;
@@ -46,24 +97,32 @@ use StageArt\Application\Organization\UpdateOrganizationUseCase;
 use StageArt\Application\Participant\CancelParticipantUseCase;
 use StageArt\Application\Participant\CreateParticipantUseCase;
 use StageArt\Application\Participant\GetParticipantUseCase;
+use StageArt\Application\Participant\ListMyParticipatingProductionsUseCase;
 use StageArt\Application\Participant\ListParticipantsUseCase;
 use StageArt\Application\Participant\UpdateParticipantUseCase;
+use StageArt\Application\Participant\WithdrawParticipationUseCase;
+use StageArt\Application\RateLimit\InvitationRateLimit;
+use StageArt\Infrastructure\WordPress\RateLimit\WordPressRateLimiter;
+use StageArt\Infrastructure\WordPress\Retention\ParticipantDataRetentionSchedule;
+use StageArt\Infrastructure\WordPress\Retention\WordPressParticipantDataRetention;
 use StageArt\Application\Production\ActivateProductionUseCase;
 use StageArt\Application\Production\ArchiveProductionUseCase;
 use StageArt\Application\Production\CancelProductionUseCase;
 use StageArt\Application\Production\ChangePrimaryManagerUseCase;
 use StageArt\Application\Production\CompleteProductionUseCase;
 use StageArt\Application\Production\CreateProductionUseCase;
+use StageArt\Application\Production\GetProductionOverviewUseCase;
 use StageArt\Application\Production\GetProductionUseCase;
 use StageArt\Application\Production\GetPublicProductionBySlugUseCase;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionOrganizationResolver;
-use StageArt\Application\Production\StartProductionPlanningUseCase;
 use StageArt\Application\Production\UpdateProductionUseCase;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
+use StageArt\Application\ProductionDelegate\DelegateAppointmentGuard;
 use StageArt\Application\ProductionDelegate\DeleteProductionDelegateUseCase;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
+use StageArt\Application\ProductionDelegate\ListMyProductionDelegateRolesUseCase;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateUseCase;
 use StageArt\Application\Project\ArchiveProjectUseCase;
 use StageArt\Application\Project\CreateProjectUseCase;
@@ -75,8 +134,17 @@ use StageArt\Application\Dashboard\GetMyDashboardUseCase;
 use StageArt\Application\Notification\ListNotificationsForProductionUseCase;
 use StageArt\Application\Notification\MarkNotificationReadUseCase;
 use StageArt\Application\Notification\UpdatePushPreferenceUseCase;
+use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Person\GetCurrentPersonUseCase;
 use StageArt\Application\Person\UpdatePersonNameUseCase;
+use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationSendService;
+use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationSendRepository;
+use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
 use StageArt\Application\Authentication\AuthenticateWithEmailUseCase;
 use StageArt\Application\Authentication\AuthenticateWithGoogleUseCase;
 use StageArt\Application\Authentication\LinkGoogleIdentityUseCase;
@@ -92,16 +160,29 @@ use StageArt\Application\UserAccount\RegisterEmailCredentialUseCase;
 use StageArt\Application\UserAccount\RequestEmailVerificationUseCase;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressAccountRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressBudgetRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressCheckInRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressSettlementRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalCreateRequestStore;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressWalkUpIdempotencyStore;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailCredentialRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressEmailVerificationTokenRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExpenseRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJournalEntryRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationExternalLinkRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationInvitationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationSNSRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantInvitationRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPasswordResetTokenRepository;
+use StageArt\Infrastructure\WordPress\Media\WordPressOrganizationLogoUploader;
+use StageArt\Infrastructure\WordPress\OrganizationInvitation\WordPressOrganizationInvitationMailer;
+use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressParticipantInvitationMailer;
 use StageArt\Infrastructure\Authentication\GoogleIdTokenVerifier;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenIssuer;
 use StageArt\Infrastructure\Authentication\JwtAccessTokenVerifier;
 use StageArt\Infrastructure\WordPress\Authentication\CurrentUserResolver;
+use StageArt\Infrastructure\WordPress\Authentication\WordPressAdminConsoleAccountProvisioner;
 use StageArt\Infrastructure\WordPress\Authentication\WordPressAuthMailer;
+use StageArt\Infrastructure\WordPress\Authentication\WordPressUserLookup;
 use StageArt\Infrastructure\WordPress\Authentication\WordPressUserProvisioner;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressExternalIdentityRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRefreshTokenRepository;
@@ -110,12 +191,24 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressFavoriteRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressJoinKeyRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationFollowRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressOrganizationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantEventRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressParticipantRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPersonRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionDelegateRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProductionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressIssuedTicketRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressPerformanceRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireInviteRecordRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressQuestionnaireResponseRepository;
+use StageArt\Infrastructure\WordPress\Questionnaire\WordPressQuestionnaireMailer;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressReservationRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressTicketRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressProjectRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressPushPreferenceRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationEmailRepository;
+use StageArt\Infrastructure\WordPress\Persistence\WordPressNotificationEmailChangeRequestRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalAttendanceRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressRehearsalRepository;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressScheduleCommentRepository;
@@ -126,22 +219,36 @@ use StageArt\Infrastructure\WordPress\Persistence\WordPressTimetableVersionPubli
 use StageArt\Infrastructure\WordPress\Persistence\WordPressTransactionManager;
 use StageArt\Infrastructure\WordPress\Persistence\WordPressUserAccountRepository;
 use StageArt\Infrastructure\WordPress\Schema\SchemaUpgrader;
+use StageArt\Presentation\Admin\AccountManagementAdminPage;
+use StageArt\Presentation\Admin\AdminConsoleAccountAdminPage;
 use StageArt\Presentation\Admin\OrganizationAdminPage;
 use StageArt\Presentation\Admin\ProjectAdminPage;
 use StageArt\Presentation\Rest\AuthenticationRestController;
 use StageArt\Presentation\Rest\DashboardRestController;
+use StageArt\Presentation\Rest\PersonalResponseCachePolicy;
+use StageArt\Presentation\Rest\RestFailureResponder;
+use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationRecipientVerifier;
+use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
+use StageArt\Application\Participant\ParticipantConsentNotifier;
 use StageArt\Presentation\Rest\FavoriteRestController;
 use StageArt\Presentation\Rest\JoinKeyRestController;
 use StageArt\Presentation\Rest\MeRestController;
+use StageArt\Presentation\Rest\OrganizationExternalLinkRestController;
+use StageArt\Presentation\Rest\OrganizationInvitationRestController;
+use StageArt\Presentation\Rest\OrganizationSNSRestController;
 use StageArt\Presentation\Rest\MembershipRestController;
 use StageArt\Presentation\Rest\NotificationRestController;
 use StageArt\Presentation\Rest\OrganizationRestController;
+use StageArt\Presentation\Rest\ParticipantInvitationRestController;
 use StageArt\Presentation\Rest\ParticipantRestController;
 use StageArt\Presentation\Rest\ParticipationRequestRestController;
 use StageArt\Presentation\Rest\ProductionDelegateRestController;
 use StageArt\Presentation\Rest\ProductionRestController;
 use StageArt\Presentation\Rest\ProjectRestController;
 use StageArt\Presentation\Rest\PushPreferenceRestController;
+use StageArt\Presentation\Rest\NotificationEmailRestController;
 use StageArt\Presentation\Rest\UserAccountRestController;
 
 final class Plugin
@@ -174,7 +281,22 @@ final class Plugin
         $productions         = new WordPressProductionRepository($wpdb);
         $productionDelegates = new WordPressProductionDelegateRepository($wpdb);
         $participants        = new WordPressParticipantRepository($wpdb);
+        $participantInvitations = new WordPressParticipantInvitationRepository($wpdb);
+        $organizationSns         = new WordPressOrganizationSNSRepository($wpdb);
+        $organizationExternalLinks = new WordPressOrganizationExternalLinkRepository($wpdb);
+        $organizationInvitations = new WordPressOrganizationInvitationRepository($wpdb);
         $rehearsals           = new WordPressRehearsalRepository($wpdb);
+        $performances         = new WordPressPerformanceRepository($wpdb);
+        $tickets              = new WordPressTicketRepository($wpdb);
+        $reservations         = new WordPressReservationRepository($wpdb);
+        $issuedTickets        = new WordPressIssuedTicketRepository($wpdb);
+        $questionnaires        = new WordPressQuestionnaireRepository($wpdb);
+        $questionnaireQuestions = new WordPressQuestionRepository($wpdb);
+        $questionnaireResponses = new WordPressQuestionnaireResponseRepository($wpdb);
+        $questionnaireInviteRecords = new WordPressQuestionnaireInviteRecordRepository($wpdb);
+        $checkIns             = new WordPressCheckInRepository($wpdb);
+        $walkUpIdempotencyStore = new WordPressWalkUpIdempotencyStore($wpdb);
+        $settlements          = new WordPressSettlementRepository($wpdb);
         $rehearsalAttendances = new WordPressRehearsalAttendanceRepository($wpdb);
         $scheduleComments     = new WordPressScheduleCommentRepository($wpdb);
         $timetables           = new WordPressTimetableRepository($wpdb);
@@ -182,6 +304,9 @@ final class Plugin
         $timetableVersionPublishedNotifications = new WordPressTimetableVersionPublishedNotificationRepository($wpdb);
         $notificationReadStates = new WordPressNotificationReadStateRepository($wpdb);
         $pushPreferences      = new WordPressPushPreferenceRepository($wpdb);
+        $notifications        = new WordPressNotificationRepository($wpdb);
+        $notificationEmails   = new WordPressNotificationEmailRepository($wpdb);
+        $notificationEmailChangeRequests = new WordPressNotificationEmailChangeRequestRepository($wpdb);
         $accounts             = new WordPressAccountRepository($wpdb);
         $budgets              = new WordPressBudgetRepository($wpdb);
         $journalEntries       = new WordPressJournalEntryRepository($wpdb);
@@ -193,15 +318,38 @@ final class Plugin
         $issueProductionJoinKey = new IssueProductionJoinKeyUseCase($productions, $joinKeys, $productionAuthorization);
         $resolveJoinKey = new ResolveJoinKeyUseCase($joinKeys, $organizations, $productions);
         $disableJoinKey = new DisableJoinKeyUseCase($joinKeys, $productions, $authorization, $productionAuthorization);
+        $listOrganizationJoinKeys = new ListOrganizationJoinKeysUseCase($organizations, $joinKeys, $authorization);
+        $listProductionJoinKeys = new ListProductionJoinKeysUseCase($productions, $joinKeys, $productionAuthorization);
         $searchProductions = new SearchProductionsUseCase($productions, $projects, $organizations);
         $productionOrganizationResolver = new ProductionOrganizationResolver($projects);
         $membershipContract = new CoreMembershipAdapter($participants, $productions, $people, $productionAuthorization);
-        $productionContextContract = new CoreProductionContextAdapter($productions, $productionOrganizationResolver);
+        $productionContextContract = new CoreProductionContextAdapter($productions, $productionOrganizationResolver, $organizations);
         $identityContract = new CoreIdentityAdapter($people);
         $authorizationContract = new CoreAuthorizationAdapter($productionAuthorization, $productions, $people);
         $organizationContextContract = new CoreOrganizationContextAdapter($organizations);
-        $notificationDispatcher = new WordPressNotificationDispatcher();
+        // PR #7 review (R4): the Production lock every booking / reception
+        // operation takes first (see ProductionActivityLockContract).
+        $productionActivityLock = new CoreProductionActivityLockAdapter($productions);
+
+        // Notification基盤実装 phase: In-App (highest priority per this
+        // phase's instruction) and Email delivery Adapters, registered
+        // with the dispatcher below. Push has no real provider decided
+        // yet - see WordPressNotificationDispatcher's own docblock for
+        // why the `do_action('stageart_notification', ...)` hook stays
+        // as that channel's event-emission point instead of a fake
+        // implementation. WordPressUserLookup is stateless and
+        // constructed again (harmlessly) at its own original call site
+        // further down for ListAllUserAccountsUseCase.
+        $notificationInAppAdapter = new InAppNotificationAdapter($notifications);
+        $personEmailResolver = new PersonEmailResolver($people, $userAccounts, $emailCredentials, new WordPressUserLookup(), $notificationEmails);
+        $notificationEmailAdapter = new WordPressEmailNotificationAdapter($personEmailResolver);
+        $notificationDispatcher = new WordPressNotificationDispatcher([$notificationInAppAdapter, $notificationEmailAdapter]);
         $notificationContract = new CoreNotificationAdapter($notificationDispatcher);
+        $rehearsalReminderScheduler = new WordPressRehearsalReminderScheduler();
+        // Google認証ユーザーのEmail通知先対応 phase: shared by both
+        // AuthenticateWithGoogleUseCase and LinkGoogleIdentityUseCase
+        // below - see NotificationEmailSeeder's own docblock.
+        $notificationEmailSeeder = new NotificationEmailSeeder($notificationEmails, $userAccounts, $emailCredentials);
 
         $createUserAccount        = new CreateUserAccountUseCase($people, $userAccounts, $transactions);
         $registerEmailCredential  = new RegisterEmailCredentialUseCase(
@@ -210,6 +358,25 @@ final class Plugin
             $emailCredentials,
             $transactions
         );
+
+        // PR #7 R14-B stage 4: Production (participant) invitations are no
+        // longer resolved by registration / verification / Google sign-in
+        // (ResolveParticipantInvitationUseCase is removed); only
+        // organization invitations are.
+        $findPersonByEmail = new FindPersonByEmailUseCase($emailCredentials, $userAccounts, $notificationEmails, $people);
+        // PR #7 R14-B: the Participant audit log (stage 3), also written by
+        // NAME_ONLY additions, delegate appointments and invitation sends
+        // (stage 4).
+        $participantEventRecorder = new ParticipantEventRecorder(new WordPressParticipantEventRepository($wpdb));
+        // R14-B stage 4 (D10): POST /participants adds NAME_ONLY members only.
+        $createParticipant = new CreateParticipantUseCase(
+            $productions,
+            $participants,
+            $productionAuthorization,
+            $transactions,
+            $participantEventRecorder
+        );
+        $resolveOrganizationInvitation = new ResolveOrganizationInvitationUseCase($organizationInvitations, $memberships);
 
         // Phase 2 (StageArt Authentication): both secrets are read from
         // wp-config.php constants, never committed to source control
@@ -243,7 +410,9 @@ final class Plugin
             $refreshTokens,
             $accessTokenIssuer,
             $wordPressUserProvisioner,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder,
+            $resolveOrganizationInvitation
         );
         $registerWithEmail = new RegisterWithEmailUseCase(
             $emailCredentials,
@@ -254,7 +423,9 @@ final class Plugin
             $accessTokenIssuer,
             $wordPressUserProvisioner,
             $transactions,
-            $authMailer
+            $authMailer,
+            $resolveOrganizationInvitation,
+            $organizationInvitations
         );
         $authenticateWithEmail = new AuthenticateWithEmailUseCase(
             $emailCredentials,
@@ -271,7 +442,8 @@ final class Plugin
             $people,
             $userAccounts,
             $externalIdentities,
-            $transactions
+            $transactions,
+            $notificationEmailSeeder
         );
         $requestPasswordReset = new RequestPasswordResetUseCase(
             $emailCredentials,
@@ -280,7 +452,15 @@ final class Plugin
             $transactions
         );
         $resetPassword = new ResetPasswordUseCase($passwordResetTokens, $emailCredentials, $refreshTokens, $transactions);
-        $verifyEmail = new VerifyEmailUseCase($emailVerificationTokens, $emailCredentials, $transactions);
+        // PR #7 R14-A (F6): invitations sent to an address are resolved
+        // when that address is verified (not at self-registration).
+        $verifyEmail = new VerifyEmailUseCase(
+            $emailVerificationTokens,
+            $emailCredentials,
+            $transactions,
+            $userAccounts,
+            $resolveOrganizationInvitation
+        );
         $changePassword = new ChangePasswordUseCase($people, $userAccounts, $emailCredentials, $transactions);
         $requestEmailVerification = new RequestEmailVerificationUseCase(
             $people,
@@ -290,18 +470,94 @@ final class Plugin
             $authMailer
         );
 
+        // 通知用Email確認・変更機能: Settings screen's own read/write
+        // Use Cases - reuses $productionAuthorization (the same "resolve
+        // my own Person" path GetPushPreferenceUseCase/
+        // UpdatePushPreferenceUseCase already use), $personEmailResolver
+        // (now the single resolution point for both delivery AND
+        // display, see PersonEmailResolver::resolveWithSource()'s own
+        // docblock), and $authMailer (a new interface method on the same
+        // Port, see AuthMailerInterface's own docblock) - no new
+        // dependency kind is introduced.
+        $getNotificationEmailSettings = new GetNotificationEmailSettingsUseCase(
+            $productionAuthorization,
+            $personEmailResolver,
+            $notificationEmailChangeRequests
+        );
+        $requestNotificationEmailChange = new RequestNotificationEmailChangeUseCase(
+            $productionAuthorization,
+            $personEmailResolver,
+            $notificationEmailChangeRequests,
+            $authMailer,
+            $transactions
+        );
+        $verifyNotificationEmailChange = new VerifyNotificationEmailChangeUseCase(
+            $notificationEmailChangeRequests,
+            $notificationEmails,
+            $transactions
+        );
+
+        // StageArt Admin Console V1 (docs/architecture/StageArtAdminConsole.md):
+        // Account Management + Admin Account creation - every Use Case here
+        // reuses the same Repositories/Use Cases already wired above
+        // ($userAccounts/$people/$emailCredentials/$transactions/
+        // $requestPasswordReset); nothing about general authentication is
+        // duplicated, only the two new WordPress-specific dependencies
+        // (WordPressUserLookup, WordPressAdminConsoleAccountProvisioner)
+        // are new.
+        $wordPressUserLookup = new WordPressUserLookup();
+        $listAllUserAccounts = new ListAllUserAccountsUseCase($userAccounts, $people, $emailCredentials, $wordPressUserLookup);
+        $blockUserAccounts = new BlockUserAccountsUseCase($userAccounts, $transactions);
+        $deleteUserAccounts = new DeleteUserAccountsUseCase($userAccounts, $transactions);
+        $adminConsoleAccountProvisioner = new WordPressAdminConsoleAccountProvisioner();
+        $createAdminConsoleAccount = new CreateAdminConsoleAccountUseCase($adminConsoleAccountProvisioner);
+
         $createOrganization = new CreateOrganizationUseCase(
             $organizations,
             $people,
             $memberships,
+            $accounts,
+            $journalEntries,
             $transactions
         );
         $getOrganization    = new GetOrganizationUseCase($organizations, $organizationFollows, $authorization);
-        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase($organizations, $projects, $productions);
+        $getPublicOrganizationBySlug = new GetPublicOrganizationBySlugUseCase(
+            $organizations,
+            $projects,
+            $productions,
+            $organizationSns,
+            $organizationExternalLinks
+        );
         $listOrganizations  = new ListOrganizationsUseCase($organizations, $memberships, $authorization);
         $updateOrganization = new UpdateOrganizationUseCase($organizations, $authorization);
         $deleteOrganization = new DeleteOrganizationUseCase($organizations, $authorization);
         $ownerTransfer      = new OwnerTransferUseCase($memberships, $userAccounts, $authorization, $transactions);
+
+        // StageArt 団体管理UI整理 "メンバー管理"/"代理人を設定": roster +
+        // delegate grant/revoke (Membership::changeRole() toward/away from
+        // RoleKey::ORGANIZATION_MANAGER - no separate Delegate table).
+        $listOrganizationMembers = new ListOrganizationMembersUseCase($memberships, $people, $authorization, $personEmailResolver);
+        $assignOrganizationDelegate = new AssignOrganizationDelegateUseCase($memberships, $authorization);
+        $revokeOrganizationDelegate = new RevokeOrganizationDelegateUseCase($memberships, $authorization);
+
+        // StageArt Organization管理UI/UX統一 "団体ロゴ": a dedicated, narrow
+        // UseCase (see its own docblock) + the WordPress-native upload
+        // wrapper the REST controller calls directly.
+        $updateOrganizationLogo = new UpdateOrganizationLogoUseCase($organizations, $authorization);
+        $organizationLogoUploader = new WordPressOrganizationLogoUploader();
+        $updateOrganizationMemberRemarks = new UpdateOrganizationMemberRemarksUseCase($memberships, $authorization);
+
+        // StageArt 団体管理UI整理 "団体情報": SNS (docs/04-DomainModel/
+        // OrganizationSNS.md) and external-link CRUD, both OWNER/
+        // ORGANIZATION_MANAGER-scoped.
+        $createOrganizationSns = new CreateOrganizationSNSUseCase($organizationSns, $authorization);
+        $updateOrganizationSns = new UpdateOrganizationSNSUseCase($organizationSns, $authorization);
+        $deleteOrganizationSns = new DeleteOrganizationSNSUseCase($organizationSns, $authorization);
+        $listOrganizationSns = new ListOrganizationSNSUseCase($organizationSns, $authorization);
+        $createOrganizationExternalLink = new CreateOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $updateOrganizationExternalLink = new UpdateOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $deleteOrganizationExternalLink = new DeleteOrganizationExternalLinkUseCase($organizationExternalLinks, $authorization);
+        $listOrganizationExternalLinks = new ListOrganizationExternalLinksUseCase($organizationExternalLinks, $authorization);
         $followOrganization   = new FollowOrganizationUseCase($organizations, $organizationFollows, $authorization);
         $unfollowOrganization = new UnfollowOrganizationUseCase($organizationFollows, $authorization);
         $listMyFollows         = new ListMyFollowsUseCase($organizationFollows, $organizations, $authorization);
@@ -337,14 +593,22 @@ final class Plugin
             $transactions
         );
         $getProduction = new GetProductionUseCase($productions, $productionAuthorization);
+        $getProductionOverview = new GetProductionOverviewUseCase($productions, $productionAuthorization);
         $getPublicProductionBySlug = new GetPublicProductionBySlugUseCase($productions, $projects, $organizations);
         $listProductions = new ListProductionsUseCase($productions, $productionDelegates, $productionAuthorization);
-        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization);
-        $startProductionPlanning = new StartProductionPlanningUseCase($productions, $productionAuthorization);
-        $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization);
-        $completeProduction = new CompleteProductionUseCase($productions, $productionAuthorization);
-        $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization);
-        $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization);
+        $updateProduction = new UpdateProductionUseCase($productions, $productionAuthorization, $performances, $transactions, $reservations);
+        $activateProduction = new ActivateProductionUseCase($productions, $productionAuthorization, $transactions);
+        $completeProduction = new CompleteProductionUseCase(
+            $productions,
+            $productionAuthorization,
+            new ProductionSettlementCalculator($performances, $reservations, $tickets),
+            $settlements,
+            $performances,
+            $reservations,
+            $transactions
+        );
+        $archiveProduction = new ArchiveProductionUseCase($productions, $productionAuthorization, $transactions);
+        $cancelProduction = new CancelProductionUseCase($productions, $productionAuthorization, $transactions);
         $changePrimaryManager = new ChangePrimaryManagerUseCase(
             $productions,
             $projects,
@@ -354,29 +618,120 @@ final class Plugin
             $transactions
         );
 
+        // R14-B stage 4 (§4.6): only a consented ACTIVE PERSON Participant can
+        // be appointed or made ACTIVE again.
+        $delegateAppointmentGuard = new DelegateAppointmentGuard($participants);
         $createProductionDelegate = new CreateProductionDelegateUseCase(
             $productions,
             $productionDelegates,
             $people,
             $productionAuthorization,
-            $transactions
+            $transactions,
+            $delegateAppointmentGuard,
+            $participantEventRecorder
         );
-        $listProductionDelegates = new ListProductionDelegatesUseCase($productionDelegates, $productions, $productionAuthorization);
-        $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $productionAuthorization);
+        $listProductionDelegates = new ListProductionDelegatesUseCase($productionDelegates, $productions, $people, $productionAuthorization);
+        $updateProductionDelegate = new UpdateProductionDelegateUseCase($productionDelegates, $productions, $people, $productionAuthorization, $transactions, $delegateAppointmentGuard, $participantEventRecorder);
         $deleteProductionDelegate = new DeleteProductionDelegateUseCase($productionDelegates, $productions, $productionAuthorization);
 
-        $createParticipant = new CreateParticipantUseCase(
-            $productions,
-            $participants,
-            $people,
-            $organizations,
-            $productionAuthorization,
+        // $createParticipant itself is constructed earlier in this method.
+        $getParticipant = new GetParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
+        $listParticipants = new ListParticipantsUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver);
+        // R14-B stage 4 (N6-N10): PUT / DELETE limit the status changes, lock
+        // Production -> Participant -> delegate and release delegate roles.
+        $participantDelegateRoles = new ParticipantDelegateRoleReleaser($productionDelegates, $participantEventRecorder);
+        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $people, $productionAuthorization, $personEmailResolver, $participantDelegateRoles, $participantEventRecorder, $transactions);
+        $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization, $participantDelegateRoles, $participantEventRecorder, $transactions);
+
+        // Its own constant, deliberately separate from
+        // $emailVerificationBaseUrl above: that one points at the static
+        // email-confirmation page (STAGEART_EMAIL_VERIFICATION_BASE_URL,
+        // historically defaulting to .../verify-app), while this one is
+        // the base URL of the mobile-rn Web app itself - the invitation
+        // link is `{this}/register?token=...`, a real app route, not a
+        // static confirmation page. Reusing the verification URL here
+        // previously produced broken /verify-app/register links.
+        $participantInvitationBaseUrl = defined('STAGEART_PARTICIPANT_INVITATION_BASE_URL')
+            ? STAGEART_PARTICIPANT_INVITATION_BASE_URL
+            : 'https://dev.stageart.top';
+        $participantInvitationMailer = new WordPressParticipantInvitationMailer($participantInvitationBaseUrl);
+        // PR #7 R14-B stage 4 (§5.3 / §6.7 / §11.3): every invitation e-mail
+        // is counted, recorded and sent by InvitationSendService; email_key
+        // uses the STAGEART_EMAIL_KEYS / STAGEART_EMAIL_KEY_CURRENT keyring
+        // from wp-config.php (missing -> create / resend refused, 500).
+        $participantInvitationConditions = new ParticipantInvitationConditions($productionAuthorization, $people);
+        $participantInvitationSends = new WordPressParticipantInvitationSendRepository($wpdb);
+        $invitationSendService = new InvitationSendService(
+            $participantInvitationSends,
+            $participantInvitations,
+            new WordPressConfigEmailKeyring(),
+            $participantInvitationMailer,
+            $participantEventRecorder,
             $transactions
         );
-        $getParticipant = new GetParticipantUseCase($participants, $productions, $productionAuthorization);
-        $listParticipants = new ListParticipantsUseCase($participants, $productions, $productionAuthorization);
-        $updateParticipant = new UpdateParticipantUseCase($participants, $productions, $productionAuthorization);
-        $cancelParticipant = new CancelParticipantUseCase($participants, $productions, $productionAuthorization);
+        // PR #7 R14-B stage 8 (§9.2): the invitation rate limits, counted in
+        // stageart_rate_limit_buckets under a key derived from WordPress's
+        // salt (not the §6.7 email_key keyring).
+        $invitationRateLimit = new InvitationRateLimit(
+            new WordPressRateLimiter($wpdb, hash_hmac('sha256', 'stageart_rate_limit_buckets', wp_salt('auth'))),
+            $productionAuthorization
+        );
+        $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
+            $participantInvitations,
+            $productions,
+            $productionAuthorization,
+            $participantInvitationConditions,
+            $invitationSendService,
+            $transactions,
+            $invitationRateLimit
+        );
+        $createParticipantInvitation = new CreateParticipantInvitationUseCase(
+            $productions,
+            $productionAuthorization,
+            $participantInvitations,
+            $resendParticipantInvitation,
+            $participantInvitationConditions,
+            $invitationSendService,
+            $transactions,
+            $invitationRateLimit
+        );
+        // R14B-4R (§7.1): the managers' list adds effective_status and the send status / limits.
+        $listParticipantInvitations = new ListParticipantInvitationsUseCase(
+            $participantInvitations,
+            $productions,
+            $productionAuthorization,
+            $participantInvitationConditions,
+            $invitationSendService,
+            $participantInvitationSends
+        );
+        $cancelParticipantInvitation = new CancelParticipantInvitationUseCase($participantInvitations, $productions, $productionAuthorization, $participantEventRecorder, $transactions);
+
+        // StageArt 団体管理UI整理 "メンバーを追加": mirrors
+        // CreateParticipantInvitationUseCase's own 氏名＋メールアドレス
+        // single-entry-point shape at Organization Scope. Reuses the
+        // same $participantInvitationBaseUrl Web host (same mobile-rn
+        // Web export; the mail links to /register without a token since
+        // R14-B stage 10 D-1) - see
+        // WordPressOrganizationInvitationMailer's own docblock.
+        $organizationInvitationMailer = new WordPressOrganizationInvitationMailer($participantInvitationBaseUrl);
+        $resendOrganizationInvitation = new ResendOrganizationInvitationUseCase(
+            $organizationInvitations,
+            $organizations,
+            $authorization,
+            $organizationInvitationMailer
+        );
+        $createOrganizationInvitation = new CreateOrganizationInvitationUseCase(
+            $organizations,
+            $authorization,
+            $findPersonByEmail,
+            $memberships,
+            $organizationInvitations,
+            $resendOrganizationInvitation,
+            $organizationInvitationMailer
+        );
+        $getOrganizationInvitationByToken = new GetOrganizationInvitationByTokenUseCase($organizationInvitations, $organizations);
+        $listOrganizationInvitations = new ListOrganizationInvitationsUseCase($organizationInvitations, $organizations, $authorization);
+        $cancelOrganizationInvitation = new CancelOrganizationInvitationUseCase($organizationInvitations, $organizations, $authorization);
 
         // StageArt Core/Module Architecture Phase 3: Rehearsal Module's
         // entire own wiring (UseCase construction + REST Controller
@@ -395,27 +750,114 @@ final class Plugin
             $authorizationContract,
             $membershipContract,
             $notificationContract,
-            $transactions
+            $rehearsalReminderScheduler,
+            $transactions,
+            // PR #7 R12: idempotency keys of Rehearsal create requests.
+            new WordPressRehearsalCreateRequestStore($wpdb)
+        );
+
+        // Phase 7 (Rehearsal仕様整合) §12: the sole Cron hook registration
+        // in this plugin - WordPressRehearsalReminderScheduler schedules
+        // this event, SendRehearsalReminderUseCase is what actually runs
+        // when it fires.
+        add_action(WordPressRehearsalReminderScheduler::HOOK, static function (string $rehearsalId) use ($rehearsalModule): void {
+            $rehearsalModule->sendRehearsalReminder()->execute(new SendRehearsalReminderCommand($rehearsalId));
+        });
+
+        // アンケート実装指示書: Questionnaire Module's entire own wiring,
+        // consolidated into QuestionnaireModuleBootstrap - see that
+        // class's own docblock. Constructed before PerformanceModuleBootstrap
+        // below so its PerformanceFinishedListenerContract implementation
+        // can be handed in - see PerformanceFinishedListenerContract's own
+        // docblock for why Performance depends only on that generic
+        // Contract, never on this Module directly.
+        $publicSiteBaseUrl = defined('STAGEART_PUBLIC_SITE_BASE_URL')
+            ? STAGEART_PUBLIC_SITE_BASE_URL
+            : 'https://dummy.stageart.top';
+        $questionnaireMailer = new WordPressQuestionnaireMailer();
+        $questionnaireModule = new QuestionnaireModuleBootstrap(
+            $questionnaires,
+            $questionnaireQuestions,
+            $questionnaireResponses,
+            $questionnaireInviteRecords,
+            $performances,
+            $reservations,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $questionnaireMailer,
+            $publicSiteBaseUrl
+        );
+
+        // StageArt Core/Module Architecture Phase 2 Performance基盤:
+        // Performance Module's entire own wiring, consolidated into
+        // PerformanceModuleBootstrap - see that class's own docblock.
+        // Only Core Contracts and Performance's own Repository interface
+        // cross this boundary, matching RehearsalModuleBootstrap's
+        // precedent above.
+        $performanceModule = new PerformanceModuleBootstrap(
+            $performances,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $membershipContract,
+            $transactions,
+            $productionActivityLock,
+            new CorePerformanceOccupancyAdapter($reservations),
+            $questionnaireModule->performanceFinishedListener()
+        );
+
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: Ticket Module's own wiring, consolidated into
+        // TicketModuleBootstrap - see that class's own docblock.
+        $ticketModule = new TicketModuleBootstrap(
+            $tickets,
+            $productions,
+            $performances,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $membershipContract,
+            $transactions,
+            $productionActivityLock
+        );
+
+        // Reservation Module's own wiring, kept separate from Ticket's
+        // per instruction §26 - see ReservationModuleBootstrap's own
+        // docblock.
+        $reservationModule = new ReservationModuleBootstrap(
+            $reservations,
+            $issuedTickets,
+            $tickets,
+            $performances,
+            $productionContextContract,
+            $identityContract,
+            $authorizationContract,
+            $transactions,
+            $productionActivityLock
         );
 
         $listNotificationsForProduction = new ListNotificationsForProductionUseCase(
-            $productions,
+            $productionContextContract,
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
-            $productionAuthorization
+            $identityContract,
+            $membershipContract
         );
         $markNotificationRead = new MarkNotificationReadUseCase(
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
-            $productions,
-            $productionAuthorization
+            $productionContextContract,
+            $identityContract,
+            $membershipContract
         );
+        $listMyNotifications = new ListMyNotificationsUseCase($notifications, $identityContract);
+        $markMyNotificationRead = new MarkMyNotificationReadUseCase($notifications, $identityContract);
         $getMyDashboard = new GetMyDashboardUseCase(
             $productions,
             $productionDelegates,
             $participants,
-            $rehearsals,
-            $rehearsalAttendances,
+            $rehearsalModule->upcomingRehearsalProvider(),
             $timetableVersionPublishedNotifications,
             $notificationReadStates,
             $organizationFollows,
@@ -423,6 +865,7 @@ final class Plugin
             $organizations,
             $productionAuthorization
         );
+        $listMyParticipatingProductions = new ListMyParticipatingProductionsUseCase($participants, $productions, $productionAuthorization);
         $getPushPreference = new GetPushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $updatePushPreference = new UpdatePushPreferenceUseCase($pushPreferences, $productionAuthorization);
         $getCurrentPerson = new GetCurrentPersonUseCase($authorization, $userAccounts, $emailCredentials);
@@ -444,7 +887,64 @@ final class Plugin
             $identityContract,
             $authorizationContract,
             $membershipContract,
+            $transactions,
+            $notificationContract,
+            new CoreProductionCapabilityDirectoryAdapter($productionAuthorization, $productions, $productionDelegates, $people)
+        );
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): Check-in Module's own wiring, mirroring every other
+        // Module Bootstrap above - see CheckInModuleBootstrap's own
+        // docblock.
+        $checkInModule = new CheckInModuleBootstrap(
+            $reservations,
+            $performances,
+            $tickets,
+            $issuedTickets,
+            $checkIns,
+            $accounts,
+            $journalEntries,
+            $productionContextContract,
+            $organizationContextContract,
+            $identityContract,
+            $authorizationContract,
+            $membershipContract,
+            $walkUpIdempotencyStore,
+            $transactions,
+            $productionActivityLock
+        );
+
+        // Settlement Module's own wiring - see SettlementModuleBootstrap's
+        // own docblock, including why CompleteProductionUseCase above
+        // constructs its own separate ProductionSettlementCalculator
+        // rather than sharing this Bootstrap's instance.
+        $settlementModule = new SettlementModuleBootstrap(
+            $productions,
+            $performances,
+            $reservations,
+            $tickets,
+            $settlements,
+            $membershipContract,
+            $people,
+            $identityContract,
+            $authorizationContract,
             $transactions
+        );
+
+        // Phase 5 (Production運営UI §9): Member Performance Summary
+        // Module's own wiring - see MemberPerformanceSummaryModuleBootstrap's
+        // own docblock.
+        $memberPerformanceSummaryModule = new MemberPerformanceSummaryModuleBootstrap(
+            $productions,
+            $rehearsals,
+            $rehearsalAttendances,
+            $performances,
+            $reservations,
+            $tickets,
+            $membershipContract,
+            $people,
+            $identityContract,
+            $authorizationContract
         );
 
         $organizationRestController = new OrganizationRestController(
@@ -457,7 +957,35 @@ final class Plugin
             $ownerTransfer,
             $followOrganization,
             $unfollowOrganization,
-            $searchOrganizations
+            $searchOrganizations,
+            $listOrganizationMembers,
+            $assignOrganizationDelegate,
+            $revokeOrganizationDelegate,
+            $updateOrganizationLogo,
+            $organizationLogoUploader,
+            $updateOrganizationMemberRemarks
+        );
+
+        $organizationSnsRestController = new OrganizationSNSRestController(
+            $createOrganizationSns,
+            $updateOrganizationSns,
+            $deleteOrganizationSns,
+            $listOrganizationSns
+        );
+
+        $organizationExternalLinkRestController = new OrganizationExternalLinkRestController(
+            $createOrganizationExternalLink,
+            $updateOrganizationExternalLink,
+            $deleteOrganizationExternalLink,
+            $listOrganizationExternalLinks
+        );
+
+        $organizationInvitationRestController = new OrganizationInvitationRestController(
+            $createOrganizationInvitation,
+            $listOrganizationInvitations,
+            $resendOrganizationInvitation,
+            $cancelOrganizationInvitation,
+            $getOrganizationInvitationByToken
         );
 
         $projectRestController = new ProjectRestController(
@@ -489,11 +1017,11 @@ final class Plugin
         $productionRestController = new ProductionRestController(
             $createProduction,
             $getProduction,
+            $getProductionOverview,
             $getPublicProductionBySlug,
             $listProductions,
             $updateProduction,
             $changePrimaryManager,
-            $startProductionPlanning,
             $activateProduction,
             $completeProduction,
             $archiveProduction,
@@ -505,20 +1033,31 @@ final class Plugin
             $createProductionDelegate,
             $listProductionDelegates,
             $updateProductionDelegate,
-            $deleteProductionDelegate
+            $deleteProductionDelegate,
+            // PR #7 R14-B stage 9 (§10): GET /productions/{id}/delegates/me.
+            new ListMyProductionDelegateRolesUseCase($productionDelegates, $productions, $productionAuthorization)
         );
 
+        // PR #7 R14-B stage 7 (§7.2, D9): the Person withdraws themselves -
+        // POST /participants/{id}/withdraw, with the delegate roles released
+        // in the same transaction and the managers notified after the commit.
+        $participantConsentNotifier = new ParticipantConsentNotifier($notificationDispatcher);
         $participantRestController = new ParticipantRestController(
             $createParticipant,
             $getParticipant,
             $listParticipants,
             $updateParticipant,
-            $cancelParticipant
+            $cancelParticipant,
+            new WithdrawParticipationUseCase($participants, $productions, $productionDelegates, $productionAuthorization, $participantDelegateRoles, $participantEventRecorder, $participantConsentNotifier, $transactions)
         );
 
-        $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $participants, $joinKeys, $productionAuthorization);
-        $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
-        $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization);
+        // PR #7 R14-B stage 3: the join request / approval / rejection run in
+        // one transaction with the §5.4 locks, reuse the one Participant row
+        // and write the audit log (the routes are unchanged).
+        $participantEnrollment = new ParticipantEnrollmentService($participants);
+        $requestProductionParticipation = new RequestProductionParticipationUseCase($productions, $joinKeys, $productionAuthorization, $participantEnrollment, $participantEventRecorder, $transactions);
+        $approveParticipantRequest = new ApproveParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $transactions);
+        $rejectParticipantRequest = new RejectParticipantRequestUseCase($participants, $productions, $people, $productionAuthorization, $participantEventRecorder, $transactions);
         $listPendingParticipantRequests = new ListPendingParticipantRequestsUseCase($participants, $productions, $people, $productionAuthorization);
 
         $participationRequestRestController = new ParticipationRequestRestController(
@@ -528,19 +1067,51 @@ final class Plugin
             $listPendingParticipantRequests
         );
 
-        $notificationRestController = new NotificationRestController($listNotificationsForProduction, $markNotificationRead);
+        $notificationRestController = new NotificationRestController(
+            $listNotificationsForProduction,
+            $markNotificationRead,
+            $listMyNotifications,
+            $markMyNotificationRead
+        );
+        $notificationEmailRestController = new NotificationEmailRestController(
+            $getNotificationEmailSettings,
+            $requestNotificationEmailChange,
+            $verifyNotificationEmailChange
+        );
         $dashboardRestController = new DashboardRestController($getMyDashboard);
 
         $pushPreferenceRestController = new PushPreferenceRestController($getPushPreference, $updatePushPreference);
 
-        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows);
+        $meRestController = new MeRestController($getCurrentPerson, $updatePersonName, $listMyFollows, $listMyParticipatingProductions);
+
+        // PR #7 R14-B stage 4: the invitee answers explicitly (the stage-3
+        // accept / reject / own-list UseCases), now that registration no
+        // longer resolves Production invitations.
+        $invitationRecipients = new InvitationRecipientVerifier($productionAuthorization, $userAccounts, $emailCredentials, $notificationEmails, $findPersonByEmail);
+        $participantInvitationRestController = new ParticipantInvitationRestController(
+            $createParticipantInvitation,
+            $listParticipantInvitations,
+            $resendParticipantInvitation,
+            $cancelParticipantInvitation,
+            new AcceptParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEnrollment, $participantDelegateRoles, $participantEventRecorder, $participantConsentNotifier, $transactions),
+            new RejectParticipantInvitationUseCase($participantInvitations, $productions, $invitationRecipients, $participantInvitationConditions, $participantEventRecorder, $participantConsentNotifier, $transactions),
+            new ListMyParticipantInvitationsUseCase($participantInvitations, $productions, $projects, $organizations, $participants, $invitationRecipients, $participantInvitationConditions),
+            $invitationRateLimit
+        );
+
+        // PR #7 R14-B stage 8 (§6.6): once a day (WP-Cron), delete the audit
+        // log rows older than 2 years, the send records older than 90 days
+        // (except each invitation's latest attempt) and the expired
+        // rate-limit rows - 1,000 rows per table per run.
+        ParticipantDataRetentionSchedule::register(new WordPressParticipantDataRetention($wpdb));
 
         $joinKeyRestController = new JoinKeyRestController(
             $issueOrganizationJoinKey,
             $issueProductionJoinKey,
             $resolveJoinKey,
             $disableJoinKey,
-            $joinKeys
+            $listOrganizationJoinKeys,
+            $listProductionJoinKeys
         );
 
         $membershipRestController = new MembershipRestController(
@@ -553,13 +1124,24 @@ final class Plugin
 
         $favoriteRestController = new FavoriteRestController($addFavorite, $removeFavorite, $listMyFavorites);
 
+        // PR #7 review (R5): one answer on every stageart/v1 endpoint for
+        // a closed Production (409), a lock timeout / deadlock (503,
+        // retryable) and any other failure (500) - see RestFailureResponder.
+        RestFailureResponder::register();
+        // PR #7 R14-B (§9.2): Cache-Control: no-store on every personal route, success and error.
+        PersonalResponseCachePolicy::register();
+
         add_action('rest_api_init', [$organizationRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationSnsRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationExternalLinkRestController, 'register_routes']);
+        add_action('rest_api_init', [$organizationInvitationRestController, 'register_routes']);
         add_action('rest_api_init', [$projectRestController, 'register_routes']);
         add_action('rest_api_init', [$userAccountRestController, 'register_routes']);
         add_action('rest_api_init', [$authenticationRestController, 'register_routes']);
         add_action('rest_api_init', [$productionRestController, 'register_routes']);
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);
+        add_action('rest_api_init', [$participantInvitationRestController, 'register_routes']);
         add_action('rest_api_init', [$participationRequestRestController, 'register_routes']);
 
         // StageArt Core/Module Architecture Phase 3: every Rehearsal
@@ -572,9 +1154,37 @@ final class Plugin
             add_action('rest_api_init', [$rehearsalRestController, 'register_routes']);
         }
 
+        // StageArt Core/Module Architecture Phase 2 Performance基盤: every
+        // Performance Module REST Controller is constructed inside
+        // PerformanceModuleBootstrap - registered identically to every
+        // other Controller here.
+        foreach ($performanceModule->restControllers() as $performanceRestController) {
+            add_action('rest_api_init', [$performanceRestController, 'register_routes']);
+        }
+
+        // StageArt Core/Module Architecture Phase 3 Ticket/Reservation
+        // 基盤: every Ticket Module and Reservation Module REST Controller
+        // is constructed inside their own Bootstraps - registered
+        // identically to every other Controller here.
+        foreach ($ticketModule->restControllers() as $ticketRestController) {
+            add_action('rest_api_init', [$ticketRestController, 'register_routes']);
+        }
+
+        foreach ($reservationModule->restControllers() as $reservationRestController) {
+            add_action('rest_api_init', [$reservationRestController, 'register_routes']);
+        }
+
+        // アンケート実装指示書: every Questionnaire Module REST Controller is
+        // constructed inside QuestionnaireModuleBootstrap - registered
+        // identically to every other Controller here.
+        foreach ($questionnaireModule->restControllers() as $questionnaireRestController) {
+            add_action('rest_api_init', [$questionnaireRestController, 'register_routes']);
+        }
+
         add_action('rest_api_init', [$notificationRestController, 'register_routes']);
         add_action('rest_api_init', [$dashboardRestController, 'register_routes']);
         add_action('rest_api_init', [$pushPreferenceRestController, 'register_routes']);
+        add_action('rest_api_init', [$notificationEmailRestController, 'register_routes']);
         add_action('rest_api_init', [$meRestController, 'register_routes']);
         add_action('rest_api_init', [$joinKeyRestController, 'register_routes']);
         add_action('rest_api_init', [$membershipRestController, 'register_routes']);
@@ -587,6 +1197,22 @@ final class Plugin
         // other Controller here.
         foreach ($accountingModule->restControllers() as $accountingRestController) {
             add_action('rest_api_init', [$accountingRestController, 'register_routes']);
+        }
+
+        // StageArt Core/Module Architecture Phase 4 (Check-in/精算/
+        // 会計連携): every Check-in Module and Settlement Module REST
+        // Controller is constructed inside their own Bootstraps -
+        // registered identically to every other Controller here.
+        foreach ($checkInModule->restControllers() as $checkInRestController) {
+            add_action('rest_api_init', [$checkInRestController, 'register_routes']);
+        }
+
+        foreach ($settlementModule->restControllers() as $settlementRestController) {
+            add_action('rest_api_init', [$settlementRestController, 'register_routes']);
+        }
+
+        foreach ($memberPerformanceSummaryModule->restControllers() as $memberPerformanceSummaryRestController) {
+            add_action('rest_api_init', [$memberPerformanceSummaryRestController, 'register_routes']);
         }
 
         // Phase 2 (StageArt Authentication): registers the StageArt
@@ -616,5 +1242,14 @@ final class Plugin
             $archiveProject,
             $listOrganizations
         ))->register();
+
+        (new AccountManagementAdminPage(
+            $listAllUserAccounts,
+            $blockUserAccounts,
+            $deleteUserAccounts,
+            $requestPasswordReset
+        ))->register();
+
+        (new AdminConsoleAccountAdminPage($createAdminConsoleAccount))->register();
     }
 }

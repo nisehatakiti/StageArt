@@ -1,7 +1,7 @@
 import { ApiClient } from './client';
 import { ApiError, NetworkError, NotAuthenticatedError } from './errors';
 
-const BASE_URL = 'https://dev-stageart.hatakiti.com/stageart-test/wp-json/stageart/v1';
+const BASE_URL = 'https://dev-api.stageart.top/wp-json/stageart/v1';
 
 function mockFetchOnce(status: number, body: unknown) {
   (global.fetch as jest.Mock).mockResolvedValueOnce({

@@ -39,9 +39,13 @@ Production Public Page
 
 基本URLは以下とする。
 
-https://hatakiti.com/StageArt/[Organization Slug]/
+Production:
+https://stageart.top/[Organization Slug]/
+https://stageart.top/[Organization Slug]/[Production Slug]/
 
-https://hatakiti.com/StageArt/[Organization Slug]/[Production Slug]/
+Development / Test:
+https://dummy.stageart.top/[Organization Slug]/
+https://dummy.stageart.top/[Organization Slug]/[Production Slug]/
 
 Organization Slugは公開URLの第1階層を構成する。
 
@@ -81,7 +85,8 @@ kujira
 
 この場合、Organization Public Pageは、
 
-https://hatakiti.com/StageArt/kujira/
+Production: https://stageart.top/kujira/
+Development: https://dummy.stageart.top/kujira/
 
 となる。
 

@@ -20,18 +20,32 @@ namespace StageArt\Application\Authentication;
  * Google Account can have no name set, or the consent screen can omit
  * the `profile` scope in some configurations), so both are nullable and
  * must be treated as optional everywhere downstream.
+ *
+ * Google認証ユーザーのEmail通知先対応 phase: `emailVerified` reflects
+ * Google's own OIDC `email_verified` claim (see GoogleIdTokenVerifier's
+ * own docblock for why it is normalized to a plain bool). Defaults to
+ * false so an unset/unparsed claim never accidentally reads as
+ * verified - only a token that explicitly asserts a verified email may
+ * ever seed NotificationEmail (see NotificationEmailSeeder).
  */
 final class GoogleIdTokenClaims
 {
     public string $sub;
     public ?string $email;
+    public bool $emailVerified;
     public ?string $familyName;
     public ?string $givenName;
 
-    public function __construct(string $sub, ?string $email, ?string $familyName = null, ?string $givenName = null)
-    {
+    public function __construct(
+        string $sub,
+        ?string $email,
+        bool $emailVerified = false,
+        ?string $familyName = null,
+        ?string $givenName = null
+    ) {
         $this->sub = $sub;
         $this->email = $email;
+        $this->emailVerified = $emailVerified;
         $this->familyName = $familyName;
         $this->givenName = $givenName;
     }

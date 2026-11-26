@@ -1,0 +1,287 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
+import { ThemedView } from '@/components/themed-view';
+import { DateTimeInput } from '@/components/date-time-input';
+import { Radius, Spacing } from '@/constants/theme';
+import { useRehearsal, useUpdateRehearsal } from '@/features/attendance/useRehearsals';
+import { useProduction } from '@/features/production/useProductions';
+import { REHEARSAL_ACTIVITY_TYPES } from '@/features/attendance/activityType';
+import { getErrorMessage } from '@/utils/errorMessage';
+
+/**
+ * StageArt Rehearsal機能完成度向上: UpdateRehearsalUseCase (Backend側は
+ * 既存、title/description/startDateTime/endDateTime/timezone/locationを
+ * 無条件上書きする - Rehearsal.php::updateBasicInfo()) をMobileへ接続する
+ * 編集画面。入力パターンはcreate.tsxと同じもの（テキスト入力の
+ * 日付/時刻/場所）を再利用し、新しい入力コンポーネントは追加しない。
+ *
+ * 参加メンバー選択はここに含めない -
+ * targetPersonIdsはUpdateRehearsalUseCaseの対象外で、Attendance系
+ * UseCase（AddRehearsalAttendanceTargetsUseCase等）の責務のまま。
+ *
+ * descriptionはこの画面では一切表示・編集しない（create.tsx既存仕様に
+ * 合わせ、新しい入力欄を追加しない）。ただしUpdateRehearsalUseCaseは
+ * 全フィールドを無条件上書きする実装のため、取得済みRehearsalの
+ * description値をそのまま更新requestへ渡し、nullで上書きしない
+ * （handleSubmit参照）。
+ */
+export default function EditRehearsalScreen() {
+  const { id: productionId, rehearsalId } = useLocalSearchParams<{ id: string; rehearsalId: string }>();
+  const router = useRouter();
+  const rehearsalQuery = useRehearsal(rehearsalId);
+  const productionQuery = useProduction(productionId);
+  const updateRehearsal = useUpdateRehearsal(rehearsalId);
+  const canManageRehearsal =
+    productionQuery.data?.is_primary_manager === true ||
+    productionQuery.data?.delegate_roles?.includes('REHEARSAL_MANAGER') === true;
+
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [description, setDescription] = useState('');
+  const [activityType, setActivityType] = useState('REHEARSAL');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
+
+  // "Adjust state during render, exactly once" - unlike create.tsx's own
+  // member-selection seeding (which intentionally re-seeds whenever the
+  // Participant list query resolves to a new object, since re-picking
+  // defaults on refetch is harmless there), this must seed only the
+  // FIRST time real data arrives and never again: a background refetch
+  // of useRehearsal() producing a new (even if content-identical) object
+  // reference must not silently discard whatever the user has already
+  // typed into this form.
+  if (rehearsalQuery.data && !hasInitialized) {
+    setHasInitialized(true);
+    setDescription(rehearsalQuery.data.description ?? '');
+    setActivityType(rehearsalQuery.data.activity_type);
+    setDate(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(0, 10) : '');
+    setTime(rehearsalQuery.data.start_date_time ? rehearsalQuery.data.start_date_time.slice(11, 16) : '');
+    setEndTime(rehearsalQuery.data.end_date_time ? rehearsalQuery.data.end_date_time.slice(11, 16) : '');
+    setLocation(rehearsalQuery.data.location ?? '');
+    setDeadlineDate(rehearsalQuery.data.response_deadline ? rehearsalQuery.data.response_deadline.slice(0, 10) : '');
+    setDeadlineTime(rehearsalQuery.data.response_deadline ? rehearsalQuery.data.response_deadline.slice(11, 16) : '');
+  }
+
+  // Phase 7 (Rehearsal仕様整合) §3/§11: Backend rejects a date change while
+  // CONFIRMED/ACTIVE (Rehearsal::updateBasicInfo()'s own guard) - this UX
+  // guard mirrors that, disabling the date input and explaining why,
+  // rather than letting the user hit a 422 with no context. Time remains
+  // editable (the Backend guard is date-only), matching the confirmed
+  // spec that a date change must instead go through Cancel + a new
+  // Rehearsal.
+  const isDateLocked = rehearsalQuery.data?.status === 'CONFIRMED' || rehearsalQuery.data?.status === 'ACTIVE';
+
+  async function handleSubmit() {
+    if (!rehearsalQuery.data) return;
+
+    const startDateTime = date && time ? `${date}T${time}:00+09:00` : undefined;
+    const endDateTime = date && endTime ? `${date}T${endTime}:00+09:00` : undefined;
+    const responseDeadline = deadlineDate && deadlineTime ? `${deadlineDate}T${deadlineTime}:00+09:00` : undefined;
+
+    await updateRehearsal.mutateAsync({
+      title: null,
+      description: description.trim() || null,
+      activityType,
+      startDateTime,
+      endDateTime,
+      timezone: 'Asia/Tokyo',
+      location: location.trim() || undefined,
+      responseDeadline,
+    });
+
+    router.replace(`/production/${productionId}/schedule/attendance/${rehearsalId}`);
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      {rehearsalQuery.isLoading && (
+        <ThemedView style={styles.centered}>
+          <ActivityIndicator testID="rehearsal-edit-loading" />
+        </ThemedView>
+      )}
+
+      {rehearsalQuery.isError && (
+        <ThemedView style={styles.centered}>
+          <ThemedText testID="rehearsal-edit-error">{getErrorMessage(rehearsalQuery.error)}</ThemedText>
+          <TouchableOpacity onPress={() => rehearsalQuery.refetch()} testID="rehearsal-edit-retry" accessibilityRole="button" accessibilityLabel="再読み込み">
+            <ThemedText type="link">再読み込み</ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+      )}
+
+      {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && !productionQuery.isLoading && !canManageRehearsal && (
+        <ThemedView style={styles.centered}>
+          <ThemedText>この稽古を編集する権限がありません。</ThemedText>
+          <TouchableOpacity onPress={() => router.replace(`/production/${productionId}/schedule/attendance/${rehearsalId}`)} testID="rehearsal-edit-back" accessibilityRole="button">
+            <ThemedText type="link">稽古詳細へ戻る</ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+      )}
+
+      {!rehearsalQuery.isLoading && !rehearsalQuery.isError && rehearsalQuery.data && !productionQuery.isLoading && canManageRehearsal && (
+        <ScrollView contentContainerStyle={styles.container}>
+          <ThemedText type="title" style={styles.title}>
+            予定を編集
+          </ThemedText>
+
+          <ThemedText type="small" themeColor="textSecondary">
+            予定の種別
+          </ThemedText>
+          <View style={styles.activityTypeRow}>
+            {REHEARSAL_ACTIVITY_TYPES.map((option) => {
+              const selected = activityType === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  testID={`rehearsal-edit-activity-type-${option.value}`}
+                  onPress={() => setActivityType(option.value)}
+                  style={[styles.activityTypeOption, selected && styles.activityTypeOptionSelected]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <ThemedText style={selected ? styles.activityTypeOptionTextSelected : undefined}>{option.label}</ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <ThemedText type="small" themeColor="textSecondary">
+            日付（YYYY-MM-DD）
+          </ThemedText>
+          <DateTimeInput
+            mode="date"
+            testID="rehearsal-edit-date"
+            placeholder="2026-09-10"
+            value={date}
+            onChangeText={setDate}
+            editable={!isDateLocked}
+          />
+          {isDateLocked && (
+            <ThemedText type="small" themeColor="textSecondary" testID="rehearsal-edit-date-locked-caption" style={styles.caption}>
+              確定済みの稽古は日付を変更できません。日付を変更するにはこの稽古を中止し、新しく作成してください。
+            </ThemedText>
+          )}
+
+          <ThemedText type="small" themeColor="textSecondary">
+            開始時刻（HH:mm）
+          </ThemedText>
+          <DateTimeInput
+            mode="time"
+            testID="rehearsal-edit-time"
+            placeholder="18:00"
+            value={time}
+            onChangeText={setTime}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            終了時刻（HH:mm）
+          </ThemedText>
+          <DateTimeInput
+            mode="time"
+            testID="rehearsal-edit-end-time"
+            placeholder="20:00"
+            value={endTime}
+            onChangeText={setEndTime}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            場所
+          </ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-edit-location"
+            placeholder="○○スタジオ"
+            value={location}
+            onChangeText={setLocation}
+            style={styles.input}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            備考（任意）
+          </ThemedText>
+          <ThemedTextInput
+            testID="rehearsal-edit-description"
+            placeholder="稽古内容、持ち物、連絡事項など"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            style={[styles.input, styles.descriptionInput]}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            回答期限（任意・YYYY-MM-DD）
+          </ThemedText>
+          <DateTimeInput
+            mode="date"
+            testID="rehearsal-edit-deadline-date"
+            placeholder="2026-09-19"
+            value={deadlineDate}
+            onChangeText={setDeadlineDate}
+          />
+
+          <ThemedText type="small" themeColor="textSecondary">
+            回答期限の時刻（HH:mm）
+          </ThemedText>
+          <DateTimeInput
+            mode="time"
+            testID="rehearsal-edit-deadline-time"
+            placeholder="18:00"
+            value={deadlineTime}
+            onChangeText={setDeadlineTime}
+          />
+
+          {updateRehearsal.isError && <ThemedText style={styles.error}>{getErrorMessage(updateRehearsal.error)}</ThemedText>}
+
+          <TouchableOpacity
+            testID="rehearsal-edit-submit"
+            onPress={handleSubmit}
+            disabled={updateRehearsal.isPending}
+            style={[styles.button, updateRehearsal.isPending && styles.buttonDisabled]}
+          >
+            {updateRehearsal.isPending ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>保存する</ThemedText>}
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
+  container: { padding: Spacing.four, gap: Spacing.two },
+  title: { fontSize: 22, lineHeight: 28, marginBottom: Spacing.two },
+  activityTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two },
+  activityTypeOption: { borderWidth: 1, borderColor: '#ccc', borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  activityTypeOptionSelected: { backgroundColor: '#4a3f7a', borderColor: '#4a3f7a' },
+  activityTypeOptionTextSelected: { color: '#fff', fontWeight: '600' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 16,
+    marginBottom: Spacing.two,
+  },
+  inputDisabled: { opacity: 0.5 },
+  descriptionInput: { minHeight: 100, textAlignVertical: 'top' },
+  caption: { marginTop: -Spacing.one, marginBottom: Spacing.two },
+  button: {
+    backgroundColor: '#4a3f7a',
+    borderRadius: Radius.medium,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    marginTop: Spacing.two,
+  },
+  buttonDisabled: { opacity: 0.6 },
+  buttonText: { color: '#fff', fontWeight: '600' },
+  error: { color: '#a6483a' },
+});

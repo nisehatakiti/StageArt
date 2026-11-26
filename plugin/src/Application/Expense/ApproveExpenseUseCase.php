@@ -1,0 +1,201 @@
+<?php
+
+declare(strict_types=1);
+
+namespace StageArt\Application\Expense;
+
+use DateTimeImmutable;
+use InvalidArgumentException;
+use StageArt\Application\Accounting\AccountingCapability;
+use StageArt\Application\Accounting\StandardPayableAccountResolver;
+use StageArt\Application\Production\ProductionNotFoundException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Core\Contract\AuthorizationContract;
+use StageArt\Core\Contract\IdentityContract;
+use StageArt\Core\Contract\OrganizationContextContract;
+use StageArt\Core\Contract\ProductionContextContract;
+use StageArt\Domain\Account\AccountRepositoryInterface;
+use StageArt\Domain\Expense\Expense;
+use StageArt\Domain\Expense\ExpenseApprovedAmountMismatchException;
+use StageArt\Domain\Expense\ExpenseId;
+use StageArt\Domain\Expense\ExpenseRepositoryInterface;
+use StageArt\Domain\Expense\ExpenseSelfApprovalException;
+use StageArt\Domain\Expense\ExpenseStateConflictException;
+use StageArt\Domain\JournalEntry\DebitCredit;
+use StageArt\Domain\JournalEntry\JournalEntry;
+use StageArt\Domain\JournalEntry\JournalEntryLine;
+use StageArt\Domain\JournalEntry\JournalEntryRepositoryInterface;
+use StageArt\Domain\Organization\OrganizationId;
+use StageArt\Domain\Person\PersonId;
+
+/**
+ * ExpenseApprovalWorkflow.md "Approval" / "Posting Rule": approving an
+ * Expense posts it - one Journal Entry for the approved total, created
+ * already POSTED, with no separate Post step.
+ *
+ * Debit: each Expense Line's own Account and amount; the approved total
+ * is always the requested one and the Lines' total
+ * (ExpenseApprovalWorkflow.md Version 1.10 - an approver cannot change
+ * the amount; Expense::resolveApprovedAmount() refuses it, and the Journal
+ * Entry is built only for an unchanged total).
+ * Credit: 未払金 (StandardPayableAccountResolver).
+ *
+ * One Expense can never produce two Journal Entries:
+ * - the Expense row is locked (findByIdForUpdate) for the whole
+ *   transaction, so concurrent approvals run one after another and the
+ *   second finds it POSTED;
+ * - an "ExpenseApproved" Journal Entry already present for the Expense is
+ *   refused;
+ * - the Expense save is conditional on the SUBMITTED status / revision it
+ *   was loaded with, and the history refuses a second APPROVED entry for
+ *   the same revision.
+ * Approving needs `Expense.Approve` - PrimaryManager, 会計管理者 or 代理人
+ * (StageArt 統合・会計仕様の確定事項 2026-10-28 §2) - and never lets
+ * anyone approve their own Expense (Expense::resolveApprovedAmount()).
+ * Any failure throws inside the transaction, so the Journal Entry and the
+ * Expense are written together or not at all. The applicant is notified
+ * only after the commit.
+ */
+final class ApproveExpenseUseCase
+{
+    public const SOURCE_EVENT_TYPE = 'ExpenseApproved';
+
+    private ExpenseRepositoryInterface $expenses;
+    private JournalEntryRepositoryInterface $journalEntries;
+    private AccountRepositoryInterface $accounts;
+    private StandardPayableAccountResolver $payableAccounts;
+    private ProductionContextContract $productionContext;
+    private OrganizationContextContract $organizationContext;
+    private IdentityContract $identity;
+    private AuthorizationContract $authorization;
+    private TransactionManagerInterface $transactions;
+    private ExpenseWorkflowNotifier $notifier;
+
+    public function __construct(
+        ExpenseRepositoryInterface $expenses,
+        JournalEntryRepositoryInterface $journalEntries,
+        AccountRepositoryInterface $accounts,
+        StandardPayableAccountResolver $payableAccounts,
+        ProductionContextContract $productionContext,
+        OrganizationContextContract $organizationContext,
+        IdentityContract $identity,
+        AuthorizationContract $authorization,
+        TransactionManagerInterface $transactions,
+        ExpenseWorkflowNotifier $notifier
+    ) {
+        $this->expenses = $expenses;
+        $this->journalEntries = $journalEntries;
+        $this->accounts = $accounts;
+        $this->payableAccounts = $payableAccounts;
+        $this->productionContext = $productionContext;
+        $this->organizationContext = $organizationContext;
+        $this->identity = $identity;
+        $this->authorization = $authorization;
+        $this->transactions = $transactions;
+        $this->notifier = $notifier;
+    }
+
+    public function execute(ApproveExpenseCommand $command): ExpenseResult
+    {
+        $requesterId = $this->identity->resolveCurrentPersonId($command->requestedByWordPressUserId);
+
+        if (! $requesterId) {
+            throw new ExpenseAccessDeniedException('No StageArt Person is linked to this WordPress user.');
+        }
+
+        $expenseId = ExpenseId::fromString($command->expenseId);
+        $expense = $this->expenses->findById($expenseId);
+
+        if (! $expense) {
+            throw new ExpenseNotFoundException($command->expenseId);
+        }
+
+        $productionId = $expense->productionId();
+
+        if (! $this->authorization->canForProduction($requesterId, $productionId, AccountingCapability::APPROVE_EXPENSE)) {
+            throw new ExpenseAccessDeniedException('Only the PrimaryManager, an accounting manager or a proxy manager can approve an Expense.');
+        }
+
+        $organizationId = $this->productionContext->getProductionOrganizationId($productionId);
+
+        if (! $organizationId) {
+            throw new ProductionNotFoundException($productionId->toString());
+        }
+
+        if (! $this->organizationContext->isAccountingEnabled($organizationId)) {
+            throw new ExpenseAccountingDisabledException('Accounting is not enabled for this Organization, so an Expense cannot be approved and posted.');
+        }
+
+        $approved = $this->transactions->run(function () use ($expenseId, $command, $requesterId, $organizationId): Expense {
+            $locked = $this->expenses->findByIdForUpdate($expenseId);
+
+            if (! $locked) {
+                throw new ExpenseNotFoundException($command->expenseId);
+            }
+
+            try {
+                $amount = $locked->resolveApprovedAmount($requesterId, $command->approvedAmount, $command->expectedRevision);
+            } catch (ExpenseSelfApprovalException $exception) {
+                throw new ExpenseAccessDeniedException($exception->getMessage());
+            }
+
+            if ($this->journalEntries->findBySourceEvent(self::SOURCE_EVENT_TYPE, $locked->id()->toString()) !== null) {
+                throw new ExpenseStateConflictException('This Expense has already been posted.');
+            }
+
+            // One instant for the Journal Date and approved_at, so the 仕訳日
+            // (its JST date, AccountingDate) is the approval date.
+            $approvedAt = new DateTimeImmutable();
+            $journalEntry = $this->buildPostedJournalEntry($locked, $amount, $organizationId, $requesterId, $approvedAt);
+            $this->journalEntries->save($journalEntry);
+
+            $locked->approve($requesterId, $command->approvedAmount, $command->expectedRevision, $journalEntry->id(), $approvedAt);
+            $this->expenses->save($locked);
+
+            return $locked;
+        });
+
+        $this->notifier->approved($approved);
+
+        return ExpenseResult::fromDomain($approved);
+    }
+
+    private function buildPostedJournalEntry(Expense $expense, int $amount, OrganizationId $organizationId, PersonId $approver, DateTimeImmutable $journalDate): JournalEntry
+    {
+        foreach ($expense->lines() as $line) {
+            $account = $this->accounts->findById($line->accountId());
+
+            if (! $account || ! $account->organizationId()->equals($organizationId) || ! $account->isActive()) {
+                throw new InvalidArgumentException('Every Expense Line must use an active Account of the Production\'s own Organization before it can be approved.');
+            }
+        }
+
+        // Never posted for any other total than the one requested and the
+        // Lines' own (Version 1.10), whoever calls this Use Case.
+        if ($amount !== (int) $expense->requestedAmount() || $amount !== $expense->totalAmount()) {
+            throw new ExpenseApprovedAmountMismatchException('An Expense can only be posted for its requested amount, which must equal the total of its Lines.');
+        }
+
+        $debitLines = array_map(
+            static fn ($line): JournalEntryLine => JournalEntryLine::create($line->accountId(), DebitCredit::debit(), $line->amount(), $line->description()),
+            $expense->lines()
+        );
+
+        $payable = $this->payableAccounts->resolvePayableAccount($organizationId);
+        $creditLine = JournalEntryLine::create($payable->id(), DebitCredit::credit(), $amount, '未払金（承認済み経費）');
+
+        $journalEntry = JournalEntry::create(
+            $organizationId,
+            $expense->productionId(),
+            $journalDate,
+            "Expense Approved ({$expense->id()->toString()})",
+            [...$debitLines, $creditLine],
+            $approver,
+            self::SOURCE_EVENT_TYPE,
+            $expense->id()->toString()
+        );
+        $journalEntry->post($approver);
+
+        return $journalEntry;
+    }
+}

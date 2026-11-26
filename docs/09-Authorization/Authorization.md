@@ -249,6 +249,7 @@ Rehearsal.Create
 Rehearsal.Update
 Rehearsal.Delete
 Schedule.Read
+Participant.Read
 
 RESERVATION_MANAGER
     ↓
@@ -275,6 +276,16 @@ Performance.Cancel
 Performance.Finish
 
 などを定義できる。
+
+REHEARSAL_MANAGERのParticipant.Readは、稽古の対象メンバーを選定するために
+Production Participant一覧を参照できることを意味する。Participant.Create /
+Update / Deleteは含まず、Participant自体の追加・削除・役割変更は
+PARTICIPANT_MANAGER（またはPrimaryManager）の権限に留める。
+
+PR #7 R14-B以降（2026-11-19追記）：
+
+- Production ScopeのRole（ProductionDelegate）のPermissionが有効なのは、ProductionDelegateがACTIVEで、かつ、その人物がこのProductionの同意を記録済みのACTIVEなPERSONのParticipantである場合だけ（`04-DomainModel/ProductionDelegate.md`「担当者の有効性（PR #7 R14-B）」）。PrimaryManagerは、これに依存しない。
+- REHEARSAL_MANAGERのParticipant.Readで参照できる情報は制限される：メールアドレスと同意の情報は含まず、終了した参加者（CANCELLED・WITHDRAWN・REJECTED）は一覧に含まない。公演の終了後（COMPLETED・ARCHIVED・CANCELLED）は氏名も含まない。開示の詳細は `08-API/ParticipantAPI.md`「参加者情報の開示（設計書 §7.3）」を正とする。
 
 RoleはPermission Setの定義であり、
 Person固有の属性ではない。
@@ -493,6 +504,7 @@ Rehearsal.Create
 Rehearsal.Update
 Rehearsal.Delete
 Schedule.Read
+Participant.Read
 
 RESERVATION_MANAGER
     ↓

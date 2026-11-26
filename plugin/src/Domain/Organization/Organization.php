@@ -16,6 +16,17 @@ final class Organization
     private ?string $description;
     private OrganizationStatus $status;
     private ?DateTimeImmutable $publishedAt;
+    private bool $accountingEnabled;
+    /**
+     * StageArt 団体管理UI整理: the uploaded logo's resulting URL, mirroring
+     * Production.flyerUrl's exact pattern - actual image hosting/upload
+     * is out of this round's scope (no file-upload infrastructure exists
+     * anywhere in this codebase yet, Production's own flyerUrl has never
+     * had a working upload UI either), so this is a plain URL the
+     * Organization info screen lets an Owner/ORGANIZATION_MANAGER paste
+     * or edit directly.
+     */
+    private ?string $logoUrl;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -27,6 +38,8 @@ final class Organization
         ?string $description,
         OrganizationStatus $status,
         ?DateTimeImmutable $publishedAt,
+        bool $accountingEnabled,
+        ?string $logoUrl,
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt
     ) {
@@ -37,6 +50,8 @@ final class Organization
         $this->description = $description;
         $this->status = $status;
         $this->publishedAt = $publishedAt;
+        $this->accountingEnabled = $accountingEnabled;
+        $this->logoUrl = $logoUrl;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -59,7 +74,9 @@ final class Organization
         OrganizationName $name,
         ?string $type = null,
         ?string $description = null,
-        ?OrganizationSlug $slug = null
+        ?OrganizationSlug $slug = null,
+        bool $accountingEnabled = false,
+        ?string $logoUrl = null
     ): self {
         $now = new DateTimeImmutable();
 
@@ -71,6 +88,8 @@ final class Organization
             $description,
             OrganizationStatus::active(),
             null,
+            $accountingEnabled,
+            $logoUrl,
             $now,
             $now
         );
@@ -85,9 +104,11 @@ final class Organization
         DateTimeImmutable $createdAt,
         DateTimeImmutable $updatedAt,
         ?OrganizationSlug $slug = null,
-        ?DateTimeImmutable $publishedAt = null
+        ?DateTimeImmutable $publishedAt = null,
+        bool $accountingEnabled = false,
+        ?string $logoUrl = null
     ): self {
-        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $createdAt, $updatedAt);
+        return new self($id, $name, $slug, $type, $description, $status, $publishedAt, $accountingEnabled, $logoUrl, $createdAt, $updatedAt);
     }
 
     public function rename(OrganizationName $name): void
@@ -156,6 +177,12 @@ final class Organization
         $this->touch();
     }
 
+    public function changeLogoUrl(?string $logoUrl): void
+    {
+        $this->logoUrl = $logoUrl;
+        $this->touch();
+    }
+
     public function activate(): void
     {
         $this->status = OrganizationStatus::active();
@@ -172,6 +199,29 @@ final class Organization
     {
         $this->status = OrganizationStatus::fromString(OrganizationStatus::ARCHIVED);
         $this->touch();
+    }
+
+    /**
+     * OrganizationSetupPolicy.md §13/Step 2: Accounting is one-way -
+     * "一度有効化した後、会計履歴を失わせる目的で単純にOFFへ戻す設計は採用
+     * しない". No `disableAccounting()` exists by design. Idempotent
+     * (calling this on an already-enabled Organization is a no-op, not
+     * an error) since nothing about re-confirming an existing state is a
+     * business violation.
+     */
+    public function enableAccounting(): void
+    {
+        if ($this->accountingEnabled) {
+            return;
+        }
+
+        $this->accountingEnabled = true;
+        $this->touch();
+    }
+
+    public function isAccountingEnabled(): bool
+    {
+        return $this->accountingEnabled;
     }
 
     private function touch(): void
@@ -207,6 +257,11 @@ final class Organization
     public function description(): ?string
     {
         return $this->description;
+    }
+
+    public function logoUrl(): ?string
+    {
+        return $this->logoUrl;
     }
 
     public function status(): OrganizationStatus

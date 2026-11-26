@@ -5,12 +5,10 @@ import type { Production } from '@/types/api';
 
 import { ThemedText } from './themed-text';
 
-/** ProductionLifecycle.md's DRAFT/PLANNING/ACTIVE/COMPLETED/ARCHIVED,
- * plus CANCELLED as a separate non-standard state. Display-only label -
- * no Status-editing affordance anywhere in this component (§4 forbids
- * any Status-change UI this Phase). */
+/** Confirmed Production Lifecycle: PLANNING/ACTIVE/COMPLETED (DRAFT is
+ * not used). ARCHIVED/CANCELLED are kept displayable as-is. Display-only
+ * label - no Status-editing affordance anywhere in this component. */
 const STATUS_LABEL: Record<string, string> = {
-  DRAFT: '下書き',
   PLANNING: '準備中',
   ACTIVE: '進行中',
   COMPLETED: '終了',

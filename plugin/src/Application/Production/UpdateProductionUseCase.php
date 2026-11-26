@@ -7,29 +7,80 @@ namespace StageArt\Application\Production;
 use DateTimeImmutable;
 use Exception;
 use InvalidArgumentException;
+use StageArt\Application\Shared\TransactionManagerInterface;
+use StageArt\Application\Shared\WebUrl;
+use StageArt\Domain\Performance\Performance;
+use StageArt\Application\Performance\CapacityBelowReservationsException;
+use StageArt\Domain\Performance\PerformanceRepositoryInterface;
+use StageArt\Domain\Performance\PerformanceStatus;
+use StageArt\Domain\Reservation\Reservation;
+use StageArt\Domain\Reservation\ReservationRepositoryInterface;
+use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionName;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 use StageArt\Domain\Production\ProductionSlug;
 
 /**
- * Basic-info updates (Name only) are PrimaryManager-exclusive (see
- * ProductionAuthorizationService::canManageProduction) - no enumerated
- * ProductionDelegate Role grants Production.Update in this phase.
+ * PR #8 統合 (2026-11-24): the PrimaryManager or the Production's 公演代理人
+ * (ProductionAuthorizationService::canActAsProductionManager()) - 会計担当,
+ * 稽古担当, 参加者担当 and 受付担当 alone are refused (403). What this Use
+ * Case can change is exactly what the 公演代理人 is allowed to change:
+ * 公演名・肩書, Slug, 公開状態 (公開日時), the public-page items (紹介文,
+ * フライヤー, 会場, 日程, 作・演出, それぞれの公開日時, メンバー情報の公開日時),
+ * 定員 (cascaded to the Performances), 公演回の共通設定 (備考) and 上演時間.
+ * Lifecycle Status (refused with 422 by the controller) and the
+ * PrimaryManager (ChangePrimaryManagerUseCase, PrimaryManager-only) are not
+ * reachable here. Formerly PrimaryManager-exclusive (canManageProduction()).
  *
  * Phase 6.1: no longer touches Status. See UpdateProductionCommand's
  * docblock - Status changes go through the dedicated Lifecycle Action
  * UseCases instead.
+ *
+ * Phase 2 Performance基盤 §11/§12: depends directly on
+ * `Domain\Performance\PerformanceRepositoryInterface` (a Domain-layer
+ * interface, not any Performance Module Application/Core-Contract type)
+ * per the instruction's own explicit direction - "定員一括上書きの業務処理
+ * は、Production更新のApplication UseCase内でRepositoryを利用して処理する
+ * 構成を基本としてください". Production save and the full Performance
+ * capacity cascade run inside one `TransactionManagerInterface::run()`
+ * call so a failure partway through never leaves Production's own
+ * capacity and its Performances' capacities inconsistent (§12).
  */
 final class UpdateProductionUseCase
 {
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
+    private PerformanceRepositoryInterface $performances;
+    private TransactionManagerInterface $transactions;
+    private ReservationRepositoryInterface $reservations;
 
-    public function __construct(ProductionRepositoryInterface $productions, ProductionAuthorizationService $authorization)
-    {
+    public function __construct(
+        ProductionRepositoryInterface $productions,
+        ProductionAuthorizationService $authorization,
+        PerformanceRepositoryInterface $performances,
+        TransactionManagerInterface $transactions,
+        ReservationRepositoryInterface $reservations
+    ) {
         $this->productions = $productions;
         $this->authorization = $authorization;
+        $this->performances = $performances;
+        $this->transactions = $transactions;
+        $this->reservations = $reservations;
+    }
+
+    /**
+     * PR #7 review (R6): the seats a Performance's Reservations take (every
+     * one not CANCELLED, as the booking capacity check counts them), read
+     * with FOR UPDATE after the Production lock (order Production ->
+     * Performance -> Reservation).
+     */
+    private function occupiedSeats(Performance $performance): int
+    {
+        return array_sum(array_map(
+            static fn (Reservation $r): int => $r->occupiesCapacity() ? $r->guestCount() : 0,
+            $this->reservations->findByPerformanceIdForUpdate($performance->id())
+        ));
     }
 
     public function execute(UpdateProductionCommand $command): ProductionResult
@@ -46,40 +97,165 @@ final class UpdateProductionUseCase
             throw new ProductionNotFoundException($command->productionId);
         }
 
-        if (! $this->authorization->canManageProduction($person, $production)) {
-            throw new ProductionAccessDeniedException('Only the PrimaryManager can update this Production.');
+        if (! $this->authorization->canActAsProductionManager($person, $production)) {
+            throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can update this Production.');
         }
 
-        $production->rename(new ProductionName($command->name));
-        $production->changeTitleHeading($command->titleHeading);
+        // PR #7 review (R5): the form is applied to the Production as re-read
+        // under the exclusive lock, in the transaction that saves it and
+        // cascades capacity / duration to its Performances. save() writes
+        // every column, so saving the copy read above could put back a
+        // status or a Ticket Back / sales setting committed since (e.g.
+        // reopen a Production that Completion had just closed). Holding the
+        // exclusive lock also orders the cascade after the bookings in
+        // progress, which hold the shared lock and read capacity under it,
+        // and after Performance edits / cancellations (shared lock too), so
+        // the cascade never overwrites one of those with an older copy.
+        $production = $this->transactions->run(function () use ($production, $person, $command): Production {
+            $production = $this->productions->findByIdForUpdate($production->id());
 
-        if ($command->slug !== null) {
-            $newSlug = new ProductionSlug($command->slug);
-            $currentSlug = $production->slug();
+            if (! $production) {
+                throw new ProductionNotFoundException($command->productionId);
+            }
 
-            if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
-                $existing = $this->productions->findBySlug($newSlug->toString());
+            if (! $this->authorization->canActAsProductionManager($person, $production)) {
+                throw new ProductionAccessDeniedException('Only the PrimaryManager or the Production proxy manager can update this Production.');
+            }
 
-                if ($existing !== null && ! $existing->id()->equals($production->id())) {
-                    throw new ProductionSlugAlreadyTakenException($newSlug->toString());
+            // PR #7 R14-A (N1): a field the request did not send keeps its
+            // current value (UpdateProductionCommand::$providedFields); one
+            // sent as null is cleared.
+            $sent = static fn (string $field): bool => $command->isProvided($field);
+            $date = fn (string $field, ?string $value, ?DateTimeImmutable $current): ?DateTimeImmutable => $sent($field) ? $this->parseOptionalDateTime($value) : $current;
+
+            if ($sent('name')) {
+                $production->rename(new ProductionName($command->name));
+            }
+
+            if ($sent('title_heading')) {
+                $production->changeTitleHeading($command->titleHeading);
+            }
+
+            if ($command->slug !== null) {
+                $newSlug = new ProductionSlug($command->slug);
+                $currentSlug = $production->slug();
+
+                if ($currentSlug === null || ! $currentSlug->equals($newSlug)) {
+                    $existing = $this->productions->findBySlug($newSlug->toString());
+
+                    if ($existing !== null && ! $existing->id()->equals($production->id())) {
+                        throw new ProductionSlugAlreadyTakenException($newSlug->toString());
+                    }
+
+                    $production->changeSlug($newSlug);
+                }
+            }
+
+            if ($command->published === true) {
+                $production->publish($this->parseOptionalDateTime($command->publishedAt));
+            } elseif ($command->published === false) {
+                $production->unpublish();
+            }
+
+            $production->updateDescription(
+                $sent('description') ? $command->description : $production->description(),
+                $date('description_published_at', $command->descriptionPublishedAt, $production->descriptionPublishedAt())
+            );
+            $production->updateFlyer(
+                // PR #7 R14-A (F9): shown on the public page - http(s) only.
+                $sent('flyer_url') ? WebUrl::optional($command->flyerUrl, 'flyer_url') : $production->flyerUrl(),
+                $date('flyer_published_at', $command->flyerPublishedAt, $production->flyerPublishedAt())
+            );
+            $production->updateVenue(
+                $sent('venue_name') ? $command->venueName : $production->venueName(),
+                $date('venue_published_at', $command->venuePublishedAt, $production->venuePublishedAt())
+            );
+            $production->updateSchedule(
+                $date('schedule_start_date', $command->scheduleStartDate, $production->scheduleStartDate()),
+                $date('schedule_end_date', $command->scheduleEndDate, $production->scheduleEndDate()),
+                $date('schedule_published_at', $command->schedulePublishedAt, $production->schedulePublishedAt())
+            );
+            $production->updateScriptDirection(
+                $sent('script_credit') ? $command->scriptCredit : $production->scriptCredit(),
+                $sent('direction_credit') ? $command->directionCredit : $production->directionCredit(),
+                $date('script_direction_published_at', $command->scriptDirectionPublishedAt, $production->scriptDirectionPublishedAt())
+            );
+            $production->updateMemberInfoPublishedAt(
+                $date('member_info_published_at', $command->memberInfoPublishedAt, $production->memberInfoPublishedAt())
+            );
+
+            if ($sent('performance_common_remarks')) {
+                $production->updatePerformanceCommonRemarks($command->performanceCommonRemarks);
+            }
+
+            $previousDuration = $production->performanceDurationMinutes();
+
+            if ($sent('performance_duration_minutes')) {
+                $production->updatePerformanceDurationMinutes($command->performanceDurationMinutes);
+            }
+
+            $newDuration = $production->performanceDurationMinutes();
+            $durationChanged = $newDuration !== $previousDuration;
+
+            $previousCapacity = $production->capacity();
+
+            if ($sent('capacity')) {
+                $production->changeCapacity($command->capacity);
+            }
+            $newCapacity = $production->capacity();
+            $capacityChanged = $newCapacity !== null && $newCapacity !== $previousCapacity;
+
+            $this->productions->save($production);
+
+            if (! $capacityChanged && ! $durationChanged) {
+                return $production;
+            }
+
+            foreach ($this->performances->findByProductionId($production->id()) as $listed) {
+                // (R6) Lock order Production -> Performance -> Reservation.
+                $performance = $this->performances->findByIdForUpdate($listed->id()) ?? $listed;
+
+                if ($capacityChanged) {
+                    // (R6) A Performance whose capacity would go down below the
+                    // seats already taken refuses the whole update: nothing is
+                    // saved (the transaction rolls back). A CANCELLED Performance
+                    // takes no new bookings, so it is not checked.
+                    if (
+                        $newCapacity < $performance->capacity()
+                        && ! $performance->status()->equals(PerformanceStatus::fromString(PerformanceStatus::CANCELLED))
+                    ) {
+                        $occupied = $this->occupiedSeats($performance);
+
+                        if ($newCapacity < $occupied) {
+                            throw new CapacityBelowReservationsException($performance->id()->toString(), $newCapacity, $occupied);
+                        }
+                    }
+
+                    // §11/§26: unconditional overwrite of every child Performance's
+                    // capacity, including individually-customized and CANCELLED ones.
+                    $performance->changeCapacity($newCapacity);
                 }
 
-                $production->changeSlug($newSlug);
+                if ($durationChanged && ! $performance->endTimeCustomized()) {
+                    $performance->setAutoCalculatedEndTime(
+                        $newDuration === null
+                            ? null
+                            : Performance::calculateEndTime($performance->startTime(), $newDuration)
+                    );
+                }
+
+                $this->performances->save($performance);
             }
-        }
 
-        if ($command->published === true) {
-            $production->publish($this->parseOptionalDateTime($command->publishedAt));
-        } elseif ($command->published === false) {
-            $production->unpublish();
-        }
-
-        $this->productions->save($production);
+            return $production;
+        });
 
         return ProductionResult::fromDomain(
             $production,
-            true,
-            $this->authorization->activeDelegateFor($person, $production)
+            $this->authorization->isPrimaryManager($person, $production),
+            $this->authorization->activeDelegateFor($person, $production),
+            $this->authorization->activeDelegatesFor($person, $production),
+            $this->authorization->canCompleteProduction($person, $production)
         );
     }
 

@@ -23,7 +23,9 @@ use InvalidArgumentException;
  * Which Roles are meaningful in which Scope is left to how Membership/
  * ProductionDelegate actually use them (Organization Setup currently
  * only ever assigns OWNER/MEMBER; ProductionDelegate currently only ever
- * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER) - Role.md is explicit
+ * assigns PARTICIPANT_MANAGER/REHEARSAL_MANAGER/PERFORMANCE_MANAGER/
+ * TICKET_MANAGER/RESERVATION_MANAGER - the last two added by Phase 3
+ * Ticket/Reservation基盤) - Role.md is explicit
  * that Role Definitions themselves carry no ScopeType ("Roleそのものは、
  * OrganizationやProductionなどのScopeを持たない"), so this catalog
  * deliberately does not partition its values by Scope.
@@ -37,14 +39,43 @@ final class RoleKey
 {
     public const OWNER = 'OWNER';
     public const MEMBER = 'MEMBER';
+    /**
+     * StageArt 団体管理UI整理: the Organization-Scope "代理人" (delegate)
+     * Role, per docs/04-DomainModel/Organization.md's "DelegateRole"
+     * section ("Organization Ownerという独立したRole体系は作成しない" /
+     * "一つのMembershipへ複数Roleを直接付与する構造は基本設計としない") -
+     * delegation at Organization Scope is a Membership.changeRole() call
+     * toward this Role, never a separate Delegate Entity/table the way
+     * ProductionDelegate works at Production Scope. Granted/revoked only
+     * by the Organization OWNER (see AssignOrganizationDelegateUseCase/
+     * RevokeOrganizationDelegateUseCase); authorized via the same
+     * explicit per-call-site RoleKey allow-list OWNER already uses
+     * (OrganizationAuthorizationService::hasRole()), not a RolePermissions
+     * entry - matching RolePermissions.php's own documented reason for
+     * leaving OWNER/MEMBER out of that map.
+     */
+    public const ORGANIZATION_MANAGER = 'ORGANIZATION_MANAGER';
     public const PARTICIPANT_MANAGER = 'PARTICIPANT_MANAGER';
     public const REHEARSAL_MANAGER = 'REHEARSAL_MANAGER';
+    public const PERFORMANCE_MANAGER = 'PERFORMANCE_MANAGER';
+    public const TICKET_MANAGER = 'TICKET_MANAGER';
+    public const RESERVATION_MANAGER = 'RESERVATION_MANAGER';
+    public const CHECKIN_MANAGER = 'CHECKIN_MANAGER';
+    public const QUESTIONNAIRE_MANAGER = 'QUESTIONNAIRE_MANAGER';
+    public const ACCOUNTING_MANAGER = 'ACCOUNTING_MANAGER';
 
     private const VALID = [
         self::OWNER,
         self::MEMBER,
+        self::ORGANIZATION_MANAGER,
         self::PARTICIPANT_MANAGER,
         self::REHEARSAL_MANAGER,
+        self::PERFORMANCE_MANAGER,
+        self::TICKET_MANAGER,
+        self::RESERVATION_MANAGER,
+        self::CHECKIN_MANAGER,
+        self::QUESTIONNAIRE_MANAGER,
+        self::ACCOUNTING_MANAGER,
     ];
 
     private string $value;
@@ -68,6 +99,11 @@ final class RoleKey
         return new self(self::MEMBER);
     }
 
+    public static function organizationManager(): self
+    {
+        return new self(self::ORGANIZATION_MANAGER);
+    }
+
     public static function participantManager(): self
     {
         return new self(self::PARTICIPANT_MANAGER);
@@ -76,6 +112,36 @@ final class RoleKey
     public static function rehearsalManager(): self
     {
         return new self(self::REHEARSAL_MANAGER);
+    }
+
+    public static function performanceManager(): self
+    {
+        return new self(self::PERFORMANCE_MANAGER);
+    }
+
+    public static function ticketManager(): self
+    {
+        return new self(self::TICKET_MANAGER);
+    }
+
+    public static function reservationManager(): self
+    {
+        return new self(self::RESERVATION_MANAGER);
+    }
+
+    public static function checkInManager(): self
+    {
+        return new self(self::CHECKIN_MANAGER);
+    }
+
+    public static function questionnaireManager(): self
+    {
+        return new self(self::QUESTIONNAIRE_MANAGER);
+    }
+
+    public static function accountingManager(): self
+    {
+        return new self(self::ACCOUNTING_MANAGER);
     }
 
     public static function fromString(string $value): self

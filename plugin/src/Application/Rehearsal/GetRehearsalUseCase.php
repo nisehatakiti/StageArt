@@ -22,17 +22,20 @@ final class GetRehearsalUseCase
     private ProductionContextContract $productionContext;
     private IdentityContract $identity;
     private MembershipContract $membership;
+    private RehearsalStatusTimeSync $statusTimeSync;
 
     public function __construct(
         RehearsalRepositoryInterface $rehearsals,
         ProductionContextContract $productionContext,
         IdentityContract $identity,
-        MembershipContract $membership
+        MembershipContract $membership,
+        RehearsalStatusTimeSync $statusTimeSync
     ) {
         $this->rehearsals = $rehearsals;
         $this->productionContext = $productionContext;
         $this->identity = $identity;
         $this->membership = $membership;
+        $this->statusTimeSync = $statusTimeSync;
     }
 
     public function execute(GetRehearsalQuery $query): RehearsalResult
@@ -59,6 +62,8 @@ final class GetRehearsalUseCase
         if (! $this->membership->isProductionMember($requesterId, $productionId)) {
             throw new RehearsalAccessDeniedException('You must be a member of this Production to view this Rehearsal.');
         }
+
+        $rehearsal = $this->statusTimeSync->sync($rehearsal);
 
         return RehearsalResult::fromDomain($rehearsal);
     }

@@ -130,6 +130,7 @@ final class FavoriteUseCaseTest extends TestCase
             null,
             new ProductionSlug('autumn-play')
         );
+        $production->activate();
         $production->publish();
         $productions->save($production);
 

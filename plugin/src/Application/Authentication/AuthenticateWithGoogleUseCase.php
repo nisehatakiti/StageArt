@@ -6,15 +6,19 @@ namespace StageArt\Application\Authentication;
 
 use DateInterval;
 use DateTimeImmutable;
+use StageArt\Application\Notification\NotificationEmailSeeder;
+use StageArt\Application\OrganizationInvitation\ResolveOrganizationInvitationUseCase;
 use StageArt\Application\Shared\TransactionManagerInterface;
 use StageArt\Domain\Authentication\RefreshToken;
 use StageArt\Domain\Authentication\RefreshTokenRepositoryInterface;
 use StageArt\Domain\Person\Person;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\PersonRepositoryInterface;
 use StageArt\Domain\UserAccount\ExternalIdentity;
 use StageArt\Domain\UserAccount\ExternalIdentityRepositoryInterface;
 use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
+use Throwable;
 
 /**
  * The Phase 2 authentication flow: Google ID Token → ExternalIdentity →
@@ -43,6 +47,8 @@ final class AuthenticateWithGoogleUseCase
     private AccessTokenIssuerInterface $accessTokenIssuer;
     private WordPressUserProvisionerInterface $wordPressUserProvisioner;
     private TransactionManagerInterface $transactions;
+    private NotificationEmailSeeder $notificationEmailSeeder;
+    private ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation;
 
     public function __construct(
         GoogleIdTokenVerifierInterface $googleVerifier,
@@ -52,7 +58,9 @@ final class AuthenticateWithGoogleUseCase
         RefreshTokenRepositoryInterface $refreshTokens,
         AccessTokenIssuerInterface $accessTokenIssuer,
         WordPressUserProvisionerInterface $wordPressUserProvisioner,
-        TransactionManagerInterface $transactions
+        TransactionManagerInterface $transactions,
+        NotificationEmailSeeder $notificationEmailSeeder,
+        ResolveOrganizationInvitationUseCase $resolveOrganizationInvitation
     ) {
         $this->googleVerifier = $googleVerifier;
         $this->externalIdentities = $externalIdentities;
@@ -62,18 +70,30 @@ final class AuthenticateWithGoogleUseCase
         $this->accessTokenIssuer = $accessTokenIssuer;
         $this->wordPressUserProvisioner = $wordPressUserProvisioner;
         $this->transactions = $transactions;
+        $this->notificationEmailSeeder = $notificationEmailSeeder;
+        $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
     }
 
     public function execute(AuthenticateWithGoogleCommand $command): AuthenticationResult
     {
         $claims = $this->googleVerifier->verify($command->idToken);
 
-        return $this->transactions->run(function () use ($claims): AuthenticationResult {
+        $result = $this->transactions->run(function () use ($claims): AuthenticationResult {
             $existingIdentity = $this->externalIdentities->findByProviderAndProviderUserId('google', $claims->sub);
             $isNewUser = $existingIdentity === null;
 
             if ($existingIdentity) {
                 $userAccount = $this->userAccounts->findById($existingIdentity->userAccountId());
+
+                // StageArt Admin Console V1: same enforcement as
+                // AuthenticateWithEmailUseCase - see that Use Case's own
+                // comment. Only applies to a RETURNING Google user
+                // (existingIdentity !== null); a brand-new UserAccount
+                // created just below is always freshly ACTIVE.
+                if (! $userAccount->isActive()) {
+                    throw new UserAccountBlockedException('This account has been blocked or disabled.');
+                }
+
                 $person = $this->people->findById($userAccount->personId());
             } else {
                 $wordPressUserId = $this->wordPressUserProvisioner->provision($claims->email);
@@ -87,6 +107,14 @@ final class AuthenticateWithGoogleUseCase
                 $identity = ExternalIdentity::create($userAccount->id(), 'google', $claims->sub);
                 $this->externalIdentities->save($identity);
             }
+
+            // Google認証ユーザーのEmail通知先対応 phase: seeds
+            // NotificationEmail only when absent (see
+            // NotificationEmailSeeder's own docblock) - applies to both
+            // branches above, since a RETURNING Google user who has
+            // never had a notification email captured still deserves
+            // one, exactly like a brand-new user.
+            $this->notificationEmailSeeder->seedFromGoogle($person->id(), $claims->email, $claims->emailVerified);
 
             $accessToken = $this->accessTokenIssuer->issue($userAccount->id(), $person->id());
             $refreshTokenValue = bin2hex(random_bytes(32));
@@ -110,5 +138,32 @@ final class AuthenticateWithGoogleUseCase
                 $claims->givenName
             );
         });
+
+        // StageArt メール招待によるProductionParticipant追加機能 (§14):
+        // only when Google itself asserts the email is verified, and
+        // only when Google actually returned an email at all - matches
+        // this round's explicit instruction not to auto-link on an
+        // unverified or absent email. Runs after the transaction above
+        // has committed and is wrapped in its own try/catch, the same
+        // shape RegisterWithEmailUseCase uses, so a resolution failure
+        // can never turn a successful Google sign-in into a failed
+        // response.
+        //
+        // PR #7 R14-B stage 4 (design doc §7.1): only organization
+        // invitations are resolved here; signing in with Google never makes
+        // anyone a Production participant (the invitee accepts explicitly).
+        if ($claims->email !== null && $claims->emailVerified === true) {
+            try {
+                $this->resolveOrganizationInvitation->execute(PersonId::fromString($result->personId), $claims->email);
+            } catch (Throwable $exception) {
+                error_log(sprintf(
+                    '[StageArt OrganizationInvitation] resolution failed after Google authentication for person=%s: %s',
+                    $result->personId,
+                    $exception->getMessage()
+                ));
+            }
+        }
+
+        return $result;
     }
 }

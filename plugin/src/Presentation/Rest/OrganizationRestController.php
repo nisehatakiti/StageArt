@@ -9,6 +9,8 @@ use StageArt\Application\Follow\FollowOrganizationCommand;
 use StageArt\Application\Follow\FollowOrganizationUseCase;
 use StageArt\Application\Follow\UnfollowOrganizationCommand;
 use StageArt\Application\Follow\UnfollowOrganizationUseCase;
+use StageArt\Application\Organization\AssignOrganizationDelegateCommand;
+use StageArt\Application\Organization\AssignOrganizationDelegateUseCase;
 use StageArt\Application\Organization\CreateOrganizationCommand;
 use StageArt\Application\Organization\CreateOrganizationUseCase;
 use StageArt\Application\Organization\DeleteOrganizationCommand;
@@ -17,9 +19,12 @@ use StageArt\Application\Organization\GetOrganizationQuery;
 use StageArt\Application\Organization\GetOrganizationUseCase;
 use StageArt\Application\Organization\GetPublicOrganizationBySlugQuery;
 use StageArt\Application\Organization\GetPublicOrganizationBySlugUseCase;
+use StageArt\Application\Organization\ListOrganizationMembersQuery;
+use StageArt\Application\Organization\ListOrganizationMembersUseCase;
 use StageArt\Application\Organization\ListOrganizationsForPersonQuery;
 use StageArt\Application\Organization\ListOrganizationsUseCase;
 use StageArt\Application\Organization\OrganizationAccessDeniedException;
+use StageArt\Application\Organization\OrganizationLogoUploadRejectedException;
 use StageArt\Application\Organization\OrganizationNotFoundException;
 use StageArt\Application\Organization\OrganizationOwnerInvariantViolatedException;
 use StageArt\Application\Organization\OrganizationSlugAlreadyTakenException;
@@ -27,10 +32,18 @@ use StageArt\Application\Organization\OwnerTransferCommand;
 use StageArt\Application\Organization\OwnerTransferTargetNotEligibleException;
 use StageArt\Application\Organization\OwnerTransferUseCase;
 use StageArt\Application\Organization\OwnerUserAccountRequiredException;
+use StageArt\Application\Organization\RevokeOrganizationDelegateCommand;
+use StageArt\Application\Organization\RevokeOrganizationDelegateUseCase;
 use StageArt\Application\Organization\SearchOrganizationsQuery;
 use StageArt\Application\Organization\SearchOrganizationsUseCase;
 use StageArt\Application\Organization\UpdateOrganizationCommand;
+use StageArt\Application\Organization\OrganizationMemberNotFoundException;
+use StageArt\Application\Organization\UpdateOrganizationLogoCommand;
+use StageArt\Application\Organization\UpdateOrganizationLogoUseCase;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksCommand;
+use StageArt\Application\Organization\UpdateOrganizationMemberRemarksUseCase;
 use StageArt\Application\Organization\UpdateOrganizationUseCase;
+use StageArt\Infrastructure\WordPress\Media\WordPressOrganizationLogoUploader;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -65,6 +78,12 @@ final class OrganizationRestController
     private FollowOrganizationUseCase $followOrganization;
     private UnfollowOrganizationUseCase $unfollowOrganization;
     private SearchOrganizationsUseCase $searchOrganizations;
+    private ListOrganizationMembersUseCase $listOrganizationMembers;
+    private AssignOrganizationDelegateUseCase $assignOrganizationDelegate;
+    private RevokeOrganizationDelegateUseCase $revokeOrganizationDelegate;
+    private UpdateOrganizationLogoUseCase $updateOrganizationLogo;
+    private WordPressOrganizationLogoUploader $logoUploader;
+    private UpdateOrganizationMemberRemarksUseCase $updateOrganizationMemberRemarks;
 
     public function __construct(
         CreateOrganizationUseCase $createOrganization,
@@ -76,7 +95,13 @@ final class OrganizationRestController
         OwnerTransferUseCase $ownerTransfer,
         FollowOrganizationUseCase $followOrganization,
         UnfollowOrganizationUseCase $unfollowOrganization,
-        SearchOrganizationsUseCase $searchOrganizations
+        SearchOrganizationsUseCase $searchOrganizations,
+        ListOrganizationMembersUseCase $listOrganizationMembers,
+        AssignOrganizationDelegateUseCase $assignOrganizationDelegate,
+        RevokeOrganizationDelegateUseCase $revokeOrganizationDelegate,
+        UpdateOrganizationLogoUseCase $updateOrganizationLogo,
+        WordPressOrganizationLogoUploader $logoUploader,
+        UpdateOrganizationMemberRemarksUseCase $updateOrganizationMemberRemarks
     ) {
         $this->createOrganization = $createOrganization;
         $this->getOrganization = $getOrganization;
@@ -88,6 +113,12 @@ final class OrganizationRestController
         $this->followOrganization = $followOrganization;
         $this->unfollowOrganization = $unfollowOrganization;
         $this->searchOrganizations = $searchOrganizations;
+        $this->listOrganizationMembers = $listOrganizationMembers;
+        $this->assignOrganizationDelegate = $assignOrganizationDelegate;
+        $this->revokeOrganizationDelegate = $revokeOrganizationDelegate;
+        $this->updateOrganizationLogo = $updateOrganizationLogo;
+        $this->logoUploader = $logoUploader;
+        $this->updateOrganizationMemberRemarks = $updateOrganizationMemberRemarks;
     }
 
     public function register_routes(): void
@@ -151,11 +182,71 @@ final class OrganizationRestController
             ],
         ]);
 
+        // StageArt 団体管理UI整理 "メンバー管理": the roster (every ACTIVE
+        // Membership), needed by that screen itself and by 代理人を設定/
+        // 代表者交代's own member picker.
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/members', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'listMembers'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        // "代理人を設定": Membership::changeRole() toward/away from
+        // RoleKey::ORGANIZATION_MANAGER - no separate Delegate Entity (see
+        // AssignOrganizationDelegateUseCase's own docblock).
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/delegates', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'assignDelegate'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/delegates/(?P<personId>[^/]+)', [
+            [
+                'methods' => 'DELETE',
+                'callback' => [$this, 'revokeDelegate'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
+        // StageArt Organization管理UI/UX統一 "メンバー管理": the roster's
+        // 備考 column, editable after the fact (see
+        // UpdateOrganizationMemberRemarksUseCase's own docblock for why
+        // only 備考, never Role, is editable here).
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/members/(?P<personId>[^/]+)', [
+            [
+                'methods' => 'PATCH',
+                'callback' => [$this, 'updateMemberRemarks'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         // StageArt Follow: authenticated (any logged-in Person, not
         // Membership-gated - see FollowOrganizationUseCase's own
         // docblock), so these deliberately use require_login rather than
         // being folded into the Organization Scope permission checks the
         // rest of this controller uses.
+        // StageArt Organization管理UI/UX統一 "団体ロゴ": multipart upload
+        // via WordPress's own wp_handle_upload() (WordPressOrganizationLogoUploader)
+        // - no base64-into-the-Organization-row shortcut. DELETE clears
+        // logo_url back to null without touching every other field (see
+        // UpdateOrganizationLogoUseCase's own docblock).
+        register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/logo', [
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'uploadLogo'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+            [
+                'methods' => 'DELETE',
+                'callback' => [$this, 'deleteLogo'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         register_rest_route(self::API_NAMESPACE, '/organizations/(?P<id>[^/]+)/follow', [
             [
                 'methods' => 'POST',
@@ -204,7 +295,10 @@ final class OrganizationRestController
                 (string) $request->get_param('name'),
                 (string) $request->get_param('slug'),
                 $this->stringOrNull($request->get_param('type')),
-                $this->stringOrNull($request->get_param('description'))
+                $this->stringOrNull($request->get_param('description')),
+                (bool) $request->get_param('accounting_enabled'),
+                $this->intOrNull($request->get_param('opening_cash_balance')),
+                $this->intOrNull($request->get_param('opening_bank_balance'))
             );
 
             return new WP_REST_Response($this->createOrganization->execute($command)->toArray(), 201);
@@ -267,7 +361,8 @@ final class OrganizationRestController
                 (string) $request->get_param('status'),
                 $this->stringOrNull($slugParam),
                 $publishedParam === null ? null : (bool) $publishedParam,
-                $this->stringOrNull($request->get_param('published_at'))
+                $this->stringOrNull($request->get_param('published_at')),
+                $this->stringOrNull($request->get_param('logo_url'))
             );
 
             return new WP_REST_Response($this->updateOrganization->execute($command)->toArray(), 200);
@@ -334,6 +429,138 @@ final class OrganizationRestController
     }
 
     /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function listMembers(WP_REST_Request $request)
+    {
+        try {
+            $query = new ListOrganizationMembersQuery((string) $request->get_param('id'), get_current_user_id());
+
+            return new WP_REST_Response(
+                array_map(static fn ($result) => $result->toArray(), $this->listOrganizationMembers->execute($query)),
+                200
+            );
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function updateMemberRemarks(WP_REST_Request $request)
+    {
+        try {
+            $command = new UpdateOrganizationMemberRemarksCommand(
+                (string) $request->get_param('id'),
+                (string) $request->get_param('personId'),
+                get_current_user_id(),
+                $this->stringOrNull($request->get_param('remarks'))
+            );
+
+            return new WP_REST_Response($this->updateOrganizationMemberRemarks->execute($command)->toArray(), 200);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationMemberNotFoundException $exception) {
+            return new WP_Error('stageart_organization_member_not_found', $exception->getMessage(), ['status' => 404]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function assignDelegate(WP_REST_Request $request)
+    {
+        try {
+            $command = new AssignOrganizationDelegateCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                (string) $request->get_param('person_id')
+            );
+
+            $this->assignOrganizationDelegate->execute($command);
+
+            return new WP_REST_Response(null, 204);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function revokeDelegate(WP_REST_Request $request)
+    {
+        try {
+            $command = new RevokeOrganizationDelegateCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                (string) $request->get_param('personId')
+            );
+
+            $this->revokeOrganizationDelegate->execute($command);
+
+            return new WP_REST_Response(null, 204);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (InvalidArgumentException $exception) {
+            return new WP_Error('stageart_organization_invalid', $exception->getMessage(), ['status' => 422]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function uploadLogo(WP_REST_Request $request)
+    {
+        try {
+            $files = $request->get_file_params();
+
+            if (empty($files['file']) || ! is_array($files['file'])) {
+                return new WP_Error('stageart_organization_logo_invalid', 'A "file" upload is required.', ['status' => 422]);
+            }
+
+            $logoUrl = $this->logoUploader->upload($files['file']);
+
+            $command = new UpdateOrganizationLogoCommand(
+                (string) $request->get_param('id'),
+                get_current_user_id(),
+                $logoUrl
+            );
+
+            return new WP_REST_Response($this->updateOrganizationLogo->execute($command)->toArray(), 200);
+        } catch (OrganizationLogoUploadRejectedException $exception) {
+            return new WP_Error('stageart_organization_logo_rejected', $exception->getMessage(), ['status' => 422]);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function deleteLogo(WP_REST_Request $request)
+    {
+        try {
+            $command = new UpdateOrganizationLogoCommand((string) $request->get_param('id'), get_current_user_id(), null);
+
+            return new WP_REST_Response($this->updateOrganizationLogo->execute($command)->toArray(), 200);
+        } catch (OrganizationAccessDeniedException $exception) {
+            return new WP_Error('stageart_organization_access_denied', $exception->getMessage(), ['status' => 403]);
+        } catch (OrganizationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_not_found', $exception->getMessage(), ['status' => 404]);
+        }
+    }
+
+    /**
      * @return WP_REST_Response
      */
     public function search(WP_REST_Request $request)
@@ -373,5 +600,13 @@ final class OrganizationRestController
     private function stringOrNull($value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function intOrNull($value): ?int
+    {
+        return $value === null || $value === '' ? null : (int) $value;
     }
 }

@@ -14,16 +14,18 @@ jest.mock('expo-secure-store', () => ({
  * 403 (Authorization) - see home-organizations-403.test.tsx for the
  * counterpart, kept in a separate file for the same reason as the
  * other split Home tests. */
-describe('Home: Organization list fails with 401', () => {
+describe('所属団体 (Organization list) fails with 401', () => {
   it('shows an Authentication-specific error message', async () => {
     mockFetchRoutes([
       { test: (u) => u.endsWith('/organizations'), status: 401, body: { code: 'stageart_unauthorized', message: 'Unauthorized' } },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
-    renderRouter('src/app', { initialUrl: '/home' });
+    // R7: 3113937 (2026-10-06) moved the Organization list off Home to the
+    // 「所属団体」 menu entry (/organizations), with the same states.
+    renderRouter('src/app', { initialUrl: '/organizations' });
 
-    await waitFor(() => expect(screen.getByTestId('organizations-error')).toBeVisible());
+    await waitFor(() => expect(screen.getByTestId('organizations-list-error')).toBeVisible());
     expect(screen.getByText('認証が切れました。再度ログインしてください。')).toBeVisible();
   });
 });

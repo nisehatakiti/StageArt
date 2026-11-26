@@ -18,6 +18,16 @@ use StageArt\Domain\Production\Production;
  * Organization) since the public page's own breadcrumb/branding needs
  * it and the client should never have to make a second round trip just
  * to render "which theatre company is this".
+ *
+ * StageArt Web Completion Audit (Production公開ページ反映問題): the
+ * per-section fields below (description/flyer/venue/schedule/script&
+ * direction) are each independently gated by their own `isXPublished()`
+ * Domain method (a time-comparison against that section's own
+ * `X_published_at`, exactly like the whole-page `isPublished()`/
+ * `publishedAt` pair above) - a section reads as `null` here whenever
+ * its own gate is false, regardless of whether the underlying Production
+ * field itself is set. Member/participant info is deliberately not
+ * included here yet - see the audit's findings for why.
  */
 final class PublicProductionResult
 {
@@ -26,6 +36,13 @@ final class PublicProductionResult
     public string $slug;
     public ?string $titleHeading;
     public string $publishedAt;
+    public ?string $description;
+    public ?string $flyerUrl;
+    public ?string $venueName;
+    public ?string $scheduleStartDate;
+    public ?string $scheduleEndDate;
+    public ?string $scriptCredit;
+    public ?string $directionCredit;
     public string $organizationId;
     public string $organizationName;
     public string $organizationSlug;
@@ -36,6 +53,13 @@ final class PublicProductionResult
         string $slug,
         ?string $titleHeading,
         string $publishedAt,
+        ?string $description,
+        ?string $flyerUrl,
+        ?string $venueName,
+        ?string $scheduleStartDate,
+        ?string $scheduleEndDate,
+        ?string $scriptCredit,
+        ?string $directionCredit,
         string $organizationId,
         string $organizationName,
         string $organizationSlug
@@ -45,6 +69,13 @@ final class PublicProductionResult
         $this->slug = $slug;
         $this->titleHeading = $titleHeading;
         $this->publishedAt = $publishedAt;
+        $this->description = $description;
+        $this->flyerUrl = $flyerUrl;
+        $this->venueName = $venueName;
+        $this->scheduleStartDate = $scheduleStartDate;
+        $this->scheduleEndDate = $scheduleEndDate;
+        $this->scriptCredit = $scriptCredit;
+        $this->directionCredit = $directionCredit;
         $this->organizationId = $organizationId;
         $this->organizationName = $organizationName;
         $this->organizationSlug = $organizationSlug;
@@ -72,6 +103,13 @@ final class PublicProductionResult
             $slug->toString(),
             $production->titleHeading(),
             $publishedAt->format(DATE_ATOM),
+            $production->isDescriptionPublished() ? $production->description() : null,
+            $production->isFlyerPublished() ? $production->flyerUrl() : null,
+            $production->isVenuePublished() ? $production->venueName() : null,
+            $production->isSchedulePublished() ? $production->scheduleStartDate()?->format('Y-m-d') : null,
+            $production->isSchedulePublished() ? $production->scheduleEndDate()?->format('Y-m-d') : null,
+            $production->isScriptDirectionPublished() ? $production->scriptCredit() : null,
+            $production->isScriptDirectionPublished() ? $production->directionCredit() : null,
             $organization->id()->toString(),
             $organization->name()->toString(),
             $organizationSlug->toString()
@@ -89,6 +127,13 @@ final class PublicProductionResult
             'slug' => $this->slug,
             'title_heading' => $this->titleHeading,
             'published_at' => $this->publishedAt,
+            'description' => $this->description,
+            'flyer_url' => $this->flyerUrl,
+            'venue_name' => $this->venueName,
+            'schedule_start_date' => $this->scheduleStartDate,
+            'schedule_end_date' => $this->scheduleEndDate,
+            'script_credit' => $this->scriptCredit,
+            'direction_credit' => $this->directionCredit,
             'organization' => [
                 'id' => $this->organizationId,
                 'name' => $this->organizationName,

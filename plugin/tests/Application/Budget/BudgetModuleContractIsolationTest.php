@@ -51,7 +51,7 @@ final class BudgetModuleContractIsolationTest extends TestCase
         $accounts->save($account);
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($productionId, 'Show', 'DRAFT', $organizationId);
+        $productionContext->register($productionId, 'Show', 'PLANNING', $organizationId);
 
         $identity = new FakeIdentityContract();
         $identity->register(1, $primaryManagerId);
@@ -92,7 +92,7 @@ final class BudgetModuleContractIsolationTest extends TestCase
         $accounts->save($account);
 
         $productionContext = new FakeProductionContextContract();
-        $productionContext->register($productionId, 'Show', 'DRAFT', $organizationId);
+        $productionContext->register($productionId, 'Show', 'PLANNING', $organizationId);
 
         $identity = new FakeIdentityContract();
         $identity->register(2, $outsiderId);

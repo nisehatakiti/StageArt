@@ -17,8 +17,22 @@ final class ParticipantSubjectType
 {
     public const PERSON = 'PERSON';
     public const ORGANIZATION = 'ORGANIZATION';
+    /**
+     * StageArt Phase 1 (docs/21-MemberManagementScreen.md §2.1/"Member
+     * Registration Scope" - "People without a StageArt account"): a
+     * Participant registered by name only, with no linked Person/
+     * Organization account yet. `Person` itself requires a WordPress
+     * user id (see Person.php's own docblock) - it has no "unclaimed"
+     * representation - so a name-only member is modeled at the
+     * Participant level instead, carrying its own `displayName` and a
+     * self-referential placeholder `subjectId` (never looked up as a
+     * real Person/Organization). A future It's ME claim flow (Blueprint
+     * §11, not built this Phase) would transition such a Participant to
+     * PERSON once claimed - not implemented here.
+     */
+    public const NAME_ONLY = 'NAME_ONLY';
 
-    private const VALID = [self::PERSON, self::ORGANIZATION];
+    private const VALID = [self::PERSON, self::ORGANIZATION, self::NAME_ONLY];
 
     private string $value;
 
@@ -39,6 +53,11 @@ final class ParticipantSubjectType
     public static function organization(): self
     {
         return new self(self::ORGANIZATION);
+    }
+
+    public static function nameOnly(): self
+    {
+        return new self(self::NAME_ONLY);
     }
 
     public static function fromString(string $value): self

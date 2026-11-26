@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace StageArt\Infrastructure\WordPress\Persistence;
 
 use DateTimeImmutable;
+use DateTimeZone;
+use RuntimeException;
 use StageArt\Domain\Account\AccountId;
 use StageArt\Domain\JournalEntry\DebitCredit;
 use StageArt\Domain\JournalEntry\JournalEntry;
@@ -36,7 +38,9 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         $row = [
             'organization_id' => $entry->organizationId()->toString(),
             'production_id' => $entry->productionId() !== null ? $entry->productionId()->toString() : null,
-            'journal_date' => $entry->journalDate()->format('Y-m-d H:i:s'),
+            // Stored as UTC whatever zone the instant carries or PHP defaults
+            // to (AccountingDate: the JST date is derived, never stored).
+            'journal_date' => $entry->journalDate()->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'description' => $entry->description(),
             'status' => $entry->status()->toString(),
             'source_event_type' => $entry->sourceEventType(),
@@ -54,14 +58,22 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             $this->wpdb->prepare("SELECT id FROM {$this->table} WHERE id = %s", $entry->id()->toString())
         );
 
+        // A failed write must throw so the surrounding transaction rolls
+        // back (修正8: an approval never leaves an Expense POSTED without
+        // its Journal Entry, or the reverse) - $wpdb itself only returns
+        // false.
         if ($existing) {
-            $this->wpdb->update($this->table, $row, ['id' => $entry->id()->toString()]);
+            $result = $this->wpdb->update($this->table, $row, ['id' => $entry->id()->toString()]);
         } else {
             $row['id'] = $entry->id()->toString();
             $row['created_by'] = $entry->createdBy()->toString();
             $row['created_at'] = $entry->createdAt()->format('Y-m-d H:i:s');
 
-            $this->wpdb->insert($this->table, $row);
+            $result = $this->wpdb->insert($this->table, $row);
+        }
+
+        if ($result === false) {
+            throw new RuntimeException('Failed to save JournalEntry.');
         }
 
         $this->syncLines($entry);
@@ -69,10 +81,12 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
 
     private function syncLines(JournalEntry $entry): void
     {
-        $this->wpdb->delete($this->linesTable, ['journal_entry_id' => $entry->id()->toString()]);
+        if ($this->wpdb->delete($this->linesTable, ['journal_entry_id' => $entry->id()->toString()]) === false) {
+            throw new RuntimeException('Failed to replace JournalEntry Lines.');
+        }
 
         foreach ($entry->lines() as $line) {
-            $this->wpdb->insert($this->linesTable, [
+            $result = $this->wpdb->insert($this->linesTable, [
                 'id' => $line->id()->toString(),
                 'journal_entry_id' => $entry->id()->toString(),
                 'account_id' => $line->accountId()->toString(),
@@ -80,6 +94,10 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
                 'amount' => $line->amount(),
                 'description' => $line->description(),
             ]);
+
+            if ($result === false) {
+                throw new RuntimeException('Failed to insert JournalEntry Line.');
+            }
         }
     }
 
@@ -118,6 +136,39 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
         );
 
         return $this->hydrateBulk($rows ?: []);
+    }
+
+    public function findPostedWithProductionByOrganizationId(OrganizationId $organizationId): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE organization_id = %s AND production_id IS NOT NULL AND status = %s ORDER BY journal_date ASC",
+                $organizationId->toString(),
+                JournalEntryStatus::POSTED
+            ),
+            ARRAY_A
+        );
+
+        return $this->hydrateBulk($rows ?: []);
+    }
+
+    public function findBySourceEvent(string $sourceEventType, string $sourceEventId): ?JournalEntry
+    {
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table} WHERE source_event_type = %s AND source_event_id = %s AND status != %s ORDER BY created_at DESC LIMIT 1",
+                $sourceEventType,
+                $sourceEventId,
+                JournalEntryStatus::REVERSED
+            ),
+            ARRAY_A
+        );
+
+        // PR #7 review (R6): see the class docblock of WpdbReadGuard - a failed
+        // read here would pass for "not found" on the ticket revenue path.
+        WpdbReadGuard::throwIfFailed($this->wpdb, 'Failed to read the Journal Entry of the source event.');
+
+        return $row ? $this->hydrate($row) : null;
     }
 
     /**
@@ -196,7 +247,7 @@ final class WordPressJournalEntryRepository implements JournalEntryRepositoryInt
             JournalEntryId::fromString($row['id']),
             OrganizationId::fromString($row['organization_id']),
             $row['production_id'] !== null ? ProductionId::fromString($row['production_id']) : null,
-            new DateTimeImmutable($row['journal_date']),
+            new DateTimeImmutable($row['journal_date'], new DateTimeZone('UTC')),
             $row['description'],
             JournalEntryStatus::fromString($row['status']),
             $row['source_event_type'],

@@ -534,10 +534,16 @@ Account
 
 として管理する。
 
-CheckInCompletedから
-Ticket Revenue Recognitionを行う際、
+Ticket / Reservation / Payment等の業務Factに基づき、
+既存のTicket / Payment / Accountingルールに従って
+売上関連のJournal Entryを生成する際、
 Accounting Domainが適切なRevenue Accountを
 選択する。
+
+CheckInCompletedは来場実績を表すFactであり、
+売上認識や仮売上振替の直接の契機ではない。
+仮売上への振替は会計期間末に行い、
+正式な売上への振替はProduction決算確定時に行う。
 
 ---
 
@@ -568,9 +574,11 @@ Accountを決定するためのMappingを
 
 例えば、
 
-CheckInCompleted
+Ticket / Reservation / Payment等の業務Fact
   ↓
-Ticket Revenue
+既存のTicket / Payment / Accountingルール
+  ↓
+Ticket Revenueに対応するJournal Entry
   ↓
 チケット売上 Account
 

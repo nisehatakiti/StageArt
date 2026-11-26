@@ -16,6 +16,14 @@ final class RehearsalAttendance
     private PersonId $personId;
     private RehearsalAttendancePhase $phase;
     private RehearsalAttendanceStatus $status;
+    private ?string $remarks;
+    /**
+     * PR #7 R9: the Manager's day-of result (ATTENDED/LATE/EARLY_LEFT/
+     * ABSENT), kept apart from `status` (the member's own answer) so
+     * recording a result never overwrites what the member answered.
+     * Null until a Manager records one.
+     */
+    private ?RehearsalAttendanceStatus $actualStatus;
     private DateTimeImmutable $createdAt;
     private DateTimeImmutable $updatedAt;
 
@@ -25,14 +33,18 @@ final class RehearsalAttendance
         PersonId $personId,
         RehearsalAttendancePhase $phase,
         RehearsalAttendanceStatus $status,
+        ?string $remarks,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?RehearsalAttendanceStatus $actualStatus = null
     ) {
         $this->id = $id;
         $this->rehearsalId = $rehearsalId;
         $this->personId = $personId;
         $this->phase = $phase;
         $this->status = $status;
+        $this->remarks = $remarks;
+        $this->actualStatus = $actualStatus;
         $this->createdAt = $createdAt;
         $this->updatedAt = $updatedAt;
     }
@@ -51,6 +63,7 @@ final class RehearsalAttendance
             $personId,
             RehearsalAttendancePhase::scheduleAdjustment(),
             RehearsalAttendanceStatus::unanswered(),
+            null,
             $now,
             $now
         );
@@ -71,6 +84,7 @@ final class RehearsalAttendance
             $personId,
             RehearsalAttendancePhase::attendanceConfirmation(),
             RehearsalAttendanceStatus::unanswered(),
+            null,
             $now,
             $now
         );
@@ -83,9 +97,11 @@ final class RehearsalAttendance
         RehearsalAttendancePhase $phase,
         RehearsalAttendanceStatus $status,
         DateTimeImmutable $createdAt,
-        DateTimeImmutable $updatedAt
+        DateTimeImmutable $updatedAt,
+        ?string $remarks = null,
+        ?RehearsalAttendanceStatus $actualStatus = null
     ): self {
-        return new self($id, $rehearsalId, $personId, $phase, $status, $createdAt, $updatedAt);
+        return new self($id, $rehearsalId, $personId, $phase, $status, $remarks, $createdAt, $updatedAt, $actualStatus);
     }
 
     /**
@@ -95,7 +111,7 @@ final class RehearsalAttendance
      * for this transition, so only the target value and the record's own
      * Phase are validated here.
      */
-    public function respondScheduleAdjustment(RehearsalAttendanceStatus $status): void
+    public function respondScheduleAdjustment(RehearsalAttendanceStatus $status, ?string $remarks = null): void
     {
         if (! $this->phase->equals(RehearsalAttendancePhase::scheduleAdjustment())) {
             throw new InvalidArgumentException('Only a Phase = SCHEDULE_ADJUSTMENT record can receive this response.');
@@ -106,6 +122,7 @@ final class RehearsalAttendance
         }
 
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->touch();
     }
 
@@ -113,7 +130,7 @@ final class RehearsalAttendance
      * Phase 2 response: ATTENDING/NOT_ATTENDING only, matching the same
      * free-swap graph as Phase 1's response values.
      */
-    public function respondAttendanceConfirmation(RehearsalAttendanceStatus $status): void
+    public function respondAttendanceConfirmation(RehearsalAttendanceStatus $status, ?string $remarks = null): void
     {
         if (! $this->phase->equals(RehearsalAttendancePhase::attendanceConfirmation())) {
             throw new InvalidArgumentException('Only a Phase = ATTENDANCE_CONFIRMATION record can receive this response.');
@@ -124,21 +141,21 @@ final class RehearsalAttendance
         }
 
         $this->status = $status;
+        $this->remarks = $remarks;
         $this->touch();
     }
 
     /**
-     * Records the actual day-of result. RehearsalAttendance.md's "Status
-     * Transition" diagram only draws ATTENDING -> {ATTENDED, LATE, ABSENT}
-     * as the source transition, but also states "必要に応じて、Managerに
-     * よるStatus修正を許可する" immediately after. This method honors both:
-     * the first recording must come from ATTENDING (the diagrammed path),
-     * while a Manager may subsequently re-record among the three actual
-     * outcomes (correcting ATTENDED -> LATE, for example). It is never
-     * reachable from UNANSWERED or NOT_ATTENDING directly - that source
-     * state is not in the Blueprint's diagram, and allowing it would blur
-     * "no-show because they said they wouldn't attend" with "no-show
-     * despite saying they would," which the Blueprint does not equate.
+     * Records (or corrects) the Manager's actual day-of result.
+     *
+     * PR #7 R9 (supersedes the earlier ATTENDING-only rule): the member's
+     * answer and the Manager's result are separate information. A
+     * Manager may record ATTENDED/LATE/EARLY_LEFT/ABSENT for every
+     * Phase 2 member, whatever they answered (ATTENDING, NOT_ATTENDING or
+     * UNANSWERED), and may change it again later. The answer in
+     * `status` and the member's `remarks` are left untouched, so the
+     * two are never confused ("said they would not come" stays visible
+     * next to "actually came").
      */
     public function recordActualStatus(RehearsalAttendanceStatus $status): void
     {
@@ -146,21 +163,11 @@ final class RehearsalAttendance
             throw new InvalidArgumentException('Only a Phase = ATTENDANCE_CONFIRMATION record can have an actual result.');
         }
 
-        $allowedTargets = [RehearsalAttendanceStatus::ATTENDED, RehearsalAttendanceStatus::LATE, RehearsalAttendanceStatus::ABSENT];
-
-        if (! in_array($status->toString(), $allowedTargets, true)) {
-            throw new InvalidArgumentException('Actual status must be ATTENDED, LATE, or ABSENT.');
+        if (! in_array($status->toString(), RehearsalAttendanceStatus::ACTUAL_VALUES, true)) {
+            throw new InvalidArgumentException('Actual status must be ATTENDED, LATE, EARLY_LEFT, or ABSENT.');
         }
 
-        $allowedSources = [RehearsalAttendanceStatus::ATTENDING, ...$allowedTargets];
-
-        if (! in_array($this->status->toString(), $allowedSources, true)) {
-            throw new InvalidArgumentException(
-                'Actual status can only be recorded from ATTENDING, or corrected once already an actual result.'
-            );
-        }
-
-        $this->status = $status;
+        $this->actualStatus = $status;
         $this->touch();
     }
 
@@ -192,6 +199,20 @@ final class RehearsalAttendance
     public function status(): RehearsalAttendanceStatus
     {
         return $this->status;
+    }
+
+    /**
+     * The Manager's recorded result, or null when none has been recorded
+     * (counted as absent in the member performance summary, §19).
+     */
+    public function actualStatus(): ?RehearsalAttendanceStatus
+    {
+        return $this->actualStatus;
+    }
+
+    public function remarks(): ?string
+    {
+        return $this->remarks;
     }
 
     public function createdAt(): DateTimeImmutable

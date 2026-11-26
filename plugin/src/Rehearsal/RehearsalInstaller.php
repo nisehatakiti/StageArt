@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StageArt\Rehearsal;
 
+use RuntimeException;
+
 /**
  * StageArt Core/Module Architecture Phase 3 (docs/architecture/
  * WordPressPluginModuleBoundary.md): Database Ownership made concrete -
@@ -44,7 +46,22 @@ final class RehearsalInstaller
         $timetableItems = $wpdb->prefix . 'stageart_timetable_items';
         $timetableItemParticipants = $wpdb->prefix . 'stageart_timetable_item_participants';
         $timetableVersionPublishedNotifications = $wpdb->prefix . 'stageart_timetable_version_published_notifications';
+        $rehearsalCreateRequests = $wpdb->prefix . 'stageart_rehearsal_create_requests';
 
+        /*
+         * Phase 7 (Rehearsal仕様整合) §4: response_deadline is the
+         * confirmed "回答期限" field (nullable - a Rehearsal need not have
+         * one). reminder_sent_at is the 24h-before-deadline Reminder's
+         * duplicate-send guard (Rehearsal::markReminderSent()/
+         * clearReminderSentMark()) - both dbDelta-added, not part of the
+         * original Phase 3 schema.
+         *
+         * StageArt 予定・活動一般化調査: activity_type (稽古/練習/自主練/
+         * ワークショップ/会議/打ち合わせ/イベント/その他) is dbDelta-added
+         * here too, `NOT NULL DEFAULT 'REHEARSAL'` so every existing row
+         * backfills to REHEARSAL automatically - no separate data
+         * migration/backfill statement is needed.
+         */
         dbDelta("CREATE TABLE {$rehearsals} (
             id CHAR(36) NOT NULL,
             production_id CHAR(36) NOT NULL,
@@ -55,6 +72,9 @@ final class RehearsalInstaller
             timezone VARCHAR(64) NULL,
             location VARCHAR(255) NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+            activity_type VARCHAR(32) NOT NULL DEFAULT 'REHEARSAL',
+            response_deadline DATETIME NULL,
+            reminder_sent_at DATETIME NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -76,6 +96,8 @@ final class RehearsalInstaller
             person_id CHAR(36) NOT NULL,
             phase VARCHAR(30) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'UNANSWERED',
+            remarks TEXT NULL,
+            actual_status VARCHAR(20) NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
@@ -83,6 +105,24 @@ final class RehearsalInstaller
             KEY person_id (person_id),
             UNIQUE KEY rehearsal_person_phase (rehearsal_id, person_id, phase)
         ) {$charsetCollate};");
+
+        /*
+         * Schema 1.46.0 (PR #7 R9): actual_status holds the Manager's
+         * day-of result apart from status (the member's own answer).
+         * Before 1.46.0 the result overwrote status, and the Domain only
+         * allowed recording it over an ATTENDING answer
+         * (RehearsalAttendance::recordActualStatus() up to R8), so every
+         * existing row with a result in status answered ATTENDING. This
+         * moves the result into actual_status and restores that answer -
+         * nothing is lost. Idempotent: a moved row's status is ATTENDING,
+         * so it never matches again.
+         */
+        self::statement(
+            $wpdb,
+            "UPDATE {$rehearsalAttendances} SET actual_status = status, status = 'ATTENDING' "
+            . "WHERE phase = 'ATTENDANCE_CONFIRMATION' AND actual_status IS NULL "
+            . "AND status IN ('ATTENDED', 'LATE', 'EARLY_LEFT', 'ABSENT')"
+        );
 
         /*
          * Phase 3 review fix: rehearsal_id relaxed to NULL-able and
@@ -117,7 +157,7 @@ final class RehearsalInstaller
          * closes that gap; MODIFY to an already-matching definition is a
          * harmless no-op on repeated runs.
          */
-        $wpdb->query("ALTER TABLE {$scheduleComments} MODIFY rehearsal_id CHAR(36) NULL");
+        self::statement($wpdb, "ALTER TABLE {$scheduleComments} MODIFY rehearsal_id CHAR(36) NULL");
 
         /*
          * Timetable.md: Timetable's parent is Rehearsal, not Production
@@ -161,17 +201,17 @@ final class RehearsalInstaller
         $existingIndexes = $wpdb->get_col("SHOW INDEX FROM {$timetables}", 2);
 
         if (in_array('rehearsal_id', $existingIndexes, true) && ! in_array('rehearsal_version', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} DROP INDEX rehearsal_id");
+            self::statement($wpdb, "ALTER TABLE {$timetables} DROP INDEX rehearsal_id");
         }
 
         $existingIndexes = $wpdb->get_col("SHOW INDEX FROM {$timetables}", 2);
 
         if (! in_array('rehearsal_version', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} ADD UNIQUE KEY rehearsal_version (rehearsal_id, version)");
+            self::statement($wpdb, "ALTER TABLE {$timetables} ADD UNIQUE KEY rehearsal_version (rehearsal_id, version)");
         }
 
         if (! in_array('rehearsal_id', $existingIndexes, true)) {
-            $wpdb->query("ALTER TABLE {$timetables} ADD KEY rehearsal_id (rehearsal_id)");
+            self::statement($wpdb, "ALTER TABLE {$timetables} ADD KEY rehearsal_id (rehearsal_id)");
         }
 
         dbDelta("CREATE TABLE {$timetableItems} (
@@ -228,5 +268,39 @@ final class RehearsalInstaller
             PRIMARY KEY  (id),
             KEY production_id (production_id)
         ) {$charsetCollate};");
+
+        /*
+         * Schema 1.47.0 (PR #7 R12, docs/20-RehearsalManagementScreen.md
+         * §26): which Rehearsal a create request's idempotency key
+         * produced. UNIQUE (production_id, idempotency_key) is what stops
+         * two concurrent requests with the same key from both creating a
+         * Rehearsal. A new table only - existing tables and rows are not
+         * changed, and Rehearsals created without a key have no row here.
+         */
+        dbDelta("CREATE TABLE {$rehearsalCreateRequests} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            production_id CHAR(36) NOT NULL,
+            idempotency_key VARCHAR(100) NOT NULL,
+            requested_by CHAR(36) NOT NULL,
+            request_hash CHAR(64) NOT NULL,
+            rehearsal_id CHAR(36) NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY production_idempotency_key (production_id,idempotency_key),
+            KEY rehearsal_id (rehearsal_id)
+        ) {$charsetCollate};");
+    }
+
+    /**
+     * A failed ALTER throws, so SchemaUpgrader keeps the stored schema
+     * version and the upgrade runs again (PR #7 review).
+     *
+     * @param \wpdb $wpdb
+     */
+    private static function statement($wpdb, string $sql): void
+    {
+        if ($wpdb->query($sql) === false) {
+            throw new RuntimeException('Rehearsal schema statement failed: ' . (string) ($wpdb->last_error ?? ''));
+        }
     }
 }
