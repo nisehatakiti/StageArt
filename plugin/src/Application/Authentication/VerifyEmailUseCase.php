@@ -59,7 +59,13 @@ final class VerifyEmailUseCase
         $this->resolveOrganizationInvitation = $resolveOrganizationInvitation;
     }
 
-    public function execute(VerifyEmailCommand $command): void
+    /**
+     * @return string|null the login address that was just verified (null
+     *         when the token's account has no EmailCredential) - returned so
+     *         the confirmation page can hand it to the login screen. Only the
+     *         holder of the token mailed to that address ever receives it.
+     */
+    public function execute(VerifyEmailCommand $command): ?string
     {
         $hash = hash('sha256', $command->token);
         $verificationToken = $this->emailVerificationTokens->findByTokenHash($hash);
@@ -85,6 +91,8 @@ final class VerifyEmailUseCase
         if ($verifiedEmail !== null) {
             $this->resolveInvitations($verificationToken->userAccountId(), $verifiedEmail);
         }
+
+        return $verifiedEmail;
     }
 
     private function resolveInvitations(UserAccountId $userAccountId, string $email): void

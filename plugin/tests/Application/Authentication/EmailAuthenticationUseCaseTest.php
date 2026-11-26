@@ -292,4 +292,19 @@ final class EmailAuthenticationUseCaseTest extends TestCase
         $this->expectException(InvalidEmailVerificationTokenException::class);
         $this->verifyEmail->execute(new VerifyEmailCommand('never-issued'));
     }
+
+    public function test_verifying_returns_the_verified_login_address_and_the_token_is_single_use(): void
+    {
+        $this->registerWithEmail->execute(new RegisterWithEmailCommand('erin@example.com', 'password123'));
+        $sentToken = $this->mailer->verificationEmails[0]['token'];
+
+        $this->assertSame('erin@example.com', $this->verifyEmail->execute(new VerifyEmailCommand($sentToken)));
+
+        $userAccount = $this->userAccounts->findByPersonId($this->people->findByWordPressUserId(100)->id());
+        $this->assertTrue($this->emailCredentials->findByUserAccountId($userAccount->id())->isEmailVerified());
+
+        // A used token is still refused - returning the address changes nothing about that.
+        $this->expectException(InvalidEmailVerificationTokenException::class);
+        $this->verifyEmail->execute(new VerifyEmailCommand($sentToken));
+    }
 }

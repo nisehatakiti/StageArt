@@ -1,9 +1,10 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
 import { appOnlyRoute } from '@/components/app-only-route';
 import { useAuth } from '@/auth/AuthContext';
+import { clearEmailHandoff, peekEmailHandoff } from '@/auth/loginEmailHandoff';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
@@ -43,10 +44,19 @@ function RegisterScreen() {
   const params = useLocalSearchParams<{ token?: string }>();
   const hasTokenInUrl = params.token !== undefined;
 
-  const [email, setEmail] = useState('');
+  // Pre-filled with the address the login screen handed over (「新規登録へ」,
+  // memory only - auth/loginEmailHandoff.ts); empty otherwise. Still
+  // editable. Never taken from an invitation (R14-B: registration has
+  // nothing to do with invitations).
+  const [email, setEmail] = useState(() => peekEmailHandoff('register') ?? '');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Read once: a later visit to the registration screen starts empty again.
+  useEffect(() => {
+    clearEmailHandoff('register');
+  }, []);
 
   async function handleSubmit() {
     setSubmitting(true);

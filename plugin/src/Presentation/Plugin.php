@@ -154,6 +154,10 @@ use StageArt\Application\Authentication\RegisterWithEmailUseCase;
 use StageArt\Application\Authentication\RequestPasswordResetUseCase;
 use StageArt\Application\Authentication\ResetPasswordUseCase;
 use StageArt\Application\Authentication\VerifyEmailUseCase;
+use StageArt\Application\Authentication\AccountCheckRateLimit;
+use StageArt\Application\Authentication\CheckAccountUseCase;
+use StageArt\Infrastructure\WordPress\Authentication\WordPressOptionsAccountCheckCounter;
+use StageArt\Presentation\Rest\AccountCheckRestController;
 use StageArt\Application\UserAccount\ChangePasswordUseCase;
 use StageArt\Application\UserAccount\CreateUserAccountUseCase;
 use StageArt\Application\UserAccount\RegisterEmailCredentialUseCase;
@@ -1013,6 +1017,16 @@ final class Plugin
             $resetPassword,
             $verifyEmail
         );
+        // Login step 1 (POST /auth/account/check): which sign-in path an
+        // address leads to, rate-limited per connection and per address
+        // (counter in wp_options - no schema change, see the counter class).
+        $accountCheckRestController = new AccountCheckRestController(new CheckAccountUseCase(
+            $emailCredentials,
+            $userAccounts,
+            $externalIdentities,
+            $notificationEmails,
+            new AccountCheckRateLimit(new WordPressOptionsAccountCheckCounter($wpdb), wp_salt('auth'))
+        ));
 
         $productionRestController = new ProductionRestController(
             $createProduction,
@@ -1138,6 +1152,7 @@ final class Plugin
         add_action('rest_api_init', [$projectRestController, 'register_routes']);
         add_action('rest_api_init', [$userAccountRestController, 'register_routes']);
         add_action('rest_api_init', [$authenticationRestController, 'register_routes']);
+        add_action('rest_api_init', [$accountCheckRestController, 'register_routes']);
         add_action('rest_api_init', [$productionRestController, 'register_routes']);
         add_action('rest_api_init', [$productionDelegateRestController, 'register_routes']);
         add_action('rest_api_init', [$participantRestController, 'register_routes']);

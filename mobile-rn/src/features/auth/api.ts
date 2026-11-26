@@ -60,8 +60,33 @@ export function resetPassword(token: string, newPassword: string): Promise<{ suc
   return publicPost<{ success: boolean }>('/auth/password/reset', { token, new_password: newPassword });
 }
 
-export function verifyEmail(token: string): Promise<{ success: boolean }> {
-  return publicPost<{ success: boolean }>('/auth/email/verify', { token });
+/** POST /auth/account/check: which sign-in path an address leads to (login step 1). */
+export type AccountCheckStatus =
+  | 'PASSWORD_LOGIN'
+  | 'MULTIPLE_AUTH_METHODS'
+  | 'EMAIL_VERIFICATION_REQUIRED'
+  | 'GOOGLE_LOGIN'
+  | 'NOT_FOUND'
+  | 'DISABLED';
+
+export type AccountCheckResult = { status: AccountCheckStatus; methods: ('password' | 'google')[] };
+
+/**
+ * Only the address is sent (never a password or a token). 422
+ * `stageart_account_check_invalid_email` for a malformed address, 429
+ * `stageart_rate_limited` when checked too often.
+ */
+export function checkAccount(email: string): Promise<AccountCheckResult> {
+  return publicPost<AccountCheckResult>('/auth/account/check', { email });
+}
+
+/**
+ * `email` is the login address that was just verified (the Backend adds it
+ * so the confirmation page can pre-fill the login screen). It may be absent
+ * (no EmailCredential, or an older Backend) - callers treat it as optional.
+ */
+export function verifyEmail(token: string): Promise<{ success: boolean; email?: string }> {
+  return publicPost<{ success: boolean; email?: string }>('/auth/email/verify', { token });
 }
 
 // --- Authenticated self-service (require an existing StageArt session) ---

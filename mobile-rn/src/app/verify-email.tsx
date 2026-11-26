@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
+import { setLoginEmailHandoff } from '@/auth/loginEmailHandoff';
 import { verifyEmail } from '@/features/auth/api';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
@@ -70,12 +71,21 @@ export default function VerifyEmailScreen() {
   // tokenParam was ever present, or via the retry button after an error.
   const [state, setState] = useState<VerifyState>(() => (tokenParam ? 'verifying' : 'idle'));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // The address the Backend reports as just verified - handed to the login
+  // screen (in memory only) when the user continues to it.
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+
+  function goToLogin() {
+    setLoginEmailHandoff(verifiedEmail);
+    router.replace('/login');
+  }
 
   async function runVerification(token: string) {
     setState('verifying');
     setErrorMessage(null);
     try {
-      await verifyEmail(token);
+      const result = await verifyEmail(token);
+      setVerifiedEmail(typeof result?.email === 'string' && result.email.length > 0 ? result.email : null);
 
       const outcome = await completeEmailVerificationFromPending();
       if (outcome.hasSession) {
@@ -156,7 +166,7 @@ export default function VerifyEmailScreen() {
               <ThemedText type="small" style={authStyles.description}>
                 StageArt Webからログインしてください。StageArtアプリをお持ちの場合は、下のボタンからアプリを開くこともできます。
               </ThemedText>
-              <TouchableOpacity testID="verify-email-continue" onPress={() => router.replace('/login')} style={authStyles.button}>
+              <TouchableOpacity testID="verify-email-continue" onPress={goToLogin} style={authStyles.button}>
                 <ThemedText style={authStyles.buttonText}>ログイン画面へ</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
@@ -174,7 +184,7 @@ export default function VerifyEmailScreen() {
               <ThemedText type="small" style={authStyles.description}>
                 ログイン画面からStageArtにログインしてください。
               </ThemedText>
-              <TouchableOpacity testID="verify-email-continue" onPress={() => router.replace('/login')} style={authStyles.button}>
+              <TouchableOpacity testID="verify-email-continue" onPress={goToLogin} style={authStyles.button}>
                 <ThemedText style={authStyles.buttonText}>ログイン画面へ</ThemedText>
               </TouchableOpacity>
             </>
