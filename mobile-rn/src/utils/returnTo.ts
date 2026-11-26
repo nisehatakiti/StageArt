@@ -33,3 +33,20 @@ export function safeReturnTo(value: unknown): string | null {
 export function returnToForUnauthenticated(pathname: string): string | null {
   return pathname === '/participant-invitations' || pathname.startsWith('/participant-invitations/') ? pathname : null;
 }
+
+/**
+ * Carries a login return_to across the authentication screens (login ->
+ * register -> registration-pending -> login), so an invited person who has
+ * to register or confirm the address first still reaches the page they came
+ * for. The value is checked with safeReturnTo() again on every hop; anything
+ * that is not an in-app path is dropped and `path` is returned unchanged.
+ *
+ * @param path an app path, optionally with its own query (`?email=...`)
+ */
+export function withReturnTo(path: string, returnTo: unknown): string {
+  const safe = safeReturnTo(returnTo);
+  if (safe === null) {
+    return path;
+  }
+  return `${path}${path.includes('?') ? '&' : '?'}return_to=${encodeURIComponent(safe)}`;
+}

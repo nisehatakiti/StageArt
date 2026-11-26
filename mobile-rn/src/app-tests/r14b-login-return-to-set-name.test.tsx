@@ -1,6 +1,9 @@
-import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+import { AuthProvider } from '@/auth/AuthContext';
 
 import { mockFetchRoutes } from './__fixtures__/homeFixtures';
+import LoginScreen from '../app/login';
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
@@ -8,16 +11,29 @@ jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(async () => undefined),
 }));
 
+const mockRouter = { push: jest.fn(), replace: jest.fn(), setParams: jest.fn(), back: jest.fn() };
+let mockParams: Record<string, string> = {};
+
+jest.mock('expo-router', () => ({
+  ...jest.requireActual('expo-router'),
+  useRouter: () => mockRouter,
+  useLocalSearchParams: () => mockParams,
+}));
+
 /**
- * PR #7 R14-B (design doc §10 「ログイン」; approved fix A), through the real
- * router: a person without a name who came from the invitation list logs
- * in, is shown the name screen first, and that screen carries
- * return_to=/participant-invitations (where it continues after saving -
- * r14b-set-name-return-to.test.tsx).
+ * PR #7 R14-B (design doc §10 「ログイン」; approved fix A): a person
+ * without a name who came from the invitation list logs in, is sent to the
+ * name screen first, and that screen gets return_to=/participant-invitations
+ * (where it continues after saving - r14b-set-name-return-to.test.tsx).
+ *
+ * Two-step login with the real AuthProvider and requests; the screen is
+ * rendered on its own (see r14b-login-return-to.test.tsx for why).
  */
 describe('R14-B ログイン: 名前未設定でも return_to を引き継ぐ', () => {
-  it('lands on set-name with return_to', async () => {
+  it('goes to set-name with return_to', async () => {
+    mockParams = { return_to: '/participant-invitations' };
     mockFetchRoutes([
+      { test: (u) => u.endsWith('/auth/account/check'), status: 200, body: { status: 'PASSWORD_LOGIN', methods: ['password'] } },
       {
         test: (u) => u.endsWith('/auth/email/login'),
         status: 200,
@@ -30,15 +46,23 @@ describe('R14-B ログイン: 名前未設定でも return_to を引き継ぐ', 
       },
     ]);
 
-    const router = renderRouter('src/app', { initialUrl: '/login?return_to=%2Fparticipant-invitations' });
+    render(
+      <AuthProvider>
+        <LoginScreen />
+      </AuthProvider>
+    );
 
     await waitFor(() => expect(screen.getByTestId('login-register-link')).toBeVisible());
-    await fireEvent.changeText(screen.getByTestId('login-email'), 'member@example.com');
-    await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
-    await fireEvent.press(screen.getByTestId('login-submit'));
+    fireEvent.changeText(screen.getByTestId('login-email'), 'member@example.com');
+    await waitFor(() => expect(screen.getByTestId('login-email').props.value).toBe('member@example.com'));
+    fireEvent.press(screen.getByTestId('login-next'));
+    await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
+    fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
+    await waitFor(() => expect(screen.getByTestId('login-password').props.value).toBe('password123'));
+    fireEvent.press(screen.getByTestId('login-submit'));
 
-    await waitFor(() => expect(router.getPathname()).toBe('/set-name'));
-    expect(router.getSearchParams()).toEqual({ return_to: '/participant-invitations' });
-    expect(screen.getByTestId('set-name-submit')).toBeVisible();
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalled());
+    expect(mockRouter.replace).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).toHaveBeenCalledWith({ pathname: '/set-name', params: { return_to: '/participant-invitations' } });
   });
 });

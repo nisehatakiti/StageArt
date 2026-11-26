@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { safeReturnTo } from '@/utils/returnTo';
+import { safeReturnTo, withReturnTo } from '@/utils/returnTo';
 
 /**
  * StageArt Authentication Phase 5: the official StageArt Mobile login
@@ -257,7 +257,7 @@ function LoginScreen() {
   /** 「新規登録へ」 / the auxiliary register link: the address goes along (memory only), still editable there. */
   function goToRegister() {
     setEmailHandoff('register', email);
-    router.push('/register');
+    router.push(withReturnTo('/register', returnTo) as Href);
   }
 
   async function handleEmailSubmit() {
@@ -274,7 +274,7 @@ function LoginScreen() {
     }
 
     if (!result.emailVerified) {
-      router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+      router.replace(withReturnTo(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`, returnTo) as Href);
       return;
     }
 

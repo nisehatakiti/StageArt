@@ -12,14 +12,19 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
  * mocked: the full-router harness does not reflect a second state change
  * reliably (see the stage-9 report), and this checks the routing decision
  * itself.
+ *
+ * Two-step login: the address is checked first (POST /auth/account/check,
+ * answered here as a password or a Google account), then the matching
+ * method is used. The routing decision after login is unchanged.
  */
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 let mockParams: Record<string, string | undefined> = {};
 const mockLoginWithEmail = jest.fn();
 const mockLoginWithGoogle = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   useLocalSearchParams: () => mockParams,
   Redirect: () => null,
 }));
@@ -35,6 +40,24 @@ jest.mock('@/auth/googleSignIn', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const LoginScreen = require('@/app/login').default;
 
+/** Answers POST /auth/account/check (the only request the screen itself makes here). */
+function mockAccountCheck(status: 'PASSWORD_LOGIN' | 'GOOGLE_LOGIN' | 'NOT_FOUND' | 'EMAIL_VERIFICATION_REQUIRED') {
+  const body = { status, methods: status === 'GOOGLE_LOGIN' ? ['google'] : status === 'NOT_FOUND' ? [] : ['password'] };
+  global.fetch = jest.fn(async (input: unknown) => {
+    if (!String(input).endsWith('/auth/account/check')) {
+      throw new Error(`Unmocked fetch: ${String(input)}`);
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body } as Response;
+  });
+}
+
+/** Step 1: the address, then 次へ. */
+async function enterAddress() {
+  await fireEvent.changeText(screen.getByTestId('login-email'), 'member@example.com');
+  await waitFor(() => expect(screen.getByTestId('login-email').props.value).toBe('member@example.com'));
+  await fireEvent.press(screen.getByTestId('login-next'));
+}
+
 const signedIn = (hasName: boolean, hints: { family: string | null; given: string | null } = { family: null, given: null }) => ({
   ok: true,
   emailVerified: true,
@@ -44,16 +67,22 @@ const signedIn = (hasName: boolean, hints: { family: string | null; given: strin
 });
 
 async function loginByEmail() {
+  mockAccountCheck('PASSWORD_LOGIN');
   await render(<LoginScreen />);
-  await fireEvent.changeText(screen.getByTestId('login-email'), 'member@example.com');
+  await enterAddress();
+  await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
   await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
+  await waitFor(() => expect(screen.getByTestId('login-password').props.value).toBe('password123'));
   await fireEvent.press(screen.getByTestId('login-submit'));
   await waitFor(() => expect(mockReplace).toHaveBeenCalled());
   return mockReplace.mock.calls[0][0];
 }
 
 async function loginByGoogle() {
+  mockAccountCheck('GOOGLE_LOGIN');
   await render(<LoginScreen />);
+  await enterAddress();
+  await waitFor(() => expect(screen.getByTestId('login-google-button')).toBeVisible());
   await fireEvent.press(screen.getByTestId('login-google-button'));
   await waitFor(() => expect(mockReplace).toHaveBeenCalled());
   expect(mockLoginWithGoogle).toHaveBeenCalledWith('google-id-token');
@@ -62,6 +91,7 @@ async function loginByGoogle() {
 
 beforeEach(() => {
   mockReplace.mockClear();
+  mockPush.mockClear();
   mockLoginWithEmail.mockReset();
   mockLoginWithGoogle.mockReset();
 });
@@ -124,5 +154,55 @@ describe('login: return_to (Google)', () => {
     mockParams = { return_to: 'https://evil.example.com/' };
     mockLoginWithGoogle.mockResolvedValue(signedIn(false, { family: '舞台', given: '花子' }));
     expect(await loginByGoogle()).toEqual({ pathname: '/set-name', params: { family_name_hint: '舞台', given_name_hint: '花子' } });
+  });
+});
+
+/**
+ * Two-step login: an invited person who still has to register or to confirm
+ * the address keeps the checked return_to on the way (login -> register /
+ * registration-pending -> login), so they still reach the invitation list.
+ * A return_to that is not an in-app path is never passed on.
+ */
+describe('login: return_to on the way to register / registration-pending', () => {
+  it.each([
+    ['an in-app path', '/participant-invitations', '/register?return_to=%2Fparticipant-invitations'],
+    ['another site', 'https://evil.example.com/', '/register'],
+    ['protocol-relative', '//evil.example.com', '/register'],
+    ['an auth screen', '/registration-pending', '/register'],
+  ])('「新規登録へ」 for an unknown address carries %s only when it is safe', async (_label, value, target) => {
+    mockParams = { return_to: value };
+    mockAccountCheck('NOT_FOUND');
+    await render(<LoginScreen />);
+    await enterAddress();
+    await waitFor(() => expect(screen.getByTestId('login-go-register')).toBeVisible());
+    await fireEvent.press(screen.getByTestId('login-go-register'));
+
+    expect(mockPush).toHaveBeenCalledWith(target);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('the auxiliary register link carries return_to too', async () => {
+    mockParams = { return_to: '/participant-invitations' };
+    await render(<LoginScreen />);
+    await fireEvent.press(screen.getByTestId('login-register-link'));
+    expect(mockPush).toHaveBeenCalledWith('/register?return_to=%2Fparticipant-invitations');
+  });
+
+  it.each([
+    ['an in-app path', '/participant-invitations', '/registration-pending?email=member%40example.com&return_to=%2Fparticipant-invitations'],
+    ['another site', 'https://evil.example.com/', '/registration-pending?email=member%40example.com'],
+  ])('an unconfirmed address goes to registration-pending with %s kept only when safe', async (_label, value, target) => {
+    mockParams = { return_to: value };
+    mockLoginWithEmail.mockResolvedValue({ ok: true, emailVerified: false, hasName: true, familyNameHint: null, givenNameHint: null });
+    mockAccountCheck('EMAIL_VERIFICATION_REQUIRED');
+    await render(<LoginScreen />);
+    await enterAddress();
+    await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
+    await fireEvent.changeText(screen.getByTestId('login-password'), 'password123');
+    await waitFor(() => expect(screen.getByTestId('login-password').props.value).toBe('password123'));
+    await fireEvent.press(screen.getByTestId('login-submit'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith(target));
+    expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 });

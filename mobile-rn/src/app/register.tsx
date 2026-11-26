@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, TouchableOpacity } from 'react-native';
 
@@ -9,6 +9,7 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 import { authStyles } from '@/components/auth/authStyles';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedTextInput } from '@/components/themed-text-input';
+import { safeReturnTo, withReturnTo } from '@/utils/returnTo';
 
 /**
  * Email+Password new StageArt Account registration (Backend Phase 2's
@@ -41,8 +42,11 @@ import { ThemedTextInput } from '@/components/themed-text-input';
 function RegisterScreen() {
   const { registerWithEmail, status } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ token?: string }>();
+  const params = useLocalSearchParams<{ token?: string; return_to?: string }>();
   const hasTokenInUrl = params.token !== undefined;
+  // R14-B §10: the login screen's return_to (「新規登録へ」) travels on to
+  // registration-pending and back to login; only an in-app path is kept.
+  const returnTo = safeReturnTo(params.return_to);
 
   // Pre-filled with the address the login screen handed over (「新規登録へ」,
   // memory only - auth/loginEmailHandoff.ts); empty otherwise. Still
@@ -72,11 +76,11 @@ function RegisterScreen() {
     }
 
     if (!result.emailVerified) {
-      router.replace(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`);
+      router.replace(withReturnTo(`/registration-pending?email=${encodeURIComponent(trimmedEmail)}`, returnTo) as Href);
       return;
     }
 
-    router.replace(result.hasName ? '/home' : '/set-name');
+    router.replace((result.hasName ? (returnTo ?? '/home') : withReturnTo('/set-name', returnTo)) as Href);
   }
 
   // Only whether a token is present is looked at - its value is never used.

@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 
@@ -11,6 +11,7 @@ import { STAGE } from '@/components/auth/authTheme';
 import { ThemedText } from '@/components/themed-text';
 import { requestEmailVerification } from '@/features/auth/api';
 import { getErrorMessage } from '@/utils/errorMessage';
+import { withReturnTo } from '@/utils/returnTo';
 
 /**
  * A real-device correction to this Phase's original design: reaching
@@ -36,7 +37,9 @@ import { getErrorMessage } from '@/utils/errorMessage';
  */
 function RegistrationPendingScreen() {
   const router = useRouter();
-  const { email } = useLocalSearchParams<{ email?: string }>();
+  // R14-B §10: the login return_to (e.g. /participant-invitations) goes back
+  // to the login screen with the person; withReturnTo() re-checks it.
+  const { email, return_to: returnTo } = useLocalSearchParams<{ email?: string; return_to?: string }>();
 
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
@@ -62,12 +65,12 @@ function RegistrationPendingScreen() {
 
   function handleWrongEmail() {
     setPendingSession(null);
-    router.replace('/login');
+    router.replace(withReturnTo('/login', returnTo) as Href);
   }
 
   function handleBackToLogin() {
     setPendingSession(null);
-    router.replace('/login');
+    router.replace(withReturnTo('/login', returnTo) as Href);
   }
 
   return (

@@ -81,3 +81,37 @@ describe('register screen (form)', () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Two-step login: 「新規登録へ」 on a login screen opened with a return_to
+ * (an invited person) opens /register?return_to=...; after registering, the
+ * person goes on to registration-pending with the same checked return_to,
+ * which leads back to login and then to the invitation list. A return_to
+ * that is not an in-app path is dropped.
+ */
+describe('register screen: return_to from the login screen', () => {
+  async function registerUnconfirmed() {
+    mockRegisterWithEmail.mockResolvedValue({ ok: true, emailVerified: false, hasName: false, familyNameHint: null, givenNameHint: null });
+    await render(<RegisterScreen />);
+    await fireEvent.changeText(screen.getByTestId('register-email'), 'invitee@example.com');
+    await fireEvent.changeText(screen.getByTestId('register-password'), 'password123');
+    await fireEvent.press(screen.getByTestId('register-submit'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledTimes(1));
+    expect(mockRegisterWithEmail.mock.calls[0]).toEqual(['invitee@example.com', 'password123']);
+    return mockReplace.mock.calls[0][0];
+  }
+
+  it('carries a safe return_to on to registration-pending', async () => {
+    mockParams = { return_to: '/participant-invitations' };
+    expect(await registerUnconfirmed()).toBe('/registration-pending?email=invitee%40example.com&return_to=%2Fparticipant-invitations');
+  });
+
+  it.each([
+    ['another site', 'https://evil.example.com/'],
+    ['protocol-relative', '//evil.example.com'],
+    ['an auth screen', '/login'],
+  ])('drops a return_to that is %s', async (_label, value) => {
+    mockParams = { return_to: value };
+    expect(await registerUnconfirmed()).toBe('/registration-pending?email=invitee%40example.com');
+  });
+});
