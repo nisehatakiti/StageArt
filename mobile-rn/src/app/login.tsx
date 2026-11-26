@@ -152,10 +152,31 @@ function useGoogleSigninButtonComponent(): GoogleSigninButtonComponent | null {
  * form. `fallback` is the ordinary password + Google form, used when the
  * check itself could not be made (rate limit, network, server) so that the
  * check can never lock anyone out of signing in.
+ *
+ * 「Googleで続ける」 is offered from the start (step 1, before any check) and
+ * after every answer except the two that rule Google out for this address
+ * (GOOGLE_HIDDEN_STATUSES). The check can only recognise a Google account
+ * by a verified notification address equal to the one typed, so a Google
+ * user whose notification address is missing, unverified or different -
+ * or whose address someone registered with a password and never verified -
+ * is answered NOT_FOUND / EMAIL_VERIFICATION_REQUIRED; Google must still be
+ * there for them. Showing the button changes nothing on the server: the
+ * Google sign-in itself (AuthenticateWithGoogleUseCase) decides the account
+ * from the Google ID Token, never from the address typed here.
  */
 type LoginStep = { kind: 'email' } | { kind: 'checked'; check: AccountCheckResult } | { kind: 'fallback' };
 
 const PASSWORD_STATUSES: AccountCheckStatus[] = ['PASSWORD_LOGIN', 'MULTIPLE_AUTH_METHODS', 'EMAIL_VERIFICATION_REQUIRED'];
+
+/**
+ * - PASSWORD_LOGIN: a verified password login with no Google identity - the
+ *   address's owner signs in with the password (「メールアドレスを入力し直す」
+ *   brings Google back on step 1).
+ * - DISABLED: the account cannot be used at all.
+ */
+const GOOGLE_HIDDEN_STATUSES: AccountCheckStatus[] = ['PASSWORD_LOGIN', 'DISABLED'];
+
+const GOOGLE_USER_HINT = 'Googleアカウントで登録している場合は、「Googleで続ける」からログインしてください。';
 
 function accountNotice(check: AccountCheckResult, googleAvailable: boolean): string | null {
   const google = check.methods.includes('google');
@@ -163,14 +184,16 @@ function accountNotice(check: AccountCheckResult, googleAvailable: boolean): str
   switch (check.status) {
     case 'MULTIPLE_AUTH_METHODS':
       return googleAvailable ? 'パスワード、またはGoogleでログインできます。' : null;
-    case 'EMAIL_VERIFICATION_REQUIRED':
-      return `このメールアドレスの確認がまだ済んでいません。届いた確認メールのリンクを開いてください。確認メールを再送するには、パスワードを入力して「ログイン」を押してください。${google && googleAvailable ? 'Googleでもログインできます。' : ''}`;
+    case 'EMAIL_VERIFICATION_REQUIRED': {
+      const googleHint = !googleAvailable ? '' : google ? 'Googleでもログインできます。' : GOOGLE_USER_HINT;
+      return `このメールアドレスの確認がまだ済んでいません。届いた確認メールのリンクを開いてください。確認メールを再送するには、パスワードを入力して「ログイン」を押してください。${googleHint}`;
+    }
     case 'GOOGLE_LOGIN':
       return googleAvailable
         ? 'このメールアドレスはGoogleアカウントで登録されています。「Googleで続ける」からログインしてください。'
         : 'このメールアドレスはGoogleアカウントで登録されています。この画面ではGoogleログインを利用できないため、Googleログインに対応したStageArtの画面からログインしてください。';
     case 'NOT_FOUND':
-      return 'このメールアドレスはまだ登録されていません。新規登録を行ってください。';
+      return `このメールアドレスはまだ登録されていません。新規登録を行ってください。${googleAvailable ? GOOGLE_USER_HINT : ''}`;
     case 'DISABLED':
       return 'このアカウントは現在ご利用いただけません。お心当たりのない場合は、StageArtの運営にお問い合わせください。';
     default:
@@ -204,7 +227,7 @@ function LoginScreen() {
   const submitting = submittingEmail || submittingGoogle || checking;
   const googleAvailable = isGoogleSignInAvailable();
   const showPassword = step.kind === 'fallback' || (step.kind === 'checked' && PASSWORD_STATUSES.includes(step.check.status));
-  const showGoogle = googleAvailable && (step.kind === 'fallback' || (step.kind === 'checked' && step.check.methods.includes('google')));
+  const showGoogle = googleAvailable && !(step.kind === 'checked' && GOOGLE_HIDDEN_STATUSES.includes(step.check.status));
   const notice = step.kind === 'checked' ? accountNotice(step.check, googleAvailable) : null;
 
   /** Back to step 1, keeping the address (the password is dropped). */
@@ -422,7 +445,7 @@ function LoginScreen() {
         </>
       )}
 
-      {showPassword && showGoogle && (
+      {showGoogle && (step.kind === 'email' || showPassword) && (
         <ThemedView style={styles.dividerRow}>
           <ThemedView style={styles.dividerLine} />
           <ThemedText type="small" style={styles.dividerText}>

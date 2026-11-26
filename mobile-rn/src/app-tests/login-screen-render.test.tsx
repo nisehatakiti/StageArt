@@ -28,17 +28,19 @@ describe('Login screen', () => {
     global.fetch = jest.fn();
   });
 
-  it('step 1 shows only the e-mail field, 次へ and the register link - with no WordPress terms', async () => {
+  it('step 1 shows the e-mail field, 次へ, 「Googleで続ける」 and the register link - with no WordPress terms', async () => {
     renderRouter('src/app', { initialUrl: '/login' });
 
-    // The password, Google and forgot-password parts appear only after
-    // 次へ has checked the address (login-account-check.test.tsx).
+    // Google is offered from the start; the password and forgot-password
+    // parts appear only after 次へ has checked the address
+    // (login-account-check.test.tsx).
     await waitFor(() => expect(screen.getByTestId('login-email')).toBeVisible());
     expect(screen.getByTestId('login-next')).toBeVisible();
+    expect(screen.getByTestId('login-google-button')).toBeVisible();
+    expect(screen.getByText('Googleで続ける')).toBeVisible();
     expect(screen.getByTestId('login-register-link')).toBeVisible();
     expect(screen.queryByTestId('login-password')).toBeNull();
     expect(screen.queryByTestId('login-submit')).toBeNull();
-    expect(screen.queryByTestId('login-google-button')).toBeNull();
     expect(screen.queryByTestId('login-forgot-password-link')).toBeNull();
 
     expect(screen.queryByText(/WordPress/i)).toBeNull();

@@ -70,6 +70,7 @@ async function typeEmailAndNext(email: string) {
 describe('login step 1: 次へ checks the account and leads to the matching step', () => {
   beforeEach(() => {
     mockRouter.push.mockClear();
+    mockRouter.replace.mockClear();
     clearEmailHandoff('register');
     clearEmailHandoff('login');
   });
@@ -88,6 +89,24 @@ describe('login step 1: 次へ checks the account and leads to the matching step
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toMatch(/\/auth\/account\/check$/);
     expect(calls[0].body).toEqual({ email: 'pw@example.com' });
+  });
+
+  it('step 1 offers 「Googleで続ける」 from the start, before any address or check', async () => {
+    const calls = mockCheck({});
+    renderLogin();
+
+    await waitFor(() => expect(screen.getByTestId('login-google-button')).toBeVisible());
+    expect(screen.getByTestId('login-email').props.value).toBe('');
+    expect(screen.getByTestId('login-next')).toBeVisible();
+    expect(screen.getByTestId('login-register-link')).toBeVisible();
+    expect(screen.queryByTestId('login-password')).toBeNull();
+    expect(screen.queryByTestId('login-account-notice')).toBeNull();
+
+    // Typing an address does not hide it either (still before the check).
+    fireEvent.changeText(screen.getByTestId('login-email'), 'someone@example.com');
+    await waitFor(() => expect(screen.getByTestId('login-email').props.value).toBe('someone@example.com'));
+    expect(screen.getByTestId('login-google-button')).toBeVisible();
+    expect(calls).toHaveLength(0);
   });
 
   it('a password account goes to the password step (no Google button)', async () => {
@@ -118,7 +137,22 @@ describe('login step 1: 次へ checks the account and leads to the matching step
     await waitFor(() => expect(screen.getByTestId('login-account-notice')).toBeVisible());
     expect(screen.getByTestId('login-account-notice').props.children).toContain('確認がまだ済んでいません');
     expect(screen.getByTestId('login-password')).toBeVisible();
-    expect(screen.queryByTestId('login-google-button')).toBeNull();
+    expect(screen.getByTestId('login-submit')).toBeVisible();
+    // The address may have been registered with a password by someone else
+    // and never verified - a Google user must still find Google here.
+    expect(screen.getByTestId('login-google-button')).toBeVisible();
+    expect(screen.getByTestId('login-account-notice').props.children).toContain('Googleアカウントで登録している場合は、「Googleで続ける」からログインしてください。');
+  });
+
+  it('an unverified account with a Google identity says Google can be used too', async () => {
+    mockCheck({ 'new-g@example.com': ok('EMAIL_VERIFICATION_REQUIRED', ['google']) });
+    renderLogin();
+    await typeEmailAndNext('new-g@example.com');
+
+    await waitFor(() => expect(screen.getByTestId('login-account-notice')).toBeVisible());
+    expect(screen.getByTestId('login-account-notice').props.children).toContain('Googleでもログインできます。');
+    expect(screen.getByTestId('login-password')).toBeVisible();
+    expect(screen.getByTestId('login-google-button')).toBeVisible();
   });
 
   it('a Google-only account is led to Google, not to registration or a password', async () => {
@@ -138,8 +172,13 @@ describe('login step 1: 次へ checks the account and leads to the matching step
     await typeEmailAndNext('nobody@example.com');
 
     await waitFor(() => expect(screen.getByTestId('login-go-register')).toBeVisible());
-    expect(screen.getByTestId('login-account-notice').props.children).toBe('このメールアドレスはまだ登録されていません。新規登録を行ってください。');
+    expect(screen.getByTestId('login-account-notice').props.children).toBe(
+      'このメールアドレスはまだ登録されていません。新規登録を行ってください。Googleアカウントで登録している場合は、「Googleで続ける」からログインしてください。'
+    );
     expect(screen.queryByTestId('login-password')).toBeNull();
+    // A Google user whose notification address is missing or different is
+    // answered NOT_FOUND too: Google stays next to registration.
+    expect(screen.getByTestId('login-google-button')).toBeVisible();
 
     fireEvent.press(screen.getByTestId('login-go-register'));
 
@@ -250,5 +289,45 @@ describe('login step 1: 次へ checks the account and leads to the matching step
 
     release!();
     await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
+  });
+});
+
+/**
+ * Kept last in this file: a successful sign-in leaves AuthContext signed in
+ * for the rest of the file (module state), which the step-1 tests above must
+ * not see.
+ */
+describe('login step 2: the password form', () => {
+  beforeEach(() => {
+    mockRouter.replace.mockClear();
+  });
+
+  it('PASSWORD_LOGIN: the password step signs in with the address and the password', async () => {
+    mockCheck({ 'pw@example.com': ok('PASSWORD_LOGIN', ['password']) });
+    renderLogin();
+    await typeEmailAndNext('pw@example.com');
+    await waitFor(() => expect(screen.getByTestId('login-password')).toBeVisible());
+
+    const checkFetch = global.fetch as jest.Mock;
+    const loginBodies: unknown[] = [];
+    const answer = (body: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body }) as Response;
+    global.fetch = jest.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/email/login')) {
+        loginBodies.push(JSON.parse(String(init?.body)));
+        return answer({ access_token: 'access-token-1', refresh_token: 'refresh-token-1', token_type: 'Bearer', expires_in: 3600, person_id: 'person-1', user_account_id: 'account-1', is_new_user: false });
+      }
+      if (url.endsWith('/me')) {
+        return answer({ email_verified: true, family_name: '山田', given_name: '花子' });
+      }
+      return checkFetch(input, init);
+    }) as jest.Mock;
+
+    fireEvent.changeText(screen.getByTestId('login-password'), 'secret-pass');
+    await waitFor(() => expect(screen.getByTestId('login-password').props.value).toBe('secret-pass'));
+    fireEvent.press(screen.getByTestId('login-submit'));
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/home'));
+    expect(loginBodies).toEqual([{ email: 'pw@example.com', password: 'secret-pass' }]);
   });
 });
