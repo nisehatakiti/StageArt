@@ -60,7 +60,7 @@ final class CheckAccountUseCase
     }
 
     /**
-     * @throws AccountCheckRateLimitedException
+     * @throws \StageArt\Application\RateLimit\RateLimitedException
      * @throws InvalidAccountCheckEmailException
      */
     public function execute(CheckAccountCommand $command): CheckAccountResult

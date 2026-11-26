@@ -156,7 +156,6 @@ use StageArt\Application\Authentication\ResetPasswordUseCase;
 use StageArt\Application\Authentication\VerifyEmailUseCase;
 use StageArt\Application\Authentication\AccountCheckRateLimit;
 use StageArt\Application\Authentication\CheckAccountUseCase;
-use StageArt\Infrastructure\WordPress\Authentication\WordPressOptionsAccountCheckCounter;
 use StageArt\Presentation\Rest\AccountCheckRestController;
 use StageArt\Application\UserAccount\ChangePasswordUseCase;
 use StageArt\Application\UserAccount\CreateUserAccountUseCase;
@@ -676,10 +675,10 @@ final class Plugin
         // PR #7 R14-B stage 8 (§9.2): the invitation rate limits, counted in
         // stageart_rate_limit_buckets under a key derived from WordPress's
         // salt (not the §6.7 email_key keyring).
-        $invitationRateLimit = new InvitationRateLimit(
-            new WordPressRateLimiter($wpdb, hash_hmac('sha256', 'stageart_rate_limit_buckets', wp_salt('auth'))),
-            $productionAuthorization
-        );
+        // One limiter for every rate limit (the invitations here, the login
+        // account check below); each rule has its own buckets.
+        $rateLimiter = new WordPressRateLimiter($wpdb, hash_hmac('sha256', 'stageart_rate_limit_buckets', wp_salt('auth')));
+        $invitationRateLimit = new InvitationRateLimit($rateLimiter, $productionAuthorization);
         $resendParticipantInvitation = new ResendParticipantInvitationUseCase(
             $participantInvitations,
             $productions,
@@ -1018,14 +1017,14 @@ final class Plugin
             $verifyEmail
         );
         // Login step 1 (POST /auth/account/check): which sign-in path an
-        // address leads to, rate-limited per connection and per address
-        // (counter in wp_options - no schema change, see the counter class).
+        // address leads to, rate-limited per connection and per address on the
+        // shared R14-B rate limiter (stageart_rate_limit_buckets, schema 1.49.0).
         $accountCheckRestController = new AccountCheckRestController(new CheckAccountUseCase(
             $emailCredentials,
             $userAccounts,
             $externalIdentities,
             $notificationEmails,
-            new AccountCheckRateLimit(new WordPressOptionsAccountCheckCounter($wpdb), wp_salt('auth'))
+            new AccountCheckRateLimit($rateLimiter)
         ));
 
         $productionRestController = new ProductionRestController(

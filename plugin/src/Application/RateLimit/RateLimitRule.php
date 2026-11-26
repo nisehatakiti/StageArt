@@ -22,9 +22,19 @@ final class RateLimitRule
     public const INVITATION_SEND = 'invitation_create';
     /** accept / reject failures (403 / 404), per Person: 10 per 10 minutes. */
     public const INVITATION_RESPOND_FAILURE = 'invitation_respond_failure';
+    /**
+     * POST /auth/account/check (two-step login), per connection and per
+     * address: 20 / 10 per 10 minutes. A separate kind, so it never shares a
+     * bucket with the invitation limits.
+     */
+    public const ACCOUNT_CHECK = 'account_check';
 
     public const SUBJECT_PERSON = 'person';
     public const SUBJECT_PRODUCTION = 'production';
+    /** The connection's REMOTE_ADDR (X-Forwarded-For is never trusted). */
+    public const SUBJECT_CLIENT = 'client';
+    /** A login address, trimmed and lower-cased (hashed with the bucket name before it is stored). */
+    public const SUBJECT_EMAIL = 'email';
 
     private string $name;
     private string $subjectType;
@@ -52,6 +62,16 @@ final class RateLimitRule
     public static function invitationRespondFailurePerPerson(): self
     {
         return new self(self::INVITATION_RESPOND_FAILURE, self::SUBJECT_PERSON, 10, 600);
+    }
+
+    public static function accountCheckPerClient(): self
+    {
+        return new self(self::ACCOUNT_CHECK, self::SUBJECT_CLIENT, 20, 600);
+    }
+
+    public static function accountCheckPerEmail(): self
+    {
+        return new self(self::ACCOUNT_CHECK, self::SUBJECT_EMAIL, 10, 600);
     }
 
     public function name(): string

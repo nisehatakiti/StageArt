@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace StageArt\Presentation\Rest;
 
-use StageArt\Application\Authentication\AccountCheckRateLimitedException;
 use StageArt\Application\Authentication\CheckAccountCommand;
 use StageArt\Application\Authentication\CheckAccountUseCase;
 use StageArt\Application\Authentication\InvalidAccountCheckEmailException;
+use Throwable;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -19,12 +19,16 @@ use WP_REST_Response;
  *   detail of the credentials.
  * - 422 `stageart_account_check_invalid_email` - empty or not an address.
  * - 429 `stageart_rate_limited` with `data.retry_after` and `Retry-After`
- *   (AccountCheckRateLimit).
- * - Any other failure goes through RestFailureResponder (500, nothing
- *   checked).
+ *   (AccountCheckRateLimit on the R14-B rate limiter: the same
+ *   RateLimitedException and the same answer as the invitation limits,
+ *   built by RestFailureResponder).
+ * - Any other failure is answered by RestFailureResponder as well (500,
+ *   nothing checked; it logs the exception class and message only - the
+ *   rate limiter's PersistenceException carries no address or IP).
  *
- * Every response carries `Cache-Control: no-store`. Nothing about the
- * request (address, IP) is logged.
+ * Every response, the 429 and 500 included, carries
+ * `Cache-Control: no-store`. Nothing about the request (address, IP,
+ * result) is logged.
  */
 final class AccountCheckRestController
 {
@@ -58,19 +62,16 @@ final class AccountCheckRestController
         try {
             $result = $this->checkAccount->execute(new CheckAccountCommand(is_string($email) ? $email : '', $clientAddress));
             $response = new WP_REST_Response($result->toArray(), 200);
-        } catch (AccountCheckRateLimitedException $exception) {
-            $response = new WP_REST_Response([
-                'code' => 'stageart_rate_limited',
-                'message' => $exception->getMessage(),
-                'data' => ['status' => 429, 'retry_after' => $exception->retryAfter()],
-            ], 429);
-            $response->header('Retry-After', (string) $exception->retryAfter());
         } catch (InvalidAccountCheckEmailException $exception) {
             $response = new WP_REST_Response([
                 'code' => 'stageart_account_check_invalid_email',
                 'message' => $exception->getMessage(),
                 'data' => ['status' => 422],
             ], 422);
+        } catch (Throwable $exception) {
+            // RateLimitedException -> 429 with retry_after / Retry-After;
+            // anything else -> 500. Answered here so no-store is added too.
+            $response = RestFailureResponder::toResponse($exception);
         }
 
         $response->header('Cache-Control', 'no-store');

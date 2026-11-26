@@ -71,6 +71,45 @@ final class WordPressRateLimiterTest extends TestCase
         );
     }
 
+    /** Two-step login: the account check counts an address and an IP - neither is stored. */
+    public function test_account_check_bucket_keys_hide_the_address_and_the_ip(): void
+    {
+        $limiter = new WordPressRateLimiter(new \wpdb(), 'secret');
+        $emailKey = $limiter->bucketKey(RateLimitRule::accountCheckPerEmail(), 'private@example.com');
+        $clientKey = $limiter->bucketKey(RateLimitRule::accountCheckPerClient(), '192.0.2.44');
+
+        foreach ([$emailKey, $clientKey] as $key) {
+            $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $key);
+            $this->assertStringNotContainsString('private', $key);
+            $this->assertStringNotContainsString('192.0.2.44', $key);
+        }
+        $this->assertSame(hash_hmac('sha256', 'account_check|email|private@example.com', 'secret'), $emailKey);
+        $this->assertNotSame(
+            $limiter->bucketKey(RateLimitRule::accountCheckPerClient(), 'X'),
+            $limiter->bucketKey(RateLimitRule::accountCheckPerEmail(), 'X'),
+            'A connection and an address never share a bucket'
+        );
+        $this->assertNotSame(
+            $limiter->bucketKey(RateLimitRule::accountCheckPerClient(), 'X'),
+            $limiter->bucketKey(RateLimitRule::invitationSendPerPerson(), 'X'),
+            'Never shares a bucket with an invitation limit'
+        );
+    }
+
+    public function test_an_account_check_hit_uses_its_own_ten_minute_window(): void
+    {
+        $db = new \wpdb(static fn (string $method, array $args) => $method === 'get_var' ? '3' : 1);
+        $limiter = new WordPressRateLimiter($db, 'secret');
+
+        $this->assertSame(3, $limiter->hit(RateLimitRule::accountCheckPerEmail(), 'private@example.com', self::now()));
+
+        $insert = $db->preparedFrom($db->callsTo('query')[0][0]);
+        $this->assertSame(
+            [hash_hmac('sha256', 'account_check|email|private@example.com', 'secret'), '2026-11-18 10:20:00', '2026-11-18 10:30:00'],
+            $insert['args']
+        );
+    }
+
     public function test_a_deadlock_is_retried_and_the_count_returned(): void
     {
         $attempts = 0;

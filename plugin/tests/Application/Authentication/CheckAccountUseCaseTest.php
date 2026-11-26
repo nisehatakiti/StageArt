@@ -7,13 +7,13 @@ namespace StageArt\Tests\Application\Authentication;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
-use StageArt\Application\Authentication\AccountCheckCounterInterface;
 use StageArt\Application\Authentication\AccountCheckRateLimit;
-use StageArt\Application\Authentication\AccountCheckRateLimitedException;
 use StageArt\Application\Authentication\CheckAccountCommand;
 use StageArt\Application\Authentication\CheckAccountResult;
 use StageArt\Application\Authentication\CheckAccountUseCase;
 use StageArt\Application\Authentication\InvalidAccountCheckEmailException;
+use StageArt\Application\RateLimit\RateLimitedException;
+use StageArt\Application\RateLimit\RateLimitRule;
 use StageArt\Domain\Notification\NotificationEmail;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\UserAccount\EmailCredential;
@@ -22,11 +22,13 @@ use StageArt\Domain\UserAccount\UserAccount;
 use StageArt\Tests\Support\InMemoryEmailCredentialRepository;
 use StageArt\Tests\Support\InMemoryExternalIdentityRepository;
 use StageArt\Tests\Support\InMemoryNotificationEmailRepository;
+use StageArt\Tests\Support\InMemoryRateLimiter;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
 /**
  * POST /auth/account/check: the sign-in path per account state, the format
- * check, the rate limit and what the answer never contains.
+ * check, the rate limit (on the R14-B rate limiter, in memory here) and
+ * what the answer never contains.
  */
 final class CheckAccountUseCaseTest extends TestCase
 {
@@ -34,7 +36,7 @@ final class CheckAccountUseCaseTest extends TestCase
     private InMemoryUserAccountRepository $accounts;
     private InMemoryExternalIdentityRepository $identities;
     private InMemoryNotificationEmailRepository $notificationEmails;
-    private CountingAccountCheckCounter $counter;
+    private InMemoryRateLimiter $limiter;
     private DateTimeImmutable $now;
     private int $nextWordPressUserId = 10;
 
@@ -44,7 +46,7 @@ final class CheckAccountUseCaseTest extends TestCase
         $this->accounts = new InMemoryUserAccountRepository();
         $this->identities = new InMemoryExternalIdentityRepository();
         $this->notificationEmails = new InMemoryNotificationEmailRepository();
-        $this->counter = new CountingAccountCheckCounter();
+        $this->limiter = new InMemoryRateLimiter();
         $this->now = new DateTimeImmutable('2026-11-25T06:03:20', new DateTimeZone('UTC'));
     }
 
@@ -144,7 +146,7 @@ final class CheckAccountUseCaseTest extends TestCase
             $this->check($email);
             $this->fail('An invalid address must be refused.');
         } catch (InvalidAccountCheckEmailException $exception) {
-            $this->assertSame(1, $this->counter->hits('client'));
+            $this->assertSame(1, $this->hits('client'));
         }
     }
 
@@ -179,14 +181,14 @@ final class CheckAccountUseCaseTest extends TestCase
 
     public function test_more_than_20_checks_from_one_connection_in_a_window_are_refused(): void
     {
-        for ($i = 1; $i <= AccountCheckRateLimit::LIMIT_PER_CLIENT; $i++) {
+        for ($i = 1; $i <= RateLimitRule::accountCheckPerClient()->limit(); $i++) {
             $this->check("user{$i}@example.com");
         }
 
         try {
             $this->check('one-more@example.com');
             $this->fail('The 21st check from one connection must be refused.');
-        } catch (AccountCheckRateLimitedException $exception) {
+        } catch (RateLimitedException $exception) {
             // 06:03:20 -> the window ends at 06:10:00.
             $this->assertSame(400, $exception->retryAfter());
         }
@@ -197,37 +199,37 @@ final class CheckAccountUseCaseTest extends TestCase
 
     public function test_more_than_10_checks_of_one_address_in_a_window_are_refused_whatever_the_connection(): void
     {
-        for ($i = 1; $i <= AccountCheckRateLimit::LIMIT_PER_EMAIL; $i++) {
+        for ($i = 1; $i <= RateLimitRule::accountCheckPerEmail()->limit(); $i++) {
             $this->check('target@example.com', "203.0.113.{$i}");
         }
 
-        $this->expectException(AccountCheckRateLimitedException::class);
+        $this->expectException(RateLimitedException::class);
         // Upper case / spaces count as the same address.
         $this->check(' TARGET@example.com ', '203.0.113.99');
     }
 
     public function test_a_connection_over_its_limit_does_not_use_up_the_address_budget(): void
     {
-        for ($i = 1; $i <= AccountCheckRateLimit::LIMIT_PER_CLIENT; $i++) {
+        for ($i = 1; $i <= RateLimitRule::accountCheckPerClient()->limit(); $i++) {
             $this->check("user{$i}@example.com");
         }
 
-        $emailHitsBefore = $this->counter->hits('email');
+        $emailHitsBefore = $this->hits('email');
 
         for ($i = 0; $i < 5; $i++) {
             try {
                 $this->check('victim@example.com');
-            } catch (AccountCheckRateLimitedException $exception) {
+            } catch (RateLimitedException $exception) {
             }
         }
 
-        $this->assertSame($emailHitsBefore, $this->counter->hits('email'), 'refused connection attempts are not counted against the address');
+        $this->assertSame($emailHitsBefore, $this->hits('email'), 'refused connection attempts are not counted against the address');
         $this->assertSame('NOT_FOUND', $this->check('victim@example.com', '198.51.100.8')->status);
     }
 
     public function test_a_new_window_starts_counting_again(): void
     {
-        for ($i = 1; $i <= AccountCheckRateLimit::LIMIT_PER_CLIENT; $i++) {
+        for ($i = 1; $i <= RateLimitRule::accountCheckPerClient()->limit(); $i++) {
             $this->check("user{$i}@example.com");
         }
 
@@ -236,15 +238,57 @@ final class CheckAccountUseCaseTest extends TestCase
         $this->assertSame('NOT_FOUND', $this->check('next-window@example.com')->status);
     }
 
-    public function test_the_counter_keys_carry_neither_the_address_nor_the_ip(): void
+    public function test_the_rules_are_their_own_account_check_rules(): void
     {
-        $this->check('private@example.com', '192.0.2.44');
+        $perClient = RateLimitRule::accountCheckPerClient();
+        $perEmail = RateLimitRule::accountCheckPerEmail();
 
-        foreach ($this->counter->buckets() as $bucket) {
-            $this->assertStringNotContainsString('private', $bucket);
-            $this->assertStringNotContainsString('192.0.2.44', $bucket);
+        $this->assertSame([RateLimitRule::ACCOUNT_CHECK, RateLimitRule::SUBJECT_CLIENT, 20, 600], [$perClient->name(), $perClient->subjectType(), $perClient->limit(), $perClient->windowSeconds()]);
+        $this->assertSame([RateLimitRule::ACCOUNT_CHECK, RateLimitRule::SUBJECT_EMAIL, 10, 600], [$perEmail->name(), $perEmail->subjectType(), $perEmail->limit(), $perEmail->windowSeconds()]);
+
+        foreach ([RateLimitRule::invitationSendPerPerson(), RateLimitRule::invitationSendPerProduction(), RateLimitRule::invitationRespondFailurePerPerson()] as $invitationRule) {
+            $this->assertNotSame($invitationRule->bucketName('x'), $perClient->bucketName('x'), 'never shares a bucket with an invitation limit');
+            $this->assertNotSame($invitationRule->bucketName('x'), $perEmail->bucketName('x'));
         }
-        $this->assertCount(2, $this->counter->buckets());
+        $this->assertNotSame($perClient->bucketName('x'), $perEmail->bucketName('x'));
+    }
+
+    public function test_the_limiter_gets_the_connection_and_the_normalized_address(): void
+    {
+        $this->check('  Private@Example.COM ', '192.0.2.44');
+
+        // Stored by WordPressRateLimiter only as an HMAC of the bucket name
+        // (WordPressRateLimiterTest::test_account_check_bucket_keys_hide_the_address_and_the_ip).
+        $this->assertSame(1, $this->limiter->countFor(RateLimitRule::accountCheckPerClient(), '192.0.2.44', $this->now));
+        $this->assertSame(1, $this->limiter->countFor(RateLimitRule::accountCheckPerEmail(), 'private@example.com', $this->now));
+        $this->assertCount(2, $this->limiter->hits);
+    }
+
+    public function test_a_counter_that_cannot_be_updated_refuses_the_check(): void
+    {
+        $this->limiter->failNextHit = new RateLimitedException(RateLimitedException::UNAVAILABLE_RETRY_AFTER);
+
+        try {
+            $this->check('pw@example.com');
+            $this->fail('A check must not pass without being counted.');
+        } catch (RateLimitedException $exception) {
+            $this->assertSame(2, $exception->retryAfter());
+        }
+    }
+
+    /** Total account-check hits of one subject type (`client` / `email`), every window. */
+    private function hits(string $subjectType): int
+    {
+        $total = 0;
+        $prefix = RateLimitRule::ACCOUNT_CHECK . '|' . $subjectType . '|';
+
+        foreach ($this->limiter->hits as $key => $count) {
+            if (strpos($key, $prefix) === 0) {
+                $total += $count;
+            }
+        }
+
+        return $total;
     }
 
     private function check(string $email, string $clientAddress = '192.0.2.1'): CheckAccountResult
@@ -254,7 +298,7 @@ final class CheckAccountUseCaseTest extends TestCase
             $this->accounts,
             $this->identities,
             $this->notificationEmails,
-            new AccountCheckRateLimit($this->counter, 'test-secret', fn (): DateTimeImmutable => $this->now)
+            new AccountCheckRateLimit($this->limiter, fn (): DateTimeImmutable => $this->now)
         );
 
         return $useCase->execute(new CheckAccountCommand($email, $clientAddress));
@@ -297,40 +341,5 @@ final class CheckAccountUseCaseTest extends TestCase
         sort($keys);
 
         return $keys;
-    }
-}
-
-/** An in-memory fixed-window counter that records the buckets it was asked for. */
-final class CountingAccountCheckCounter implements AccountCheckCounterInterface
-{
-    /** @var array<string, int> */
-    private array $counts = [];
-
-    public function hit(string $bucket, DateTimeImmutable $windowStart, int $windowSeconds): int
-    {
-        $key = $bucket . '@' . $windowStart->getTimestamp();
-        $this->counts[$key] = ($this->counts[$key] ?? 0) + 1;
-
-        return $this->counts[$key];
-    }
-
-    /** Total hits of one kind (`client` / `email`). */
-    public function hits(string $kind): int
-    {
-        $total = 0;
-
-        foreach ($this->counts as $key => $count) {
-            if (strpos($key, 'acct_check_' . $kind . '_') === 0) {
-                $total += $count;
-            }
-        }
-
-        return $total;
-    }
-
-    /** @return string[] */
-    public function buckets(): array
-    {
-        return array_keys($this->counts);
     }
 }
