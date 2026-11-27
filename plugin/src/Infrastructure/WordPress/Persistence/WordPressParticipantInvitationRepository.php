@@ -42,9 +42,10 @@ use wpdb;
  *   Production -> invitation locks; currentSendIdOf() reads the column
  *   without a lock just before a send (§11.3 step 3).
  * - Stage 4: findByProductionEmailAndTypeForUpdate() (the same-address
- *   invitations locked, §5.4) and latestRejectionAt() (the 30-day block
- *   after a rejection, D6) narrow by SQL and keep only exact §6.4 matches
- *   in PHP; every read throws on failure.
+ *   invitations locked, §5.4) narrows by SQL and keeps only exact §6.4
+ *   matches in PHP; every read throws on failure. (latestRejectionAt(), the
+ *   30-day block after a rejection, was removed with the rejection -
+ *   invitation policy 2026-11-27.)
  * - findByIdForUpdate() locks the row (SELECT ... FOR UPDATE, lock order
  *   §5.4: Production first). findByVerifiedEmailCandidates() narrows by
  *   SQL and then keeps only exact matches of the §6.4 normalisation in
@@ -210,38 +211,6 @@ final class WordPressParticipantInvitationRepository implements ParticipantInvit
             array_map(fn (array $row): ParticipantInvitation => $this->hydrate($row), is_array($rows) ? $rows : []),
             static fn (ParticipantInvitation $invitation): bool => self::normalizeEmail($invitation->email()) === $wanted
         ));
-    }
-
-    public function latestRejectionAt(ProductionId $productionId, string $email): ?DateTimeImmutable
-    {
-        $this->wpdb->last_error = '';
-        $rows = $this->wpdb->get_results(
-            $this->wpdb->prepare(
-                "SELECT email, responded_at FROM {$this->table} WHERE production_id = %s AND email = %s AND status = %s AND responded_at IS NOT NULL",
-                $productionId->toString(),
-                trim($email),
-                ParticipantInvitationStatus::REJECTED
-            ),
-            ARRAY_A
-        );
-        $this->throwIfReadFailed();
-
-        $wanted = self::normalizeEmail($email);
-        $latest = null;
-
-        foreach (is_array($rows) ? $rows : [] as $row) {
-            if (self::normalizeEmail((string) $row['email']) !== $wanted) {
-                continue;
-            }
-
-            $respondedAt = self::fromDb((string) $row['responded_at']);
-
-            if ($latest === null || $respondedAt > $latest) {
-                $latest = $respondedAt;
-            }
-        }
-
-        return $latest;
     }
 
     public function currentSendIdOf(ParticipantInvitationId $id): ?string

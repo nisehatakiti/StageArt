@@ -103,8 +103,7 @@ final class CancelParticipantInvitationTest extends TestCase
             'CANCELLED(PRODUCTION_CLOSED)' => [static fn (ParticipantInvitation $i, Person $p) => $i->close(ParticipantInvitationCloseReason::productionClosed())],
             'CANCELLED(INVITER_REVOKED)' => [static fn (ParticipantInvitation $i, Person $p) => $i->close(ParticipantInvitationCloseReason::inviterRevoked())],
             'CANCELLED (pre-R14-B, no reason)' => [static fn (ParticipantInvitation $i, Person $p) => $i->cancel()],
-            'ACCEPTED' => [static fn (ParticipantInvitation $i, Person $p) => $i->accept($p->id(), ParticipantId::generate())],
-            'REJECTED' => [static fn (ParticipantInvitation $i, Person $p) => $i->reject($p->id())],
+            'COMPLETED (registered from the invitation)' => [static fn (ParticipantInvitation $i, Person $p) => $i->completeByEnrollment($p->id(), ParticipantId::generate())],
             'CONSUMED' => [static fn (ParticipantInvitation $i, Person $p) => $i->consume()],
         ];
     }
@@ -181,18 +180,17 @@ final class CancelParticipantInvitationTest extends TestCase
         $this->assertSame(1, $this->f->transactions->rollbacks());
     }
 
-    /** §5.3: cancellation first -> the invitee's acceptance is 409; the invitation stays CANCELLED(MANAGER). */
-    public function test_an_accepted_invitation_is_not_cancelled_and_a_cancelled_one_is_not_accepted(): void
+    /** §5.3: cancellation first -> verifying the address registers nobody; the invitation stays CANCELLED(MANAGER). */
+    public function test_a_cancelled_invitation_registers_nobody_on_verification(): void
     {
         $invitee = $this->f->person('taro@example.com');
         $cancelled = $this->f->invitation('taro@example.com');
         $this->cancel($cancelled);
 
-        try {
-            $this->f->accept()->execute(new \StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand($invitee->wordPressUserId(), $cancelled->id()->toString()));
-            $this->fail('409 expected.');
-        } catch (ParticipantInvitationNotPendingException $e) {
-            $this->assertSame(ParticipantInvitationCloseReason::MANAGER, $this->stored($cancelled)->closeReason()->toString());
-        }
+        $this->f->resolve()->execute($invitee->id(), 'taro@example.com');
+
+        $this->assertSame(ParticipantInvitationCloseReason::MANAGER, $this->stored($cancelled)->closeReason()->toString());
+        $this->assertSame([], $this->f->participants->findByProductionId($this->f->production->id()));
     }
+
 }

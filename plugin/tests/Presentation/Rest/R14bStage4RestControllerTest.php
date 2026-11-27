@@ -60,9 +60,7 @@ final class R14bStage4RestControllerTest extends TestCase
             $f->listInvitations(),
             $f->resendInvitation(),
             $f->cancelInvitation(),
-            $f->accept(),
-            $f->reject(),
-            $f->listMine()
+            $f->getMine()
         );
         $this->participants = new ParticipantRestController(
             new \StageArt\Application\Participant\CreateParticipantUseCase($f->productions, $f->participants, $f->authorization, $f->transactions, $f->events),
@@ -106,7 +104,7 @@ final class R14bStage4RestControllerTest extends TestCase
 
     // --- invitations -----------------------------------------------------
 
-    public function test_create_answers_201_with_the_outcome_only(): void
+    public function test_create_answers_201_with_the_outcome(): void
     {
         [$status, , $data] = $this->invite();
 
@@ -114,6 +112,19 @@ final class R14bStage4RestControllerTest extends TestCase
         $this->assertSame('INVITATION_SENT', $data['outcome']);
         $this->assertArrayNotHasKey('participant', $data);
         $this->assertSame('INVITATION_RESENT', $this->invite()[2]['outcome']);
+
+        // Invitation policy 2026-11-27: a verified account is registered at once.
+        $member = $this->f->person('member@example.com');
+        [$status, , $data] = $this->invite('member@example.com');
+        $this->assertSame(201, $status);
+        $this->assertSame(['outcome', 'participant_id'], array_keys($data));
+        $this->assertSame('MEMBER_ADDED', $data['outcome']);
+        $this->assertSame(
+            [409, 'stageart_participant_already_exists'],
+            array_slice($this->invite('member@example.com'), 0, 2),
+            'Already an ACTIVE participant of the type: nothing changes'
+        );
+        $this->assertSame($member->id()->toString(), $this->f->participants->findById(\StageArt\Domain\Participant\ParticipantId::fromString($data['participant_id']))->subjectId());
     }
 
     public function test_create_refusals(): void
@@ -127,12 +138,10 @@ final class R14bStage4RestControllerTest extends TestCase
         [$status, $code, $data] = $this->invite();
         $this->assertSame([500, 'stageart_email_key_not_configured'], [$status, $code]);
 
+        // Invitation policy 2026-11-27: there is no recently_rejected refusal any more (the rejection was removed).
         $this->setUp();
-        $rejected = $this->f->invitation('taro@example.com');
-        $rejected->reject($this->f->person('x@example.com')->id(), null, new DateTimeImmutable('-1 day'));
-        [$status, $code, $data] = $this->invite();
-        $this->assertSame([409, 'stageart_participant_invitation_recently_rejected'], [$status, $code]);
-        $this->assertArrayHasKey('available_at', $data);
+        [$status, , $data] = $this->invite();
+        $this->assertSame([201, 'INVITATION_SENT'], [$status, $data['outcome']]);
     }
 
     public function test_send_limits_are_429(): void
@@ -168,27 +177,38 @@ final class R14bStage4RestControllerTest extends TestCase
         $this->assertNotFalse(DateTimeImmutable::createFromFormat(DATE_ATOM, $data['available_at']));
     }
 
-    public function test_accept_and_reject_answer_like_the_design(): void
+    /**
+     * Invitation policy 2026-11-27: the invitee only opens the invitation from
+     * the mail (GET /me/participant-invitations/{id}); there is no accept /
+     * reject route and no own list any more.
+     */
+    public function test_the_invitee_opens_the_invitation_from_the_mail_and_cannot_answer_it(): void
     {
         $invitee = $this->f->person('invitee@example.com');
         $GLOBALS['stageart_test_wp']['current_user'] = $invitee->wordPressUserId();
         $mine = $this->f->invitation('invitee@example.com');
         $someoneElses = $this->f->invitation('other@example.com');
 
-        [$status, , $list] = self::answer($this->invitations->listMine(new WP_REST_Request()));
+        [$status, , $data] = self::answer($this->invitations->getMine(new WP_REST_Request(['id' => $mine->id()->toString()])));
         $this->assertSame(200, $status);
-        $this->assertSame([$mine->id()->toString()], array_column($list, 'id'));
+        $this->assertSame(['id', 'production_id', 'production_name', 'participant_type', 'status'], array_keys($data));
+        $this->assertSame('PENDING', $data['status']);
+        $this->assertSame('Autumn Play', $data['production_name']);
+        $this->assertStringNotContainsString('invitee@example.com', (string) json_encode($data), 'The address is not sent back');
 
-        $this->assertSame([404, 'stageart_participant_invitation_not_found'], array_slice(self::answer($this->invitations->accept(new WP_REST_Request(['id' => $someoneElses->id()->toString()]))), 0, 2), 'Not mine = missing');
-        $this->assertSame(200, self::answer($this->invitations->accept(new WP_REST_Request(['id' => $mine->id()->toString()])))[0]);
-        $this->assertSame([409, 'stageart_participant_invitation_not_pending'], array_slice(self::answer($this->invitations->reject(new WP_REST_Request(['id' => $mine->id()->toString()]))), 0, 2));
+        $this->assertSame([404, 'stageart_participant_invitation_not_found'], array_slice(self::answer($this->invitations->getMine(new WP_REST_Request(['id' => $someoneElses->id()->toString()]))), 0, 2), 'Not mine = missing');
+        $this->assertSame([404, 'stageart_participant_invitation_not_found'], array_slice(self::answer($this->invitations->getMine(new WP_REST_Request(['id' => 'not-a-uuid']))), 0, 2));
 
-        $expired = $this->f->invitation('invitee@example.com', null, ParticipantType::STAFF, new DateTimeImmutable('-1 minute'));
-        $this->assertSame([410, 'stageart_participant_invitation_expired'], array_slice(self::answer($this->invitations->accept(new WP_REST_Request(['id' => $expired->id()->toString()]))), 0, 2));
+        $this->f->resolve()->execute($invitee->id(), 'invitee@example.com');
+        $this->assertSame('REGISTERED', self::answer($this->invitations->getMine(new WP_REST_Request(['id' => $mine->id()->toString()])))[2]['status']);
+
+        foreach (['accept', 'reject', 'listMine'] as $removed) {
+            $this->assertFalse(method_exists($this->invitations, $removed), "No {$removed} route any more");
+        }
 
         $suspended = $this->f->person('susp@example.com', true, 'SUSPENDED');
         $GLOBALS['stageart_test_wp']['current_user'] = $suspended->wordPressUserId();
-        $this->assertSame(403, self::answer($this->invitations->listMine(new WP_REST_Request()))[0]);
+        $this->assertSame(403, self::answer($this->invitations->getMine(new WP_REST_Request(['id' => $mine->id()->toString()])))[0]);
     }
 
     // --- participants -------------------------------------------------------
@@ -257,6 +277,8 @@ final class R14bStage4RestControllerTest extends TestCase
         $outsider = $this->f->person('o@example.com');
         $unconsented = $this->f->person('u@example.com');
         $this->f->participantRow($unconsented, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
+        $legacy = $this->f->person('l@example.com');
+        $this->f->participantRow($legacy, ParticipantStatus::ACTIVE, ParticipantType::CAST);
         $create = fn ($person) => self::answer($this->delegates->create(new WP_REST_Request([
             'id' => $this->f->production->id()->toString(),
             'person_id' => $person->id()->toString(),
@@ -264,12 +286,13 @@ final class R14bStage4RestControllerTest extends TestCase
         ])));
 
         $this->assertSame([422, 'stageart_production_delegate_target_not_participant'], array_slice($create($outsider), 0, 2));
-        $this->assertSame([422, 'stageart_production_delegate_target_not_consented'], array_slice($create($unconsented), 0, 2));
+        // Invitation policy 2026-11-27 (user decision): an ACTIVE participant without recorded consent can be appointed.
+        $this->assertSame(201, $create($unconsented)[0]);
 
-        $this->f->delegate($unconsented);
+        $this->f->delegate($legacy);
         [$status, , $list] = self::answer($this->delegates->list(new WP_REST_Request(['id' => $this->f->production->id()->toString()])));
         $this->assertSame(200, $status);
-        $this->assertSame([false, 'CONSENT_UNCONFIRMED'], [$list[0]['effective'], $list[0]['ineffective_reason']]);
+        $this->assertSame([[true, null], [true, null]], array_map(static fn (array $row): array => [$row['effective'], $row['ineffective_reason']], $list));
     }
 
     // --- cancel (stage 4 review fix, §5.1 / §7.1) -------------------------
@@ -310,7 +333,7 @@ final class R14bStage4RestControllerTest extends TestCase
         $this->assertSame(['PENDING', 'PENDING', 'SENT', 0, 5], [$sent['status'], $sent['effective_status'], $sent['send_status'], $sent['resend_count'], $sent['resend_remaining']]);
         $this->assertSame(['sent_in_30_days' => 1, 'remaining_in_30_days' => 5, 'available_at' => null], $sent['send_limit']);
         $this->assertNotNull($sent['last_sent_at']);
-        $this->assertNull($sent['reinvite_available_at']);
+        $this->assertArrayNotHasKey('reinvite_available_at', $sent, 'Removed with the rejection (2026-11-27)');
         $this->assertSame(['CANCELLED', 'MANAGER', null], [$rows['hanako@example.com']['effective_status'], $rows['hanako@example.com']['close_reason'], $rows['hanako@example.com']['send_status']]);
         $this->assertNotNull($rows['hanako@example.com']['closed_at']);
 

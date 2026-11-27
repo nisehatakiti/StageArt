@@ -1,8 +1,10 @@
 # StageArt Blueprint
 # Chapter 12 : Functional Structure and User Flows
 
-Version : 1.7
+Version : 1.8
 Status : Confirmed business specification
+
+- 1.8 (2026-11-27): §7, §10 and §11 updated to the invitation and enrollment policy decided by the product owner (`03-InvitationAndEnrollmentPolicy.md`): no accept / reject by the recipient, automatic registration when the authenticated e-mail address matches, Home after an ordinary registration and login.
 
 ---
 
@@ -268,17 +270,17 @@ This distinction is intentional and must be preserved in the UI, API, domain mod
 
 The current design must not require an administrator to display an invitation key on screen and manually communicate that key to the recipient as the normal flow.
 
+Updated 2026-11-27: the invitation and enrollment policy is defined in `03-InvitationAndEnrollmentPolicy.md`, which takes precedence. The administrator confirms the person's intention to take part outside StageArt before inviting them; the recipient does not accept or reject the invitation. Organizations and Productions follow the same principle.
+
 The preferred user experience is:
 
-1. Administrator enters the recipient's email address.
-2. StageArt creates an invitation with a secure invitation token/key.
-3. StageArt sends an invitation email containing an invitation URL.
-4. The recipient opens the URL.
-5. StageArt identifies the pending invitation.
-6. The recipient logs in or creates an account if necessary.
-7. StageArt displays the invitation confirmation screen.
-8. The recipient accepts or rejects the invitation.
-9. StageArt updates the appropriate Membership or Participant lifecycle.
+1. Administrator confirms, outside StageArt, that the recipient intends to take part, and enters the recipient's email address.
+2. StageArt creates an invitation.
+3. StageArt sends an invitation email.
+4. The recipient logs in, or creates an account and verifies the email address if they have none.
+5. When the authenticated account's email address matches the invited email address, StageArt registers the Membership or Participant automatically.
+
+There is no invitation confirmation screen with accept / reject, and no second confirmation of the recipient's intention. When exactly the automatic registration happens is not decided yet (`03-InvitationAndEnrollmentPolicy.md` §6).
 
 The invitation key/token is an implementation/security mechanism, not the primary human-facing workflow.
 
@@ -335,14 +337,15 @@ An invitation should have an explicit lifecycle separate from the resulting Memb
 At minimum, the specification must support the concepts of:
 
 - Pending
-- Accepted
-- Rejected
+- Completed (the relationship was registered automatically for the matching account)
 - Revoked / cancelled
 - Expired
 
+Updated 2026-11-27 (`03-InvitationAndEnrollmentPolicy.md`): the recipient does not accept or reject an invitation, so "Accepted" and "Rejected" are not concepts of the specification. Production invitations completed by registration are stored as `CONSUMED`; past R14-B `ACCEPTED` / `REJECTED` invitations are kept as history.
+
 The exact status names and persistence model should be defined in the corresponding Domain specification.
 
-Invitation acceptance must create or activate the appropriate relationship without changing the identity of the underlying Person.
+The automatic registration must create or activate the appropriate relationship without changing the identity of the underlying Person.
 
 ---
 
@@ -352,27 +355,27 @@ The invitation flow must support both cases.
 
 ### Existing StageArt user
 
-Invitation URL
+Invitation email
 ↓
 Login / existing session
 ↓
-Invitation confirmation
+The authenticated email address matches the invited email address
 ↓
-Accept
+Registered automatically
 
 ### New StageArt user
 
-Invitation URL
+Invitation email
 ↓
 Create StageArt account
 ↓
-Complete required identity setup / verification
+Verify the email address
 ↓
-Invitation confirmation
+The verified email address matches the invited email address
 ↓
-Accept
+Registered automatically
 
-The invitation must survive the authentication/registration transition so that the recipient does not lose the invitation context.
+Updated 2026-11-27 (`03-InvitationAndEnrollmentPolicy.md` §2, §3.2): the invitation is matched by the authenticated email address, not by carrying the invitation context through the screens. After an ordinary registration and e-mail verification, and after an ordinary login, the person goes to Home. Returning to the previous screen with `return_to` after registration is not a requirement of the ordinary registration. To look at an invitation, the person opens the invitation e-mail link again (`/organization-invitations/{id}` or `/participant-invitations/{id}`) after logging in.
 
 ---
 

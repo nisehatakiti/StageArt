@@ -52,7 +52,7 @@ final class ListProductionsUseCase
         $primaryManagerProductions = $this->productions->findByPrimaryManagerPersonId($person->id());
 
         // R14-B §4.6 (stage 4): only EFFECTIVE delegate rows (ACTIVE row of a
-        // consented ACTIVE PERSON Participant), decided by
+        // ACTIVE PERSON Participant - no consent needed since 2026-11-27), decided by
         // ProductionAuthorizationService - never by the row status alone.
         $delegateProductions = $this->productions->findByIds(
             $this->authorization->effectiveDelegateProductionIds($person->id())

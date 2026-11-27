@@ -9,13 +9,11 @@ use PHPUnit\Framework\TestCase;
 use StageArt\Application\Participant\ApproveParticipantRequestCommand;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Participant\WithdrawParticipationCommand;
-use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand;
 use StageArt\Application\Production\ListProductionsForPersonQuery;
 use StageArt\Application\Production\ListProductionsUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateCommand;
 use StageArt\Application\ProductionDelegate\ListProductionDelegatesQuery;
-use StageArt\Application\ProductionDelegate\ProductionDelegateTargetNotConsentedException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateTargetNotParticipantException;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateCommand;
 use StageArt\Application\Shared\PersistenceException;
@@ -35,9 +33,11 @@ use StageArt\Tests\Support\ParticipantConsentFixture;
 /**
  * R14-B §4.6 / §7.1 / §8 (stage 4, T40-T50, T75-T79, T86-T88): a
  * ProductionDelegate row grants its Role only while the row is ACTIVE AND
- * the Person is an ACTIVE PERSON Participant with recorded consent
- * (consented_at). The PrimaryManager is unaffected. Rows are never changed
- * by the check itself; appointment requires the same condition.
+ * the Person is an ACTIVE PERSON Participant. Since the 2026-11-27
+ * invitation policy (user decision) recorded consent (consented_at) is no
+ * longer part of the condition. The PrimaryManager is unaffected. Rows are
+ * never changed by the check itself; appointment requires the same
+ * condition.
  */
 final class DelegateEffectivenessTest extends TestCase
 {
@@ -83,8 +83,9 @@ final class DelegateEffectivenessTest extends TestCase
 
     private function accept(Person $person, string $email, string $type = ParticipantType::CAST): void
     {
-        $invitation = $this->f->invitation($email, null, $type);
-        $this->f->accept()->execute(new AcceptParticipantInvitationCommand($person->wordPressUserId(), $invitation->id()->toString()));
+        // Invitation policy 2026-11-27: registered once the address is verified (the R14-B acceptance before).
+        $this->f->invitation($email, null, $type);
+        $this->f->resolve()->execute($person->id(), $email);
     }
 
     private function appoint(Person $person, string $role = RoleKey::PARTICIPANT_MANAGER): void
@@ -113,15 +114,19 @@ final class DelegateEffectivenessTest extends TestCase
         }
     }
 
-    /** T75: an ACTIVE PERSON Participant without recorded consent (existing data) - no delegate permission, still a member. */
-    public function test_an_active_participant_without_consent_has_no_delegate_permission_but_is_a_member(): void
+    /**
+     * Invitation policy 2026-11-27 (user decision): an ACTIVE PERSON Participant
+     * without recorded consent - existing data or one registered from an
+     * invitation - now has its delegate rows' permissions (T75 before: none).
+     */
+    public function test_an_active_participant_without_consent_has_the_roles_permissions(): void
     {
         $person = $this->delegatePerson();
         $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
         $this->giveRoles($person);
 
-        $this->assertSame(self::none(), $this->permissions($person));
-        $this->assertTrue($this->f->authorization->isActivePersonParticipant($person, $this->f->production), 'Participant functions keep working (D2)');
+        $this->assertSame(array_fill_keys(array_keys(self::none()), true), $this->permissions($person));
+        $this->assertTrue($this->f->authorization->isActivePersonParticipant($person, $this->f->production));
         $this->assertTrue($this->f->authorization->isProductionMember($person, $this->f->production));
     }
 
@@ -237,12 +242,8 @@ final class DelegateEffectivenessTest extends TestCase
 
         $this->assertSame([], $ids(), 'Not a participant');
 
-        $row = $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
-        $this->assertSame([], $ids(), 'Consent unconfirmed');
-
-        $row->recordConsent(\StageArt\Domain\Participant\ParticipantConsentSource::invitation(), new DateTimeImmutable());
-        $this->f->participants->save($row);
-        $this->assertSame([$this->f->production->id()->toString()], $ids());
+        $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
+        $this->assertSame([$this->f->production->id()->toString()], $ids(), 'An ACTIVE participant, with or without consent');
         $this->assertSame([$this->f->production->id()], $this->f->authorization->effectiveDelegateProductionIds($person->id()));
     }
 
@@ -262,9 +263,9 @@ final class DelegateEffectivenessTest extends TestCase
         $holders = array_map(static fn ($id): string => $id->toString(), $directory->personIdsWithProductionCapability($this->f->production->id(), 'Accounting.Update'));
 
         sort($holders);
-        $expected = [$this->f->primaryManager->id()->toString(), $effective->id()->toString()];
+        $expected = [$this->f->primaryManager->id()->toString(), $effective->id()->toString(), $unconsented->id()->toString()];
         sort($expected);
-        $this->assertSame($expected, $holders);
+        $this->assertSame($expected, $holders, 'The non-participant is left out; consent no longer matters');
     }
 
     // --- lifecycle (T43-T45, T76, T86-T88) -----------------------------
@@ -292,15 +293,15 @@ final class DelegateEffectivenessTest extends TestCase
         $this->assertSame(ParticipantEvent::DELEGATE_REACTIVATED, $this->f->eventStore->all()[count($this->f->eventStore->all()) - 1]->eventType());
     }
 
-    /** T76 / T86 (U15): recording consent makes the ACTIVE row effective without reappointment; an INACTIVE row stays. */
-    public function test_recording_consent_makes_active_rows_effective_and_leaves_inactive_rows(): void
+    /** T76 / T86 (U15): an ACTIVE participant's ACTIVE row is effective; an invitation to them changes nothing; an INACTIVE row stays. */
+    public function test_an_invitation_to_an_active_participant_keeps_active_rows_and_leaves_inactive_rows(): void
     {
         $person = $this->delegatePerson();
         $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::CAST);
         $active = $this->f->delegate($person, RoleKey::PARTICIPANT_MANAGER);
         $inactive = $this->f->delegate($person, RoleKey::REHEARSAL_MANAGER, false);
 
-        $this->assertFalse($this->f->authorization->canManageParticipants($person, $this->f->production));
+        $this->assertTrue($this->f->authorization->canManageParticipants($person, $this->f->production));
 
         $this->accept($person, 'taro@example.com');
 
@@ -343,25 +344,20 @@ final class DelegateEffectivenessTest extends TestCase
         $this->appoint($person);
     }
 
-    /** T77 */
-    public function test_appointing_an_unconsented_participant_is_refused(): void
+    /** T77 (changed by the invitation policy 2026-11-27): an ACTIVE participant without recorded consent can be appointed. */
+    public function test_an_active_participant_without_consent_can_be_appointed(): void
     {
         $person = $this->delegatePerson();
         $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
 
-        try {
-            $this->appoint($person);
-            $this->fail('422 target_not_consented expected.');
-        } catch (ProductionDelegateTargetNotConsentedException $e) {
-            $this->addToAssertionCount(1);
-        }
+        $this->appoint($person);
 
-        $this->assertSame([], $this->f->delegates->findByProductionId($this->f->production->id()));
-        $this->assertSame([], $this->f->eventStore->types());
+        $this->assertCount(1, $this->f->delegates->findByProductionId($this->f->production->id()));
+        $this->assertTrue($this->f->authorization->canManageParticipants($person, $this->f->production));
     }
 
-    /** T78 / T79: an R14-B join request carries consent on approval; a pre-R14-B one does not. */
-    public function test_an_approved_join_request_can_be_appointed_only_with_recorded_consent(): void
+    /** T78 / T79: an approved join request can be appointed, R14-B (with consent) or pre-R14-B (without). */
+    public function test_an_approved_join_request_can_be_appointed(): void
     {
         $person = $this->delegatePerson();
         $request = $this->f->participantRow($person, ParticipantStatus::PENDING, ParticipantType::CAST, ParticipantEnrollmentSource::JOIN_REQUEST, new DateTimeImmutable('-1 day'));
@@ -372,9 +368,8 @@ final class DelegateEffectivenessTest extends TestCase
         $legacy = $this->delegatePerson('legacy@example.com');
         $old = $this->f->participantRow($legacy, ParticipantStatus::PENDING, ParticipantType::CAST);
         $this->f->approveRequest()->execute(new ApproveParticipantRequestCommand($this->f->primaryManager->wordPressUserId(), $old->id()->toString()));
-
-        $this->expectException(ProductionDelegateTargetNotConsentedException::class);
         $this->appoint($legacy);
+        $this->assertTrue($this->f->authorization->canManageParticipants($legacy, $this->f->production));
     }
 
     public function test_appointment_rolls_back_on_a_failed_participant_read(): void
@@ -411,27 +406,18 @@ final class DelegateEffectivenessTest extends TestCase
             $this->assertFalse($this->f->delegates->findById($row->id())->isActive(), 'Unchanged');
         }
 
-        $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
-
-        try {
-            $update(RoleKey::PARTICIPANT_MANAGER, ProductionDelegate::STATUS_ACTIVE);
-            $this->fail('422 expected.');
-        } catch (ProductionDelegateTargetNotConsentedException $e) {
-            $this->addToAssertionCount(1);
-        }
-
-        $consented = $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::CAST, null, null, true);
+        $member = $this->f->participantRow($person, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
         $result = $update(RoleKey::PARTICIPANT_MANAGER, ProductionDelegate::STATUS_ACTIVE);
-        $this->assertTrue($result->effective);
+        $this->assertTrue($result->effective, 'An ACTIVE participant, no consent needed');
         $this->assertNull($result->ineffectiveReason);
 
-        $consented->withdraw();
-        $this->f->participants->save($consented);
+        $member->withdraw();
+        $this->f->participants->save($member);
 
         try {
             $update(RoleKey::REHEARSAL_MANAGER, ProductionDelegate::STATUS_ACTIVE);
             $this->fail('A Role change of an ineffective row is an appointment: 422 expected.');
-        } catch (ProductionDelegateTargetNotConsentedException $e) {
+        } catch (ProductionDelegateTargetNotParticipantException $e) {
             $this->assertTrue($this->f->delegates->findById($row->id())->role()->equals(RoleKey::participantManager()));
         }
 
@@ -466,7 +452,7 @@ final class DelegateEffectivenessTest extends TestCase
 
         $this->assertSame([true, null], $items[$rowEffective->id()->toString()]);
         $this->assertSame([false, ProductionAuthorizationService::DELEGATE_INACTIVE], $items[$rowInactive->id()->toString()]);
-        $this->assertSame([false, ProductionAuthorizationService::DELEGATE_CONSENT_UNCONFIRMED], $items[$rowUnconsented->id()->toString()]);
+        $this->assertSame([true, null], $items[$rowUnconsented->id()->toString()], 'Consent no longer matters (2026-11-27)');
         $this->assertSame([false, ProductionAuthorizationService::DELEGATE_NOT_ACTIVE_PARTICIPANT], $items[$rowOutsider->id()->toString()]);
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ParticipantInvitation;
 
-use DateInterval;
 use DateTimeImmutable;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -13,6 +12,7 @@ use StageArt\Domain\ParticipantInvitation\InvitationEmailAddress;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSendRepositoryInterface;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
@@ -36,7 +36,8 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  *   the 30-day window (one read) and the current attempts (one read). The
  *   inviter's permission is judged once per distinct inviter, and only
  *   when a PENDING row within its expiry of an open Production needs it.
- *   reinvite_available_at comes from the invitations already read.
+ *   (reinvite_available_at was removed with the rejection - invitation
+ *   policy 2026-11-27; past REJECTED rows are still listed as history.)
  */
 final class ListParticipantInvitationsUseCase
 {
@@ -102,15 +103,12 @@ final class ListParticipantInvitationsUseCase
             $production->id(),
             array_values(array_filter(array_map(static fn (ParticipantInvitation $invitation): ?string => $invitation->currentSendId(), $invitations)))
         );
-        $latestRejections = self::latestRejectionsByAddress($invitations);
         $inviterCanManage = [];
         $results = [];
 
         foreach ($invitations as $invitation) {
             $address = InvitationEmailAddress::normalize($invitation->email());
             $current = $invitation->currentSendId() !== null ? ($currentSends[$invitation->currentSendId()] ?? null) : null;
-            $isRejected = $invitation->status()->toString() === ParticipantInvitationStatus::REJECTED;
-            $rejectedAt = $isRejected ? ($latestRejections[$address] ?? null) : null;
 
             $results[] = new ManagedParticipantInvitationResult(
                 ParticipantInvitationResult::fromDomain($invitation),
@@ -122,8 +120,7 @@ final class ListParticipantInvitationsUseCase
                 $invitation->remainingResends(),
                 $current !== null ? $current->displayStatusAt($now) : null,
                 $invitation->currentSendId() !== null ? self::format($invitation->lastSentAt()) : null,
-                $limits[$address] ?? null,
-                $rejectedAt !== null ? self::format($rejectedAt->add(new DateInterval(CreateParticipantInvitationUseCase::REJECTION_BLOCK))) : null
+                $limits[$address] ?? null
             );
         }
 
@@ -140,7 +137,7 @@ final class ListParticipantInvitationsUseCase
         $status = $invitation->status()->toString();
 
         if ($status === ParticipantInvitationStatus::CANCELLED) {
-            return ListMyParticipantInvitationsUseCase::effectiveStatusOfStoredCancellation($invitation->closeReason());
+            return self::effectiveStatusOfStoredCancellation($invitation->closeReason());
         }
 
         if ($status !== ParticipantInvitationStatus::PENDING) {
@@ -165,31 +162,18 @@ final class ListParticipantInvitationsUseCase
     }
 
     /**
-     * D6 / §5.3: the latest rejection per normalised address of the
-     * Production (any type), as latestRejectionAt() finds it for the create
-     * API - from the invitations already read (they are all of this
-     * Production).
-     *
-     * @param ParticipantInvitation[] $invitations
-     * @return array<string, DateTimeImmutable>
+     * §11.5: effective_status of a stored CANCELLED invitation -
+     * INVITER_REVOKED for close_reason INVITER_REVOKED, CANCELLED for any
+     * other reason (PRODUCTION_CLOSED, MANAGER) or none. (Moved here from
+     * the invitee's list, removed with the 2026-11-27 invitation policy.)
      */
-    private static function latestRejectionsByAddress(array $invitations): array
+    public static function effectiveStatusOfStoredCancellation(?ParticipantInvitationCloseReason $closeReason): string
     {
-        $latest = [];
-
-        foreach ($invitations as $invitation) {
-            if ($invitation->status()->toString() !== ParticipantInvitationStatus::REJECTED || $invitation->respondedAt() === null) {
-                continue;
-            }
-
-            $address = InvitationEmailAddress::normalize($invitation->email());
-
-            if (! isset($latest[$address]) || $invitation->respondedAt() > $latest[$address]) {
-                $latest[$address] = $invitation->respondedAt();
-            }
+        if ($closeReason !== null && $closeReason->toString() === ParticipantInvitationCloseReason::INVITER_REVOKED) {
+            return ParticipantInvitationCloseReason::INVITER_REVOKED;
         }
 
-        return $latest;
+        return ParticipantInvitationStatus::CANCELLED;
     }
 
     private static function format(?DateTimeImmutable $value): ?string

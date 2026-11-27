@@ -138,38 +138,35 @@ function r14bMessage(error: ApiError): string | null {
     }
     case 'stageart_participant_invitation_resend_limit':
       return 'この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません。';
-    case 'stageart_participant_invitation_recently_rejected': {
-      const availableAt = formatServerDateTime(error.data?.available_at);
-      return `このメールアドレスへの招待は辞退されたため、${availableAt ? `${availableAt}まで` : 'しばらくの間'}再び招待できません。`;
-    }
     case 'stageart_participant_invitation_production_closed':
       return 'この公演は終了または中止されているため、招待・再送はできません。';
     case 'stageart_participant_invitation_inviter_revoked':
       return '招待した管理者の権限がなくなっているため、この招待は再送できません。取り消して、改めて招待してください。';
     case 'stageart_participant_invitation_not_pending':
-      return 'この招待は既に承諾・辞退・取消などで処理済みのため、この操作はできません。';
+      return 'この招待は既に登録済み・取消などで処理済みのため、この操作はできません。';
     case 'stageart_participant_invitation_access_denied':
       return '招待の操作は、PrimaryManagerまたは参加者管理の権限を持つ担当者のみ行えます。';
     case 'stageart_participant_invitation_invalid':
       return '氏名・メールアドレス・役割を正しく入力してください。';
-    // §7.2: the invitee's accept / reject.
+    // The invitee opening an invitation from the mail (invitation policy 2026-11-27: no accept / reject).
     case 'stageart_participant_invitation_forbidden':
-      return 'このアカウントでは招待に回答できません。メールアドレスの確認が済んでいるかご確認ください。';
+    case 'stageart_organization_invitation_forbidden':
+      return 'このアカウントでは招待を表示できません。';
     case 'stageart_participant_invitation_not_found':
-      return 'この招待は見つかりません。招待一覧から確認してください。';
-    case 'stageart_participant_invitation_expired':
-      return 'この招待は有効期限が切れています。';
-    case 'stageart_participant_invitation_closed':
-      return 'この招待は現在承諾できません（公演の終了、または招待した管理者の権限がなくなったため）。';
+    case 'stageart_organization_invitation_not_found':
+      return 'この招待は見つかりません。招待メールを受け取ったメールアドレスでログインしているか確認してください。';
+    // Inviting a verified account registers it at once.
+    case 'stageart_participant_already_exists':
+      return 'この方は既にこの役割で公演のメンバーです。';
     case 'stageart_participant_draft_exists':
-      return 'この公演での参加の情報に確認が必要なため、承諾できません。公演の管理者に問い合わせてください。';
+      return 'この方の参加の情報に確認が必要なため、メンバーに追加できません。下書きの登録を確認してください。';
     // §7.1 / §7.2: participants.
     case 'stageart_participant_type_conflict':
       return 'この人は、変更先の区分で既にこの公演に登録されています。';
     case 'stageart_participant_cancel_not_allowed':
       return 'この状態のメンバーは削除できません。参加申請は「却下」を使ってください。';
     case 'stageart_participant_requires_invitation':
-      return 'StageArtのアカウントを持つ方は、招待して本人に承諾してもらう必要があります。';
+      return 'StageArtのアカウントを持つ方は、メールアドレスを入力して招待してください。';
     case 'stageart_participant_status_change_not_allowed':
     case 'stageart_participant_status_requires_consent':
       return 'この状態の変更はできません。';
@@ -179,9 +176,7 @@ function r14bMessage(error: ApiError): string | null {
       return '現在参加中ではないため、参加をやめる操作はできません。';
     // §4.6: delegate appointment.
     case 'stageart_production_delegate_target_not_participant':
-      return 'この方はこの公演のメンバーではないため、担当者にできません。招待して、承諾後に改めて任命してください。';
-    case 'stageart_production_delegate_target_not_consented':
-      return 'この方は同意が確認できていないため、担当者にできません。メンバー管理から「同意の確認を依頼」してください。';
+      return 'この方はこの公演のメンバーではないため、担当者にできません。メンバーとして登録してから、改めて任命してください。';
     default:
       return null;
   }

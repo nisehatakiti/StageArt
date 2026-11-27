@@ -16,7 +16,6 @@ use StageArt\Application\ProductionDelegate\ListProductionDelegatesUseCase;
 use StageArt\Application\ProductionDelegate\ProductionDelegateAccessDeniedException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateAlreadyExistsException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateNotFoundException;
-use StageArt\Application\ProductionDelegate\ProductionDelegateTargetNotConsentedException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateTargetNotEligibleException;
 use StageArt\Application\ProductionDelegate\ProductionDelegateTargetNotParticipantException;
 use StageArt\Application\ProductionDelegate\UpdateProductionDelegateCommand;
@@ -158,8 +157,6 @@ final class ProductionDelegateRestController
             return new WP_Error('stageart_production_not_found', $exception->getMessage(), ['status' => 404]);
         } catch (ProductionDelegateTargetNotParticipantException $exception) {
             return new WP_Error('stageart_production_delegate_target_not_participant', $exception->getMessage(), ['status' => 422]);
-        } catch (ProductionDelegateTargetNotConsentedException $exception) {
-            return new WP_Error('stageart_production_delegate_target_not_consented', $exception->getMessage(), ['status' => 422]);
         } catch (ProductionDelegateTargetNotEligibleException $exception) {
             return new WP_Error('stageart_production_delegate_target_not_eligible', $exception->getMessage(), ['status' => 422]);
         } catch (ProductionDelegateAlreadyExistsException $exception) {
@@ -185,8 +182,6 @@ final class ProductionDelegateRestController
             return new WP_REST_Response($this->updateDelegate->execute($command)->toArray(), 200);
         } catch (ProductionDelegateTargetNotParticipantException $exception) {
             return new WP_Error('stageart_production_delegate_target_not_participant', $exception->getMessage(), ['status' => 422]);
-        } catch (ProductionDelegateTargetNotConsentedException $exception) {
-            return new WP_Error('stageart_production_delegate_target_not_consented', $exception->getMessage(), ['status' => 422]);
         } catch (ProductionDelegateAccessDeniedException $exception) {
             return new WP_Error('stageart_production_delegate_access_denied', $exception->getMessage(), ['status' => 403]);
         } catch (ProductionDelegateNotFoundException $exception) {

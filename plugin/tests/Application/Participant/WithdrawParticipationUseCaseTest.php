@@ -103,10 +103,12 @@ final class WithdrawParticipationUseCaseTest extends TestCase
 
         $recipients = array_map([self::class, 'recipient'], $this->f->dispatcher->dispatched());
         sort($recipients);
-        $expected = [$this->f->primaryManager->id()->toString(), $effective->id()->toString()];
+        // Invitation policy 2026-11-27 (user decision): an ACTIVE participant's delegate row is effective
+        // without recorded consent, so the consent-unconfirmed PARTICIPANT_MANAGER is told too.
+        $expected = [$this->f->primaryManager->id()->toString(), $effective->id()->toString(), $unconsented->id()->toString()];
         sort($expected);
         $this->assertSame($expected, $recipients);
-        $this->assertSame([ParticipantConsentNotifier::TYPE_PARTICIPANT_WITHDRAWN, ParticipantConsentNotifier::TYPE_PARTICIPANT_WITHDRAWN], $this->f->notificationTypes());
+        $this->assertSame(array_fill(0, 3, ParticipantConsentNotifier::TYPE_PARTICIPANT_WITHDRAWN), $this->f->notificationTypes());
         $this->assertStringContainsString('出演 一郎さん', $this->f->dispatcher->dispatched()[0]['payload']['message']);
         $this->assertStringNotContainsString('member@example.com', $this->f->everythingRecordedAndSent());
     }

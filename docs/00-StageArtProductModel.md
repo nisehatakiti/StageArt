@@ -1,8 +1,10 @@
 # StageArt Blueprint
 # StageArt Product Model
 
-Version : 1.0
+Version : 1.1
 Status : Confirmed product-level整理
+
+- 1.1（2026-11-27）：§12 Invitation を、招待と登録の方針（`03-InvitationAndEnrollmentPolicy.md`、プロダクトオーナーの決定）に合わせて更新した。本人による招待の承認を削除し、メールアドレスの一致による自動の登録とした。
 
 ---
 
@@ -315,39 +317,43 @@ It's MEは自動紐付けではない。
 
 招待は検索とは異なる。
 
+2026-11-27 更新：招待と登録の方針は `03-InvitationAndEnrollmentPolicy.md` を正本とする。参加意思の確認は、管理者が招待の前にシステムの外で行う。招待は、管理者が指定した対象者を正しいアカウントに紐付けて登録するための仕組みであり、本人による招待の承認・拒否は設けない。団体と公演で同じ考え方とする。
+
 ### Organization Invitation
 
 ```text
-団体管理者
+団体管理者（本人の参加意思を事前に確認済み）
   ↓
-人を団体へ招待
+人を団体へ招待（本人のメールアドレスを登録）
   ↓
-招待メール / URL
+招待メール
   ↓
-本人が確認
+本人がログイン（アカウントがなければ新規登録とメールアドレスの確認）
   ↓
-承認
+認証されたアカウントのメールアドレスと招待先のメールアドレスが一致
   ↓
-Organization Membership
+Organization Membership（自動で登録）
 ```
 
 ### Production Invitation
 
 ```text
-公演管理者
+公演管理者（本人の参加意思を事前に確認済み）
   ↓
-人を公演へ招待
+人を公演へ招待（本人のメールアドレスを登録）
   ↓
-招待メール / URL
+招待メール
   ↓
-本人が確認
+本人がログイン（アカウントがなければ新規登録とメールアドレスの確認）
   ↓
-承認
+認証されたアカウントのメールアドレスと招待先のメールアドレスが一致
   ↓
-Production Participant
+Production Participant（自動で登録）
 ```
 
 この二つは別の業務であり、Productionへの招待をOrganizationへの所属へ自動変換してはならない。
+
+確認済みのアカウントは招待の時点で、未登録のアドレスはメールアドレスの確認・Googleでのログインの時点で登録する（団体も同じ。`docs/03-InvitationAndEnrollmentPolicy.md` §3）。
 
 ---
 

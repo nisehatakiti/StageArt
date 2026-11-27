@@ -72,30 +72,13 @@ final class ParticipantInvitationUpdatedAtTest extends TestCase
         $this->assertNull($invitation->updatedAt());
     }
 
-    public function test_accept_sets_it_and_a_repeat_does_not(): void
+    public function test_completing_by_enrollment_sets_it(): void
     {
         $invitation = $this->legacy();
-        $person = PersonId::generate();
         $at = new DateTimeImmutable('2026-11-17T00:00:00+00:00');
 
-        $this->assertTrue($invitation->accept($person, ParticipantId::generate(), $at));
-        $this->assertEquals($at, $invitation->updatedAt());
+        $invitation->completeByEnrollment(PersonId::generate(), ParticipantId::generate(), $at);
 
-        $this->assertFalse($invitation->accept($person, $invitation->participantId(), new DateTimeImmutable('2026-11-18T00:00:00+00:00')));
-        $this->assertEquals($at, $invitation->updatedAt());
-    }
-
-    public function test_reject_sets_it_and_a_repeat_does_not(): void
-    {
-        $invitation = $this->legacy(ParticipantInvitationStatus::CANCELLED, ParticipantInvitationCloseReason::inviterRevoked());
-        $person = PersonId::generate();
-        $at = new DateTimeImmutable('2026-11-17T00:00:00+00:00');
-
-        $this->assertTrue($invitation->reject($person, null, $at));
-        $this->assertEquals($at, $invitation->updatedAt());
-        $this->assertEquals(new DateTimeImmutable('2026-11-02T00:00:00+00:00'), $invitation->closedAt(), 'closed_at is kept');
-
-        $this->assertFalse($invitation->reject($person, null, new DateTimeImmutable('2026-11-18T00:00:00+00:00')));
         $this->assertEquals($at, $invitation->updatedAt());
     }
 

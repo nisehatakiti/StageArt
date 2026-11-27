@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace StageArt\Application\RateLimit;
 
 use DateTimeImmutable;
+use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotFoundException;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientNotEligibleException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
 use StageArt\Application\Production\ProductionAuthorizationService;
@@ -69,8 +70,11 @@ final class InvitationRateLimit
     }
 
     /**
-     * Runs an accept / reject for the logged-in WordPress user under the
-     * failure limit. A WordPress user without a StageArt Person has nothing
+     * Runs an invitee request (opening an invitation from the mail -
+     * GET /me/participant-invitations/{id} and
+     * GET /me/organization-invitations/{id}; the accept / reject it
+     * guarded before were removed, invitation policy 2026-11-27) for the
+     * logged-in WordPress user under the failure limit. A WordPress user without a StageArt Person has nothing
      * to count against (the operation refuses them anyway).
      *
      * @template T
@@ -96,7 +100,7 @@ final class InvitationRateLimit
 
         try {
             return $operation();
-        } catch (InvitationRecipientNotEligibleException | ParticipantInvitationNotFoundException $failure) {
+        } catch (InvitationRecipientNotEligibleException | ParticipantInvitationNotFoundException | OrganizationInvitationNotFoundException $failure) {
             $this->limiter->hit($rule, $subject, $now ?? ($this->clock)());
 
             throw $failure;

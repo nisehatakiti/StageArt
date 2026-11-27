@@ -30,8 +30,9 @@ const delegate = (id: string, effective: boolean, reason: string | null, status 
 /**
  * PR #7 R14-B stage 9 (design doc §4.6 / §10 / §14.2): the delegates screen
  * lists effective and ineffective delegates apart, says why a role grants
- * nothing (同意未確認 / メンバーではない / 解除済み) and leads to member
- * management for the next step; there is no Person ID input.
+ * nothing (メンバーではない / 解除済み; 同意未確認 was removed with the
+ * 2026-11-27 invitation policy) and leads to member management for the next
+ * step; there is no Person ID input.
  */
 describe('R14-B 担当者: 有効・無効の区別', () => {
   it('splits the delegates and shows the reasons with the way to member management', async () => {
@@ -42,7 +43,6 @@ describe('R14-B 担当者: 有効・無効の区別', () => {
         status: 200,
         body: [
           delegate('a', true, null),
-          delegate('b', false, 'CONSENT_UNCONFIRMED'),
           delegate('c', false, 'NOT_ACTIVE_PARTICIPANT'),
           delegate('d', false, 'INACTIVE', 'INACTIVE'),
         ],
@@ -59,13 +59,13 @@ describe('R14-B 担当者: 有効・無効の区別', () => {
     expect(screen.getByText('有効な担当者')).toBeVisible();
     expect(screen.getByText('無効な担当者')).toBeVisible();
     expect(screen.queryByTestId('production-delegate-reason-a')).toBeNull();
-    expect(screen.getByTestId('production-delegate-reason-b')).toHaveTextContent(/同意未確認のため無効です。本人に同意の確認を依頼してください/);
-    expect(screen.getByTestId('production-delegate-reason-c')).toHaveTextContent(/この公演のメンバーではないため無効です。招待して、承諾後に改めて任命してください/);
+    expect(screen.getByTestId('production-delegate-reason-c')).toHaveTextContent(/この公演のメンバーではないため無効です。メンバーとして登録してから、改めて任命してください/);
+    expect(screen.queryByText(/同意|承諾/)).toBeNull();
     expect(screen.getByTestId('production-delegate-reason-d')).toHaveTextContent(/解除済み/);
     expect(screen.queryByTestId('production-delegate-to-members-d')).toBeNull();
     expect(screen.queryByTestId('production-delegates-new-person-id')).toBeNull();
 
-    fireEvent.press(screen.getByTestId('production-delegate-to-members-b'));
+    fireEvent.press(screen.getByTestId('production-delegate-to-members-c'));
     await waitFor(() => expect(screen.getByTestId('production-participants-list')).toBeVisible());
   });
 });

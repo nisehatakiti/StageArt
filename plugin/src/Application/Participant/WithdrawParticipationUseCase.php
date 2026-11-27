@@ -158,8 +158,8 @@ final class WithdrawParticipationUseCase
 
     /**
      * §7.2: the PrimaryManager and every effective PARTICIPANT_MANAGER - an
-     * ACTIVE delegate row whose Person is an ACTIVE PERSON Participant with
-     * recorded consent (§4.6) - except the Person who withdrew. Worked out
+     * ACTIVE delegate row whose Person is an ACTIVE PERSON Participant
+     * (§4.6; no consent needed since 2026-11-27) - except the Person who withdrew. Worked out
      * after the commit; a failure here only loses the notification.
      */
     private function notifyManagers(Production $production, Participant $participant, Person $person): void
@@ -169,7 +169,7 @@ final class WithdrawParticipationUseCase
             $consented = [];
 
             foreach ($this->participants->findByProductionId($production->id()) as $member) {
-                if ($member->isConsentedActivePerson()) {
+                if ($member->isActivePerson()) {
                     $consented[$member->subjectId()] = true;
                 }
             }

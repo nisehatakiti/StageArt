@@ -623,7 +623,7 @@ final class JoinKeyListAuthorizationTest extends TestCase
         // R14-B §4.6: a delegate row counts only for a consented ACTIVE
         // Participant of the Production (the expectations are unchanged).
         $personId = $this->personByUser[$wordPressUserId]->id();
-        if (! $this->participants->existsConsentedActivePersonParticipant($production->id(), $personId->toString())) {
+        if (! $this->participants->existsActivePersonParticipant($production->id(), $personId->toString())) {
             ConsentedParticipant::seed($this->participants, $production->id(), $personId);
         }
 

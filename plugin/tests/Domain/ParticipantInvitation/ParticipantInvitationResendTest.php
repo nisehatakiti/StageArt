@@ -110,7 +110,8 @@ final class ParticipantInvitationResendTest extends TestCase
         $invitation->resend($now);
 
         $this->assertFalse($invitation->isExpiredAt($now));
-        $this->assertTrue($invitation->accept(PersonId::generate(), ParticipantId::generate(), $now));
+        $invitation->completeByEnrollment(PersonId::generate(), ParticipantId::generate(), $now);
+        $this->assertSame(ParticipantInvitationStatus::CONSUMED, $invitation->status()->toString(), 'Usable again: it can complete');
     }
 
     /** D6: 5 resends (6 sends with the first one); the 6th resend is refused and changes nothing. */
@@ -155,10 +156,8 @@ final class ParticipantInvitationResendTest extends TestCase
     public function test_non_pending_invitations_cannot_be_resent(): void
     {
         $now = new DateTimeImmutable('2026-11-20T12:00:00+09:00');
-        $accepted = $this->invitation();
-        $accepted->accept(PersonId::generate(), ParticipantId::generate(), $now);
-        $rejected = $this->invitation();
-        $rejected->reject(PersonId::generate(), null, $now);
+        $accepted = $this->invitation(ParticipantInvitationStatus::ACCEPTED);
+        $rejected = $this->invitation(ParticipantInvitationStatus::REJECTED);
         $cancelled = $this->invitation();
         $cancelled->close(ParticipantInvitationCloseReason::manager(), PersonId::generate(), $now);
         $consumed = $this->invitation(ParticipantInvitationStatus::CONSUMED);

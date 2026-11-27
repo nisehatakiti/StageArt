@@ -21,5 +21,6 @@ namespace StageArt\Application\ParticipantInvitation;
  */
 interface ParticipantInvitationMailerInterface
 {
-    public function sendInvitationEmail(string $toEmail, string $productionName): bool;
+    /** @param string $invitationId the invitation the mail's link opens (/participant-invitations/{id}) */
+    public function sendInvitationEmail(string $toEmail, string $productionName, string $invitationId): bool;
 }

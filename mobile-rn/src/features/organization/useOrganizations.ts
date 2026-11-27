@@ -8,6 +8,7 @@ import {
   cancelOrganizationInvitation,
   createOrganizationInvitation,
   deleteOrganizationLogo,
+  fetchMyOrganizationInvitation,
   fetchOrganizationInvitations,
   fetchOrganizationMembers,
   fetchOrganizations,
@@ -17,6 +18,18 @@ import {
   updateOrganizationMemberRemarks,
   uploadOrganizationLogo,
 } from './api';
+
+/** GET /me/organization-invitations/{id} - the screen the organization invitation mail's link opens (login required). */
+export function useMyOrganizationInvitation(invitationId: string | undefined) {
+  const { apiClient, status } = useAuth();
+
+  return useQuery({
+    queryKey: ['my-organization-invitation', invitationId],
+    queryFn: () => fetchMyOrganizationInvitation(apiClient, invitationId as string),
+    enabled: status === 'authenticated' && !!invitationId,
+    retry: false,
+  });
+}
 
 export function useOrganizations() {
   const { apiClient, status } = useAuth();

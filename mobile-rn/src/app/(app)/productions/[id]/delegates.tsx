@@ -47,13 +47,13 @@ const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAF
 
 /**
  * PR #7 R14-B (design doc §4.6 / §10): why a delegate row grants nothing -
- * from the Backend's ineffective_reason - and what to do next. The
- * actions (同意の確認を依頼 / 招待) are on the member management screen
- * (confirmed by the user before stage 9).
+ * from the Backend's ineffective_reason - and what to do next (the
+ * invitation is on the member management screen). Invitation policy
+ * 2026-11-27: an ACTIVE member is enough (no consent), and nobody accepts an
+ * invitation - the person becomes a member once registered.
  */
 const INEFFECTIVE_REASON_TEXT: Record<DelegateIneffectiveReason, string> = {
-  CONSENT_UNCONFIRMED: '同意未確認のため無効です。本人に同意の確認を依頼してください',
-  NOT_ACTIVE_PARTICIPANT: 'この公演のメンバーではないため無効です。招待して、承諾後に改めて任命してください',
+  NOT_ACTIVE_PARTICIPANT: 'この公演のメンバーではないため無効です。メンバーとして登録してから、改めて任命してください',
   INACTIVE: '解除済み',
 };
 
@@ -110,10 +110,8 @@ export default function ProductionDelegatesScreen() {
   const [rowErrorMessage, setRowErrorMessage] = useState<Record<string, string>>({});
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-  // R14-B §4.6: only an ACTIVE PERSON member whose consent is confirmed can be appointed.
-  const personCandidates: ActivePersonParticipant[] = (participantsQuery.data ?? [])
-    .filter(isActivePersonParticipant)
-    .filter((participant) => participant.consent_status === 'CONFIRMED');
+  // R14-B §4.6: only an ACTIVE PERSON member can be appointed (no consent needed since the 2026-11-27 invitation policy).
+  const personCandidates: ActivePersonParticipant[] = (participantsQuery.data ?? []).filter(isActivePersonParticipant);
 
   async function handleAdd() {
     setAddErrorMessage(null);

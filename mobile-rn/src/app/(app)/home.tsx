@@ -20,7 +20,6 @@ import { approveMembershipRequest, fetchPendingMembershipRequests, rejectMembers
 import { useCurrentPerson } from '@/features/person/useCurrentPerson';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMarkMyNotificationRead, useMyNotifications } from '@/features/notifications/useNotifications';
-import { useMyParticipantInvitations } from '@/features/participantInvitation/useParticipantInvitation';
 import { getErrorMessage } from '@/utils/errorMessage';
 import { phaseForRehearsalStatus } from '@/features/attendance/phase';
 import { responseOptionsForPhase, statusLabel } from '@/features/attendance/viewModel';
@@ -179,7 +178,6 @@ export default function HomeScreen() {
 
       <HomeMembershipApprovalSection organizations={organizationsQuery.data ?? []} />
 
-      <HomeParticipantInvitationsSection />
 
       <FollowedOrganizationsFeedSection items={dashboardViewModel?.followedOrganizationsFeed ?? []} />
     </ScrollView>
@@ -273,35 +271,6 @@ function HomeMembershipApprovalSection({ organizations }: { organizations: impor
           </ThemedView>
         </ThemedView>
       ))}
-    </ThemedView>
-  );
-}
-
-/**
- * PR #7 R14-B (design doc §10 「自分宛ての招待（ホーム）」): the number of
- * invitations the person can accept now (can_accept from
- * GET /me/participant-invitations) and the way to the invitation list.
- * There is no in-app notice when an invitation is made, so this is how a
- * registered person finds it. Nothing is shown when there is none.
- */
-function HomeParticipantInvitationsSection() {
-  const router = useRouter();
-  const invitationsQuery = useMyParticipantInvitations();
-  const acceptable = (invitationsQuery.data ?? []).filter((invitation) => invitation.can_accept).length;
-
-  if (acceptable === 0) return null;
-
-  return (
-    <ThemedView style={styles.section} testID="home-participant-invitations">
-      <ThemedText type="subtitle" style={styles.sectionTitle}>公演への招待</ThemedText>
-      <TouchableOpacity
-        testID="home-participant-invitations-link"
-        style={styles.card}
-        onPress={() => router.push('/participant-invitations')}
-      >
-        <ThemedText type="smallBold">承諾待ちの招待が{acceptable}件あります</ThemedText>
-        <ThemedText type="link">招待を確認する</ThemedText>
-      </TouchableOpacity>
     </ThemedView>
   );
 }

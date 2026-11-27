@@ -91,26 +91,6 @@ final class InMemoryParticipantInvitationRepository implements ParticipantInvita
         ));
     }
 
-    public function latestRejectionAt(ProductionId $productionId, string $email): ?\DateTimeImmutable
-    {
-        $this->failIfAsked();
-        $wanted = \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($email);
-        $latest = null;
-
-        foreach ($this->invitations as $invitation) {
-            if ($invitation->productionId()->equals($productionId)
-                && $invitation->status()->toString() === \StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus::REJECTED
-                && $invitation->respondedAt() !== null
-                && \StageArt\Domain\ParticipantInvitation\InvitationEmailAddress::normalize($invitation->email()) === $wanted
-                && ($latest === null || $invitation->respondedAt() > $latest)
-            ) {
-                $latest = $invitation->respondedAt();
-            }
-        }
-
-        return $latest;
-    }
-
     public function currentSendIdOf(ParticipantInvitationId $id): ?string
     {
         $this->failIfAsked();

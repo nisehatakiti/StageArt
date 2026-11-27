@@ -6,7 +6,6 @@ namespace StageArt\Application\Participant;
 
 use DateTimeImmutable;
 use StageArt\Domain\Participant\Participant;
-use StageArt\Domain\Participant\ParticipantConsentSource;
 use StageArt\Domain\Participant\ParticipantRepositoryInterface;
 use StageArt\Domain\Participant\ParticipantStatus;
 use StageArt\Domain\Participant\ParticipantSubjectType;
@@ -16,7 +15,8 @@ use StageArt\Domain\Production\ProductionId;
 
 /**
  * R14-B §5.2 / §7.4 (U13 A案, N1, N11): the one place where an invitation
- * acceptance and a join request create or reuse a PERSON Participant row.
+ * (automatic registration, invitation policy 2026-11-27) and a join request
+ * create or reuse a PERSON Participant row.
  * The (production_id, subject_type, subject_id, participant_type) key has
  * exactly one row, whatever its status: it is read again with SELECT ...
  * FOR UPDATE and, when it exists, its status is changed - a new
@@ -37,23 +37,24 @@ final class ParticipantEnrollmentService
     }
 
     /**
-     * Invitation acceptance (§5.2, §4.5, §4.7):
-     * - no row: a new ACTIVE row (enrollmentSource = consentSource =
-     *   INVITATION, consentedAt = the acceptance);
+     * Registration from an invitation (invitation policy 2026-11-27: no
+     * acceptance by the person, and no consent is recorded):
+     * - no row: a new ACTIVE row (enrollmentSource = INVITATION, no consent);
      * - CANCELLED / WITHDRAWN / REJECTED / INACTIVE / PENDING: the same row
-     *   becomes ACTIVE; enrollmentSource is kept, consent is recorded;
-     * - ACTIVE: the status stays, only consent is recorded;
+     *   becomes ACTIVE; enrollmentSource and any earlier consent are kept as
+     *   they are;
+     * - ACTIVE: nothing changes (previousStatus ACTIVE, becameActive false) -
+     *   the caller decides (409 when inviting, already done when resolving);
      * - DRAFT (of this type): ParticipantDraftExistsException, nothing
      *   changed (a DRAFT row of another type is a different key and never
      *   looked at).
      *
      * @throws ParticipantDraftExistsException
      */
-    public function enrollFromInvitation(
+    public function enrollByInvitation(
         ProductionId $productionId,
         PersonId $personId,
         ParticipantType $participantType,
-        DateTimeImmutable $acceptedAt,
         ?string $displayName,
         ?string $remarks
     ): ParticipantEnrollmentOutcome {
@@ -61,11 +62,10 @@ final class ParticipantEnrollmentService
 
         if ($existing === null) {
             $wasParticipant = $this->isActiveInAnotherType($productionId, $personId, $participantType);
-            $participant = Participant::enrollFromInvitation(
+            $participant = Participant::enrollByInvitation(
                 $productionId,
                 $personId->toString(),
                 $participantType,
-                $acceptedAt,
                 $remarks,
                 $displayName
             );
@@ -80,17 +80,15 @@ final class ParticipantEnrollmentService
             throw new ParticipantDraftExistsException('A DRAFT Participant of this type already exists for the invitee.');
         }
 
-        $becameActive = $previous !== ParticipantStatus::ACTIVE;
-        $personBecameParticipant = $becameActive && ! $this->isActiveInAnotherType($productionId, $personId, $participantType);
-
-        if ($becameActive) {
-            $existing->reenroll();
+        if ($previous === ParticipantStatus::ACTIVE) {
+            return new ParticipantEnrollmentOutcome($existing, $previous, false, false);
         }
 
-        $existing->recordConsent(ParticipantConsentSource::invitation(), $acceptedAt);
+        $personBecameParticipant = ! $this->isActiveInAnotherType($productionId, $personId, $participantType);
+        $existing->reenroll();
         $this->participants->save($existing);
 
-        return new ParticipantEnrollmentOutcome($existing, $previous, $becameActive, $personBecameParticipant);
+        return new ParticipantEnrollmentOutcome($existing, $previous, true, $personBecameParticipant);
     }
 
     /**

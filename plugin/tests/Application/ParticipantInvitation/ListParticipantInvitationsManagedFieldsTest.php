@@ -11,7 +11,6 @@ use StageArt\Application\Participant\ParticipantAccessDeniedException;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsQuery;
 use StageArt\Application\ParticipantInvitation\ManagedParticipantInvitationResult;
-use StageArt\Application\ParticipantInvitation\ParticipantInvitationRecentlyRejectedException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationSendLimitException;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationCommand;
 use StageArt\Application\Production\ProductionNotFoundException;
@@ -22,6 +21,8 @@ use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationId;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSend;
+use StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Person\Person;
 use StageArt\Domain\Production\Production;
 use StageArt\Domain\Production\ProductionId;
@@ -34,9 +35,10 @@ use StageArt\Tests\Support\ParticipantConsentFixture;
  * §11.3): the §7.1 fields of the managers'
  * `GET /productions/{id}/participant-invitations`, with the four decisions
  * of 2026-11-18 (missing key -> send_limit null; stored
- * CANCELLED(INVITER_REVOKED) -> INVITER_REVOKED; reinvite_available_at =
- * the address's latest rejection + 30 days; no current send -> send_status
- * and last_sent_at null).
+ * CANCELLED(INVITER_REVOKED) -> INVITER_REVOKED; no current send ->
+ * send_status and last_sent_at null). reinvite_available_at was removed
+ * with the rejection (invitation policy 2026-11-27); past ACCEPTED /
+ * REJECTED rows are still listed as history.
  */
 final class ListParticipantInvitationsManagedFieldsTest extends TestCase
 {
@@ -134,13 +136,10 @@ final class ListParticipantInvitationsManagedFieldsTest extends TestCase
             'CANCELLED(PRODUCTION_CLOSED)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->close(ParticipantInvitationCloseReason::productionClosed()), 'CANCELLED', 'PRODUCTION_CLOSED', true, false],
             'CANCELLED(INVITER_REVOKED) is shown as INVITER_REVOKED (§11.5)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->close(ParticipantInvitationCloseReason::inviterRevoked()), 'INVITER_REVOKED', 'INVITER_REVOKED', true, false],
             'CANCELLED without reason (pre-R14-B)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->cancel(), 'CANCELLED', null, false, false],
-            'ACCEPTED' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->accept($invitee($f)->id(), ParticipantId::generate()), 'ACCEPTED', null, false, true],
-            'REJECTED' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->reject($invitee($f)->id()), 'REJECTED', null, false, true],
-            'REJECTED after CANCELLED(INVITER_REVOKED) keeps the close' => [static function (ParticipantConsentFixture $f, ParticipantInvitation $i) use ($invitee): void {
-                $i->close(ParticipantInvitationCloseReason::inviterRevoked(), null, new DateTimeImmutable('-2 days'));
-                $i->reject($invitee($f)->id());
-            }, 'REJECTED', 'INVITER_REVOKED', true, true],
-            'REJECTED first detecting PRODUCTION_CLOSED' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->reject($invitee($f)->id(), ParticipantInvitationCloseReason::productionClosed()), 'REJECTED', 'PRODUCTION_CLOSED', true, true],
+            'ACCEPTED (a past R14-B row)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => self::answered($i, ParticipantInvitationStatus::ACCEPTED), 'ACCEPTED', null, false, true],
+            'REJECTED (a past R14-B row)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => self::answered($i, ParticipantInvitationStatus::REJECTED), 'REJECTED', null, false, true],
+            'REJECTED first detecting PRODUCTION_CLOSED (a past R14-B row)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => self::answered($i, ParticipantInvitationStatus::REJECTED, ParticipantInvitationCloseReason::productionClosed()), 'REJECTED', 'PRODUCTION_CLOSED', true, true],
+            'COMPLETED by the registration (CONSUMED)' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->completeByEnrollment($invitee($f)->id(), ParticipantId::generate()), 'CONSUMED', null, false, false],
             'CONSUMED' => [static fn (ParticipantConsentFixture $f, ParticipantInvitation $i) => $i->consume(), 'CONSUMED', null, false, false],
         ];
     }
@@ -414,46 +413,7 @@ final class ListParticipantInvitationsManagedFieldsTest extends TestCase
         $this->listAs();
     }
 
-    // --- reinvite_available_at (D6) --------------------------------------------
-
-    public function test_reinvite_is_the_latest_rejection_of_the_address_plus_30_days(): void
-    {
-        $invitee = $this->f->person('invitee@example.com');
-        $earlier = $this->f->invitation('Taro@Example.com', null, ParticipantType::CAST);
-        $later = $this->f->invitation('taro@example.com', null, ParticipantType::STAFF);
-        $pending = $this->f->invitation('taro@example.com', null, ParticipantType::CAST);
-        $earlier->reject($invitee->id(), null, $this->ago('P20D'));
-        $later->reject($invitee->id(), null, $this->ago('P5D'));
-        $this->saved($earlier);
-        $this->saved($later);
-
-        $rows = $this->listAs();
-        $expected = $later->respondedAt()->add(new DateInterval('P30D'))->format(DATE_ATOM);
-        $this->assertSame($expected, $rows[$earlier->id()->toString()]->reinviteAvailableAt, 'Same address: the latest rejection');
-        $this->assertSame($expected, $rows[$later->id()->toString()]->reinviteAvailableAt);
-        $this->assertNull($rows[$pending->id()->toString()]->reinviteAvailableAt, 'Only REJECTED rows');
-
-        try {
-            // STAFF: the CAST one is still PENDING (that would be a resend, §5.3).
-            $this->create('TARO@example.com', ParticipantType::STAFF);
-            $this->fail('409 recently_rejected expected.');
-        } catch (ParticipantInvitationRecentlyRejectedException $e) {
-            $this->assertSame($expected, $e->availableAt()->format(DATE_ATOM), 'Same as the create API');
-        }
-    }
-
-    public function test_a_passed_reinvite_time_is_still_returned(): void
-    {
-        $rejected = $this->f->invitation(self::EMAIL);
-        $rejected->reject($this->f->person('invitee@example.com')->id(), null, $this->ago('P40D'));
-        $this->saved($rejected);
-
-        $at = $this->row($rejected)['reinvite_available_at'];
-        $this->assertNotNull($at);
-        $this->assertLessThan(new DateTimeImmutable(), new DateTimeImmutable($at));
-        $this->create(self::EMAIL, ParticipantType::STAFF);
-        $this->addToAssertionCount(1);
-    }
+    // --- reinvite_available_at (D6, removed 2026-11-27): see test_a_past_rejection_is_listed_without_a_reinvite_time_and_does_not_block ---
 
     // --- authorization -------------------------------------------------------
 
@@ -505,4 +465,45 @@ final class ListParticipantInvitationsManagedFieldsTest extends TestCase
         $this->assertSame(2, $this->f->sends->recordReads, 'recordsSince + recordsByIds once each');
         $this->assertLessThanOrEqual(2, $one);
     }
+
+    /**
+     * Sets a past R14-B answer on the row as it is stored (the acceptance and
+     * the rejection were removed with the 2026-11-27 invitation policy - such
+     * rows can only come from the database now).
+     */
+    private static function answered(ParticipantInvitation $invitation, string $status, ?ParticipantInvitationCloseReason $detected = null): void
+    {
+        \Closure::bind(function () use ($status, $detected): void {
+            $now = new DateTimeImmutable();
+            $this->status = ParticipantInvitationStatus::fromString($status);
+            $this->inviteePersonId = PersonId::generate();
+            $this->respondedAt = $now;
+            $this->updatedAt = $now;
+
+            if ($status === ParticipantInvitationStatus::ACCEPTED) {
+                $this->participantId = ParticipantId::generate();
+            }
+
+            if ($detected !== null) {
+                $this->closeReason = $detected;
+                $this->closedAt = $now;
+            }
+        }, $invitation, ParticipantInvitation::class)();
+    }
+
+    /** Invitation policy 2026-11-27: there is no reinvite_available_at any more (no block after a rejection); a past REJECTED row is still listed. */
+    public function test_a_past_rejection_is_listed_without_a_reinvite_time_and_does_not_block(): void
+    {
+        $rejected = $this->f->invitation(self::EMAIL);
+        self::answered($rejected, ParticipantInvitationStatus::REJECTED);
+        $this->saved($rejected);
+
+        $row = $this->row($rejected);
+
+        $this->assertSame('REJECTED', $row['effective_status']);
+        $this->assertArrayNotHasKey('reinvite_available_at', $row);
+        $this->create(self::EMAIL, ParticipantType::STAFF);
+        $this->addToAssertionCount(1);
+    }
+
 }

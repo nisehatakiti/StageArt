@@ -245,7 +245,7 @@ final class WordPressParticipantRepositoryTest extends TestCase
         $this->assertNull($participant->consentedAt());
         $this->assertNull($participant->requestedAt());
         $this->assertFalse($participant->hasRecordedConsent());
-        $this->assertFalse($participant->isConsentedActivePerson());
+        $this->assertSame($participant->isActive(), $participant->isActivePerson(), 'Consent is no longer part of it (2026-11-27)');
         $this->assertEquals(new DateTimeImmutable('2026-11-01T10:00:00+00:00'), $participant->createdAt());
     }
 

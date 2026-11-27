@@ -1,7 +1,9 @@
 # StageArt Blueprint
 # API : Production
 
-Version : 4.1
+Version : 4.2
+
+- 4.2（2026-11-27）：招待と登録の方針の実装（`feature/invitation-simplify`）に合わせ、「ProductionDelegateの有効性」から同意の条件・`CONSENT_UNCONFIRMED`・`target_not_consented` を除いた。
 
 ---
 
@@ -767,11 +769,11 @@ Reservation Domainが発行する。
 担当者の行がRoleのPermissionを与えるのは、次の両方を満たす場合だけ。
 
 1. 担当者の行の `status` が ACTIVE。
-2. その人物が、この公演の **ACTIVEなPERSONの参加者で、本人の同意が記録されている**（`consented_at` がある）。
+2. その人物が、この公演の **ACTIVEなPERSONの参加者**である（同意の記録 `consented_at` は条件にしない。2026-11-27、`../03-InvitationAndEnrollmentPolicy.md` §3.3）。
 
 - 条件を満たさないACTIVEな行は、変更せずに残るが、権限を与えない（「無効」）。
 - PrimaryManagerの権限は、担当者の行・参加者の状態に依存しない。
-- R14-Bより前からある参加者の行は同意が記録されていないため、その人物の担当者の行は、本人が「同意の確認を依頼」の招待を承諾するまで無効になる（承諾すると、再任命なしに有効になる）。
+- R14-Bより前からある参加者（同意の記録なし）の人物の担当者の行も、2の条件で有効になる（2026-11-27）。
 
 ## エンドポイント
 
@@ -793,11 +795,11 @@ Reservation Domainが発行する。
 |---|---|
 | `INACTIVE` | 担当者の行が INACTIVE |
 | `NOT_ACTIVE_PARTICIPANT` | その人物がACTIVEなPERSONの参加者でない |
-| `CONSENT_UNCONFIRMED` | ACTIVEな参加者だが、同意が記録されていない |
+（`CONSENT_UNCONFIRMED` は 2026-11-27 に廃止した。）
 
 ## 任命・変更の条件
 
-- 任命（`POST`）と、`PUT` で行が新たに有効な任命になる場合（INACTIVE → ACTIVE、または役割の変更）は、対象の人物が同意を確認済みのACTIVEな参加者でなければならない。参加者でなければ422 `stageart_production_delegate_target_not_participant`、同意が記録されていなければ422 `stageart_production_delegate_target_not_consented`。
+- 任命（`POST`）と、`PUT` で行が新たに有効な任命になる場合（INACTIVE → ACTIVE、または役割の変更）は、対象の人物がACTIVEなPERSONの参加者でなければならない。参加者でなければ422 `stageart_production_delegate_target_not_participant`（422 `stageart_production_delegate_target_not_consented` は 2026-11-27 に廃止した）。
 - 同じ公演・人物・役割の INACTIVE の行がある場合、`POST` は新しい行を作らず、その行を ACTIVE に戻す（監査ログ `DELEGATE_REACTIVATED`。新しい行は `DELEGATE_APPOINTED`）。すでにACTIVEな行は409 `stageart_production_delegate_already_exists`。
 - ACTIVEな行を同じ役割のまま保つ変更は、任命ではないため、条件を確認し直さない（無効なまま残る）。
 
@@ -810,7 +812,7 @@ Reservation Domainが発行する。
 | `PUT /participants/{id}` で ACTIVE → INACTIVE | `PARTICIPANT_DEACTIVATED` |
 | `DELETE /participants/{id}`（ACTIVE・INACTIVE → CANCELLED） | `PARTICIPANT_REMOVED` |
 | `POST /participants/{id}/withdraw`（本人の取りやめ） | `PARTICIPANT_WITHDRAWN` |
-| 招待の承諾で新たに ACTIVE になった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
+| 招待による登録で新たに ACTIVE になった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
 | `PUT /production-delegates/{id}` で INACTIVE にした | `MANAGER` |
 
 担当者のAPIの応答には `Cache-Control: no-store` を付ける（`README.md`「個人宛てのAPIのキャッシュ」）。

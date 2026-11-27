@@ -3,7 +3,8 @@ import type { ManagedParticipantInvitation, MyParticipantInvitation, Participant
 /**
  * PR #7 R14-B stage 9: fixtures in the exact shapes the stage 1-8 Backend
  * answers (ParticipantResult with the §7.3 disclosure, the managers'
- * invitation list with the §7.1 fields, the invitee's own list).
+ * invitation list with the §7.1 fields) and the invitation screen's answer
+ * (GET /me/participant-invitations/{id}, invitation policy 2026-11-27).
  */
 export function participantRow(overrides: Partial<Participant> = {}): Participant {
   return {
@@ -50,25 +51,18 @@ export function managedInvitation(overrides: Partial<ManagedParticipantInvitatio
     send_status: 'SENT',
     last_sent_at: '2026-11-18T01:00:00+00:00',
     send_limit: { sent_in_30_days: 1, remaining_in_30_days: 5, available_at: null },
-    reinvite_available_at: null,
     ...overrides,
   };
 }
 
+/** GET /me/participant-invitations/{id} (invitation policy 2026-11-27). */
 export function myInvitation(overrides: Partial<MyParticipantInvitation> = {}): MyParticipantInvitation {
   return {
     id: 'invitation-1',
     production_id: 'prod-1',
     production_name: '踊れチュパカブラ',
-    organization_name: '劇団テスト',
     participant_type: 'CAST',
-    invited_by_display_name: '制作 花子',
-    expires_at: '2099-01-01T00:00:00+00:00',
-    effective_status: 'PENDING',
-    already_participant: false,
-    can_accept: true,
-    can_reject: true,
-    unavailable_reason: null,
+    status: 'PENDING',
     ...overrides,
   };
 }

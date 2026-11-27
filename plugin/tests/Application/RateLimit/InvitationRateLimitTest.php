@@ -6,14 +6,12 @@ namespace StageArt\Tests\Application\RateLimit;
 
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
-use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientNotEligibleException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationAccessDeniedException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotFoundException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationNotPendingException;
-use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationCommand;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
@@ -37,7 +35,9 @@ use WP_REST_Request;
  *   Production (fixed UTC windows); counted after the permission check and
  *   before the input check / transaction; the Production's window is not
  *   counted once the Person's is exceeded (both confirmed by the user).
- * - accept / reject: 10 failures (403 / 404) per Person per 10 minutes;
+ * - the invitee opening an invitation from the mail (GET
+ *   /me/participant-invitations/{id}; accept / reject before the 2026-11-27
+ *   invitation policy): 10 failures (403 / 404) per Person per 10 minutes;
  *   read first, added to only on such a failure.
  * - Over a limit: 429 stageart_rate_limited with retry_after (seconds to
  *   the end of the window) and Retry-After; nothing of the operation done.
@@ -269,16 +269,12 @@ final class InvitationRateLimitTest extends TestCase
         $this->invite();
     }
 
-    // --- accept / reject failures ----------------------------------------------
+    // --- the invitee's failures (opening an invitation from the mail) -----------
 
-    private function accept(Person $as, string $invitationId): void
+    /** Invitation policy 2026-11-27: GET /me/participant-invitations/{id} (the accept / reject this guarded were removed). */
+    private function open(Person $as, string $invitationId): array
     {
-        $this->rateLimit->guardResponse($as->wordPressUserId(), fn () => $this->f->accept()->execute(new AcceptParticipantInvitationCommand($as->wordPressUserId(), $invitationId)));
-    }
-
-    private function reject(Person $as, string $invitationId): void
-    {
-        $this->rateLimit->guardResponse($as->wordPressUserId(), fn () => $this->f->reject()->execute(new RejectParticipantInvitationCommand($as->wordPressUserId(), $invitationId)));
+        return $this->rateLimit->guardResponse($as->wordPressUserId(), fn () => $this->f->getMine()->execute($as->wordPressUserId(), $invitationId));
     }
 
     private function failureCount(Person $person): int
@@ -294,7 +290,7 @@ final class InvitationRateLimitTest extends TestCase
 
         for ($i = 0; $i < 10; $i++) {
             try {
-                $i % 2 === 0 ? $this->accept($person, $someoneElses->id()->toString()) : $this->reject($person, 'not-a-uuid');
+                $this->open($person, $i % 2 === 0 ? $someoneElses->id()->toString() : 'not-a-uuid');
                 $this->fail('404 expected');
             } catch (ParticipantInvitationNotFoundException $expected) {
                 $this->addToAssertionCount(1);
@@ -304,53 +300,37 @@ final class InvitationRateLimitTest extends TestCase
         $this->assertSame(10, $this->failureCount($person));
 
         try {
-            $this->accept($person, $mine->id()->toString());
+            $this->open($person, $mine->id()->toString());
             $this->fail('At the limit the request is refused before anything is done');
         } catch (RateLimitedException $exception) {
             $this->assertSame(600, $exception->retryAfter(), "Seconds from 10:20 to the end of the 10:20 window");
         }
 
-        $this->assertTrue($this->f->invitations->findById($mine->id())->isPending(), 'Nothing was done');
         $this->assertSame(10, $this->failureCount($person), 'The refused request is only read, not added');
 
         // The next 10-minute window starts fresh.
         $this->limiter->now = new DateTimeImmutable('2026-11-18T10:30:00+00:00');
-        $this->accept($person, $mine->id()->toString());
-        $this->assertFalse($this->f->invitations->findById($mine->id())->isPending());
+        $this->assertSame('PENDING', $this->open($person, $mine->id()->toString())['status']);
     }
 
-    public function test_403_failures_count_but_success_409_and_410_do_not(): void
+    public function test_403_failures_count_but_a_success_does_not(): void
     {
-        $unverified = $this->f->person('unverified@example.com', false);
-        $invitation = $this->f->invitation('unverified@example.com');
+        $suspended = $this->f->person('suspended@example.com', true, 'SUSPENDED');
+        $invitation = $this->f->invitation('suspended@example.com');
 
         try {
-            $this->accept($unverified, $invitation->id()->toString());
+            $this->open($suspended, $invitation->id()->toString());
             $this->fail('403 expected');
         } catch (InvitationRecipientNotEligibleException $expected) {
-            $this->assertSame(1, $this->failureCount($unverified));
+            $this->assertSame(1, $this->failureCount($suspended));
         }
 
         $person = $this->f->person('hanako@example.com');
-        $accepted = $this->f->invitation('hanako@example.com');
-        $this->accept($person, $accepted->id()->toString());
-
-        try {
-            $this->reject($person, $accepted->id()->toString());
-            $this->fail('409 expected');
-        } catch (ParticipantInvitationNotPendingException $expected) {
-            $this->addToAssertionCount(1);
-        }
-
+        $mine = $this->f->invitation('hanako@example.com');
         $expired = $this->f->invitation('hanako@example.com', null, 'STAFF', new DateTimeImmutable('-1 day'));
 
-        try {
-            $this->reject($person, $expired->id()->toString());
-            $this->fail('410 expected');
-        } catch (\StageArt\Application\ParticipantInvitation\ParticipantInvitationExpiredException $expected) {
-            $this->addToAssertionCount(1);
-        }
-
+        $this->assertSame('PENDING', $this->open($person, $mine->id()->toString())['status']);
+        $this->assertSame('EXPIRED', $this->open($person, $expired->id()->toString())['status']);
         $this->assertSame(0, $this->failureCount($person));
     }
 
@@ -366,7 +346,7 @@ final class InvitationRateLimitTest extends TestCase
         $this->assertSame('2400', $response->get_headers()['Retry-After']);
     }
 
-    public function test_the_controller_passes_the_429_on_from_accept(): void
+    public function test_the_controller_passes_the_429_on_from_opening_an_invitation(): void
     {
         require_once __DIR__ . '/../../Support/wordpress-rest-stubs.php';
         $person = $this->f->person('jiro@example.com');
@@ -376,20 +356,18 @@ final class InvitationRateLimitTest extends TestCase
             $this->f->listInvitations(),
             $this->resendUseCase(),
             $this->f->cancelInvitation(),
-            $this->f->accept(),
-            $this->f->reject(),
-            $this->f->listMine(),
+            $this->f->getMine(),
             $this->rateLimit
         );
         $missing = ['id' => '00000000-0000-4000-8000-000000000000'];
 
         for ($i = 0; $i < 10; $i++) {
-            $answer = $controller->accept(new WP_REST_Request($missing));
+            $answer = $controller->getMine(new WP_REST_Request($missing));
             $this->assertSame(404, $answer->get_error_data()['status']);
         }
 
         try {
-            $controller->reject(new WP_REST_Request($missing));
+            $controller->getMine(new WP_REST_Request($missing));
             $this->fail('The 429 goes on to RestFailureResponder');
         } catch (RateLimitedException $exception) {
             $this->assertSame(429, RestFailureResponder::toResponse($exception)->get_status());

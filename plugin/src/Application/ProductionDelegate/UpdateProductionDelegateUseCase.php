@@ -21,8 +21,8 @@ use StageArt\Domain\Role\RoleKey;
  *
  * R14-B §4.6 / §7.1 (stage 4): when the row ends up ACTIVE as a new
  * appointment - made ACTIVE from INACTIVE, or given another Role - its
- * Person must be an ACTIVE PERSON Participant with recorded consent
- * (DelegateAppointmentGuard, 422). Keeping an ACTIVE row ACTIVE with the
+ * Person must be an ACTIVE PERSON Participant (DelegateAppointmentGuard,
+ * 422; no recorded consent needed since 2026-11-27). Keeping an ACTIVE row ACTIVE with the
  * same Role is not an appointment and is not re-checked (such a row
  * simply stays ineffective while the Person is not a consented member).
  * One transaction, locked Production -> Participant -> delegate (§5.4);

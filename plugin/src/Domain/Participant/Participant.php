@@ -156,7 +156,43 @@ final class Participant
     }
 
     /**
-     * R14-B §5.2 "(行なし) → ACTIVE": a new PERSON Participant created
+     * Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md,
+     * 2026-11-27): a new ACTIVE PERSON Participant registered from an
+     * administrator's invitation - at invitation time for a verified
+     * account, or when the invited address is verified / signed in with
+     * Google. The enrolment route is INVITATION (never changed later). No
+     * consent is recorded: the person did not consent in StageArt (the
+     * administrator confirmed their intention outside StageArt), so
+     * consentSource / consentedAt stay NULL.
+     */
+    public static function enrollByInvitation(
+        ProductionId $productionId,
+        string $personId,
+        ParticipantType $participantType,
+        ?string $remarks = null,
+        ?string $displayName = null
+    ): self {
+        $now = new DateTimeImmutable();
+
+        return new self(
+            ParticipantId::generate(),
+            $productionId,
+            ParticipantSubjectType::person(),
+            $personId,
+            $participantType,
+            ParticipantStatus::active(),
+            $now,
+            $now,
+            self::normalizeNullableString($remarks),
+            self::normalizeNullableString($displayName),
+            ParticipantEnrollmentSource::invitation()
+        );
+    }
+
+    /**
+     * R14-B §5.2 "(行なし) → ACTIVE" (history: the R14-B acceptance, removed
+     * with the 2026-11-27 invitation policy; no current flow calls this - it
+     * builds rows as accepted ones were stored): a new PERSON Participant created
      * because the Person themselves accepted an invitation. Records the
      * enrolment route (INVITATION, never changed later) and the Person's
      * consent (INVITATION at `$acceptedAt`) together. Row REUSE for an
@@ -446,17 +482,19 @@ final class Participant
     }
 
     /**
-     * R14-B §4.6 base condition for an effective ProductionDelegate: an
-     * ACTIVE PERSON Participant with recorded consent. This only describes
-     * the Participant's own state - the delegate permission decision itself
-     * (and the PrimaryManager's separate treatment) lives in the
-     * Application layer, not here.
+     * Base condition for an effective ProductionDelegate: an ACTIVE PERSON
+     * Participant. Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md,
+     * 2026-11-27): the administrator confirms the person's intention before
+     * inviting them, so recorded consent (consented_at) is no longer part of
+     * the condition - it stays on the row as history only. This only
+     * describes the Participant's own state - the delegate permission
+     * decision itself (and the PrimaryManager's separate treatment) lives in
+     * the Application layer, not here.
      */
-    public function isConsentedActivePerson(): bool
+    public function isActivePerson(): bool
     {
         return $this->subjectType->equals(ParticipantSubjectType::person())
-            && $this->isActive()
-            && $this->hasRecordedConsent();
+            && $this->isActive();
     }
 
     public function isActive(): bool

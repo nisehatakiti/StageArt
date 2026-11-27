@@ -307,106 +307,33 @@ final class ParticipantInvitation
     }
 
     /**
-     * R14-B §5.1 / §7.2 accept: the invitee themselves accepts. Only a
-     * PENDING invitation within its expiry can be accepted; CANCELLED (any
-     * reason), REJECTED and the legacy CONSUMED cannot. Whether the
-     * production is closed or the inviter still has permission is decided
-     * by the Application layer BEFORE calling this (it closes the
-     * invitation with close() instead). Repeating the acceptance by the
-     * same Person is an idempotent no-op.
-     *
-     * @return bool true when the invitation actually changed
+     * Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md,
+     * 2026-11-27): the invitation is completed by registering the invited
+     * Person - no acceptance by the person. Only a PENDING invitation within
+     * its expiry can be completed; whether the production is closed or the
+     * inviter still has permission is decided by the Application layer
+     * BEFORE calling this (it closes the invitation with close() instead).
+     * The invitation becomes CONSUMED and records who was registered and as
+     * which Participant row. Past ACCEPTED / REJECTED rows (the R14-B
+     * acceptance and rejection, removed) are kept as they are.
      */
-    public function accept(PersonId $inviteePersonId, ParticipantId $participantId, ?DateTimeImmutable $now = null): bool
+    public function completeByEnrollment(PersonId $inviteePersonId, ParticipantId $participantId, ?DateTimeImmutable $now = null): void
     {
         $now = $now ?? new DateTimeImmutable();
 
-        if ($this->status->toString() === ParticipantInvitationStatus::ACCEPTED) {
-            if ($this->inviteePersonId !== null && $this->inviteePersonId->equals($inviteePersonId)) {
-                return false;
-            }
-
-            throw new InvalidArgumentException('This ParticipantInvitation was already accepted by someone else.');
-        }
-
         if (! $this->isPending()) {
-            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be accepted.');
+            throw new InvalidArgumentException('Only a PENDING ParticipantInvitation can be completed.');
         }
 
         if ($this->isExpiredAt($now)) {
-            throw new InvalidArgumentException('An expired ParticipantInvitation cannot be accepted.');
+            throw new InvalidArgumentException('An expired ParticipantInvitation cannot be completed.');
         }
 
-        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::ACCEPTED);
+        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::CONSUMED);
+        $this->consumedAt = $now;
         $this->inviteePersonId = $inviteePersonId;
-        $this->respondedAt = $now;
         $this->participantId = $participantId;
         $this->updatedAt = $now;
-
-        return true;
-    }
-
-    /**
-     * R14-B §4.3 / §5.1 / §7.2 reject (U7): the invitee themselves declines.
-     * Allowed, within the expiry, from:
-     * - PENDING (including when the production is closed or the inviter
-     *   lost permission - pass that as `$firstDetectedCloseReason` when the
-     *   reject is the write that first detects it, so it is recorded as the
-     *   past invalidation without overwriting anything), and
-     * - CANCELLED(PRODUCTION_CLOSED / INVITER_REVOKED), keeping the original
-     *   close reason and time.
-     * Not allowed from CANCELLED(MANAGER), a reason-less (pre-R14-B)
-     * CANCELLED, ACCEPTED or CONSUMED, nor after expiry. Repeating the
-     * rejection by the same Person is an idempotent no-op.
-     *
-     * @return bool true when the invitation actually changed
-     */
-    public function reject(
-        PersonId $inviteePersonId,
-        ?ParticipantInvitationCloseReason $firstDetectedCloseReason = null,
-        ?DateTimeImmutable $now = null
-    ): bool {
-        $now = $now ?? new DateTimeImmutable();
-        $status = $this->status->toString();
-
-        if ($status === ParticipantInvitationStatus::REJECTED) {
-            if ($this->inviteePersonId !== null && $this->inviteePersonId->equals($inviteePersonId)) {
-                return false;
-            }
-
-            throw new InvalidArgumentException('This ParticipantInvitation was already rejected by someone else.');
-        }
-
-        if ($status === ParticipantInvitationStatus::PENDING) {
-            if ($firstDetectedCloseReason !== null && ! $firstDetectedCloseReason->allowsInviteeRejection()) {
-                throw new InvalidArgumentException('Only PRODUCTION_CLOSED or INVITER_REVOKED can be detected at reject time.');
-            }
-        } elseif ($status === ParticipantInvitationStatus::CANCELLED
-            && $this->closeReason !== null
-            && $this->closeReason->allowsInviteeRejection()
-        ) {
-            if ($firstDetectedCloseReason !== null) {
-                throw new InvalidArgumentException('A recorded close reason is never overwritten.');
-            }
-        } else {
-            throw new InvalidArgumentException("A {$status} ParticipantInvitation cannot be rejected.");
-        }
-
-        if ($this->isExpiredAt($now)) {
-            throw new InvalidArgumentException('An expired ParticipantInvitation cannot be rejected.');
-        }
-
-        if ($firstDetectedCloseReason !== null) {
-            $this->closeReason = $firstDetectedCloseReason;
-            $this->closedAt = $now;
-        }
-
-        $this->status = ParticipantInvitationStatus::fromString(ParticipantInvitationStatus::REJECTED);
-        $this->inviteePersonId = $inviteePersonId;
-        $this->respondedAt = $now;
-        $this->updatedAt = $now;
-
-        return true;
     }
 
     /**

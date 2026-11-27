@@ -163,14 +163,14 @@ final class WordPressParticipantRepository implements ParticipantRepositoryInter
      * permission decision). A failed read throws (assertRead) instead of
      * answering "no" or "yes".
      */
-    public function existsConsentedActivePersonParticipant(ProductionId $productionId, string $personId): bool
+    public function existsActivePersonParticipant(ProductionId $productionId, string $personId): bool
     {
         $this->wpdb->last_error = '';
         $found = $this->wpdb->get_var(
             $this->wpdb->prepare(
                 "SELECT id FROM {$this->table} "
                 . "WHERE production_id = %s AND subject_type = %s AND subject_id = %s AND status = %s "
-                . "AND consented_at IS NOT NULL LIMIT 1",
+                . "LIMIT 1",
                 $productionId->toString(),
                 ParticipantSubjectType::PERSON,
                 $personId,

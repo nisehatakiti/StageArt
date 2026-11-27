@@ -29,9 +29,15 @@ export function safeReturnTo(value: unknown): string | null {
   return value;
 }
 
-/** The app paths that send an unauthenticated visitor to login with a return_to (§10: the invitations). */
+/**
+ * The app paths that send an unauthenticated visitor to login with a
+ * return_to: the invitation screens the invitation mails open (§10;
+ * /organization-invitations/{id} too since the 2026-11-27 invitation policy).
+ */
 export function returnToForUnauthenticated(pathname: string): string | null {
-  return pathname === '/participant-invitations' || pathname.startsWith('/participant-invitations/') ? pathname : null;
+  const invitationPaths = ['/participant-invitations', '/organization-invitations'];
+
+  return invitationPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`)) ? pathname : null;
 }
 
 /**

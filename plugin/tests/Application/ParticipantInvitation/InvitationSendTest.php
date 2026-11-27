@@ -15,7 +15,6 @@ use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCas
 use StageArt\Application\ParticipantInvitation\EmailKeyNotConfiguredException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationInviterRevokedException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationProductionClosedException;
-use StageArt\Application\ParticipantInvitation\ParticipantInvitationRecentlyRejectedException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationResendLimitException;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationSendLimitException;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationCommand;
@@ -103,24 +102,36 @@ final class InvitationSendTest extends TestCase
 
     // --- create: always an invitation ----------------------------------
 
-    public function test_a_registered_and_an_unregistered_address_get_the_same_response_and_no_lookup(): void
+    /**
+     * Invitation policy 2026-11-27 (like an organization invitation): a
+     * verified account is registered at once (MEMBER_ADDED, no mail, no
+     * invitation); an unregistered or unverified address gets an invitation.
+     */
+    public function test_a_verified_account_is_registered_at_once_and_other_addresses_are_invited(): void
     {
-        $this->f->person('registered@example.com');
+        $registered = $this->f->person('registered@example.com');
+        $this->f->person('unverified@example.com', false);
 
-        $registered = $this->invite('registered@example.com')->toArray();
+        $added = $this->invite('Registered@Example.com ')->toArray();
+        $unverified = $this->invite('unverified@example.com')->toArray();
         $unregistered = $this->invite('nobody@example.com')->toArray();
 
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $registered['outcome']);
-        $this->assertSame($unregistered['outcome'], $registered['outcome']);
-        $this->assertSame(array_keys($unregistered), array_keys($registered));
-        $this->assertSame(array_keys($unregistered['invitation']), array_keys($registered['invitation']));
-        $this->assertArrayNotHasKey('participant', $registered);
-        $this->assertSame([], $this->f->notificationTypes(), 'No in-app notification on invitation');
-        $this->assertSame([], $this->f->participants->findByProductionId($this->f->production->id()), 'Nobody added directly');
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_MEMBER_ADDED, $added['outcome']);
+        $this->assertArrayNotHasKey('invitation', $added);
+        $participant = $this->f->participants->findById(\StageArt\Domain\Participant\ParticipantId::fromString($added['participant_id']));
+        $this->assertSame($registered->id()->toString(), $participant->subjectId());
+        $this->assertSame(\StageArt\Domain\Participant\ParticipantStatus::ACTIVE, $participant->status()->toString());
+        $this->assertSame('INVITATION', $participant->enrollmentSource()->toString());
+        $this->assertNull($participant->consentedAt(), 'No consent is recorded');
+        $this->assertSame('招待 太郎', $participant->displayName());
 
-        foreach ((new ReflectionClass(CreateParticipantInvitationUseCase::class))->getConstructor()->getParameters() as $parameter) {
-            $this->assertNotSame(FindPersonByEmailUseCase::class, (string) $parameter->getType(), 'No Person lookup by address');
-        }
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $unverified['outcome'], 'An unverified address is never used');
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $unregistered['outcome']);
+        $this->assertSame(['unverified@example.com', 'nobody@example.com'], array_column($this->f->mailer->invitationEmails, 'to'), 'No mail to the registered account');
+        $this->assertSame([], $this->f->notificationTypes(), 'No in-app notification');
+        $this->assertSame([ParticipantEvent::INVITATION_ENROLLED, ParticipantEvent::INVITED, ParticipantEvent::INVITED], $this->f->eventStore->types());
+        $this->assertSame('INVITATION_CREATED', $this->f->eventStore->ofType(ParticipantEvent::INVITATION_ENROLLED)[0]->detail()['trigger']);
+        $this->assertCount(1, $this->f->participants->findByProductionId($this->f->production->id()));
     }
 
     public function test_a_new_invitation_is_valid_for_7_days_and_its_send_is_counted_and_sent_without_a_token(): void
@@ -135,7 +146,7 @@ final class InvitationSendTest extends TestCase
         $this->assertSame([ParticipantInvitationSend::SENT], array_values($this->f->sends->statuses()));
         $this->assertSame($this->f->sends->all()[0]->id(), $invitation->currentSendId());
         $this->assertNotNull($invitation->lastSentAt());
-        $this->assertSame([['to' => self::EMAIL, 'productionName' => 'Autumn Play']], $this->f->mailer->invitationEmails, 'No token in the mail');
+        $this->assertSame([['to' => self::EMAIL, 'productionName' => 'Autumn Play', 'invitationId' => $invitation->id()->toString()]], $this->f->mailer->invitationEmails, 'No token in the mail - the invitation id for its link');
         $this->assertSame([ParticipantEvent::INVITED], $this->f->eventStore->types());
         $this->assertStringNotContainsString(self::EMAIL, $this->f->everythingRecordedAndSent());
         $this->assertStringNotContainsString($invitation->tokenHash(), $this->f->everythingRecordedAndSent());
@@ -167,30 +178,29 @@ final class InvitationSendTest extends TestCase
         $this->assertNothingWritten(1);
     }
 
-    /** §5.3 (D6): 29 days after a rejection - 409 with available_at; 30 days on - allowed. */
-    public function test_a_rejection_blocks_a_new_invitation_for_30_days(): void
+    /** Invitation policy 2026-11-27: the rejection was removed - a past REJECTED invitation no longer blocks a new one. */
+    public function test_a_past_rejection_no_longer_blocks_a_new_invitation(): void
     {
-        $rejected = $this->f->invitation(self::EMAIL, null, ParticipantType::STAFF);
-        $rejectedAt = new DateTimeImmutable('-29 days');
-        $rejected->reject($this->f->person('someone@example.com')->id(), null, $rejectedAt);
+        $rejected = \StageArt\Domain\ParticipantInvitation\ParticipantInvitation::reconstitute(
+            \StageArt\Domain\ParticipantInvitation\ParticipantInvitationId::generate(),
+            $this->f->production->id(),
+            self::EMAIL,
+            '招待 太郎',
+            $this->f->primaryManager->id(),
+            ParticipantType::staff(),
+            null,
+            hash('sha256', 'old'),
+            \StageArt\Domain\ParticipantInvitation\ParticipantInvitationStatus::fromString('REJECTED'),
+            new DateTimeImmutable('-3 days'),
+            new DateTimeImmutable('+4 days'),
+            null,
+            null,
+            new DateTimeImmutable('-1 day')
+        );
+        $this->f->invitations->save($rejected);
 
-        try {
-            $this->invite('Taro@Example.com ');
-            $this->fail('409 recently_rejected expected (any type, normalised address).');
-        } catch (ParticipantInvitationRecentlyRejectedException $e) {
-            $this->assertEquals($rejectedAt->add(new DateInterval('P30D')), $e->availableAt());
-        }
-
-        $this->assertNothingWritten(1);
-
-        $old = $this->f->invitation(self::EMAIL, null, ParticipantType::STAFF);
-        $old->reject($this->f->person('other@example.com')->id(), null, new DateTimeImmutable('-30 days -1 minute'));
-        $rejected2 = $this->f->invitations->findById($rejected->id());
-        // Only the old rejection left: move the recent one out of the way.
-        $this->f->invitations->restore([[$old->id()->toString() => $old], []]);
-
-        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $this->invite()->outcome);
-        $this->assertNotNull($rejected2);
+        $this->assertSame(CreateParticipantInvitationResult::OUTCOME_INVITATION_SENT, $this->invite('Taro@Example.com ')->outcome);
+        $this->assertSame('REJECTED', $this->f->invitations->findById($rejected->id())->status()->toString(), 'The past row is kept as history');
     }
 
     /** §5.3 (D6): the first send plus 5 resends; the 6th resend is 429 resend_limit. */
@@ -366,7 +376,8 @@ final class InvitationSendTest extends TestCase
         $this->assertSame([ParticipantEvent::INVITED, ParticipantEvent::RESENT], $this->f->eventStore->types());
 
         foreach ($this->f->mailer->invitationEmails as $mail) {
-            $this->assertSame(['to', 'productionName'], array_keys($mail));
+            $this->assertSame(['to', 'productionName', 'invitationId'], array_keys($mail));
+            $this->assertSame($created->invitation->id, $mail['invitationId']);
         }
     }
 

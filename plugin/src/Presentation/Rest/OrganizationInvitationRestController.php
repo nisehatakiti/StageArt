@@ -13,12 +13,15 @@ use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationComm
 use StageArt\Application\OrganizationInvitation\CreateOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenQuery;
 use StageArt\Application\OrganizationInvitation\GetOrganizationInvitationByTokenUseCase;
+use StageArt\Application\OrganizationInvitation\GetMyOrganizationInvitationUseCase;
 use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsQuery;
 use StageArt\Application\OrganizationInvitation\ListOrganizationInvitationsUseCase;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotFoundException;
 use StageArt\Application\OrganizationInvitation\OrganizationInvitationNotPendingException;
 use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationCommand;
 use StageArt\Application\OrganizationInvitation\ResendOrganizationInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationRecipientNotEligibleException;
+use StageArt\Application\RateLimit\InvitationRateLimit;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -29,6 +32,12 @@ use WP_REST_Response;
  * one deliberate public/unauthenticated exception (the unauthenticated
  * registration screen's own preview), matching
  * OrganizationRestController::getBySlug()'s precedent.
+ *
+ * Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md, 2026-11-27):
+ * `GET /me/organization-invitations/{id}` is the screen the invitation
+ * mail's link opens - login required, shown only to the Person whose
+ * verified address is the invited one (the same 404 otherwise), with the
+ * same failure limit as the Production invitation screen.
  */
 final class OrganizationInvitationRestController
 {
@@ -39,14 +48,20 @@ final class OrganizationInvitationRestController
     private ResendOrganizationInvitationUseCase $resendInvitation;
     private CancelOrganizationInvitationUseCase $cancelInvitation;
     private GetOrganizationInvitationByTokenUseCase $getInvitationByToken;
+    private ?GetMyOrganizationInvitationUseCase $getMyInvitation;
+    private ?InvitationRateLimit $rateLimit;
 
     public function __construct(
         CreateOrganizationInvitationUseCase $createInvitation,
         ListOrganizationInvitationsUseCase $listInvitations,
         ResendOrganizationInvitationUseCase $resendInvitation,
         CancelOrganizationInvitationUseCase $cancelInvitation,
-        GetOrganizationInvitationByTokenUseCase $getInvitationByToken
+        GetOrganizationInvitationByTokenUseCase $getInvitationByToken,
+        ?GetMyOrganizationInvitationUseCase $getMyInvitation = null,
+        ?InvitationRateLimit $rateLimit = null
     ) {
+        $this->getMyInvitation = $getMyInvitation;
+        $this->rateLimit = $rateLimit;
         $this->createInvitation = $createInvitation;
         $this->listInvitations = $listInvitations;
         $this->resendInvitation = $resendInvitation;
@@ -85,6 +100,14 @@ final class OrganizationInvitationRestController
             ],
         ]);
 
+        register_rest_route(self::API_NAMESPACE, '/me/organization-invitations/(?P<id>[^/]+)', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'getMine'],
+                'permission_callback' => [$this, 'require_login'],
+            ],
+        ]);
+
         register_rest_route(self::API_NAMESPACE, '/organization-invitations/by-token/(?P<token>[^/]+)', [
             [
                 'methods' => 'GET',
@@ -97,6 +120,27 @@ final class OrganizationInvitationRestController
     public function require_login(): bool
     {
         return is_user_logged_in();
+    }
+
+    /**
+     * @return WP_REST_Response|WP_Error
+     */
+    public function getMine(WP_REST_Request $request)
+    {
+        $wordPressUserId = get_current_user_id();
+        $id = (string) $request->get_param('id');
+        $operation = fn () => $this->getMyInvitation->execute($wordPressUserId, $id);
+
+        try {
+            return new WP_REST_Response(
+                $this->rateLimit !== null ? $this->rateLimit->guardResponse($wordPressUserId, $operation) : $operation(),
+                200
+            );
+        } catch (InvitationRecipientNotEligibleException $exception) {
+            return new WP_Error('stageart_organization_invitation_forbidden', 'This account cannot open invitations.', ['status' => 403]);
+        } catch (OrganizationInvitationNotFoundException $exception) {
+            return new WP_Error('stageart_organization_invitation_not_found', 'The invitation was not found.', ['status' => 404]);
+        }
     }
 
     /**

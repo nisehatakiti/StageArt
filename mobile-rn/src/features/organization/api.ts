@@ -3,6 +3,7 @@ import { publicGet } from '@/api/publicClient';
 import type {
   CreateOrganizationInvitationResult,
   MyFollow,
+  MyOrganizationInvitation,
   Organization,
   OrganizationExternalLink,
   OrganizationFollowStatus,
@@ -130,6 +131,17 @@ export function createOrganizationInvitation(
 /** GET /organization-invitations/by-token/{token} - public, unauthenticated registration preview. */
 export function fetchOrganizationInvitationByToken(token: string): Promise<OrganizationInvitationPreview> {
   return publicGet<OrganizationInvitationPreview>(`/organization-invitations/by-token/${encodeURIComponent(token)}`);
+}
+
+/**
+ * GET /me/organization-invitations/{id} - the organization invitation the
+ * mail's link opens (/organization-invitations/{id}), after login; shown only
+ * to the account whose verified address is the invited one (404 otherwise).
+ * Invitation policy 2026-11-27: nobody accepts or rejects - the member is
+ * registered when the invited address is verified.
+ */
+export function fetchMyOrganizationInvitation(client: ApiClient, invitationId: string): Promise<MyOrganizationInvitation> {
+  return client.get<MyOrganizationInvitation>(`/me/organization-invitations/${encodeURIComponent(invitationId)}`);
 }
 
 /** GET /organizations/{id}/invitations - 招待中のメンバー, mirroring

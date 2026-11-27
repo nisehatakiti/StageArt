@@ -146,7 +146,7 @@ final class ParticipantWithdrawAndReenrollTest extends TestCase
         $participant->reenroll();
         $participant->recordConsent(ParticipantConsentSource::invitation(), $at);
 
-        $this->assertTrue($participant->isConsentedActivePerson());
+        $this->assertTrue($participant->isActivePerson());
         $this->assertEquals($at, $participant->consentedAt());
         $this->assertSame(ParticipantEnrollmentSource::INVITATION, $participant->enrollmentSource()->toString());
     }

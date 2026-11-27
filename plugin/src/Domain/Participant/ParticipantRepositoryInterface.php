@@ -50,19 +50,18 @@ interface ParticipantRepositoryInterface
     ): bool;
 
     /**
-     * R14-B §4.6 / §7.4 (stage 4): whether the Person has an ACTIVE PERSON
-     * row (any type) with recorded consent (consented_at IS NOT NULL) in
-     * the Production - the participant half of an effective
-     * ProductionDelegate. NAME_ONLY / ORGANIZATION rows never count, and
-     * created_at is never taken for consent. Throws when the read fails
-     * (never answers "no" for a failure).
+     * Whether the Person has an ACTIVE PERSON row (any type) in the
+     * Production - the participant half of an effective ProductionDelegate
+     * (since the 2026-11-27 invitation policy, recorded consent is not part
+     * of it). NAME_ONLY / ORGANIZATION rows never count. Throws when the read
+     * fails (never answers "no" for a failure).
      */
-    public function existsConsentedActivePersonParticipant(ProductionId $productionId, string $personId): bool;
+    public function existsActivePersonParticipant(ProductionId $productionId, string $personId): bool;
 
     /**
      * R14-B §4.6 (stage 4): the Person's PERSON rows (every type and
-     * status) in the Production - to tell NOT_ACTIVE_PARTICIPANT from
-     * CONSENT_UNCONFIRMED. Throws when the read fails.
+     * status) in the Production - to tell whether one of them is ACTIVE
+     * (NOT_ACTIVE_PARTICIPANT otherwise). Throws when the read fails.
      *
      * @return Participant[]
      */

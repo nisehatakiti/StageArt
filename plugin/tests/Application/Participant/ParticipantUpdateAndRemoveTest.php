@@ -452,14 +452,14 @@ final class ParticipantUpdateAndRemoveTest extends TestCase
     }
 
     /** §5.2: rejoining after removal does not bring the delegate role back (T88). */
-    public function test_a_removed_delegate_who_accepts_again_needs_a_new_appointment(): void
+    public function test_a_removed_delegate_who_is_invited_again_needs_a_new_appointment(): void
     {
         $row = $this->row(ParticipantStatus::ACTIVE);
         $delegate = $this->f->delegate($this->member);
         $this->delete($row);
 
-        $invitation = $this->f->invitation('member@example.com');
-        $this->f->accept()->execute(new \StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand($this->member->wordPressUserId(), $invitation->id()->toString()));
+        $this->f->invitation('member@example.com');
+        $this->f->resolve()->execute($this->member->id(), 'member@example.com');
 
         $this->assertSame(ParticipantStatus::ACTIVE, $this->stored($row)->status()->toString());
         $this->assertFalse($this->f->delegates->findById($delegate->id())->isActive());

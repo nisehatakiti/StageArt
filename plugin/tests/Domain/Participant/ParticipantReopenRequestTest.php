@@ -141,7 +141,7 @@ final class ParticipantReopenRequestTest extends TestCase
         $participant = $this->participant(ParticipantStatus::ACTIVE);
         $updatedAt = $participant->updatedAt();
 
-        $participant->isConsentedActivePerson();
+        $participant->isActivePerson();
         $participant->hasRecordedConsent();
         $this->assertFalse($participant->withdraw() === false);
 

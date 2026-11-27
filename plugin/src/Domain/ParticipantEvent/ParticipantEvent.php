@@ -46,9 +46,19 @@ final class ParticipantEvent
     public const DELEGATE_REACTIVATED = 'DELEGATE_REACTIVATED';
     /** R14-B stage 4 review fix (§5.1 / §6.3): a manager cancelled a PENDING invitation (close_reason MANAGER). */
     public const INVITATION_CANCELLED = 'INVITATION_CANCELLED';
+    /**
+     * Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md, 2026-11-27):
+     * the invited Person was registered automatically - at invitation time
+     * (a verified account with the invited address) or when the invited
+     * address was verified / signed in with Google. Not a consent.
+     * ACCEPTED / REJECTED / CONSENT_RECORDED are no longer written (the
+     * acceptance and rejection were removed) and stay readable as history.
+     */
+    public const INVITATION_ENROLLED = 'INVITATION_ENROLLED';
 
     /** §6.3 event types (all of them are written now). */
     private const TYPES = [
+        self::INVITATION_ENROLLED,
         self::INVITATION_CANCELLED,
         self::INVITED,
         self::RESENT,

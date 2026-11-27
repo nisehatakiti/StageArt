@@ -52,16 +52,17 @@ final class WordPressOrganizationInvitationMailerTest extends TestCase
         return $matches[1];
     }
 
-    public function test_the_mail_links_to_the_registration_screen_without_a_token(): void
+    /** Invitation policy 2026-11-27: the link opens the invitation by its id (login required, no token). */
+    public function test_the_mail_links_to_the_invitation_by_its_id_without_a_token(): void
     {
         self::stubWordPress();
         $mailer = new WordPressOrganizationInvitationMailer('https://app.example.test/');
 
-        $mailer->sendInvitationEmail('newcomer@example.com', '劇団テスト', self::TOKEN);
+        $mailer->sendInvitationEmail('newcomer@example.com', '劇団テスト', self::TOKEN, 'e3b0c442-98fc-4c14-9afb-f4c8996fb924');
 
         $mail = self::onlyMail();
-        $this->assertSame(['https://app.example.test/register'], self::links($mail['message']));
-        $this->assertSame('https://app.example.test/register', $mailer->registrationUrl());
+        $this->assertSame(['https://app.example.test/organization-invitations/e3b0c442-98fc-4c14-9afb-f4c8996fb924'], self::links($mail['message']));
+        $this->assertSame('https://app.example.test/organization-invitations/e3b0c442-98fc-4c14-9afb-f4c8996fb924', $mailer->invitationUrl('e3b0c442-98fc-4c14-9afb-f4c8996fb924'));
         $this->assertStringNotContainsString('token', $mail['message']);
         $this->assertStringNotContainsString('?', self::links($mail['message'])[0]);
         $this->assertStringNotContainsString(self::TOKEN, $mail['message']);
@@ -69,21 +70,22 @@ final class WordPressOrganizationInvitationMailerTest extends TestCase
         $this->assertStringNotContainsString(self::TOKEN, implode("\n", $mail['headers']));
     }
 
-    public function test_the_registration_guidance_subject_and_recipient_are_unchanged(): void
+    public function test_the_guidance_subject_and_recipient(): void
     {
         self::stubWordPress();
         $mailer = new WordPressOrganizationInvitationMailer('https://app.example.test');
 
-        $mailer->sendInvitationEmail('newcomer@example.com', '劇団テスト', self::TOKEN);
+        $mailer->sendInvitationEmail('newcomer@example.com', '劇団テスト', self::TOKEN, 'e3b0c442-98fc-4c14-9afb-f4c8996fb924');
 
         $mail = self::onlyMail();
         $this->assertSame('newcomer@example.com', $mail['to']);
         $this->assertSame('StageArt - 「劇団テスト」への招待', $mail['subject']);
         $this->assertStringContainsString('「劇団テスト」のメンバーとしてStageArtへ招待されました。', $mail['message']);
-        $this->assertStringContainsString('下のボタンからStageArtへご登録いただくと、この団体のメンバーに追加されます。', $mail['message']);
-        $this->assertStringContainsString('>StageArtに登録する</a>', $mail['message']);
+        $this->assertStringContainsString('このメールを受け取ったメールアドレスでStageArtに登録し、メールアドレスの確認を済ませると、この団体のメンバーとして登録されます。', $mail['message']);
+        $this->assertStringContainsString('>招待を確認する</a>', $mail['message']);
         $this->assertStringContainsString('このリンクの有効期限は24時間です。', $mail['message']);
         $this->assertStringContainsString('心当たりがない場合は、このメールを破棄してください。', $mail['message']);
+        $this->assertStringNotContainsString('承諾', $mail['message'], 'No acceptance');
         $this->assertContains('Content-Type: text/html; charset=UTF-8', $mail['headers']);
     }
 
@@ -92,21 +94,24 @@ final class WordPressOrganizationInvitationMailerTest extends TestCase
         self::stubWordPress();
         $mailer = new WordPressOrganizationInvitationMailer('https://app.example.test');
 
-        $mailer->sendInvitationEmail('newcomer@example.com', '<b>劇団</b>', self::TOKEN);
+        $mailer->sendInvitationEmail('newcomer@example.com', '<b>劇団</b>', self::TOKEN, 'e3b0c442-98fc-4c14-9afb-f4c8996fb924');
 
         $this->assertStringContainsString('&lt;b&gt;劇団&lt;/b&gt;', self::onlyMail()['message']);
     }
 
-    public function test_the_production_invitation_mail_still_links_to_the_invitation_list(): void
+    /** Invitation policy 2026-11-27: the Production invitation mail opens the invitation by its id, and asks for no acceptance. */
+    public function test_the_production_invitation_mail_links_to_the_invitation_by_its_id(): void
     {
         self::stubWordPress();
         $mailer = new WordPressParticipantInvitationMailer('https://app.example.test/');
 
-        $mailer->sendInvitationEmail('invitee@example.com', '公演テスト');
+        $mailer->sendInvitationEmail('invitee@example.com', '公演テスト', 'e3b0c442-98fc-4c14-9afb-f4c8996fb924');
 
         $mail = self::onlyMail();
-        $this->assertSame(['https://app.example.test/participant-invitations'], self::links($mail['message']));
+        $this->assertSame(['https://app.example.test/participant-invitations/e3b0c442-98fc-4c14-9afb-f4c8996fb924'], self::links($mail['message']));
         $this->assertStringNotContainsString('/register', $mail['message']);
+        $this->assertStringNotContainsString('承諾', $mail['message'], 'No acceptance');
+        $this->assertStringContainsString('この公演の参加者として登録されます。', $mail['message']);
     }
 
     public function test_both_mailers_keep_the_same_base_url_wiring(): void

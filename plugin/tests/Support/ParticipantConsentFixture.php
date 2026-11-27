@@ -17,17 +17,17 @@ use StageArt\Application\Participant\ParticipantEventRecorder;
 use StageArt\Application\Participant\RejectParticipantRequestUseCase;
 use StageArt\Application\Participant\RequestProductionParticipationUseCase;
 use StageArt\Application\Participant\WithdrawParticipationUseCase;
-use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CancelParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\CreateParticipantInvitationUseCase;
 use StageArt\Application\ParticipantInvitation\InvitationSendService;
 use StageArt\Application\ParticipantInvitation\ResendParticipantInvitationUseCase;
 use StageArt\Infrastructure\WordPress\ParticipantInvitation\WordPressConfigEmailKeyring;
 use StageArt\Application\ParticipantInvitation\InvitationRecipientVerifier;
-use StageArt\Application\ParticipantInvitation\ListMyParticipantInvitationsUseCase;
+use StageArt\Application\ParticipantInvitation\GetMyParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\InvitationEnrollmentService;
 use StageArt\Application\ParticipantInvitation\ListParticipantInvitationsUseCase;
 use StageArt\Application\ParticipantInvitation\ParticipantInvitationConditions;
-use StageArt\Application\ParticipantInvitation\RejectParticipantInvitationUseCase;
+use StageArt\Application\ParticipantInvitation\ResolveParticipantInvitationUseCase;
 use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\ProductionDelegate\CreateProductionDelegateUseCase;
@@ -314,45 +314,36 @@ final class ParticipantConsentFixture
         return new ParticipantConsentNotifier($this->dispatcher);
     }
 
-    public function accept(): AcceptParticipantInvitationUseCase
+    public function findPersonByEmail(): FindPersonByEmailUseCase
     {
-        return new AcceptParticipantInvitationUseCase(
+        return new FindPersonByEmailUseCase($this->credentials, $this->userAccounts, $this->notificationEmails, $this->people);
+    }
+
+    /** Invitation policy 2026-11-27: the registration from an invitation (no acceptance, no consent). */
+    public function invitationEnrollment(): InvitationEnrollmentService
+    {
+        return new InvitationEnrollmentService($this->enrollment(), $this->releaser(), $this->events);
+    }
+
+    /** Invitation policy 2026-11-27: the invitations resolved once an address is verified / signed in with Google. */
+    public function resolve(): ResolveParticipantInvitationUseCase
+    {
+        return new ResolveParticipantInvitationUseCase(
             $this->invitations,
             $this->productions,
-            $this->verifier(),
             $this->conditions(),
-            $this->enrollment(),
-            $this->releaser(),
+            $this->invitationEnrollment(),
             $this->events,
             $this->notifier(),
+            $this->findPersonByEmail(),
             $this->transactions
         );
     }
 
-    public function reject(): RejectParticipantInvitationUseCase
+    /** Invitation policy 2026-11-27: the screen the invitation mail's link opens. */
+    public function getMine(): GetMyParticipantInvitationUseCase
     {
-        return new RejectParticipantInvitationUseCase(
-            $this->invitations,
-            $this->productions,
-            $this->verifier(),
-            $this->conditions(),
-            $this->events,
-            $this->notifier(),
-            $this->transactions
-        );
-    }
-
-    public function listMine(): ListMyParticipantInvitationsUseCase
-    {
-        return new ListMyParticipantInvitationsUseCase(
-            $this->invitations,
-            $this->productions,
-            $this->projects,
-            $this->organizations,
-            $this->participants,
-            $this->verifier(),
-            $this->conditions()
-        );
+        return new GetMyParticipantInvitationUseCase($this->verifier(), $this->invitations, $this->productions, $this->participants);
     }
 
     public function withdraw(): WithdrawParticipationUseCase
@@ -441,7 +432,10 @@ final class ParticipantConsentFixture
             $this->resendInvitation(),
             $this->conditions(),
             $this->sendService(),
-            $this->transactions
+            $this->transactions,
+            null,
+            $this->findPersonByEmail(),
+            $this->invitationEnrollment()
         );
     }
 

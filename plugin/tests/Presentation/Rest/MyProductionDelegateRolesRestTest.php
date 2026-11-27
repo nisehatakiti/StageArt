@@ -79,7 +79,8 @@ final class MyProductionDelegateRolesRestTest extends TestCase
         $this->assertSame(['id', 'production_id', 'role', 'status', 'effective', 'ineffective_reason'], array_keys($rows['PARTICIPANT_MANAGER']), 'No name or other Person data');
     }
 
-    public function test_an_unconsented_member_and_a_non_member_get_their_reason(): void
+    /** Invitation policy 2026-11-27 (user decision): a member without recorded consent is effective; a non-member gets the reason. */
+    public function test_an_unconsented_member_is_effective_and_a_non_member_gets_the_reason(): void
     {
         $legacy = $this->f->person('legacy@example.com');
         $this->f->participantRow($legacy, ParticipantStatus::ACTIVE, ParticipantType::STAFF);
@@ -89,7 +90,7 @@ final class MyProductionDelegateRolesRestTest extends TestCase
         $this->f->participantRow($outsider, ParticipantStatus::WITHDRAWN, ParticipantType::STAFF, 'INVITATION', null, true);
         $this->f->delegate($outsider, RoleKey::REHEARSAL_MANAGER);
 
-        $this->assertSame('CONSENT_UNCONFIRMED', $this->byRole($legacy)['REHEARSAL_MANAGER']['ineffective_reason']);
+        $this->assertSame([true, null], [$this->byRole($legacy)['REHEARSAL_MANAGER']['effective'], $this->byRole($legacy)['REHEARSAL_MANAGER']['ineffective_reason']]);
         $this->assertSame('NOT_ACTIVE_PARTICIPANT', $this->byRole($outsider)['REHEARSAL_MANAGER']['ineffective_reason']);
     }
 

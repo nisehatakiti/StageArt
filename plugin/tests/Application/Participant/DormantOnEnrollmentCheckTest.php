@@ -7,7 +7,6 @@ namespace StageArt\Tests\Application\Participant;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use StageArt\Application\Participant\ApproveParticipantRequestCommand;
-use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand;
 use StageArt\Application\Shared\PersistenceException;
 use StageArt\Domain\Participant\Participant;
 use StageArt\Domain\Participant\ParticipantEnrollmentSource;
@@ -27,8 +26,10 @@ use StageArt\Tests\Support\ParticipantConsentFixture;
  * holds an ACTIVE PERSON row of another type is asked with a dedicated,
  * locking, failure-checked Repository read
  * (existsActivePersonParticipantOfAnotherTypeForUpdate()). A failed read
- * throws and the whole acceptance / approval rolls back - it is never taken
- * for "none", which would release delegate roles that must be kept.
+ * throws and the whole registration from an invitation (invitation policy
+ * 2026-11-27; the R14-B acceptance before) / approval rolls back - it is
+ * never taken for "none", which would release delegate roles that must be
+ * kept.
  */
 final class DormantOnEnrollmentCheckTest extends TestCase
 {
@@ -48,9 +49,10 @@ final class DormantOnEnrollmentCheckTest extends TestCase
         $this->person = $this->f->person(self::EMAIL);
     }
 
+    /** The invitation policy's registration once the address is verified (the R14-B acceptance before). */
     private function accept(ParticipantInvitation $invitation): void
     {
-        $this->f->accept()->execute(new AcceptParticipantInvitationCommand($this->person->wordPressUserId(), $invitation->id()->toString()));
+        $this->f->resolve()->execute($this->person->id(), $invitation->email());
     }
 
     private function approve(Participant $request): void
@@ -212,7 +214,7 @@ final class DormantOnEnrollmentCheckTest extends TestCase
 
     // --- U15: already ACTIVE -------------------------------------------
 
-    public function test_an_already_active_participant_records_consent_and_keeps_the_roles_without_asking(): void
+    public function test_an_already_active_participant_keeps_the_roles_without_asking(): void
     {
         $this->f->participantRow($this->person, ParticipantStatus::ACTIVE, ParticipantType::CAST);
         $delegate = $this->f->delegate($this->person);
@@ -222,7 +224,7 @@ final class DormantOnEnrollmentCheckTest extends TestCase
 
         $this->assertKept($delegate);
         $this->assertSame(0, $this->f->participants->otherTypeChecks, 'U15: nothing to decide, nothing read');
-        $this->assertSame([ParticipantEvent::ACCEPTED, ParticipantEvent::CONSENT_RECORDED], $this->f->eventStore->types());
+        $this->assertSame([], $this->f->eventStore->types(), 'Nothing changed on the row (no consent is recorded any more)');
     }
 
     // --- a failed read rolls everything back ---------------------------
@@ -257,13 +259,23 @@ final class DormantOnEnrollmentCheckTest extends TestCase
         ];
         $this->f->participants->failNextOtherTypeCheck = new PersistenceException('read from', 'wp_stageart_participants', 1205);
 
+        // The registration runs after a verification: a failure there is
+        // logged (ids only) and the invitation stays PENDING - never read as
+        // "none" (which would release the roles).
+        $log = ini_get('error_log');
+        $file = tempnam(sys_get_temp_dir(), 'dormant');
+        ini_set('error_log', $file);
+
         try {
             $this->accept($invitation);
-            $this->fail('A failed read must surface, not read as "none".');
-        } catch (PersistenceException $e) {
-            $this->assertSame(1205, $e->mysqlErrno());
-            $this->assertStringNotContainsString(self::EMAIL, $e->getMessage());
+        } finally {
+            ini_set('error_log', (string) $log);
         }
+
+        $logged = (string) file_get_contents($file);
+        @unlink($file);
+        $this->assertStringContainsString('PersistenceException', $logged);
+        $this->assertStringNotContainsString(self::EMAIL, $logged);
 
         $this->assertEquals($before['invitation'], $this->f->invitations->findById($invitation->id()));
         $this->assertSame(ParticipantInvitationStatus::PENDING, $this->f->invitations->findById($invitation->id())->status()->toString());

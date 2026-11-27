@@ -614,7 +614,8 @@ export type ProductionDelegate = {
   ineffective_reason: DelegateIneffectiveReason | null;
 };
 
-export type DelegateIneffectiveReason = 'INACTIVE' | 'NOT_ACTIVE_PARTICIPANT' | 'CONSENT_UNCONFIRMED';
+/** CONSENT_UNCONFIRMED was removed with the 2026-11-27 invitation policy (an ACTIVE participant is enough). */
+export type DelegateIneffectiveReason = 'INACTIVE' | 'NOT_ACTIVE_PARTICIPANT';
 
 /** R14-B stage 9: GET /productions/{id}/delegates/me - the caller's own delegate rows. */
 export type MyProductionDelegateRole = {
@@ -680,50 +681,36 @@ export type ManagedParticipantInvitation = ParticipantInvitation & {
   send_status: 'PENDING' | 'SENT' | 'FAILED' | 'UNKNOWN' | null;
   last_sent_at: string | null;
   send_limit: InvitationSendLimit | null;
-  reinvite_available_at: string | null;
 };
 
 /**
- * R14-B §7.1 (stage 4): POST /productions/{id}/participant-invitations always
- * invites (no Person lookup, no direct add): a new invitation, or a resend
- * of a PENDING one to the same address and type.
+ * POST /productions/{id}/participant-invitations (invitation policy
+ * 2026-11-27): a verified account is registered at once (MEMBER_ADDED);
+ * otherwise a new invitation, or a resend of a PENDING one to the same
+ * address and type.
  */
-export type CreateParticipantInvitationResult = {
-  outcome: 'INVITATION_SENT' | 'INVITATION_RESENT';
-  invitation: ParticipantInvitation;
-};
+export type CreateParticipantInvitationResult =
+  | { outcome: 'INVITATION_SENT' | 'INVITATION_RESENT'; invitation: ParticipantInvitation }
+  | { outcome: 'MEMBER_ADDED'; participant_id: string };
 
-/**
- * R14-B §7.2 (D7): GET /me/participant-invitations - invitations to the
- * caller's verified addresses only. No address, invited name or remarks.
- */
+/** Status of an invitation opened from its mail (GET /me/participant-invitations/{id}, GET /me/organization-invitations/{id}). */
+export type MyInvitationStatus = 'REGISTERED' | 'PENDING' | 'EXPIRED' | 'CANCELLED' | 'CLOSED';
+
+/** GET /me/participant-invitations/{id} - no address, invited name or remarks. */
 export type MyParticipantInvitation = {
   id: string;
   production_id: string;
   production_name: string;
-  organization_name: string | null;
   participant_type: string;
-  invited_by_display_name: string;
-  expires_at: string;
-  effective_status: ParticipantInvitationEffectiveStatus;
-  already_participant: boolean;
-  can_accept: boolean;
-  can_reject: boolean;
-  unavailable_reason: 'PRODUCTION_CLOSED' | 'INVITER_REVOKED' | null;
+  status: MyInvitationStatus;
 };
 
-/** R14-B §7.2: POST /participant-invitations/{id}/accept. */
-export type AcceptParticipantInvitationResult = {
-  participant_id: string;
-  production_id: string;
-  status: 'ACTIVE';
-};
-
-/** R14-B §7.2: POST /participant-invitations/{id}/reject. */
-export type RejectParticipantInvitationResult = {
+/** GET /me/organization-invitations/{id} - no address, invited name or remarks. */
+export type MyOrganizationInvitation = {
   id: string;
-  status: 'REJECTED';
-  close_reason: string | null;
+  organization_id: string;
+  organization_name: string;
+  status: MyInvitationStatus;
 };
 
 export type TimetableItem = {

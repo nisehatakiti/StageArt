@@ -66,10 +66,10 @@ final class InMemoryParticipantRepository implements ParticipantRepositoryInterf
     /** R14-B stage 4: the next consent / person-row read throws this (a failed read). */
     public ?\Throwable $failNextConsentRead = null;
 
-    public function existsConsentedActivePersonParticipant(ProductionId $productionId, string $personId): bool
+    public function existsActivePersonParticipant(ProductionId $productionId, string $personId): bool
     {
         foreach ($this->findPersonParticipants($productionId, $personId) as $participant) {
-            if ($participant->isConsentedActivePerson()) {
+            if ($participant->isActivePerson()) {
                 return true;
             }
         }

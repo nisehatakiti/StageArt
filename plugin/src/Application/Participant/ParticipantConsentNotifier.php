@@ -41,40 +41,14 @@ final class ParticipantConsentNotifier
         $this->dispatcher = $dispatcher;
     }
 
-    /** To the inviter (§11.1: an acceptance only succeeds while the inviter has permission). */
-    public function invitationAccepted(ParticipantInvitation $invitation, Production $production): void
-    {
-        $this->send(
-            $invitation->invitedByPersonId(),
-            self::TYPE_INVITATION_ACCEPTED,
-            $production,
-            sprintf('%sさんが『%s』への招待を承諾しました。', $invitation->invitedName(), $production->name()->toString()),
-            $invitation->id()->toString()
-        );
-    }
-
     /**
-     * To the inviter, or the PrimaryManager when the inviter no longer has
-     * permission (the caller decides `$recipient`). `$withRevocationNote`
-     * when this rejection is also the one INVITER_REVOKED notification
-     * attempt (§11.5): one message covers both.
+     * §11.5: the one INVITER_REVOKED notification attempt, to the
+     * PrimaryManager - detected when an invitation would register the
+     * invited Person (ResolveParticipantInvitationUseCase; the acceptance
+     * before the 2026-11-27 invitation policy). The acceptance / rejection
+     * notifications to the inviter were removed with the acceptance and
+     * rejection; their types stay for the notifications already sent.
      */
-    public function invitationRejected(
-        ParticipantInvitation $invitation,
-        Production $production,
-        PersonId $recipient,
-        bool $withRevocationNote
-    ): void {
-        $message = sprintf('%sさんが『%s』への招待を辞退しました。', $invitation->invitedName(), $production->name()->toString());
-
-        if ($withRevocationNote) {
-            $message .= '（招待者の権限がなくなっていたため、この招待は無効になっていました）';
-        }
-
-        $this->send($recipient, self::TYPE_INVITATION_REJECTED, $production, $message, $invitation->id()->toString());
-    }
-
-    /** §11.5: the one INVITER_REVOKED notification attempt on acceptance, to the PrimaryManager. */
     public function invitationClosedByRevokedInviter(ParticipantInvitation $invitation, Production $production): void
     {
         $this->send(

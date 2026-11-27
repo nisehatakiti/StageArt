@@ -2,8 +2,10 @@
 
 # Domain Model : ProductionDelegate
 
-Version : 2.2
+Version : 2.4
 
+- 2.4（2026-11-27）：招待と登録の方針の実装（`feature/invitation-simplify`）に合わせ、「担当者の有効性」の条件から同意の記録を外し、任命の条件・無効の理由を改めた。
+- 2.3（2026-11-27）：招待と登録の方針（`../03-InvitationAndEnrollmentPolicy.md`）の決定に合わせ、「担当者の有効性（PR #7 R14-B）」の冒頭に注記した。同意の記録を担当者の権限の条件とするかどうかは未決（同方針 §6 U6）。
 - 2.2（2026-11-19）：PR #7 R14-B の担当者の有効性の条件を「担当者の有効性（PR #7 R14-B）」に追記した。Status・Relationship with Participant の記述のうち、権限の有効・無効の判定は、その節を正とする。
 
 ---
@@ -573,11 +575,13 @@ Participantであることによって、
 ProductionDelegateであることによって、
 自動的にParticipantになることもない。
 
-> R14-B以降、ProductionDelegateの権限が有効であるためには、その人物が同意を記録済みのACTIVEなParticipantでなければならない。次の「担当者の有効性（PR #7 R14-B）」を参照。
+> R14-B以降、ProductionDelegateの権限が有効であるためには、その人物がACTIVEなParticipantでなければならない（2026-11-27 以降、同意の記録は条件にしない）。次の「担当者の有効性（PR #7 R14-B）」を参照。
 
 ---
 
 # 担当者の有効性（PR #7 R14-B）
+
+> **2026-11-27**：招待と登録の方針は `../03-InvitationAndEnrollmentPolicy.md` を正本とする。本人による招待の承諾・辞退はなく、担当者の権限の条件から同意の記録を外した（ユーザーの判断）。
 
 設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.6・§7.1（設計書ブランチ、第9版 `9b42eb5`）。APIは `docs/08-API/ProductionAPI.md`「ProductionDelegateの有効性（PR #7 R14-B）」。
 
@@ -586,15 +590,15 @@ ProductionDelegateであることによって、
 ProductionDelegateがRoleのPermissionを与えるのは、次の両方を満たす場合だけ。
 
 1. ProductionDelegateのStatusが ACTIVE。
-2. そのPersonが、このProductionの **ACTIVEなPERSONのParticipantで、本人の同意が記録されている**（`consented_at` がある）。
+2. そのPersonが、このProductionの **ACTIVEなPERSONのParticipant**である（同意の記録 `consented_at` は条件にしない。2026-11-27）。
 
-- 2を満たさないACTIVEなProductionDelegateは、行を変えずに残すが、権限を与えない（無効）。無効の理由は `INACTIVE`・`NOT_ACTIVE_PARTICIPANT`（ACTIVEな参加者でない）・`CONSENT_UNCONFIRMED`（同意の記録がない）。
+- 2を満たさないACTIVEなProductionDelegateは、行を変えずに残すが、権限を与えない（無効）。無効の理由は `INACTIVE`・`NOT_ACTIVE_PARTICIPANT`（ACTIVEな参加者でない）。`CONSENT_UNCONFIRMED`（同意の記録がない）は 2026-11-27 に廃止した。
 - PrimaryManagerの権限は、ProductionDelegate・Participantの状態に依存しない。PrimaryManagerは、担当者の権限の有無にかかわらず、すべての操作と復旧ができる。
-- R14-Bより前からあるParticipantは同意が記録されていないため、その人物のProductionDelegateは、本人が「同意の確認を依頼」の招待を承諾するまで無効になる。承諾すると、再任命なしに有効になる。
+- R14-Bより前からあるParticipant（同意の記録なし）の人物のProductionDelegateも、2の条件で有効になる（2026-11-27。R14-B では「同意の確認を依頼」の承諾まで無効だった）。
 
 ## 任命の条件
 
-- 任命と、INACTIVEからACTIVEへの変更・Roleの変更（新たな任命になる変更）は、対象のPersonが同意を記録済みのACTIVEなParticipantである場合だけ受け付ける。
+- 任命と、INACTIVEからACTIVEへの変更・Roleの変更（新たな任命になる変更）は、対象のPersonがACTIVEなPERSONのParticipantである場合だけ受け付ける。
 - 同じ Production・Person・Role のINACTIVEの行があれば、新しい行を作らずにACTIVEに戻す。
 
 ## Participantの状態の変更による無効化
@@ -606,10 +610,10 @@ ProductionDelegateがRoleのPermissionを与えるのは、次の両方を満た
 | ParticipantがACTIVE → INACTIVE（管理者の変更） | `PARTICIPANT_DEACTIVATED` |
 | ParticipantがCANCELLED（管理者の取消） | `PARTICIPANT_REMOVED` |
 | ParticipantがWITHDRAWN（本人の取りやめ） | `PARTICIPANT_WITHDRAWN` |
-| 招待の承諾で新たにACTIVEなParticipantになった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
+| 招待による登録で新たにACTIVEなParticipantになった | `DORMANT_ON_ENROLLMENT`（改めて任命する） |
 | 管理者がProductionDelegateをINACTIVEにした | `MANAGER` |
 
-すでにACTIVEなParticipantが招待を承諾して同意だけを記録した場合は、ProductionDelegateを変えない。
+すでにACTIVEなParticipantに招待しても、ProductionDelegateを変えない（招待の時点では409、メールアドレスの確認の時点では招待だけを完了にする）。
 
 ## Permissionと参加者情報
 

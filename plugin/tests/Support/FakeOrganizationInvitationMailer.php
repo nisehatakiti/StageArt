@@ -8,11 +8,11 @@ use StageArt\Application\OrganizationInvitation\OrganizationInvitationMailerInte
 
 final class FakeOrganizationInvitationMailer implements OrganizationInvitationMailerInterface
 {
-    /** @var array<int, array{to: string, organizationName: string, token: string}> */
+    /** @var array<int, array{to: string, organizationName: string, token: string, invitationId: string}> */
     public array $invitationEmails = [];
 
-    public function sendInvitationEmail(string $toEmail, string $organizationName, string $token): void
+    public function sendInvitationEmail(string $toEmail, string $organizationName, string $token, string $invitationId): void
     {
-        $this->invitationEmails[] = ['to' => $toEmail, 'organizationName' => $organizationName, 'token' => $token];
+        $this->invitationEmails[] = ['to' => $toEmail, 'organizationName' => $organizationName, 'token' => $token, 'invitationId' => $invitationId];
     }
 }

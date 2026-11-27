@@ -82,7 +82,8 @@ final class ParticipantDataRetentionScheduleTest extends TestCase
 
         $this->assertStringContainsString('ParticipantDataRetentionSchedule::register(new WordPressParticipantDataRetention($wpdb));', $plugin);
         $this->assertMatchesRegularExpression('#new ResendParticipantInvitationUseCase\([^;]*\$invitationRateLimit\s*\);#s', $plugin);
-        $this->assertMatchesRegularExpression('#new CreateParticipantInvitationUseCase\([^;]*\$invitationRateLimit\s*\);#s', $plugin);
+        // Invitation policy 2026-11-27: the verified-account registration follows the rate limit argument.
+        $this->assertMatchesRegularExpression('#new CreateParticipantInvitationUseCase\([^;]*\$invitationRateLimit,\s*\$findPersonByEmail,\s*\$invitationEnrollment\s*\);#s', $plugin);
         $this->assertMatchesRegularExpression('#new ParticipantInvitationRestController\((?:[^;]|;\s*\))*?\$invitationRateLimit\s*\);#s', $plugin);
         $this->assertStringContainsString("wp_salt('auth')", $plugin, 'The bucket key secret comes from WordPress, not the email_key keyring');
         $this->assertStringContainsString("register_deactivation_hook( STAGEART_PLUGIN_FILE, [ StageArt\\Infrastructure\\WordPress\\Retention\\ParticipantDataRetentionSchedule::class, 'unschedule' ] );", $main);

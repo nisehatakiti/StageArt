@@ -146,18 +146,20 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
         return $invitation;
     }
 
-    public function test_an_accepted_invitation_is_stored_with_its_response(): void
+    /** Invitation policy 2026-11-27: an invitation completed by the registration is stored CONSUMED with who / which row (no response). */
+    public function test_a_completed_invitation_is_stored_with_the_registered_person_and_row(): void
     {
         $invitation = $this->pending();
-        $invitation->accept(PersonId::fromString(self::INVITEE), ParticipantId::fromString(self::PARTICIPANT), new DateTimeImmutable('2026-11-20T10:00:00+00:00'));
+        $invitation->completeByEnrollment(PersonId::fromString(self::INVITEE), ParticipantId::fromString(self::PARTICIPANT), new DateTimeImmutable('2026-11-20T10:00:00+00:00'));
 
         [$method, $table, $row] = $this->saved($invitation, true);
 
         $this->assertSame('update', $method);
         $this->assertSame('wp_stageart_participant_invitations', $table);
-        $this->assertSame('ACCEPTED', $row['status']);
+        $this->assertSame('CONSUMED', $row['status']);
         $this->assertSame(self::INVITEE, $row['invitee_person_id']);
-        $this->assertSame('2026-11-20 10:00:00', $row['responded_at']);
+        $this->assertSame('2026-11-20 10:00:00', $row['consumed_at']);
+        $this->assertNull($row['responded_at']);
         $this->assertSame(self::PARTICIPANT, $row['participant_id']);
         $this->assertNull($row['close_reason']);
         $this->assertNull($row['closed_at']);
@@ -179,19 +181,15 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
         $this->assertSame(self::PARTICIPANT, $invitation->participantId()->toString());
     }
 
-    public function test_a_rejected_invitation_is_stored_and_reads_back(): void
+    /** A past R14-B REJECTED row (the rejection was removed) reads back as it was stored. */
+    public function test_a_rejected_row_reads_back(): void
     {
-        $invitation = $this->pending();
-        $invitation->reject(PersonId::fromString(self::INVITEE), null, new DateTimeImmutable('2026-11-21T00:00:00+00:00'));
+        $read = $this->hydrated($this->row([
+            'status' => 'REJECTED',
+            'invitee_person_id' => self::INVITEE,
+            'responded_at' => '2026-11-21 00:00:00',
+        ]));
 
-        [, , $row] = $this->saved($invitation, true);
-
-        $this->assertSame('REJECTED', $row['status']);
-        $this->assertSame(self::INVITEE, $row['invitee_person_id']);
-        $this->assertSame('2026-11-21 00:00:00', $row['responded_at']);
-        $this->assertNull($row['participant_id']);
-
-        $read = $this->hydrated($this->row(['id' => self::ID] + $row));
         $this->assertSame('REJECTED', $read->status()->toString());
         $this->assertSame(self::INVITEE, $read->inviteePersonId()->toString());
         $this->assertEquals(new DateTimeImmutable('2026-11-21T00:00:00+00:00'), $read->respondedAt());
@@ -248,9 +246,10 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
         $this->assertNull($read->closedAt());
         $this->assertNull($read->closedByPersonId());
 
-        // Nothing is derived from the missing reason: the Domain still refuses a rejection.
+        // Nothing is derived from the missing reason: it is not usable, and the Domain refuses to complete it.
+        $this->assertFalse($read->isUsable());
         $this->expectException(\InvalidArgumentException::class);
-        $read->reject(PersonId::fromString(self::INVITEE), null, new DateTimeImmutable('2026-11-19T00:00:00+00:00'));
+        $read->completeByEnrollment(PersonId::fromString(self::INVITEE), ParticipantId::fromString(self::PARTICIPANT), new DateTimeImmutable('2026-11-19T00:00:00+00:00'));
     }
 
     /** A pre-R14-B CONSUMED row reads back as CONSUMED, its consumed_at and token hash as they were. */
@@ -367,11 +366,11 @@ final class WordPressParticipantInvitationRepositoryTest extends TestCase
     public function test_date_times_are_stored_in_utc(): void
     {
         $invitation = $this->pending();
-        $invitation->accept(PersonId::fromString(self::INVITEE), ParticipantId::fromString(self::PARTICIPANT), new DateTimeImmutable('2026-11-20T19:00:00+09:00'));
+        $invitation->completeByEnrollment(PersonId::fromString(self::INVITEE), ParticipantId::fromString(self::PARTICIPANT), new DateTimeImmutable('2026-11-20T19:00:00+09:00'));
 
         [, , $row] = $this->saved($invitation, true);
 
-        $this->assertSame('2026-11-20 10:00:00', $row['responded_at']);
+        $this->assertSame('2026-11-20 10:00:00', $row['consumed_at']);
     }
 
     /**

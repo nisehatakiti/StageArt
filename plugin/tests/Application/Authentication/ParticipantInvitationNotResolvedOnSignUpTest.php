@@ -42,13 +42,16 @@ use StageArt\Tests\Support\InMemoryTransactionManager;
 use StageArt\Tests\Support\InMemoryUserAccountRepository;
 
 /**
- * PR #7 R14-B stage 4 (design doc §4.2 / §7.1 / §9.2, U5 C案): registering
- * with e-mail, verifying the address and signing in with Google never make
- * anyone a Production participant, and a Production invitation is never
- * looked up by token. `invitation_token` of a Production invitation is
- * ignored: the registration is exactly an ordinary one. Organization
- * invitations (token registration, resolution on verification / Google)
- * are unchanged (D1).
+ * PR #7 R14-B stage 4 (design doc §7.1 / §9.2, U5 C案): a Production
+ * invitation is never looked up by token - `invitation_token` of a
+ * Production invitation is ignored and the registration is exactly an
+ * ordinary one. Organization invitations' token registration is unchanged.
+ *
+ * Invitation policy (2026-11-27): verifying the address and signing in with
+ * Google DO register the invited Person now, for Productions as for
+ * organizations - see InvitationAutoEnrollmentFlowTest (the two tests of
+ * the opposite R14-B rule were removed from here). Registering without a
+ * verified address still registers nothing (assertUntouched below).
  */
 final class ParticipantInvitationNotResolvedOnSignUpTest extends TestCase
 {
@@ -153,46 +156,11 @@ final class ParticipantInvitationNotResolvedOnSignUpTest extends TestCase
     private function assertUntouched(ParticipantInvitation $invitation): void
     {
         $stored = $this->invitations->findById($invitation->id());
-        $this->assertTrue($stored->isPending(), 'Still PENDING - only the invitee\'s explicit acceptance resolves it');
+        $this->assertTrue($stored->isPending(), 'Still PENDING - a registration without a verified address resolves nothing');
         $this->assertNull($stored->consumedAt());
         $this->assertNull($stored->inviteePersonId());
         $this->assertSame(0, $this->invitations->saves, 'Never written by sign-up');
         $this->assertSame([], $this->participants->findByProductionId($invitation->productionId()), 'No Participant row');
-    }
-
-    public function test_email_registration_and_verification_do_not_accept_a_production_invitation(): void
-    {
-        $invitation = $this->participantInvitation(self::EMAIL);
-        $this->invitations->saves = 0;
-        $organizationInvitation = $this->organizationInvitation(self::EMAIL);
-
-        $result = $this->register->execute(new RegisterWithEmailCommand(self::EMAIL, 'password123'));
-        $this->assertUntouched($invitation);
-
-        $this->verify->execute(new VerifyEmailCommand($this->authMailer->verificationEmails[0]['token']));
-
-        $this->assertUntouched($invitation);
-        $this->assertNotNull(
-            $this->memberships->findByOrganizationAndPerson($this->organization->id(), PersonId::fromString($result->personId)),
-            'The organization invitation is still resolved on verification (D1)'
-        );
-        $this->assertFalse($this->organizationInvitations->findById($organizationInvitation->id())->isPending());
-    }
-
-    public function test_google_sign_in_does_not_accept_a_production_invitation(): void
-    {
-        $invitation = $this->participantInvitation('googleuser@example.com');
-        $this->invitations->saves = 0;
-        $this->organizationInvitation('googleuser@example.com');
-        $this->googleVerifier->registerValidToken('good-token', 'google-sub-1', 'googleuser@example.com', null, null, true);
-
-        $result = $this->google->execute(new AuthenticateWithGoogleCommand('good-token'));
-
-        $this->assertUntouched($invitation);
-        $this->assertNotNull(
-            $this->memberships->findByOrganizationAndPerson($this->organization->id(), PersonId::fromString($result->personId)),
-            'The organization invitation is still resolved on Google sign-in (D1)'
-        );
     }
 
     /** §7.1: a Production invitation token is ignored - the result is that of a registration without a token. */

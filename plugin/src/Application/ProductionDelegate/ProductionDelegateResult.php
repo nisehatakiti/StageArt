@@ -22,9 +22,9 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegate;
  * no such search capability exists anywhere in StageArt today).
  *
  * R14-B §4.6 / §7.1 (stage 4): `effective` / `ineffective_reason`
- * (INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED) - whether the
- * row actually grants its Role now (ProductionAuthorizationService). An
- * ACTIVE row of a Person who is not a consented ACTIVE member is shown, but
+ * (INACTIVE / NOT_ACTIVE_PARTICIPANT; CONSENT_UNCONFIRMED until 2026-11-27) -
+ * whether the row actually grants its Role now (ProductionAuthorizationService).
+ * An ACTIVE row of a Person who is not an ACTIVE member is shown, but
  * as not effective.
  */
 final class ProductionDelegateResult

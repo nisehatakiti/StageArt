@@ -322,7 +322,7 @@ Domain Layerで表現する。
 |409|`stageart_production_closed`|公演がCANCELLED / COMPLETED / ARCHIVEDで、その操作を受け付けない（`message` にStatusを含む）|再実行しても成功しない。公演が中止・決算完了済みであることを表示する|
 |409|`stageart_capacity_below_reservations`|定員を予約済み席数より少なくしようとした（R6）。`data.capacity`、`data.reserved_seats` 付き。何も変更しない|予約済み席数以上の定員を指定し直してもらう|
 |503|`stageart_database_busy`|ロック待ちタイムアウト・デッドロック。トランザクション全体をROLLBACK済みで、何も保存されていない。`data.retryable: true`、`Retry-After: 2` ヘッダー付き|自動では再送しない。「保存されなかったので、少し待ってから再度実行してほしい」と表示し、利用者の操作で再実行する|
-|429|`stageart_rate_limited`|操作のレート制限を超えた（PR #7 R14-B。招待の作成・再送、招待の承諾・辞退の失敗）。何も処理していない。`data.retry_after`（時間枠の終了までの秒数）と、同じ秒数の `Retry-After` ヘッダー付き。回数の記録のデッドロックが続いた場合も、`retry_after` 2秒で返す|自動では再送しない。待ち時間を表示し、利用者の操作で再実行する|
+|429|`stageart_rate_limited`|操作のレート制限を超えた（PR #7 R14-B。招待の作成・再送、招待メールのリンクから開いた招待の失敗（403・404）。2026-11-27 以前は招待の承諾・辞退の失敗）。何も処理していない。`data.retry_after`（時間枠の終了までの秒数）と、同じ秒数の `Retry-After` ヘッダー付き。回数の記録のデッドロックが続いた場合も、`retry_after` 2秒で返す|自動では再送しない。待ち時間を表示し、利用者の操作で再実行する|
 |500|`stageart_persistence_failed`|保存に失敗し、トランザクション全体をROLLBACKした（PR #7 R14-B）。何も変更されていない。詳細はサーバーログのみ|再試行可能とは表示しない|
 |500|`stageart_internal_error`|その他のサーバー・DB障害。詳細はサーバーログのみに出力し、応答には含めない|再試行可能とは表示しない|
 

@@ -226,7 +226,7 @@ final class InvitationSendService
             }
 
             try {
-                $sent = $this->mailer->sendInvitationEmail($pending->email, $pending->productionName);
+                $sent = $this->mailer->sendInvitationEmail($pending->email, $pending->productionName, $pending->invitationId->toString());
             } catch (Throwable $exception) {
                 $sent = false;
             }

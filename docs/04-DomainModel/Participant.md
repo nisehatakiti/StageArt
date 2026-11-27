@@ -2,8 +2,10 @@
 
 # Domain Model : Participant
 
-Version : 2.2
+Version : 2.4
 
+- 2.4（2026-11-27）：招待と登録の方針の実装（`feature/invitation-simplify`）に合わせ、R14-B の節を「招待による登録と状態の遷移」に書き直した。招待の承諾を、招待による自動の登録（同意は記録しない）に改め、担当者の有効性から同意の条件を除いた。
+- 2.3（2026-11-27）：招待と登録の方針（`../03-InvitationAndEnrollmentPolicy.md`）の決定に合わせ、R14-B の節の冒頭に注記した（2.4 で本文に反映）。
 - 2.2（2026-11-19）：PR #7 R14-B（本人の同意に基づく公演参加者登録）の実装を「本人の同意と状態の遷移（PR #7 R14-B）」に追記した。StatusとLifecycleの記述のうち、R14-Bで変わった点（PENDING・REJECTED・WITHDRAWNの状態、INACTIVEからACTIVEへの直接の復帰の禁止、同意の記録）は、その節を正とする。
 
 ---
@@ -602,14 +604,16 @@ ParticipantのStatus変更によって、
 
 ---
 
-# 本人の同意と状態の遷移（PR #7 R14-B）
+# 招待による登録と状態の遷移（PR #7 R14-B、2026-11-27 更新）
+
+> **2026-11-27**：招待と登録の方針は `../03-InvitationAndEnrollmentPolicy.md` を正本とする。本人による招待の承諾・辞退はない。招待先のメールアドレスと認証されたアカウントのメールアドレスが一致したとき（確認済みのアカウントは招待の時点、未登録はメールアドレスの確認・Googleでのログインの時点）に、自動的に Participant として登録する。以前の承諾の仕様は R14-B の設計書（第9版）に履歴として残る。
 
 設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md` §4.5・§4.6・§5.2・§6.3・§7.3（設計書ブランチ `docs/r14b-participant-invitation-design`、第9版 `9b42eb5`）。APIは `docs/08-API/ParticipantAPI.md`「実装済みエンドポイント（PR #7 R14-B）」。
 
 ## 原則
 
-- PERSONのParticipantがACTIVEになるのは、本人の同意があるときだけ：招待の承諾、または本人の参加申請の承認。管理者は人物を直接追加できない。
-- 管理者が直接記録できるのは、NAME_ONLY（氏名だけで、Personに紐付かないParticipant。同意の対象外）だけ。
+- PERSONのParticipantがACTIVEになるのは、招待による登録（管理者が本人の参加意思を事前に確認して招待し、認証されたアカウントのメールアドレスが招待先と一致したとき）か、本人の参加申請の承認だけ。管理者は人物IDを指定して直接追加できない。
+- 管理者が直接記録できるのは、NAME_ONLY（氏名だけで、Personに紐付かないParticipant）だけ。
 - Participantの行は物理削除しない。終了した状態（CANCELLED・WITHDRAWN・REJECTED）でも行は残り、出欠・精算・会計の記録もそのまま残る。
 
 ## Status（7つ）
@@ -628,42 +632,43 @@ ParticipantのStatus変更によって、
 
 | 遷移 | 操作 |
 |---|---|
-| （新規）→ ACTIVE | 招待の承諾（PERSON）、NAME_ONLYの記録 |
+| （新規）→ ACTIVE | 招待による登録（PERSON）、NAME_ONLYの記録 |
 | （新規）→ PENDING | 本人の参加申請 |
 | PENDING → ACTIVE / REJECTED | 参加申請の承認 / 却下 |
-| CANCELLED・WITHDRAWN・REJECTED・INACTIVE・PENDING → ACTIVE | 招待の承諾（同じ行を再利用する） |
+| CANCELLED・WITHDRAWN・REJECTED・INACTIVE・PENDING → ACTIVE | 招待による登録（同じ行を再利用する） |
 | CANCELLED・REJECTED・WITHDRAWN・INACTIVE → PENDING | 本人の参加申請（同じ行を再利用する） |
 | ACTIVE → INACTIVE | 管理者の変更（`PUT /participants/{id}`） |
 | ACTIVE・INACTIVE → CANCELLED | 管理者の取消（`DELETE /participants/{id}`） |
 | ACTIVE → WITHDRAWN | 本人の取りやめ（`POST /participants/{id}/withdraw`。PrimaryManagerはできない） |
 
-- **INACTIVE → ACTIVE の直接の復帰は認めない**（管理者の変更では422）。復帰は、本人の招待の承諾または参加申請の承認による。
+- **INACTIVE → ACTIVE の直接の復帰は認めない**（管理者の変更では422）。復帰は、招待による登録または参加申請の承認による。
 - 管理者の変更（`PUT`）で受け付ける状態の変更は ACTIVE → INACTIVE だけ。
 - 同じ Production・Subject・ParticipantType の行は1つだけで、再び参加するときは同じ行（同じParticipant ID）を再利用する。そのため、出欠・精算の記録は引き継がれる。
-- 同じ役割の DRAFT の行がある場合、招待の承諾は拒否する（409。管理者に連絡する）。DRAFTの行を参加申請に変えることもしない。
+- 同じ役割の DRAFT の行がある場合、招待による登録はしない（招待の時点では409、メールアドレスの確認の時点では招待を登録待ちのまま残す）。DRAFTの行を参加申請に変えることもしない。
+- 同じ役割の行がすでに ACTIVE なら、招待による登録で行は変えない（招待の時点では409、メールアドレスの確認の時点では招待だけを完了にする）。
 - 公演が終了した後（COMPLETED・ARCHIVED・CANCELLED）も、行と同意の情報は削除しない。見せ方は「参加者情報の開示」による。
 
 ## 追加の属性
 
 | 属性 | 内容 |
 |---|---|
-| `enrollment_source` | 行が最初に作られた経路：`INVITATION`・`JOIN_REQUEST`・`MANAGER_RECORD`（NAME_ONLY）。作成時に一度だけ記録し、行の再利用では変えない。R14-Bより前の行は `NULL` |
-| `consent_source` | 最新の同意の経路：`INVITATION`・`JOIN_REQUEST` |
-| `consented_at` | 最新の同意の日時。`NULL` は同意の記録がないことを表し、同意済みとはみなさない（R14-Bより前の行はすべて `NULL`） |
+| `enrollment_source` | 行が最初に作られた経路：`INVITATION`（招待による登録。R14-Bの承諾を含む）・`JOIN_REQUEST`・`MANAGER_RECORD`（NAME_ONLY）。作成時に一度だけ記録し、行の再利用では変えない。R14-Bより前の行は `NULL` |
+| `consent_source` | 最新の同意の記録の経路：`INVITATION`（R14-Bの承諾。2026-11-27 以降は記録しない）・`JOIN_REQUEST` |
+| `consented_at` | 最新の同意の記録の日時。`NULL` は記録がないこと（招待から登録した行、R14-Bより前の行） |
 
-- 同意を記録できるのは、ACTIVEなPERSONのParticipantだけ。新しい同意が古い同意を上書きし、過去の同意は監査ログにだけ残る。
-- 招待の承諾では承諾の時点を、参加申請の承認では申請の日時を、同意の日時として記録する（申請の日時が記録されていない古い申請の承認では、同意を記録しない）。
-- すでにACTIVEなParticipantが招待（「同意の確認を依頼」）を承諾すると、行はそのままで、同意だけを記録する。
-- APIの表示用の `consent_status`：`CONFIRMED`（`consented_at` あり）・`UNCONFIRMED`（PERSONで `consented_at` なし）・`NOT_APPLICABLE`（NAME_ONLY・ORGANIZATION）。
+- 招待による登録では、同意を記録しない（本人はStageArtで同意していない）。
+- 同意を記録するのは、参加申請の承認だけ（申請の日時を同意の日時とする。申請の日時が記録されていない古い申請の承認では記録しない）。過去の同意の記録（R14-Bの承諾）は、そのまま履歴として残る。
+- 同意の記録は、権限の判定には使わない（2026-11-27）。
+- APIの表示用の `consent_status`：`CONFIRMED`（`consented_at` あり）・`UNCONFIRMED`（PERSONで `consented_at` なし）・`NOT_APPLICABLE`（NAME_ONLY・ORGANIZATION）。画面には表示しない。
 
 ## ProductionDelegateとの関係
 
-- 担当者（ProductionDelegate）の権限が有効なのは、その人物が**同意を記録済みのACTIVEなPERSONのParticipant**である場合だけ（`ProductionDelegate.md`「担当者の有効性（PR #7 R14-B）」）。
+- 担当者（ProductionDelegate）の権限が有効なのは、その人物が**ACTIVEなPERSONのParticipant**である場合だけ（同意の記録は条件にしない。2026-11-27）（`ProductionDelegate.md`「担当者の有効性（PR #7 R14-B）」）。
 - 次の場合、同じトランザクションで、その人物のこの公演の担当者の行を INACTIVE にする。
   - ACTIVE → INACTIVE
   - ACTIVE・INACTIVE → CANCELLED
   - ACTIVE → WITHDRAWN
-  - 招待の承諾で新たに ACTIVE になった場合（改めて任命する）
+  - 招待による登録で新たに ACTIVE になった場合（改めて任命する）
 
 ## 参加者情報の開示
 

@@ -36,7 +36,6 @@ describe('R14-B メンバー管理: 招待中のメンバーの表示', () => {
             id: 'inv-rejected',
             status: 'REJECTED',
             effective_status: 'REJECTED',
-            reinvite_available_at: '2099-02-01T00:00:00+00:00',
           }),
           managedInvitation({ id: 'inv-cancelled', status: 'CANCELLED', effective_status: 'CANCELLED', close_reason: 'MANAGER' }),
           managedInvitation({ id: 'inv-accepted', status: 'ACCEPTED', effective_status: 'ACCEPTED' }),
@@ -57,12 +56,12 @@ describe('R14-B メンバー管理: 招待中のメンバーの表示', () => {
     await waitFor(() => expect(screen.getByTestId('participant-invitation-row-inv-pending')).toBeVisible());
 
     const status = (id: string) => screen.getByTestId(`participant-invitation-status-${id}`);
-    expect(status('inv-pending')).toHaveTextContent(contains('承諾待ち'));
+    expect(status('inv-pending')).toHaveTextContent(contains('登録待ち'));
     expect(status('inv-expired')).toHaveTextContent(contains('期限切れ'));
     expect(status('inv-closed')).toHaveTextContent(contains('無効（公演終了）'));
     expect(status('inv-revoked')).toHaveTextContent(contains('無効（招待者の権限なし）'));
-    expect(status('inv-rejected')).toHaveTextContent(contains('辞退'));
-    expect(screen.getByTestId('participant-invitation-reinvite-inv-rejected')).toHaveTextContent(contains('以降に再び招待できます'));
+    expect(status('inv-rejected')).toHaveTextContent(contains('辞退（以前の方式）'));
+    expect(screen.queryByTestId('participant-invitation-reinvite-inv-rejected')).toBeNull();
     expect(status('inv-cancelled')).toHaveTextContent(contains('取消'));
     expect(screen.queryByTestId('participant-invitation-row-inv-accepted')).toBeNull();
 
@@ -97,7 +96,7 @@ describe('R14-B メンバー管理: 招待中のメンバーの表示', () => {
     (global.fetch as jest.Mock).mockImplementationOnce(apiError(409, 'stageart_participant_invitation_not_pending'));
     fireEvent.press(screen.getByTestId('participant-invitation-cancel-inv-pending'));
     await waitFor(() =>
-      expect(screen.getByTestId('production-participants-error')).toHaveTextContent(contains('この招待は既に承諾・辞退・取消などで処理済みのため、この操作はできません。'))
+      expect(screen.getByTestId('production-participants-error')).toHaveTextContent(contains('この招待は既に登録済み・取消などで処理済みのため、この操作はできません。'))
     );
     expect(callsTo('/participant-invitations/inv-pending/cancel', 'POST')).toHaveLength(1);
 

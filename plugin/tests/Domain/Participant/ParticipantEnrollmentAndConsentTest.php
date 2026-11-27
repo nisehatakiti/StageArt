@@ -67,7 +67,7 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         $this->assertEquals($acceptedAt, $participant->consentedAt());
         $this->assertSame('remarks', $participant->remarks());
         $this->assertSame('山田 太郎', $participant->displayName());
-        $this->assertTrue($participant->isConsentedActivePerson());
+        $this->assertTrue($participant->isActivePerson());
     }
 
     public function test_request_participation_records_join_request_enrollment_without_consent(): void
@@ -95,7 +95,12 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
     }
 
-    /** §4.5 / §12: existing (pre-R14-B) rows reconstitute with NULLs and are never treated as consented. */
+    /**
+     * §4.5 / §12: existing (pre-R14-B) rows reconstitute with NULLs and are
+     * never treated as consented - but, since the 2026-11-27 invitation policy
+     * (user decision), an ACTIVE one is an ACTIVE PERSON participant for the
+     * delegate condition all the same.
+     */
     public function test_existing_data_with_null_sources_is_not_consented(): void
     {
         $participant = $this->reconstitutePerson(ParticipantStatus::ACTIVE);
@@ -104,7 +109,7 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         $this->assertNull($participant->consentSource());
         $this->assertNull($participant->consentedAt());
         $this->assertFalse($participant->hasRecordedConsent());
-        $this->assertFalse($participant->isConsentedActivePerson());
+        $this->assertTrue($participant->isActivePerson());
     }
 
     public function test_reconstitute_without_the_new_arguments_keeps_the_previous_signature_working(): void
@@ -138,7 +143,7 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         $this->assertSame(ParticipantEnrollmentSource::JOIN_REQUEST, $participant->enrollmentSource()->toString());
         $this->assertSame(ParticipantConsentSource::JOIN_REQUEST, $participant->consentSource()->toString());
         $this->assertEquals($consentedAt, $participant->consentedAt());
-        $this->assertTrue($participant->isConsentedActivePerson());
+        $this->assertTrue($participant->isActivePerson());
     }
 
     public function test_reconstitute_rejects_a_consent_source_without_a_consent_time(): void
@@ -159,7 +164,7 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         $this->assertSame(ParticipantConsentSource::INVITATION, $participant->consentSource()->toString());
         $this->assertEquals($at, $participant->consentedAt());
         $this->assertNull($participant->enrollmentSource());
-        $this->assertTrue($participant->isConsentedActivePerson());
+        $this->assertTrue($participant->isActivePerson());
     }
 
     /** §4.5: the most recent consent overwrites the previous one (history lives in the audit log). */
@@ -237,7 +242,7 @@ final class ParticipantEnrollmentAndConsentTest extends TestCase
         );
 
         $this->assertTrue($consentedInactive->hasRecordedConsent());
-        $this->assertFalse($consentedInactive->isConsentedActivePerson());
+        $this->assertFalse($consentedInactive->isActivePerson());
     }
 
     public function test_source_value_objects_reject_unknown_values(): void

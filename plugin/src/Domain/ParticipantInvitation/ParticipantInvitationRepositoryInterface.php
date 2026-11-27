@@ -61,14 +61,6 @@ interface ParticipantInvitationRepositoryInterface
     ): array;
 
     /**
-     * R14-B §5.3 (D6, stage 4): the latest responded_at of an invitation of
-     * this Production to the same address (any type) that the invitee
-     * rejected (status REJECTED), or null. §6.4 exact match in PHP; throws
-     * when the read fails.
-     */
-    public function latestRejectionAt(ProductionId $productionId, string $email): ?\DateTimeImmutable;
-
-    /**
      * R14-B §11.3 step 3 (stage 4): the invitation's current_send_id read
      * again just before a send, without a lock. Throws when the read fails.
      */

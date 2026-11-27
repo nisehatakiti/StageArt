@@ -22,8 +22,8 @@ use StageArt\Domain\Role\RoleKey;
  *
  * R14-B §4.6 / §7.1 (stage 4):
  * - The target must be an ACTIVE PERSON Participant of the Production
- *   with recorded consent (422 target_not_participant / target_not_consented,
- *   DelegateAppointmentGuard), checked under the Production lock with the
+ *   (422 target_not_participant, DelegateAppointmentGuard; recorded consent
+ *   is no longer required - invitation policy 2026-11-27), checked under the Production lock with the
  *   Participant rows locked (Production -> Participant -> delegate, §5.4).
  * - A row of the same (Production, Person, Role) left INACTIVE is made
  *   ACTIVE again instead of a second row (the key is unique) -

@@ -37,7 +37,7 @@ final class ParticipantEventRecorder
 
     /**
      * §11.5: the write that first detected PRODUCTION_CLOSED /
-     * INVITER_REVOKED. `detectedBy` is ACCEPT or REJECT;
+     * INVITER_REVOKED. `detectedBy` is ENROLL (the automatic registration; ACCEPT / REJECT in past rows);
      * primary_manager_notify_attempted means the one notification attempt
      * was decided in this transaction (not that it was delivered).
      */
@@ -67,76 +67,38 @@ final class ParticipantEventRecorder
     }
 
     /**
-     * §5.2 / §4.7: the invitee accepted. previous_status is the Participant
-     * row's status before the acceptance (null = no row, a new one was
-     * created); reused_participant / superseded_join_request tell a reuse
-     * and a pending join request taken over by the acceptance.
+     * Invitation policy (2026-11-27): the invited Person was registered
+     * automatically (INVITATION_ENROLLED - not a consent). `invitation` is
+     * the completed invitation, or null when an administrator's invitation
+     * registered a verified account at once (no invitation row is kept,
+     * like an organization invitation to a verified account).
+     * previous_status is the Participant row's status before (null = a new
+     * row); trigger tells when it happened (INVITATION_CREATED /
+     * ADDRESS_VERIFIED).
      */
-    public function invitationAccepted(
-        ParticipantInvitation $invitation,
+    public function invitationEnrolled(
+        ?ParticipantInvitation $invitation,
         Participant $participant,
         ?string $previousStatus,
+        PersonId $actorPersonId,
+        string $trigger,
         DateTimeImmutable $at
     ): void {
-        $person = PersonId::fromString($participant->subjectId());
-
         $this->append(ParticipantEvent::record(
-            ParticipantEvent::ACCEPTED,
-            $invitation->productionId(),
+            ParticipantEvent::INVITATION_ENROLLED,
+            $participant->productionId(),
             $at,
             $participant->id(),
-            $invitation->id(),
+            $invitation !== null ? $invitation->id() : null,
             null,
             ParticipantEvent::PATH_INVITATION,
-            $person,
-            $person,
+            $actorPersonId,
+            PersonId::fromString($participant->subjectId()),
             [
                 'previous_status' => $previousStatus,
                 'reused_participant' => $previousStatus !== null,
                 'superseded_join_request' => $previousStatus === ParticipantStatus::PENDING,
-            ]
-        ));
-    }
-
-    /** §6.3: an already ACTIVE Participant's consent recorded by an acceptance. */
-    public function consentRecorded(ParticipantInvitation $invitation, Participant $participant, DateTimeImmutable $at): void
-    {
-        $person = PersonId::fromString($participant->subjectId());
-
-        $this->append(ParticipantEvent::record(
-            ParticipantEvent::CONSENT_RECORDED,
-            $invitation->productionId(),
-            $at,
-            $participant->id(),
-            $invitation->id(),
-            null,
-            ParticipantEvent::PATH_INVITATION,
-            $person,
-            $person,
-            ['consent_source' => ParticipantEvent::PATH_INVITATION]
-        ));
-    }
-
-    /** §7.2 reject: previous_status is the invitation's status before it (PENDING / CANCELLED). */
-    public function invitationRejected(
-        ParticipantInvitation $invitation,
-        PersonId $inviteePersonId,
-        string $previousStatus,
-        DateTimeImmutable $at
-    ): void {
-        $this->append(ParticipantEvent::record(
-            ParticipantEvent::REJECTED,
-            $invitation->productionId(),
-            $at,
-            null,
-            $invitation->id(),
-            null,
-            null,
-            $inviteePersonId,
-            $inviteePersonId,
-            [
-                'previous_status' => $previousStatus,
-                'close_reason' => $invitation->closeReason() !== null ? $invitation->closeReason()->toString() : null,
+                'trigger' => $trigger,
             ]
         ));
     }

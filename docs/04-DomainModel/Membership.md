@@ -2,7 +2,13 @@
 
 # Domain Model : Membership
 
-Version : 2.2
+Version : 2.3
+
+---
+
+## 変更履歴
+
+- 2.3（2026-11-27）：招待と登録の方針（`../03-InvitationAndEnrollmentPolicy.md`、プロダクトオーナーの決定）に合わせ、Organizationからの招待をPersonが承認・拒否する記述を、招待先のメールアドレスと認証されたアカウントのメールアドレスの一致による自動の成立に改めた。INVITEDの状態をMembershipで持つかどうかなど、データ構造は変更していない（未決。同方針 §6）。現行実装では、招待はMembershipとは別のOrganizationInvitationで記録し、一致した時点でACTIVEなMembershipを作る（同方針 §3）。所属申請（REQUESTED）とその承認・却下は変わらない。
 
 ---
 
@@ -227,8 +233,8 @@ Membership
     ↓
 INVITED
 
-招待を受けたPersonが承認すると、
-ACTIVEへ遷移する。
+招待先のメールアドレスと、認証されたアカウントのメールアドレスが一致すると、
+自動的にACTIVEへ遷移する（2.3。Personによる承認・拒否はない）。
 
 ---
 
@@ -271,9 +277,9 @@ LeaveDateを記録する。
 # Rejected
 
 REJECTEDは、
-所属申請または招待が拒否された状態。
+所属申請が拒否された状態（2.3：招待は本人が拒否しないため、招待による REJECTED はない）。
 
-過去の申請・招待の事実を保持するため、
+過去の申請の事実を保持するため、
 Membershipそのものを物理削除しない。
 
 ---
@@ -308,9 +314,9 @@ Personを招待
     ↓
 Membership = INVITED
     ↓
-Personが承認
+認証されたアカウントのメールアドレスが招待先と一致
     ↓
-Membership = ACTIVE
+Membership = ACTIVE（自動）
 
 とする。
 
@@ -340,11 +346,13 @@ PersonをOrganizationへ招待できる。
 招待によってMembershipを作成し、
 INVITED状態とする。
 
-Personが招待を承認すると、
-ACTIVEへ遷移する。
+招待先のメールアドレスと、認証されたアカウントのメールアドレスが一致すると、
+自動的にACTIVEへ遷移する。
 
-招待を拒否した場合は、
-REJECTEDへ遷移する。
+Personによる招待の承認・拒否、参加意思の再確認は設けない
+（参加意思の確認は、管理者が招待の前にシステムの外で行う。2.3）。
+
+メールアドレスが未確認のアカウントは、一致の判断に使わない。
 
 ---
 
@@ -611,12 +619,6 @@ REQUESTED
     ↓
 REJECTED
 
-招待が拒否された場合：
-
-INVITED
-    ↓
-REJECTED
-
 Membershipは原則として物理削除しない。
 
 Statusの変更によって、
@@ -855,7 +857,7 @@ Role変更についても、
 - OrganizationからPersonへの招待を許可する。
 - 所属申請と招待は異なるLifecycleとして扱う。
 - 所属申請はOrganization側の承認を必要とする。
-- 招待はPerson側の承認を必要とする。
+- 招待はPerson側の承認を必要としない。招待先のメールアドレスと認証されたアカウントのメールアドレスの一致で、自動的にACTIVEとなる（2.3）。
 - MembershipはREQUESTED / INVITED / ACTIVE / SUSPENDED / LEFT / REJECTEDを持つ。
 - Membershipは原則として物理削除しない。
 - Membershipの所属期間を管理する。
@@ -913,7 +915,7 @@ ACTIVEとなったことを表す。
 
 MembershipRejected
 
-所属申請または招待が拒否されたことを表す。
+所属申請が拒否されたことを表す（2.3：招待は本人が拒否しない）。
 
 MembershipSuspended
 
@@ -1043,7 +1045,7 @@ Organization
 - Organizationからの招待を許可する。
 - 所属申請と招待を別のLifecycleとして扱う。
 - 所属申請はOrganization側の承認を必要とする。
-- 招待はPerson側の承認を必要とする。
+- 招待はPerson側の承認を必要としない。招待先のメールアドレスと認証されたアカウントのメールアドレスの一致で、自動的にACTIVEとなる（2.3）。
 - Membership履歴は削除しない。
 - Membershipの所属期間を管理する。
 - Role変更はMembershipに対する変更として扱う。

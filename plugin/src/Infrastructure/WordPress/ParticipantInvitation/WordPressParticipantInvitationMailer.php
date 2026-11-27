@@ -14,11 +14,13 @@ use StageArt\Infrastructure\WordPress\Mail\StageArtMail;
  * STAGEART_PARTICIPANT_INVITATION_BASE_URL Web host (see Plugin.php).
  *
  * PR #7 R14-B stage 4 (design doc §4.1 / §9.2 / §10, U5 C案): no token.
- * The link is always `{base}/participant-invitations` - the invitee's own
- * invitation list, login required - so opening it shows nothing about the
- * invitation by itself. The text is the same whether or not the address
- * belongs to an account. Returns StageArtMail::send()'s result (the mail
- * server accepted it; not delivery).
+ * Invitation policy (2026-11-27): the link is `{base}/participant-invitations/{id}`
+ * - the invitation's id, not a secret: the screen needs login, and the
+ * server shows the invitation only to an account whose verified address is
+ * the invited one. The invited person never accepts or rejects: they are
+ * registered once the invited address is verified (or signed in with
+ * Google). Returns StageArtMail::send()'s result (the mail server accepted
+ * it; not delivery).
  */
 final class WordPressParticipantInvitationMailer implements ParticipantInvitationMailerInterface
 {
@@ -29,12 +31,12 @@ final class WordPressParticipantInvitationMailer implements ParticipantInvitatio
         $this->baseUrl = rtrim($baseUrl, '/');
     }
 
-    public function invitationListUrl(): string
+    public function invitationUrl(string $invitationId): string
     {
-        return $this->baseUrl . '/participant-invitations';
+        return $this->baseUrl . '/participant-invitations/' . rawurlencode($invitationId);
     }
 
-    public function sendInvitationEmail(string $toEmail, string $productionName): bool
+    public function sendInvitationEmail(string $toEmail, string $productionName, string $invitationId): bool
     {
         $body = sprintf(
             '<div style="font-family: sans-serif; font-size: 15px; line-height: 1.7; color: #2A2320;">'
@@ -52,11 +54,11 @@ final class WordPressParticipantInvitationMailer implements ParticipantInvitatio
                 esc_html__('「%s」のメンバーとしてStageArtへ招待されました。', 'stageart'),
                 esc_html($productionName)
             ),
-            esc_html__('このメールを受け取ったメールアドレスでStageArtにログインすると（未登録の場合は、登録とメールアドレスの確認の後に）、招待を確認できます。承諾するまで参加者にはなりません。', 'stageart'),
-            esc_url($this->invitationListUrl()),
+            esc_html__('このメールを受け取ったメールアドレスでStageArtに登録し、メールアドレスの確認を済ませると、この公演の参加者として登録されます。', 'stageart'),
+            esc_url($this->invitationUrl($invitationId)),
             esc_html__('招待を確認する', 'stageart'),
             esc_html__('招待の有効期限は7日間です。', 'stageart'),
-            esc_html__('招待が見つからない場合は、このメールを受け取ったメールアドレスでログインしてください。', 'stageart'),
+            esc_html__('登録の後にこのメールのボタンをもう一度押すと、ログインした状態で招待の内容を確認できます。', 'stageart'),
             esc_html__('心当たりがない場合は、このメールを破棄してください。', 'stageart')
         );
 

@@ -15,9 +15,10 @@ use StageArt\Domain\UserAccount\UserAccountRepositoryInterface;
 
 /**
  * R14-B §4.3 / §6.4 / §7.4: decides whether an invitation is addressed to
- * the logged-in Person - the one recipient check shared by accept, reject
- * and the invitee's own list. Not used when an invitation is created
- * (§7.1: creation never looks the address up).
+ * the logged-in Person - the one recipient check of the invitation screens
+ * opened from the mail (GetMyParticipantInvitationUseCase,
+ * GetMyOrganizationInvitationUseCase; invitation policy 2026-11-27 - the
+ * acceptance, the rejection and the invitee's list were removed).
  *
  * recipient():
  * - the WordPress user must resolve to a StageArt Person whose UserAccount
@@ -113,14 +114,23 @@ final class InvitationRecipientVerifier
 
     public function isAddressedTo(VerifiedInvitationRecipient $recipient, ParticipantInvitation $invitation): bool
     {
-        $address = InvitationEmailAddress::normalize($invitation->email());
+        return $this->isEmailAddressedTo($recipient, $invitation->email());
+    }
+
+    /**
+     * The same check for any invited address - also used for an
+     * organization invitation (GetMyOrganizationInvitationUseCase).
+     */
+    public function isEmailAddressedTo(VerifiedInvitationRecipient $recipient, string $invitedEmail): bool
+    {
+        $address = InvitationEmailAddress::normalize($invitedEmail);
 
         if ($address === '' || ! in_array($address, $recipient->verifiedAddresses(), true)) {
             return false;
         }
 
         try {
-            $owner = $this->findPersonByEmail->execute($invitation->email());
+            $owner = $this->findPersonByEmail->execute($invitedEmail);
         } catch (AmbiguousPersonEmailException $exception) {
             return false;
         }

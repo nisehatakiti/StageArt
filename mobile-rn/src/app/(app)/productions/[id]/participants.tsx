@@ -58,14 +58,16 @@ type RowEdit = { participantType: string; remarks: string; delete: boolean };
 /**
  * PR #7 R14-B (design doc §5.1 / §10): the Backend's effective_status as
  * shown in 「招待中のメンバー」 - never derived here. ACCEPTED / CONSUMED
- * invitations are not listed (the person is a member).
+ * invitations are not listed (the person is a member). Invitation policy
+ * 2026-11-27: nobody accepts or rejects any more - a PENDING invitation waits
+ * for the invited address to be verified; REJECTED is only a past answer.
  */
 const INVITATION_STATUS_LABEL: Record<string, string> = {
-  PENDING: '承諾待ち',
+  PENDING: '登録待ち',
   EXPIRED: '期限切れ',
   PRODUCTION_CLOSED: '無効（公演終了）',
   INVITER_REVOKED: '無効（招待者の権限なし）',
-  REJECTED: '辞退',
+  REJECTED: '辞退（以前の方式）',
   CANCELLED: '取消',
 };
 
@@ -93,14 +95,6 @@ function sendBlockedMessage(invitation: ManagedParticipantInvitation): string | 
 function resendBlockedMessage(invitation: ManagedParticipantInvitation): string | null {
   return sendBlockedMessage(invitation) ??
     (invitation.resend_remaining <= 0 ? 'この招待の再送は5回までです。取り消して新しく招待しても、30日間の送信回数は数え直されません。' : null);
-}
-
-/** §4.5: 「同意未確認（旧方式）」 for a PERSON without recorded consent (旧方式 when it predates R14-B). */
-function consentLabel(participant: Participant): string | null {
-  if (participant.consent_status !== 'UNCONFIRMED') {
-    return null;
-  }
-  return participant.enrollment_source === null ? '同意未確認（旧方式）' : '同意未確認';
 }
 
 function localDatePart(value: string): string {
@@ -247,8 +241,11 @@ export default function ProductionParticipantsScreen() {
 
 
   /**
-   * One action, 氏名＋メールアドレス＋役割＋備考 submitted together; the
-   * result is INVITATION_SENT or INVITATION_RESENT (R14-B §10).
+   * One action, 氏名＋メールアドレス＋役割＋備考 submitted together
+   * (invitation policy 2026-11-27, like an organization invitation): a
+   * verified account is added at once (MEMBER_ADDED); otherwise an invitation
+   * is mailed (INVITATION_SENT) or resent (INVITATION_RESENT) and the person is
+   * added once they verify that address. Nobody accepts or rejects.
    */
   async function handleAddMember() {
     const name = newMemberName.trim();
@@ -265,40 +262,16 @@ export default function ProductionParticipantsScreen() {
         participantType: newMemberType,
         remarks: newMemberRemarks.trim() || null,
       });
-      // R14-B §10: exactly two results - nobody is added by this action.
       setAddMemberMessage(
-        result.outcome === 'INVITATION_RESENT'
-          ? '承諾待ちの招待に再送しました。'
-          : '招待メールを送信しました。本人が承諾するとメンバーに追加されます。'
+        result.outcome === 'MEMBER_ADDED'
+          ? 'メンバーに追加しました。'
+          : result.outcome === 'INVITATION_RESENT'
+            ? '登録待ちの招待に再送しました。'
+            : '招待メールを送信しました。招待したメールアドレスで登録とメールアドレスの確認が済むと、メンバーに追加されます。'
       );
       setNewMemberName('');
       setNewMemberEmail('');
       setNewMemberRemarks('');
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }
-
-  /**
-   * R14-B §4.5: 「同意の確認を依頼」 - an ordinary invitation to the member's
-   * address. When they accept it, their consent is recorded (the row stays
-   * as it is); declining changes nothing.
-   */
-  async function handleRequestConsent(participant: Participant) {
-    if (!participant.email) {
-      return;
-    }
-    const personFullName = [participant.person_family_name, participant.person_given_name].filter(Boolean).join(' ');
-    setErrorMessage(null);
-    setAddMemberMessage(null);
-    try {
-      await createInvitation.mutateAsync({
-        name: participant.display_name?.trim() || personFullName || participant.email,
-        email: participant.email,
-        participantType: participant.participant_type,
-        remarks: null,
-      });
-      setAddMemberMessage('同意の確認を依頼する招待メールを送信しました。本人が承諾すると同意が記録されます。');
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -418,8 +391,6 @@ export default function ProductionParticipantsScreen() {
           delegateRoles={delegatesQuery.data ?? []}
           canManageDelegateRoles={canManageDelegateRoles}
           delegateBusy={createDelegate.isPending || updateDelegate.isPending}
-          requestConsentBusy={createInvitation.isPending}
-          onRequestConsent={() => handleRequestConsent(participant)}
           onToggleDelegateCheckbox={async (personId, roles, checked) => {
             const delegates = delegatesQuery.data ?? [];
             setErrorMessage(null);
@@ -523,7 +494,6 @@ export default function ProductionParticipantsScreen() {
         <View style={styles.invitationActionsHeader} />
       </View>
       {listedInvitations.map((invitation) => {
-        const reinviteAt = invitation.effective_status === 'REJECTED' ? formatServerDateTime(invitation.reinvite_available_at) : null;
         const lastSentAt = formatServerDateTime(invitation.last_sent_at);
         const actionable = invitation.status === 'PENDING';
         const resendBlocked = resendBlockedMessage(invitation);
@@ -538,11 +508,6 @@ export default function ProductionParticipantsScreen() {
                 <ThemedText testID={`participant-invitation-status-${invitation.id}`}>
                   {INVITATION_STATUS_LABEL[invitation.effective_status] ?? invitation.effective_status}
                 </ThemedText>
-                {reinviteAt && (
-                  <ThemedText type="small" themeColor="textSecondary" testID={`participant-invitation-reinvite-${invitation.id}`}>
-                    {reinviteAt}以降に再び招待できます
-                  </ThemedText>
-                )}
               </View>
               <View style={styles.invitationSendCell}>
                 <ThemedText type="small" testID={`participant-invitation-send-status-${invitation.id}`}>
@@ -746,7 +711,6 @@ export default function ProductionParticipantsScreen() {
 
 function ParticipantEditRow({
   participant, isSelf, edit, onChange, delegateRoles, canManageDelegateRoles, delegateBusy, onToggleDelegateCheckbox,
-  requestConsentBusy, onRequestConsent,
 }: {
   participant: Participant;
   isSelf: boolean;
@@ -756,12 +720,9 @@ function ParticipantEditRow({
   canManageDelegateRoles: boolean;
   delegateBusy: boolean;
   onToggleDelegateCheckbox: (personId: string, roles: string[], checked: boolean) => Promise<void>;
-  requestConsentBusy: boolean;
-  onRequestConsent: () => void;
 }) {
   // R14-B §7.3: the Person id can be withheld (null); only a known one keys delegate rows.
   const personId = isActivePersonParticipant(participant) ? participant.subject_id : null;
-  const consent = consentLabel(participant);
   /**
    * StageArt Production側氏名の権威付けラウンド §0/§11: `display_name` is
    * this Production's own record of the member's name (entered on the
@@ -794,11 +755,6 @@ function ParticipantEditRow({
       </View>
       <View style={styles.memberNameCell}>
         <ThemedText style={[styles.memberNameText, edit.delete && styles.strikethrough]}>{displayLabel}</ThemedText>
-        {consent && (
-          <ThemedText type="small" themeColor="textSecondary" testID={`participant-consent-${participant.id}`}>
-            {consent}
-          </ThemedText>
-        )}
       </View>
       <View style={styles.memberRoleCell}>
         {PARTICIPANT_TYPES.map((type) => (
@@ -827,20 +783,6 @@ function ParticipantEditRow({
         {participant.email ?? ''}
       </ThemedText>
       <View style={styles.memberAddActionCell}>
-        {consent && (
-          <TouchableOpacity
-            testID={`participant-request-consent-${participant.id}`}
-            onPress={onRequestConsent}
-            disabled={!participant.email || requestConsentBusy}
-            accessibilityState={{ disabled: !participant.email || requestConsentBusy }}
-            style={[styles.invitationActionButton, !participant.email && styles.buttonDisabled]}
-          >
-            <ThemedText type="small">同意の確認を依頼</ThemedText>
-          </TouchableOpacity>
-        )}
-        {consent && !participant.email && (
-          <ThemedText type="small" themeColor="textSecondary">メールアドレスが不明です</ThemedText>
-        )}
       </View>
       {canManageDelegateRoles &&
         DELEGATE_CHECKBOXES.map((checkbox) => {

@@ -26,10 +26,12 @@ describe('getErrorMessage: R14-B codes', () => {
       [error(409, 'stageart_participant_withdraw_primary_manager'), '公演の管理者（PrimaryManager）は参加をやめられません。先に管理者を引き継いでください。'],
       [error(409, 'stageart_participant_withdraw_not_allowed'), '現在参加中ではないため、参加をやめる操作はできません。'],
       [error(409, 'stageart_participant_type_conflict'), 'この人は、変更先の区分で既にこの公演に登録されています。'],
-      [error(409, 'stageart_participant_draft_exists'), 'この公演での参加の情報に確認が必要なため、承諾できません。公演の管理者に問い合わせてください。'],
-      [error(410, 'stageart_participant_invitation_expired'), 'この招待は有効期限が切れています。'],
-      [error(404, 'stageart_participant_invitation_not_found'), 'この招待は見つかりません。招待一覧から確認してください。'],
-      [error(422, 'stageart_production_delegate_target_not_consented'), 'この方は同意が確認できていないため、担当者にできません。メンバー管理から「同意の確認を依頼」してください。'],
+      // Invitation policy 2026-11-27: no accept / reject / consent codes any more.
+      [error(409, 'stageart_participant_draft_exists'), 'この方の参加の情報に確認が必要なため、メンバーに追加できません。下書きの登録を確認してください。'],
+      [error(409, 'stageart_participant_already_exists'), 'この方は既にこの役割で公演のメンバーです。'],
+      [error(404, 'stageart_participant_invitation_not_found'), 'この招待は見つかりません。招待メールを受け取ったメールアドレスでログインしているか確認してください。'],
+      [error(404, 'stageart_organization_invitation_not_found'), 'この招待は見つかりません。招待メールを受け取ったメールアドレスでログインしているか確認してください。'],
+      [error(422, 'stageart_production_delegate_target_not_participant'), 'この方はこの公演のメンバーではないため、担当者にできません。メンバーとして登録してから、改めて任命してください。'],
     ];
     for (const [apiError, text] of cases) {
       expect(getErrorMessage(apiError)).toBe(text);
@@ -37,7 +39,7 @@ describe('getErrorMessage: R14-B codes', () => {
   });
 
   it('reads not_pending the same for the cancel 409 and the resend 422', () => {
-    const text = 'この招待は既に承諾・辞退・取消などで処理済みのため、この操作はできません。';
+    const text = 'この招待は既に登録済み・取消などで処理済みのため、この操作はできません。';
     expect(getErrorMessage(error(409, 'stageart_participant_invitation_not_pending'))).toBe(text);
     expect(getErrorMessage(error(422, 'stageart_participant_invitation_not_pending'))).toBe(text);
   });

@@ -39,7 +39,6 @@ const PARTICIPANT_TYPE_LABEL: Record<string, string> = { CAST: '出演者', STAF
  */
 /** R14-B §10 「公演の画面（担当者本人）」: why the person's own role grants nothing. */
 const OWN_ROLE_INEFFECTIVE_TEXT: Record<Exclude<DelegateIneffectiveReason, 'INACTIVE'>, string> = {
-  CONSENT_UNCONFIRMED: 'あなたの担当者の役割は、参加への同意が確認できていないため無効になっています。公演の管理者からの「同意の確認」の招待を承諾すると有効になります。',
   NOT_ACTIVE_PARTICIPANT: 'あなたの担当者の役割は、この公演のメンバーではないため無効になっています。',
 };
 
@@ -57,7 +56,7 @@ export default function ProductionOverviewScreen() {
     new Set(
       (myRolesQuery.data ?? [])
         .map((role) => role.ineffective_reason)
-        .filter((reason): reason is Exclude<DelegateIneffectiveReason, 'INACTIVE'> => reason === 'CONSENT_UNCONFIRMED' || reason === 'NOT_ACTIVE_PARTICIPANT')
+        .filter((reason): reason is Exclude<DelegateIneffectiveReason, 'INACTIVE'> => reason === 'NOT_ACTIVE_PARTICIPANT')
     )
   );
 

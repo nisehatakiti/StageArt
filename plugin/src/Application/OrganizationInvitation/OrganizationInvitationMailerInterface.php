@@ -9,5 +9,9 @@ namespace StageArt\Application\OrganizationInvitation;
  * from AuthMailerInterface. */
 interface OrganizationInvitationMailerInterface
 {
-    public function sendInvitationEmail(string $toEmail, string $organizationName, string $token): void;
+    /**
+     * @param string $token        the invitation token (not put in the mail since R14-B stage 10; kept for the unchanged invitation itself)
+     * @param string $invitationId the invitation the mail's link opens (/organization-invitations/{id})
+     */
+    public function sendInvitationEmail(string $toEmail, string $organizationName, string $token, string $invitationId): void;
 }

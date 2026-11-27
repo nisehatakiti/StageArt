@@ -17,10 +17,9 @@ jest.mock('expo-secure-store', () => ({
  * own docblock), picking a Role, and submitting sends
  * POST /productions/{id}/delegates with that person_id and role.
  *
- * PR #7 R14-B (design doc §4.6 / §10; expectations added for the spec
- * change): only an ACTIVE PERSON member whose consent is confirmed is a
- * candidate (an unconfirmed member is not), and there is no Person ID
- * input any more.
+ * PR #7 R14-B (design doc §4.6 / §10) and the invitation policy of
+ * 2026-11-27 (user decision): every ACTIVE PERSON member is a candidate,
+ * with or without recorded consent, and there is no Person ID input.
  */
 describe('Web 担当者: 追加', () => {
   it('adds a delegate by picking a Participant candidate and a Role', async () => {
@@ -72,7 +71,8 @@ describe('Web 担当者: 追加', () => {
 
     await waitFor(() => expect(screen.getByTestId('production-delegates-candidate-person-9')).toBeVisible());
     expect(screen.getByText('担当 一郎（スタッフ）')).toBeVisible();
-    expect(screen.queryByTestId('production-delegates-candidate-person-8')).toBeNull();
+    expect(screen.getByTestId('production-delegates-candidate-person-8')).toBeVisible();
+    expect(screen.getByText('旧方式 次郎（出演者）')).toBeVisible();
     expect(screen.queryByTestId('production-delegates-new-person-id')).toBeNull();
 
     fireEvent.press(screen.getByTestId('production-delegates-candidate-person-9'));

@@ -14,7 +14,6 @@ use StageArt\Application\Participant\ParticipantRequestNotPendingException;
 use StageArt\Application\Participant\ParticipantRequestResult;
 use StageArt\Application\Participant\RejectParticipantRequestCommand;
 use StageArt\Application\Participant\RequestProductionParticipationCommand;
-use StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand;
 use StageArt\Application\Shared\PersistenceException;
 use StageArt\Application\Shared\UniqueConstraintViolationException;
 use StageArt\Domain\JoinKey\JoinKey;
@@ -322,12 +321,12 @@ final class JoinRequestConsentTest extends TestCase
         $this->f->approveRequest()->execute(new ApproveParticipantRequestCommand($this->requester->wordPressUserId(), $request->id));
     }
 
-    // --- §4.7: with an invitation acceptance --------------------------
+    // --- §4.7: with an invitation (registered once the address is verified - invitation policy 2026-11-27) ---
 
     private function acceptInvitation(): void
     {
-        $invitation = $this->f->invitation(self::EMAIL);
-        $this->f->accept()->execute(new AcceptParticipantInvitationCommand($this->requester->wordPressUserId(), $invitation->id()->toString()));
+        $this->f->invitation(self::EMAIL);
+        $this->f->resolve()->execute($this->requester->id(), self::EMAIL);
     }
 
     public function test_acceptance_first_then_approval_is_409(): void
@@ -339,7 +338,7 @@ final class JoinRequestConsentTest extends TestCase
         $this->approve($request->id);
     }
 
-    public function test_approval_first_then_acceptance_records_consent_on_the_same_row(): void
+    public function test_approval_first_then_the_invitation_keeps_the_same_row_and_its_consent(): void
     {
         $request = $this->request();
         $this->approve($request->id);
@@ -348,9 +347,10 @@ final class JoinRequestConsentTest extends TestCase
 
         $participant = $this->f->participants->findById(ParticipantId::fromString($request->id));
         $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
-        $this->assertSame(ParticipantConsentSource::INVITATION, $participant->consentSource()->toString(), 'The latest consent');
+        $this->assertSame(ParticipantConsentSource::JOIN_REQUEST, $participant->consentSource()->toString(), 'The approval\'s consent stays; the invitation records none');
         $this->assertCount(1, $this->f->participants->findByProductionId($this->f->production->id()));
-        $this->assertCount(1, $this->f->eventStore->ofType(ParticipantEvent::CONSENT_RECORDED));
+        $this->assertSame([], $this->f->eventStore->ofType(ParticipantEvent::CONSENT_RECORDED));
+        $this->assertSame([], $this->f->eventStore->ofType(ParticipantEvent::INVITATION_ENROLLED), 'Already ACTIVE: the row did not change');
     }
 
     public function test_rejection_first_then_acceptance_brings_the_same_row_back(): void
@@ -362,7 +362,7 @@ final class JoinRequestConsentTest extends TestCase
 
         $participant = $this->f->participants->findById(ParticipantId::fromString($request->id));
         $this->assertSame(ParticipantStatus::ACTIVE, $participant->status()->toString());
-        $this->assertSame(ParticipantStatus::REJECTED, $this->f->eventStore->ofType(ParticipantEvent::ACCEPTED)[0]->detail()['previous_status']);
+        $this->assertSame(ParticipantStatus::REJECTED, $this->f->eventStore->ofType(ParticipantEvent::INVITATION_ENROLLED)[0]->detail()['previous_status']);
     }
 
     public function test_rejection_after_acceptance_is_409(): void

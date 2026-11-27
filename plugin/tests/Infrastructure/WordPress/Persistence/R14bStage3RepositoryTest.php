@@ -401,7 +401,7 @@ final class R14bStage3RepositoryTest extends TestCase
         $this->assertArrayHasKey('updated_at', $writes[0]);
         $this->assertNull($writes[0]['updated_at'], 'An unchanged legacy row keeps NULL; nothing is filled in');
 
-        $legacy->reject(PersonId::fromString(self::PERSON), null, new DateTimeImmutable('2026-11-16T12:00:00+09:00'));
+        $legacy->close(\StageArt\Domain\ParticipantInvitation\ParticipantInvitationCloseReason::manager(), PersonId::fromString(self::PERSON), new DateTimeImmutable('2026-11-16T12:00:00+09:00'));
         $repository->save($legacy);
         $this->assertSame('2026-11-16 03:00:00', $writes[1]['updated_at']);
 

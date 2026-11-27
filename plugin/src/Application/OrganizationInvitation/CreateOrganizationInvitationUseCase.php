@@ -144,7 +144,7 @@ final class CreateOrganizationInvitationUseCase
         );
         $this->invitations->save($invitation);
 
-        $this->mailer->sendInvitationEmail($email, $organization->name()->toString(), $tokenValue);
+        $this->mailer->sendInvitationEmail($email, $organization->name()->toString(), $tokenValue, $invitation->id()->toString());
 
         return CreateOrganizationInvitationResult::forNewInvitation(OrganizationInvitationResult::fromDomain($invitation));
     }

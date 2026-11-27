@@ -249,8 +249,9 @@ final class GetMyDashboardUseCase
         }
 
         // R14-B §4.6 (stage 4): effective delegate rows only, decided by
-        // ProductionAuthorizationService (ACTIVE row + consented ACTIVE
-        // PERSON Participant) - an ACTIVE row alone no longer counts.
+        // ProductionAuthorizationService (ACTIVE row + ACTIVE PERSON
+        // Participant; no consent needed since the 2026-11-27 invitation
+        // policy) - an ACTIVE row alone does not count.
         foreach ($this->authorization->effectiveDelegateProductionIds($personId) as $productionId) {
             $ids[$productionId->toString()] = $productionId;
         }

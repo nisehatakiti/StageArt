@@ -27,7 +27,7 @@ describe('公演概要ダッシュボード: 自分の担当者の役割が無�
         test: (u) => u.endsWith('/productions/prod-1/delegates/me'),
         status: 200,
         body: [
-          { id: 'd-1', production_id: 'prod-1', role: 'REHEARSAL_MANAGER', status: 'ACTIVE', effective: false, ineffective_reason: 'CONSENT_UNCONFIRMED' },
+          { id: 'd-1', production_id: 'prod-1', role: 'REHEARSAL_MANAGER', status: 'ACTIVE', effective: false, ineffective_reason: 'NOT_ACTIVE_PARTICIPANT' },
           { id: 'd-2', production_id: 'prod-1', role: 'TICKET_MANAGER', status: 'INACTIVE', effective: false, ineffective_reason: 'INACTIVE' },
         ],
       },
@@ -36,7 +36,9 @@ describe('公演概要ダッシュボード: 自分の担当者の役割が無�
     renderRouter('src/app', { initialUrl: '/production/prod-1/overview' });
 
     await waitFor(() => expect(screen.getByTestId('production-overview-own-role-ineffective')).toBeVisible());
-    expect(screen.getByTestId('production-overview-own-role-CONSENT_UNCONFIRMED')).toHaveTextContent(/参加への同意が確認できていないため無効/);
+    // Invitation policy 2026-11-27: the only reason left for an ACTIVE row is not being a member (no consent any more).
+    expect(screen.getByTestId('production-overview-own-role-NOT_ACTIVE_PARTICIPANT')).toHaveTextContent(/この公演のメンバーではないため無効/);
+    expect(screen.queryByText(/同意/)).toBeNull();
     expect(screen.queryByTestId('production-overview-own-role-INACTIVE')).toBeNull();
   });
 });

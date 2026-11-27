@@ -136,9 +136,9 @@ final class ProductionAuthorizationService
     /**
      * R14-B §4.6 (D9, stage 4): an EFFECTIVE delegate row only - the row is
      * ACTIVE AND the Person is an ACTIVE PERSON Participant of the
-     * Production with recorded consent (consented_at). A row that is ACTIVE
-     * in the table but fails the participant/consent condition grants
-     * nothing (it is not changed, only not honoured). The PrimaryManager
+     * Production (recorded consent is no longer required - invitation
+     * policy 2026-11-27). A row that is ACTIVE in the table but fails the
+     * participant condition grants nothing (it is not changed, only not honoured). The PrimaryManager
      * is decided separately (isPrimaryManager()) and does not depend on
      * this. A failed participant read throws (never read as "no").
      */
@@ -149,10 +149,9 @@ final class ProductionAuthorizationService
         return $delegates[0] ?? null;
     }
 
-    /** R14-B §4.6: INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED. */
+    /** R14-B §4.6: INACTIVE / NOT_ACTIVE_PARTICIPANT (CONSENT_UNCONFIRMED was removed with the 2026-11-27 invitation policy). */
     public const DELEGATE_INACTIVE = 'INACTIVE';
     public const DELEGATE_NOT_ACTIVE_PARTICIPANT = 'NOT_ACTIVE_PARTICIPANT';
-    public const DELEGATE_CONSENT_UNCONFIRMED = 'CONSENT_UNCONFIRMED';
 
     /**
      * R14-B §4.6 / §7.1 (stage 4): why a delegate row grants nothing, or
@@ -172,28 +171,20 @@ final class ProductionAuthorizationService
 
     /**
      * R14-B §4.6: given the Person's PERSON rows in the Production, null
-     * when one of them is ACTIVE with recorded consent, otherwise
-     * CONSENT_UNCONFIRMED (an ACTIVE row without consent) or
-     * NOT_ACTIVE_PARTICIPANT (no ACTIVE row). Shared by the delegate list
-     * and the appointment check.
+     * when one of them is ACTIVE, otherwise NOT_ACTIVE_PARTICIPANT. Shared
+     * by the delegate list and the appointment check.
      *
      * @param Participant[] $personRows
      */
     public static function participantIneffectiveReason(array $personRows): ?string
     {
-        $active = false;
-
         foreach ($personRows as $participant) {
-            if ($participant->isConsentedActivePerson()) {
+            if ($participant->isActivePerson()) {
                 return null;
-            }
-
-            if ($participant->subjectType()->equals(ParticipantSubjectType::person()) && $participant->isActive()) {
-                $active = true;
             }
         }
 
-        return $active ? self::DELEGATE_CONSENT_UNCONFIRMED : self::DELEGATE_NOT_ACTIVE_PARTICIPANT;
+        return self::DELEGATE_NOT_ACTIVE_PARTICIPANT;
     }
 
     /**
@@ -215,7 +206,7 @@ final class ProductionAuthorizationService
                 continue;
             }
 
-            if ($this->participants->existsConsentedActivePersonParticipant($delegate->productionId(), $personId->toString())) {
+            if ($this->participants->existsActivePersonParticipant($delegate->productionId(), $personId->toString())) {
                 $ids[$key] = $delegate->productionId();
             }
         }
@@ -246,9 +237,9 @@ final class ProductionAuthorizationService
                 $delegate->personId()->equals($person->id()) && $delegate->isActive()
         ));
 
-        // R14-B §4.6 (stage 4): ACTIVE rows count only while the Person is a
-        // consented ACTIVE PERSON Participant (one indexed read).
-        if ($rows === [] || ! $this->participants->existsConsentedActivePersonParticipant($production->id(), $person->id()->toString())) {
+        // R14-B §4.6 (stage 4): ACTIVE rows count only while the Person is an
+        // ACTIVE PERSON Participant (one indexed read).
+        if ($rows === [] || ! $this->participants->existsActivePersonParticipant($production->id(), $person->id()->toString())) {
             return [];
         }
 

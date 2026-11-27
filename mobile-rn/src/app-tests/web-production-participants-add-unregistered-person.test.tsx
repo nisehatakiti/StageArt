@@ -16,10 +16,10 @@ jest.mock('expo-secure-store', () => ({
  * Person creates a ParticipantInvitation carrying the entered name -
  * never a NAME_ONLY Participant.
  *
- * PR #7 R14-B (§10; expectation updated for the spec change): the answer is
- * INVITATION_SENT and the result text is 「招待メールを送信しました。本人が
- * 承諾するとメンバーに追加されます。」 (the person is no longer added
- * automatically when they register).
+ * Invitation policy 2026-11-27 (expectation updated for the spec change):
+ * the answer is INVITATION_SENT and the result text says the person becomes
+ * a member once the invited address is registered and verified (no
+ * acceptance).
  */
 describe('Web メンバー管理: 未登録メールアドレスへの登録案内送信', () => {
   it('sends a registration-guidance invitation when the email has no existing Person', async () => {
@@ -76,7 +76,7 @@ describe('Web メンバー管理: 未登録メールアドレスへの登録案�
     });
 
     await waitFor(() =>
-      expect(screen.getByText('招待メールを送信しました。本人が承諾するとメンバーに追加されます。')).toBeVisible()
+      expect(screen.getByText('招待メールを送信しました。招待したメールアドレスで登録とメールアドレスの確認が済むと、メンバーに追加されます。')).toBeVisible()
     );
   });
 });

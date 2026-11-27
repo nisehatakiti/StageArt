@@ -70,19 +70,19 @@ final class R14bStage4RepositoryTest extends TestCase
         ];
     }
 
-    public function test_consented_active_person_check_is_one_indexed_read_without_a_lock(): void
+    public function test_the_active_person_check_is_one_indexed_read_without_a_lock(): void
     {
         $db = new \wpdb(static fn (string $method) => $method === 'get_var' ? self::ID : FakeWpdbDefault::VALUE);
         $repository = new WordPressParticipantRepository($db);
 
-        $this->assertTrue($repository->existsConsentedActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
+        $this->assertTrue($repository->existsActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
 
         $sql = $db->callsTo('get_var')[0][0];
         $this->assertStringContainsString("production_id = '" . self::PRODUCTION . "'", $sql);
         $this->assertStringContainsString("subject_type = 'PERSON'", $sql, 'NAME_ONLY / ORGANIZATION never count');
         $this->assertStringContainsString("subject_id = '" . self::PERSON . "'", $sql);
         $this->assertStringContainsString("status = 'ACTIVE'", $sql);
-        $this->assertStringContainsString('consented_at IS NOT NULL', $sql, 'created_at is never taken for consent');
+        $this->assertStringNotContainsString('consented_at', $sql, 'Invitation policy 2026-11-27 (user decision): recorded consent is no longer required');
         $this->assertStringNotContainsString('FOR UPDATE', $sql);
         $this->assertStringNotContainsString('participant_type', $sql, 'Either type counts');
     }
@@ -91,7 +91,7 @@ final class R14bStage4RepositoryTest extends TestCase
     {
         $repository = new WordPressParticipantRepository(new \wpdb(static fn () => FakeWpdbDefault::VALUE));
 
-        $this->assertFalse($repository->existsConsentedActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
+        $this->assertFalse($repository->existsActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
     }
 
     public function test_a_failed_consent_check_throws_instead_of_answering_no(): void
@@ -107,7 +107,7 @@ final class R14bStage4RepositoryTest extends TestCase
         }));
 
         try {
-            $repository->existsConsentedActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON);
+            $repository->existsActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON);
             $this->fail('A failed read must throw.');
         } catch (PersistenceException $e) {
             $this->assertSame(1205, $e->mysqlErrno());
@@ -120,7 +120,7 @@ final class R14bStage4RepositoryTest extends TestCase
         $db = new \wpdb(static fn () => FakeWpdbDefault::VALUE);
         $db->last_error = 'an earlier, unrelated failure';
 
-        $this->assertFalse((new WordPressParticipantRepository($db))->existsConsentedActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
+        $this->assertFalse((new WordPressParticipantRepository($db))->existsActivePersonParticipant(ProductionId::fromString(self::PRODUCTION), self::PERSON));
     }
 
     public function test_person_rows_are_read_plainly_or_locked_and_hydrated(): void
@@ -131,7 +131,7 @@ final class R14bStage4RepositoryTest extends TestCase
         $plain = $repository->findPersonParticipants(ProductionId::fromString(self::PRODUCTION), self::PERSON);
         $locked = $repository->findPersonParticipantsForUpdate(ProductionId::fromString(self::PRODUCTION), self::PERSON);
 
-        $this->assertTrue($plain[0]->isConsentedActivePerson());
+        $this->assertTrue($plain[0]->isActivePerson());
         $this->assertSame(self::ID, $locked[0]->id()->toString());
 
         [$plainSql, $lockedSql] = [$db->callsTo('get_results')[0][0], $db->callsTo('get_results')[1][0]];
@@ -335,35 +335,6 @@ final class R14bStage4RepositoryTest extends TestCase
         $this->assertSame('99999999-9999-4999-8999-999999999999', $found[0]->currentSendId());
         $this->assertStringEndsWith('ORDER BY id FOR UPDATE', $db->callsTo('get_results')[0][0]);
         $this->assertStringContainsString("email = 'taro@example.com'", $db->callsTo('get_results')[0][0], 'trimmed');
-    }
-
-    public function test_the_latest_rejection_is_found_by_normalised_address_and_failures_throw(): void
-    {
-        $db = new \wpdb(static fn (string $method) => $method === 'get_results'
-            ? [['email' => 'TARO@example.com', 'responded_at' => '2026-11-01 00:00:00'], ['email' => 'taro@example.com', 'responded_at' => '2026-11-05 00:00:00'], ['email' => 'other@example.com', 'responded_at' => '2026-11-09 00:00:00']]
-            : FakeWpdbDefault::VALUE);
-        $repository = new WordPressParticipantInvitationRepository($db);
-
-        $latest = $repository->latestRejectionAt(ProductionId::fromString(self::PRODUCTION), 'taro@example.com');
-
-        $this->assertSame('2026-11-05T00:00:00+00:00', $latest->format(DATE_ATOM));
-        $this->assertStringContainsString("status = 'REJECTED' AND responded_at IS NOT NULL", $db->callsTo('get_results')[0][0]);
-        $this->assertStringNotContainsString('participant_type', $db->callsTo('get_results')[0][0], 'Any type');
-
-        $failing = new WordPressParticipantInvitationRepository(new \wpdb(static function (string $method, array $args, \wpdb $db) {
-            self::failRead($db);
-
-            return $method === 'get_var' ? null : [];
-        }));
-
-        foreach ([fn () => $failing->latestRejectionAt(ProductionId::fromString(self::PRODUCTION), 'x@example.com'), fn () => $failing->currentSendIdOf(ParticipantInvitationId::fromString(self::ID))] as $read) {
-            try {
-                $read();
-                $this->fail('A failed read must throw.');
-            } catch (PersistenceException $e) {
-                $this->addToAssertionCount(1);
-            }
-        }
     }
 
     public function test_current_send_id_is_read_without_a_lock(): void

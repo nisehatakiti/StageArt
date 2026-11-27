@@ -285,7 +285,8 @@ final class R14bStage7WithdrawRestTest extends TestCase
     }
 
     /**
-     * T87: a delegate who withdrew and later accepts a new invitation is a
+     * T87: a delegate who withdrew and is later invited again (registered
+     * once the address is verified - invitation policy 2026-11-27) is a
      * member again, but the delegate rows stay INACTIVE until reappointed.
      */
     public function test_t87_rejoining_does_not_bring_the_delegate_role_back(): void
@@ -293,8 +294,8 @@ final class R14bStage7WithdrawRestTest extends TestCase
         $delegate = $this->f->delegate($this->member, RoleKey::PARTICIPANT_MANAGER);
         $this->withdrawAs($this->member);
 
-        $invitation = $this->f->invitation('member@example.com', null, ParticipantType::CAST);
-        $this->f->accept()->execute(new \StageArt\Application\ParticipantInvitation\AcceptParticipantInvitationCommand($this->member->wordPressUserId(), $invitation->id()->toString()));
+        $this->f->invitation('member@example.com', null, ParticipantType::CAST);
+        $this->f->resolve()->execute($this->member->id(), 'member@example.com');
 
         $this->assertSame(ParticipantStatus::ACTIVE, $this->statusOf($this->row), 'The same row is ACTIVE again');
         $this->assertFalse($this->f->delegates->findById($delegate->id())->isActive());

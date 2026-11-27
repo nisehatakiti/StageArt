@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace StageArt\Application\ParticipantInvitation;
 
-use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use StageArt\Application\Participant\ParticipantAccessDeniedException;
+use StageArt\Application\Participant\ParticipantAlreadyExistsException;
+use StageArt\Application\Person\AmbiguousPersonEmailException;
+use StageArt\Application\Person\FindPersonByEmailUseCase;
 use StageArt\Application\Production\ProductionAuthorizationService;
 use StageArt\Application\Production\ProductionNotFoundException;
 use StageArt\Application\RateLimit\InvitationRateLimit;
@@ -16,6 +18,7 @@ use StageArt\Domain\Participant\ParticipantType;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitation;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationRepositoryInterface;
 use StageArt\Domain\ParticipantInvitation\ParticipantInvitationSend;
+use StageArt\Domain\Person\PersonId;
 use StageArt\Domain\Production\ProductionId;
 use StageArt\Domain\Production\ProductionRepositoryInterface;
 
@@ -23,24 +26,28 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  * `POST /productions/{id}/participant-invitations`: an admin invites
  * someone by 氏名＋メールアドレス＋役割＋備考.
  *
- * PR #7 R14-B stage 4 (design doc §4.1 / §5.3 / §7.1 / §9.2 / §11.3):
- * - Always an invitation, whoever the address belongs to: no Person is
- *   looked up by the address (FindPersonByEmailUseCase is not used), no
- *   Participant is added directly, and no in-app notification is created.
- *   The response is the same for a registered and an unregistered address:
- *   `outcome` INVITATION_SENT (a new invitation) or INVITATION_RESENT (a
- *   PENDING, unexpired invitation to the same address and type existed and
- *   was resent), and the invitation as the admin entered it - never a
- *   Person id, a Person's name or whether an account exists.
+ * Invitation policy (docs/03-InvitationAndEnrollmentPolicy.md, 2026-11-27;
+ * the organization invitation's own shape, CreateOrganizationInvitationUseCase):
+ * the administrator has confirmed the person's intention before inviting
+ * them, and the person never accepts or rejects in StageArt.
+ * - The address belongs to a verified account (FindPersonByEmailUseCase -
+ *   verified addresses only): that Person is registered as a Participant at
+ *   once (InvitationEnrollmentService, INVITATION_ENROLLED), `outcome`
+ *   MEMBER_ADDED, no invitation is sent. Usable invitations to the same
+ *   address and type are completed with it. Already an ACTIVE participant
+ *   of the type: 409 already_exists, nothing changed.
+ * - Otherwise an invitation: `outcome` INVITATION_SENT (a new invitation)
+ *   or INVITATION_RESENT (a PENDING, unexpired invitation to the same
+ *   address and type existed and was resent). It registers the Person once
+ *   the address is verified (ResolveParticipantInvitationUseCase).
  * - One transaction, locked Production -> same-address invitations (FOR
- *   UPDATE) -> send record (§5.4), so two requests never create two
- *   PENDING invitations.
+ *   UPDATE) -> send record / Participant (§5.4), so two requests never
+ *   create two PENDING invitations or two rows.
  * - Refused, writing nothing: Production COMPLETED / ARCHIVED / CANCELLED
- *   (409 production_closed); for a new invitation, a rejection of an
- *   invitation of this Production to the same address (any type) less than
- *   30 days ago (409 recently_rejected, available_at); the 30-day
- *   per-address send limit (429 send_limit, available_at); for a resend,
- *   also inviter_revoked / resend_limit (ResendParticipantInvitationUseCase).
+ *   (409 production_closed); the 30-day per-address send limit (429
+ *   send_limit, available_at); for a resend, also inviter_revoked /
+ *   resend_limit (ResendParticipantInvitationUseCase). There is no block
+ *   after a rejection any more (the rejection was removed).
  *   Addresses are compared after trim + lower-case (§6.4).
  * - A new invitation is valid for 7 days. Its token_hash column (NOT NULL,
  *   UNIQUE) gets the hash of 32 random bytes that are thrown away: no token
@@ -50,9 +57,6 @@ use StageArt\Domain\Production\ProductionRepositoryInterface;
  */
 final class CreateParticipantInvitationUseCase
 {
-    /** D6: no new invitation to the same Production + address for 30 days after a rejection (also the list's reinvite_available_at). */
-    public const REJECTION_BLOCK = 'P30D';
-
     private ProductionRepositoryInterface $productions;
     private ProductionAuthorizationService $authorization;
     private ParticipantInvitationRepositoryInterface $invitations;
@@ -62,6 +66,9 @@ final class CreateParticipantInvitationUseCase
     private TransactionManagerInterface $transactions;
     /** R14-B stage 8 (§9.2); null only where a test leaves the limits out. */
     private ?InvitationRateLimit $rateLimit;
+    /** Invitation policy 2026-11-27: null only where a test leaves the verified-account registration out. */
+    private ?FindPersonByEmailUseCase $findPersonByEmail;
+    private ?InvitationEnrollmentService $enrollment;
 
     public function __construct(
         ProductionRepositoryInterface $productions,
@@ -71,9 +78,13 @@ final class CreateParticipantInvitationUseCase
         ParticipantInvitationConditions $conditions,
         InvitationSendService $sendService,
         TransactionManagerInterface $transactions,
-        ?InvitationRateLimit $rateLimit = null
+        ?InvitationRateLimit $rateLimit = null,
+        ?FindPersonByEmailUseCase $findPersonByEmail = null,
+        ?InvitationEnrollmentService $enrollment = null
     ) {
         $this->rateLimit = $rateLimit;
+        $this->findPersonByEmail = $findPersonByEmail;
+        $this->enrollment = $enrollment;
         $this->productions = $productions;
         $this->authorization = $authorization;
         $this->invitations = $invitations;
@@ -124,6 +135,30 @@ final class CreateParticipantInvitationUseCase
 
         $participantType = ParticipantType::fromString($command->participantType);
 
+        $existingPerson = null;
+
+        if ($this->findPersonByEmail !== null && $this->enrollment !== null) {
+            try {
+                $existingPerson = $this->findPersonByEmail->execute($email);
+            } catch (AmbiguousPersonEmailException $exception) {
+                // An address of more than one Person is never treated as one
+                // account: an ordinary invitation, as for an unknown address.
+                $existingPerson = null;
+            }
+        }
+
+        if ($existingPerson !== null) {
+            return $this->registerVerifiedAccount(
+                $production->id(),
+                PersonId::fromString($existingPerson->id),
+                $requester->id(),
+                $email,
+                $name,
+                $participantType,
+                $command->remarks
+            );
+        }
+
         [$outcome, $invitation, $pending] = $this->transactions->run(
             function () use ($production, $requester, $email, $name, $participantType, $command): array {
                 $now = new DateTimeImmutable();
@@ -144,16 +179,6 @@ final class CreateParticipantInvitationUseCase
                             $candidate,
                             $this->resend->resendLocked($candidate, $locked, $requester, $now),
                         ];
-                    }
-                }
-
-                $rejectedAt = $this->invitations->latestRejectionAt($locked->id(), $email);
-
-                if ($rejectedAt !== null) {
-                    $availableAt = $rejectedAt->add(new DateInterval(self::REJECTION_BLOCK));
-
-                    if ($availableAt > $now) {
-                        throw new ParticipantInvitationRecentlyRejectedException($availableAt);
                     }
                 }
 
@@ -185,5 +210,65 @@ final class CreateParticipantInvitationUseCase
         $this->sendService->deliver($pending);
 
         return CreateParticipantInvitationResult::of($outcome, ParticipantInvitationResult::fromDomain($invitation));
+    }
+
+    /**
+     * The address belongs to a verified account: register that Person now.
+     *
+     * @throws ParticipantAlreadyExistsException already an ACTIVE participant of the type
+     * @throws \StageArt\Application\Participant\ParticipantDraftExistsException a DRAFT row of the type
+     */
+    private function registerVerifiedAccount(
+        ProductionId $productionId,
+        PersonId $personId,
+        PersonId $requesterId,
+        string $email,
+        string $name,
+        ParticipantType $participantType,
+        ?string $remarks
+    ): CreateParticipantInvitationResult {
+        $participantId = $this->transactions->run(
+            function () use ($productionId, $personId, $requesterId, $email, $name, $participantType, $remarks): string {
+                $now = new DateTimeImmutable();
+                $locked = $this->productions->findByIdForUpdate($productionId);
+
+                if ($locked === null) {
+                    throw new ProductionNotFoundException($productionId->toString());
+                }
+
+                if ($this->conditions->isProductionClosed($locked)) {
+                    throw new ParticipantInvitationProductionClosedException('The production is closed; invitations cannot be sent.');
+                }
+
+                $candidates = $this->invitations->findByProductionEmailAndTypeForUpdate($locked->id(), $email, $participantType);
+
+                $enrolled = $this->enrollment->enroll(
+                    $locked->id(),
+                    $personId,
+                    $participantType,
+                    $name,
+                    $remarks,
+                    null,
+                    $requesterId,
+                    InvitationEnrollmentService::TRIGGER_INVITATION_CREATED,
+                    $now
+                );
+
+                if (! $enrolled->becameActive) {
+                    throw new ParticipantAlreadyExistsException('This person is already an active member of this Production.');
+                }
+
+                foreach ($candidates as $candidate) {
+                    if ($candidate->isPending() && ! $candidate->isExpiredAt($now)) {
+                        $candidate->completeByEnrollment($personId, $enrolled->participant->id(), $now);
+                        $this->invitations->save($candidate);
+                    }
+                }
+
+                return $enrolled->participant->id()->toString();
+            }
+        );
+
+        return CreateParticipantInvitationResult::memberAdded($participantId);
     }
 }

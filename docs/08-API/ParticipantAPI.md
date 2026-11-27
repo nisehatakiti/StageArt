@@ -1,8 +1,9 @@
 # StageArt Blueprint
 # API : Participant
 
-Version : 3.1
+Version : 3.3
 
+- 3.3（2026-11-27）：招待と登録の方針の実装（`feature/invitation-simplify`）に合わせ、「実装済みエンドポイント」を書き直した。確認済みのアカウントへの招待時の登録（`MEMBER_ADDED`）、メールアドレスの確認・Googleでのログインの時点の登録、招待の画面のAPI（`GET /me/participant-invitations/{id}`）を記載し、承諾・辞退・自分宛ての一覧のAPI、辞退後30日の制限、`reinvite_available_at` を削除した。担当者の権限は同意の記録を条件にしない。
 - 3.1（2026-11-19）：PR #7 R14-B（本人の同意に基づく公演参加者登録）の実装済みエンドポイントを「実装済みエンドポイント（PR #7 R14-B）」に追記した。以下のBlueprintの記述のうち、R14-Bで変わった点（PERSON・ORGANIZATIONの直接追加の廃止、招待・承諾・辞退、参加者情報の開示の制御、本人の参加の取りやめ、認可）は、その節を正とする。
 
 ---
@@ -79,7 +80,7 @@ POST /api/v1/productions/{productionId}/participants
 
 201 Created
 
-> R14-B以降、PERSON・ORGANIZATIONのSubjectを指定した直接の作成は422で拒否する。人物の参加は招待の承諾（または参加申請の承認）だけで成立する。管理者が直接作成できるのはNAME_ONLY（氏名だけの参加者）だけ。下記「実装済みエンドポイント（PR #7 R14-B）」を参照。
+> R14-B以降、PERSON・ORGANIZATIONのSubjectを指定した直接の作成は422で拒否する。人物の参加は招待による登録（2026-11-27 以降、承諾はない）または参加申請の承認だけで成立する。管理者が直接作成できるのはNAME_ONLY（氏名だけの参加者）だけ。下記「実装済みエンドポイント（PR #7 R14-B）」を参照。
 
 ### Business Rules
 
@@ -413,16 +414,20 @@ Audience Historyを生成しない。
 
 ---
 
-# 実装済みエンドポイント（PR #7 R14-B）
+# 実装済みエンドポイント（PR #7 R14-B、招待と登録の方針 2026-11-27）
 
-実装済みのエンドポイント（`/wp-json/stageart/v1/...`）。すべてログインが必要（未ログインはWordPressの401）。設計の正本は `docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md`（設計書ブランチ `docs/r14b-participant-invitation-design`、第9版 `9b42eb5`）の §4〜§7・§9.2。運用（鍵・レート制限・保存期間）は `docs/handoffs/PR7-R14B-OperationsRunbook.md`。
+招待と登録の方針は `docs/03-InvitationAndEnrollmentPolicy.md` を正本とする。本人による招待の承諾・辞退はない（2026-11-27 に廃止。`feature/invitation-simplify`）。以前の承諾・辞退の仕様は、`docs/handoffs/PR7-R14B-ParticipantInvitationDesign.md`（第9版）に履歴として残る。
+
+実装済みのエンドポイント（`/wp-json/stageart/v1/...`）。すべてログインが必要（未ログインはWordPressの401）。
 
 ## 参加者の登録の原則
 
-- 公演の参加者に**人物（PERSON）を直接追加しない**。人物が参加者になるのは、本人が招待を承諾したとき、または本人の参加申請が承認されたときだけ（本人の同意）。
-- 招待の作成は、宛先のメールアドレスが登録済みかどうかにかかわらず、同じ処理・同じ応答になる。アドレスから人物を検索しない。登録済みかどうか、人物ID・氏名は応答に含めない。
-- 管理者が直接記録できるのは、**NAME_ONLY**（氏名だけの参加者。StageArtの人物に紐付かず、同意の対象外）だけ。
-- ORGANIZATIONのSubjectも直接追加しない。
+- 管理者は、本人の参加意思を事前に（StageArtの外で）確認したうえで、メールアドレスを登録して招待する。
+- 招待先のメールアドレスが**確認済みのアカウント**のものなら、招待の時点で参加者として登録する（招待メールは送らない）。
+- それ以外のアドレスには招待を保存してメールを送る。本人がそのアドレスで登録してメールアドレスの確認を済ませた時点、またはそのアドレス（Googleが確認済みのもの）でGoogleにログインした時点で、参加者として登録する。
+- 本人による承諾・辞退、参加意思の再確認はない。登録しても、本人の同意（`consent_source`・`consented_at`）は記録しない。記録するのは登録の経路（`enrollment_source` `INVITATION`）だけ。
+- 管理者が人物IDを指定して直接追加する方式はない（`POST /productions/{id}/participants` で PERSON・ORGANIZATION は422）。
+- 管理者が直接記録できるのは、**NAME_ONLY**（氏名だけの参加者。StageArtの人物に紐付かない）だけ。
 
 ## 認可
 
@@ -430,9 +435,9 @@ Audience Historyを生成しない。
 |---|---|
 | 参加者の一覧（`GET /productions/{id}/participants`） | PrimaryManager、有効な担当者のうち `Participant.Read` を持つ役割（PARTICIPANT_MANAGER・REHEARSAL_MANAGER） |
 | 参加者の取得・作成・更新・削除、招待の作成・一覧・再送・取消 | PrimaryManager、有効な担当者のうち `Participant.Update` を持つ役割（PARTICIPANT_MANAGER） |
-| 本人の招待の一覧・承諾・辞退、参加の取りやめ（withdraw） | 本人だけ |
+| 招待メールのリンクから招待を開く（`GET /me/participant-invitations/{id}`）、参加の取りやめ（withdraw） | 本人だけ |
 
-- 担当者（ProductionDelegate）の権限は、担当者の行がACTIVEで、かつ本人が同意を確認済みのACTIVEなPERSONの参加者である場合だけ有効になる（`ProductionAPI.md`「ProductionDelegateの有効性（PR #7 R14-B）」）。PrimaryManagerの権限は、これに依存しない。
+- 担当者（ProductionDelegate）の権限は、担当者の行がACTIVEで、かつその人物がこの公演のACTIVEなPERSONの参加者である場合に有効になる。同意の記録は条件にしない（2026-11-27、ユーザーの判断）。R14-Bより前の参加者（同意の記録なし）も同じ。
 
 ## エンドポイント一覧
 
@@ -444,16 +449,16 @@ Audience Historyを生成しない。
 | `PUT /participants/{id}` | 役割（`participant_type`）・状態・備考の変更 | 200 |
 | `DELETE /participants/{id}` | 管理者による参加の取消（行は削除せず CANCELLED） | 204 |
 | `POST /participants/{id}/withdraw` | 本人による参加の取りやめ（WITHDRAWN） | 200 |
-| `POST /productions/{id}/participant-invitations` | 招待の作成（同じアドレス・役割の承諾待ちがあれば再送） | 201 |
+| `POST /productions/{id}/participant-invitations` | 招待（確認済みのアカウントはその場で登録、同じアドレス・役割の登録待ちがあれば再送） | 201 |
 | `GET /productions/{id}/participant-invitations` | 管理者向けの招待の一覧 | 200 |
 | `POST /participant-invitations/{id}/resend` | 招待の再送 | 200 |
 | `POST /participant-invitations/{id}/cancel` | 招待の取消 | 200 |
-| `GET /me/participant-invitations` | 自分宛ての招待の一覧 | 200 |
-| `POST /participant-invitations/{id}/accept` | 自分宛ての招待の承諾 | 200 |
-| `POST /participant-invitations/{id}/reject` | 自分宛ての招待の辞退 | 200 |
+| `GET /me/participant-invitations/{id}` | 招待メールのリンクから開いた招待（本人宛てだけ） | 200 |
 
-- 未登録のまま招待の内容をトークンで照会するAPI（`GET /participant-invitations/resolve?token=`）は削除した（WordPressの404 `rest_no_route`）。招待をトークンで照会・承諾するAPIはない。
+- 2026-11-27 に削除したAPI（WordPressの404 `rest_no_route`）：`GET /me/participant-invitations`（自分宛ての一覧）、`POST /participant-invitations/{id}/accept`（承諾）、`POST /participant-invitations/{id}/reject`（辞退）。
+- 未登録のまま招待の内容をトークンで照会するAPI（`GET /participant-invitations/resolve?token=`）はない（R14-Bで削除）。
 - 上記のすべての応答（成功・エラーとも）に `Cache-Control: no-store` を付ける（`README.md`「個人宛てのAPIのキャッシュ」）。
+- 団体の招待の同じ画面のAPI（`GET /me/organization-invitations/{id}`）は `docs/03-InvitationAndEnrollmentPolicy.md` §3.2。
 
 ## 参加者（Participant）の応答
 
@@ -465,7 +470,7 @@ Audience Historyを生成しない。
   "created_at": "…", "updated_at": "…",
   "remarks": "…", "display_name": "…",
   "person_family_name": "…", "person_given_name": "…", "email": "…",
-  "enrollment_source": "INVITATION", "consent_status": "CONFIRMED", "consented_at": "…"
+  "enrollment_source": "INVITATION", "consent_status": "UNCONFIRMED", "consented_at": null
 }
 ```
 
@@ -475,8 +480,8 @@ Audience Historyを生成しない。
 | `participant_type` | `CAST`・`STAFF` |
 | `status` | `DRAFT`・`PENDING`・`ACTIVE`・`INACTIVE`・`CANCELLED`・`REJECTED`・`WITHDRAWN`（`04-DomainModel/Participant.md`） |
 | `enrollment_source` | 行が最初に作られた経路。`INVITATION`・`JOIN_REQUEST`・`MANAGER_RECORD`（NAME_ONLY）。R14-Bより前の行は `null` |
-| `consent_status` | `CONFIRMED`（同意を記録済み）・`UNCONFIRMED`（PERSONで同意の記録なし。R14-Bより前の行を含む）・`NOT_APPLICABLE`（NAME_ONLY・ORGANIZATION） |
-| `consented_at` | 最新の同意の日時。なければ `null` |
+| `consent_status` | 同意の記録の有無（履歴）。`CONFIRMED`（記録あり：R14-Bの承諾、参加申請の承認）・`UNCONFIRMED`（PERSONで記録なし。招待から登録した行、R14-Bより前の行）・`NOT_APPLICABLE`（NAME_ONLY・ORGANIZATION）。権限の判定には使わない。画面には表示しない |
+| `consented_at` | 最新の同意の記録の日時。なければ `null` |
 
 開示しない項目は `null` で返す（項目自体は省略しない）。
 
@@ -525,7 +530,7 @@ Audience Historyを生成しない。
 
 - `status` を送らない場合は変わらない。現在と同じ値は成功（何も変えない）。
 - 状態の変更として受け付けるのは **ACTIVE → INACTIVE だけ**。同じトランザクションで、その人物のこの公演の担当者の行をすべて INACTIVE にする（理由 `PARTICIPANT_DEACTIVATED`）。
-- **INACTIVE → ACTIVE は422 `stageart_participant_status_requires_consent`**（復帰は、本人の招待の承諾または参加申請の承認による）。その他の変更は422 `stageart_participant_status_change_not_allowed`。
+- **INACTIVE → ACTIVE は422 `stageart_participant_status_requires_consent`**（コードの名前は R14-B のまま）。復帰は、招待による登録または参加申請の承認による。その他の変更は422 `stageart_participant_status_change_not_allowed`。
 - 同じSubjectが同じ公演で別の役割の行を持っている場合、その役割への変更は409 `stageart_participant_type_conflict`。
 - `remarks`：送らない場合は保持、`null`・空文字は削除、文字列は前後の空白を除いて保存。
 - 入力の誤り（`participant_type` がない・不正、`status` が文字列でない・不正など）は422 `stageart_participant_invalid` で、何も変更しない。
@@ -533,7 +538,7 @@ Audience Historyを生成しない。
 
 ## 参加の取消（`DELETE /participants/{id}`）
 
-- ACTIVE・INACTIVE → CANCELLED（204）。行・出欠・精算・会計の記録は残す。同じトランザクションで、その人物のこの公演のACTIVEな担当者の行を INACTIVE にする（理由 `PARTICIPANT_REMOVED`）。監査ログ `REMOVED_BY_MANAGER`。
+- ACTIVE・INACTIVE → CANCELLED（204）。行・出欠・精算・会計の記録は残す。同じトランザクションで、その人物のこの公演のACTIVEな担当者の行を INACTIVE にする（理由 `PARTICIPANT_REMOVED`）。監査ログ `REMOVED_BY_MANAGER`・`DELEGATE_DEACTIVATED`。
 - CANCELLED は成功（何も変えない）。
 - PENDING・DRAFT・REJECTED・WITHDRAWN は409 `stageart_participant_cancel_not_allowed`。
 
@@ -544,81 +549,94 @@ Audience Historyを生成しない。
 - ACTIVE以外の行は409 `stageart_participant_withdraw_not_allowed`。
 - **PrimaryManagerは取りやめられない**：409 `stageart_participant_withdraw_primary_manager`（先に管理者を引き継ぐ）。
 - 公演の状態による制限はない。
-- 同じトランザクションで、その人物のこの公演の担当者の行をすべて INACTIVE にする（理由 `PARTICIPANT_WITHDRAWN`）。監査ログ `WITHDRAWN`・`DELEGATE_DEACTIVATED`。出欠・精算・会計の記録は変更しない。確定の後、PrimaryManagerと有効なPARTICIPANT_MANAGERに通知する。
+- 同じトランザクションで、その人物のこの公演の担当者の行をすべて INACTIVE にする（理由 `PARTICIPANT_WITHDRAWN`）。監査ログ `WITHDRAWN`・`DELEGATE_DEACTIVATED`。出欠・精算・会計の記録は変更しない。確定の後、PrimaryManagerと有効なPARTICIPANT_MANAGERに通知する（本人を除く）。
 
 ## 招待の作成・再送・取消（管理者）
 
-**作成**（`POST /productions/{id}/participant-invitations`）。本文：`name`、`email`、`participant_type`、`remarks`（任意）。
+**作成**（`POST /productions/{id}/participant-invitations`）。本文：`name`、`email`、`participant_type`、`remarks`（任意）。応答は201で、次のどれか。
 
-- 応答（201）：`{ "outcome": "INVITATION_SENT" | "INVITATION_RESENT", "invitation": { … } }`。同じ公演・アドレス・役割の期限内の承諾待ちの招待があれば、新しく作らずに再送する（`INVITATION_RESENT`）。
-- **公演招待**の有効期限は、作成から7日。再送すると、再送の時点から7日に延びる。R14-Bより前に作られた公演招待は、作成時の期限（24時間）のまま変えない。団体招待（有効期限24時間）は別の機能で、この節の対象外。
+| `outcome` | 応答 | 条件 |
+|---|---|---|
+| `MEMBER_ADDED` | `{ "outcome": "MEMBER_ADDED", "participant_id": "…" }` | アドレスが確認済みのアカウントのもの（ログインの確認済みのアドレス、または確認済みの通知用アドレス）。その場で参加者として登録し、招待メールは送らない。同じアドレス・役割の期限内の登録待ちの招待は、完了（`CONSUMED`）にする |
+| `INVITATION_SENT` | `{ "outcome": "INVITATION_SENT", "invitation": { … } }` | 上以外。新しい招待を作ってメールを送る |
+| `INVITATION_RESENT` | `{ "outcome": "INVITATION_RESENT", "invitation": { … } }` | 同じ公演・アドレス・役割の期限内の登録待ちの招待があり、それを再送した |
+
+- 確認済みのアカウントの登録：同じ公演・人物・役割の行がなければ ACTIVE で作り（`enrollment_source` `INVITATION`、同意は記録しない、`display_name` は管理者が入力した氏名）、CANCELLED・WITHDRAWN・REJECTED・INACTIVE・PENDING の行があれば同じ行を ACTIVE に戻す（`enrollment_source` と過去の同意の記録はそのまま）。新しく参加者になった場合は、その人物のこの公演のACTIVEな担当者の行を INACTIVE にする（理由 `DORMANT_ON_ENROLLMENT`。改めて任命する）。監査ログ `INVITATION_ENROLLED`（`detail.trigger` `INVITATION_CREATED`）。
+- アドレスが複数の人物の確認済みのアドレスになっている場合は、確認済みのアカウントとして扱わず、招待を送る。
+- **公演招待**の有効期限は、作成から7日。再送すると、再送の時点から7日に延びる。R14-Bより前に作られた公演招待は、作成時の期限（24時間）のまま変えない。団体招待の有効期限は24時間。
 - アドレスは前後の空白を除き、小文字にして比較する。
-- メールは確定の後に送る。メールにはトークンを含めず、招待の一覧（`/participant-invitations`）へのリンクを載せる。送信の失敗は招待を取り消さず、送信の回数も戻さない。
+- メールは確定の後に送る。メールにはトークンを含めず、その招待の画面（`/participant-invitations/{招待ID}`）へのリンクを載せる。送信の失敗は招待を取り消さず、送信の回数も戻さない。
 
-**再送**（`POST /participant-invitations/{id}/resend`）・**取消**（`POST /participant-invitations/{id}/cancel`）：応答は招待（200）。取消は承諾待ちの招待を CANCELLED（close_reason `MANAGER`）にする。
+**招待からの登録（メールアドレスの確認・Googleでのログイン）**：本人が招待されたアドレスで登録してメールアドレスを確認した時点（`POST /auth/email/verify`）、またはGoogleが確認済みのそのアドレスでGoogleにログインした時点（`POST /auth/google`）に、そのアドレス宛ての期限内の登録待ちの招待で、参加者として登録する（招待ごとに1つのトランザクション）。
+
+- 招待は `CONSUMED`（`consumed_at`、登録した人物 `invitee_person_id`、参加者の行 `participant_id`）になる。`responded_at` は記録しない。監査ログ `INVITATION_ENROLLED`（`detail.trigger` `ADDRESS_VERIFIED`）。
+- 行の作り方・再利用・担当者の行の扱いは、作成のときと同じ。すでに同じ役割で ACTIVE なら行は変えず、招待だけを完了にする。
+- 公演が COMPLETED・ARCHIVED・CANCELLED、または招待した人に権限がなくなっていれば、登録せず、招待を CANCELLED（close_reason `PRODUCTION_CLOSED`・`INVITER_REVOKED`）にする。`INVITER_REVOKED` のときは、確定の後に PrimaryManager へ1回だけ通知する。
+- 同じ役割の DRAFT の行があれば、何も変えず、招待は登録待ちのまま残る（ログに記録）。
+- 取消済み・期限切れの招待、別のアドレス宛ての招待、ほかの人物の確認済みのアドレス宛ての招待では、登録しない。同じ招待を何度処理しても、登録は1回だけ。
+- 失敗しても、メールアドレスの確認やログインの応答は変えない（ログにIDだけを記録する）。
+
+**再送**（`POST /participant-invitations/{id}/resend`）・**取消**（`POST /participant-invitations/{id}/cancel`）：応答は招待（200）。取消は登録待ちの招待を CANCELLED（close_reason `MANAGER`）にする。
 
 **送信の上限**（レート制限とは別に、常に適用）：
 
 - 招待1件あたりの再送は5回まで。
 - 同じ公演・同じアドレスへの送信（作成・再送の合計）は30日間に6回まで。
-- 同じ公演の招待を辞退した人には、辞退から30日間、新しい招待を作れない（役割を問わない）。
+- 辞退後30日の再招待の制限は、辞退とともに廃止した（2026-11-27）。
 
 | HTTP | code | 条件 |
 |---|---|---|
 | 409 | `stageart_participant_invitation_production_closed` | 公演が COMPLETED・ARCHIVED・CANCELLED |
 | 409 | `stageart_participant_invitation_inviter_revoked` | 再送で、招待した人に権限がなくなっている |
-| 409 | `stageart_participant_invitation_recently_rejected` | 辞退から30日以内（`data.available_at`） |
+| 409 | `stageart_participant_already_exists` | 作成で、確認済みのアカウントが同じ役割で既にACTIVEな参加者（何も変えない） |
+| 409 | `stageart_participant_draft_exists` | 作成で、確認済みのアカウントに同じ役割の DRAFT の行がある（何も変えない） |
 | 429 | `stageart_participant_invitation_resend_limit` | この招待の再送が5回に達した |
 | 429 | `stageart_participant_invitation_send_limit` | 30日間の送信が6回に達した（`data.available_at`） |
 | 429 | `stageart_rate_limited` | 操作のレート制限（`README.md`） |
 | 422 | `stageart_participant_invitation_invalid` | 入力の誤り（作成） |
-| 422 | `stageart_participant_invitation_not_pending` | 承諾待ちでない招待の再送 |
-| 409 | `stageart_participant_invitation_not_pending` | 承諾待ちでない招待の取消 |
+| 422 | `stageart_participant_invitation_not_pending` | 登録待ちでない招待の再送 |
+| 409 | `stageart_participant_invitation_not_pending` | 登録待ちでない招待の取消 |
 | 403 | `stageart_participant_invitation_access_denied` | 権限なし |
 | 404 | `stageart_participant_invitation_not_found`・`stageart_production_not_found` | 招待・公演がない |
-| 500 | `stageart_email_key_not_configured` | email_key の鍵が設定されていない（作成・再送。何も保存しない） |
+| 500 | `stageart_email_key_not_configured` | email_key の鍵が設定されていない（招待の作成・再送。何も保存しない） |
 
-**管理者向けの一覧**（`GET /productions/{id}/participant-invitations`）の各行は、招待の項目（`id`・`production_id`・`email`・`name`・`invited_by_person_id`・`participant_type`・`remarks`・`status`・`created_at`・`expires_at`・`consumed_at`・`is_expired`）に、次を加える。招待された人の人物ID・氏名は含めない。
+**管理者向けの一覧**（`GET /productions/{id}/participant-invitations`）の各行は、招待の項目（`id`・`production_id`・`email`・`name`・`invited_by_person_id`・`participant_type`・`remarks`・`status`・`created_at`・`expires_at`・`consumed_at`・`is_expired`）に、次の項目を加えたもの。
 
 | 項目 | 内容 |
 |---|---|
-| `effective_status` | 表示用の状態。承諾待ちは、期限切れ → 公演の終了 → 招待者の権限なし の順に判定して `EXPIRED`・`PRODUCTION_CLOSED`・`INVITER_REVOKED`・`PENDING`。CANCELLED（理由 `INVITER_REVOKED`）は `INVITER_REVOKED`、その他のCANCELLEDは `CANCELLED`。`ACCEPTED`・`REJECTED`・`CONSUMED` はそのまま |
-| `responded_at`・`close_reason`・`closed_at` | 保存されている値 |
+| `effective_status` | 表示用の状態。登録待ちは、期限切れ → 公演の終了 → 招待者の権限なし の順に判定して `EXPIRED`・`PRODUCTION_CLOSED`・`INVITER_REVOKED`・`PENDING`。CANCELLED（理由 `INVITER_REVOKED`）は `INVITER_REVOKED`、そのほかの CANCELLED は `CANCELLED`。`CONSUMED`（登録済み）、過去の `ACCEPTED`・`REJECTED` はそのまま |
+| `responded_at`・`close_reason`・`closed_at` | 保存されている値（`responded_at` は過去の承諾・辞退の行だけ） |
 | `resend_count`・`resend_remaining` | この招待の再送の回数と、5回までの残り |
 | `send_status`・`last_sent_at` | 最新の送信の状態（`PENDING`・`SENT`・`FAILED`・`UNKNOWN`）と日時。R14-Bより前の招待は `null` |
 | `send_limit` | `{ sent_in_30_days, remaining_in_30_days, available_at }`。期間内に使われた鍵の版が設定されていないなど、数えられない場合は `null` |
-| `reinvite_available_at` | REJECTEDの行だけ。最新の辞退から30日後（過ぎていても返す） |
 
-`send_status` の `UNKNOWN` は保存せず、送信を受け付けてから10分たっても結果が記録されていない `PENDING` を表示上そう扱う。`SENT` は送信を受け付けたことだけを表し、相手に届いたことは保証しない。
+`reinvite_available_at` は、辞退後30日の制限とともに削除した（2026-11-27）。`send_status` の `UNKNOWN` は保存せず、送信を受け付けてから10分たっても結果が記録されていない `PENDING` を表示上そう扱う。`SENT` は送信を受け付けたことだけを表し、相手に届いたことは保証しない。
 
-## 本人の招待の一覧・承諾・辞退
+## 招待メールのリンクから開いた招待（`GET /me/participant-invitations/{id}`）
 
-**一覧**（`GET /me/participant-invitations`）：ログインしている人物の**確認済みのアドレス**（ログインのアドレスと、確認済みの通知用アドレス）宛ての招待。トークンは使わない。
+招待メールのリンク（`/participant-invitations/{招待ID}`）の画面が使う。招待IDだけでは何も見せない：招待先のアドレスが、ログインしている人物の**確認済みのアドレス**（ログインのアドレスと、確認済みの通知用アドレス）の1つで、そのアドレスがその人物のものと確かめられた場合だけ返す。読み取りだけで、登録・通知・書き込みはしない（開いたことは承諾ではない）。
 
-- 載せるもの：期限内の承諾待ち（`effective_status` が `PENDING` なら承諾・辞退できる。`PRODUCTION_CLOSED`・`INVITER_REVOKED` は辞退だけ）、期限内の CANCELLED（`PRODUCTION_CLOSED`・`INVITER_REVOKED`、辞退だけ）。期限切れ・回答済み・管理者が取り消したものは載せない。
-- 各項目：`id`・`production_id`・`production_name`・`organization_name`・`participant_type`・`invited_by_display_name`（公演での招待者の表示名。なければ「公演の管理者」）・`expires_at`・`effective_status`・`already_participant`・`can_accept`・`can_reject`・`unavailable_reason`。招待のアドレス、管理者が入力した氏名・備考、他の人物の情報は含めない。
-- 一覧の取得は何も書き換えない。
+応答（200）：
 
-**承諾**（`POST /participant-invitations/{id}/accept`）：応答は `{ "participant_id", "production_id", "status" }`。
+```json
+{ "id": "…", "production_id": "…", "production_name": "…", "participant_type": "CAST", "status": "PENDING" }
+```
 
-- 同じ公演・人物・役割の行がなければ作り、あれば再利用して ACTIVE にし、同意（`consent_source` `INVITATION`・`consented_at`）を記録する。すでに ACTIVE の行には同意だけを記録する（「同意の確認を依頼」）。
-- 承諾によって新しく ACTIVE になった場合は、その人物のこの公演のACTIVEな担当者の行を INACTIVE にする（理由 `DORMANT_ON_ENROLLMENT`。改めて任命する）。すでにACTIVEで同意だけを記録した場合は、担当者の行は変えない。
-- すでに本人が承諾済みなら、同じ応答を返す（何も変えない）。
-- 監査ログ：`ACCEPTED`（すでにACTIVEなら `CONSENT_RECORDED` も）。確定の後、招待した人に通知する。
+| `status` | 内容 |
+|---|---|
+| `REGISTERED` | その人物が、招待の役割でこの公演のACTIVEな参加者（招待の状態にかかわらず） |
+| `PENDING` | 登録待ち（招待されたアドレスの確認が済むと登録される） |
+| `EXPIRED` | 登録待ちのまま期限切れ |
+| `CANCELLED` | 取消、または公演の終了・招待者の権限なしで無効 |
+| `CLOSED` | そのほかの終了（以前に完了・回答済みで、今はACTIVEな参加者でない） |
 
-**辞退**（`POST /participant-invitations/{id}/reject`）：応答は `{ "id", "status": "REJECTED", "close_reason" }`。参加者の行は作らず、変更もしない。監査ログ `REJECTED`。招待した人（権限がなくなっていればPrimaryManager）に通知する。
+メールアドレス・招待時の氏名・備考は返さない。
 
-| HTTP | code | 条件（承諾・辞退） |
+| HTTP | code | 条件 |
 |---|---|---|
-| 403 | `stageart_participant_invitation_forbidden` | 招待に回答できないアカウント（人物・有効なアカウント・確認済みのアドレスがない） |
-| 404 | `stageart_participant_invitation_not_found` | 招待がない、または本人宛てでない（区別しない） |
-| 409 | `stageart_participant_invitation_not_pending` | 回答済み・管理者が取り消した招待 |
-| 409 | `stageart_participant_invitation_closed` | 公演の終了・招待者の権限なしで承諾できない（`data.close_reason`）。辞退はできる |
-| 409 | `stageart_participant_draft_exists` | 承諾：同じ役割の DRAFT の行がある（管理者に連絡する） |
-| 410 | `stageart_participant_invitation_expired` | 期限切れ |
-| 429 | `stageart_rate_limited` | 承諾・辞退の失敗（403・404）が10分間に10回に達した |
-
-一覧の取得で回答できないアカウントの場合も403 `stageart_participant_invitation_forbidden`。
+| 403 | `stageart_participant_invitation_forbidden` | 人物がない、またはアカウントがACTIVEでない |
+| 404 | `stageart_participant_invitation_not_found` | 招待がない、IDの形式が違う、または本人宛てでない（区別しない） |
+| 429 | `stageart_rate_limited` | 403・404の失敗が10分間に10回に達した |
 
 ---
 

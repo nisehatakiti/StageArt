@@ -33,6 +33,10 @@ describe('returnToForUnauthenticated', () => {
     expect(returnToForUnauthenticated('/participant-invitations/abc')).toBe('/participant-invitations/abc');
     expect(returnToForUnauthenticated('/home')).toBeNull();
     expect(returnToForUnauthenticated('/participant-invitationsX')).toBeNull();
+    // Invitation policy 2026-11-27: the organization invitation screen too.
+    expect(returnToForUnauthenticated('/organization-invitations/abc')).toBe('/organization-invitations/abc');
+    expect(returnToForUnauthenticated('/organization-invitationsX')).toBeNull();
+    expect(returnToForUnauthenticated('/organizations/abc')).toBeNull();
   });
 });
 

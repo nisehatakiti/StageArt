@@ -16,7 +16,7 @@ use StageArt\Domain\ProductionDelegate\ProductionDelegateRepositoryInterface;
  * §4.6; API added with the user's approval): `GET
  * /productions/{id}/delegates/me` - the logged-in Person's OWN delegate rows
  * in one Production, each with `effective` and `ineffective_reason`
- * (INACTIVE / NOT_ACTIVE_PARTICIPANT / CONSENT_UNCONFIRMED), so the Person
+ * (INACTIVE / NOT_ACTIVE_PARTICIPANT; CONSENT_UNCONFIRMED until 2026-11-27), so the Person
  * can see why a role of theirs grants nothing.
  *
  * - Any logged-in Person may call it; it only ever returns their own rows

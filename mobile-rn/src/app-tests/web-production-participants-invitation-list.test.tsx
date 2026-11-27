@@ -33,7 +33,6 @@ const pendingInvitation = {
   send_status: 'SENT',
   last_sent_at: '2026-11-18T01:00:00+00:00',
   send_limit: { sent_in_30_days: 1, remaining_in_30_days: 5, available_at: null },
-  reinvite_available_at: null,
 };
 
 /**
@@ -56,7 +55,7 @@ describe('Web メンバー管理: 招待一覧・再送・取消', () => {
     expect(screen.getByText('invitee@example.com')).toBeVisible();
     expect(screen.getByText('山田 花子')).toBeVisible();
     // R14-B §10: the Backend's effective_status as the state.
-    expect(screen.getByTestId('participant-invitation-status-invitation-1')).toHaveTextContent('承諾待ち');
+    expect(screen.getByTestId('participant-invitation-status-invitation-1')).toHaveTextContent('登録待ち');
 
     (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
       ok: true,

@@ -71,7 +71,7 @@ final class ResendOrganizationInvitationUseCase
         $invitation->rotateToken($tokenHash, $expiresAt);
         $this->invitations->save($invitation);
 
-        $this->mailer->sendInvitationEmail($invitation->email(), $organization->name()->toString(), $tokenValue);
+        $this->mailer->sendInvitationEmail($invitation->email(), $organization->name()->toString(), $tokenValue, $invitation->id()->toString());
 
         return OrganizationInvitationResult::fromDomain($invitation);
     }

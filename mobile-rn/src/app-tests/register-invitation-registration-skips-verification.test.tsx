@@ -1,4 +1,4 @@
-import { renderRouter, screen, waitFor } from 'expo-router/testing-library';
+import { renderRouter, waitFor } from 'expo-router/testing-library';
 
 import { mockFetchRoutes, myDashboardEmpty } from './__fixtures__/homeFixtures';
 
@@ -15,21 +15,20 @@ jest.mock('expo-secure-store', () => ({
  * spec change - previously a registration from an invitation link
  * forwarded the token and skipped the mail confirmation, and in the first
  * stage-9 version the link stayed on the registration form): an old
- * invitation link opened while logged in goes to the invitation list
- * (/participant-invitations). The token is not read, sent or carried into
+ * invitation link opened while logged in goes to /participant-invitations,
+ * which goes on to Home since the 2026-11-27 invitation policy (there is no
+ * invitation list any more). The token is not read, sent or carried into
  * the URL, and nothing is registered.
  */
 describe('register screen: old invitation link while logged in', () => {
-  it('goes to the invitation list without the token', async () => {
+  it('goes to Home without the token', async () => {
     mockFetchRoutes([
-      { test: (u) => u.endsWith('/me/participant-invitations'), status: 200, body: [] },
       { test: (u) => u.endsWith('/me/dashboard'), status: 200, body: myDashboardEmpty },
     ]);
 
     const router = renderRouter('src/app', { initialUrl: '/register?token=good-token' });
 
-    await waitFor(() => expect(screen.getByTestId('participant-invitations-empty')).toBeVisible());
-    expect(router.getPathname()).toBe('/participant-invitations');
+    await waitFor(() => expect(router.getPathname()).toBe('/home'));
     expect(router.getSearchParams()).toEqual({});
 
     const calls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));

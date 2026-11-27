@@ -1,20 +1,21 @@
 import type { ApiClient } from '@/api/client';
 import type {
-  AcceptParticipantInvitationResult,
   CreateParticipantInvitationResult,
   ManagedParticipantInvitation,
   MyParticipantInvitation,
   ParticipantInvitation,
-  RejectParticipantInvitationResult,
 } from '@/types/api';
 
 /**
- * PR #7 R14-B (design doc §7.1, stage 4): an admin invites someone by
- * 氏名＋メールアドレス＋役割＋備考. It is always an invitation - the address
- * is never looked up and nobody is added directly: `outcome` is
- * INVITATION_SENT (a new invitation) or INVITATION_RESENT (a PENDING one to
- * the same address and type was resent). The person becomes a member only
- * when they accept it themselves.
+ * An admin invites someone by 氏名＋メールアドレス＋役割＋備考
+ * (invitation policy, docs/03-InvitationAndEnrollmentPolicy.md, 2026-11-27 -
+ * the same way as an organization invitation):
+ * - the address belongs to a verified account: that person is registered at
+ *   once - `outcome` MEMBER_ADDED (no mail);
+ * - otherwise an invitation is mailed - INVITATION_SENT, or INVITATION_RESENT
+ *   when a PENDING one to the same address and type was resent. The person is
+ *   registered once they verify that address (or sign in with Google with it).
+ * Nobody accepts or rejects an invitation.
  */
 export function createParticipantInvitation(
   client: ApiClient,
@@ -44,17 +45,10 @@ export function cancelParticipantInvitation(client: ApiClient, invitationId: str
 }
 
 /**
- * R14-B §7.2: the invitations to the logged-in Person's verified addresses -
- * the only way to look an invitation up (no token, no lookup by id).
+ * The invitation the mail's link opens (/participant-invitations/{id}),
+ * after login: shown only when its address is one of the logged-in person's
+ * verified addresses (otherwise 404, like a missing one).
  */
-export function fetchMyParticipantInvitations(client: ApiClient): Promise<MyParticipantInvitation[]> {
-  return client.get<MyParticipantInvitation[]>('/me/participant-invitations');
-}
-
-export function acceptParticipantInvitation(client: ApiClient, invitationId: string): Promise<AcceptParticipantInvitationResult> {
-  return client.post<AcceptParticipantInvitationResult>(`/participant-invitations/${invitationId}/accept`);
-}
-
-export function rejectParticipantInvitation(client: ApiClient, invitationId: string): Promise<RejectParticipantInvitationResult> {
-  return client.post<RejectParticipantInvitationResult>(`/participant-invitations/${invitationId}/reject`);
+export function fetchMyParticipantInvitation(client: ApiClient, invitationId: string): Promise<MyParticipantInvitation> {
+  return client.get<MyParticipantInvitation>(`/me/participant-invitations/${encodeURIComponent(invitationId)}`);
 }

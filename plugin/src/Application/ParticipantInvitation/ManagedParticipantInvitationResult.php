@@ -24,10 +24,6 @@ namespace StageArt\Application\ParticipantInvitation;
  * - send_limit: the address's 30-day limit (InvitationSendLimit); null when
  *   it cannot be counted because a key version used in the window is not
  *   configured - decided 2026-11-18.
- * - reinvite_available_at: REJECTED rows only - the latest rejection of the
- *   same Production + normalised address (any type) plus 30 days, as the
- *   create API decides it; returned even when it has passed - decided
- *   2026-11-18.
  */
 final class ManagedParticipantInvitationResult
 {
@@ -41,7 +37,6 @@ final class ManagedParticipantInvitationResult
     public ?string $sendStatus;
     public ?string $lastSentAt;
     public ?InvitationSendLimit $sendLimit;
-    public ?string $reinviteAvailableAt;
 
     public function __construct(
         ParticipantInvitationResult $invitation,
@@ -53,8 +48,7 @@ final class ManagedParticipantInvitationResult
         int $resendRemaining,
         ?string $sendStatus,
         ?string $lastSentAt,
-        ?InvitationSendLimit $sendLimit,
-        ?string $reinviteAvailableAt
+        ?InvitationSendLimit $sendLimit
     ) {
         $this->invitation = $invitation;
         $this->effectiveStatus = $effectiveStatus;
@@ -66,7 +60,6 @@ final class ManagedParticipantInvitationResult
         $this->sendStatus = $sendStatus;
         $this->lastSentAt = $lastSentAt;
         $this->sendLimit = $sendLimit;
-        $this->reinviteAvailableAt = $reinviteAvailableAt;
     }
 
     /**
@@ -84,7 +77,6 @@ final class ManagedParticipantInvitationResult
             'send_status' => $this->sendStatus,
             'last_sent_at' => $this->lastSentAt,
             'send_limit' => $this->sendLimit !== null ? $this->sendLimit->toArray() : null,
-            'reinvite_available_at' => $this->reinviteAvailableAt,
         ];
     }
 }
